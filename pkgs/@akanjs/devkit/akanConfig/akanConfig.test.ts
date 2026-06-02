@@ -7,7 +7,13 @@ import { AkanAppConfig, AkanLibConfig } from "./akanConfig";
 import type { DeepPartial, LibConfigResult } from "./types";
 
 const akanPackageJson = JSON.parse(
-  fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../akanjs/package.json"), "utf8"),
+  fs.readFileSync(
+    path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../../../akanjs/package.json",
+    ),
+    "utf8",
+  ),
 ) as PackageJson;
 
 const packageJson: PackageJson = {
@@ -34,7 +40,13 @@ const baseDevEnv = {
 
 describe("AkanAppConfig", () => {
   test("applies defaults for route domains, i18n, image, mobile, and imports", () => {
-    const config = new AkanAppConfig(app, ["shared"], packageJson, {}, baseDevEnv);
+    const config = new AkanAppConfig(
+      app,
+      ["shared"],
+      packageJson,
+      {},
+      baseDevEnv,
+    );
 
     expect([...config.domains].sort()).toEqual([
       "portal-debug.akanjs.com",
@@ -61,7 +73,11 @@ describe("AkanAppConfig", () => {
       },
     });
     expect(config.barrelImports).toEqual(
-      expect.arrayContaining(["@apps/portal/ui", "@libs/shared/server", "akanjs/common"]),
+      expect.arrayContaining([
+        "@apps/portal/ui",
+        "@libs/shared/server",
+        "akanjs/common",
+      ]),
     );
     expect(config.docker.content).toContain("ENV AKAN_PUBLIC_APP_NAME=portal");
     expect(process.env.AKAN_PUBLIC_DEFAULT_LOCALE).toBe("en");
@@ -75,10 +91,21 @@ describe("AkanAppConfig", () => {
       {
         routes: [
           { domains: { debug: ["Root.Local:8282"], qa: ["QA.Root.Local"] } },
-          { basePath: "/admin/", domains: { debug: ["Admin.Local:8282"], main: ["Admin.Main.Local"] } },
+          {
+            basePath: "/admin/",
+            domains: {
+              debug: ["Admin.Local:8282"],
+              main: ["Admin.Main.Local"],
+            },
+          },
         ],
         i18n: { locales: ["ko", "en"], defaultLocale: "ko" },
-        mobile: { appName: "Portal App", appId: "com.portal.mobile", version: "1.2.3", buildNum: 7 },
+        mobile: {
+          appName: "Portal App",
+          appId: "com.portal.mobile",
+          version: "1.2.3",
+          buildNum: 7,
+        },
         images: { qualities: [80, 90], dangerouslyAllowSVG: true },
         docker: {
           image: { amd64: "oven/bun:amd64", arm64: "oven/bun:arm64" },
@@ -102,7 +129,12 @@ describe("AkanAppConfig", () => {
       "admin.local",
       "admin.main.local",
     ]);
-    expect([...config.branches].sort()).toEqual(["debug", "develop", "main", "qa"]);
+    expect([...config.branches].sort()).toEqual([
+      "debug",
+      "develop",
+      "main",
+      "qa",
+    ]);
     expect(config.i18n.defaultLocale).toBe("ko");
     expect(config.images.qualities).toEqual([80, 90]);
     expect(config.images.dangerouslyAllowSVG).toBe(true);
@@ -122,9 +154,17 @@ describe("AkanAppConfig", () => {
   });
 
   test("creates production package json and reports missing external versions", () => {
-    const config = new AkanAppConfig(app, [], packageJson, { externalLibs: ["@external/runtime"] }, baseDevEnv);
+    const config = new AkanAppConfig(
+      app,
+      [],
+      packageJson,
+      { externalLibs: ["@external/runtime"] },
+      baseDevEnv,
+    );
 
-    expect(config.getProductionPackageJson({ scripts: { start: "bun main.js" } })).toMatchObject({
+    expect(
+      config.getProductionPackageJson({ scripts: { start: "bun main.js" } }),
+    ).toMatchObject({
       name: "portal",
       main: "./main.js",
       scripts: { start: "bun main.js" },
@@ -145,11 +185,16 @@ describe("AkanAppConfig", () => {
       { externalLibs: ["missing-lib"] },
       baseDevEnv,
     );
-    expect(() => brokenConfig.getProductionPackageJson()).toThrow("Dependency missing-lib not found");
+    expect(() => brokenConfig.getProductionPackageJson()).toThrow(
+      "Dependency missing-lib not found",
+    );
   });
 
   test("falls back to akanjs package versions for built-in runtime dependencies", () => {
-    const runtimeDependencies = { ...akanPackageJson.dependencies, ...akanPackageJson.peerDependencies };
+    const runtimeDependencies = {
+      ...akanPackageJson.dependencies,
+      ...akanPackageJson.peerDependencies,
+    };
     const config = new AkanAppConfig(
       app,
       [],
@@ -168,44 +213,130 @@ describe("AkanAppConfig", () => {
     expect(config.getProductionPackageJson().dependencies).toEqual({
       react: runtimeDependencies.react,
       "react-dom": runtimeDependencies["react-dom"],
-      "react-server-dom-webpack": runtimeDependencies["react-server-dom-webpack"],
+      "react-server-dom-webpack":
+        runtimeDependencies["react-server-dom-webpack"],
       croner: runtimeDependencies.croner,
       sharp: runtimeDependencies.sharp,
     });
   });
 
   test("adds backend runtime packages by database mode", () => {
-    const runtimeDependencies = { ...akanPackageJson.dependencies, ...akanPackageJson.peerDependencies };
-    const singleConfig = new AkanAppConfig(app, [], packageJson, { defaultDatabaseMode: "single" }, baseDevEnv);
-    const multipleConfig = new AkanAppConfig(app, [], packageJson, { defaultDatabaseMode: "multiple" }, baseDevEnv);
-    const clusterConfig = new AkanAppConfig(app, [], packageJson, { defaultDatabaseMode: "cluster" }, baseDevEnv);
+    const runtimeDependencies = {
+      ...akanPackageJson.dependencies,
+      ...akanPackageJson.peerDependencies,
+    };
+    const singleConfig = new AkanAppConfig(
+      app,
+      [],
+      packageJson,
+      { defaultDatabaseMode: "single" },
+      baseDevEnv,
+    );
+    const multipleConfig = new AkanAppConfig(
+      app,
+      [],
+      packageJson,
+      { defaultDatabaseMode: "multiple" },
+      baseDevEnv,
+    );
+    const clusterConfig = new AkanAppConfig(
+      app,
+      [],
+      packageJson,
+      { defaultDatabaseMode: "cluster" },
+      baseDevEnv,
+    );
 
     expect(singleConfig.getProductionPackageJson().dependencies).toMatchObject({
       croner: runtimeDependencies.croner,
     });
-    expect(singleConfig.getProductionPackageJson().dependencies).not.toHaveProperty("ioredis");
-    expect(singleConfig.getProductionPackageJson().dependencies).not.toHaveProperty("bullmq");
-    expect(singleConfig.getProductionPackageJson().dependencies).not.toHaveProperty("@libsql/client");
-    expect(singleConfig.getProductionPackageJson().dependencies).not.toHaveProperty("postgres");
-    expect(singleConfig.getProductionPackageJson().dependencies).not.toHaveProperty("protobufjs");
+    expect(
+      singleConfig.getProductionPackageJson().dependencies,
+    ).not.toHaveProperty("ioredis");
+    expect(
+      singleConfig.getProductionPackageJson().dependencies,
+    ).not.toHaveProperty("bullmq");
+    expect(
+      singleConfig.getProductionPackageJson().dependencies,
+    ).not.toHaveProperty("@libsql/client");
+    expect(
+      singleConfig.getProductionPackageJson().dependencies,
+    ).not.toHaveProperty("postgres");
+    expect(
+      singleConfig.getProductionPackageJson().dependencies,
+    ).not.toHaveProperty("protobufjs");
 
-    expect(multipleConfig.getProductionPackageJson().dependencies).toMatchObject({
+    expect(
+      multipleConfig.getProductionPackageJson().dependencies,
+    ).toMatchObject({
       "@libsql/client": runtimeDependencies["@libsql/client"],
       bullmq: runtimeDependencies.bullmq,
       croner: runtimeDependencies.croner,
       ioredis: runtimeDependencies.ioredis,
       protobufjs: runtimeDependencies.protobufjs,
     });
-    expect(multipleConfig.getProductionPackageJson().dependencies).not.toHaveProperty("postgres");
+    expect(
+      multipleConfig.getProductionPackageJson().dependencies,
+    ).not.toHaveProperty("postgres");
 
-    expect(clusterConfig.getProductionPackageJson().dependencies).toMatchObject({
-      bullmq: runtimeDependencies.bullmq,
-      croner: runtimeDependencies.croner,
-      ioredis: runtimeDependencies.ioredis,
-      postgres: runtimeDependencies.postgres,
-      protobufjs: runtimeDependencies.protobufjs,
-    });
-    expect(clusterConfig.getProductionPackageJson().dependencies).not.toHaveProperty("@libsql/client");
+    expect(clusterConfig.getProductionPackageJson().dependencies).toMatchObject(
+      {
+        bullmq: runtimeDependencies.bullmq,
+        croner: runtimeDependencies.croner,
+        ioredis: runtimeDependencies.ioredis,
+        postgres: runtimeDependencies.postgres,
+        protobufjs: runtimeDependencies.protobufjs,
+      },
+    );
+    expect(
+      clusterConfig.getProductionPackageJson().dependencies,
+    ).not.toHaveProperty("@libsql/client");
+  });
+
+  test("resolves database mode runtime packages and missing install specs", () => {
+    const runtimeDependencies = {
+      ...akanPackageJson.dependencies,
+      ...akanPackageJson.peerDependencies,
+    };
+    const config = new AkanAppConfig(
+      app,
+      [],
+      {
+        name: "repo",
+        version: "1.0.0",
+        description: "repo",
+        dependencies: {
+          bullmq: "5.0.0",
+        },
+        devDependencies: {
+          ioredis: "5.0.0",
+        },
+      },
+      {},
+      baseDevEnv,
+    );
+
+    expect(config.getDatabaseModeRuntimePackages("single")).toEqual([]);
+    expect(config.getDatabaseModeRuntimePackages("multiple")).toEqual([
+      "@libsql/client",
+      "bullmq",
+      "ioredis",
+      "protobufjs",
+    ]);
+    expect(config.getDatabaseModeRuntimePackages("cluster")).toEqual([
+      "bullmq",
+      "ioredis",
+      "postgres",
+      "protobufjs",
+    ]);
+    expect(config.getMissingDatabaseModeDependencySpecs("multiple")).toEqual([
+      `@libsql/client@${runtimeDependencies["@libsql/client"]}`,
+      `protobufjs@${runtimeDependencies.protobufjs}`,
+    ]);
+    expect(config.getMissingDatabaseModeDependencySpecs("cluster")).toEqual([
+      `postgres@${runtimeDependencies.postgres}`,
+      `protobufjs@${runtimeDependencies.protobufjs}`,
+    ]);
   });
 
   test("normalizes multiple mobile targets and validates base paths", () => {
@@ -266,7 +397,11 @@ describe("AkanLibConfig", () => {
     const lib = { name: "shared" } as never;
     expect(new AkanLibConfig(lib, {}).externalLibs).toEqual([]);
 
-    const config: DeepPartial<LibConfigResult> = { externalLibs: ["firebase-admin"] };
-    expect(new AkanLibConfig(lib, config).externalLibs).toEqual(["firebase-admin"]);
+    const config: DeepPartial<LibConfigResult> = {
+      externalLibs: ["firebase-admin"],
+    };
+    expect(new AkanLibConfig(lib, config).externalLibs).toEqual([
+      "firebase-admin",
+    ]);
   });
 });

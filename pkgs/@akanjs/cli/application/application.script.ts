@@ -1,4 +1,5 @@
 import {
+  type AkanAppConfig,
   type App,
   ApplicationBuildReporter,
   type DatabaseMode,
@@ -13,6 +14,7 @@ import {
   type TypecheckOptions,
   type Workspace,
 } from "@akanjs/devkit";
+import { confirm } from "@inquirer/prompts";
 import { Logger } from "akanjs/common";
 import { LibraryScript } from "../library/library.script";
 import { ApplicationRunner } from "./application.runner";
@@ -28,14 +30,69 @@ type MobileReleaseOptions = MobileCommandOptions & {
   allowLocalRelease?: boolean;
 };
 
-export class ApplicationScript extends script("application", [ApplicationRunner, LibraryScript]) {
+export class ApplicationScript extends script("application", [
+  ApplicationRunner,
+  LibraryScript,
+]) {
+  async confirmDatabaseModeDependencyInstall(
+    databaseMode: DatabaseMode,
+    installSpecs: string[],
+  ) {
+    return await confirm({
+      message: [
+        `Database mode '${databaseMode}' requires missing dependencies: ${installSpecs.join(", ")}.`,
+        "Install them now?",
+      ].join(" "),
+      default: true,
+    });
+  }
+  async syncDatabaseModeDependencies(
+    app: App,
+    akanConfig: AkanAppConfig,
+    databaseMode: DatabaseMode,
+  ) {
+    const installSpecs =
+      akanConfig.getMissingDatabaseModeDependencySpecs(databaseMode);
+    if (installSpecs.length === 0) return;
+
+    const shouldInstall = await this.confirmDatabaseModeDependencyInstall(
+      databaseMode,
+      installSpecs,
+    );
+    if (!shouldInstall)
+      throw new Error(
+        `Database mode '${databaseMode}' requires missing dependencies: ${installSpecs.join(", ")}.`,
+      );
+
+    const spinner = app.workspace.spinning(
+      `Installing database dependencies for ${databaseMode} mode...`,
+    );
+    try {
+      await app.workspace.spawn("bun", ["add", ...installSpecs], {
+        stdio: "inherit",
+      });
+      await app.workspace.getPackageJson({ refresh: true });
+      spinner.succeed(
+        `Installed database dependencies for ${databaseMode} mode`,
+      );
+    } catch (error) {
+      spinner.fail(
+        `Failed to install database dependencies for ${databaseMode} mode`,
+      );
+      throw error;
+    }
+  }
   async createApplication(
     appName: string,
     workspace: Workspace,
     { start = false, libs = [] }: { start?: boolean; libs?: string[] } = {},
   ) {
     const spinner = workspace.spinning("Creating application...");
-    const app = await this.applicationRunner.createApplication(appName, workspace, libs);
+    const app = await this.applicationRunner.createApplication(
+      appName,
+      workspace,
+      libs,
+    );
     spinner.succeed(`Application created in apps/${app.name}`);
     await app.scanSync();
     if (start) await this.start(app, { open: true });
@@ -51,17 +108,25 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   }
 
   async script(app: App, filename: string | null) {
-    const scriptFilename = filename ?? (await this.applicationRunner.getScriptFilename(app));
+    const scriptFilename =
+      filename ?? (await this.applicationRunner.getScriptFilename(app));
     await app.scanSync();
     await this.applicationRunner.runScript(app, scriptFilename);
   }
 
   async build(
     app: App,
-    { write = true, fast = false, quiet = false }: { write?: boolean; fast?: boolean; quiet?: boolean } = {},
+    {
+      write = true,
+      fast = false,
+      quiet = false,
+    }: { write?: boolean; fast?: boolean; quiet?: boolean } = {},
   ) {
     await app.scanSync({ write });
-    if (!quiet) Logger.rawLog(`Creating an optimized production build for ${app.name}...`);
+    if (!quiet)
+      Logger.rawLog(
+        `Creating an optimized production build for ${app.name}...`,
+      );
     try {
       const result = await this.applicationRunner.build(app, {
         fast,
@@ -70,15 +135,27 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       Logger.rawLog(`${app.name} built in dist/apps/${app.name}`);
       if (!quiet) ApplicationBuildReporter.printSummary(result);
     } catch (error) {
-      Logger.rawLog(`${app.name} build failed in dist/apps/${app.name}`, undefined, "error");
-      Logger.rawLog(ApplicationBuildReporter.formatError(error), undefined, "error");
+      Logger.rawLog(
+        `${app.name} build failed in dist/apps/${app.name}`,
+        undefined,
+        "error",
+      );
+      Logger.rawLog(
+        ApplicationBuildReporter.formatError(error),
+        undefined,
+        "error",
+      );
       throw error;
     }
   }
 
   async typecheck(
     app: App,
-    { write = true, clean = false, incremental = true }: TypecheckOptions & { write?: boolean } = {},
+    {
+      write = true,
+      clean = false,
+      incremental = true,
+    }: TypecheckOptions & { write?: boolean } = {},
   ) {
     await app.scanSync({ write });
     const spinner = app.spinning(`Typechecking ${app.name}...`);
@@ -87,7 +164,11 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       spinner.succeed(`${app.name} typechecked`);
     } catch (error) {
       spinner.fail(`${app.name} typecheck failed`);
-      Logger.rawLog(ApplicationBuildReporter.formatError(error), undefined, "error");
+      Logger.rawLog(
+        ApplicationBuildReporter.formatError(error),
+        undefined,
+        "error",
+      );
       throw error;
     }
   }
@@ -120,11 +201,19 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       dbup = true,
       withInk = false,
       write = true,
-    }: { open?: boolean; dbup?: boolean; withInk?: boolean; write?: boolean } = {},
+    }: {
+      open?: boolean;
+      dbup?: boolean;
+      withInk?: boolean;
+      write?: boolean;
+    } = {},
   ) {
     await app.scanSync({ write });
     const akanConfig = await app.getConfig();
-    const databaseMode = (process.env.AKAN_DATABASE_MODE ?? akanConfig.defaultDatabaseMode ?? "single") as DatabaseMode;
+    const databaseMode = (process.env.AKAN_DATABASE_MODE ??
+      akanConfig.defaultDatabaseMode ??
+      "single") as DatabaseMode;
+    await this.syncDatabaseModeDependencies(app, akanConfig, databaseMode);
     if (app.getEnv() === "local" && dbup && databaseMode !== "single") {
       const wasDbAlreadyUp = await this.dbup(app.workspace, databaseMode);
       if (!wasDbAlreadyUp)
@@ -144,7 +233,15 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     return akanAppHost;
   }
 
-  async buildIos(app: App, { write = true, target, env = "debug", regenerate = false }: MobileCommandOptions = {}) {
+  async buildIos(
+    app: App,
+    {
+      write = true,
+      target,
+      env = "debug",
+      regenerate = false,
+    }: MobileCommandOptions = {},
+  ) {
     await app.scanSync({ write });
     await this.applicationRunner.buildIos(app, { target, env, regenerate });
   }
@@ -167,11 +264,23 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     } = {},
   ) {
     await app.scanSync({ write });
-    await this.applicationRunner.startIos(app, { open, operation, env, target, regenerate });
+    await this.applicationRunner.startIos(app, {
+      open,
+      operation,
+      env,
+      target,
+      regenerate,
+    });
   }
   async releaseIos(
     app: App,
-    { write = true, target, env = "main", regenerate = false, allowLocalRelease = false }: MobileReleaseOptions = {},
+    {
+      write = true,
+      target,
+      env = "main",
+      regenerate = false,
+      allowLocalRelease = false,
+    }: MobileReleaseOptions = {},
   ) {
     await app.scanSync({ write });
     if (env === "local" && !allowLocalRelease)
@@ -180,7 +289,15 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       );
     await this.applicationRunner.releaseIos(app, { target, env, regenerate });
   }
-  async buildAndroid(app: App, { write = true, target, env = "debug", regenerate = false }: MobileCommandOptions = {}) {
+  async buildAndroid(
+    app: App,
+    {
+      write = true,
+      target,
+      env = "debug",
+      regenerate = false,
+    }: MobileCommandOptions = {},
+  ) {
     await app.scanSync({ write });
     await this.applicationRunner.buildAndroid(app, { target, env, regenerate });
   }
@@ -203,20 +320,36 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     } = {},
   ) {
     await app.scanSync({ write });
-    await this.applicationRunner.startAndroid(app, { open, operation, env, target, regenerate });
+    await this.applicationRunner.startAndroid(app, {
+      open,
+      operation,
+      env,
+      target,
+      regenerate,
+    });
   }
   //* 안드로이드 릴리즈(apk or aab 추출) 메서드
   async releaseAndroid(
     app: App,
     assembleType: "apk" | "aab",
-    { write = true, target, env = "main", regenerate = false, allowLocalRelease = false }: MobileReleaseOptions = {},
+    {
+      write = true,
+      target,
+      env = "main",
+      regenerate = false,
+      allowLocalRelease = false,
+    }: MobileReleaseOptions = {},
   ) {
     await app.scanSync({ write });
     if (env === "local" && !allowLocalRelease)
       throw new Error(
         "releaseAndroid --env local is blocked. Pass allowLocalRelease only for explicit local release testing.",
       );
-    await this.applicationRunner.releaseAndroid(app, assembleType, { target, env, regenerate });
+    await this.applicationRunner.releaseAndroid(app, assembleType, {
+      target,
+      env,
+      regenerate,
+    });
   }
 
   async configureApp(app: App) {
@@ -228,10 +361,17 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   async codepush(app: App, os: "ios" | "android") {
     await this.applicationRunner.codepush(app, os);
   }
-  async dbup(workspace: Workspace, mode: DatabaseMode = "multiple"): Promise<boolean> {
+  async dbup(
+    workspace: Workspace,
+    mode: DatabaseMode = "multiple",
+  ): Promise<boolean> {
     const spinner = workspace.spinning(`Starting local database (${mode})...`);
     const wasAlreadyUp = await this.applicationRunner.dbup(workspace, mode);
-    spinner.succeed(wasAlreadyUp ? `Local database (${mode}) was already up` : `Local database (${mode}) is up`);
+    spinner.succeed(
+      wasAlreadyUp
+        ? `Local database (${mode}) was already up`
+        : `Local database (${mode}) is up`,
+    );
     return wasAlreadyUp;
   }
   async dbdown(workspace: Workspace) {
@@ -246,6 +386,8 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   async testApplication(app: App) {
     const spinner = app.spinning("Testing application...");
     await this.applicationRunner.testApplication(app);
-    spinner.succeed(`Application ${app.name} (apps/${app.name}) test is successful`);
+    spinner.succeed(
+      `Application ${app.name} (apps/${app.name}) test is successful`,
+    );
   }
 }
