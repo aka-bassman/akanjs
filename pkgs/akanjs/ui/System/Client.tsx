@@ -14,6 +14,7 @@ import {
   router,
   setCookie,
   type TransitionStyle,
+  Translator,
 } from "akanjs/client";
 import { Logger } from "akanjs/common";
 import type { AkanTheme } from "akanjs/fetch";
@@ -41,7 +42,7 @@ interface ClientWrapperProps {
   children: ReactNode;
   theme?: AkanTheme;
   lang?: string;
-  dictionary?: { [key: string]: { [key: string]: string } };
+  dictionary?: Record<string, Record<string, unknown>>;
   signals?: SerializedSignal[];
   reconnect?: boolean;
 }
@@ -49,13 +50,17 @@ export const ClientWrapper = ({
   children,
   theme,
   lang = "en",
-  dictionary = {},
+  dictionary,
   signals = [],
   reconnect = true,
 }: ClientWrapperProps) => {
+  // Seed the active locale into the shared Translator before children render.
+  // SSR provides the active-locale dictionary as a prop (serialized via the RSC Flight payload);
+  // this runs in both the SSR render process and the browser, so the first paint is translated
+  // without shipping every locale in the client JS bundle. CSR seeds via the build-time macro instead.
+  if (dictionary) Translator.seed(lang, dictionary);
   if (getEnv().renderMode === "ssr") {
     // TODO: revive
-    // if (!serverTranslator.hasTranslator(lang)) serverTranslator.setTranslator(lang, dictionary);
     // (global as unknown as { builtFetch?: typeof global.builtFetch }).builtFetch ??= signalInfo.buildFetch(
     //   signals,
     // ) as unknown as typeof global.builtFetch;
@@ -74,7 +79,8 @@ export const ClientWrapper = ({
 };
 Client.Wrapper = ClientWrapper;
 
-interface ClientPathWrapperProps extends Omit<HTMLAttributes<HTMLDivElement>, "style"> {
+interface ClientPathWrapperProps
+  extends Omit<HTMLAttributes<HTMLDivElement>, "style"> {
   bind?: () => HTMLAttributes<HTMLDivElement>;
   wrapperRef?: RefObject<HTMLDivElement | null> | null;
   pageType?: "current" | "prev" | "cached";
@@ -95,12 +101,18 @@ export const ClientPathWrapper = ({
   layoutStyle = "web",
   ...props
 }: ClientPathWrapperProps) => {
-  const href = location?.href ?? (typeof window !== "undefined" ? window.location.href : "");
-  const hash = location?.hash ?? (typeof window !== "undefined" ? window.location.hash : "");
+  const href =
+    location?.href ??
+    (typeof window !== "undefined" ? window.location.href : "");
+  const hash =
+    location?.hash ??
+    (typeof window !== "undefined" ? window.location.hash : "");
   const pathname = location?.pathname ?? "/"; // ?? usePathname();
   const params = location?.params ?? {}; // ?? (useParams() as unknown as Record<string, string>);
   const searchParams = location?.searchParams ?? {}; //?? Object.fromEntries(useSearchParams());
-  const search = location?.search ?? (typeof window !== "undefined" ? window.location.search : "");
+  const search =
+    location?.search ??
+    (typeof window !== "undefined" ? window.location.search : "");
   const lang = params.lang;
   const firstPath = pathname.split("/")[2];
   const pathRoute: PathRoute = location?.pathRoute ?? {
@@ -124,14 +136,24 @@ export const ClientPathWrapper = ({
     <pathContext.Provider
       value={{
         pageType,
-        location: { href, hash, pathname, params, searchParams, search, pathRoute },
+        location: {
+          href,
+          hash,
+          pathname,
+          params,
+          searchParams,
+          search,
+          pathRoute,
+        },
         prefix,
         gestureEnabled,
         setGestureEnabled,
       }}
     >
       <animated.div
-        {...(bind && pathRoute.pageState.gesture && gestureEnabled ? bind() : {})}
+        {...(bind && pathRoute.pageState.gesture && gestureEnabled
+          ? bind()
+          : {})}
         className={clsx("group/path", className)}
         ref={wrapperRef}
         {...props}
@@ -153,7 +175,13 @@ interface ClientBridgeProps {
   gaTrackingId?: string;
 }
 
-export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId }: ClientBridgeProps) => {
+export const ClientBridge = ({
+  env,
+  lang,
+  theme,
+  prefix,
+  gaTrackingId,
+}: ClientBridgeProps) => {
   const uiOperation = st.use.uiOperation();
   const pathname = st.use.pathname();
   const params = st.use.params();
@@ -242,18 +270,26 @@ function applyThemePolicy(theme: AkanTheme): void {
   }
   if (theme === "system") {
     const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute(
+      "data-theme",
+      dark ? "dark" : "light",
+    );
     return;
   }
   document.documentElement.setAttribute("data-theme", theme);
 }
 
-function buildSearchParams(entries: Iterable<[string, string]>): Record<string, string | string[]> {
+function buildSearchParams(
+  entries: Iterable<[string, string]>,
+): Record<string, string | string[]> {
   const params: Record<string, string | string[]> = {};
   for (const [key, value] of entries) {
     const current = params[key];
     if (current === undefined) params[key] = value;
-    else params[key] = Array.isArray(current) ? [...current, value] : [current, value];
+    else
+      params[key] = Array.isArray(current)
+        ? [...current, value]
+        : [current, value];
   }
   return params;
 }
@@ -273,7 +309,10 @@ interface ClientSsrBridgeProps {
   lang: string;
   prefix?: string;
 }
-export const ClientSsrBridge = ({ lang, prefix = "" }: ClientSsrBridgeProps) => {
+export const ClientSsrBridge = ({
+  lang,
+  prefix = "",
+}: ClientSsrBridgeProps) => {
   useEffect(() => {
     const visiblePrefix = getEnv().operationMode === "local" ? prefix : "";
     const navigateRscWithFallback = (
@@ -287,13 +326,19 @@ export const ClientSsrBridge = ({ lang, prefix = "" }: ClientSsrBridgeProps) => 
         return;
       }
       void navigation.catch((error) => {
-        Logger.warn(`RSC navigation failed, falling back to document navigation: ${String(error)}`);
+        Logger.warn(
+          `RSC navigation failed, falling back to document navigation: ${String(error)}`,
+        );
         fallback();
       });
     };
     const syncHref = (href: string) => {
       const url = new URL(href, window.location.origin);
-      const { path } = getPathInfo(`${url.pathname}${url.search}${url.hash}`, lang, visiblePrefix);
+      const { path } = getPathInfo(
+        `${url.pathname}${url.search}${url.hash}`,
+        lang,
+        visiblePrefix,
+      );
       const searchParams = buildSearchParams(url.searchParams.entries());
       st.set({ pathname: url.pathname, path, searchParams });
     };
@@ -305,11 +350,17 @@ export const ClientSsrBridge = ({ lang, prefix = "" }: ClientSsrBridgeProps) => 
       router: {
         push: (href, routeOptions) => {
           syncHref(href);
-          navigateRscWithFallback(href, routeOptions, () => window.location.assign(href));
+          navigateRscWithFallback(href, routeOptions, () =>
+            window.location.assign(href),
+          );
         },
         replace: (href, routeOptions) => {
           syncHref(href);
-          navigateRscWithFallback(href, { ...routeOptions, replace: true }, () => window.location.replace(href));
+          navigateRscWithFallback(
+            href,
+            { ...routeOptions, replace: true },
+            () => window.location.replace(href),
+          );
         },
         back: () => {
           window.history.back();
@@ -317,7 +368,10 @@ export const ClientSsrBridge = ({ lang, prefix = "" }: ClientSsrBridgeProps) => 
         refresh: () => {
           clearRscNavigationCache();
           syncHref(window.location.href);
-          void navigateRsc(window.location.href, { replace: true, scrollToTop: false });
+          void navigateRsc(window.location.href, {
+            replace: true,
+            scrollToTop: false,
+          });
         },
       },
     });
@@ -328,8 +382,14 @@ export const ClientSsrBridge = ({ lang, prefix = "" }: ClientSsrBridgeProps) => 
     const visiblePrefix = getEnv().operationMode === "local" ? prefix : "";
     const sync = () => {
       const { pathname, search, hash } = window.location;
-      const { path } = getPathInfo(`${pathname}${search}${hash}`, lang, visiblePrefix);
-      const searchParams = buildSearchParams(new URLSearchParams(search).entries());
+      const { path } = getPathInfo(
+        `${pathname}${search}${hash}`,
+        lang,
+        visiblePrefix,
+      );
+      const searchParams = buildSearchParams(
+        new URLSearchParams(search).entries(),
+      );
       st.set({ pathname: window.location.pathname, path, searchParams });
     };
     sync();

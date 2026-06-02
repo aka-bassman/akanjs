@@ -11,7 +11,9 @@ export interface AllDictionary {
 
 export class Translator {
   static #langDictionaryMap = new Map<string, Dictionary>();
-  constructor(dictionary: Record<string, Record<string, Record<string, unknown>>>) {
+  constructor(
+    dictionary: Record<string, Record<string, Record<string, unknown>>>,
+  ) {
     Object.entries(dictionary).forEach(([lang, dictionary]) => {
       this.#setDictionary(lang, dictionary);
     });
@@ -19,25 +21,39 @@ export class Translator {
   hasDictionary(lang: string) {
     return Translator.#langDictionaryMap.has(lang);
   }
-  #setDictionary(lang: string, dict: Dictionary) {
-    const existingDictionary = Translator.#langDictionaryMap.get(lang);
-    const dictionary = existingDictionary ?? {};
+  // Synchronously merge a single locale's dictionary into the shared static map.
+  // Idempotent: re-seeding the same locale merges keys without dropping existing ones.
+  // Used by ClientWrapper to seed the active locale from the server-provided prop.
+  static seed(lang: string, dict: Dictionary | undefined) {
+    if (!dict) return;
+    const existingDictionary = Translator.#langDictionaryMap.get(lang) ?? {};
     Object.entries(dict).forEach(([key, modelDict]) => {
-      if (dictionary[key]) Object.assign(dictionary[key], modelDict);
-      else dictionary[key] = modelDict;
+      if (existingDictionary[key])
+        Object.assign(existingDictionary[key], modelDict);
+      else existingDictionary[key] = modelDict as Dictionary[string];
     });
-    Translator.#langDictionaryMap.set(lang, dictionary);
-    return dictionary;
+    Translator.#langDictionaryMap.set(lang, existingDictionary);
   }
-  translate(lang: string, key: string, param?: Record<string, string | number>): string {
+  #setDictionary(lang: string, dict: Dictionary) {
+    Translator.seed(lang, dict);
+    return Translator.#langDictionaryMap.get(lang) as Dictionary;
+  }
+  translate(
+    lang: string,
+    key: string,
+    param?: Record<string, string | number>,
+  ): string {
     const dictionary = Translator.#langDictionaryMap.get(lang);
     if (!dictionary) return key;
     const msg = (pathGet(key, dictionary, ".", { t: key }) as { t: string }).t;
-    return param ? msg.replace(/{([^}]+)}/g, (_, key: string) => param[key] as string) : msg;
+    return param
+      ? msg.replace(/{([^}]+)}/g, (_, key: string) => param[key] as string)
+      : msg;
   }
   async getDictionary(lang: string) {
     const dictionary = Translator.#langDictionaryMap.get(lang);
-    if (!dictionary) throw new Error(`Dictionary for language ${lang} not found`);
+    if (!dictionary)
+      throw new Error(`Dictionary for language ${lang} not found`);
     return dictionary;
   }
 }

@@ -1,7 +1,10 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
 const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
-export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { [key: string]: string } = {}) {
+export default function getContent(
+  scanInfo: AppInfo | LibInfo | null,
+  dict: { [key: string]: string } = {},
+) {
   if (!scanInfo) return null;
   const databaseModules = scanInfo.getDatabaseModules();
   const scalarModules = scanInfo.getScalarModules();
@@ -44,6 +47,6 @@ export const dictionary = makeDictionary(${libs.length ? libs.join(", ") : "base
   ].join(",\n  ")}
 });
  
-export const { Err, translate, msg, getAllDictionary, __Dict_Key__, __Error_Key__ } = makeTrans(dictionary);
+export const { Err, translate, msg, getDictionary, getAllDictionary, __Dict_Key__, __Error_Key__ } = makeTrans(dictionary);
 `;
 }

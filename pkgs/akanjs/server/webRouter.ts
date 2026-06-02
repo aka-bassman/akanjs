@@ -39,22 +39,33 @@ export function normalizeRscTargetUrlForHostBasePath(
   },
 ): { url: URL; basePath: string | null } {
   const { basePath, basePaths = [], i18n, seedEntries } = options;
-  const routeMatches = (url: URL) => !seedEntries || Boolean(RouteSeedIndexStore.match(url.pathname, seedEntries));
+  const routeMatches = (url: URL) =>
+    !seedEntries ||
+    Boolean(RouteSeedIndexStore.match(url.pathname, seedEntries));
 
   const segments = targetUrl.pathname.split("/").filter(Boolean);
   const [locale, firstPath] = segments;
-  if (!locale || !i18n.locales.includes(locale)) return { url: targetUrl, basePath: null };
+  if (!locale || !i18n.locales.includes(locale))
+    return { url: targetUrl, basePath: null };
 
-  const targetBasePath = firstPath && basePaths.includes(firstPath) ? firstPath : null;
-  if (seedEntries && routeMatches(targetUrl)) return { url: targetUrl, basePath: targetBasePath ?? basePath };
-  if (RESERVED_BASE_PATHS.has(firstPath ?? "")) return { url: targetUrl, basePath: basePath ?? targetBasePath };
+  const targetBasePath =
+    firstPath && basePaths.includes(firstPath) ? firstPath : null;
+  if (seedEntries && routeMatches(targetUrl))
+    return { url: targetUrl, basePath: targetBasePath ?? basePath };
+  if (RESERVED_BASE_PATHS.has(firstPath ?? ""))
+    return { url: targetUrl, basePath: basePath ?? targetBasePath };
 
-  const candidates = [...new Set([basePath, ...basePaths].filter((bp): bp is string => Boolean(bp)))];
+  const candidates = [
+    ...new Set(
+      [basePath, ...basePaths].filter((bp): bp is string => Boolean(bp)),
+    ),
+  ];
   for (const candidate of candidates) {
     if (firstPath === candidate) continue;
     const normalized = new URL(targetUrl);
     normalized.pathname = `/${[locale, candidate, ...segments.slice(1)].join("/")}`;
-    if (routeMatches(normalized)) return { url: normalized, basePath: candidate };
+    if (routeMatches(normalized))
+      return { url: normalized, basePath: candidate };
   }
 
   return { url: targetUrl, basePath: basePath ?? targetBasePath };
@@ -89,7 +100,8 @@ export class WebRouter {
   #artifact: BaseBuildArtifact;
   #rsc: RscWorker;
   #hub: HmrWsHub | null = null;
-  #prodMode = process.env.NODE_ENV === "production" || typeof process.send !== "function";
+  #prodMode =
+    process.env.NODE_ENV === "production" || typeof process.send !== "function";
   #builderRpc: BuilderRpc | null;
   #routeCache: RouteClientCache;
   #devHmr: DevHmrController | null = null;
@@ -106,8 +118,16 @@ export class WebRouter {
   #htmlCacheBypass = 0;
   renderState: RenderState;
   #seedIndex: RouteSeedIndex;
-  constructor({ artifact, cssBytesByUrl, rsc, seedIndex, upgradeHmrWs }: WebRouterOptions) {
-    this.#logger.verbose(`[SSR] loaded ${Object.keys(cssBytesByUrl).length} CSS assets`);
+  constructor({
+    artifact,
+    cssBytesByUrl,
+    rsc,
+    seedIndex,
+    upgradeHmrWs,
+  }: WebRouterOptions) {
+    this.#logger.verbose(
+      `[SSR] loaded ${Object.keys(cssBytesByUrl).length} CSS assets`,
+    );
     this.#artifact = artifact;
     this.#rsc = rsc;
     this.renderState = {
@@ -133,7 +153,9 @@ export class WebRouter {
   }
 
   async initializeRoute() {
-    const prebuilt = this.#prodMode ? await RoutesManifestStore.read(this.#artifactDir) : null;
+    const prebuilt = this.#prodMode
+      ? await RoutesManifestStore.read(this.#artifactDir)
+      : null;
     if (prebuilt) {
       this.#routeCache.seed(prebuilt);
       await this.#rsc.reload({
@@ -158,7 +180,11 @@ export class WebRouter {
     const renderEnvRoutes: HttpRoutes = {
       "/__csr": async () => {
         this.#requestStats.csr += 1;
-        const csrHtml = WebRouter.#resolveCsrHtmlPath(csrOutputDir, "/", this.#artifact);
+        const csrHtml = WebRouter.#resolveCsrHtmlPath(
+          csrOutputDir,
+          "/",
+          this.#artifact,
+        );
         const csrFile = csrHtml ? Bun.file(csrHtml) : null;
         const htmlText =
           csrFile && (await csrFile.exists())
@@ -176,23 +202,33 @@ export class WebRouter {
     <script type="module" src="/csr.js"></script>
   </body>
 </html>`;
-        return new Response(this.#withCsrHmr(htmlText), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+        return new Response(this.#withCsrHmr(htmlText), {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
       },
       [`${clientServePrefix}/*`]: async (req) => {
         this.#requestStats.staticAsset += 1;
         const url = new URL(req.url);
-        const filePath = WebRouter.#safeResolve(clientOutputDir, url.pathname.slice(clientServePrefix.length + 1));
+        const filePath = WebRouter.#safeResolve(
+          clientOutputDir,
+          url.pathname.slice(clientServePrefix.length + 1),
+        );
         if (!filePath) return new Response("Not Found", { status: 404 });
         return WebRouter.#fileResponse(req, filePath, {
           contentType: Bun.file(filePath).type || "application/javascript",
-          cacheControl: this.#prodMode ? "public, max-age=31536000, immutable" : "no-store",
+          cacheControl: this.#prodMode
+            ? "public, max-age=31536000, immutable"
+            : "no-store",
         });
       },
       "/_akan/styles/*": (req) => {
         this.#requestStats.staticAsset += 1;
         const url = new URL(req.url);
         if (this.#prodMode) {
-          const filePath = WebRouter.#safeResolve(this.#artifactDir, url.pathname.slice("/_akan/".length));
+          const filePath = WebRouter.#safeResolve(
+            this.#artifactDir,
+            url.pathname.slice("/_akan/".length),
+          );
           if (filePath) {
             return WebRouter.#fileResponse(req, filePath, {
               contentType: "text/css; charset=utf-8",
@@ -210,11 +246,16 @@ export class WebRouter {
       "/_akan/fonts/*": (req) => {
         this.#requestStats.staticAsset += 1;
         const url = new URL(req.url);
-        const filePath = WebRouter.#safeResolve(this.#artifactDir, url.pathname.slice("/_akan/".length));
+        const filePath = WebRouter.#safeResolve(
+          this.#artifactDir,
+          url.pathname.slice("/_akan/".length),
+        );
         if (!filePath) return new Response("Not Found", { status: 404 });
         return WebRouter.#fileResponse(req, filePath, {
           contentType: Bun.file(filePath).type || "font/woff2",
-          cacheControl: this.#prodMode ? "public, max-age=31536000, immutable" : "no-store",
+          cacheControl: this.#prodMode
+            ? "public, max-age=31536000, immutable"
+            : "no-store",
         });
       },
       "/_akan/image": (req) => {
@@ -224,10 +265,14 @@ export class WebRouter {
       ...(!this.#prodMode
         ? {
             "/_akan/hmr": (req: Request) => {
-              return this.#devHmr?.handleWs(req) ?? new Response("HMR unavailable", { status: 404 });
+              return (
+                this.#devHmr?.handleWs(req) ??
+                new Response("HMR unavailable", { status: 404 })
+              );
             },
             "/_akan/hmr/client-refresh": (req: Request) =>
-              this.#devHmr?.handleClientRefresh(req) ?? new Response("HMR unavailable", { status: 404 }),
+              this.#devHmr?.handleClientRefresh(req) ??
+              new Response("HMR unavailable", { status: 404 }),
           }
         : {}),
       "/__rsc": async (req) => {
@@ -239,34 +284,55 @@ export class WebRouter {
           const target = reqUrl.searchParams.get("url");
           const rawTargetUrl = target ? new URL(target, clientOrigin) : reqUrl;
           const requestBasePath =
-            req.headers.get("x-base-path") ?? WebRouter.#basePathForRequestHost(req, this.#artifact.subRoutes);
-          const normalizedTarget = normalizeRscTargetUrlForHostBasePath(rawTargetUrl, {
-            basePath: requestBasePath,
-            basePaths: this.#artifact.basePaths,
-            i18n: this.#artifact.i18n,
-            seedEntries: this.#seedIndex.entries,
-          });
+            req.headers.get("x-base-path") ??
+            WebRouter.#basePathForRequestHost(req, this.#artifact.subRoutes);
+          const normalizedTarget = normalizeRscTargetUrlForHostBasePath(
+            rawTargetUrl,
+            {
+              basePath: requestBasePath,
+              basePaths: this.#artifact.basePaths,
+              i18n: this.#artifact.i18n,
+              seedEntries: this.#seedIndex.entries,
+            },
+          );
           const targetUrl = normalizedTarget.url;
           if (!WebRouter.#isTrustedRscTarget(clientOrigin, targetUrl))
             return new Response("Bad Request", { status: 400 });
           const manifest = await this.#ensureRoute(targetUrl);
           const rscHeaders = new Headers(req.headers);
-          if (normalizedTarget.basePath) rscHeaders.set("x-base-path", normalizedTarget.basePath);
-          const rscReq = new Request(targetUrl, { method: "GET", headers: rscHeaders });
-          const result = await this.#rsc.renderWithMeta(rscReq, { clientManifest: manifest.clientManifest });
-          if (result.type === "redirect") return WebRouter.#rscRedirectResponse(result.location, result.method);
-          if (result.type === "not-found") return WebRouter.#rscRedirectResponse("/404", "replace");
+          if (normalizedTarget.basePath)
+            rscHeaders.set("x-base-path", normalizedTarget.basePath);
+          const rscReq = new Request(targetUrl, {
+            method: "GET",
+            headers: rscHeaders,
+          });
+          const result = await this.#rsc.renderWithMeta(rscReq, {
+            clientManifest: manifest.clientManifest,
+          });
+          if (result.type === "redirect")
+            return WebRouter.#rscRedirectResponse(
+              result.location,
+              result.method,
+            );
+          if (result.type === "not-found")
+            return WebRouter.#rscRedirectResponse("/404", "replace");
           return new Response(result.stream, {
-            headers: { "Content-Type": "text/x-component; charset=utf-8", "Cache-Control": "no-store" },
+            headers: {
+              "Content-Type": "text/x-component; charset=utf-8",
+              "Cache-Control": "no-store",
+            },
           });
         } catch (err) {
           return this.#renderErrorResponse("__rsc", err);
         }
       },
       "/__rsc/manifest": () =>
-        new Response(JSON.stringify(this.#routeCache.merged.clientManifest, null, 2), {
-          headers: { "Content-Type": "application/json; charset=utf-8" },
-        }),
+        new Response(
+          JSON.stringify(this.#routeCache.merged.clientManifest, null, 2),
+          {
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+          },
+        ),
       "/*": async (req) => {
         const url = new URL(req.url);
         if (WebRouter.#isImageOptimizerPath(url.pathname)) {
@@ -277,19 +343,30 @@ export class WebRouter {
         const isCsr = url.searchParams.get("csr") === "true";
         if (isCsr) {
           this.#requestStats.csr += 1;
-          const csrHtml = WebRouter.#resolveCsrHtmlPath(csrOutputDir, url.pathname, this.#artifact);
+          const csrHtml = WebRouter.#resolveCsrHtmlPath(
+            csrOutputDir,
+            url.pathname,
+            this.#artifact,
+          );
           if (!csrHtml) return new Response("Not Found", { status: 404 });
           const html = await Bun.file(csrHtml).text();
-          return new Response(this.#withCsrHmr(html), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+          return new Response(this.#withCsrHmr(html), {
+            headers: { "Content-Type": "text/html; charset=utf-8" },
+          });
         }
 
-        const csrAssetPath = path.extname(url.pathname) ? WebRouter.#safeResolve(csrOutputDir, url.pathname) : null;
+        const csrAssetPath = path.extname(url.pathname)
+          ? WebRouter.#safeResolve(csrOutputDir, url.pathname)
+          : null;
         if (csrAssetPath) {
           if (await Bun.file(csrAssetPath).exists()) {
             this.#requestStats.staticAsset += 1;
             return WebRouter.#fileResponse(req, csrAssetPath, {
-              contentType: Bun.file(csrAssetPath).type || "application/octet-stream",
-              cacheControl: this.#prodMode ? "public, max-age=31536000, immutable" : undefined,
+              contentType:
+                Bun.file(csrAssetPath).type || "application/octet-stream",
+              cacheControl: this.#prodMode
+                ? "public, max-age=31536000, immutable"
+                : undefined,
             });
           }
         }
@@ -299,8 +376,9 @@ export class WebRouter {
           if (await Bun.file(filePath).exists()) {
             this.#requestStats.staticAsset += 1;
             return WebRouter.#fileResponse(req, filePath, {
-              contentType: Bun.file(filePath).type || "application/octet-stream",
-              cacheControl: this.#prodMode ? "public, max-age=0" : "no-store",
+              contentType:
+                Bun.file(filePath).type || "application/octet-stream",
+              cacheControl: this.#prodMode ? "public, max-age=300" : "no-store",
             });
           }
         }
@@ -309,7 +387,9 @@ export class WebRouter {
           return new Response(createDefaultRobotsTxt(), {
             headers: {
               "Content-Type": "text/plain; charset=utf-8",
-              "Cache-Control": this.#prodMode ? "public, max-age=3600" : "no-store",
+              "Cache-Control": this.#prodMode
+                ? "public, max-age=3600"
+                : "no-store",
             },
           });
         }
@@ -317,7 +397,8 @@ export class WebRouter {
         const sitemapBasePath = getSitemapBasePath(
           url.pathname,
           this.#artifact.basePaths,
-          req.headers.get("x-base-path") ?? WebRouter.#basePathForRequestHost(req, this.#artifact.subRoutes),
+          req.headers.get("x-base-path") ??
+            WebRouter.#basePathForRequestHost(req, this.#artifact.subRoutes),
         );
         if (sitemapBasePath !== undefined) {
           return new Response(
@@ -330,7 +411,9 @@ export class WebRouter {
             {
               headers: {
                 "Content-Type": "application/xml; charset=utf-8",
-                "Cache-Control": this.#prodMode ? "public, max-age=3600" : "no-store",
+                "Cache-Control": this.#prodMode
+                  ? "public, max-age=3600"
+                  : "no-store",
               },
             },
           );
@@ -340,33 +423,54 @@ export class WebRouter {
           this.#requestStats.fullSsr += 1;
           const manifest = await this.#ensureRoute(url);
           const htmlCacheKey = this.#getHtmlCacheKey(req, url);
-          const cachedHtml = htmlCacheKey ? this.#getCachedHtml(htmlCacheKey) : null;
+          const cachedHtml = htmlCacheKey
+            ? this.#getCachedHtml(htmlCacheKey)
+            : null;
           if (cachedHtml) {
             return new Response(cachedHtml, {
-              headers: { "Content-Type": "text/html; charset=utf-8", "X-Akan-Cache": "HIT" },
+              headers: {
+                "Content-Type": "text/html; charset=utf-8",
+                "X-Akan-Cache": "HIT",
+              },
             });
           }
-          const rscResult = await this.#rsc.renderWithMeta(req, { clientManifest: manifest.clientManifest });
-          if (rscResult.type === "redirect") return Response.redirect(new URL(rscResult.location, url.origin), 307);
-          if (rscResult.type === "not-found") return Response.redirect(new URL("/404", url.origin), 307);
+          const rscResult = await this.#rsc.renderWithMeta(req, {
+            clientManifest: manifest.clientManifest,
+          });
+          if (rscResult.type === "redirect")
+            return Response.redirect(
+              new URL(rscResult.location, url.origin),
+              307,
+            );
+          if (rscResult.type === "not-found")
+            return Response.redirect(new URL("/404", url.origin), 307);
           const themeCookieExists = WebRouter.#hasCookie(req, "theme");
           const htmlStream = await new SsrFromRscRenderer().render({
             request: req,
             rscStream: rscResult.stream,
             ssrManifest: manifest.ssrManifest,
             bootstrapModules: [this.#artifact.rscClientUrl],
-            extraBootstrapInline: !this.#prodMode ? HMR_CLIENT_SCRIPT : undefined,
+            extraBootstrapInline: !this.#prodMode
+              ? HMR_CLIENT_SCRIPT
+              : undefined,
             importmap: this.#artifact.vendorMap,
-            theme: themeCookieExists ? undefined : (rscResult.theme ?? "system"),
+            theme: themeCookieExists
+              ? undefined
+              : (rscResult.theme ?? "system"),
           });
           if (htmlCacheKey) {
             const html = await new Response(htmlStream).text();
             this.#setCachedHtml(htmlCacheKey, html);
             return new Response(html, {
-              headers: { "Content-Type": "text/html; charset=utf-8", "X-Akan-Cache": "MISS" },
+              headers: {
+                "Content-Type": "text/html; charset=utf-8",
+                "X-Akan-Cache": "MISS",
+              },
             });
           }
-          return new Response(htmlStream, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+          return new Response(htmlStream, {
+            headers: { "Content-Type": "text/html; charset=utf-8" },
+          });
         } catch (err) {
           return this.#renderErrorResponse(url.pathname, err);
         }
@@ -405,7 +509,10 @@ export class WebRouter {
    */
   static #clientFacingOrigin(req: Request): string {
     const parsed = new URL(req.url);
-    const fwdProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+    const fwdProto = req.headers
+      .get("x-forwarded-proto")
+      ?.split(",")[0]
+      ?.trim();
     const fwdHost = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
     const hostFallback = fwdHost ?? req.headers.get("host");
     const protoFallback = fwdProto ?? parsed.protocol.slice(0, -1); // strip trailing ':'
@@ -419,13 +526,25 @@ export class WebRouter {
     return parsed.origin;
   }
 
-  static #basePathForRequestHost(req: Request, subRoutes: Record<string, string[]>): string | null {
-    const host = (req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "")
+  static #basePathForRequestHost(
+    req: Request,
+    subRoutes: Record<string, string[]>,
+  ): string | null {
+    const host = (
+      req.headers.get("x-forwarded-host") ??
+      req.headers.get("host") ??
+      ""
+    )
       .toLowerCase()
       .replace(/:\d+$/, "");
     if (!host) return null;
     for (const [basePath, domains] of Object.entries(subRoutes)) {
-      if (domains.some((domain) => domain.toLowerCase().replace(/:\d+$/, "") === host)) return basePath;
+      if (
+        domains.some(
+          (domain) => domain.toLowerCase().replace(/:\d+$/, "") === host,
+        )
+      )
+        return basePath;
     }
     return null;
   }
@@ -489,7 +608,8 @@ export class WebRouter {
 
   #setCachedHtml(cacheKey: string, html: string): void {
     const ttl = Number.parseInt(cacheKey.split("\n").at(-1) ?? "30", 10);
-    const maxEntries = WebRouter.#positiveIntEnv("AKAN_HTML_RESULT_CACHE_MAX_ENTRIES") ?? 100;
+    const maxEntries =
+      WebRouter.#positiveIntEnv("AKAN_HTML_RESULT_CACHE_MAX_ENTRIES") ?? 100;
     while (this.#htmlCache.size >= maxEntries) {
       const firstKey = this.#htmlCache.keys().next().value;
       if (!firstKey) break;
@@ -507,7 +627,9 @@ export class WebRouter {
     if (req.headers.has("authorization")) return false;
     const cookie = req.headers.get("cookie");
     if (!cookie) return true;
-    return [...parseCookieHeader(cookie).keys()].every((name) => name === "theme" || name.startsWith("akan_public_"));
+    return [...parseCookieHeader(cookie).keys()].every(
+      (name) => name === "theme" || name.startsWith("akan_public_"),
+    );
   }
 
   static #htmlCacheTtlSeconds(): number {
@@ -521,7 +643,9 @@ export class WebRouter {
       .filter(Boolean);
     if (prefixes.length === 0) return false;
     return prefixes.some(
-      (prefix) => pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`),
+      (prefix) =>
+        pathname === prefix ||
+        pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`),
     );
   }
 
@@ -536,8 +660,12 @@ export class WebRouter {
 
   async #ensureRoute(url: URL) {
     const started = Date.now();
-    const matched = RouteSeedIndexStore.match(url.pathname, this.#seedIndex.entries);
-    if (matched) await this.#routeCache.ensure(matched.entry.routeId, matched.entry.seeds);
+    const matched = RouteSeedIndexStore.match(
+      url.pathname,
+      this.#seedIndex.entries,
+    );
+    if (matched)
+      await this.#routeCache.ensure(matched.entry.routeId, matched.entry.seeds);
     this.#logger.verbose(
       `[route-cache] ensure pathname=${url.pathname} routeId=${matched?.entry.routeId ?? "(none)"} in ${Date.now() - started}ms`,
     );
@@ -551,7 +679,10 @@ export class WebRouter {
   }
   #withCsrHmr(html: string): string {
     if (this.#prodMode) return html;
-    return WebRouter.#injectBeforeBodyEnd(html, `<script>${HMR_CLIENT_SCRIPT}</script>`);
+    return WebRouter.#injectBeforeBodyEnd(
+      html,
+      `<script>${HMR_CLIENT_SCRIPT}</script>`,
+    );
   }
   static #injectBeforeBodyEnd(html: string, snippet: string): string {
     const matches = [...html.matchAll(/<\/body\s*>/gi)];
@@ -560,15 +691,18 @@ export class WebRouter {
     return `${html.slice(0, last.index)}${snippet}\n${html.slice(last.index)}`;
   }
   static #rscRedirectResponse(location: string, method: "replace" | "push") {
-    return new Response(JSON.stringify({ type: "redirect", location, method }), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "no-store",
-        "X-Akan-Redirect": location,
-        "X-Akan-Redirect-Method": method,
+    return new Response(
+      JSON.stringify({ type: "redirect", location, method }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Akan-Redirect": location,
+          "X-Akan-Redirect-Method": method,
+        },
       },
-    });
+    );
   }
   #getProductionRouteCache() {
     return new RouteClientCache({
@@ -583,29 +717,53 @@ export class WebRouter {
   static async create({ upgradeHmrWs }: SsrRoutesInputs) {
     const artifactDir = WebRouter.#resolveArtifactDir();
     const artifact = WebRouter.#normalizeArtifact(
-      (await Bun.file(path.join(artifactDir, "base-artifact.json")).json()) as BaseBuildArtifact,
+      (await Bun.file(
+        path.join(artifactDir, "base-artifact.json"),
+      ).json()) as BaseBuildArtifact,
       artifactDir,
     );
-    const cssBytesByUrl = await WebRouter.#loadCssBytesByUrl(artifact, artifactDir);
+    const cssBytesByUrl = await WebRouter.#loadCssBytesByUrl(
+      artifact,
+      artifactDir,
+    );
     const rsc = new RscWorker(artifact);
     await rsc.ready;
     const seedIndex = await RouteSeedIndexStore.load(artifactDir);
-    return new WebRouter({ artifact, cssBytesByUrl, rsc, seedIndex, upgradeHmrWs });
+    return new WebRouter({
+      artifact,
+      cssBytesByUrl,
+      rsc,
+      seedIndex,
+      upgradeHmrWs,
+    });
   }
 
   static #resolveArtifactDir() {
     const localArtifactDir = path.join(process.cwd(), ".akan", "artifact");
-    if (fs.existsSync(path.join(localArtifactDir, "base-artifact.json"))) return localArtifactDir;
-    return path.join(process.cwd(), "apps", getEnv().appName, ".akan", "artifact");
+    if (fs.existsSync(path.join(localArtifactDir, "base-artifact.json")))
+      return localArtifactDir;
+    return path.join(
+      process.cwd(),
+      "apps",
+      getEnv().appName,
+      ".akan",
+      "artifact",
+    );
   }
 
   static #resolveAppDir() {
     return process.env.AKAN_APP_DIR ?? path.dirname(Bun.main);
   }
 
-  static #normalizeArtifact(artifact: BaseBuildArtifact, artifactDir: string): BaseBuildArtifact {
+  static #normalizeArtifact(
+    artifact: BaseBuildArtifact,
+    artifactDir: string,
+  ): BaseBuildArtifact {
     const normalizedArtifactDir = path.resolve(artifactDir);
-    const pagesBundlePath = WebRouter.#resolveArtifactPath(artifact.pagesBundlePath, normalizedArtifactDir);
+    const pagesBundlePath = WebRouter.#resolveArtifactPath(
+      artifact.pagesBundlePath,
+      normalizedArtifactDir,
+    );
     return {
       ...artifact,
       cssAssets: artifact.cssAssets ?? {},
@@ -623,14 +781,20 @@ export class WebRouter {
       await Promise.all(
         Object.values(artifact.cssAssets ?? {}).map(async (asset) => [
           asset.cssUrl,
-          await Bun.file(path.join(normalizedArtifactDir, asset.cssRelPath)).bytes(),
+          await Bun.file(
+            path.join(normalizedArtifactDir, asset.cssRelPath),
+          ).bytes(),
         ]),
       ),
     );
   }
 
-  static #resolveArtifactPath(artifactPath: string, artifactDir: string): string {
-    if (!path.isAbsolute(artifactPath)) return path.resolve(artifactDir, artifactPath);
+  static #resolveArtifactPath(
+    artifactPath: string,
+    artifactDir: string,
+  ): string {
+    if (!path.isAbsolute(artifactPath))
+      return path.resolve(artifactDir, artifactPath);
     if (fs.existsSync(artifactPath)) return artifactPath;
 
     const marker = `${path.sep}.akan${path.sep}artifact${path.sep}`;
@@ -649,7 +813,11 @@ export class WebRouter {
     return path.join(artifactDir, "csr");
   }
 
-  static #resolveCsrHtmlPath(csrOutputDir: string, pathname: string, artifact: BaseBuildArtifact): string | null {
+  static #resolveCsrHtmlPath(
+    csrOutputDir: string,
+    pathname: string,
+    artifact: BaseBuildArtifact,
+  ): string | null {
     const basePath = getBasePathFromPathname(pathname, {
       basePaths: artifact.basePaths,
       i18n: artifact.i18n,
@@ -666,16 +834,21 @@ export class WebRouter {
   ): Promise<Response> {
     const headers = WebRouter.#baseAssetHeaders(options);
     const file = Bun.file(filePath);
-    if (!(await file.exists())) return new Response("Not Found", { status: 404 });
+    if (!(await file.exists()))
+      return new Response("Not Found", { status: 404 });
     const stat = fs.statSync(filePath);
     const lastModifiedMs = Math.floor(stat.mtimeMs / 1000) * 1000;
     const etag = WebRouter.#weakEtag(stat.size, lastModifiedMs);
     headers.set("ETag", etag);
     headers.set("Last-Modified", new Date(lastModifiedMs).toUTCString());
-    if (WebRouter.#isNotModified(req, etag, lastModifiedMs)) return new Response(null, { status: 304, headers });
+    if (WebRouter.#isNotModified(req, etag, lastModifiedMs))
+      return new Response(null, { status: 304, headers });
 
     const gzipPath = `${filePath}.gz`;
-    if (WebRouter.#acceptsGzip(req) && WebRouter.#isCompressible(options.contentType)) {
+    if (
+      WebRouter.#acceptsGzip(req) &&
+      WebRouter.#isCompressible(options.contentType)
+    ) {
       const gzipFile = Bun.file(gzipPath);
       if (await gzipFile.exists()) {
         const gzipBytes = await gzipFile.bytes();
@@ -699,12 +872,19 @@ export class WebRouter {
   }
 
   static #toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    return bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength,
+    ) as ArrayBuffer;
   }
 
-  static #baseAssetHeaders(options: { contentType: string; cacheControl?: string }): Headers {
+  static #baseAssetHeaders(options: {
+    contentType: string;
+    cacheControl?: string;
+  }): Headers {
     const headers = new Headers({ "Content-Type": options.contentType });
-    if (options.cacheControl) headers.set("Cache-Control", options.cacheControl);
+    if (options.cacheControl)
+      headers.set("Cache-Control", options.cacheControl);
     return headers;
   }
 
@@ -712,7 +892,11 @@ export class WebRouter {
     return `W/"${size.toString(16)}-${mtimeMs.toString(16)}"`;
   }
 
-  static #isNotModified(req: Request, etag: string, lastModifiedMs: number): boolean {
+  static #isNotModified(
+    req: Request,
+    etag: string,
+    lastModifiedMs: number,
+  ): boolean {
     if (req.method !== "GET" && req.method !== "HEAD") return false;
     const ifNoneMatch = req.headers.get("if-none-match");
     if (ifNoneMatch) {
@@ -756,7 +940,9 @@ export class WebRouter {
     const rel = decoded.replace(/^[/\\]+/, "");
     const resolved = path.resolve(normalizedBase, rel);
     if (resolved === normalizedBase) return resolved;
-    const baseWithSep = normalizedBase.endsWith(path.sep) ? normalizedBase : normalizedBase + path.sep;
+    const baseWithSep = normalizedBase.endsWith(path.sep)
+      ? normalizedBase
+      : normalizedBase + path.sep;
     if (!resolved.startsWith(baseWithSep)) return null;
     return resolved;
   }

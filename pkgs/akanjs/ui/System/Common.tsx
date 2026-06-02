@@ -30,6 +30,8 @@ export interface ProviderProps {
   layoutStyle?: "mobile" | "web";
   /** Enable reconnect helper. Defaults to local operation mode in CSR. */
   reconnect?: boolean;
+  /** Active-locale dictionary injected by the server (SSR only) to seed the client Translator. */
+  dictionary?: Record<string, Record<string, unknown>>;
   /** Root route component used by CSR page loading. */
   of: (props: unknown) => ReactNode | null;
 }
@@ -55,7 +57,10 @@ export function toManifestJson(value: unknown): unknown {
   return Object.fromEntries(
     Object.entries(value)
       .filter(([, entryValue]) => entryValue !== undefined)
-      .map(([key, entryValue]) => [camelToSnake(key), toManifestJson(entryValue)]),
+      .map(([key, entryValue]) => [
+        camelToSnake(key),
+        toManifestJson(entryValue),
+      ]),
   );
 }
 
@@ -75,7 +80,11 @@ function encodeBase64Utf8(value: string): string {
 
   const buffer = (
     globalThis as typeof globalThis & {
-      Buffer?: { from: (bytes: Uint8Array) => { toString: (encoding: "base64") => string } };
+      Buffer?: {
+        from: (bytes: Uint8Array) => {
+          toString: (encoding: "base64") => string;
+        };
+      };
     }
   ).Buffer;
   if (buffer) return buffer.from(bytes).toString("base64");

@@ -1,10 +1,21 @@
 import { getEnv } from "akanjs/base";
-import { clsx, type ReactFont, router, type WebAppManifest } from "akanjs/client";
+import {
+  clsx,
+  type ReactFont,
+  router,
+  type WebAppManifest,
+} from "akanjs/client";
 import { setRequestTheme } from "akanjs/fetch";
 import { Children, Fragment, type ReactNode, Suspense } from "react";
 import { FontCss } from "../fontCss";
 import { Load } from "../Load";
-import { ClientBridge, ClientInner, ClientPathWrapper, ClientSsrBridge, ClientWrapper } from "./Client";
+import {
+  ClientBridge,
+  ClientInner,
+  ClientPathWrapper,
+  ClientSsrBridge,
+  ClientWrapper,
+} from "./Client";
 import { ManifestLink, type ProviderProps } from "./Common";
 
 export const SSR = () => {
@@ -29,6 +40,7 @@ const SSRProvider = ({
   fonts,
   layoutStyle = "web",
   reconnect = getEnv().operationMode === "local",
+  dictionary,
   of,
 }: SSRProviderProps) => {
   setRequestTheme(theme);
@@ -38,7 +50,8 @@ const SSRProvider = ({
       of={of}
       loader={async () => {
         const { lang } = params;
-        if (!router.isInitialized) router.init({ type: "ssr", side: "server", lang, prefix });
+        if (!router.isInitialized)
+          router.init({ type: "ssr", side: "server", lang, prefix });
         return { lang } as const;
       }}
       render={({ lang }) => (
@@ -52,13 +65,24 @@ const SSRProvider = ({
           prefix={prefix}
           layoutStyle={layoutStyle}
         >
-          <ClientWrapper theme={theme} lang={lang} reconnect={reconnect}>
+          <ClientWrapper
+            theme={theme}
+            lang={lang}
+            reconnect={reconnect}
+            dictionary={dictionary}
+          >
             <Fragment key="children">{Children.toArray(children)}</Fragment>
             <Suspense key="client-inner" fallback={null}>
               <ClientInner />
             </Suspense>
             <Suspense key="client-bridge" fallback={null}>
-              <ClientBridge key="bridge" env={env} theme={theme} prefix={prefix} gaTrackingId={gaTrackingId} />
+              <ClientBridge
+                key="bridge"
+                env={env}
+                theme={theme}
+                prefix={prefix}
+                gaTrackingId={gaTrackingId}
+              />
               <ClientSsrBridge key="ssr-bridge" lang={lang} prefix={prefix} />
             </Suspense>
           </ClientWrapper>
@@ -77,7 +101,14 @@ const ServerFontFace = ({ fonts }: { fonts: ReactFont[] }) => {
   return (
     <>
       {preloads.map((preload) => (
-        <link key={preload.href} rel="preload" href={preload.href} as="font" type={preload.type} crossOrigin="" />
+        <link
+          key={preload.href}
+          rel="preload"
+          href={preload.href}
+          as="font"
+          type={preload.type}
+          crossOrigin=""
+        />
       ))}
       {css ? (
         // biome-ignore lint/security/noDangerouslySetInnerHtml: injecting @font-face CSS
@@ -114,14 +145,23 @@ const SSRWrapper = ({
     {head ? <Fragment key="head">{head}</Fragment> : null}
     <div key="frame-root" id="frameRoot" className={className}>
       <ClientPathWrapper layoutStyle={layoutStyle} prefix={prefix}>
-        <div key="top-safe-area" id="topSafeArea" className={clsx("fixed inset-x-0 top-0 bg-base-100")} />
-        <div key="page-containers" id="pageContainers" className={clsx("isolate")}>
+        <div
+          key="top-safe-area"
+          id="topSafeArea"
+          className={clsx("fixed inset-x-0 top-0 bg-base-100")}
+        />
+        <div
+          key="page-containers"
+          id="pageContainers"
+          className={clsx("isolate")}
+        >
           <div id="pageContainer">
             <div
               id="pageContent"
               className={clsx("relative isolate", {
                 "w-full": layoutStyle === "web",
-                "left-1/2 h-screen w-[600px] -translate-x-1/2": layoutStyle === "mobile",
+                "left-1/2 h-screen w-[600px] -translate-x-1/2":
+                  layoutStyle === "mobile",
               })}
             >
               {Children.toArray(children)}
@@ -136,7 +176,10 @@ const SSRWrapper = ({
             "w-full": layoutStyle === "web",
           })}
         >
-          <div id="topInsetContent" className={clsx("relative isolate size-full")} />
+          <div
+            id="topInsetContent"
+            className={clsx("relative isolate size-full")}
+          />
         </div>
         <div
           key="top-left-action"
@@ -153,7 +196,11 @@ const SSRWrapper = ({
         >
           <div id="bottomInsetContent" className="isolate size-full" />
         </div>
-        <div key="bottom-safe-area" id="bottomSafeArea" className="fixed inset-x-0 bg-base-100" />
+        <div
+          key="bottom-safe-area"
+          id="bottomSafeArea"
+          className="fixed inset-x-0 bg-base-100"
+        />
       </ClientPathWrapper>
     </div>
   </>
