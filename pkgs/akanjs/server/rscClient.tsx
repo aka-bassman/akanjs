@@ -67,7 +67,21 @@ async function fetchRsc(href: string, options: { buildId?: number } = {}): Promi
     return { type: "redirected" };
   }
   if (!res.ok || !res.body) throw new Error(`[rscClient] RSC fetch failed ${res.status} ${res.statusText}`);
-  return { type: "rsc", thenable: createRscThenable(res.body) };
+  // Buffer the entire Flight payload before constructing the thenable. The root
+  // `use(thenable)` lives at the document root with no Suspense boundary above it
+  // (see Root / ssrFromRscRenderer), so any mid-render suspension during a client
+  // navigation transition has no fallback and can leave the transition stuck —
+  // committing only when a later navigation flushes the pending lane. Materializing
+  // the payload up front means all RSC rows are present and every referenced client
+  // module `import()` starts immediately, so the committed render does not suspend.
+  const buffer = await res.arrayBuffer();
+  const completeStream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array(buffer));
+      controller.close();
+    },
+  });
+  return { type: "rsc", thenable: createRscThenable(completeStream) };
 }
 
 const rscCache = new Map<string, RscThenable>();
