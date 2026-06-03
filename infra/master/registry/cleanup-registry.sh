@@ -2,6 +2,7 @@
 
 set -euo pipefail
 
+REGISTRY_DIR=/mnt/blockstorage/registry/data/docker/registry/v2/repositories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../jenkins/credentials.sh"
 #add --insecure to the curl command on line 17 if you use https with self-signed certificates

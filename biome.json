@@ -127,12 +127,7 @@
   },
   "overrides": [
     {
-      "includes": [
-        "**/page/**/*.ts",
-        "**/page/**/*.tsx",
-        "**/*.Unit.tsx",
-        "**/*.View.tsx"
-      ],
+      "includes": ["**/page/**/*.ts", "**/page/**/*.tsx", "**/*.Unit.tsx", "**/*.View.tsx"],
       "plugins": [
         "./pkgs/@akanjs/devkit/lint/no-import-client-functions.grit",
         "./pkgs/@akanjs/devkit/lint/no-use-client-in-server.grit"
@@ -143,12 +138,7 @@
       "plugins": ["./pkgs/@akanjs/devkit/lint/non-scalar-props-restricted.grit"]
     },
     {
-      "includes": [
-        "**/*.constant.ts",
-        "**/*.document.ts",
-        "**/*.service.ts",
-        "**/*.store.ts"
-      ],
+      "includes": ["**/*.constant.ts", "**/*.document.ts", "**/*.service.ts", "**/*.store.ts"],
       "plugins": ["./pkgs/@akanjs/devkit/lint/no-js-private-class-method.grit"]
     },
     {
