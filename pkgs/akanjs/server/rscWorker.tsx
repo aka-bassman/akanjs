@@ -7,6 +7,7 @@ import type { ClientManifest } from "./artifact";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { RouteElementComposer } from "./routeElementComposer";
 import { type PagesContext, RouteTreeBuilder } from "./routeTreeBuilder";
+import { createSystemPageDocument, getSystemPageHomeHref } from "./systemPages";
 
 interface InitMsg {
   type: "init";
@@ -14,6 +15,7 @@ interface InitMsg {
   pagesBundlePath: string;
   pagesBundleBuildId: number;
   cssAssets?: Record<string, { cssUrl: string; cssRelPath: string }>;
+  basePaths?: string[];
   i18n?: AkanI18nConfig;
 }
 interface RenderMsg {
@@ -95,6 +97,7 @@ class RscRenderer {
   #clientManifest: ClientManifest = {};
   #pathRoutes: PathRoute[] = [];
   #cssAssets: Record<string, { cssUrl: string; cssRelPath: string }> = {};
+  #basePaths: string[] = [];
   #i18n: AkanI18nConfig = DEFAULT_AKAN_I18N;
   #pagesBundlePath = "";
   #pagesBundleBuildId = 0;
@@ -159,6 +162,7 @@ class RscRenderer {
     try {
       this.#clientManifest = msg.clientManifest;
       this.#cssAssets = msg.cssAssets ?? {};
+      this.#basePaths = msg.basePaths ?? Object.keys(this.#cssAssets);
       this.#i18n = msg.i18n ?? DEFAULT_AKAN_I18N;
       this.#pagesBundlePath = msg.pagesBundlePath;
       this.#pagesBundleBuildId = msg.pagesBundleBuildId;
@@ -326,7 +330,7 @@ class RscRenderer {
         const responseTheme = getRequestTheme();
         if (cacheKey)
           this.#setCachedResult(cacheKey, { chunks: buffered, bytes, chunksCount: chunks, theme: responseTheme });
-        this.#send({ type: "meta", requestId, theme: responseTheme });
+        this.#send({ type: "meta", requestId, theme: responseTheme, status: match ? undefined : 404 });
         for (const chunk of buffered) {
           this.#send({ type: "chunk", requestId, data: chunk });
         }
@@ -526,19 +530,18 @@ class RscRenderer {
   }
 
   #renderNotFound(url: URL): ReactNode {
-    return (
-      <html lang={this.#i18n.defaultLocale}>
-        <head key="head">
-          <meta key="charset" charSet="utf-8" />
-          <title key="title">Not Found</title>
-          {this.#renderStylesheet(url.pathname)}
-        </head>
-        <body key="body">
-          <h1 key="title">404</h1>
-          <p key="message">No route matched: {url.pathname}</p>
-        </body>
-      </html>
-    );
+    return createSystemPageDocument({
+      kind: "not-found",
+      pathname: url.pathname,
+      lang: RscRenderer.#getLocale(url.pathname, this.#i18n),
+      homeHref: getSystemPageHomeHref({
+        pathname: url.pathname,
+        i18n: this.#i18n,
+        basePaths: this.#basePaths,
+        headerBasePath: getRequest()?.headers.get("x-base-path"),
+      }),
+      stylesheetHref: this.#getStylesheetHref(url.pathname),
+    });
   }
 
   #renderDefaultHead(): ReactNode {
@@ -564,14 +567,23 @@ class RscRenderer {
   }
 
   #renderStylesheet(pathname: string): ReactNode {
+    const cssUrl = this.#getStylesheetHref(pathname);
+    if (!cssUrl) return null;
+    return <link key="stylesheet" rel="stylesheet" href={cssUrl} precedence="default" data-akan-css="active" />;
+  }
+
+  #getStylesheetHref(pathname: string): string | null {
     const basePath = getBasePathFromPathname(pathname, {
       basePaths: Object.keys(this.#cssAssets),
       i18n: this.#i18n,
       headerBasePath: getRequest()?.headers.get("x-base-path"),
     });
-    const cssUrl = this.#cssAssets[basePath ?? ""]?.cssUrl;
-    if (!cssUrl) return null;
-    return <link key="stylesheet" rel="stylesheet" href={cssUrl} precedence="default" data-akan-css="active" />;
+    return this.#cssAssets[basePath ?? ""]?.cssUrl ?? null;
+  }
+
+  static #getLocale(pathname: string, i18n: AkanI18nConfig): string {
+    const [segment] = pathname.split("/").filter(Boolean);
+    return segment && i18n.locales.includes(segment) ? segment : i18n.defaultLocale;
   }
 
   static #parsePositiveIntEnv(name: string): number | null {

@@ -11,7 +11,7 @@ interface RscPending {
   onChunk: (data: Uint8Array) => void;
   onEnd: () => void;
   onError: (message: string) => void;
-  onMeta?: (meta: { theme?: AkanTheme }) => void;
+  onMeta?: (meta: { theme?: AkanTheme; status?: number }) => void;
   onRedirect?: (location: string, method: RscRedirectMethod) => void;
   onNotFound?: () => void;
 }
@@ -19,7 +19,7 @@ interface RscPending {
 export type RscRedirectMethod = "replace" | "push";
 
 export type RscRenderResult =
-  | { type: "stream"; stream: ReadableStream<Uint8Array>; theme?: AkanTheme }
+  | { type: "stream"; stream: ReadableStream<Uint8Array>; theme?: AkanTheme; status?: number }
   | { type: "redirect"; location: string; method: RscRedirectMethod }
   | { type: "not-found" };
 
@@ -27,7 +27,7 @@ type RscInMsg =
   | { type: "hello" }
   | { type: "ready" }
   | { type: "reloaded"; buildId: number }
-  | { type: "meta"; requestId: string; theme?: AkanTheme }
+  | { type: "meta"; requestId: string; theme?: AkanTheme; status?: number }
   | { type: "chunk"; requestId: string; data: Uint8Array }
   | { type: "end"; requestId: string }
   | { type: "redirect"; requestId: string; location: string; method?: RscRedirectMethod }
@@ -89,6 +89,7 @@ export class RscWorker {
   #pagesBundlePath: string;
   #pagesBundleBuildId: number;
   #cssAssets: Record<string, CssAsset>;
+  #basePaths: string[];
   #i18n: AkanI18nConfig;
   #resolveReady!: () => void;
   #rejectReady!: (err: Error) => void;
@@ -118,6 +119,7 @@ export class RscWorker {
     this.#pagesBundlePath = artifact.pagesBundlePath;
     this.#pagesBundleBuildId = artifact.pagesBundleBuildId;
     this.#cssAssets = artifact.cssAssets ?? {};
+    this.#basePaths = artifact.basePaths ?? [];
     this.#i18n = artifact.i18n ?? DEFAULT_AKAN_I18N;
     this.#restartOpts = { baseDelayMs: 200, maxDelayMs: 30_000, maxAttempts: undefined };
     this.ready = new Promise<void>((resolve, reject) => {
@@ -185,17 +187,19 @@ export class RscWorker {
     let settled = false;
     let stream!: ReadableStream<Uint8Array>;
     let theme: AkanTheme | undefined;
+    let status: number | undefined;
     const result = new Promise<RscRenderResult>((resolve, reject) => {
       stream = new ReadableStream<Uint8Array>({
         start: (controller) => {
           const settleStream = () => {
             if (settled) return;
             settled = true;
-            resolve({ type: "stream", stream, theme });
+            resolve({ type: "stream", stream, theme, status });
           };
           this.#pending.set(requestId, {
             onMeta: (meta) => {
               theme = meta.theme;
+              status = meta.status;
               settleStream();
             },
             onChunk: (data) => {
@@ -392,6 +396,7 @@ export class RscWorker {
           pagesBundlePath: this.#pagesBundlePath,
           pagesBundleBuildId: this.#pagesBundleBuildId,
           cssAssets: this.#cssAssets,
+          basePaths: this.#basePaths,
           i18n: this.#i18n,
         });
         return;
@@ -412,7 +417,7 @@ export class RscWorker {
         this.#pending.get(message.requestId)?.onChunk(message.data);
         return;
       case "meta":
-        this.#pending.get(message.requestId)?.onMeta?.({ theme: message.theme });
+        this.#pending.get(message.requestId)?.onMeta?.({ theme: message.theme, status: message.status });
         return;
       case "end":
         this.#resolvePending(message.requestId, (p) => p.onEnd());
