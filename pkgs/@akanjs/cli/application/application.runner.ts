@@ -106,7 +106,8 @@ export class ApplicationRunner extends runner("application") {
     const { env } = await app.prepareCommand("start");
     const appHost = await new AkanAppHost(app, { env, withInk }).start();
     onStart?.();
-    if (open) setTimeout(() => openBrowser("http://localhost:8282"), 3000);
+    if (open)
+      setTimeout(() => openBrowser(`http://localhost:${env.AKAN_PUBLIC_CLIENT_PORT ?? env.PORT ?? "8282"}`), 3000);
     return appHost;
   }
 

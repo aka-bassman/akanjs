@@ -1314,6 +1314,13 @@ export class AppExecutor extends SysExecutor {
   getEnv() {
     return WorkspaceExecutor.getBaseDevEnv().env;
   }
+  async getDevPort() {
+    const basePort = 8282;
+    const appNames = (await this.workspace.getApps()).sort((a, b) => a.localeCompare(b));
+    const appIndex = Math.max(appNames.indexOf(this.name), 0);
+    const portOffset = WorkspaceExecutor.getBaseDevEnv().portOffset;
+    return basePort + appIndex + portOffset;
+  }
   getCommandEnv(env: Record<string, string> = {}): Record<string, string> {
     const basePort = 8282;
     const portOffset = WorkspaceExecutor.getBaseDevEnv().portOffset;
@@ -1345,7 +1352,12 @@ export class AppExecutor extends SysExecutor {
         this.cp("public", `${this.dist.cwdPath}/public`),
       ]);
     } else await this.removeDir(".akan");
-    const env = this.getCommandEnv({ AKAN_COMMAND_TYPE: type, ...routeEnv });
+    const devPort = type === "start" ? (await this.getDevPort()).toString() : undefined;
+    const env = this.getCommandEnv({
+      AKAN_COMMAND_TYPE: type,
+      ...routeEnv,
+      ...(devPort ? { PORT: devPort, AKAN_PUBLIC_CLIENT_PORT: devPort, AKAN_PUBLIC_SERVER_PORT: devPort } : {}),
+    });
     return { env };
   }
   #publicEnv: Record<string, string> | null = null;

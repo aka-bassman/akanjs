@@ -396,7 +396,7 @@ export class AkanApp {
         data: {} as GatewayWsData,
       },
     });
-    this.logger.info(`AkanApp gateway is running on port ${this.#port}`);
+    this.logger.info(`AkanApp gateway is running on port http://localhost:${this.#port}`);
   }
 
   async #handleFetch(req: Request, server: Bun.Server<GatewayWsData>): Promise<Response | undefined> {

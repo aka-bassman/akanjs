@@ -251,6 +251,53 @@ describe("Workspace and app executor environment contracts", () => {
     expect((await stat(path.join(root, "dist/apps/demo/private"))).isDirectory()).toBe(true);
     expect((await stat(path.join(root, "dist/apps/demo/public"))).isDirectory()).toBe(true);
   });
+
+  test("assigns start command ports from sorted app order", async () => {
+    const root = await makeTempRoot();
+    process.env.AKAN_PUBLIC_REPO_NAME = "repo";
+    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+    process.env.AKAN_PUBLIC_ENV = "local";
+
+    await writeJson(path.join(root, "package.json"), rootPackageJson());
+    for (const appName of ["minimal", "akan"]) {
+      await mkdir(path.join(root, `apps/${appName}`), { recursive: true });
+      await writeFile(
+        path.join(root, `apps/${appName}/akan.config.ts`),
+        [
+          "export default {",
+          `  routes: [{ basePath: "${appName}", domains: { debug: ["${appName}.local:8282"] } }],`,
+          "};",
+          "",
+        ].join("\n"),
+      );
+    }
+
+    const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
+    const akan = AppExecutor.from(workspace, "akan");
+    const minimal = AppExecutor.from(workspace, "minimal");
+
+    const akanStart = await akan.prepareCommand("start");
+    expect(akanStart.env.PORT).toBe("8282");
+    expect(akanStart.env.AKAN_PUBLIC_CLIENT_PORT).toBe("8282");
+    expect(akanStart.env.AKAN_PUBLIC_SERVER_PORT).toBe("8282");
+
+    const minimalStart = await minimal.prepareCommand("start");
+    expect(minimalStart.env.PORT).toBe("8283");
+    expect(minimalStart.env.AKAN_PUBLIC_CLIENT_PORT).toBe("8283");
+    expect(minimalStart.env.AKAN_PUBLIC_SERVER_PORT).toBe("8283");
+
+    process.env.PORT_OFFSET = "3";
+
+    const offsetAkanStart = await akan.prepareCommand("start");
+    expect(offsetAkanStart.env.PORT).toBe("8285");
+    expect(offsetAkanStart.env.AKAN_PUBLIC_CLIENT_PORT).toBe("8285");
+    expect(offsetAkanStart.env.AKAN_PUBLIC_SERVER_PORT).toBe("8285");
+
+    const offsetMinimalStart = await minimal.prepareCommand("start");
+    expect(offsetMinimalStart.env.PORT).toBe("8286");
+    expect(offsetMinimalStart.env.AKAN_PUBLIC_CLIENT_PORT).toBe("8286");
+    expect(offsetMinimalStart.env.AKAN_PUBLIC_SERVER_PORT).toBe("8286");
+  });
 });
 
 describe("PkgExecutor package generation", () => {
