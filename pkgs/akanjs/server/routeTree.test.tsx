@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
+import { renderToReadableStream } from "react-dom/server.browser";
 import { RouteElementComposer } from "./routeElementComposer";
 import { RouteTreeBuilder } from "./routeTreeBuilder";
+
+async function renderToText(node: ReactNode): Promise<string> {
+  return new Response(await renderToReadableStream(node)).text();
+}
 
 describe("RouteTreeBuilder implicit locale", () => {
   test("matches locale-prefixed routes while keeping special routes at root", () => {
@@ -112,5 +117,82 @@ describe("RouteTreeBuilder implicit locale", () => {
       matched &&
         RouteElementComposer.resolveHead({ pathRoute: matched.pathRoute, params: matched.params, searchParams: {} }),
     ).rejects.toThrow('[route-convention] unsupported export "loader"');
+
+    const routesWithBadFallback = new RouteTreeBuilder({
+      "./bad-fallback.tsx": async () => ({ default: () => null, NotFound: () => null }) as never,
+    }).build();
+    const badFallback = RouteTreeBuilder.match("/ko/bad-fallback", routesWithBadFallback);
+    expect(
+      badFallback &&
+        RouteElementComposer.resolveHead({
+          pathRoute: badFallback.pathRoute,
+          params: badFallback.params,
+          searchParams: {},
+        }),
+    ).rejects.toThrow('[route-convention] unsupported export "NotFound"');
+  });
+
+  test("composes nearest layout NotFound and Error fallbacks", async () => {
+    const builder = new RouteTreeBuilder({
+      "./__root_layout.tsx": async () => ({
+        default: ({ children }: { children: ReactNode }) => <main>root:{children}</main>,
+        NotFound: ({ pathname }: { pathname: string }) => <p>root missing {pathname}</p>,
+      }),
+      "./docs/_layout.tsx": async () => ({
+        default: ({ children }: { children: ReactNode }) => <section>docs:{children}</section>,
+        NotFound: ({ pathname, params }: { pathname: string; params: Record<string, string> }) => (
+          <p>
+            docs missing {params.lang}:{pathname}
+          </p>
+        ),
+        Error: ({ error }: { error?: unknown }) => (
+          <p>docs error {error instanceof Error ? error.message : "unknown"}</p>
+        ),
+      }),
+      "./docs/guide.tsx": async () => ({ default: () => <article>guide</article> }),
+    });
+    const routes = builder.build();
+    const matched = RouteTreeBuilder.match("/ko/docs/guide", routes);
+    if (!matched) throw new Error("route did not match");
+
+    const notFound = await RouteElementComposer.composeFallback({
+      kind: "not-found",
+      route: matched.pathRoute,
+      params: matched.params,
+      searchParams: {},
+      pathname: "/ko/docs/guide",
+    });
+    const error = await RouteElementComposer.composeFallback({
+      kind: "error",
+      route: matched.pathRoute,
+      params: matched.params,
+      searchParams: {},
+      pathname: "/ko/docs/guide",
+      error: new Error("boom"),
+    });
+
+    const notFoundHtml = await renderToText(notFound);
+    const errorHtml = await renderToText(error);
+    expect(notFoundHtml).toContain("root:");
+    expect(notFoundHtml).toContain("docs:");
+    expect(notFoundHtml).toContain("docs missing");
+    expect(notFoundHtml).toContain("/ko/docs/guide");
+    expect(errorHtml).toContain("docs error");
+    expect(errorHtml).toContain("boom");
+
+    const unmatched = RouteTreeBuilder.matchFallback("/ko/docs/missing/path", builder.getFallbackRoutes());
+    expect(unmatched?.fallbackRoute.path).toBe("/:lang/docs");
+    const unmatchedNotFound =
+      unmatched &&
+      (await RouteElementComposer.composeFallback({
+        kind: "not-found",
+        route: unmatched.fallbackRoute,
+        params: unmatched.params,
+        searchParams: {},
+        pathname: "/ko/docs/missing/path",
+      }));
+    const unmatchedHtml = await renderToText(unmatchedNotFound);
+    expect(unmatchedHtml).toContain("docs missing");
+    expect(unmatchedHtml).toContain("/ko/docs/missing/path");
   });
 });

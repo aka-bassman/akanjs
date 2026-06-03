@@ -295,14 +295,51 @@ export default function Layout({ children, params }: LayoutProps) {
 
 export function Loading() {
   return <div>Loading project...</div>;
+}
+
+export function NotFound({ pathname }: { pathname: string }) {
+  return <div>Project route not found: {pathname}</div>;
+}
+
+export function Error({ error }: { error?: unknown }) {
+  return <div>Project failed to render.</div>;
 }`}
         />
         <div>
           {l.trans({
-            en: "Layouts support default, head, generateHead, and Loading. Layout's head is used for child pages without head declaration.",
-            ko: "레이아웃은 default, head, generateHead, Loading을 지원합니다. head가 선언되지 않은 child page에 대해서 layout의 head가 사용됩니다.",
+            en: "Layouts support default, head, generateHead, Loading, NotFound, and Error. Layout's head is used for child pages without head declaration, and the nearest layout fallback renders when a child route is missing or fails.",
+            ko: "레이아웃은 default, head, generateHead, Loading, NotFound, Error를 지원합니다. head가 선언되지 않은 child page에는 layout의 head가 사용되고, 하위 라우트를 찾지 못하거나 렌더링에 실패하면 가장 가까운 layout fallback이 렌더링됩니다.",
           })}
         </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {[
+            {
+              name: "NotFound",
+              desc: l.trans({
+                en: "Layout-scoped 404 UI. It renders under the layout when a child route is missing or router.notFound() is called below it.",
+                ko: "레이아웃 범위의 404 UI입니다. 하위 라우트를 찾지 못하거나 해당 layout 아래에서 router.notFound()가 호출되면 layout 안에서 렌더링됩니다.",
+              }),
+            },
+            {
+              name: "Error",
+              desc: l.trans({
+                en: "Layout-scoped server render error UI. It renders under the nearest layout when a child route throws during SSR.",
+                ko: "레이아웃 범위의 서버 렌더링 에러 UI입니다. 하위 라우트가 SSR 중 에러를 던지면 가장 가까운 layout 안에서 렌더링됩니다.",
+              }),
+            },
+          ].map(({ name, desc }) => (
+            <div key={name} className="rounded-xl border border-base-300 bg-base-100 px-4 py-3">
+              <div className="font-mono font-semibold text-primary">{name}</div>
+              <div className="mt-2 text-base-content/70 text-sm">{desc}</div>
+            </div>
+          ))}
+        </div>
+        <Docs.Alert type="info">
+          {l.trans({
+            en: "Custom NotFound and Error exports are available on _layout.tsx files, not page files. If a layout does not export one, Akan walks up to the nearest parent layout fallback, then falls back to the framework system page.",
+            ko: "커스텀 NotFound와 Error export는 page 파일이 아니라 _layout.tsx 파일에서 사용할 수 있습니다. 해당 layout에 fallback이 없으면 Akan은 가장 가까운 상위 layout fallback을 찾고, 없으면 framework system page를 사용합니다.",
+          })}
+        </Docs.Alert>
       </Scroll.Slide>
       <div className="divider" />
 

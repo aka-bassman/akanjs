@@ -46,6 +46,8 @@ describe("resolveSsrPageEntries", () => {
     const generatedSource = await Bun.file(groupedRoot?.moduleAbsPath ?? "").text();
     expect(generatedSource).toContain('import * as inheritedLayout from "../../../page/_layout.tsx";');
     expect(generatedSource).not.toContain("<System.Provider");
+    expect(generatedSource).toContain("export const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;");
+    expect(generatedSource).toContain("export const Error = userLayout.Error ?? inheritedLayout.Error;");
     expect(generatedSource).toContain(
       "<UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>",
     );

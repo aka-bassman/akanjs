@@ -1,4 +1,11 @@
-import type { Head, PathRoute, RouteRender } from "akanjs/client";
+import type {
+  Head,
+  LayoutErrorRender,
+  LayoutFallbackRoute,
+  LayoutNotFoundRender,
+  PathRoute,
+  RouteRender,
+} from "akanjs/client";
 import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode, Suspense } from "react";
 
 export class RouteElementComposer {
@@ -39,6 +46,71 @@ export class RouteElementComposer {
     return pathRoute.resolveHead?.({ params, searchParams });
   }
 
+  static async composeFallback({
+    kind,
+    route,
+    params,
+    searchParams,
+    pathname,
+    error,
+    digest,
+  }: {
+    kind: "not-found" | "error";
+    route: PathRoute | LayoutFallbackRoute;
+    params: Record<string, string>;
+    searchParams: Record<string, string | string[]>;
+    pathname: string;
+    error?: unknown;
+    digest?: string;
+  }): Promise<ReactNode | null> {
+    const layoutStack = [...route.renderRootLayouts, ...route.renderLayouts];
+    for (let index = layoutStack.length - 1; index >= 0; index--) {
+      const layoutRender = layoutStack[index];
+      if (!layoutRender) continue;
+      const fallback =
+        kind === "not-found" ? await layoutRender.resolveNotFound?.() : await layoutRender.resolveError?.();
+      if (!fallback) continue;
+      const renders = [
+        ...layoutStack.slice(0, index + 1),
+        RouteElementComposer.#makeFallbackRouteRender({
+          kind,
+          fallback,
+          params,
+          searchParams,
+          pathname,
+          error,
+          digest,
+        }),
+      ];
+      return RouteElementComposer.composeRenders({ renders, params, searchParams });
+    }
+    return null;
+  }
+
+  static composeRenders({
+    renders,
+    params,
+    searchParams,
+  }: {
+    renders: RouteRender[];
+    params: Record<string, string>;
+    searchParams: Record<string, string | string[]>;
+  }): ReactNode {
+    let element: ReactNode = null;
+    for (let i = renders.length - 1; i >= 0; i--) {
+      const routeRender = renders[i];
+      if (!routeRender) continue;
+      element = (
+        <Suspense fallback={RouteElementComposer.#composeLoadingFallback(renders.slice(i), params)}>
+          <RouteElementComposer.AsyncRender routeRender={routeRender} params={params} searchParams={searchParams}>
+            {element}
+          </RouteElementComposer.AsyncRender>
+        </Suspense>
+      );
+    }
+    return element;
+  }
+
   static async renderAsync({
     routeRender,
     children,
@@ -60,6 +132,34 @@ export class RouteElementComposer {
     params: Record<string, string>;
     searchParams: Record<string, string | string[]>;
   }) => RouteElementComposer.renderAsync(props);
+
+  static #makeFallbackRouteRender({
+    kind,
+    fallback,
+    pathname,
+    error,
+    digest,
+  }: {
+    kind: "not-found" | "error";
+    fallback: LayoutNotFoundRender | LayoutErrorRender;
+    params: Record<string, string>;
+    searchParams: Record<string, string | string[]>;
+    pathname: string;
+    error?: unknown;
+    digest?: string;
+  }): RouteRender {
+    return {
+      render: (props: { params: Record<string, string>; searchParams: Record<string, string | string[]> }) => {
+        const { params, searchParams } = props as {
+          params: Record<string, string>;
+          searchParams: Record<string, string | string[]>;
+        };
+        return kind === "not-found"
+          ? (fallback as LayoutNotFoundRender)({ params, searchParams, pathname })
+          : (fallback as LayoutErrorRender)({ params, searchParams, pathname, error, digest });
+      },
+    };
+  }
 
   static #normalizeReactNode(node: ReactNode): ReactNode {
     if (Array.isArray(node)) return Children.toArray(node).map(RouteElementComposer.#normalizeReactNode);

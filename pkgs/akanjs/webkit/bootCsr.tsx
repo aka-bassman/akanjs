@@ -6,6 +6,7 @@ import {
   Device,
   defaultPageState,
   initAuth,
+  type LayoutModule,
   type PageConfig,
   type PageState,
   type PathRoute,
@@ -153,7 +154,15 @@ export const bootCsr = async (context: Record<string, () => Promise<RouteModule>
     if (!targetPath) continue;
     const page = pages[filePath];
     if (!page) continue;
-    const routeRender: RouteRender = { render: page.default as never, Loading: page.Loading as never };
+    const layoutPage = parsed.kind === "layout" ? (page as LayoutModule) : null;
+    const routeRender: RouteRender = {
+      render: page.default as never,
+      Loading: page.Loading as never,
+      NotFound: layoutPage?.NotFound,
+      Error: layoutPage?.Error,
+      resolveNotFound: layoutPage ? () => layoutPage.NotFound : undefined,
+      resolveError: layoutPage ? () => layoutPage.Error : undefined,
+    };
     targetRouteMap.set(targetPath, {
       // action: pages[path]?.action,
       // ErrorBoundary: pages[path]?.ErrorBoundary,
@@ -268,8 +277,10 @@ function validateRouteModuleExports(key: string, mod: RouteModule) {
             "layoutStyle",
             "gaTrackingId",
             "Loading",
+            "NotFound",
+            "Error",
           ])
-        : new Set(["default", "head", "generateHead", "Loading"]);
+        : new Set(["default", "head", "generateHead", "Loading", "NotFound", "Error"]);
   for (const exportName of Object.keys(mod)) {
     if (!allowed.has(exportName)) {
       throw new Error(`[route-convention] unsupported export "${exportName}" in ${key}`);

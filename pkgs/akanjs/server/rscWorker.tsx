@@ -1,4 +1,4 @@
-import type { AkanNotFoundError, AkanRedirectError, PathRoute } from "akanjs/client";
+import type { AkanNotFoundError, AkanRedirectError, LayoutFallbackRoute, PathRoute } from "akanjs/client";
 import { type AkanI18nConfig, DEFAULT_AKAN_I18N, getBasePathFromPathname, Logger } from "akanjs/common";
 import { cookies, getRequest, getRequestTheme, requestStorage } from "akanjs/fetch";
 import type { ReactNode } from "react";
@@ -39,7 +39,10 @@ interface UpdateCssAssetsMsg {
   cssAssets: Record<string, { cssUrl: string; cssRelPath: string }>;
 }
 type InMsg = InitMsg | RenderMsg | ReloadMsg | UpdateCssAssetsMsg;
-type RenderControl = { type: "redirect"; location: string; method: "replace" | "push" } | { type: "not-found" };
+type RenderControl =
+  | { type: "redirect"; location: string; method: "replace" | "push" }
+  | { type: "not-found" }
+  | { type: "error"; error: unknown };
 
 interface RscRendererStats {
   renderCount: number;
@@ -96,6 +99,7 @@ class RscRenderer {
   readonly #logger = new Logger("scWorker");
   #clientManifest: ClientManifest = {};
   #pathRoutes: PathRoute[] = [];
+  #fallbackRoutes: LayoutFallbackRoute[] = [];
   #cssAssets: Record<string, { cssUrl: string; cssRelPath: string }> = {};
   #basePaths: string[] = [];
   #i18n: AkanI18nConfig = DEFAULT_AKAN_I18N;
@@ -172,7 +176,9 @@ class RscRenderer {
       this.#logger.verbose(
         `init state pagesBundlePath=${msg.pagesBundlePath} buildId=${msg.pagesBundleBuildId} cssAssets=${Object.keys(this.#cssAssets).length} clientEntries=${Object.keys(msg.clientManifest).length}`,
       );
-      this.#pathRoutes = await this.#importPages(msg.pagesBundlePath, msg.pagesBundleBuildId);
+      const routes = await this.#importPages(msg.pagesBundlePath, msg.pagesBundleBuildId);
+      this.#pathRoutes = routes.pathRoutes;
+      this.#fallbackRoutes = routes.fallbackRoutes;
       this.#logger.verbose(`init complete in ${Date.now() - startedAt}ms`);
       this.#send({ type: "ready" });
     } catch (error) {
@@ -197,7 +203,7 @@ class RscRenderer {
       this.#logger.verbose(
         `reload state buildId=${msg.buildId} bundlePath=${nextPagesBundlePath} cssAssets=${Object.keys(nextCssAssets).length} clientEntries=${Object.keys(msg.clientManifest).length}`,
       );
-      const pathRoutes = await this.#importPages(nextPagesBundlePath, msg.buildId);
+      const routes = await this.#importPages(nextPagesBundlePath, msg.buildId);
       if (seq !== this.#reloadSeq) {
         this.#logger.verbose(`reload stale buildId=${msg.buildId} seq=${seq} latest=${this.#reloadSeq}`);
         return;
@@ -207,7 +213,8 @@ class RscRenderer {
       this.#pagesBundlePath = nextPagesBundlePath;
       this.#pagesBundleBuildId = msg.buildId;
       this.#stats.pagesBundleBuildId = msg.buildId;
-      this.#pathRoutes = pathRoutes;
+      this.#pathRoutes = routes.pathRoutes;
+      this.#fallbackRoutes = routes.fallbackRoutes;
       this.#routeStats.clear();
       this.#resultCache.clear();
       this.#logger.verbose(`reload complete buildId=${msg.buildId} in ${Date.now() - startedAt}ms`);
@@ -225,7 +232,10 @@ class RscRenderer {
     }
   }
 
-  async #importPages(bundlePath: string, buildId: number): Promise<PathRoute[]> {
+  async #importPages(
+    bundlePath: string,
+    buildId: number,
+  ): Promise<{ pathRoutes: PathRoute[]; fallbackRoutes: LayoutFallbackRoute[] }> {
     const specifier = `${bundlePath}?v=${buildId}`;
     this.#logger.verbose(`importing pages bundle ${specifier}`);
     const importStart = Date.now();
@@ -235,12 +245,13 @@ class RscRenderer {
     if (!pages) throw new Error(`pages export not found in ${specifier}`);
 
     const routeBuildStart = Date.now();
-    const pathRoutes = new RouteTreeBuilder(pages).build();
+    const routeTree = new RouteTreeBuilder(pages);
+    const pathRoutes = routeTree.build();
     const routeBuildMs = Date.now() - routeBuildStart;
     this.#logger.verbose(
       `pages imported in ${Date.now() - importStart}ms import=${importedAt - importStart}ms routeBuild=${routeBuildMs}ms routes=${pathRoutes.length} specifier=${specifier}`,
     );
-    return pathRoutes;
+    return { pathRoutes, fallbackRoutes: routeTree.getFallbackRoutes() };
   }
 
   async #handleRender(msg: RenderMsg): Promise<void> {
@@ -248,12 +259,18 @@ class RscRenderer {
     const startedAt = Date.now();
     this.#stats.renderCount += 1;
     this.#stats.inFlightRenderCount += 1;
+    const activeRoute: {
+      url: URL | null;
+      match: { pathRoute: PathRoute; params: Record<string, string> } | null;
+    } = { url: null, match: null };
     try {
       const request = new Request(url, { method, headers });
       await this.#runWithRequest(request, async () => {
         const urlObj = new URL(url);
+        activeRoute.url = urlObj;
         this.#stats.lastRenderedPath = urlObj.pathname;
         const match = RouteTreeBuilder.match(urlObj.pathname, this.#pathRoutes);
+        activeRoute.match = match;
         const routeId = match?.pathRoute.path ?? "__not_found__";
         this.#stats.lastRenderRouteId = routeId;
         this.#stats.lastRenderKind = match ? "route" : "not-found";
@@ -280,62 +297,67 @@ class RscRenderer {
           return;
         }
         const theme = cookies().get("theme")?.value;
-        const element = match ? await this.#renderMatched(urlObj, match, theme) : this.#renderNotFound(urlObj);
+        const element = match ? await this.#renderMatched(urlObj, match, theme) : await this.#renderNotFound(urlObj);
         this.#logger.verbose(`render[${requestId}] starting Flight stream`);
-        const controlRef: { current: RenderControl | null } = { current: null };
-        const stream = await renderToReadableStream(element, msg.clientManifest ?? this.#clientManifest, {
-          onError: (error) => {
-            if (isAkanRedirectError(error)) {
-              controlRef.current = { type: "redirect", location: error.location, method: error.method };
-              return error.digest;
-            }
-            if (isAkanNotFoundError(error)) {
-              controlRef.current = { type: "not-found" };
-              return error.digest;
-            }
-            return error instanceof Error ? error.message : String(error);
-          },
-        });
-        const reader = stream.getReader();
-        let chunks = 0;
-        let bytes = 0;
-        const buffered: Uint8Array[] = [];
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          if (controlRef.current) {
-            await reader.cancel();
-            break;
-          }
-          const chunk = value instanceof Uint8Array ? value : new Uint8Array(value as ArrayBufferLike);
-          chunks += 1;
-          bytes += chunk.byteLength;
-          buffered.push(chunk);
-        }
-        const control = controlRef.current;
+        const result = await this.#renderFlightElement(element, msg.clientManifest ?? this.#clientManifest);
+        const control = result.control;
         if (control) {
           this.#stats.lastRenderKind = control.type;
+          if (!match && control.type === "error") {
+            const systemResult = await this.#renderFlightElement(
+              this.#renderSystemNotFound(urlObj),
+              msg.clientManifest ?? this.#clientManifest,
+            );
+            if (!systemResult.control) {
+              this.#send({ type: "meta", requestId, theme: getRequestTheme(), status: 404 });
+              for (const chunk of systemResult.chunks) this.#send({ type: "chunk", requestId, data: chunk });
+              this.#send({ type: "end", requestId });
+              return;
+            }
+          }
+          if (
+            match &&
+            control.type !== "redirect" &&
+            (await this.#trySendFallbackRender({
+              requestId,
+              kind: control.type,
+              route: match.pathRoute,
+              params: match.params,
+              searchParams: RouteTreeBuilder.parseSearchParams(urlObj.search),
+              pathname: urlObj.pathname,
+              url: urlObj,
+              error: control.type === "error" ? control.error : undefined,
+              clientManifest: msg.clientManifest ?? this.#clientManifest,
+            }))
+          ) {
+            return;
+          }
           this.#sendRenderControl(requestId, control);
           return;
         }
-        this.#stats.lastFlightBytes = bytes;
-        this.#stats.lastFlightChunks = chunks;
-        this.#stats.totalFlightBytes += bytes;
-        this.#stats.totalFlightChunks += chunks;
+        this.#stats.lastFlightBytes = result.bytes;
+        this.#stats.lastFlightChunks = result.chunks.length;
+        this.#stats.totalFlightBytes += result.bytes;
+        this.#stats.totalFlightChunks += result.chunks.length;
         this.#stats.lastRenderDurationMs = Date.now() - startedAt;
         const afterLoadedKeys = RouteTreeBuilder.getCacheStats().loadedModuleKeys;
         this.#stats.lastRenderLoadedModules = afterLoadedKeys.filter((key) => !beforeLoadedKeys.includes(key));
         this.#stats.lastRenderLoadedModuleDelta = this.#stats.lastRenderLoadedModules.length;
-        this.#recordRouteStats(routeId, bytes, this.#stats.lastRenderDurationMs);
+        this.#recordRouteStats(routeId, result.bytes, this.#stats.lastRenderDurationMs);
         const responseTheme = getRequestTheme();
         if (cacheKey)
-          this.#setCachedResult(cacheKey, { chunks: buffered, bytes, chunksCount: chunks, theme: responseTheme });
+          this.#setCachedResult(cacheKey, {
+            chunks: result.chunks,
+            bytes: result.bytes,
+            chunksCount: result.chunks.length,
+            theme: responseTheme,
+          });
         this.#send({ type: "meta", requestId, theme: responseTheme, status: match ? undefined : 404 });
-        for (const chunk of buffered) {
+        for (const chunk of result.chunks) {
           this.#send({ type: "chunk", requestId, data: chunk });
         }
         this.#logger.verbose(
-          `render[${requestId}] done chunks=${chunks} bytes=${bytes} in ${Date.now() - startedAt}ms`,
+          `render[${requestId}] done chunks=${result.chunks.length} bytes=${result.bytes} in ${Date.now() - startedAt}ms`,
         );
         this.#send({ type: "end", requestId });
       });
@@ -349,12 +371,49 @@ class RscRenderer {
       if (isAkanNotFoundError(error)) {
         this.#stats.lastRenderKind = "not-found";
         this.#logger.verbose(`render[${requestId}] not-found`);
+        const fallbackUrl = activeRoute.url;
+        const fallbackMatch = activeRoute.match;
+        if (
+          fallbackUrl &&
+          fallbackMatch &&
+          (await this.#trySendFallbackRender({
+            requestId,
+            kind: "not-found",
+            route: fallbackMatch.pathRoute,
+            params: fallbackMatch.params,
+            searchParams: RouteTreeBuilder.parseSearchParams(fallbackUrl.search),
+            pathname: fallbackUrl.pathname,
+            url: fallbackUrl,
+            clientManifest: msg.clientManifest ?? this.#clientManifest,
+          }))
+        ) {
+          return;
+        }
         this.#send({ type: "not-found", requestId });
         return;
       }
       this.#logger.error(
         `render[${requestId}] failed url=${url}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
       );
+      const fallbackUrl = activeRoute.url;
+      const fallbackMatch = activeRoute.match;
+      if (
+        fallbackUrl &&
+        fallbackMatch &&
+        (await this.#trySendFallbackRender({
+          requestId,
+          kind: "error",
+          route: fallbackMatch.pathRoute,
+          params: fallbackMatch.params,
+          searchParams: RouteTreeBuilder.parseSearchParams(fallbackUrl.search),
+          pathname: fallbackUrl.pathname,
+          url: fallbackUrl,
+          error,
+          clientManifest: msg.clientManifest ?? this.#clientManifest,
+        }))
+      ) {
+        return;
+      }
       this.#send({
         type: "error",
         requestId,
@@ -407,10 +466,105 @@ class RscRenderer {
     this.#send({ type: "metrics", metrics });
   }
 
+  async #renderFlightElement(
+    element: ReactNode,
+    clientManifest: ClientManifest,
+  ): Promise<{ chunks: Uint8Array[]; bytes: number; control: RenderControl | null }> {
+    const controlRef: { current: RenderControl | null } = { current: null };
+    const stream = await renderToReadableStream(element, clientManifest, {
+      onError: (error) => {
+        if (isAkanRedirectError(error)) {
+          controlRef.current = { type: "redirect", location: error.location, method: error.method };
+          return error.digest;
+        }
+        if (isAkanNotFoundError(error)) {
+          controlRef.current = { type: "not-found" };
+          return error.digest;
+        }
+        controlRef.current = { type: "error", error };
+        return error instanceof Error ? error.message : String(error);
+      },
+    });
+    const reader = stream.getReader();
+    let bytes = 0;
+    const chunks: Uint8Array[] = [];
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (controlRef.current) {
+        await reader.cancel();
+        break;
+      }
+      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value as ArrayBufferLike);
+      bytes += chunk.byteLength;
+      chunks.push(chunk);
+    }
+    return { chunks, bytes, control: controlRef.current };
+  }
+
+  async #trySendFallbackRender({
+    requestId,
+    kind,
+    route,
+    params,
+    searchParams,
+    pathname,
+    url,
+    error,
+    clientManifest,
+  }: {
+    requestId: string;
+    kind: "not-found" | "error";
+    route: PathRoute | LayoutFallbackRoute;
+    params: Record<string, string>;
+    searchParams: Record<string, string | string[]>;
+    pathname: string;
+    url: URL;
+    error?: unknown;
+    clientManifest: ClientManifest;
+  }): Promise<boolean> {
+    try {
+      const element = await this.#renderFallbackDocument({
+        kind,
+        route,
+        params,
+        searchParams,
+        pathname,
+        url,
+        error: kind === "error" ? RscRenderer.#errorForFallback(error) : undefined,
+        digest: kind === "error" ? "AKAN_RENDER_ERROR" : undefined,
+      });
+      if (!element) return false;
+      const result = await this.#renderFlightElement(element, clientManifest);
+      if (result.control) return false;
+      this.#send({ type: "meta", requestId, theme: getRequestTheme(), status: kind === "not-found" ? 404 : 500 });
+      for (const chunk of result.chunks) this.#send({ type: "chunk", requestId, data: chunk });
+      this.#send({ type: "end", requestId });
+      this.#stats.lastFlightBytes = result.bytes;
+      this.#stats.lastFlightChunks = result.chunks.length;
+      this.#stats.totalFlightBytes += result.bytes;
+      this.#stats.totalFlightChunks += result.chunks.length;
+      return true;
+    } catch (fallbackError) {
+      this.#logger.error(
+        `render[${requestId}] custom ${kind} fallback failed: ${
+          fallbackError instanceof Error ? (fallbackError.stack ?? fallbackError.message) : String(fallbackError)
+        }`,
+      );
+      return false;
+    }
+  }
+
   #sendRenderControl(requestId: string, control: RenderControl): void {
     if (control.type === "redirect") {
       this.#logger.verbose(`render[${requestId}] redirect ${control.location}`);
       this.#send({ type: "redirect", requestId, location: control.location, method: control.method });
+      return;
+    }
+    if (control.type === "error") {
+      const message = control.error instanceof Error ? control.error.message : String(control.error);
+      this.#logger.verbose(`render[${requestId}] error`);
+      this.#send({ type: "error", requestId, message });
       return;
     }
     this.#logger.verbose(`render[${requestId}] not-found`);
@@ -497,6 +651,55 @@ class RscRenderer {
     return fn();
   }
 
+  async #renderFallbackDocument({
+    kind,
+    route,
+    params,
+    searchParams,
+    pathname,
+    url,
+    error,
+    digest,
+  }: {
+    kind: "not-found" | "error";
+    route: PathRoute | LayoutFallbackRoute;
+    params: Record<string, string>;
+    searchParams: Record<string, string | string[]>;
+    pathname: string;
+    url: URL;
+    error?: unknown;
+    digest?: string;
+  }): Promise<ReactNode | null> {
+    const body = await RouteElementComposer.composeFallback({
+      kind,
+      route,
+      params,
+      searchParams,
+      pathname,
+      error,
+      digest,
+    });
+    if (!body) return null;
+    const routeHead = "resolveHead" in route ? await route.resolveHead?.({ params, searchParams }) : undefined;
+    const theme = cookies().get("theme")?.value;
+    return (
+      <html
+        lang={params.lang ?? RscRenderer.#getLocale(pathname, this.#i18n)}
+        {...(theme ? { "data-theme": theme } : { suppressHydrationWarning: true })}
+      >
+        <head key="head">
+          <meta key="charset" charSet="utf-8" />
+          <meta key="viewport" name="viewport" content="width=device-width, initial-scale=1" />
+          <meta key="robots" name="robots" content="noindex" />
+          {routeHead ?? this.#renderDefaultHead()}
+          {this.#renderLocaleAlternates(url)}
+          {this.#renderStylesheet(pathname)}
+        </head>
+        <body key="body">{body}</body>
+      </html>
+    );
+  }
+
   async #renderMatched(
     url: URL,
     match: { pathRoute: PathRoute; params: Record<string, string> },
@@ -529,7 +732,29 @@ class RscRenderer {
     );
   }
 
-  #renderNotFound(url: URL): ReactNode {
+  async #renderNotFound(url: URL): Promise<ReactNode> {
+    const matchedFallback = RouteTreeBuilder.matchFallback(url.pathname, this.#fallbackRoutes);
+    if (matchedFallback) {
+      try {
+        const fallback = await this.#renderFallbackDocument({
+          kind: "not-found",
+          route: matchedFallback.fallbackRoute,
+          params: matchedFallback.params,
+          searchParams: RouteTreeBuilder.parseSearchParams(url.search),
+          pathname: url.pathname,
+          url,
+        });
+        if (fallback) return fallback;
+      } catch (error) {
+        this.#logger.error(
+          `custom unmatched not-found fallback failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+        );
+      }
+    }
+    return this.#renderSystemNotFound(url);
+  }
+
+  #renderSystemNotFound(url: URL): ReactNode {
     return createSystemPageDocument({
       kind: "not-found",
       pathname: url.pathname,
@@ -607,6 +832,11 @@ class RscRenderer {
       .map((part) => part.trim().split("=")[0])
       .filter(Boolean)
       .every((name) => name === "theme" || name.startsWith("akan_public_"));
+  }
+
+  static #errorForFallback(error: unknown): unknown {
+    if (process.env.NODE_ENV !== "production") return error;
+    return undefined;
   }
 
   static #getPublicRequestUrl(url: URL): URL {

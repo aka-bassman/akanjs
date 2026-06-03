@@ -51,6 +51,13 @@ export interface PageLoadingProps {
 export interface LayoutLoadingProps extends PageLoadingProps {
   children: ReactNode;
 }
+export interface LayoutNotFoundProps extends PageProps {
+  pathname: string;
+}
+export interface LayoutErrorProps extends LayoutNotFoundProps {
+  error?: unknown;
+  digest?: string;
+}
 export type Head = ReactNode;
 export type GenerateHead = (props: PageProps) => PromiseOrObject<Head | null | undefined>;
 export type ResolveHead = (props: PageProps) => PromiseOrObject<Head | null | undefined>;
@@ -59,9 +66,15 @@ export type PageRender = (props: PageProps) => PromiseOrObject<ReactNode>;
 export type LayoutRender = (props: LayoutProps) => PromiseOrObject<ReactNode>;
 export type PageLoadingRender = (props: PageLoadingProps) => PromiseOrObject<ReactNode>;
 export type LayoutLoadingRender = (props: LayoutLoadingProps) => PromiseOrObject<ReactNode>;
+export type LayoutNotFoundRender = (props: LayoutNotFoundProps) => PromiseOrObject<ReactNode>;
+export type LayoutErrorRender = (props: LayoutErrorProps) => PromiseOrObject<ReactNode>;
 export interface RouteRender {
   render: LayoutRender | PageRender;
   Loading?: LayoutLoadingRender | PageLoadingRender;
+  NotFound?: LayoutNotFoundRender;
+  Error?: LayoutErrorRender;
+  resolveNotFound?: () => PromiseOrObject<LayoutNotFoundRender | undefined>;
+  resolveError?: () => PromiseOrObject<LayoutErrorRender | undefined>;
   resolveHead?: ResolveHead;
   getPageConfig?: () => PromiseOrObject<PageConfig | undefined>;
 }
@@ -108,6 +121,8 @@ export interface LayoutModule {
   layoutStyle?: "mobile" | "web";
   gaTrackingId?: string;
   Loading?: LayoutLoadingRender;
+  NotFound?: LayoutNotFoundRender;
+  Error?: LayoutErrorRender;
 }
 export type RouteModule = PageModule | LayoutModule;
 export interface Route {
@@ -256,6 +271,13 @@ export interface PathRoute {
   renderLayouts: RouteRender[];
   resolveHead?: ResolveHead;
   isSpecialRoute?: boolean;
+}
+
+export interface LayoutFallbackRoute {
+  path: string;
+  pathSegments: string[];
+  renderRootLayouts: RouteRender[];
+  renderLayouts: RouteRender[];
 }
 
 export interface RouteGuide {

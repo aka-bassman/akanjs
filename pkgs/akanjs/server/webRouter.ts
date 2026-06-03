@@ -264,6 +264,9 @@ export class WebRouter {
           });
           if (result.type === "redirect") return WebRouter.#rscRedirectResponse(result.location, result.method);
           if (result.type === "not-found") return WebRouter.#rscRedirectResponse("/404", "replace");
+          if (result.status === 404) return WebRouter.#rscRedirectResponse("/404", "replace");
+          if (result.status && result.status >= 500)
+            return this.#renderRscErrorResponse("__rsc", "Internal Server Error");
           return new Response(result.stream, {
             headers: {
               "Content-Type": "text/x-component; charset=utf-8",
@@ -562,7 +565,9 @@ export class WebRouter {
 
   async #ensureRoute(url: URL) {
     const started = Date.now();
-    const matched = RouteSeedIndexStore.match(url.pathname, this.#seedIndex.entries);
+    const matched =
+      RouteSeedIndexStore.match(url.pathname, this.#seedIndex.entries) ??
+      RouteSeedIndexStore.matchPrefix(url.pathname, this.#seedIndex.entries);
     if (matched) await this.#routeCache.ensure(matched.entry.routeId, matched.entry.seeds);
     this.#logger.verbose(
       `[route-cache] ensure pathname=${url.pathname} routeId=${matched?.entry.routeId ?? "(none)"} in ${Date.now() - started}ms`,

@@ -8,12 +8,7 @@ import {
   spawn,
 } from "node:child_process";
 import { readFileSync } from "node:fs";
-import {
-  copyFile,
-  mkdir,
-  readdir as readDirEntries,
-  stat,
-} from "node:fs/promises";
+import { copyFile, mkdir, readdir as readDirEntries, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   capitalize,
@@ -26,12 +21,7 @@ import {
 import { $ } from "bun";
 import chalk from "chalk";
 import ts from "typescript";
-import {
-  AkanAppConfig,
-  AkanLibConfig,
-  decreaseBuildNum,
-  increaseBuildNum,
-} from "./akanConfig";
+import { AkanAppConfig, AkanLibConfig, decreaseBuildNum, increaseBuildNum } from "./akanConfig";
 import { FileSys } from "./fileSys";
 import { getDirname } from "./getDirname";
 import { Linter } from "./linter";
@@ -74,8 +64,7 @@ const staticTemplateFileExtensions = new Set([
   ".xml",
 ]);
 
-const formatCommandArg = (value: string) =>
-  /^[\w@%+=:,./-]+$/.test(value) ? value : JSON.stringify(value);
+const formatCommandArg = (value: string) => (/^[\w@%+=:,./-]+$/.test(value) ? value : JSON.stringify(value));
 
 const formatCommandForDisplay = (command: string, args: string[] = []) =>
   [command, ...args].map(formatCommandArg).join(" ");
@@ -111,21 +100,11 @@ export class CommandExecutionError extends Error {
     cause,
   }: CommandExecutionErrorOptions) {
     const displayCommand = formatCommandForDisplay(command, args);
-    const status = signal
-      ? `signal: ${signal}`
-      : `exit code: ${code ?? "unknown"}`;
+    const status = signal ? `signal: ${signal}` : `exit code: ${code ?? "unknown"}`;
     const output = (stderr || stdout).trim();
-    super(
-      [
-        `Command failed: ${displayCommand}`,
-        `cwd: ${cwd}`,
-        status,
-        output ? `\n${output}` : "",
-      ].join("\n"),
-      {
-        cause,
-      },
-    );
+    super([`Command failed: ${displayCommand}`, `cwd: ${cwd}`, status, output ? `\n${output}` : ""].join("\n"), {
+      cause,
+    });
     this.name = "CommandExecutionError";
     this.command = command;
     this.args = args;
@@ -159,17 +138,12 @@ const parseEnvFile = (envPath: string): Record<string, string> => {
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
-    const normalized = trimmed.startsWith("export ")
-      ? trimmed.slice("export ".length).trim()
-      : trimmed;
+    const normalized = trimmed.startsWith("export ") ? trimmed.slice("export ".length).trim() : trimmed;
     const separatorIndex = normalized.indexOf("=");
     if (separatorIndex <= 0) continue;
     const key = normalized.slice(0, separatorIndex).trim();
     let value = normalized.slice(separatorIndex + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
     env[key] = value;
@@ -177,13 +151,7 @@ const parseEnvFile = (envPath: string): Record<string, string> => {
   return env;
 };
 
-const PAGE_ROUTE_EXPORTS = new Set([
-  "default",
-  "pageConfig",
-  "head",
-  "generateHead",
-  "Loading",
-]);
+const PAGE_ROUTE_EXPORTS = new Set(["default", "pageConfig", "head", "generateHead", "Loading"]);
 const ROOT_LAYOUT_EXPORTS = new Set([
   "default",
   "head",
@@ -195,13 +163,10 @@ const ROOT_LAYOUT_EXPORTS = new Set([
   "layoutStyle",
   "gaTrackingId",
   "Loading",
+  "NotFound",
+  "Error",
 ]);
-const LAYOUT_ROUTE_EXPORTS = new Set([
-  "default",
-  "head",
-  "generateHead",
-  "Loading",
-]);
+const LAYOUT_ROUTE_EXPORTS = new Set(["default", "head", "generateHead", "Loading", "NotFound", "Error"]);
 
 function validateRouteSourceExports(
   source: string,
@@ -209,42 +174,23 @@ function validateRouteSourceExports(
   kind: "page" | "layout",
   options: { rootLayout?: boolean } = {},
 ) {
-  const sourceFile = ts.createSourceFile(
-    filePath,
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
+  const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const allowed =
-    kind === "page"
-      ? PAGE_ROUTE_EXPORTS
-      : options.rootLayout
-        ? ROOT_LAYOUT_EXPORTS
-        : LAYOUT_ROUTE_EXPORTS;
+    kind === "page" ? PAGE_ROUTE_EXPORTS : options.rootLayout ? ROOT_LAYOUT_EXPORTS : LAYOUT_ROUTE_EXPORTS;
   const exported = new Set<string>();
   const assertExport = (name: string) => {
     if (!allowed.has(name)) {
-      throw new Error(
-        `[route-convention] unsupported export "${name}" in ${filePath}`,
-      );
+      throw new Error(`[route-convention] unsupported export "${name}" in ${filePath}`);
     }
     exported.add(name);
   };
 
   for (const statement of sourceFile.statements) {
-    if (
-      ts.isInterfaceDeclaration(statement) ||
-      ts.isTypeAliasDeclaration(statement)
-    )
-      continue;
+    if (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement)) continue;
     if (ts.isExportDeclaration(statement)) {
       if (statement.isTypeOnly) continue;
       const clause = statement.exportClause;
-      if (!clause)
-        throw new Error(
-          `[route-convention] export * is not allowed in route modules: ${filePath}`,
-        );
+      if (!clause) throw new Error(`[route-convention] export * is not allowed in route modules: ${filePath}`);
       if (ts.isNamedExports(clause)) {
         for (const element of clause.elements) {
           if (element.isTypeOnly) continue;
@@ -253,22 +199,17 @@ function validateRouteSourceExports(
       }
       continue;
     }
-    const modifiers = ts.canHaveModifiers(statement)
-      ? ts.getModifiers(statement)
-      : undefined;
-    const isExported =
-      modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+    const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
+    const isExported = modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
     if (!isExported) continue;
-    const isDefault =
-      modifiers?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword) ?? false;
+    const isDefault = modifiers?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword) ?? false;
     if (isDefault) {
       assertExport("default");
       continue;
     }
     if (ts.isVariableStatement(statement)) {
       for (const declaration of statement.declarationList.declarations) {
-        if (ts.isIdentifier(declaration.name))
-          assertExport(declaration.name.text);
+        if (ts.isIdentifier(declaration.name)) assertExport(declaration.name.text);
       }
       continue;
     }
@@ -278,9 +219,7 @@ function validateRouteSourceExports(
     }
   }
   if (exported.has("head") && exported.has("generateHead")) {
-    throw new Error(
-      `[route-convention] head and generateHead cannot both be exported in ${filePath}`,
-    );
+    throw new Error(`[route-convention] head and generateHead cannot both be exported in ${filePath}`);
   }
 }
 
@@ -353,11 +292,7 @@ export class Executor {
     });
   }
 
-  spawn(
-    command: string,
-    args: string[] = [],
-    options: SpawnOptions = {},
-  ): Promise<string> {
+  spawn(command: string, args: string[] = [], options: SpawnOptions = {}): Promise<string> {
     const cwd = options.cwd?.toString() ?? this.cwdPath;
     const proc = spawn(command, args, {
       cwd: this.cwdPath,
@@ -409,11 +344,7 @@ export class Executor {
       });
     });
   }
-  spawnSync(
-    command: string,
-    args: string[] = [],
-    options: SpawnOptions = {},
-  ): ChildProcess {
+  spawnSync(command: string, args: string[] = [], options: SpawnOptions = {}): ChildProcess {
     const proc = spawn(command, args, {
       cwd: this.cwdPath,
       // stdio: "inherit",
@@ -494,8 +425,7 @@ export class Executor {
   }
   async mkdir(dirPath: string) {
     const writePath = this.getPath(dirPath);
-    if (!(await FileSys.dirExists(writePath)))
-      await mkdir(writePath, { recursive: true });
+    if (!(await FileSys.dirExists(writePath))) await mkdir(writePath, { recursive: true });
     this.logger.verbose(`Make directory ${writePath}`);
     return this;
   }
@@ -508,27 +438,16 @@ export class Executor {
       return [];
     }
   }
-  async getAllFiles(
-    pattern = "**/*",
-    { cwd }: { cwd?: string } = {},
-  ): Promise<string[]> {
+  async getAllFiles(pattern = "**/*", { cwd }: { cwd?: string } = {}): Promise<string[]> {
     const glob = new Bun.Glob(pattern);
-    return Array.from(
-      glob.scanSync({ cwd: cwd ?? this.cwdPath, onlyFiles: true }),
-    );
+    return Array.from(glob.scanSync({ cwd: cwd ?? this.cwdPath, onlyFiles: true }));
   }
-  async getFilesAndDirs(
-    dirPath: string,
-  ): Promise<{ files: string[]; dirs: string[] }> {
+  async getFilesAndDirs(dirPath: string): Promise<{ files: string[]; dirs: string[] }> {
     const fullDirPath = this.getPath(dirPath);
     const fileGlob = new Bun.Glob("*");
-    const files = Array.from(
-      fileGlob.scanSync({ cwd: fullDirPath, onlyFiles: true }),
-    );
+    const files = Array.from(fileGlob.scanSync({ cwd: fullDirPath, onlyFiles: true }));
     const dirGlob = new Bun.Glob("*");
-    const allEntries = Array.from(
-      dirGlob.scanSync({ cwd: fullDirPath, onlyFiles: false }),
-    );
+    const allEntries = Array.from(dirGlob.scanSync({ cwd: fullDirPath, onlyFiles: false }));
     const dirs = allEntries.filter((entry) => !files.includes(entry));
     return { files, dirs };
   }
@@ -556,8 +475,7 @@ export class Executor {
     const writePath = this.getPath(filePath);
     const dir = path.dirname(writePath);
     if (!(await FileSys.dirExists(dir))) await mkdir(dir, { recursive: true });
-    let contentStr =
-      typeof content === "string" ? content : JSON.stringify(content, null, 2);
+    let contentStr = typeof content === "string" ? content : JSON.stringify(content, null, 2);
 
     if (await FileSys.fileExists(writePath)) {
       const currentContent = await FileSys.readText(writePath);
@@ -566,8 +484,7 @@ export class Executor {
         contentStr = currentContent;
       } else {
         await FileSys.writeText(writePath, contentStr);
-        if (Logger.isVerbose())
-          this.logger.rawLog(chalk.yellow(`File Update: ${filePath}`));
+        if (Logger.isVerbose()) this.logger.rawLog(chalk.yellow(`File Update: ${filePath}`));
       }
     } else {
       await FileSys.writeText(writePath, contentStr);
@@ -579,9 +496,7 @@ export class Executor {
     await this.writeFile(filePath, content);
   }
   async getLocalFile(targetPath: string) {
-    const filePath = path.isAbsolute(targetPath)
-      ? targetPath
-      : targetPath.replace(this.cwdPath, "");
+    const filePath = path.isAbsolute(targetPath) ? targetPath : targetPath.replace(this.cwdPath, "");
     const content = await this.readFile(filePath);
     return { filePath, content };
   }
@@ -598,8 +513,7 @@ export class Executor {
     const dest = this.getPath(destPath);
     if (!(await FileSys.exists(src))) return;
     const isDirectory = (await stat(src)).isDirectory();
-    if (!(await FileSys.exists(dest)) && isDirectory)
-      await mkdir(dest, { recursive: true });
+    if (!(await FileSys.exists(dest)) && isDirectory) await mkdir(dest, { recursive: true });
     await $`cp -r ${src}${isDirectory ? "/." : ""} ${dest}`;
   }
   log(msg: string) {
@@ -614,22 +528,12 @@ export class Executor {
     this.logger.debug(msg);
     return this;
   }
-  spinning(
-    msg: string,
-    {
-      prefix = `${this.emoji}${this.name}`,
-      indent = 0,
-      enableSpin = !Executor.verbose,
-    } = {},
-  ) {
+  spinning(msg: string, { prefix = `${this.emoji}${this.name}`, indent = 0, enableSpin = !Executor.verbose } = {}) {
     return new Spinner(msg, { prefix, indent, enableSpin }).start();
   }
 
   #tsconfig: TsConfigJson | null = null;
-  async getTsConfig(
-    pathname = "tsconfig.json",
-    { refresh }: { refresh?: boolean } = {},
-  ): Promise<TsConfigJson> {
+  async getTsConfig(pathname = "tsconfig.json", { refresh }: { refresh?: boolean } = {}): Promise<TsConfigJson> {
     if (this.#tsconfig && !refresh) return this.#tsconfig;
     const tsconfig = (await this.readJson(pathname)) as TsConfigJson;
     if (tsconfig.extends) {
@@ -654,11 +558,7 @@ export class Executor {
   }
 
   #packageJson: PackageJson | null = null;
-  async getPackageJson({
-    refresh,
-  }: {
-    refresh?: boolean;
-  } = {}): Promise<PackageJson> {
+  async getPackageJson({ refresh }: { refresh?: boolean } = {}): Promise<PackageJson> {
     if (this.#packageJson && !refresh) return this.#packageJson;
     const packageJson = (await this.readJson("package.json")) as PackageJson;
     this.#packageJson = packageJson;
@@ -705,55 +605,39 @@ export class Executor {
       };
       const result = await getContent.default(scanInfo ?? null, dict, options);
       if (result === null) return null;
-      const filename =
-        typeof result === "object"
-          ? result.filename
-          : path.basename(targetPath).replace(".js", ".ts");
+      const filename = typeof result === "object" ? result.filename : path.basename(targetPath).replace(".js", ".ts");
       const content = typeof result === "object" ? result.content : result;
       const dirname = path.dirname(targetPath);
       const convertedTargetPath = Object.entries(dict).reduce(
-        (path, [key, value]) =>
-          path.replace(new RegExp(`__${key}__`, "g"), value),
+        (path, [key, value]) => path.replace(new RegExp(`__${key}__`, "g"), value),
         `${dirname}/${filename}`,
       );
-      this.logger.verbose(
-        `Apply template ${templatePath} to ${convertedTargetPath}`,
-      );
+      this.logger.verbose(`Apply template ${templatePath} to ${convertedTargetPath}`);
       return this.writeFile(convertedTargetPath, content, { overwrite });
     } else if (targetPath.endsWith(".template")) {
       const content = await FileSys.readText(templatePath);
       const convertedTargetPath = Object.entries(dict).reduce(
-        (path, [key, value]) =>
-          path.replace(new RegExp(`__${key}__`, "g"), value),
+        (path, [key, value]) => path.replace(new RegExp(`__${key}__`, "g"), value),
         targetPath.slice(0, -9),
       );
       const convertedContent = Object.entries(dict).reduce(
-        (data, [key, value]) =>
-          data.replace(new RegExp(`<%= ${key} %>`, "g"), value),
+        (data, [key, value]) => data.replace(new RegExp(`<%= ${key} %>`, "g"), value),
         content,
       );
-      this.logger.verbose(
-        `Apply template ${templatePath} to ${convertedTargetPath}`,
-      );
+      this.logger.verbose(`Apply template ${templatePath} to ${convertedTargetPath}`);
       return this.writeFile(convertedTargetPath, convertedContent, {
         overwrite,
       });
-    } else if (
-      staticTemplateFileExtensions.has(path.extname(targetPath).toLowerCase())
-    ) {
+    } else if (staticTemplateFileExtensions.has(path.extname(targetPath).toLowerCase())) {
       const convertedTargetPath = Object.entries(dict).reduce(
-        (path, [key, value]) =>
-          path.replace(new RegExp(`__${key}__`, "g"), value),
+        (path, [key, value]) => path.replace(new RegExp(`__${key}__`, "g"), value),
         targetPath,
       );
       const writePath = this.getPath(convertedTargetPath);
       const dirname = path.dirname(writePath);
-      if (!(await FileSys.dirExists(dirname)))
-        await mkdir(dirname, { recursive: true });
+      if (!(await FileSys.dirExists(dirname))) await mkdir(dirname, { recursive: true });
       await copyFile(templatePath, writePath);
-      this.logger.verbose(
-        `Apply template ${templatePath} to ${convertedTargetPath}`,
-      );
+      this.logger.verbose(`Apply template ${templatePath} to ${convertedTargetPath}`);
       return { filePath: writePath, content: "" };
     } else return null;
   }
@@ -841,10 +725,7 @@ export class Executor {
     const dict = {
       ...(options.dict ?? {}),
       ...Object.fromEntries(
-        Object.entries(options.dict ?? {}).map(([key, value]) => [
-          capitalize(key),
-          capitalize(value),
-        ]),
+        Object.entries(options.dict ?? {}).map(([key, value]) => [capitalize(key), capitalize(value)]),
       ),
     };
     return this._applyTemplate({ ...options, dict });
@@ -856,8 +737,7 @@ export class Executor {
   typeCheck(filePath: string) {
     const path = this.getPath(filePath);
     const typeChecker = this.getTypeChecker();
-    const { fileDiagnostics, fileErrors, fileWarnings } =
-      typeChecker.check(path);
+    const { fileDiagnostics, fileErrors, fileWarnings } = typeChecker.check(path);
     const message = typeChecker.formatDiagnostics(fileDiagnostics);
     return { fileDiagnostics, fileErrors, fileWarnings, message };
   }
@@ -879,11 +759,7 @@ export class Executor {
       new Response(proc.stderr).text(),
       proc.exited,
     ]);
-    if (exitCode !== 0)
-      throw new Error(
-        (stderr || stdout).trim() ||
-          `Typecheck failed with exit code ${exitCode}`,
-      );
+    if (exitCode !== 0) throw new Error((stderr || stdout).trim() || `Typecheck failed with exit code ${exitCode}`);
 
     const result = JSON.parse(stdout) as {
       fileDiagnosticsCount: number;
@@ -901,23 +777,14 @@ export class Executor {
   async #resolveTypecheckWorkerEntry() {
     const dirname = getDirname(import.meta.url);
     const candidates = [
-      path.join(
-        process.cwd(),
-        "pkgs/@akanjs/devkit/typecheck/typecheck.proc.ts",
-      ),
-      path.join(
-        process.cwd(),
-        "node_modules/@akanjs/devkit/typecheck/typecheck.proc.ts",
-      ),
+      path.join(process.cwd(), "pkgs/@akanjs/devkit/typecheck/typecheck.proc.ts"),
+      path.join(process.cwd(), "node_modules/@akanjs/devkit/typecheck/typecheck.proc.ts"),
       path.join(dirname, "typecheck/typecheck.proc.ts"),
       path.join(dirname, "typecheck.proc.js"),
       path.join(dirname, "typecheck.proc.ts"),
     ];
-    for (const candidate of candidates)
-      if (await Bun.file(candidate).exists()) return candidate;
-    throw new Error(
-      `[devkit] typecheck worker entry not found; looked in: ${candidates.join(", ")}`,
-    );
+    for (const candidate of candidates) if (await Bun.file(candidate).exists()) return candidate;
+    throw new Error(`[devkit] typecheck worker entry not found; looked in: ${candidates.join(", ")}`);
   }
   getLinter() {
     this.linter ??= new Linter(this.cwdPath);
@@ -965,16 +832,11 @@ export class WorkspaceExecutor extends Executor {
     workspaceRoot?: string;
     repoName?: string;
   } = {}) {
-    return (
-      WorkspaceExecutor.#execs.get(repoName) ??
-      new WorkspaceExecutor({ workspaceRoot, repoName })
-    );
+    return WorkspaceExecutor.#execs.get(repoName) ?? new WorkspaceExecutor({ workspaceRoot, repoName });
   }
   static getBaseDevEnv(envPath?: string) {
     // Bun auto-loads .env, so we use process.env directly
-    const sourceEnv = envPath
-      ? { ...process.env, ...parseEnvFile(envPath) }
-      : process.env;
+    const sourceEnv = envPath ? { ...process.env, ...parseEnvFile(envPath) } : process.env;
 
     const appName = sourceEnv.AKAN_PUBLIC_APP_NAME;
     const workspaceRoot = sourceEnv.AKAN_WORKSPACE_ROOT;
@@ -1012,8 +874,7 @@ export class WorkspaceExecutor extends Executor {
     allowEmpty?: AllowEmpty;
   } = {}): AllowEmpty extends true ? string | undefined : string {
     const { workspaceId } = WorkspaceExecutor.getBaseDevEnv();
-    if (!workspaceId && !allowEmpty)
-      throw new Error("Workspace ID is not found");
+    if (!workspaceId && !allowEmpty) throw new Error("Workspace ID is not found");
     return workspaceId as AllowEmpty extends true ? string | undefined : string;
   }
   async scan(): Promise<WorkspaceInfo> {
@@ -1021,38 +882,22 @@ export class WorkspaceExecutor extends Executor {
   }
   async getApps() {
     if (!(await FileSys.dirExists(`${this.workspaceRoot}/apps`))) return [];
-    return await this.#getDirHasFile(
-      `${this.workspaceRoot}/apps`,
-      "akan.config.ts",
-    );
+    return await this.#getDirHasFile(`${this.workspaceRoot}/apps`, "akan.config.ts");
   }
   async getLibs() {
     if (!(await FileSys.dirExists(`${this.workspaceRoot}/libs`))) return [];
-    return await this.#getDirHasFile(
-      `${this.workspaceRoot}/libs`,
-      "akan.config.ts",
-    );
+    return await this.#getDirHasFile(`${this.workspaceRoot}/libs`, "akan.config.ts");
   }
   async getSyss() {
-    const [appNames, libNames] = await Promise.all([
-      this.getApps(),
-      this.getLibs(),
-    ]);
+    const [appNames, libNames] = await Promise.all([this.getApps(), this.getLibs()]);
     return [appNames, libNames] as [string[], string[]];
   }
   async getPkgs() {
     if (!(await FileSys.dirExists(`${this.workspaceRoot}/pkgs`))) return [];
-    return await this.#getDirHasFile(
-      `${this.workspaceRoot}/pkgs`,
-      "package.json",
-    );
+    return await this.#getDirHasFile(`${this.workspaceRoot}/pkgs`, "package.json");
   }
   async getExecs() {
-    const [appNames, libNames, pkgNames] = await Promise.all([
-      this.getApps(),
-      this.getLibs(),
-      this.getPkgs(),
-    ]);
+    const [appNames, libNames, pkgNames] = await Promise.all([this.getApps(), this.getLibs(), this.getPkgs()]);
     return [appNames, libNames, pkgNames] as [string[], string[], string[]];
   }
   async setPkgTsPaths(name: string) {
@@ -1061,11 +906,7 @@ export class WorkspaceExecutor extends Executor {
     rootTsConfig.compilerOptions.paths[name] = [`./pkgs/${name}/index.ts`];
     rootTsConfig.compilerOptions.paths[`${name}/*`] = [`./pkgs/${name}/*`];
     if (rootTsConfig.references) {
-      if (
-        !rootTsConfig.references.some(
-          (ref) => ref.path === `./pkgs/${name}/tsconfig.json`,
-        )
-      )
+      if (!rootTsConfig.references.some((ref) => ref.path === `./pkgs/${name}/tsconfig.json`))
         rootTsConfig.references.push({ path: `./pkgs/${name}/tsconfig.json` });
     }
     await this.writeJson("tsconfig.json", rootTsConfig);
@@ -1073,14 +914,11 @@ export class WorkspaceExecutor extends Executor {
   }
   async unsetPkgTsPaths(name: string) {
     const rootTsConfig = (await this.readJson("tsconfig.json")) as TsConfigJson;
-    const filteredKeys = Object.keys(
-      rootTsConfig.compilerOptions.paths ?? {},
-    ).filter((key) => key !== name && key !== `${name}/*`);
+    const filteredKeys = Object.keys(rootTsConfig.compilerOptions.paths ?? {}).filter(
+      (key) => key !== name && key !== `${name}/*`,
+    );
     rootTsConfig.compilerOptions.paths = Object.fromEntries(
-      filteredKeys.map((key) => [
-        key,
-        rootTsConfig.compilerOptions.paths?.[key] ?? [],
-      ]),
+      filteredKeys.map((key) => [key, rootTsConfig.compilerOptions.paths?.[key] ?? []]),
     );
     if (rootTsConfig.references) {
       rootTsConfig.references = rootTsConfig.references.filter(
@@ -1092,12 +930,7 @@ export class WorkspaceExecutor extends Executor {
   }
   async getDirInModule(basePath: string, name: string) {
     const AVOID_DIRS = ["__lib", "__scalar", `_`, `_${name}`];
-    const getDirs = async (
-      dirname: string,
-      maxDepth = 3,
-      results: string[] = [],
-      prefix = "",
-    ) => {
+    const getDirs = async (dirname: string, maxDepth = 3, results: string[] = [], prefix = "") => {
       const dirs = await this.readdir(dirname);
       await Promise.all(
         dirs.map(async (dir) => {
@@ -1105,8 +938,7 @@ export class WorkspaceExecutor extends Executor {
           const dirPath = path.join(dirname, dir);
           if ((await stat(dirPath)).isDirectory()) {
             results.push(`${prefix}${dir}`);
-            if (maxDepth > 0)
-              await getDirs(dirPath, maxDepth - 1, results, `${prefix}${dir}/`);
+            if (maxDepth > 0) await getDirs(dirPath, maxDepth - 1, results, `${prefix}${dir}/`);
           }
         }),
       );
@@ -1114,34 +946,23 @@ export class WorkspaceExecutor extends Executor {
     };
     return await getDirs(basePath);
   }
-  async commit(
-    message: string,
-    { init = false, add = true }: { init?: boolean; add?: boolean } = {},
-  ) {
+  async commit(message: string, { init = false, add = true }: { init?: boolean; add?: boolean } = {}) {
     if (init) await this.exec(`git init --quiet`);
     if (add) await this.exec(`git add .`);
     await this.exec(`git commit --quiet -m "${message}"`);
   }
   async #getDirHasFile(basePath: string, targetFilename: string) {
     const AVOID_DIRS = ["node_modules", "dist", "public", "webkit"];
-    const getDirs = async (
-      dirname: string,
-      maxDepth = 3,
-      results: string[] = [],
-      prefix = "",
-    ) => {
+    const getDirs = async (dirname: string, maxDepth = 3, results: string[] = [], prefix = "") => {
       const dirs = await this.readdir(dirname);
       await Promise.all(
         dirs.map(async (dir) => {
           if (AVOID_DIRS.includes(dir)) return;
           const dirPath = path.join(dirname, dir);
           if ((await stat(dirPath)).isDirectory()) {
-            const hasTargetFile = await FileSys.fileExists(
-              path.join(dirPath, targetFilename),
-            );
+            const hasTargetFile = await FileSys.fileExists(path.join(dirPath, targetFilename));
             if (hasTargetFile) results.push(`${prefix}${dir}`);
-            if (maxDepth > 0)
-              await getDirs(dirPath, maxDepth - 1, results, `${prefix}${dir}/`);
+            if (maxDepth > 0) await getDirs(dirPath, maxDepth - 1, results, `${prefix}${dir}/`);
           }
         }),
       );
@@ -1154,18 +975,10 @@ export class WorkspaceExecutor extends Executor {
     const [appNames, libNames] = await this.getSyss();
     const scalarConstantExampleFiles = [
       ...(
-        await Promise.all(
-          appNames.map((appName) =>
-            AppExecutor.from(this, appName).getScalarConstantFiles(),
-          ),
-        )
+        await Promise.all(appNames.map((appName) => AppExecutor.from(this, appName).getScalarConstantFiles()))
       ).flat(),
       ...(
-        await Promise.all(
-          libNames.map((libName) =>
-            LibExecutor.from(this, libName).getScalarConstantFiles(),
-          ),
-        )
+        await Promise.all(libNames.map((libName) => LibExecutor.from(this, libName).getScalarConstantFiles()))
       ).flat(),
     ];
     return scalarConstantExampleFiles;
@@ -1173,60 +986,24 @@ export class WorkspaceExecutor extends Executor {
   async getConstantFiles() {
     const [appNames, libNames] = await this.getSyss();
     const moduleConstantExampleFiles = [
-      ...(
-        await Promise.all(
-          appNames.map((appName) =>
-            AppExecutor.from(this, appName).getConstantFiles(),
-          ),
-        )
-      ).flat(),
-      ...(
-        await Promise.all(
-          libNames.map((libName) =>
-            LibExecutor.from(this, libName).getConstantFiles(),
-          ),
-        )
-      ).flat(),
+      ...(await Promise.all(appNames.map((appName) => AppExecutor.from(this, appName).getConstantFiles()))).flat(),
+      ...(await Promise.all(libNames.map((libName) => LibExecutor.from(this, libName).getConstantFiles()))).flat(),
     ];
     return moduleConstantExampleFiles;
   }
   async getDictionaryFiles() {
     const [appNames, libNames] = await this.getSyss();
     const moduleDictionaryExampleFiles = [
-      ...(
-        await Promise.all(
-          appNames.map((appName) =>
-            AppExecutor.from(this, appName).getDictionaryFiles(),
-          ),
-        )
-      ).flat(),
-      ...(
-        await Promise.all(
-          libNames.map((libName) =>
-            LibExecutor.from(this, libName).getDictionaryFiles(),
-          ),
-        )
-      ).flat(),
+      ...(await Promise.all(appNames.map((appName) => AppExecutor.from(this, appName).getDictionaryFiles()))).flat(),
+      ...(await Promise.all(libNames.map((libName) => LibExecutor.from(this, libName).getDictionaryFiles()))).flat(),
     ];
     return moduleDictionaryExampleFiles;
   }
   async getViewFiles() {
     const [appNames, libNames] = await this.getSyss();
     const viewExampleFiles = [
-      ...(
-        await Promise.all(
-          appNames.map((appName) =>
-            AppExecutor.from(this, appName).getViewsSourceCode(),
-          ),
-        )
-      ).flat(),
-      ...(
-        await Promise.all(
-          libNames.map((libName) =>
-            LibExecutor.from(this, libName).getViewsSourceCode(),
-          ),
-        )
-      ).flat(),
+      ...(await Promise.all(appNames.map((appName) => AppExecutor.from(this, appName).getViewsSourceCode()))).flat(),
+      ...(await Promise.all(libNames.map((libName) => LibExecutor.from(this, libName).getViewsSourceCode()))).flat(),
     ];
     return viewExampleFiles;
   }
@@ -1245,11 +1022,7 @@ export class SysExecutor extends Executor {
   override name: string;
   type: "app" | "lib";
   override emoji: string;
-  constructor({
-    workspace = WorkspaceExecutor.fromRoot(),
-    name,
-    type,
-  }: SysExecutorOptions) {
+  constructor({ workspace = WorkspaceExecutor.fromRoot(), name, type }: SysExecutorOptions) {
     super(name, `${workspace.workspaceRoot}/${type}s/${name}`);
     this.workspace = workspace;
     this.name = name;
@@ -1266,8 +1039,7 @@ export class SysExecutor extends Executor {
     return this.#akanConfig;
   }
   async getModules() {
-    const path =
-      this.type === "app" ? `apps/${this.name}/lib` : `libs/${this.name}/lib`;
+    const path = this.type === "app" ? `apps/${this.name}/lib` : `libs/${this.name}/lib`;
     return await this.workspace.getDirInModule(path, this.name);
   }
 
@@ -1279,26 +1051,17 @@ export class SysExecutor extends Executor {
     allowEmpty,
   }: {
     allowEmpty?: AllowEmpty;
-  } = {}): AllowEmpty extends true
-    ? AppInfo | LibInfo | null
-    : AppInfo | LibInfo {
-    if (!this.hasScanInfo() && !allowEmpty)
-      throw new Error("Scan info is not available");
-    return this.#scanInfo as AllowEmpty extends true
-      ? AppInfo | LibInfo | null
-      : AppInfo | LibInfo;
+  } = {}): AllowEmpty extends true ? AppInfo | LibInfo | null : AppInfo | LibInfo {
+    if (!this.hasScanInfo() && !allowEmpty) throw new Error("Scan info is not available");
+    return this.#scanInfo as AllowEmpty extends true ? AppInfo | LibInfo | null : AppInfo | LibInfo;
   }
-  #getScanTemplateTasks(
-    scanInfo: AppInfo | LibInfo,
-  ): (Promise<FileContent[]> | null)[] {
+  #getScanTemplateTasks(scanInfo: AppInfo | LibInfo): (Promise<FileContent[]> | null)[] {
     return [
       this._applyTemplate({ basePath: "env", template: "env", scanInfo }),
       this._applyTemplate({ basePath: "lib", template: "lib", scanInfo }),
       this._applyTemplate({ basePath: ".", template: "server.ts", scanInfo }),
       this._applyTemplate({ basePath: ".", template: "client.ts", scanInfo }),
-      this.type === "lib"
-        ? this._applyTemplate({ basePath: ".", template: "index.ts", scanInfo })
-        : null,
+      this.type === "lib" ? this._applyTemplate({ basePath: ".", template: "index.ts", scanInfo }) : null,
       ...scanFacetDirs.map((facet) =>
         this._applyTemplate({
           basePath: facet,
@@ -1359,11 +1122,7 @@ export class SysExecutor extends Executor {
       if (writeLib) {
         const libInfos = [...scanInfo.getLibInfos().values()];
         await this.#updateDependencies(scanInfo);
-        await Promise.all(
-          libInfos.flatMap((libInfo) =>
-            libInfo.exec.#getScanTemplateTasks(libInfo),
-          ),
-        );
+        await Promise.all(libInfos.flatMap((libInfo) => libInfo.exec.#getScanTemplateTasks(libInfo)));
       }
     }
     this.#scanInfo = scanInfo;
@@ -1380,9 +1139,7 @@ export class SysExecutor extends Executor {
       ...libPackageJson,
       dependencies: {
         ...Object.fromEntries(
-          Object.entries(libPackageJson.dependencies ?? {}).filter(
-            ([dep]) => !devDependencySet.has(dep),
-          ),
+          Object.entries(libPackageJson.dependencies ?? {}).filter(([dep]) => !devDependencySet.has(dep)),
         ),
         ...(Object.fromEntries(
           dependencies
@@ -1393,134 +1150,82 @@ export class SysExecutor extends Executor {
       },
       devDependencies: {
         ...Object.fromEntries(
-          Object.entries(libPackageJson.devDependencies ?? {}).filter(
-            ([dep]) => !dependencySet.has(dep),
-          ),
+          Object.entries(libPackageJson.devDependencies ?? {}).filter(([dep]) => !dependencySet.has(dep)),
         ),
         ...(Object.fromEntries(
           devDependencies
-            .filter(
-              (dep) =>
-                rootPackageJson.dependencies?.[dep] ||
-                rootPackageJson.devDependencies?.[dep],
-            )
+            .filter((dep) => rootPackageJson.dependencies?.[dep] || rootPackageJson.devDependencies?.[dep])
             .sort()
-            .map((dep) => [
-              dep,
-              rootPackageJson.devDependencies?.[dep] ??
-                rootPackageJson.dependencies?.[dep],
-            ]),
+            .map((dep) => [dep, rootPackageJson.devDependencies?.[dep] ?? rootPackageJson.dependencies?.[dep]]),
         ) as Record<string, string>),
       },
     };
     await this.setPackageJson(libPkgJsonWithDeps);
   }
   override async getLocalFile(targetPath: string) {
-    const filePath = path.isAbsolute(targetPath)
-      ? targetPath
-      : `${this.type}s/${this.name}/${targetPath}`;
+    const filePath = path.isAbsolute(targetPath) ? targetPath : `${this.type}s/${this.name}/${targetPath}`;
     const content = await this.workspace.readFile(filePath);
     return { filePath, content };
   }
 
   async getDatabaseModules() {
     const databaseModules = (await this.readdir("lib"))
-      .filter(
-        (name) =>
-          !name.startsWith("_") &&
-          !name.startsWith("__") &&
-          !name.endsWith(".ts"),
-      )
-      .filter((name) =>
-        Bun.file(`${this.cwdPath}/lib/${name}/${name}.constant.ts`).exists(),
-      );
+      .filter((name) => !name.startsWith("_") && !name.startsWith("__") && !name.endsWith(".ts"))
+      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${name}.constant.ts`).exists());
     return databaseModules;
   }
 
   async getServiceModules() {
     const serviceModules = (await this.readdir("lib"))
       .filter((name) => name.startsWith("_") && !name.startsWith("__"))
-      .filter((name) =>
-        Bun.file(`${this.cwdPath}/lib/${name}/${name}.service.ts`).exists(),
-      );
+      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${name}.service.ts`).exists());
     return serviceModules;
   }
 
   async getScalarModules() {
     const scalarModules = (await this.readdir("lib/__scalar"))
       .filter((name) => !name.startsWith("_"))
-      .filter((name) =>
-        Bun.file(
-          `${this.cwdPath}/lib/__scalar/${name}/${name}.constant.ts`,
-        ).exists(),
-      );
+      .filter((name) => Bun.file(`${this.cwdPath}/lib/__scalar/${name}/${name}.constant.ts`).exists());
     return scalarModules;
   }
 
   async getViewComponents() {
     const viewComponents = (await this.readdir("lib"))
-      .filter(
-        (name) =>
-          !name.startsWith("_") &&
-          !name.startsWith("__") &&
-          !name.endsWith(".ts"),
-      )
-      .filter((name) =>
-        Bun.file(`${this.cwdPath}/lib/${name}/${name}.View.tsx`).exists(),
-      );
+      .filter((name) => !name.startsWith("_") && !name.startsWith("__") && !name.endsWith(".ts"))
+      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${name}.View.tsx`).exists());
     return viewComponents;
   }
 
   async getUnitComponents() {
     const unitComponents = (await this.readdir("lib"))
-      .filter(
-        (name) =>
-          !name.startsWith("_") &&
-          !name.startsWith("__") &&
-          !name.endsWith(".ts"),
-      )
-      .filter((name) =>
-        Bun.file(`${this.cwdPath}/lib/${name}/${name}.Unit.tsx`).exists(),
-      );
+      .filter((name) => !name.startsWith("_") && !name.startsWith("__") && !name.endsWith(".ts"))
+      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${name}.Unit.tsx`).exists());
     return unitComponents;
   }
   async getTemplateComponents() {
     const templateComponents = (await this.readdir("lib"))
-      .filter(
-        (name) =>
-          !name.startsWith("_") &&
-          !name.startsWith("__") &&
-          !name.endsWith(".ts"),
-      )
-      .filter((name) =>
-        Bun.file(`${this.cwdPath}/lib/${name}/${name}.Template.tsx`).exists(),
-      );
+      .filter((name) => !name.startsWith("_") && !name.startsWith("__") && !name.endsWith(".ts"))
+      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${name}.Template.tsx`).exists());
     return templateComponents;
   }
 
   async getViewsSourceCode() {
     const viewComponents = await this.getViewComponents();
     return Promise.all(
-      viewComponents.map((viewComponent) =>
-        this.getLocalFile(`lib/${viewComponent}/${viewComponent}.View.tsx`),
-      ),
+      viewComponents.map((viewComponent) => this.getLocalFile(`lib/${viewComponent}/${viewComponent}.View.tsx`)),
     );
   }
   async getUnitsSourceCode() {
     const unitComponents = await this.getUnitComponents();
     return Promise.all(
-      unitComponents.map((unitComponent) =>
-        this.getLocalFile(`lib/${unitComponent}/${unitComponent}.Unit.tsx`),
-      ),
+      unitComponents.map((unitComponent) => this.getLocalFile(`lib/${unitComponent}/${unitComponent}.Unit.tsx`)),
     );
   }
   async getTemplatesSourceCode() {
     const templateComponents = await this.getTemplateComponents();
     return Promise.all(
       templateComponents.map((templateComponent) =>
-        this.getLocalFile(
-          `lib/${templateComponent}/${templateComponent}.Template.tsx`,
-        ),
+        this.getLocalFile(`lib/${templateComponent}/${templateComponent}.Template.tsx`),
       ),
     );
   }
@@ -1529,9 +1234,7 @@ export class SysExecutor extends Executor {
     const scalarModules = await this.getScalarModules();
     return Promise.all(
       scalarModules.map((scalarModule) =>
-        this.getLocalFile(
-          `lib/__scalar/${scalarModule}/${scalarModule}.constant.ts`,
-        ),
+        this.getLocalFile(`lib/__scalar/${scalarModule}/${scalarModule}.constant.ts`),
       ),
     );
   }
@@ -1539,19 +1242,13 @@ export class SysExecutor extends Executor {
   async getScalarDictionaryFiles() {
     const scalarModules = await this.getScalarModules();
     return Promise.all(
-      scalarModules.map((scalarModule) =>
-        this.getLocalFile(`lib/${scalarModule}/${scalarModule}.dictionary.ts`),
-      ),
+      scalarModules.map((scalarModule) => this.getLocalFile(`lib/${scalarModule}/${scalarModule}.dictionary.ts`)),
     );
   }
 
   async getConstantFiles() {
     const modules = await this.getModules();
-    return Promise.all(
-      modules.map((module) =>
-        this.getLocalFile(`lib/${module}/${module}.constant.ts`),
-      ),
-    );
+    return Promise.all(modules.map((module) => this.getLocalFile(`lib/${module}/${module}.constant.ts`)));
   }
   async getConstantFilesWithLibs() {
     const scanInfo =
@@ -1567,19 +1264,11 @@ export class SysExecutor extends Executor {
         ...(await LibExecutor.from(this, lib).getScalarConstantFiles()),
       ]),
     );
-    return [
-      ...sysContantFiles,
-      ...sysScalarConstantFiles,
-      ...libConstantFiles.flat(),
-    ];
+    return [...sysContantFiles, ...sysScalarConstantFiles, ...libConstantFiles.flat()];
   }
   async getDictionaryFiles() {
     const modules = await this.getModules();
-    return Promise.all(
-      modules.map((module) =>
-        this.getLocalFile(`lib/${module}/${module}.dictionary.ts`),
-      ),
-    );
+    return Promise.all(modules.map((module) => this.getLocalFile(`lib/${module}/${module}.dictionary.ts`)));
   }
   override async applyTemplate(options: {
     basePath: string;
@@ -1590,10 +1279,7 @@ export class SysExecutor extends Executor {
     const dict = {
       ...(options.dict ?? {}),
       ...Object.fromEntries(
-        Object.entries(options.dict ?? {}).map(([key, value]) => [
-          capitalize(key),
-          capitalize(value),
-        ]),
+        Object.entries(options.dict ?? {}).map(([key, value]) => [capitalize(key), capitalize(value)]),
       ),
     };
     const scanInfo = await this.scan();
@@ -1616,17 +1302,13 @@ export class AppExecutor extends SysExecutor {
   override emoji = execEmoji.app;
   constructor({ workspace, name }: AppExecutorOptions) {
     super({ workspace, name, type: "app" });
-    this.dist = new Executor(
-      `dist/${name}`,
-      `${this.workspace.workspaceRoot}/dist/apps/${name}`,
-    );
+    this.dist = new Executor(`dist/${name}`, `${this.workspace.workspaceRoot}/dist/apps/${name}`);
   }
   static #execs = new Map<string, AppExecutor>();
   static from(executor: SysExecutor | WorkspaceExecutor, name: string) {
     const exec = AppExecutor.#execs.get(name);
     if (exec) return exec;
-    else if (executor instanceof WorkspaceExecutor)
-      return new AppExecutor({ workspace: executor, name });
+    else if (executor instanceof WorkspaceExecutor) return new AppExecutor({ workspace: executor, name });
     else return new AppExecutor({ workspace: executor.workspace, name });
   }
   getEnv() {
@@ -1636,9 +1318,7 @@ export class AppExecutor extends SysExecutor {
     const basePort = 8282;
     const portOffset = WorkspaceExecutor.getBaseDevEnv().portOffset;
     const PORT = basePort ? (basePort + portOffset).toString() : undefined;
-    const AKAN_PUBLIC_SERVER_PORT = portOffset
-      ? (8282 + portOffset).toString()
-      : undefined;
+    const AKAN_PUBLIC_SERVER_PORT = portOffset ? (8282 + portOffset).toString() : undefined;
     return {
       ...process.env,
       AKAN_PUBLIC_APP_NAME: this.name,
@@ -1651,22 +1331,15 @@ export class AppExecutor extends SysExecutor {
   }
   async prepareCommand(type: "build" | "start") {
     const akanConfig = await this.getConfig();
-    const databaseMode =
-      process.env.AKAN_DATABASE_MODE ??
-      akanConfig.defaultDatabaseMode ??
-      "single";
+    const databaseMode = process.env.AKAN_DATABASE_MODE ?? akanConfig.defaultDatabaseMode ?? "single";
     const routeEnv = {
       AKAN_PUBLIC_BASE_PATHS: [...akanConfig.basePaths].join(","),
       AKAN_DATABASE_MODE: databaseMode,
     };
     Object.assign(process.env, routeEnv);
     if (type === "build") {
-      if (await this.exists(this.dist.cwdPath))
-        await this.dist.exec(`rm -rf ${this.dist.cwdPath}`);
-      await Promise.all([
-        this.dist.mkdir("private"),
-        this.dist.mkdir("public"),
-      ]);
+      if (await this.exists(this.dist.cwdPath)) await this.dist.exec(`rm -rf ${this.dist.cwdPath}`);
+      await Promise.all([this.dist.mkdir("private"), this.dist.mkdir("public")]);
       await Promise.all([
         this.cp("private", `${this.dist.cwdPath}/private`),
         this.cp("public", `${this.dist.cwdPath}/public`),
@@ -1704,11 +1377,7 @@ export class AppExecutor extends SysExecutor {
   }
 
   #pageKeys: string[] | null = null;
-  async getPageKeys({
-    refresh,
-  }: {
-    refresh?: boolean;
-  } = {}): Promise<string[]> {
+  async getPageKeys({ refresh }: { refresh?: boolean } = {}): Promise<string[]> {
     if (this.#pageKeys && !refresh) return this.#pageKeys;
     const akanConfig = await this.getConfig();
     const glob = new Bun.Glob("**/*");
@@ -1736,18 +1405,10 @@ export class AppExecutor extends SysExecutor {
       });
       const parsed = parseRouteModuleKey(key);
       if (parsed.isInternalRootLayout) {
-        throw new Error(
-          `[route-convention] __root_layout is reserved for Akan.js generated root layout: ${absPath}`,
-        );
+        throw new Error(`[route-convention] __root_layout is reserved for Akan.js generated root layout: ${absPath}`);
       }
-      const isRootLayout =
-        parsed.kind === "layout" && parsed.moduleSegments.at(-1) === "_layout";
-      validateRouteSourceExports(
-        await Bun.file(absPath).text(),
-        absPath,
-        parsed.kind,
-        { rootLayout: isRootLayout },
-      );
+      const isRootLayout = parsed.kind === "layout" && parsed.moduleSegments.at(-1) === "_layout";
+      validateRouteSourceExports(await Bun.file(absPath).text(), absPath, parsed.kind, { rootLayout: isRootLayout });
       pageKeys.push(key);
     }
     pageKeys.sort();
@@ -1763,56 +1424,27 @@ export class AppExecutor extends SysExecutor {
     const projectAssetsPath = `${this.cwdPath}/private`;
     const projectPublicLibPath = `${projectPublicPath}/libs`;
     const projectAssetsLibPath = `${projectAssetsPath}/libs`;
-    await Promise.all([
-      this.removeDir(projectPublicLibPath),
-      this.removeDir(projectAssetsLibPath),
-    ]);
+    await Promise.all([this.removeDir(projectPublicLibPath), this.removeDir(projectAssetsLibPath)]);
     const targetPublicDeps = [] as string[];
     for (const dep of libDeps) {
-      if (
-        await this.exists(`${this.workspace.workspaceRoot}/libs/${dep}/public`)
-      )
-        targetPublicDeps.push(dep);
+      if (await this.exists(`${this.workspace.workspaceRoot}/libs/${dep}/public`)) targetPublicDeps.push(dep);
     }
     const targetAssetsDeps = [] as string[];
     for (const dep of libDeps) {
-      if (
-        await this.exists(`${this.workspace.workspaceRoot}/libs/${dep}/private`)
-      )
-        targetAssetsDeps.push(dep);
+      if (await this.exists(`${this.workspace.workspaceRoot}/libs/${dep}/private`)) targetAssetsDeps.push(dep);
     }
-    await Promise.all(
-      targetPublicDeps.map((dep) =>
-        this.mkdir(`${projectPublicLibPath}/${dep}`),
-      ),
-    );
-    await Promise.all(
-      targetAssetsDeps.map((dep) =>
-        this.mkdir(`${projectAssetsLibPath}/${dep}`),
-      ),
-    );
+    await Promise.all(targetPublicDeps.map((dep) => this.mkdir(`${projectPublicLibPath}/${dep}`)));
+    await Promise.all(targetAssetsDeps.map((dep) => this.mkdir(`${projectAssetsLibPath}/${dep}`)));
     await Promise.all([
       ...targetPublicDeps.map((dep) =>
-        this.cp(
-          `${this.workspace.workspaceRoot}/libs/${dep}/public`,
-          `${projectPublicLibPath}/${dep}`,
-        ),
+        this.cp(`${this.workspace.workspaceRoot}/libs/${dep}/public`, `${projectPublicLibPath}/${dep}`),
       ),
       ...targetAssetsDeps.map((dep) =>
-        this.cp(
-          `${this.workspace.workspaceRoot}/libs/${dep}/private`,
-          `${projectAssetsLibPath}/${dep}`,
-        ),
+        this.cp(`${this.workspace.workspaceRoot}/libs/${dep}/private`, `${projectAssetsLibPath}/${dep}`),
       ),
     ]);
   }
-  async scanSync({
-    refresh = false,
-    write = true,
-  }: {
-    refresh?: boolean;
-    write?: boolean;
-  } = {}) {
+  async scanSync({ refresh = false, write = true }: { refresh?: boolean; write?: boolean } = {}) {
     const scanInfo = (await this.scan({
       refresh,
       write,
@@ -1837,17 +1469,13 @@ export class LibExecutor extends SysExecutor {
   override emoji = execEmoji.lib;
   constructor({ workspace, name }: LibExecutorOptions) {
     super({ workspace, name, type: "lib" });
-    this.dist = new Executor(
-      `dist/${name}`,
-      `${this.workspace.workspaceRoot}/dist/libs/${name}`,
-    );
+    this.dist = new Executor(`dist/${name}`, `${this.workspace.workspaceRoot}/dist/libs/${name}`);
   }
   static #execs = new Map<string, LibExecutor>();
   static from(executor: SysExecutor | WorkspaceExecutor, name: string) {
     const exec = LibExecutor.#execs.get(name);
     if (exec) return exec;
-    else if (executor instanceof WorkspaceExecutor)
-      return new LibExecutor({ workspace: executor, name });
+    else if (executor instanceof WorkspaceExecutor) return new LibExecutor({ workspace: executor, name });
     else return new LibExecutor({ workspace: executor.workspace, name });
   }
 
@@ -1868,21 +1496,14 @@ export class PkgExecutor extends Executor {
   override name: string;
   dist: Executor;
   override emoji = execEmoji.pkg;
-  constructor({
-    workspace = WorkspaceExecutor.fromRoot(),
-    name,
-  }: PkgExecutorOptions) {
+  constructor({ workspace = WorkspaceExecutor.fromRoot(), name }: PkgExecutorOptions) {
     super(name, `${workspace.workspaceRoot}/pkgs/${name}`);
     this.workspace = workspace;
     this.name = name;
-    this.dist = new Executor(
-      `dist/${name}`,
-      `${this.workspace.workspaceRoot}/dist/pkgs/${name}`,
-    );
+    this.dist = new Executor(`dist/${name}`, `${this.workspace.workspaceRoot}/dist/pkgs/${name}`);
   }
   static from(executor: SysExecutor | WorkspaceExecutor, name: string) {
-    if (executor instanceof WorkspaceExecutor)
-      return new PkgExecutor({ workspace: executor, name });
+    if (executor instanceof WorkspaceExecutor) return new PkgExecutor({ workspace: executor, name });
     return new PkgExecutor({ workspace: executor.workspace, name });
   }
 
@@ -1894,10 +1515,7 @@ export class PkgExecutor extends Executor {
     this.#scanInfo = scanInfo;
     return scanInfo;
   }
-  async #getDependencyVersion(
-    rootPackageJson: PackageJson,
-    dep: string,
-  ): Promise<string | undefined> {
+  async #getDependencyVersion(rootPackageJson: PackageJson, dep: string): Promise<string | undefined> {
     const rootDeps = {
       ...rootPackageJson.dependencies,
       ...rootPackageJson.devDependencies,
@@ -1907,15 +1525,9 @@ export class PkgExecutor extends Executor {
 
     try {
       const packageJsonPath = `pkgs/${dep}/package.json`;
-      if (
-        !(await Bun.file(
-          path.join(this.workspace.workspaceRoot, packageJsonPath),
-        ).exists())
-      )
-        return undefined;
+      if (!(await Bun.file(path.join(this.workspace.workspaceRoot, packageJsonPath)).exists())) return undefined;
       const packageJson = await this.workspace.readJson(packageJsonPath);
-      if ((packageJson as PackageJson).name === dep)
-        return (packageJson as PackageJson).version;
+      if ((packageJson as PackageJson).name === dep) return (packageJson as PackageJson).version;
     } catch {
       return undefined;
     }
@@ -1926,9 +1538,7 @@ export class PkgExecutor extends Executor {
     devDependencies: string[] = [],
   ): Promise<Pick<PackageJson, "dependencies" | "devDependencies">> {
     const dependencyNames = [...new Set(dependencies)].sort();
-    const devDependencyNames = [...new Set(devDependencies)]
-      .filter((dep) => !dependencyNames.includes(dep))
-      .sort();
+    const devDependencyNames = [...new Set(devDependencies)].filter((dep) => !dependencyNames.includes(dep)).sort();
     const dependencyVersions = new Map<string, string>();
     const missingDeps: string[] = [];
     for (const dep of [...dependencyNames, ...devDependencyNames]) {
@@ -1937,40 +1547,26 @@ export class PkgExecutor extends Executor {
       else missingDeps.push(dep);
     }
     if (missingDeps.length > 0)
-      throw new Error(
-        `Missing dependency versions in root package.json: ${missingDeps.join(", ")}`,
-      );
+      throw new Error(`Missing dependency versions in root package.json: ${missingDeps.join(", ")}`);
 
     const toDependencyEntries = (names: string[]) =>
       names.map((dep) => {
         const version = dependencyVersions.get(dep);
-        if (!version)
-          throw new Error(
-            `Missing dependency versions in root package.json: ${dep}`,
-          );
+        if (!version) throw new Error(`Missing dependency versions in root package.json: ${dep}`);
         return [dep, version] as const;
       });
 
     return {
       dependencies: Object.fromEntries(toDependencyEntries(dependencyNames)),
-      devDependencies: Object.fromEntries(
-        toDependencyEntries(devDependencyNames),
-      ),
+      devDependencies: Object.fromEntries(toDependencyEntries(devDependencyNames)),
     };
   }
   async updatePackageJsonDependencies(
     dependencies: string[] = [],
     devDependencies: string[] = [],
   ): Promise<PackageJson> {
-    const [rootPackageJson, pkgJson] = await Promise.all([
-      this.workspace.getPackageJson(),
-      this.getPackageJson(),
-    ]);
-    const dependencyMaps = await this.#toDependencyMap(
-      rootPackageJson,
-      dependencies,
-      devDependencies,
-    );
+    const [rootPackageJson, pkgJson] = await Promise.all([this.workspace.getPackageJson(), this.getPackageJson()]);
+    const dependencyMaps = await this.#toDependencyMap(rootPackageJson, dependencies, devDependencies);
     const newPkgJson = {
       ...pkgJson,
       ...dependencyMaps,
@@ -1978,19 +1574,9 @@ export class PkgExecutor extends Executor {
     await this.writeJson("package.json", newPkgJson);
     return newPkgJson;
   }
-  async generateDistPackageJson(
-    dependencies: string[] = [],
-    devDependencies: string[] = [],
-  ): Promise<PackageJson> {
-    const [rootPackageJson, pkgJson] = await Promise.all([
-      this.workspace.getPackageJson(),
-      this.getPackageJson(),
-    ]);
-    const dependencyMaps = await this.#toDependencyMap(
-      rootPackageJson,
-      dependencies,
-      devDependencies,
-    );
+  async generateDistPackageJson(dependencies: string[] = [], devDependencies: string[] = []): Promise<PackageJson> {
+    const [rootPackageJson, pkgJson] = await Promise.all([this.workspace.getPackageJson(), this.getPackageJson()]);
+    const dependencyMaps = await this.#toDependencyMap(rootPackageJson, dependencies, devDependencies);
     const distPkgJson: PackageJson = {
       ...pkgJson,
       type: "module",
@@ -2005,10 +1591,7 @@ export class PkgExecutor extends Executor {
       engines: { bun: ">=1.3.13" },
       ...dependencyMaps,
     };
-    await Promise.all([
-      this.dist.writeJson("package.json", distPkgJson),
-      this.writeJson("package.json", distPkgJson),
-    ]);
+    await Promise.all([this.dist.writeJson("package.json", distPkgJson), this.writeJson("package.json", distPkgJson)]);
     return distPkgJson;
   }
   async build(): Promise<void> {
@@ -2021,10 +1604,7 @@ export class PkgExecutor extends Executor {
     await this.cp(`${this.cwdPath}/dist`, this.dist.cwdPath);
   }
   async generateTsconfigJson(): Promise<TsConfigJson> {
-    const [rootTsconfig, pkgTsconfig] = await Promise.all([
-      this.workspace.getTsConfig(),
-      this.getTsConfig(),
-    ]);
+    const [rootTsconfig, pkgTsconfig] = await Promise.all([this.workspace.getTsConfig(), this.getTsConfig()]);
     const tsconfig: TsConfigJson = {
       ...rootTsconfig,
       ...pkgTsconfig,
@@ -2047,10 +1627,7 @@ export class ModuleExecutor extends Executor {
   sys: SysExecutor;
   override emoji = execEmoji.module;
   constructor({ sys, name }: ModuleExecutorOptions) {
-    super(
-      name,
-      `${sys.workspace.workspaceRoot}/${sys.type}s/${sys.name}/lib/${name}`,
-    );
+    super(name, `${sys.workspace.workspaceRoot}/${sys.type}s/${sys.name}/lib/${name}`);
     this.sys = sys;
   }
   static from(sysExecutor: SysExecutor, name: string) {
