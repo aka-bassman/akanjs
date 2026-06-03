@@ -42,9 +42,7 @@ const createStartApp = ({
     },
     recorder,
   );
-  const getMissingDatabaseModeDependencySpecs = mock(
-    (mode: DatabaseMode) => installSpecsByMode[mode] ?? [],
-  );
+  const getMissingDatabaseModeDependencySpecs = mock((mode: DatabaseMode) => installSpecsByMode[mode] ?? []);
   const akanConfig = {
     defaultDatabaseMode: databaseMode,
     getMissingDatabaseModeDependencySpecs,
@@ -70,31 +68,22 @@ const createStartApp = ({
 afterEach(async () => {
   CommandContainer.clear();
   mock.restore();
-  await Promise.all(
-    tempRoots.splice(0).map((root) => cleanupCliTempWorkspace(root)),
-  );
+  await Promise.all(tempRoots.splice(0).map((root) => cleanupCliTempWorkspace(root)));
 });
 
 describe("ApplicationCommand", () => {
   test("exposes command metadata and delegates normalized app creation", async () => {
     const metas = Object.fromEntries(
-      getArgMetas(ApplicationCommand, "createApplication")[0].map((arg) => [
-        arg.idx,
-        arg.type,
-      ]),
+      getArgMetas(ApplicationCommand, "createApplication")[0].map((arg) => [arg.idx, arg.type]),
     );
     expect(metas).toEqual({ 0: "Argument", 1: "Option", 2: "Workspace" });
 
     const command = CommandContainer.get(ApplicationCommand);
     const calls: unknown[] = [];
-    command.applicationScript.createApplication = async (
-      ...args: unknown[]
-    ) => {
+    command.applicationScript.createApplication = async (...args: unknown[]) => {
       calls.push(args);
     };
-    const handler = getTargetMetas(ApplicationCommand).find(
-      (meta) => meta.key === "createApplication",
-    )?.handler;
+    const handler = getTargetMetas(ApplicationCommand).find((meta) => meta.key === "createApplication")?.handler;
     await handler?.call(command, "My App", true, { name: "workspace" });
     expect(calls).toEqual([["my-app", { name: "workspace" }, { start: true }]]);
   });
@@ -103,11 +92,8 @@ describe("ApplicationCommand", () => {
 describe("ApplicationScript", () => {
   test("start skips dependency install for single database mode", async () => {
     const script = CommandContainer.get(ApplicationScript);
-    const { app, getMissingDatabaseModeDependencySpecs, recorder } =
-      createStartApp();
-    script.confirmDatabaseModeDependencyInstall = async (
-      ...args: unknown[]
-    ) => {
+    const { app, getMissingDatabaseModeDependencySpecs, recorder } = createStartApp();
+    script.confirmDatabaseModeDependencyInstall = async (...args: unknown[]) => {
       recorder.record("confirmInstall", ...args);
       return true;
     };
@@ -124,9 +110,7 @@ describe("ApplicationScript", () => {
 
     await script.start(app as never, { write: false });
 
-    expect(getMissingDatabaseModeDependencySpecs).toHaveBeenCalledWith(
-      "single",
-    );
+    expect(getMissingDatabaseModeDependencySpecs).toHaveBeenCalledWith("single");
     expect(recorder.names()).not.toContain("confirmInstall");
     expect(recorder.names()).not.toContain("workspace.spawn");
     expect(recorder.names()).not.toContain("dbup");
@@ -135,19 +119,12 @@ describe("ApplicationScript", () => {
 
   test("start confirms and installs missing multiple-mode dependencies before dbup", async () => {
     const script = CommandContainer.get(ApplicationScript);
-    const installSpecs = [
-      "@libsql/client@^0.17.3",
-      "bullmq@^5.76.10",
-      "ioredis@^5.10.1",
-      "protobufjs@^8.4.0",
-    ];
+    const installSpecs = ["@libsql/client@^0.17.3", "bullmq@^5.76.10", "ioredis@^5.10.1", "protobufjs@^8.4.0"];
     const { app, recorder } = createStartApp({
       databaseMode: "multiple",
       installSpecsByMode: { multiple: installSpecs },
     });
-    script.confirmDatabaseModeDependencyInstall = async (
-      ...args: unknown[]
-    ) => {
+    script.confirmDatabaseModeDependencyInstall = async (...args: unknown[]) => {
       recorder.record("confirmInstall", ...args);
       return true;
     };
@@ -176,12 +153,8 @@ describe("ApplicationScript", () => {
       name: "workspace.getPackageJson",
       args: [{ refresh: true }],
     });
-    expect(recorder.names().indexOf("workspace.spawn")).toBeLessThan(
-      recorder.names().indexOf("dbup"),
-    );
-    expect(recorder.names().indexOf("dbup")).toBeLessThan(
-      recorder.names().indexOf("runner.start"),
-    );
+    expect(recorder.names().indexOf("workspace.spawn")).toBeLessThan(recorder.names().indexOf("dbup"));
+    expect(recorder.names().indexOf("dbup")).toBeLessThan(recorder.names().indexOf("runner.start"));
   });
 
   test("start aborts before install and startup when dependency install is declined", async () => {
@@ -191,9 +164,7 @@ describe("ApplicationScript", () => {
       databaseMode: "multiple",
       installSpecsByMode: { multiple: installSpecs },
     });
-    script.confirmDatabaseModeDependencyInstall = async (
-      ...args: unknown[]
-    ) => {
+    script.confirmDatabaseModeDependencyInstall = async (...args: unknown[]) => {
       recorder.record("confirmInstall", ...args);
       return false;
     };
@@ -224,9 +195,7 @@ describe("ApplicationScript", () => {
   test("start does not reinstall existing database-mode dependencies", async () => {
     const script = CommandContainer.get(ApplicationScript);
     const { app, recorder } = createStartApp({ databaseMode: "multiple" });
-    script.confirmDatabaseModeDependencyInstall = async (
-      ...args: unknown[]
-    ) => {
+    script.confirmDatabaseModeDependencyInstall = async (...args: unknown[]) => {
       recorder.record("confirmInstall", ...args);
       return true;
     };
@@ -254,20 +223,12 @@ describe("ApplicationScript", () => {
     process.env.AKAN_DATABASE_MODE = "cluster";
     try {
       const script = CommandContainer.get(ApplicationScript);
-      const clusterSpecs = [
-        "bullmq@^5.76.10",
-        "ioredis@^5.10.1",
-        "postgres@^3.4.9",
-        "protobufjs@^8.4.0",
-      ];
-      const { app, getMissingDatabaseModeDependencySpecs, recorder } =
-        createStartApp({
-          databaseMode: "multiple",
-          installSpecsByMode: { cluster: clusterSpecs },
-        });
-      script.confirmDatabaseModeDependencyInstall = async (
-        ...args: unknown[]
-      ) => {
+      const clusterSpecs = ["bullmq@^5.76.10", "ioredis@^5.10.1", "postgres@^3.4.9", "protobufjs@^8.4.0"];
+      const { app, getMissingDatabaseModeDependencySpecs, recorder } = createStartApp({
+        databaseMode: "multiple",
+        installSpecsByMode: { cluster: clusterSpecs },
+      });
+      script.confirmDatabaseModeDependencyInstall = async (...args: unknown[]) => {
         recorder.record("confirmInstall", ...args);
         return true;
       };
@@ -284,9 +245,7 @@ describe("ApplicationScript", () => {
 
       await script.start(app as never, { write: false });
 
-      expect(getMissingDatabaseModeDependencySpecs).toHaveBeenCalledWith(
-        "cluster",
-      );
+      expect(getMissingDatabaseModeDependencySpecs).toHaveBeenCalledWith("cluster");
       expect(recorder.calls).toContainEqual({
         name: "confirmInstall",
         args: ["cluster", clusterSpecs],
@@ -296,8 +255,7 @@ describe("ApplicationScript", () => {
         args: ["bun", ["add", ...clusterSpecs], { stdio: "inherit" }],
       });
     } finally {
-      if (previousDatabaseMode === undefined)
-        delete process.env.AKAN_DATABASE_MODE;
+      if (previousDatabaseMode === undefined) delete process.env.AKAN_DATABASE_MODE;
       else process.env.AKAN_DATABASE_MODE = previousDatabaseMode;
     }
   });
@@ -313,10 +271,7 @@ describe("ApplicationScript", () => {
       createFakeExecutor("lib", { type: "lib" }, recorder),
       LibExecutor.prototype,
     ) as LibExecutor;
-    const pkg = Object.setPrototypeOf(
-      createFakeExecutor("pkg", {}, recorder),
-      PkgExecutor.prototype,
-    ) as PkgExecutor;
+    const pkg = Object.setPrototypeOf(createFakeExecutor("pkg", {}, recorder), PkgExecutor.prototype) as PkgExecutor;
 
     script.libraryScript.syncLibrary = async (target: unknown) => {
       recorder.record("syncLibrary", target);
@@ -352,15 +307,14 @@ describe("ApplicationScript", () => {
     const app = createFakeExecutor(
       "demo",
       {
-        scanSync: async (...args: unknown[]) =>
-          recorder.record("scanSync", ...args),
+        scanSync: async (...args: unknown[]) => recorder.record("scanSync", ...args),
       },
       recorder,
     );
 
-    await expect(
-      script.releaseAndroid(app as never, "apk", { env: "local" }),
-    ).rejects.toThrow("--env local is blocked");
+    await expect(script.releaseAndroid(app as never, "apk", { env: "local" })).rejects.toThrow(
+      "--env local is blocked",
+    );
     expect(recorder.names()).toEqual(["scanSync"]);
   });
 });
@@ -378,12 +332,8 @@ describe("ApplicationRunner", () => {
       AKAN_PUBLIC_APP_NAME: "demo",
     });
 
-    await expect(runner.runScript(app, "../secret")).rejects.toThrow(
-      "Invalid script filename",
-    );
-    await expect(runner.runScript(app, "missing")).rejects.toThrow(
-      "Script file not found",
-    );
+    await expect(runner.runScript(app, "../secret")).rejects.toThrow("Invalid script filename");
+    await expect(runner.runScript(app, "missing")).rejects.toThrow("Script file not found");
 
     await runner.runScript(app, "hello.ts");
     expect(spawn).toHaveBeenCalledWith("bun", ["script/hello.ts"], {
@@ -416,22 +366,27 @@ describe("ApplicationRunner", () => {
         exports: { "./package.json": "./package.json" },
       }),
     );
-    await writeText(
-      `${root}/node_modules/akanjs/test/signalTest.preload.ts`,
-      "export {};\n",
-    );
+    await writeText(`${root}/node_modules/akanjs/test/signalTest.preload.ts`, "export {};\n");
     const runner = new ApplicationRunner();
     const spawn = mock(async () => "");
     lib.spawn = spawn as never;
 
     await runner.test(lib);
 
-    expect(spawn).toHaveBeenCalledWith("bun", [
-      "test",
-      "--isolate",
-      "--preload",
-      expect.stringContaining("node_modules/akanjs/test/signalTest.preload.ts"),
-    ]);
+    expect(spawn).toHaveBeenCalledWith(
+      "bun",
+      ["test", "--isolate", "--preload", expect.stringContaining("node_modules/akanjs/test/signalTest.preload.ts")],
+      {
+        env: {
+          ...process.env,
+          AKAN_TEST_SIGNAL: "1",
+          AKAN_TEST_TARGET_TYPE: "lib",
+          AKAN_TEST_TARGET_NAME: "shared",
+          AKAN_TEST_LIBS: "",
+        },
+        stdio: "inherit",
+      },
+    );
   });
 
   test("runs bun test through the resolved executor", async () => {
@@ -458,10 +413,7 @@ describe("ApplicationRunner", () => {
         exports: { "./package.json": "./package.json" },
       }),
     );
-    await writeText(
-      `${root}/node_modules/akanjs/test/signalTest.preload.ts`,
-      "export {};\n",
-    );
+    await writeText(`${root}/node_modules/akanjs/test/signalTest.preload.ts`, "export {};\n");
     const runner = new ApplicationRunner();
     const spawn = mock(async () => "");
     lib.spawn = spawn as never;
@@ -470,14 +422,7 @@ describe("ApplicationRunner", () => {
 
     expect(spawn).toHaveBeenCalledWith(
       "bun",
-      [
-        "test",
-        "--isolate",
-        "--preload",
-        expect.stringContaining(
-          "node_modules/akanjs/test/signalTest.preload.ts",
-        ),
-      ],
+      ["test", "--isolate", "--preload", expect.stringContaining("node_modules/akanjs/test/signalTest.preload.ts")],
       {
         env: {
           ...process.env,
