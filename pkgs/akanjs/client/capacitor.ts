@@ -169,58 +169,56 @@ const loadCapacitorModule = <K extends keyof CapacitorModuleMap>(
   return loaded;
 };
 
-const importNativeModule = <T>(specifier: string) => import(specifier) as Promise<T>;
-
-const capacitorPackage = (name: string) => `@capacitor/${name}`;
-
-const capacitorCommunityPackage = (name: string) => `@capacitor-community/${name}`;
+const asCapacitorModule = <T>(modulePromise: Promise<unknown>) => modulePromise as Promise<T>;
 
 export const loadCapacitorApp = () =>
-  loadCapacitorModule("app", () => importNativeModule<CapacitorAppModule>(capacitorPackage("app")));
+  loadCapacitorModule("app", () => asCapacitorModule<CapacitorAppModule>(import("@capacitor/app")));
 
 export const loadCapacitorBrowser = () =>
-  loadCapacitorModule("browser", () => importNativeModule<CapacitorBrowserModule>(capacitorPackage("browser")));
+  loadCapacitorModule("browser", () => asCapacitorModule<CapacitorBrowserModule>(import("@capacitor/browser")));
 
 export const loadCapacitorCamera = () =>
-  loadCapacitorModule("camera", () => importNativeModule<CapacitorCameraModule>(capacitorPackage("camera")));
+  loadCapacitorModule("camera", () => asCapacitorModule<CapacitorCameraModule>(import("@capacitor/camera")));
 
 export const loadCapacitorContacts = () =>
   loadCapacitorModule("contacts", () =>
-    importNativeModule<CapacitorContactsModule>(capacitorCommunityPackage("contacts")),
+    asCapacitorModule<CapacitorContactsModule>(import("@capacitor-community/contacts")),
   );
 
 export const loadCapacitorCore = () =>
-  loadCapacitorModule("core", () => importNativeModule<CapacitorCoreModule>(capacitorPackage("core")));
+  loadCapacitorModule("core", () => asCapacitorModule<CapacitorCoreModule>(import("@capacitor/core")));
 
 export const loadCapacitorDevice = () =>
-  loadCapacitorModule("device", () => importNativeModule<CapacitorDeviceModule>(capacitorPackage("device")));
+  loadCapacitorModule("device", () => asCapacitorModule<CapacitorDeviceModule>(import("@capacitor/device")));
 
 export const loadCapacitorFcm = () =>
-  loadCapacitorModule("fcm", () => importNativeModule<CapacitorFcmModule>(capacitorCommunityPackage("fcm")));
+  loadCapacitorModule("fcm", () => asCapacitorModule<CapacitorFcmModule>(import("@capacitor-community/fcm")));
 
 export const loadCapacitorGeolocation = () =>
   loadCapacitorModule("geolocation", () =>
-    importNativeModule<CapacitorGeolocationModule>(capacitorPackage("geolocation")),
+    asCapacitorModule<CapacitorGeolocationModule>(import("@capacitor/geolocation")),
   );
 
 export const loadCapacitorHaptics = () =>
-  loadCapacitorModule("haptics", () => importNativeModule<CapacitorHapticsModule>(capacitorPackage("haptics")));
+  loadCapacitorModule("haptics", () => asCapacitorModule<CapacitorHapticsModule>(import("@capacitor/haptics")));
 
 export const loadCapacitorKeyboard = () =>
-  loadCapacitorModule("keyboard", () => importNativeModule<CapacitorKeyboardModule>(capacitorPackage("keyboard")));
+  loadCapacitorModule("keyboard", () => asCapacitorModule<CapacitorKeyboardModule>(import("@capacitor/keyboard")));
 
 export const loadCapacitorPreferences = () =>
   loadCapacitorModule("preferences", () =>
-    importNativeModule<CapacitorPreferencesModule>(capacitorPackage("preferences")),
+    asCapacitorModule<CapacitorPreferencesModule>(import("@capacitor/preferences")),
   );
 
 export const loadCapacitorPushNotifications = () =>
   loadCapacitorModule("pushNotifications", () =>
-    importNativeModule<CapacitorPushNotificationsModule>(capacitorPackage("push-notifications")),
+    asCapacitorModule<CapacitorPushNotificationsModule>(import("@capacitor/push-notifications")),
   );
 
 export const loadCapacitorSafeArea = () =>
-  loadCapacitorModule("safeArea", () => importNativeModule<CapacitorSafeAreaModule>("capacitor-plugin-safe-area"));
+  loadCapacitorModule("safeArea", () =>
+    asCapacitorModule<CapacitorSafeAreaModule>(import("capacitor-plugin-safe-area")),
+  );
 
 export const loadCapacitorUpdater = () =>
-  loadCapacitorModule("updater", () => importNativeModule<CapacitorUpdaterModule>("@capgo/capacitor-updater"));
+  loadCapacitorModule("updater", () => asCapacitorModule<CapacitorUpdaterModule>(import("@capgo/capacitor-updater")));

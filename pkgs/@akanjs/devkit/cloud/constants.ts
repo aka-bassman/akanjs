@@ -3,9 +3,8 @@ import type { SupportedLlmModel } from "../aiEditor";
 
 export const basePath = `${Bun.env.HOME ?? Bun.env.USERPROFILE}/.akan`;
 export const configPath = `${basePath}/config.json`;
-export const akanCloudHost =
-  process.env.AKAN_PUBLIC_OPERATION_MODE === "local" ? "http://localhost" : "https://cloud.akanjs.com";
-export const akanCloudUrl = `${akanCloudHost}${process.env.AKAN_PUBLIC_OPERATION_MODE === "local" ? ":8282" : ""}/api`;
+export const akanCloudHost = process.env.USE_AKANJS_PKGS === "true" ? "http://localhost" : "https://cloud.akanjs.com";
+export const akanCloudUrl = `${akanCloudHost}${process.env.USE_AKANJS_PKGS === "true" ? ":8282" : ""}/api`;
 
 export interface HostConfig {
   auth?: {

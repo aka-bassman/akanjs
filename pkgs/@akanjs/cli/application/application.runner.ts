@@ -139,7 +139,7 @@ export class ApplicationRunner extends runner("application") {
   ) {
     const targets = await resolveMobileTargets(app, target);
     if (operation === "release") await this.#buildMobileCsr(app, env);
-    else await this.start(app);
+    // else await this.start(app);
     await this.#runMobileTargets(targets, async (mobileTarget) => {
       const capacitorApp = new CapacitorApp(app, mobileTarget.config);
       await capacitorApp.runIos({ operation, env, regenerate });
@@ -186,7 +186,7 @@ export class ApplicationRunner extends runner("application") {
   ) {
     const targets = await resolveMobileTargets(app, target);
     if (operation === "release") await this.#buildMobileCsr(app, env);
-    else await this.start(app);
+    // else await this.start(app);
     await this.#runMobileTargets(targets, async (mobileTarget) => {
       const capacitorApp = new CapacitorApp(app, mobileTarget.config);
       await capacitorApp.runAndroid({ operation, env, regenerate });

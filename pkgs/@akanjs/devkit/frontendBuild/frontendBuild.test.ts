@@ -58,12 +58,40 @@ describe("PagesEntrySourceGenerator", () => {
         'import * as page0 from "/repo/apps/demo/page/_index.tsx";',
         'import * as page1 from "/repo/apps/demo/page/admin.tsx";',
         "export const pages = {",
-        '  "./_index.tsx": async () => page0,',
-        '  "./admin.tsx": async () => page1,',
+        '  "./_index.tsx": { loader: async () => page0, isAsyncDefault: false },',
+        '  "./admin.tsx": { loader: async () => page1, isAsyncDefault: false },',
         "};",
         "",
       ].join("\n"),
     );
+  });
+
+  test("marks async default exports for static CSR bundles", async () => {
+    const root = await makeTempRoot();
+    const indexPath = path.join(root, "page/_index.tsx");
+    const adminPath = path.join(root, "page/admin.tsx");
+    const typedPath = path.join(root, "page/typed.tsx");
+    const expressionPath = path.join(root, "page/expression.tsx");
+    const namedExportPath = path.join(root, "page/named-export.tsx");
+    await write(indexPath, "export default async function Page() { return null; }");
+    await write(adminPath, "const Admin = async () => null;\nexport default Admin;");
+    await write(typedPath, "const Typed: () => Promise<null> = async () => null;\nexport default Typed;");
+    await write(expressionPath, "export default async () => null;");
+    await write(namedExportPath, "async function NamedExport() { return null; }\nexport { NamedExport as default };");
+
+    const source = PagesEntrySourceGenerator.generateStatic([
+      { key: "./_index.tsx", moduleAbsPath: indexPath },
+      { key: "./admin.tsx", moduleAbsPath: adminPath },
+      { key: "./typed.tsx", moduleAbsPath: typedPath },
+      { key: "./expression.tsx", moduleAbsPath: expressionPath },
+      { key: "./named-export.tsx", moduleAbsPath: namedExportPath },
+    ]);
+
+    expect(source).toContain('"./_index.tsx": { loader: async () => page0, isAsyncDefault: true },');
+    expect(source).toContain('"./admin.tsx": { loader: async () => page1, isAsyncDefault: true },');
+    expect(source).toContain('"./typed.tsx": { loader: async () => page2, isAsyncDefault: true },');
+    expect(source).toContain('"./expression.tsx": { loader: async () => page3, isAsyncDefault: true },');
+    expect(source).toContain('"./named-export.tsx": { loader: async () => page4, isAsyncDefault: true },');
   });
 });
 
@@ -117,7 +145,8 @@ describe("SsrBaseArtifactBuilder", () => {
     const development = await prepareCssAsset("start", "", css);
     const production = await prepareCssAsset("build", "", css);
 
-    expect(development).toBe(css);
+    expect(development).toContain(".card");
+    expect(development).toContain("color: red");
     expect(production.length).toBeLessThan(css.length);
     expect(production).toContain(".card{");
     expect(production).not.toContain("\n  ");

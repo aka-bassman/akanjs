@@ -283,6 +283,7 @@ export class RouteTreeBuilder {
   static #makeRouteRender(key: string, kind: "page" | "layout", loader: () => Promise<RouteModule>): RouteRender {
     const loadModule = RouteTreeBuilder.#makeLazyModule(key, kind, loader);
     const routeRender: RouteRender = {
+      isAsync: true,
       render: async (props: LayoutProps | PageProps) => {
         const mod = await loadModule();
         routeRender.Loading = mod.Loading as never;

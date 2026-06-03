@@ -30,6 +30,8 @@ import { useCsrValues } from "./useCsrValues";
 import { useFetch } from "./useFetch";
 
 type RouteModuleWithConfig = RouteModule & { pageConfig?: PageConfig };
+type CsrRouteModuleLoader = () => Promise<RouteModule>;
+type CsrRouteModuleEntry = CsrRouteModuleLoader | { loader: CsrRouteModuleLoader; isAsyncDefault?: boolean };
 
 declare global {
   interface Window {
@@ -49,7 +51,7 @@ const RootRenderLayer = memo(({ renders, index, params, searchParams }: RootRend
     <RootRenderLayer renders={renders} index={index + 1} params={params} searchParams={searchParams} />
   );
   const routeRender = renders[index];
-  const isAsyncRender = routeRender?.render.constructor.name === "AsyncFunction";
+  const isAsyncRender = isAsyncRouteRender(routeRender);
   const resultRef = useRef<ReactNode | Promise<ReactNode> | null>(null);
   if (isAsyncRender && resultRef.current === null) {
     resultRef.current = routeRender?.render({ children, params, searchParams } as never) ?? null;
@@ -61,6 +63,10 @@ const RootRenderLayer = memo(({ renders, index, params, searchParams }: RootRend
   return Layout;
 });
 
+function isAsyncRouteRender(routeRender?: RouteRender): boolean {
+  return Boolean(routeRender?.isAsync || routeRender?.render.constructor.name === "AsyncFunction");
+}
+
 function composeLoadingFallback(renders: RouteRender[], params: Record<string, string>): ReactNode {
   let element: ReactNode = null;
   for (let i = renders.length - 1; i >= 0; i--) {
@@ -71,9 +77,10 @@ function composeLoadingFallback(renders: RouteRender[], params: Record<string, s
   return element;
 }
 
-export const bootCsr = async (context: Record<string, () => Promise<RouteModule>>) => {
+export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
   const i18n = parseAkanI18nEnv();
   window.document.body.style.overflow = "hidden";
+  initializeMobileTargetFromSearch();
   const mobileBasePath = window.__AKAN_MOBILE_TARGET__?.basePath?.replace(/^\/+|\/+$/g, "");
   const pathname = mobileBasePath && window.location.pathname === "/" ? `/${mobileBasePath}` : window.location.pathname;
   if (pathname === "/404") return;
@@ -95,6 +102,7 @@ export const bootCsr = async (context: Record<string, () => Promise<RouteModule>
   const otherBasePaths = basePaths?.filter((path) => path !== currentBasePath) ?? [];
 
   const pages: { [key: string]: RouteModule } = {};
+  const asyncDefaultMap: { [key: string]: boolean | undefined } = {};
   await Promise.all(
     Object.entries(context).map(async ([key, value]) => {
       const parsed = parseRouteModuleKey(key);
@@ -102,8 +110,10 @@ export const bootCsr = async (context: Record<string, () => Promise<RouteModule>
         const pageBasePath = parsed.sourceRouteSegments.find((segment) => !/^\(.+\)$/.test(segment));
         if (pageBasePath && otherBasePaths.includes(pageBasePath)) return; // ignore other base paths
       }
-      const pageContent = await value();
+      const entry = typeof value === "function" ? { loader: value } : value;
+      const pageContent = await entry.loader();
       validateRouteModuleExports(key, pageContent);
+      asyncDefaultMap[key] = entry.isAsyncDefault;
       if (pageContent.default) pages[key] = pageContent;
     }),
   );
@@ -157,6 +167,7 @@ export const bootCsr = async (context: Record<string, () => Promise<RouteModule>
     const layoutPage = parsed.kind === "layout" ? (page as LayoutModule) : null;
     const routeRender: RouteRender = {
       render: page.default as never,
+      isAsync: asyncDefaultMap[filePath] || page.default?.constructor.name === "AsyncFunction",
       Loading: page.Loading as never,
       NotFound: layoutPage?.NotFound,
       Error: layoutPage?.Error,
@@ -259,6 +270,17 @@ export const bootCsr = async (context: Record<string, () => Promise<RouteModule>
   const root = ReactDOM.createRoot(el);
   root.render(<RouterProvider />);
 };
+
+function initializeMobileTargetFromSearch() {
+  if (window.__AKAN_MOBILE_TARGET__) return;
+
+  const params = new URLSearchParams(window.location.search);
+  const name = params.get("akanMobileTarget");
+  if (!name) return;
+
+  const basePath = params.get("akanMobileBasePath")?.replace(/^\/+|\/+$/g, "") ?? "";
+  window.__AKAN_MOBILE_TARGET__ = { name, basePath };
+}
 
 function validateRouteModuleExports(key: string, mod: RouteModule) {
   const parsed = parseRouteModuleKey(key);

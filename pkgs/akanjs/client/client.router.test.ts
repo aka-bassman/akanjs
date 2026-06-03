@@ -157,6 +157,45 @@ describe("router", () => {
     globalThis.setTimeout = originalSetTimeout;
   });
 
+  test("csr navigation preserves csr runtime search params", async () => {
+    envState.side = "client";
+    installClientWindow("/en/admin/current", "?csr=true&akanMobileTarget=default&akanMobileBasePath=admin");
+    const originalSetTimeout = globalThis.setTimeout;
+    const mockSetTimeout = ((handler: TimerHandler) => {
+      timeoutCallbacks.push(() => {
+        if (typeof handler === "function") handler();
+      });
+      return timeoutCallbacks.length as unknown as ReturnType<typeof setTimeout>;
+    }) as unknown as typeof setTimeout;
+    globalThis.setTimeout = mockSetTimeout;
+    const calls: unknown[] = [];
+    const { router } = await import("./router");
+
+    router.init({
+      type: "csr",
+      lang: "en",
+      prefix: "admin",
+      router: {
+        push: (href, options) => calls.push(["push", href, options]),
+        replace: (href, options) => calls.push(["replace", href, options]),
+        back: (options) => calls.push(["back", options]),
+        refresh: () => calls.push(["refresh"]),
+      },
+    });
+
+    router.push("/users?tab=a#bio");
+    router.replace("/settings?csr=false");
+    timeoutCallbacks.splice(0).forEach((callback) => {
+      callback();
+    });
+
+    expect(calls).toEqual([
+      ["push", "/en/admin/users?tab=a&csr=true&akanMobileTarget=default&akanMobileBasePath=admin#bio", undefined],
+      ["replace", "/en/admin/settings?csr=false&akanMobileTarget=default&akanMobileBasePath=admin", undefined],
+    ]);
+    globalThis.setTimeout = originalSetTimeout;
+  });
+
   test("ssr client navigation hides base path outside local mode", async () => {
     envState.side = "client";
     envState.operationMode = "main";

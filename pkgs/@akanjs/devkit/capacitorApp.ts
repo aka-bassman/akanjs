@@ -27,6 +27,7 @@ export class CapacitorApp {
   readonly iosRootPath = "ios";
   readonly iosProjectPath = "ios/App";
   readonly androidRootPath = "android";
+  readonly androidAssetsPath = "android/app/src/main/assets";
   constructor(
     private readonly app: AppExecutor,
     readonly target: AkanMobileTargetConfig,
@@ -111,6 +112,7 @@ export class CapacitorApp {
     await this.#applyLinks();
     await this.project.commit();
     await this.#generateAssets({ operation, env });
+    await this.#ensureAndroidAssetsDir();
     await this.#spawnMobile("npx", ["cap", "sync", "android"], { operation, env });
   }
 
@@ -166,11 +168,14 @@ export class CapacitorApp {
     await this.app.spawn(gradleCommand, [assembleType === "apk" ? "assembleRelease" : "bundleRelease"], {
       stdio: "inherit",
       cwd: path.join(this.app.cwdPath, this.androidRootPath),
-      env: this.#commandEnv("release", env),
+      env: await this.#commandEnv("release", env),
     });
   }
   async openAndroid() {
     await this.#spawnMobile("npx", ["cap", "open", "android"], { operation: "local", env: "local" });
+  }
+  async #ensureAndroidAssetsDir() {
+    await mkdir(path.join(this.app.cwdPath, this.androidAssetsPath), { recursive: true });
   }
   async syncAndroid(options: { regenerate?: boolean } = {}) {
     await this.prepareWww();
@@ -217,7 +222,7 @@ export class CapacitorApp {
       .split(path.sep)
       .join("/");
     const content = `import type { AppScanResult } from "akanjs";
-import { withBase } from "akanjs/capacitor.base.config";
+import { withBase } from "${process.env.USE_AKANJS_PKGS === "true" ? "../../pkgs/" : ""}akanjs/capacitor.base.config";
 import appInfo from "${appInfoPath.startsWith(".") ? appInfoPath : `./${appInfoPath}`}";
 
 export default withBase(
@@ -331,12 +336,14 @@ export default withBase(
         );
     }
   }
-  #commandEnv(operation: "local" | "release", env: "local" | "debug" | "develop" | "main") {
+  async #commandEnv(operation: "local" | "release", env: "local" | "debug" | "develop" | "main") {
+    const devPort = operation === "local" ? (await this.app.getDevPort()).toString() : undefined;
     return this.app.getCommandEnv({
       APP_OPERATION_MODE: operation,
       AKAN_PUBLIC_OPERATION_MODE: env === "local" ? "local" : "cloud",
       AKAN_PUBLIC_ENV: env,
       AKAN_MOBILE_TARGET: this.target.name,
+      ...(devPort ? { PORT: devPort, AKAN_PUBLIC_CLIENT_PORT: devPort, AKAN_PUBLIC_SERVER_PORT: devPort } : {}),
     });
   }
   async #spawn(command: string, args: string[] = [], options: Parameters<AppExecutor["spawn"]>[2] = {}) {
@@ -350,7 +357,7 @@ export default withBase(
   ) {
     return await this.#spawn(command, args, {
       ...options,
-      env: { ...this.#commandEnv(operation, env), ...options.env },
+      env: { ...(await this.#commandEnv(operation, env)), ...options.env },
     });
   }
   async addCamera() {

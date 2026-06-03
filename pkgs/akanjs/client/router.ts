@@ -63,6 +63,7 @@ function getServerRequestContext() {
 const getConfiguredBasePaths = () => new Set(parseBasePaths(process.env.AKAN_PUBLIC_BASE_PATHS));
 
 const shouldExposeBasePath = () => getEnv().operationMode === "local";
+const CSR_RUNTIME_SEARCH_PARAMS = ["csr", "akanMobileTarget", "akanMobileBasePath"] as const;
 
 const getLocaleFromPathname = (pathname: string) => {
   const [firstSegment] = pathname.split("/").filter(Boolean);
@@ -173,14 +174,14 @@ class Router {
       push: (href: string, routeOptions) => {
         const { path, pathname, hash, href: fullHref } = this.#getPathInfo(href);
         this.#postPathChange({ path, pathname, hash });
-        options.router.push(fullHref, routeOptions);
+        options.router.push(this.#withCsrRuntimeSearchParams(fullHref), routeOptions);
       },
       replace: (href: string, routeOptions) => {
         const { path, pathname, hash, href: fullHref } = this.#getPathInfo(href);
         this.#postPathChange({ path, pathname, hash });
         // for avoiding set state while rendering in redirect
         setTimeout(() => {
-          options.router.replace(fullHref, routeOptions);
+          options.router.replace(this.#withCsrRuntimeSearchParams(fullHref), routeOptions);
         }, 0);
       },
       back: (routeOptions) => {
@@ -204,6 +205,21 @@ class Router {
   }
   #getNavigationPathInfo(href: string) {
     return this.#getPathInfo(href, shouldExposeBasePath() ? this.#prefix : "");
+  }
+  #withCsrRuntimeSearchParams(href: string) {
+    const currentSearch = new URLSearchParams(window.location.search);
+    if (currentSearch.get("csr") !== "true") return href;
+
+    const [hrefWithoutHash, hash = ""] = href.split("#");
+    const [pathname, search = ""] = hrefWithoutHash.split("?");
+    const nextSearch = new URLSearchParams(search);
+    for (const param of CSR_RUNTIME_SEARCH_PARAMS) {
+      if (nextSearch.has(param)) continue;
+      const value = currentSearch.get(param);
+      if (value !== null) nextSearch.set(param, value);
+    }
+    const query = nextSearch.toString();
+    return `${pathname}${query ? `?${query}` : ""}${hash ? `#${hash}` : ""}`;
   }
   #getVisiblePathInfo(href: string, lang = this.#lang) {
     return getPathInfo(href, lang, shouldExposeBasePath() ? this.#prefix : "");

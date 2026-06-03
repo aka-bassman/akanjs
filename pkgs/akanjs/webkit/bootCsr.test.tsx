@@ -134,4 +134,20 @@ describe("bootCsr", () => {
 
     expect(replacements).toEqual(["/en/home?a=1#top"]);
   });
+
+  test("initializes mobile target from local Capacitor CSR URL", async () => {
+    const replacements: string[] = [];
+    installWindow({
+      href: "https://example.test/en/?csr=true&akanMobileTarget=default&akanMobileBasePath=minimal",
+      replace: (href) => replacements.push(href),
+    });
+    const { bootCsr } = await import("./bootCsr");
+
+    await bootCsr({
+      "./_index.tsx": async () => ({ default: () => null }),
+    });
+
+    expect(window.__AKAN_MOBILE_TARGET__).toEqual({ name: "default", basePath: "minimal" });
+    expect(replacements).toEqual([]);
+  });
 });

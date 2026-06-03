@@ -396,7 +396,7 @@ const RenderLayer = memo(({ renders, index, params, searchParams }: RenderLayerP
     <RenderLayer renders={renders} index={index + 1} params={params} searchParams={searchParams} />
   );
   const routeRender = renders[index];
-  const isAsyncRender = routeRender?.render.constructor.name === "AsyncFunction";
+  const isAsyncRender = isAsyncRouteRender(routeRender);
   const resultRef = useRef<ReactNode | Promise<ReactNode> | null>(null);
   if (isAsyncRender && resultRef.current === null) {
     resultRef.current = routeRender?.render({ children, params, searchParams } as never) ?? null;
@@ -407,6 +407,10 @@ const RenderLayer = memo(({ renders, index, params, searchParams }: RenderLayerP
   if (!fulfilled || !Component) return <>{composeLoadingFallback(renders.slice(index), params)}</>;
   return <>{Component}</>;
 });
+
+function isAsyncRouteRender(routeRender?: RouteRender): boolean {
+  return Boolean(routeRender?.isAsync || routeRender?.render.constructor.name === "AsyncFunction");
+}
 
 function composeLoadingFallback(renders: RouteRender[], params: Record<string, string>): ReactNode {
   let element: ReactNode = null;

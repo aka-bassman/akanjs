@@ -70,6 +70,7 @@ export type LayoutNotFoundRender = (props: LayoutNotFoundProps) => PromiseOrObje
 export type LayoutErrorRender = (props: LayoutErrorProps) => PromiseOrObject<ReactNode>;
 export interface RouteRender {
   render: LayoutRender | PageRender;
+  isAsync?: boolean;
   Loading?: LayoutLoadingRender | PageLoadingRender;
   NotFound?: LayoutNotFoundRender;
   Error?: LayoutErrorRender;

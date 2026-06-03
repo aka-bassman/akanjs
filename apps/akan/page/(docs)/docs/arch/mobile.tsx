@@ -302,6 +302,42 @@ export const pageConfig = {
 akan build-android myapp --target store
 akan release-android myapp --target store --env main --assembleType aab`}
           />
+          <Code.Snippet
+            className="w-full"
+            title="Android local prerequisites"
+            language="bash"
+            code={`# Gradle/Android builds require JDK 21
+brew install openjdk@21
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export PATH="$JAVA_HOME/bin:$PATH"
+
+# Android SDK should be discoverable by Gradle
+export ANDROID_HOME="$HOME/Library/Android/sdk"`}
+          />
+          <Code.Snippet
+            className="w-full"
+            title="apps/myapp/package.json"
+            code={`{
+  "dependencies": {
+    "@capacitor/app": "*",
+    "@capacitor/browser": "*",
+    "@capacitor/camera": "*",
+    "@capacitor/core": "*",
+    "@capacitor/device": "*",
+    "@capacitor/geolocation": "*",
+    "@capacitor/haptics": "*",
+    "@capacitor/keyboard": "*",
+    "@capacitor/preferences": "*",
+    "capacitor-plugin-safe-area": "*"
+  }
+}`}
+          />
+          <Docs.Alert type="info">
+            {l.trans({
+              en: 'Declare the Capacitor packages that your app uses in the app package.json with "*" versions. This lets Capacitor sync discover and link native plugins from the app project, while the workspace controls the actual installed versions.',
+              ko: '앱에서 사용하는 Capacitor 패키지는 app package.json에 "*" 버전으로 선언하세요. 이렇게 하면 실제 설치 버전은 workspace가 관리하면서도 Capacitor sync가 앱 프로젝트에서 네이티브 플러그인을 발견하고 연결할 수 있습니다.',
+            })}
+          </Docs.Alert>
           <Docs.Alert type="warning">
             {l.trans({
               en: "Android release needs stable package identity and signing. Keep appId stable after release, increase buildNum for native releases, and prepare release keystore settings for Play Store artifacts.",
@@ -368,10 +404,97 @@ akan release-android myapp --target store --env main --assembleType aab`}
 akan build-ios myapp --target store
 akan release-ios myapp --target store --env main`}
           />
+          <Docs.Alert type="info">
+            {l.trans({
+              en: 'For iOS, keep the same app-level Capacitor dependencies in apps/myapp/package.json before running start-ios or build-ios. If a plugin is missing there, the JavaScript module can load while the native iOS plugin is not linked, causing "plugin is not implemented" errors in the simulator.',
+              ko: 'iOS에서도 start-ios나 build-ios를 실행하기 전에 apps/myapp/package.json에 앱 단위 Capacitor dependency를 선언해 두세요. 해당 선언이 빠지면 JavaScript 모듈은 로드되지만 네이티브 iOS 플러그인이 연결되지 않아 시뮬레이터에서 "plugin is not implemented" 오류가 날 수 있습니다.',
+            })}
+          </Docs.Alert>
           <Docs.Alert type="warning">
             {l.trans({
               en: "iOS release needs stable bundle identity and Apple signing setup. Keep appId stable after release, increase buildNum for native releases, and verify provisioning, certificates, and App Store Connect settings before submission.",
               ko: "iOS 릴리즈에는 안정적인 bundle 식별 정보와 Apple signing 설정이 필요합니다. 릴리즈 후 appId는 안정적으로 유지하고, 네이티브 릴리즈마다 buildNum을 올리며, 제출 전에 provisioning, certificate, App Store Connect 설정을 확인하세요.",
+            })}
+          </Docs.Alert>
+        </Docs.Description>
+      </Scroll.Slide>
+      <div className="divider" />
+
+      <Scroll.Slide
+        id="native-build-troubleshooting"
+        title={l.trans({ en: "Native Build Troubleshooting", ko: "네이티브 빌드 문제 해결" })}
+      >
+        <Docs.Title>{l.trans({ en: "Native Build Troubleshooting", ko: "네이티브 빌드 문제 해결" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Most mobile build issues come from native toolchain setup, plugin sync state, or confusing local mode with release mode. Check these items before debugging page code.",
+              ko: "대부분의 모바일 빌드 문제는 네이티브 도구 설정, 플러그인 sync 상태, local/release 모드 혼동에서 발생합니다. 페이지 코드를 디버깅하기 전에 아래 항목을 먼저 확인하세요.",
+            })}
+          </div>
+          <div className="space-y-1">
+            {[
+              {
+                title: "Android SDK",
+                desc: l.trans({
+                  en: "Set ANDROID_HOME or android/local.properties so Gradle can find the SDK. Start an emulator or connect a device before running start-android.",
+                  ko: "Gradle이 SDK를 찾을 수 있도록 ANDROID_HOME 또는 android/local.properties를 설정하세요. start-android 실행 전 에뮬레이터를 켜거나 디바이스를 연결해야 합니다.",
+                }),
+              },
+              {
+                title: "Java 21",
+                desc: l.trans({
+                  en: "Capacitor Android builds require a Java 21 compiler. If you see invalid source release: 21, update JAVA_HOME and PATH to JDK 21.",
+                  ko: "Capacitor Android 빌드는 Java 21 컴파일러가 필요합니다. invalid source release: 21 오류가 나오면 JAVA_HOME과 PATH가 JDK 21을 가리키도록 설정하세요.",
+                }),
+              },
+              {
+                title: "Plugin sync",
+                desc: l.trans({
+                  en: "After adding or removing Capacitor packages, rerun start-ios/start-android or a build command so native projects regenerate plugin files.",
+                  ko: "Capacitor 패키지를 추가하거나 제거한 뒤에는 start-ios/start-android 또는 build 명령을 다시 실행해 네이티브 프로젝트의 플러그인 파일을 갱신하세요.",
+                }),
+              },
+              {
+                title: "iOS plugins",
+                desc: l.trans({
+                  en: "If Safari console says a plugin is not implemented, the JavaScript module loaded but the native plugin was not linked. Check app package.json and rerun iOS sync/build.",
+                  ko: "Safari 콘솔에 plugin is not implemented가 보이면 JavaScript 모듈은 로드됐지만 네이티브 플러그인이 연결되지 않은 상태입니다. app package.json을 확인하고 iOS sync/build를 다시 실행하세요.",
+                }),
+              },
+              {
+                title: "Safe area",
+                desc: l.trans({
+                  en: "safeArea handles device system bars; topInset and bottomInset handle app UI such as nav bars, tabs, and fixed bottom actions.",
+                  ko: "safeArea는 디바이스 시스템 바를 처리하고, topInset/bottomInset은 nav bar, tab, 고정 하단 액션 같은 앱 UI 공간을 처리합니다.",
+                }),
+              },
+            ].map(({ title, desc }) => (
+              <div key={title} className="rounded-xl border border-base-300 bg-base-100 px-4 py-0">
+                <span className="font-mono font-semibold text-primary">{title}: </span>
+                <span className="text-base-content/70 text-sm">{desc}</span>
+              </div>
+            ))}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="Common local fixes"
+            language="bash"
+            code={`# Android SDK path
+echo "sdk.dir=$HOME/Library/Android/sdk" > android/local.properties
+
+# Java 21 for Gradle
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export PATH="$JAVA_HOME/bin:$PATH"
+
+# Re-sync after plugin/package changes
+akan start-android myapp --target store
+akan start-ios myapp --target store`}
+          />
+          <Docs.Alert type="info">
+            {l.trans({
+              en: "Local mode uses a live server.url and does not package built CSR assets into the native app. Release mode builds CSR output first and copies the target HTML into the Capacitor webDir.",
+              ko: "local 모드는 live server.url을 사용하므로 빌드된 CSR asset을 네이티브 앱 안에 패키징하지 않습니다. release 모드는 먼저 CSR 산출물을 만들고 target HTML을 Capacitor webDir로 복사합니다.",
             })}
           </Docs.Alert>
         </Docs.Description>

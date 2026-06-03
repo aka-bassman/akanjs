@@ -18,8 +18,7 @@ export interface BuildSsrBaseArtifactResult {
 }
 
 export function prepareCssAsset(command: "build" | "start", basePath: string, cssText: string): string {
-  if (command !== "build") return cssText;
-  return optimize(cssText, { file: `${basePath || "root"}.css`, minify: true }).code;
+  return optimize(cssText, { file: `${basePath || "root"}.css`, minify: command === "build" }).code;
 }
 
 export class SsrBaseArtifactBuilder {
