@@ -32,7 +32,7 @@ export class CapacitorApp {
     private readonly app: AppExecutor,
     readonly target: AkanMobileTargetConfig,
   ) {
-    this.targetRootPath = path.posix.join("mobile", this.target.name);
+    this.targetRootPath = path.posix.join(".akan", "mobile", this.target.name);
     this.targetRoot = path.join(this.app.cwdPath, this.targetRootPath);
     this.targetWebRoot = path.join(this.targetRoot, "www");
     this.targetAssetRoot = path.join(this.targetRoot, "assets");
@@ -113,6 +113,7 @@ export class CapacitorApp {
     await this.project.commit();
     await this.#generateAssets({ operation, env });
     await this.#ensureAndroidAssetsDir();
+    await this.#ensureAndroidDebugKeystore();
     await this.#spawnMobile("npx", ["cap", "sync", "android"], { operation, env });
   }
 
@@ -177,6 +178,31 @@ export class CapacitorApp {
   async #ensureAndroidAssetsDir() {
     await mkdir(path.join(this.app.cwdPath, this.androidAssetsPath), { recursive: true });
   }
+  async #ensureAndroidDebugKeystore() {
+    const keystorePath = path.join(this.app.cwdPath, this.androidRootPath, "app/debug.keystore");
+    if (await Bun.file(keystorePath).exists()) return;
+
+    await this.#spawn("keytool", [
+      "-genkeypair",
+      "-v",
+      "-keystore",
+      keystorePath,
+      "-storepass",
+      "android",
+      "-alias",
+      "androiddebugkey",
+      "-keypass",
+      "android",
+      "-keyalg",
+      "RSA",
+      "-keysize",
+      "2048",
+      "-validity",
+      "10000",
+      "-dname",
+      "CN=Android Debug,O=Android,C=US",
+    ]);
+  }
   async syncAndroid(options: { regenerate?: boolean } = {}) {
     await this.prepareWww();
     await this.#prepareAndroid({ operation: "release", env: "debug", ...options });
@@ -228,7 +254,7 @@ import appInfo from "${appInfoPath.startsWith(".") ? appInfoPath : `./${appInfoP
 export default withBase(
   (config, target) => ({
     ...config,
-    webDir: \`mobile/\${target.name}/www\`,
+    webDir: \`.akan/mobile/\${target.name}/www\`,
     android: {
       ...config.android,
       path: "android",

@@ -99,6 +99,7 @@ apps/*/android/captures/
 apps/*/android/capacitor-cordova-android-plugins/
 apps/*/android/capacitor.settings.gradle
 apps/*/android/app/capacitor.build.gradle
+apps/*/android/app/debug.keystore
 apps/*/android/app/src/main/assets/
 apps/*/android/app/src/main/res/xml/config.xml
 apps/*/android/app/release/

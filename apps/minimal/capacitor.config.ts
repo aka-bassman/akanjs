@@ -5,7 +5,7 @@ import appInfo from "./akan.app.json";
 export default withBase(
   (config, target) => ({
     ...config,
-    webDir: `mobile/${target.name}/www`,
+    webDir: `.akan/mobile/${target.name}/www`,
     android: {
       ...config.android,
       path: "android",
