@@ -151,6 +151,7 @@ describe("solid sqlite utilities", () => {
   test("resolves default sqlite paths and solid config", () => {
     const previousSqliteDir = process.env.AKAN_SQLITE_DIR;
     const previousSolidDbPath = process.env.AKAN_SOLID_DB_PATH;
+    const previousOperationMode = process.env.AKAN_PUBLIC_OPERATION_MODE;
     try {
       process.env.AKAN_SQLITE_DIR = "/tmp/akan-sqlite";
       expect(
@@ -171,6 +172,36 @@ describe("solid sqlite utilities", () => {
           workspaceRoot: "/workspace",
         }),
       ).toBe("/workspace/local/apps/demo/demo.db");
+
+      expect(
+        resolveDefaultSqliteFile({
+          appName: "demo",
+          fileName: "demo.db",
+          isProduction: true,
+          operationMode: "local",
+          workspaceRoot: "/workspace",
+        }),
+      ).toBe("/workspace/local/apps/demo/demo.db");
+
+      process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
+      expect(
+        resolveDefaultSqliteFile({
+          appName: "demo",
+          fileName: "demo.db",
+          isProduction: true,
+          workspaceRoot: "/workspace",
+        }),
+      ).toBe("/workspace/local/apps/demo/demo.db");
+
+      expect(
+        resolveDefaultSqliteFile({
+          appName: "demo",
+          fileName: "demo.db",
+          isProduction: true,
+          operationMode: "cloud",
+          workspaceRoot: "/workspace",
+        }),
+      ).toBe(`${process.cwd()}/sqlite/demo.db`);
 
       process.env.AKAN_SOLID_DB_PATH = "/tmp/solid.db";
       expect(
@@ -197,6 +228,8 @@ describe("solid sqlite utilities", () => {
       else process.env.AKAN_SQLITE_DIR = previousSqliteDir;
       if (previousSolidDbPath === undefined) delete process.env.AKAN_SOLID_DB_PATH;
       else process.env.AKAN_SOLID_DB_PATH = previousSolidDbPath;
+      if (previousOperationMode === undefined) delete process.env.AKAN_PUBLIC_OPERATION_MODE;
+      else process.env.AKAN_PUBLIC_OPERATION_MODE = previousOperationMode;
     }
   });
 

@@ -1094,6 +1094,7 @@ export class SqliteDatabase
         appName,
         fileName: `${appName}-${environment}.db`,
         isProduction: process.env.NODE_ENV === "production",
+        operationMode: env.operationMode,
         workspaceRoot: env.workspaceRoot,
       });
       return {
@@ -1204,6 +1205,7 @@ export class LibsqlDatabase
         appName,
         fileName: `${appName}-${environment}.db`,
         isProduction: process.env.NODE_ENV === "production",
+        operationMode: env.operationMode,
         workspaceRoot: env.workspaceRoot,
       });
       return {
