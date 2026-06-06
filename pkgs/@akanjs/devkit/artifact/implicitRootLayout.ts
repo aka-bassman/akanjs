@@ -196,7 +196,7 @@ export default function GeneratedLayout({ children, params, searchParams }: Layo
       gaTrackingId={userLayout.gaTrackingId ?? inheritedLayout.gaTrackingId}
       layoutStyle={userLayout.layoutStyle ?? inheritedLayout.layoutStyle}
       reconnect={userLayout.reconnect ?? inheritedLayout.reconnect ?? false}
-      dictionary={allDictionary[params.lang]}
+      allDictionary={process.env.AKAN_PUBLIC_RENDER_ENV === "ssr" ? allDictionary : undefined}
     >
       <UserLayout params={params} searchParams={searchParams}>{children}</UserLayout>
     </System.Provider>

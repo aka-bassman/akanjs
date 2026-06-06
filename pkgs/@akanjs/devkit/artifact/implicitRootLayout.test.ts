@@ -74,7 +74,9 @@ describe("resolveSsrPageEntries", () => {
     expect(generatedSource).toContain("<System.Provider");
     expect(generatedSource).toContain("theme={userLayout.theme ?? inheritedLayout.theme}");
     expect(generatedSource).toContain('import { allDictionary } from "../dict/useDict.ts";');
-    expect(generatedSource).toContain("dictionary={allDictionary[params.lang]}");
+    expect(generatedSource).toContain(
+      'allDictionary={process.env.AKAN_PUBLIC_RENDER_ENV === "ssr" ? allDictionary : undefined}',
+    );
     expect(generatedSource).not.toContain("getAllDictionary");
     expect(generatedSource).not.toContain("// export default function GeneratedLayout");
 

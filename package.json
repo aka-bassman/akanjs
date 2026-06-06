@@ -3,7 +3,10 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
-  "workspaces": ["pkgs/*", "pkgs/@akanjs/*"],
+  "workspaces": [
+    "pkgs/*",
+    "pkgs/@akanjs/*"
+  ],
   "scripts": {
     "uploadEnv": "chmod +x infra/master/jenkins/uploadEnv.sh && chmod +x infra/master/jenkins/getSecrets.sh && bash infra/master/jenkins/uploadEnv.sh",
     "downloadEnv": "chmod +x infra/master/jenkins/downloadEnv.sh && chmod +x infra/master/jenkins/getSecrets.sh && bash infra/master/jenkins/downloadEnv.sh",
@@ -19,7 +22,8 @@
     "killAkan": "lsof -ti tcp:8282,18282-18300 | xargs kill -9",
     "buildAkan": "bun pkgs/@akanjs/cli/build.ts",
     "runAkan": "bun dist/pkgs/@akanjs/cli/index.js",
-    "create-akan-workspace": "bun pkgs/create-akan-workspace/build.ts && bun dist/pkgs/create-akan-workspace/index.js"
+    "create-akan-workspace": "bun pkgs/create-akan-workspace/build.ts && bun dist/pkgs/create-akan-workspace/index.js",
+    "pr": "gh pr create --repo akan-team/akanjs --base main --fill"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.4",

@@ -2,11 +2,12 @@
 
 set -euo pipefail
 
-REGISTRY_DIR=~/registry/data/docker/registry/v2/repositories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../jenkins/credentials.sh"
 #add --insecure to the curl command on line 17 if you use https with self-signed certificates
 
+# Apply defaults only when credentials.sh did not provide them.
+: "${REGISTRY_DIR:=$HOME/registry/data/docker/registry/v2/repositories}"
 : "${REGISTRY_URL:=http://localhost:5000}"
 REGISTRY_URL="${REGISTRY_URL%/}"
 
@@ -16,8 +17,8 @@ if [ -z "${REGISTRY_DIR:-}" ]; then
 fi
 
 if [ ! -d "${REGISTRY_DIR}" ]; then
-	echo "REGISTRY_DIR does not exist: ${REGISTRY_DIR}" >&2
-	exit 1
+	echo "REGISTRY_DIR does not exist, nothing to clean: ${REGISTRY_DIR}"
+	exit 0
 fi
 
 cd "${REGISTRY_DIR}"
@@ -30,9 +31,11 @@ total_count=$(echo "${manifests_without_tags}" | wc -w)
 for manifest in ${manifests_without_tags}; do
 	repo=$(find . -type f -path "*/_manifests/revisions/sha256/${manifest}/link" | awk -F "_manifest"  '{print $(NF-1)}' | sed 's#^./\(.*\)/#\1#')
 	
-	#should have error checking on the curl command, it might fail silently atm.
-	curl -s -X DELETE ${REGISTRY_URL}/v2/${repo}/manifests/sha256:${manifest} > /dev/null
-	
-	((count++))
+	if ! curl -s -f -X DELETE "${REGISTRY_URL}/v2/${repo}/manifests/sha256:${manifest}" > /dev/null; then
+		echo "Failed to delete ${repo}@sha256:${manifest}, skipping." >&2
+		continue
+	fi
+
+	count=$((count + 1))
 	echo "Deleted ${count} of ${total_count} manifests."
 done

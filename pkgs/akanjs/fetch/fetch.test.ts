@@ -481,6 +481,130 @@ describe("FetchClient HTTP generation", () => {
       init: { headers: { "Content-Type": "application/json", Authorization: "Bearer clone-jwt" } },
     });
   });
+
+  test("sends requests to the FetchPolicy.origin host instead of the client origin", async () => {
+    setMockFetch();
+    jsonResponses.push("pong", { title: "Created", count: 2, nested: { label: "N" } });
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+
+    // trailing slash on the override host must be normalized away
+    const queried = await client.handler.getThing("1234567890abcdef12345678", [], null, {
+      origin: "https://akasys-debug.akamir.com/",
+    });
+    const created = await client.handler.createThing("Created", 2, { origin: "https://akasys-debug.akamir.com" });
+
+    expect(queried).toBe("pong");
+    expect(created).toBeInstanceOf(FetchTestFull);
+    expect(fetchCalls[0]?.url).toBe("https://akasys-debug.akamir.com/custom/1234567890abcdef12345678");
+    expect(fetchCalls[1]?.url).toBe("https://akasys-debug.akamir.com/createThing");
+  });
+
+  test("uses FetchPolicy.origin verbatim, including the global api prefix supplied by the caller", async () => {
+    setMockFetch();
+    jsonResponses.push("pong", { title: "Created", count: 2, nested: { label: "N" } });
+    const client = new FetchClient("https://api.example/api", {}, { service: serviceSignal });
+
+    // the caller is responsible for including the server global prefix (e.g. "/api")
+    const queried = await client.handler.getThing("1234567890abcdef12345678", [], null, {
+      origin: "https://edge.example.com/api",
+    });
+    const created = await client.handler.createThing("Created", 2, { origin: "https://edge.example.com/api" });
+
+    expect(queried).toBe("pong");
+    expect(created).toBeInstanceOf(FetchTestFull);
+    expect(fetchCalls[0]?.url).toBe("https://edge.example.com/api/custom/1234567890abcdef12345678");
+    expect(fetchCalls[1]?.url).toBe("https://edge.example.com/api/createThing");
+  });
+
+  test("bypasses the request-query cache when FetchPolicy.origin is set", async () => {
+    if (!requestStorage) return;
+    setMockFetch();
+    jsonResponses.push("origin", "override-1", "override-2");
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+
+    const result = await requestStorage.run(new Request("https://example.test"), async () => {
+      const cachedA = await client.handler.getThing("1234567890abcdef12345678", [], null);
+      const cachedB = await client.handler.getThing("1234567890abcdef12345678", [], null);
+      const overrideA = await client.handler.getThing("1234567890abcdef12345678", [], null, {
+        origin: "https://akasys-debug.akamir.com",
+      });
+      const overrideB = await client.handler.getThing("1234567890abcdef12345678", [], null, {
+        origin: "https://akasys-debug.akamir.com",
+      });
+      return { cachedA, cachedB, overrideA, overrideB };
+    });
+
+    // origin requests share the memoized cache: the second call reuses the first response
+    expect(result.cachedA).toBe("origin");
+    expect(result.cachedB).toBe("origin");
+    // url overrides skip the cache entirely: each call performs a fresh fetch
+    expect(result.overrideA).toBe("override-1");
+    expect(result.overrideB).toBe("override-2");
+    expect(fetchCalls.map((call) => call.url)).toEqual([
+      "https://api.example/custom/1234567890abcdef12345678",
+      "https://akasys-debug.akamir.com/custom/1234567890abcdef12345678",
+      "https://akasys-debug.akamir.com/custom/1234567890abcdef12345678",
+    ]);
+  });
+
+  test("clone targets the new origin for queries and mutations while leaving the original intact", async () => {
+    setMockFetch();
+    jsonResponses.push({ title: "Created", count: 2, nested: { label: "N" } }, "clone-query", "origin-query");
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+    client.setJwt("origin-jwt");
+    const cloned = client.clone({ origin: "https://clone.example", connect: false, jwt: "clone-jwt" }) as unknown as {
+      getThing: (id: string, tags: string[], empty: null) => Promise<unknown>;
+      createThing: (title: string, count: number) => Promise<unknown>;
+    };
+
+    const created = await cloned.createThing("Created", 2);
+    const cloneQuery = await cloned.getThing("1234567890abcdef12345678", [], null);
+    const originQuery = await client.handler.getThing("1234567890abcdef12345678", [], null);
+
+    expect(created).toBeInstanceOf(FetchTestFull);
+    expect(cloneQuery).toBe("clone-query");
+    expect(originQuery).toBe("origin-query");
+    // clone routes mutations and queries to the new origin with its own jwt
+    expect(fetchCalls[0]).toMatchObject({
+      url: "https://clone.example/createThing",
+      init: { headers: { Authorization: "Bearer clone-jwt" } },
+    });
+    expect(fetchCalls[1]).toMatchObject({ url: "https://clone.example/custom/1234567890abcdef12345678" });
+    // original client keeps its own origin and jwt, unaffected by the clone
+    expect(fetchCalls[2]).toMatchObject({
+      url: "https://api.example/custom/1234567890abcdef12345678",
+      init: { headers: { Authorization: "Bearer origin-jwt" } },
+    });
+  });
+
+  test("clone with a different origin does not share the request-query cache with the original", async () => {
+    if (!requestStorage) return;
+    setMockFetch();
+    jsonResponses.push("origin-resp", "clone-resp");
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+    const cloned = client.clone({ origin: "https://clone.example", connect: false }) as unknown as {
+      getThing: (id: string, tags: string[], empty: null) => Promise<unknown>;
+    };
+
+    const result = await requestStorage.run(new Request("https://example.test"), async () => {
+      const originA = await client.handler.getThing("1234567890abcdef12345678", [], null);
+      const cloneA = await cloned.getThing("1234567890abcdef12345678", [], null);
+      const originB = await client.handler.getThing("1234567890abcdef12345678", [], null);
+      const cloneB = await cloned.getThing("1234567890abcdef12345678", [], null);
+      return { originA, cloneA, originB, cloneB };
+    });
+
+    // the cache key is scoped by origin, so origin and clone resolve to different responses
+    expect(result.originA).toBe("origin-resp");
+    expect(result.cloneA).toBe("clone-resp");
+    // repeated calls reuse each client's own cached response, so no extra fetches happen
+    expect(result.originB).toBe("origin-resp");
+    expect(result.cloneB).toBe("clone-resp");
+    expect(fetchCalls.map((call) => call.url)).toEqual([
+      "https://api.example/custom/1234567890abcdef12345678",
+      "https://clone.example/custom/1234567890abcdef12345678",
+    ]);
+  });
 });
 
 describe("FetchClient database signal helpers", () => {

@@ -1,5 +1,5 @@
 import { getEnv } from "akanjs/base";
-import { clsx, type ReactFont, router, Translator, type WebAppManifest } from "akanjs/client";
+import { clsx, type ReactFont, router, Translator, usePage, type WebAppManifest } from "akanjs/client";
 import { setRequestTheme } from "akanjs/fetch";
 import { Children, Fragment, type ReactNode, Suspense } from "react";
 import { FontCss } from "../fontCss";
@@ -30,17 +30,29 @@ const SSRProvider = ({
   layoutStyle = "web",
   reconnect = getEnv().operationMode === "local",
   dictionary,
+  allDictionary,
   of,
 }: SSRProviderProps) => {
   setRequestTheme(theme);
-  if (dictionary && params.lang) Translator.seed(params.lang, dictionary);
+
+  // Resolve the active locale exactly like `l()` does (getPageInfo / request), not via `params.lang`,
+  // which is only populated when the matched route pattern contains `:lang` and can otherwise diverge.
+  const { lang: activeLocale } = usePage();
+
+  // Server (RSC worker) renders server components: seed every locale into the shared Translator. This is
+  // free on the server (it never reaches the browser bundle) and makes server-component translations
+  // resolve no matter how the locale is routed.
+  if (allDictionary) for (const [lng, dict] of Object.entries(allDictionary)) Translator.seed(lng, dict);
+
+  // Only the active locale is serialized to the client (Flight payload) to keep the browser bundle lean.
+  const activeDictionary = allDictionary?.[activeLocale] ?? dictionary;
+
   return (
     <Load.Page
       of={of}
       loader={async () => {
-        const { lang } = params;
-        if (!router.isInitialized) router.init({ type: "ssr", side: "server", lang, prefix });
-        return { lang } as const;
+        if (!router.isInitialized) router.init({ type: "ssr", side: "server", lang: activeLocale, prefix });
+        return { lang: activeLocale } as const;
       }}
       render={({ lang }) => (
         <SSRWrapper
@@ -53,7 +65,7 @@ const SSRProvider = ({
           prefix={prefix}
           layoutStyle={layoutStyle}
         >
-          <ClientWrapper theme={theme} lang={lang} reconnect={reconnect} dictionary={dictionary}>
+          <ClientWrapper theme={theme} lang={lang} reconnect={reconnect} dictionary={activeDictionary}>
             <Fragment key="children">{Children.toArray(children)}</Fragment>
             <Suspense key="client-inner" fallback={null}>
               <ClientInner />

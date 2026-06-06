@@ -144,8 +144,13 @@ export class FetchClient {
           const argMap = new Map(serializerMap.entries().map(([key, serializer], idx) => [key, serializer(args[idx])]));
           const url = FetchClient.makeHttpUrl(key, endpoint, prefix, argMap);
           const headers = this.#makeAuthHeaders(option);
-          const cacheKey = FetchClient.#makeRequestQueryCacheKey(this.origin, url, headers);
-          const response = await memoizeRequestQuery(cacheKey, () => this.http.get(url, { headers }));
+          const baseUrl = option?.origin;
+          // A per-request origin override targets an arbitrary server, so the shared
+          // request-query cache (keyed by the client origin) must be bypassed.
+          const requestQuery = () => this.http.get(url, { headers, baseUrl });
+          const response = baseUrl
+            ? await requestQuery()
+            : await memoizeRequestQuery(FetchClient.#makeRequestQueryCacheKey(this.origin, url, headers), requestQuery);
           const parsedReturn = parseReturn(FetchClient.#deepCopy(response), { crystalize: option?.crystalize ?? true });
           return parsedReturn;
         };
@@ -160,6 +165,7 @@ export class FetchClient {
           const body = HttpClient.makeBody(bodyArgs, uploadArgs, argMap);
           const response = await this.http.post(url, body, {
             headers: this.#makeAuthHeaders(option),
+            baseUrl: option?.origin,
           });
           const parsedReturn = parseReturn(response, { crystalize: option?.crystalize ?? true });
           return parsedReturn;

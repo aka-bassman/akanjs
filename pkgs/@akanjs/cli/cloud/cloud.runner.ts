@@ -363,14 +363,10 @@ export class CloudRunner extends runner("cloud") {
   }
 
   async downloadEnv(cloudApi: CloudApi, workspace: Workspace, workspaceId: string) {
-    const envArchivePath = "local/env.tar";
     await workspace.mkdir("local");
-    await workspace.remove(envArchivePath);
-    await cloudApi.downloadEnv(workspaceId);
-    await workspace.spawn("tar", ["-xf", envArchivePath], {
-      cwd: workspace.workspaceRoot,
-    });
-    await workspace.remove(envArchivePath);
+    const localPath = (await cloudApi.downloadEnv(workspaceId)) as string;
+    await workspace.spawn("tar", ["-xf", localPath], { cwd: workspace.workspaceRoot });
+    await workspace.remove(localPath);
   }
   async uploadEnv(cloudApi: CloudApi, workspaceId: string, filePath: string) {
     const file = new File([Bun.file(filePath)], path.basename(filePath));

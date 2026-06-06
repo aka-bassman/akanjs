@@ -32,6 +32,12 @@ export interface ProviderProps {
   reconnect?: boolean;
   /** Active-locale dictionary injected by the server (SSR only) to seed the client Translator. */
   dictionary?: Record<string, Record<string, unknown>>;
+  /**
+   * Full lang-keyed dictionary snapshot (SSR server-only). The provider seeds every locale into
+   * the RSC-worker Translator (free on the server, never shipped to the browser) and serializes only
+   * the request's active locale to the client, so translations resolve regardless of locale routing.
+   */
+  allDictionary?: Record<string, Record<string, Record<string, unknown>>>;
   /** Root route component used by CSR page loading. */
   of: (props: unknown) => ReactNode | null;
 }
@@ -57,10 +63,7 @@ export function toManifestJson(value: unknown): unknown {
   return Object.fromEntries(
     Object.entries(value)
       .filter(([, entryValue]) => entryValue !== undefined)
-      .map(([key, entryValue]) => [
-        camelToSnake(key),
-        toManifestJson(entryValue),
-      ]),
+      .map(([key, entryValue]) => [camelToSnake(key), toManifestJson(entryValue)]),
   );
 }
 

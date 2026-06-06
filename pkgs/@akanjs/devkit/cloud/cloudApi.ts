@@ -67,7 +67,6 @@ export class CloudApi {
   }
 
   async uploadEnv(devProjectId: string, file: File): Promise<boolean> {
-    await this.#ensureAccessTokenLive();
     const formData = new FormData();
     formData.append("devProjectId", devProjectId);
     formData.append("file", file);
@@ -75,7 +74,6 @@ export class CloudApi {
     return data;
   }
   async downloadEnv(devProjectId: string): Promise<unknown> {
-    await this.#ensureAccessTokenLive();
     const localPath = `${this.#workspace.workspaceRoot}/local/env.tar`;
     await this.#api.getFile(`/downloadEnv/${devProjectId}`, localPath);
     return localPath;
