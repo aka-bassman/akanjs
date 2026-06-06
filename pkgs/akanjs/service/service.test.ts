@@ -70,6 +70,9 @@ type CallRecord = { method: string; args: unknown[] };
 type TestItemDocInstance = InstanceType<typeof TestItemDoc>;
 type TestItemDataInput = Parameters<DatabaseService["__libsPreCreate"]>[0];
 type TestHookServiceCls = { prototype: object };
+type Equal<Left, Right> =
+  (<Type>() => Type extends Left ? 1 : 2) extends <Type>() => Type extends Right ? 1 : 2 ? true : false;
+type Expect<Type extends true> = Type;
 
 const makeFakeDatabaseModel = () => {
   const calls: CallRecord[] = [];
@@ -455,7 +458,7 @@ describe("dependency injection resolution", () => {
       },
       async hget(topic: string, prop: string, key: string) {
         calls.push({ method: "hget", args: [topic, prop, key] });
-        return hashValues.get(`${topic}:${prop}`)?.get(key) ?? null;
+        return hashValues.get(`${topic}:${prop}`)?.get(key);
       },
       async hset(topic: string, prop: string, key: string, value: unknown) {
         calls.push({ method: "hset", args: [topic, prop, key, value] });
@@ -467,6 +470,18 @@ describe("dependency injection resolution", () => {
       async hdelete(topic: string, prop: string, key: string) {
         calls.push({ method: "hdelete", args: [topic, prop, key] });
         hashValues.get(`${topic}:${prop}`)?.delete(key);
+      },
+      async hkeys(topic: string, prop: string) {
+        calls.push({ method: "hkeys", args: [topic, prop] });
+        return [...(hashValues.get(`${topic}:${prop}`)?.keys() ?? [])];
+      },
+      async hentries(topic: string, prop: string) {
+        calls.push({ method: "hentries", args: [topic, prop] });
+        return [...(hashValues.get(`${topic}:${prop}`)?.entries() ?? [])];
+      },
+      async hclear(topic: string, prop: string) {
+        calls.push({ method: "hclear", args: [topic, prop] });
+        hashValues.delete(`${topic}:${prop}`);
       },
     };
     return cache as CacheAdaptor & { calls: CallRecord[] };
@@ -540,12 +555,22 @@ describe("dependency injection resolution", () => {
         delete: () => Promise<void>;
       };
       remoteMap: {
-        get: (key: string) => Promise<string | null>;
+        get: (key: string) => Promise<string | undefined>;
         set: (key: string, value: string) => Promise<void>;
         delete: (key: string) => Promise<void>;
+        getOrInsert: (key: string, value: string) => Promise<string>;
+        getOrInsertComputed: (key: string, compute: (key: string) => string | Promise<string>) => Promise<string>;
+        keys: () => Promise<string[]>;
+        entries: () => Promise<[string, string][]>;
+        forEach: (callback: (value: string, key: string) => void | Promise<void>) => Promise<void>;
+        clear: () => Promise<void>;
       };
       serviceTestItemModel: typeof database;
     };
+    type RemoteMapGetValue = Awaited<ReturnType<TargetService["remoteMap"]["get"]>>;
+    type _RemoteMapGetReturnsOptionalString = Expect<Equal<RemoteMapGetValue, string | undefined>>;
+    type RemoteMapEntriesValue = Awaited<ReturnType<TargetService["remoteMap"]["entries"]>>;
+    type _RemoteMapEntriesReturnsStringTuples = Expect<Equal<RemoteMapEntriesValue, [string, string][]>>;
 
     await InjectInfo.resolveInjection(instance, TargetService, registry, { envValue: "env-value" } as never);
 
@@ -566,7 +591,25 @@ describe("dependency injection resolution", () => {
     await instance.remoteMap.set("ko", "안녕");
     expect(await instance.remoteMap.get("ko")).toBe("안녕");
     await instance.remoteMap.delete("ko");
+    expect(await instance.remoteMap.get("ko")).toBeUndefined();
+    expect(await instance.remoteMap.getOrInsert("ko", "다시 안녕")).toBe("다시 안녕");
+    expect(await instance.remoteMap.getOrInsert("ko", "덮어쓰기")).toBe("다시 안녕");
+    expect(await instance.remoteMap.getOrInsertComputed("en", async (key) => `hello:${key}`)).toBe("hello:en");
+    expect(await instance.remoteMap.getOrInsertComputed("en", () => "overwrite")).toBe("hello:en");
+    expect(await instance.remoteMap.keys()).toEqual(["ko", "en"]);
+    expect(await instance.remoteMap.entries()).toEqual([
+      ["ko", "다시 안녕"],
+      ["en", "hello:en"],
+    ]);
+    const seen: string[] = [];
+    await instance.remoteMap.forEach((value, key) => {
+      seen.push(`${key}:${value}`);
+    });
+    expect(seen).toEqual(["ko:다시 안녕", "en:hello:en"]);
+    await instance.remoteMap.clear();
+    expect(await instance.remoteMap.keys()).toEqual([]);
     expect(cache.calls.map((call) => call.method)).toContain("hdelete");
+    expect(cache.calls.map((call) => call.method)).toContain("hclear");
 
     expect(Object.getOwnPropertyDescriptor(instance, "plainUse")).toMatchObject({ enumerable: true, writable: false });
   });

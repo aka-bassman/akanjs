@@ -1,10 +1,13 @@
-import type { SerializedSignal } from "./types";
+interface FileUploadSerializedEndpoint {
+  fileUpload?: boolean;
+}
 
-/**
- * Framework-owned file-upload contract. A plugin opts in by marking exactly one
- * upload mutation with `{ fileUpload: true }`; the multipart form must use these
- * field names and the metas shape below.
- */
+interface FileUploadSerializedSignal {
+  prefix?: string;
+  endpoint: Record<string, FileUploadSerializedEndpoint>;
+}
+
+/** Framework-owned file-upload contract shared by client-safe packages. */
 export const fileUploadContract = {
   fields: { files: "files", metas: "metas", type: "type", parentId: "parentId" },
   buildMetas: (fileList: FileList) =>
@@ -18,9 +21,9 @@ export interface FileUploadCapability {
 }
 
 /** Discovers the upload endpoint marked with `{ fileUpload: true }` from the serialized signal. */
-export const resolveFileUploadCapability = (serializedSignal: {
-  [key: string]: SerializedSignal;
-}): FileUploadCapability | null => {
+export const resolveFileUploadCapability = (
+  serializedSignal: Record<string, FileUploadSerializedSignal>,
+): FileUploadCapability | null => {
   const matches: FileUploadCapability[] = [];
   for (const [refName, signal] of Object.entries(serializedSignal))
     for (const [endpointKey, endpoint] of Object.entries(signal.endpoint))

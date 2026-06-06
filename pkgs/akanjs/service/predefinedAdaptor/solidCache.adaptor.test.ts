@@ -84,6 +84,22 @@ describe("SolidCache adaptor (sqlite)", () => {
     expect(await cache.hget<string>("session", "user-1", "field-b")).toBe("value-b");
   });
 
+  test("lists and clears hash values", async () => {
+    await cache.hset("session", "user-1", "field-b", "value-b");
+    await cache.hset("session", "user-1", "field-a", "value-a");
+    await cache.hset("session", "user-2", "field-c", "value-c");
+
+    expect(await cache.hkeys("session", "user-1")).toEqual(["field-a", "field-b"]);
+    expect(await cache.hentries<string>("session", "user-1")).toEqual([
+      ["field-a", "value-a"],
+      ["field-b", "value-b"],
+    ]);
+
+    await cache.hclear("session", "user-1");
+    expect(await cache.hkeys("session", "user-1")).toEqual([]);
+    expect(await cache.hget<string>("session", "user-2", "field-c")).toBe("value-c");
+  });
+
   test("expires hash values once the expiration has passed", async () => {
     await cache.hset("session", "user-1", "field-a", "value-a", { expireAt: dayjs().subtract(1, "second") });
     expect(await cache.hget<string>("session", "user-1", "field-a")).toBeUndefined();

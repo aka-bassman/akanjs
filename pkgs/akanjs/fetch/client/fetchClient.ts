@@ -1,5 +1,5 @@
 import { DataList, getEnv, PrimitiveRegistry, type PromiseOrObject } from "akanjs/base";
-import { capitalize, type FetchPolicy, Logger } from "akanjs/common";
+import { capitalize, type FetchPolicy, fileUploadContract, Logger, resolveFileUploadCapability } from "akanjs/common";
 import { type BaseInsight, type BaseObject, ConstantRegistry, deserialize, serialize } from "akanjs/constant";
 import type {
   DatabaseSignal,
@@ -10,7 +10,6 @@ import type {
   SerializedSlice,
   ServiceSignal,
 } from "akanjs/signal";
-import { fileUploadContract, resolveFileUploadCapability } from "akanjs/signal/fileUpload";
 import type { ClientSignal, MergeAllFetchTypes, SliceMeta } from "../fetchType";
 import { memoizeRequestQuery, cookies as requestCookies, headers as requestHeaders } from "../requestStorage";
 import type { GetSliceMetaObjFromDatabaseSignals } from "../types";

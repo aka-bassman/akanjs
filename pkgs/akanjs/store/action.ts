@@ -1,5 +1,14 @@
 import { DataList, type Dayjs, FIELD_META, type GetStateObject, type SLICE_META } from "akanjs/base";
-import { capitalize, deepObjectify, type FetchPolicy, isQueryEqual, Logger, lowerlize, pathSet } from "akanjs/common";
+import {
+  capitalize,
+  deepObjectify,
+  type FetchPolicy,
+  isQueryEqual,
+  Logger,
+  lowerlize,
+  pathSet,
+  resolveFileUploadCapability,
+} from "akanjs/common";
 import {
   type BaseInsight,
   type BaseObject,
@@ -12,7 +21,6 @@ import {
 import type { BaseFilterSortKey, ExtractSort, FilterInstance } from "akanjs/document";
 import type { FetchInitForm, FetchProxy } from "akanjs/fetch";
 import type { SerializedSlice, SliceCls, SliceInfoArgs } from "akanjs/signal";
-import { resolveFileUploadCapability } from "akanjs/signal/fileUpload";
 import type { SliceStateKey } from "./state";
 import type { SetGet } from "./types";
 

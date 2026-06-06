@@ -254,20 +254,47 @@ export class InjectInfo<
         enumerable: true,
       });
     } else if (injectInfo.isMap) {
+      const topic = `akan:memory:${injectInfo.parentRefName}`;
+      const getter = injectInfo.get as unknown as (value: unknown) => unknown;
+      const setter = injectInfo.set as unknown as (value: unknown) => string | number | Buffer;
+      const get = async (key: string) => {
+        const value = await cacheAdaptor.hget(topic, propKey, key);
+        return value === undefined || value === null ? undefined : getter(value);
+      };
+      const set = async (key: string, value: unknown) => {
+        const setValue = setter(value);
+        await cacheAdaptor.hset(topic, propKey, key, setValue);
+      };
       Object.defineProperty(instance, propKey, {
         value: {
-          get: async (key: string) => {
-            const getter = injectInfo.get as unknown as (value: unknown) => unknown;
-            const value = await cacheAdaptor.hget(`akan:memory:${injectInfo.parentRefName}`, propKey, key);
-            return value === null ? value : getter(value);
-          },
-          set: async (key: string, value: unknown) => {
-            const setter = injectInfo.set as unknown as (value: unknown) => string | number | Buffer;
-            const setValue = setter(value);
-            await cacheAdaptor.hset(`akan:memory:${injectInfo.parentRefName}`, propKey, key, setValue);
-          },
+          get,
+          set,
           delete: async (key: string) => {
-            await cacheAdaptor.hdelete(`akan:memory:${injectInfo.parentRefName}`, propKey, key);
+            await cacheAdaptor.hdelete(topic, propKey, key);
+          },
+          getOrInsert: async (key: string, value: unknown) => {
+            const existingValue = await get(key);
+            if (existingValue !== undefined) return existingValue;
+            await set(key, value);
+            return value;
+          },
+          getOrInsertComputed: async (key: string, compute: (key: string) => unknown | Promise<unknown>) => {
+            const existingValue = await get(key);
+            if (existingValue !== undefined) return existingValue;
+            const value = await compute(key);
+            await set(key, value);
+            return value;
+          },
+          keys: async () => await cacheAdaptor.hkeys(topic, propKey),
+          entries: async () => {
+            const entries = await cacheAdaptor.hentries(topic, propKey);
+            return entries.map(([key, value]) => [key, getter(value)]);
+          },
+          forEach: async (callback: (value: unknown, key: string) => void | Promise<void>) => {
+            for (const [key, value] of await cacheAdaptor.hentries(topic, propKey)) await callback(getter(value), key);
+          },
+          clear: async () => {
+            await cacheAdaptor.hclear(topic, propKey);
           },
         },
       });
@@ -346,6 +373,7 @@ export const injectionBuilder = (parentRefName: string) => ({
     const isMap = modelRef === Map;
     if (isMap && !opts.of) throw new Error("of should be provided when modelRef is Map");
     type FieldValue = never extends GetFn ? GetFieldValue<ValueRef, ExplicitType, MapValue> : ReturnType<GetFn>;
+    type MapFieldValue = never extends GetFn ? FieldToValue<MapValue> : ReturnType<GetFn>;
     type IsNullable = DefaultValue extends never ? true : false;
     type UseValue = IsNullable extends true ? FieldValue | null : FieldValue;
     return new InjectInfo<
@@ -356,9 +384,18 @@ export const injectionBuilder = (parentRefName: string) => ({
           : UseValue
         : MapConstructor extends ValueRef
           ? {
-              get: (key: string) => Promise<FieldToValue<MapValue>>;
-              set: (key: string, value: FieldToValue<MapValue>) => Promise<void>;
+              get: (key: string) => Promise<MapFieldValue | undefined>;
+              set: (key: string, value: MapFieldValue) => Promise<void>;
               delete: (key: string) => Promise<void>;
+              getOrInsert: (key: string, value: MapFieldValue) => Promise<MapFieldValue>;
+              getOrInsertComputed: (
+                key: string,
+                compute: (key: string) => MapFieldValue | Promise<MapFieldValue>,
+              ) => Promise<MapFieldValue>;
+              keys: () => Promise<string[]>;
+              entries: () => Promise<[string, MapFieldValue][]>;
+              forEach: (callback: (value: MapFieldValue, key: string) => void | Promise<void>) => Promise<void>;
+              clear: () => Promise<void>;
             }
           : { get: () => Promise<UseValue>; set: (value: UseValue) => Promise<void>; delete: () => Promise<void> },
       never,

@@ -16,6 +16,9 @@ export interface CacheAdaptor {
   ): Promise<void>;
   hget<T extends string | number | Buffer>(topic: string, key: string, subKey: string): Promise<T | undefined>;
   hdelete(topic: string, key: string, subKey: string): Promise<void>;
+  hkeys(topic: string, key: string): Promise<string[]>;
+  hentries<T extends string | number | Buffer>(topic: string, key: string): Promise<[string, T][]>;
+  hclear(topic: string, key: string): Promise<void>;
 }
 
 interface RedisEnv extends BaseEnv {
@@ -96,6 +99,16 @@ export class RedisCache
   }
   async hdelete(topic: string, key: string, subKey: string): Promise<void> {
     await this.redis.hdel(`${topic}:${key}`, subKey);
+  }
+  async hkeys(topic: string, key: string): Promise<string[]> {
+    return await this.redis.hkeys(`${topic}:${key}`);
+  }
+  async hentries<T extends string | number | Buffer>(topic: string, key: string): Promise<[string, T][]> {
+    const values = await this.redis.hgetall(`${topic}:${key}`);
+    return Object.entries(values) as [string, T][];
+  }
+  async hclear(topic: string, key: string): Promise<void> {
+    await this.redis.del(`${topic}:${key}`);
   }
   getClient(): Redis {
     return this.redis;

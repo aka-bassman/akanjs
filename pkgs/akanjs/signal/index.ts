@@ -2,7 +2,6 @@ export * from "./base.signal";
 export * from "./endpoint";
 export * from "./endpointInfo";
 export * from "./exception";
-export * from "./fileUpload";
 export * from "./guard";
 export * from "./guards";
 export * from "./intercept";
