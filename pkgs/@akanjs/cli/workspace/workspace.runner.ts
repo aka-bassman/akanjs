@@ -3,7 +3,6 @@ import { type Exec, FileSys, type PackageJson, runner, type Workspace, Workspace
 import { getLatestPackageVersion, getNpmRegistryUrl } from "../npmRegistry";
 
 const defaultWorkspacePeerDependencies = new Set([
-  "@radix-ui/react-dialog",
   "@react-spring/web",
   "@use-gesture/react",
   "croner",

@@ -168,7 +168,6 @@ describe("WorkspaceRunner", () => {
       };
       expect(workspacePackageJson.dependencies.akanjs).toBe("2.0.0-beta.0");
       expect(workspacePackageJson.dependencies).toMatchObject({
-        "@radix-ui/react-dialog": expect.any(String),
         "@react-spring/web": expect.any(String),
         "@use-gesture/react": expect.any(String),
         croner: expect.any(String),

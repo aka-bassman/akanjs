@@ -1,6 +1,6 @@
 {
   "name": "akanjs",
-  "version": "2.2.4-rc.2",
+  "version": "2.2.4-rc.3",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -133,7 +133,6 @@
     "@capgo/capacitor-updater": "^8.46.1",
     "@libsql/client": "^0.17.3",
     "@playwright/test": "^1.60.0",
-    "@radix-ui/react-dialog": "^1.1.15",
     "@react-spring/web": "^10.1.0",
     "@use-gesture/react": "^10.3.1",
     "bullmq": "^5.76.10",
@@ -206,9 +205,6 @@
       "optional": true
     },
     "@playwright/test": {
-      "optional": true
-    },
-    "@radix-ui/react-dialog": {
       "optional": true
     },
     "@react-spring/web": {
