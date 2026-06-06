@@ -1,5 +1,7 @@
 # create-akan-workspace
 
+## 2.2.7
+
 ## 2.2.5
 
 ## 2.2.3
