@@ -1,5 +1,14 @@
 # akanjs
 
+## 2.2.5
+
+### Patch Changes
+
+- d636456: add rich Map methods on memory() helper service
+- a1ee4e8: fill nested constant defaults for arrays on document save and load, normalize date fields to a consistent epoch representation on store (accepting legacy ISO-string values on read), and correct falsy defaults in getDefault
+- 5cdb05e: reverse dependency of file upload api
+- a7da50e: remove dependency from radix dialog
+
 ## 2.2.3
 
 ### Patch Changes

@@ -1,5 +1,16 @@
 # @akanjs/cli
 
+## 2.2.5
+
+### Patch Changes
+
+- 5cdb05e: reverse dependency of file upload api
+- Updated dependencies [d636456]
+- Updated dependencies [a1ee4e8]
+- Updated dependencies [5cdb05e]
+- Updated dependencies [a7da50e]
+  - akanjs@2.2.5
+
 ## 2.2.3
 
 ### Patch Changes
