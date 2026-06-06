@@ -57,6 +57,7 @@ pipeline {
                         sh "ssh -i $SSH_KEY -p $BUILD_PORT $BUILD_USER@$BUILD_HOST \"cd $REPO_NAME/$BRANCH && echo 'AKAN_PUBLIC_ENV=$BRANCH' >> .env\""
                         sh "ssh -i $SSH_KEY $BUILD_USER@$BUILD_HOST -p $BUILD_PORT \"cd $REPO_NAME/$BRANCH && timeout 3m bun install\""
                         sh "ssh -i $SSH_KEY -p $BUILD_PORT $BUILD_USER@$BUILD_HOST \"cd $REPO_NAME/$BRANCH && bun run buildAkan\""
+                        sh "ssh -i $SSH_KEY -p $BUILD_PORT $BUILD_USER@$BUILD_HOST \"cd $REPO_NAME/$BRANCH && bun run runAkan script akan generateDocsSearch\""
                         script {
                             PROJECTS = ALL_PROJECTS.tokenize(",");
                             ALL_PROJECTS.tokenize(",").each { app -> 
