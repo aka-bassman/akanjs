@@ -10,6 +10,7 @@ import type {
   SerializedSlice,
   ServiceSignal,
 } from "akanjs/signal";
+import { fileUploadContract, resolveFileUploadCapability } from "akanjs/signal/fileUpload";
 import type { ClientSignal, MergeAllFetchTypes, SliceMeta } from "../fetchType";
 import { memoizeRequestQuery, cookies as requestCookies, headers as requestHeaders } from "../requestStorage";
 import type { GetSliceMetaObjFromDatabaseSignals } from "../types";
@@ -365,18 +366,20 @@ export class FetchClient {
 
     Object.assign(this.handler, {
       [names.addModelFiles]: async (fileList: FileList, parentId?: string, option?: FetchPolicy) => {
+        const cap = resolveFileUploadCapability(this.serializedSignal);
+        const endpoint = cap ? this.serializedSignal[cap.refName]?.endpoint[cap.endpointKey] : undefined;
+        if (!cap || !endpoint)
+          throw new Error(
+            "File upload is not configured. Mark an upload mutation with { fileUpload: true } (e.g. shared FileEndpoint.addFiles).",
+          );
+        const { fields, buildMetas } = fileUploadContract;
         const formData = new FormData();
-        for (let i = 0; i < fileList.length; i++) formData.append("files", fileList[i]);
-        const metas = Array.from(fileList).map((f) => ({
-          lastModifiedAt: new Date(f.lastModified).toISOString(),
-          size: f.size,
-        }));
-        formData.append("metas", JSON.stringify(metas));
-        formData.append("type", refName);
-        if (parentId) formData.append("parentId", parentId);
-        return await this.http.post(`/file/addFilesRestApi`, formData, {
-          headers: { ...(this.jwt ? { Authorization: `Bearer ${this.jwt}` } : {}) },
-        });
+        for (let i = 0; i < fileList.length; i++) formData.append(fields.files, fileList[i]);
+        formData.append(fields.metas, JSON.stringify(buildMetas(fileList)));
+        formData.append(fields.type, refName);
+        if (parentId) formData.append(fields.parentId, parentId);
+        const url = FetchClient.makeHttpUrl(cap.endpointKey, endpoint, cap.prefix, new Map());
+        return await this.http.post(url, formData, { headers: this.#makeAuthHeaders(option) });
       },
     });
   }

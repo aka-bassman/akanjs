@@ -12,6 +12,7 @@ import {
 import type { BaseFilterSortKey, ExtractSort, FilterInstance } from "akanjs/document";
 import type { FetchInitForm, FetchProxy } from "akanjs/fetch";
 import type { SerializedSlice, SliceCls, SliceInfoArgs } from "akanjs/signal";
+import { resolveFileUploadCapability } from "akanjs/signal/fileUpload";
 import type { SliceStateKey } from "./state";
 import type { SetGet } from "./types";
 
@@ -277,6 +278,7 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
   type Light = BaseObject;
   const [fieldName, className] = [refName, capitalize(refName)];
   const modelRef = ConstantRegistry.getDatabase(refName).full;
+  const fileUploadRefName = resolveFileUploadCapability(fetch.serializedSignal)?.refName;
 
   const names = {
     model: fieldName,
@@ -356,7 +358,7 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
             },
           }
         : {}),
-      ...(field.isClass && ConstantRegistry.getRefName(field.modelRef) === "file"
+      ...(field.isClass && !!fileUploadRefName && ConstantRegistry.getRefName(field.modelRef) === fileUploadRefName
         ? {
             [namesOfField.uploadFieldOnModel]: async function (this: SetGet, fileList: FileList, index?: number) {
               const form = (this.get() as { [key: string]: any })[names.modelForm] as { [key: string]: any };
@@ -383,7 +385,9 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
                 const intervalKey = setInterval(() => {
                   void (async () => {
                     const currentFile = await (
-                      (fetch as { [key: string]: any }).file as (id: string) => Promise<ProtoFile>
+                      (fetch as { [key: string]: any })[fileUploadRefName as string] as (
+                        id: string,
+                      ) => Promise<ProtoFile>
                     )(file.id);
                     if (field.isArray)
                       this.set((state: { [key: string]: { [key: string]: ProtoFile[] } }) => {

@@ -77,6 +77,8 @@ export interface SignalOption<Response = any, Nullable extends boolean = false, 
   middlewares?: MiddlewareCls[];
   prefix?: false | string;
   globalPrefix?: false;
+  /** Marks this mutation as the framework file-upload endpoint (see resolveFileUploadCapability). */
+  fileUpload?: boolean;
 
   // * ==================== Schedule ==================== * //
   scheduleType?: "init" | "destroy" | "cron" | "interval" | "timeout";
@@ -93,6 +95,7 @@ interface SerializedSignalOption {
   prefix?: false | string;
   globalPrefix?: false;
   guards?: string[];
+  fileUpload?: boolean;
 }
 export interface SerializedSlice extends SerializedSignalOption {}
 

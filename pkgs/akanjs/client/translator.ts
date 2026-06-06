@@ -16,6 +16,17 @@ export class Translator {
   // build, so repeat requests skip the merge entirely. A dev rebuild produces a
   // new object reference, which re-seeds and keeps hot reload correct.
   static #seededDicts = new WeakSet<object>();
+  // Browser-only source of truth for the active locale. Set by ClientWrapper from the server-resolved
+  // `lang` (Flight prop) so client lookups use the same locale that was seeded and server-rendered,
+  // instead of re-deriving it from the URL (unreliable for base-path / cloud routing). Unsafe on the
+  // server (concurrent requests share the module), so it must only be set when `typeof window !== undefined`.
+  static #activeLocale: string | undefined;
+  static setActiveLocale(lang: string | undefined) {
+    if (lang) Translator.#activeLocale = lang;
+  }
+  static getActiveLocale(): string | undefined {
+    return Translator.#activeLocale;
+  }
   constructor(dictionary: Record<string, Record<string, Record<string, unknown>>>) {
     Object.entries(dictionary).forEach(([lang, dictionary]) => {
       this.#setDictionary(lang, dictionary);

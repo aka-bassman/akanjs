@@ -25,8 +25,13 @@ const getPageInfo = (): { locale: string; path: string } => {
   const localeSet = new Set(locales);
   if (getEnv().side !== "server") {
     const [, firstSegment = "", ...rest] = window.location.pathname.split("/");
-    if (localeSet.has(firstSegment)) return { locale: firstSegment, path: `/${rest.join("/")}` };
-    return { locale: defaultLocale, path: window.location.pathname };
+    const hasLocalePrefix = localeSet.has(firstSegment);
+    // Prefer the server-resolved active locale (seeded via ClientWrapper) so client lookups match the
+    // SSR render even when the URL's leading segment is not the locale (base-path / cloud routing).
+    // Fall back to the URL segment for CSR or any pre-seed render.
+    const activeLocale = Translator.getActiveLocale();
+    const locale = activeLocale ?? (hasLocalePrefix ? firstSegment : defaultLocale);
+    return { locale, path: hasLocalePrefix ? `/${rest.join("/")}` : window.location.pathname };
   }
   const h = headers();
   // Honor explicit proxy/middleware headers when present; otherwise derive
