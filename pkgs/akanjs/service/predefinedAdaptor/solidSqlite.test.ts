@@ -45,6 +45,47 @@ const insightTestDatabase = DatabaseRegistry.buildModel(
   InsightTestFilter,
 );
 
+class TicketHistory extends via((f) => ({
+  action: f(String),
+  content: f([String], { default: [] }),
+  count: f(Int, { default: 0 }),
+  flag: f(Boolean, { default: false }),
+})) {}
+class TicketTestInput extends via((f) => ({
+  title: f(String),
+  status: f(String, { default: "active" }),
+  issuedAt: f(Date).optional(),
+  transactionAt: f(Date, { default: dayjs(0) }),
+  histories: f([TicketHistory]),
+})) {}
+class TicketTestObject extends via(TicketTestInput, (f) => ({})) {}
+class TicketTestLight extends via(TicketTestObject, ["title"] as const, () => ({})) {}
+class TicketTestFull extends via(TicketTestObject, TicketTestLight, () => ({})) {}
+class TicketTestInsight extends via(TicketTestFull, (f) => ({
+  count: f(Int, { default: 0, accumulate: {} }),
+})) {}
+const ticketTestConstant = ConstantRegistry.buildModel(
+  "sqliteTicketTest",
+  TicketTestInput,
+  TicketTestObject,
+  TicketTestFull,
+  TicketTestLight,
+  TicketTestInsight,
+  { TicketTestInput, TicketTestObject, TicketTestFull, TicketTestLight, TicketTestInsight, TicketHistory },
+);
+class TicketTestFilter extends from(TicketTestFull, () => ({})) {}
+class TicketTestDoc extends by(TicketTestFull) {}
+class TicketTestModel extends into(TicketTestDoc, TicketTestFilter, ticketTestConstant, () => ({})) {}
+const ticketTestDatabase = DatabaseRegistry.buildModel(
+  "sqliteTicketTest",
+  TicketTestInput as unknown as DatabaseCls<InstanceType<typeof TicketTestInput>>,
+  TicketTestDoc,
+  TicketTestModel,
+  TicketTestObject,
+  TicketTestInsight,
+  TicketTestFilter,
+);
+
 class TestSqliteStatement implements AkanSqlStatement {
   constructor(private readonly statement: Statement) {}
 
@@ -256,6 +297,127 @@ describe("solid sqlite utilities", () => {
         status: "active",
         tags: [],
       });
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("fills nested constant defaults inside arrays on save", async () => {
+    const db = new Database(":memory:", { strict: true, create: true });
+    const client = new TestSqliteClient(db);
+    const owner = new TestDatabaseOwner(client);
+    const store = new SqliteDocumentStore(owner, ticketTestConstant, ticketTestDatabase, new DocumentSchema());
+
+    try {
+      await client.execute(
+        `CREATE TABLE IF NOT EXISTS "_akan_meta" ("key" TEXT PRIMARY KEY NOT NULL, "value" TEXT NOT NULL, "updatedAt" INTEGER NOT NULL)`,
+      );
+      await store.ensure();
+
+      const created = await store.create({ title: "Ticket", histories: [{ action: "open" }] });
+      expect(created.histories[0]).toMatchObject({ action: "open", content: [], count: 0, flag: false });
+
+      created.histories.push({ action: "close" });
+      const saved = await created.save();
+      expect(saved.histories[1]).toMatchObject({ action: "close", content: [], count: 0, flag: false });
+
+      const fetched = await store.pickById(created.id);
+      expect(fetched.histories[0]).toMatchObject({ action: "open", content: [], count: 0, flag: false });
+      expect(fetched.histories[1]).toMatchObject({ action: "close", content: [], count: 0, flag: false });
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("fills missing nested and top-level defaults when loading legacy rows", async () => {
+    const db = new Database(":memory:", { strict: true, create: true });
+    const client = new TestSqliteClient(db);
+    const owner = new TestDatabaseOwner(client);
+    const store = new SqliteDocumentStore(owner, ticketTestConstant, ticketTestDatabase, new DocumentSchema());
+
+    try {
+      await client.execute(
+        `CREATE TABLE IF NOT EXISTS "_akan_meta" ("key" TEXT PRIMARY KEY NOT NULL, "value" TEXT NOT NULL, "updatedAt" INTEGER NOT NULL)`,
+      );
+      await store.ensure();
+
+      const now = Date.now();
+      // Legacy row: nested `content`/`count`/`flag` and top-level `status` were never persisted.
+      const legacyDoc = JSON.stringify({ title: "Legacy", histories: [{ action: "open" }] });
+      await client.execute(
+        `INSERT INTO "sqliteTicketTest" ("id", "createdAt", "updatedAt", "removedAt", "_doc") VALUES (?, ?, ?, ?, ?)`,
+        ["legacy-1", now, now, null, legacyDoc],
+      );
+
+      const fetched = await store.pickById("legacy-1");
+      expect(fetched.status).toBe("active");
+      expect(fetched.histories[0]).toMatchObject({ action: "open", content: [], count: 0, flag: false });
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("normalizes date fields to epoch storage regardless of input shape", async () => {
+    const db = new Database(":memory:", { strict: true, create: true });
+    const client = new TestSqliteClient(db);
+    const owner = new TestDatabaseOwner(client);
+    const store = new SqliteDocumentStore(owner, ticketTestConstant, ticketTestDatabase, new DocumentSchema());
+
+    try {
+      await client.execute(
+        `CREATE TABLE IF NOT EXISTS "_akan_meta" ("key" TEXT PRIMARY KEY NOT NULL, "value" TEXT NOT NULL, "updatedAt" INTEGER NOT NULL)`,
+      );
+      await store.ensure();
+
+      const iso = "2026-06-06T13:52:39.747Z";
+      // `issuedAt` arrives as an ISO string while `transactionAt` falls back to its dayjs(0) default.
+      const created = await store.create({ title: "Dated", issuedAt: iso, histories: [] });
+      expect(dayjs.isDayjs(created.issuedAt)).toBe(true);
+      expect(created.issuedAt.valueOf()).toBe(dayjs(iso).valueOf());
+      expect(created.transactionAt.valueOf()).toBe(0);
+
+      // Both dates must persist as epoch numbers, not a string/number mix.
+      const row = await client
+        .prepare(`SELECT "_doc" FROM "sqliteTicketTest" WHERE "id" = ?`)
+        .get<{ _doc: string }>(created.id);
+      const stored = JSON.parse(row?._doc ?? "{}");
+      expect(typeof stored.issuedAt).toBe("number");
+      expect(stored.issuedAt).toBe(dayjs(iso).valueOf());
+      expect(typeof stored.transactionAt).toBe("number");
+      expect(stored.transactionAt).toBe(0);
+
+      const fetched = await store.pickById(created.id);
+      expect(fetched.issuedAt.valueOf()).toBe(dayjs(iso).valueOf());
+      expect(fetched.transactionAt.valueOf()).toBe(0);
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("reads legacy ISO-string dates as valid dayjs", async () => {
+    const db = new Database(":memory:", { strict: true, create: true });
+    const client = new TestSqliteClient(db);
+    const owner = new TestDatabaseOwner(client);
+    const store = new SqliteDocumentStore(owner, ticketTestConstant, ticketTestDatabase, new DocumentSchema());
+
+    try {
+      await client.execute(
+        `CREATE TABLE IF NOT EXISTS "_akan_meta" ("key" TEXT PRIMARY KEY NOT NULL, "value" TEXT NOT NULL, "updatedAt" INTEGER NOT NULL)`,
+      );
+      await store.ensure();
+
+      const iso = "2026-06-06T13:52:39.747Z";
+      const now = Date.now();
+      // Legacy row persisted `issuedAt` as an ISO string instead of epoch ms.
+      const legacyDoc = JSON.stringify({ title: "Legacy", issuedAt: iso, histories: [] });
+      await client.execute(
+        `INSERT INTO "sqliteTicketTest" ("id", "createdAt", "updatedAt", "removedAt", "_doc") VALUES (?, ?, ?, ?, ?)`,
+        ["legacy-date-1", now, now, null, legacyDoc],
+      );
+
+      const fetched = await store.pickById("legacy-date-1");
+      expect(fetched.issuedAt.isValid()).toBe(true);
+      expect(fetched.issuedAt.valueOf()).toBe(dayjs(iso).valueOf());
     } finally {
       await client.close();
     }

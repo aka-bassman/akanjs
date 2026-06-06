@@ -185,7 +185,7 @@ export const Modal = ({ className, bodyClassName, confirmClose, children, onCanc
   return createPortal(
     <>
       <div
-        className={clsx("fixed inset-0 z-10", showBackground && "animate-fadeIn bg-base-content/50 backdrop-blur-md")}
+        className={clsx("fixed inset-0 z-10", showBackground && "animate-fadeIn bg-black/50 backdrop-blur-md")}
         onClick={(event) => {
           if (event.target !== event.currentTarget) return;
           requestClose();

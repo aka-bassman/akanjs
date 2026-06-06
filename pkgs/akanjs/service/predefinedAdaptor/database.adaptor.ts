@@ -4,7 +4,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { InArgs, InValue, Client as LibsqlClient } from "@libsql/client";
 import { type BaseEnv, dayjs, FIELD_META, type PromiseOrObject } from "akanjs/base";
-import type { ConstantModel } from "akanjs/constant";
+import { type ConstantModel, getDefault } from "akanjs/constant";
 import {
   createDocumentId,
   type DatabaseModel,
@@ -300,6 +300,13 @@ const jsonPath = (path: string) =>
     .map((part) => part.replaceAll('"', '\\"'))
     .join(".")}`;
 const encodeSqlValue = (value: unknown) => encodeDocumentValue(value);
+// Dates are persisted as epoch ms, but legacy rows may hold ISO strings; accept both.
+const decodeDateValue = (value: unknown) => {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "number") return dayjs(value);
+  const epoch = Number(value);
+  return Number.isNaN(epoch) ? dayjs(value as never) : dayjs(epoch);
+};
 const QUERY_OPERATOR_KEYS = new Set([
   "eq",
   "ne",
@@ -773,6 +780,9 @@ export class SqliteDocumentStore {
       } else {
         doc[key] = value;
       }
+      if (doc[key] !== undefined && doc[key] !== null) {
+        doc[key] = this.normalizeWriteValue(doc[key], props);
+      }
       if (props.enum && doc[key] !== undefined && doc[key] !== null) {
         const values = Array.isArray(doc[key]) ? doc[key] : [doc[key]];
         const fieldEnum = props.enum as { has: (value: unknown) => boolean } | undefined;
@@ -958,12 +968,28 @@ export class SqliteDocumentStore {
 
   private decodeDocumentPayload(payload: Record<string, unknown>) {
     const fields = this.database.doc[FIELD_META] as unknown as FieldMap;
-    return Object.fromEntries(
-      Object.entries(payload).map(([key, value]) => {
-        const props = fields[key]?.getProps?.();
-        return [key, props ? this.decodeFieldValue(value, props) : value];
-      }),
-    );
+    const result: Record<string, unknown> = {};
+    for (const [key, fieldMeta] of Object.entries(fields)) {
+      if (BASE_COLUMNS.has(key)) continue;
+      const props = fieldMeta.getProps();
+      const value = payload[key];
+      if (value === undefined) {
+        const def = props.default;
+        if (def !== undefined && def !== null) {
+          result[key] = typeof def === "function" ? (def as (data: unknown) => unknown)(payload) : def;
+        } else if (props.nullable) {
+          result[key] = null;
+        }
+      } else {
+        result[key] = this.decodeFieldValue(value, props);
+      }
+    }
+    for (const [key, value] of Object.entries(payload)) {
+      if (key in result || BASE_COLUMNS.has(key)) continue;
+      const props = fields[key]?.getProps?.();
+      result[key] = props ? this.decodeFieldValue(value, props) : value;
+    }
+    return result;
   }
 
   private decodeFieldValue(value: unknown, props: Record<string, unknown>): unknown {
@@ -973,8 +999,8 @@ export class SqliteDocumentStore {
       return new Map(entries.map(([key, item]) => [key, this.decodeMapValue(item, props)]));
     }
     if (props.modelRef === Date) {
-      if (Array.isArray(value)) return value.map((item) => (item === null ? item : dayjs(Number(item))));
-      return dayjs(Number(value));
+      if (Array.isArray(value)) return value.map((item) => (item === null ? item : decodeDateValue(item)));
+      return decodeDateValue(value);
     }
     if (Array.isArray(value)) return value.map((item) => this.decodeNestedValue(item, props));
     return this.decodeNestedValue(value, props);
@@ -982,7 +1008,7 @@ export class SqliteDocumentStore {
 
   private decodeMapValue(value: unknown, props: Record<string, unknown>) {
     if (value === undefined || value === null) return value;
-    if (props.of === Date) return dayjs(Number(value));
+    if (props.of === Date) return decodeDateValue(value);
     return value;
   }
 
@@ -991,12 +1017,44 @@ export class SqliteDocumentStore {
     if (!props.isClass || !props.isScalar) return value;
     const scalarFields = (props.modelRef as { [FIELD_META]?: FieldMap } | undefined)?.[FIELD_META];
     if (!scalarFields) return value;
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, nested]) => {
-        const nestedProps = scalarFields[key]?.getProps?.();
-        return [key, nestedProps ? this.decodeFieldValue(nested, nestedProps) : nested];
-      }),
-    );
+    const source = value as Record<string, unknown>;
+    const defaults = getDefault(scalarFields as never) as Record<string, unknown>;
+    const result: Record<string, unknown> = {};
+    for (const [key, fieldMeta] of Object.entries(scalarFields)) {
+      const nestedProps = fieldMeta.getProps();
+      const nested = source[key];
+      result[key] = nested === undefined ? defaults[key] : this.decodeFieldValue(nested, nestedProps);
+    }
+    for (const [key, nested] of Object.entries(source)) {
+      if (!(key in result)) result[key] = nested;
+    }
+    return result;
+  }
+
+  private normalizeWriteValue(value: unknown, props: Record<string, unknown>): unknown {
+    if (value === undefined || value === null) return value;
+    if (props.modelRef === Date) {
+      if (Array.isArray(value))
+        return value.map((item) => (item === null || item === undefined ? item : dayjs(item as never)));
+      return dayjs(value as never);
+    }
+    if (!props.isClass || !props.isScalar) return value;
+    if (Array.isArray(value)) return value.map((item) => this.fillScalarDefaults(item, props));
+    return this.fillScalarDefaults(value, props);
+  }
+
+  private fillScalarDefaults(value: unknown, props: Record<string, unknown>): unknown {
+    if (!value || typeof value !== "object") return value;
+    const scalarFields = (props.modelRef as { [FIELD_META]?: FieldMap } | undefined)?.[FIELD_META];
+    if (!scalarFields) return value;
+    const defaults = getDefault(scalarFields as never) as Record<string, unknown>;
+    const result = { ...(value as Record<string, unknown>) };
+    for (const [key, fieldMeta] of Object.entries(scalarFields)) {
+      const nestedProps = fieldMeta.getProps();
+      if (result[key] === undefined) result[key] = defaults[key];
+      else result[key] = this.normalizeWriteValue(result[key], nestedProps);
+    }
+    return result;
   }
 
   hydrate(data: DocumentRecord, originalData: DocumentRecord = data) {

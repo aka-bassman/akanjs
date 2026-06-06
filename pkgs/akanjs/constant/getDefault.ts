@@ -6,7 +6,7 @@ export const getDefault = <T>(fieldObj: FieldObject): DefaultOf<T> => {
   const result: Record<string, unknown> = {};
   for (const [key, field] of Object.entries(fieldObj)) {
     if (field.fieldType === "hidden") result[key] = null;
-    else if (field.default) {
+    else if (field.default !== undefined && field.default !== null) {
       if (typeof field.default === "function") result[key] = (field.default as () => object)();
       else result[key] = field.default as object;
     } else if (field.isArray) result[key] = [];
