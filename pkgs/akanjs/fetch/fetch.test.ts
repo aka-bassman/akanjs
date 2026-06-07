@@ -48,6 +48,7 @@ const setAkanPublicEnv = () => {
 };
 
 afterEach(() => {
+  FetchClient.resetSharedRegistry();
   globalThis.fetch = originalFetch;
   globalThis.WebSocket = originalWebSocket;
   globalThis.setTimeout = originalSetTimeout;
@@ -605,6 +606,47 @@ describe("FetchClient HTTP generation", () => {
       "https://clone.example/custom/1234567890abcdef12345678",
     ]);
   });
+
+  test("materializes handlers lazily from local and shared serialized signals", async () => {
+    setMockFetch();
+    jsonResponses.push("local", "shared");
+
+    const local = new FetchClient("https://local.example", {}, { service: serviceSignal });
+    expect(Object.keys(local.handler)).toEqual([]);
+
+    const localResult = await local.handler.getThing("1234567890abcdef12345678", [], null);
+    expect(localResult).toBe("local");
+    expect(Object.keys(local.handler)).toContain("getThing");
+
+    const shared = new FetchClient("https://shared.example");
+    expect(Object.keys(shared.handler)).toEqual([]);
+
+    const sharedResult = await shared.handler.getThing("abcdefabcdefabcdefabcdef", [], null);
+    expect(sharedResult).toBe("shared");
+    expect(Object.keys(shared.handler)).toContain("getThing");
+    expect(fetchCalls.map((call) => call.url)).toEqual([
+      "https://local.example/custom/1234567890abcdef12345678",
+      "https://shared.example/custom/abcdefabcdefabcdefabcdef",
+    ]);
+  });
+
+  test("does not require database constants while only indexing shared database signals", () => {
+    const missingConstantSignal: SerializedSignal = {
+      prefix: "missingConstant",
+      getGuards: ["Public"],
+      cruGuards: ["Admin"],
+      slice: {
+        "": { args: [] },
+      },
+      endpoint: {},
+    };
+
+    expect(() => new FetchClient("https://api.example", {}, { missingConstant: missingConstantSignal })).not.toThrow();
+    expect(() => new FetchClient("https://shared.example")).not.toThrow();
+    expect(() =>
+      FetchClient.build<any>({}, { missingConstant: missingConstantSignal }, { connect: false }),
+    ).not.toThrow();
+  });
 });
 
 describe("FetchClient database signal helpers", () => {
@@ -624,6 +666,7 @@ describe("FetchClient database signal helpers", () => {
       { count: 1 },
     );
     const client = new FetchClient("https://api.example", {}, { fetchTestItem: databaseSignal });
+    expect(Object.keys(client.handler)).toEqual([]);
 
     const full = await client.handler.fetchTestItem("1234567890abcdef12345678");
     const light = await client.handler.lightFetchTestItem("1234567890abcdef12345678");
@@ -658,6 +701,18 @@ describe("FetchClient database signal helpers", () => {
     expect(init.fetchTestItemListByOwner).toBeInstanceOf(DataList);
     expect(init.fetchTestItemInsightByOwner).toBeInstanceOf(FetchTestInsight);
     expect(defaultInit.fetchTestItemInit.queryArgsOfFetchTestItem).toEqual([]);
+    expect(Object.keys(client.handler)).toEqual(
+      expect.arrayContaining([
+        "fetchTestItem",
+        "lightFetchTestItem",
+        "createFetchTestItem",
+        "updateFetchTestItem",
+        "removeFetchTestItem",
+        "fetchTestItemListByOwner",
+        "fetchTestItemInsightByOwner",
+        "initFetchTestItemByOwner",
+      ]),
+    );
     expect(client.slice.fetchTestItemByOwner).toEqual({
       refName: "fetchTestItem",
       sliceName: "fetchTestItemByOwner",
@@ -687,6 +742,7 @@ describe("FetchClient database signal helpers", () => {
       { title: "Updated", count: 2, nested: { label: "N" } },
     );
     const client = new FetchClient("https://api.example", {}, { fetchTestItem: databaseSignal });
+    expect(Object.keys(client.handler)).toEqual([]);
 
     const view = (await client.handler.viewFetchTestItem("1234567890abcdef12345678")) as {
       fetchTestItem: unknown;
@@ -704,6 +760,9 @@ describe("FetchClient database signal helpers", () => {
     expect(view.fetchTestItemView.fetchTestItemObj).toMatchObject({ title: "View" });
     expect(edit.fetchTestItemObj).toMatchObject({ title: "ViewRaw" });
     expect(merged).toBeInstanceOf(FetchTestFull);
+    expect(Object.keys(client.handler)).toEqual(
+      expect.arrayContaining(["viewFetchTestItem", "fetchTestItem", "getFetchTestItemEdit", "mergeFetchTestItem"]),
+    );
     expect(fetchCalls.at(-1)?.url).toBe("https://api.example/fetchTest/updateFetchTestItem/bbbbbbbbbbbbbbbbbbbbbbbb");
   });
 });
