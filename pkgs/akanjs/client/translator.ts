@@ -47,6 +47,12 @@ export class Translator {
   static getActiveLocale(): string | undefined {
     return getTranslatorState().activeLocale;
   }
+  static translateByLocale(lang: string, key: string, param?: Record<string, string | number>): string {
+    const dictionary = getTranslatorState().langDictionaryMap.get(lang);
+    if (!dictionary) return key;
+    const msg = (pathGet(key, dictionary, ".", { t: key }) as { t: string }).t;
+    return param ? msg.replace(/{([^}]+)}/g, (_, key: string) => param[key] as string) : msg;
+  }
   // Synchronously merge a single locale's dictionary into the shared map.
   // Idempotent: re-seeding the same locale merges keys without dropping existing ones, and re-seeding
   // the exact same snapshot object is skipped for performance.
@@ -63,10 +69,7 @@ export class Translator {
     state.langDictionaryMap.set(lang, existingDictionary);
   }
   translate(lang: string, key: string, param?: Record<string, string | number>): string {
-    const dictionary = getTranslatorState().langDictionaryMap.get(lang);
-    if (!dictionary) return key;
-    const msg = (pathGet(key, dictionary, ".", { t: key }) as { t: string }).t;
-    return param ? msg.replace(/{([^}]+)}/g, (_, key: string) => param[key] as string) : msg;
+    return Translator.translateByLocale(lang, key, param);
   }
   async getDictionary(lang: string) {
     const dictionary = getTranslatorState().langDictionaryMap.get(lang);
