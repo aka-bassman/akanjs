@@ -162,6 +162,7 @@ describe("generated client glue", () => {
     const { makePageProto } = await import("./makePageProto");
     const pageProto = makePageProto(dictionary);
     const runtimeFetch = Object.assign(() => "ok", generatedFetch);
+    const shownMessages: unknown[] = [];
 
     registerClientRuntime({ ...pageProto, fetch: runtimeFetch, sig: generatedSig });
     const client = await import("./useClient");
@@ -171,5 +172,11 @@ describe("generated client glue", () => {
     expect(client.Err).toBeDefined();
     expect((client.fetch.ping as () => string)()).toBe("pong");
     expect(client.sig.ping).toBe("signal");
+
+    Object.assign(client.msg, {
+      success: (key: string, option?: unknown) => shownMessages.push({ key, option }),
+    });
+    client.msg.success("user.hello", { key: "inviteOwnerFromOrg" });
+    expect(shownMessages).toEqual([{ key: "user.hello", option: { key: "inviteOwnerFromOrg" } }]);
   });
 });
