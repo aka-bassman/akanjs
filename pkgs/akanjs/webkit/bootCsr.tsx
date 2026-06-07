@@ -296,6 +296,7 @@ function validateRouteModuleExports(key: string, mod: RouteModule) {
             "manifest",
             "theme",
             "reconnect",
+            "wsConnect",
             "layoutStyle",
             "gaTrackingId",
             "Loading",

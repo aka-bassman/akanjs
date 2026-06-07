@@ -58,6 +58,27 @@ describe("RouteTreeBuilder implicit locale", () => {
     }
   });
 
+  test("allows wsConnect export on internal root layouts", async () => {
+    const routes = new RouteTreeBuilder({
+      "./__root_layout.tsx": async () => ({
+        default: ({ children }: { children: ReactNode }) => children,
+        head: "root",
+        wsConnect: false,
+      }),
+      "./foo.tsx": async () => ({ default: () => null }),
+    }).build();
+    const matched = RouteTreeBuilder.match("/ko/foo", routes);
+
+    expect(
+      matched &&
+        (await RouteElementComposer.resolveHead({
+          pathRoute: matched.pathRoute,
+          params: matched.params,
+          searchParams: {},
+        })),
+    ).toBe("root");
+  });
+
   test("supports route groups, repeated search params, and cached lazy modules", async () => {
     let loadCount = 0;
     const routes = new RouteTreeBuilder({

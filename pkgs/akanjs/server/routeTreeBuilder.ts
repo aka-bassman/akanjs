@@ -53,6 +53,7 @@ export class RouteTreeBuilder {
     "manifest",
     "theme",
     "reconnect",
+    "wsConnect",
     "layoutStyle",
     "gaTrackingId",
     "Loading",

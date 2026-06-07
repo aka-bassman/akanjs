@@ -119,6 +119,7 @@ export interface LayoutModule {
   manifest?: WebAppManifest;
   theme?: string;
   reconnect?: boolean;
+  wsConnect?: boolean;
   layoutStyle?: "mobile" | "web";
   gaTrackingId?: string;
   Loading?: LayoutLoadingRender;

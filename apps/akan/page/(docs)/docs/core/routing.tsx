@@ -385,8 +385,8 @@ export function Error({ error }: { error?: unknown }) {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "The root _layout.tsx can configure app-wide behavior. It is still a layout, but it may also export extra values for fonts, manifest, theme, analytics, and mobile-style rendering.",
-              ko: "root _layout.tsx는 앱 전체의 동작을 설정할 수 있습니다. 기본적으로는 layout이지만, font, manifest, theme, analytics, mobile-style rendering 같은 앱 공통 설정을 추가로 export할 수 있습니다.",
+              en: "The root _layout.tsx can configure app-wide behavior. It is still a layout, but it may also export extra values for fonts, manifest, theme, realtime connection, analytics, and mobile-style rendering.",
+              ko: "root _layout.tsx는 앱 전체의 동작을 설정할 수 있습니다. 기본적으로는 layout이지만, font, manifest, theme, realtime connection, analytics, mobile-style rendering 같은 앱 공통 설정을 추가로 export할 수 있습니다.",
             })}
           </div>
         </Docs.Description>
@@ -411,6 +411,7 @@ export const manifest: WebAppManifest = {
 
 export const theme = "dark";
 export const reconnect = true;
+export const wsConnect = true;
 export const layoutStyle = "web";
 export const gaTrackingId = "G-XXXXXXXXXX";
 
@@ -446,6 +447,13 @@ export default function Layout({ children }: LayoutProps) {
               desc: l.trans({
                 en: "Controls whether the client tries to reconnect to realtime runtime channels.",
                 ko: "클라이언트가 실시간 런타임 채널에 다시 연결할지 정합니다.",
+              }),
+            },
+            {
+              name: "wsConnect",
+              desc: l.trans({
+                en: "Controls whether the browser connects the client WebSocket runtime after load. The default is true. If false, message/pubsub calls warn in the browser console until fetch.instance.connect() is called.",
+                ko: "브라우저 로드 후 client WebSocket runtime을 연결할지 정합니다. 기본값은 true입니다. false이면 fetch.instance.connect()를 호출하기 전 message/pubsub 호출 시 브라우저 콘솔에 warning이 표시됩니다.",
               }),
             },
             {

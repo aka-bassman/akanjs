@@ -768,6 +768,27 @@ describe("FetchClient database signal helpers", () => {
 });
 
 describe("WsClient", () => {
+  test("warns when realtime APIs are used before websocket connection", () => {
+    setFakeWebSocket();
+    const originalConsoleWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = ((message: string) => {
+      warnings.push(message);
+    }) as typeof console.warn;
+    try {
+      const client = new WsClient("ws://example/ws");
+      client.emit("send", ["hello"]);
+      client.subscribe({ key: "roomKey", data: ["r1"], handleEvent: () => undefined });
+
+      expect(warnings).toEqual([
+        expect.stringContaining('before emit "send"'),
+        expect.stringContaining('before subscribe "roomKey"'),
+      ]);
+    } finally {
+      console.warn = originalConsoleWarn;
+    }
+  });
+
   test("manages websocket lifecycle, messages, listeners, and subscriptions", () => {
     setFakeWebSocket();
     const client = new WsClient("ws://example/ws");

@@ -29,6 +29,7 @@ const SSRProvider = ({
   fonts,
   layoutStyle = "web",
   reconnect = getEnv().operationMode === "local",
+  wsConnect = true,
   dictionary,
   allDictionary,
   of,
@@ -71,7 +72,14 @@ const SSRProvider = ({
               <ClientInner />
             </Suspense>
             <Suspense key="client-bridge" fallback={null}>
-              <ClientBridge key="bridge" env={env} theme={theme} prefix={prefix} gaTrackingId={gaTrackingId} />
+              <ClientBridge
+                key="bridge"
+                env={env}
+                theme={theme}
+                prefix={prefix}
+                gaTrackingId={gaTrackingId}
+                wsConnect={wsConnect}
+              />
               <ClientSsrBridge key="ssr-bridge" lang={lang} prefix={prefix} />
             </Suspense>
           </ClientWrapper>

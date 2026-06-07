@@ -30,6 +30,8 @@ export interface ProviderProps {
   layoutStyle?: "mobile" | "web";
   /** Enable reconnect helper. Defaults to local operation mode in CSR. */
   reconnect?: boolean;
+  /** Connect the client WebSocket runtime after the browser loads. */
+  wsConnect?: boolean;
   /** Active-locale dictionary injected by the server (SSR only) to seed the client Translator. */
   dictionary?: Record<string, Record<string, unknown>>;
   /**

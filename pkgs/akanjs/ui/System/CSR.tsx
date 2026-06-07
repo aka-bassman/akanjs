@@ -45,6 +45,7 @@ const CSRProvider = ({
   fonts,
   layoutStyle = "web",
   reconnect = getEnv().operationMode === "local",
+  wsConnect = true,
   of,
 }: CSRProviderProps) => {
   return (
@@ -72,7 +73,14 @@ const CSRProvider = ({
           </Client.Wrapper>
           <Client.Inner />
           <CSRInner />
-          <Client.Bridge lang={lang} env={env} theme={theme} prefix={prefix} gaTrackingId={gaTrackingId} />
+          <Client.Bridge
+            lang={lang}
+            env={env}
+            theme={theme}
+            prefix={prefix}
+            gaTrackingId={gaTrackingId}
+            wsConnect={wsConnect}
+          />
           <CSRBridge lang={lang} prefix={prefix} />
         </>
       )}

@@ -5,6 +5,7 @@ import {
   clsx,
   Device,
   defaultPageState,
+  fetch,
   getPathInfo,
   initAuth,
   type Location,
@@ -164,9 +165,10 @@ interface ClientBridgeProps {
   theme?: AkanTheme;
   prefix?: string;
   gaTrackingId?: string;
+  wsConnect?: boolean;
 }
 
-export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId }: ClientBridgeProps) => {
+export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId, wsConnect = true }: ClientBridgeProps) => {
   const uiOperation = st.use.uiOperation();
   const pathname = st.use.pathname();
   const params = st.use.params();
@@ -199,6 +201,11 @@ export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId }: ClientB
       st.set({ uiOperation: "idle" });
     }, 2000);
   }, []);
+
+  useEffect(() => {
+    if (!wsConnect) return;
+    (fetch.instance as { connect: () => void }).connect();
+  }, [wsConnect]);
 
   useEffect(() => {
     if (getThemeCookie() !== undefined) return;
