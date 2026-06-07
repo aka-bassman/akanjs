@@ -1,5 +1,12 @@
 # akanjs
 
+## 2.2.7
+
+### Patch Changes
+
+- fix: base dictionary translation failed in some cases
+- fix: file upload contract workaround on shared Field.Img component
+
 ## 2.2.3
 
 ### Patch Changes

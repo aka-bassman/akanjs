@@ -1,5 +1,13 @@
 # @akanjs/cli
 
+## 2.2.7
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - akanjs@2.2.7
+
 ## 2.2.3
 
 ### Patch Changes

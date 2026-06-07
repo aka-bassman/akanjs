@@ -1,6 +1,7 @@
 export { applyMixins } from "./applyMixins";
 export { capitalize } from "./capitalize";
 export { deepObjectify } from "./deepObjectify";
+export * from "./fileUpload";
 export { formatNumber } from "./formatNumber";
 export { formatPhone } from "./formatPhone";
 export { getAllPropertyDescriptors } from "./getAllPropertyDescriptors";
