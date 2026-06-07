@@ -362,6 +362,7 @@ export class DevHmrController {
       `${path.sep}pkgs${path.sep}akanjs${path.sep}server${path.sep}src${path.sep}ssrFromRscRenderer.tsx`,
     ];
     if (files.some((file) => runtimeRoots.some((needle) => path.resolve(file).includes(needle)))) return true;
+    if (files.some((file) => path.basename(file).endsWith(".signal.ts"))) return true;
 
     // A route source file that is not in the current seed index is likely a
     // newly added route/layout. The backend's route seed index is static for

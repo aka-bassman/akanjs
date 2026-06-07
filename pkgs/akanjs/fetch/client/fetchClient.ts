@@ -173,6 +173,10 @@ export class FetchClient {
     if (!handler) throw new Error(`${owner} requires fetch handler "${key}", but it is not registered`);
     return handler as T;
   }
+  #setHandlerFactory(key: string, factory: FetchHandlerFactory) {
+    this.#handlerFactory.set(key, factory);
+    delete this.#handlerStore[key];
+  }
   connect() {
     this.ws.connect();
   }
@@ -259,15 +263,15 @@ export class FetchClient {
   #registerEndpoint(key: string, endpoint: SerializedEndpoint, prefix?: string) {
     switch (endpoint.type) {
       case "query": {
-        this.#handlerFactory.set(key, () => this.#makeHttpFn(key, endpoint, prefix));
+        this.#setHandlerFactory(key, () => this.#makeHttpFn(key, endpoint, prefix));
         return;
       }
       case "mutation": {
-        this.#handlerFactory.set(key, () => this.#makeHttpFn(key, endpoint, prefix));
+        this.#setHandlerFactory(key, () => this.#makeHttpFn(key, endpoint, prefix));
         return;
       }
       case "pubsub": {
-        this.#handlerFactory.set(`subscribe${capitalize(key)}`, () => {
+        this.#setHandlerFactory(`subscribe${capitalize(key)}`, () => {
           const roomArgs = endpoint.args.filter((arg) => arg.type === "room");
           const roomArgLength = roomArgs.length;
           const serializerMap = this.#makeArgSerializer(endpoint.args);
@@ -295,7 +299,7 @@ export class FetchClient {
         return;
       }
       case "message": {
-        this.#handlerFactory.set(key, () => {
+        this.#setHandlerFactory(key, () => {
           const msgArgs = endpoint.args.filter((arg) => arg.type === "msg");
           const msgArgLength = msgArgs.length;
           const serializerMap = this.#makeArgSerializer(endpoint.args);
@@ -305,7 +309,7 @@ export class FetchClient {
             this.ws.emit(key, data);
           };
         });
-        this.#handlerFactory.set(`listen${capitalize(key)}`, () => {
+        this.#setHandlerFactory(`listen${capitalize(key)}`, () => {
           const parseReturn = this.#makeReturnParser(endpoint.returns);
           const wrappedListeners = new WeakMap<(data: unknown) => void, (data: unknown) => void>();
           return ((handleEvent: (data: unknown) => void, fetchPolicy: FetchPolicy = {}) => {
@@ -410,11 +414,11 @@ export class FetchClient {
     };
     const endpoint = FetchClient.getBaseEndpoint(refName, signal);
     Object.entries(endpoint).forEach(([key, value]) => {
-      this.#handlerFactory.set(key, () => this.#makeHttpFn(key, value, signal.prefix));
+      this.#setHandlerFactory(key, () => this.#makeHttpFn(key, value, signal.prefix));
     });
 
     if (signal.cruGuards) {
-      this.#handlerFactory.set(
+      this.#setHandlerFactory(
         names.viewModel,
         () =>
           (async (id: string, option?: FetchPolicy) => {
@@ -428,7 +432,7 @@ export class FetchClient {
             };
           }) as FetchHandler,
       );
-      this.#handlerFactory.set(
+      this.#setHandlerFactory(
         names.getModelView,
         () =>
           (async (id: string, option?: FetchPolicy) => {
@@ -437,7 +441,7 @@ export class FetchClient {
             return { refName, [`${refName}Obj`]: modelObj, [`${refName}ViewAt`]: new Date() };
           }) as FetchHandler,
       );
-      this.#handlerFactory.set(
+      this.#setHandlerFactory(
         names.editModel,
         () =>
           (async (id: string, option?: FetchPolicy) => {
@@ -451,7 +455,7 @@ export class FetchClient {
             };
           }) as FetchHandler,
       );
-      this.#handlerFactory.set(
+      this.#setHandlerFactory(
         names.getModelEdit,
         () =>
           (async (id: string, option?: FetchPolicy) => {
@@ -460,7 +464,7 @@ export class FetchClient {
             return { refName, [`${refName}Obj`]: modelObj, [`${refName}ViewAt`]: new Date() };
           }) as FetchHandler,
       );
-      this.#handlerFactory.set(
+      this.#setHandlerFactory(
         names.mergeModel,
         () =>
           (async (modelOrId: string | { id: string }, data: UnknownRecord, option?: FetchPolicy) => {
@@ -471,7 +475,7 @@ export class FetchClient {
       );
     }
 
-    this.#handlerFactory.set(
+    this.#setHandlerFactory(
       names.addModelFiles,
       () =>
         (async (fileList: FileList, parentId?: string, option?: FetchPolicy) => {
@@ -532,12 +536,12 @@ export class FetchClient {
 
     const endpoint = FetchClient.getEndpointFromSlice(refName, suffix, slice);
     Object.entries(endpoint).forEach(([key, value]) => {
-      this.#handlerFactory.set(key, () => this.#makeHttpFn(key, value, prefix));
+      this.#setHandlerFactory(key, () => this.#makeHttpFn(key, value, prefix));
     });
 
     const argLength = slice.args.length;
     this.slice[sliceName] = { refName, sliceName, argLength };
-    this.#handlerFactory.set(names.init, () => async (...argData: unknown[]) => {
+    this.#setHandlerFactory(names.init, () => async (...argData: unknown[]) => {
       const cnst = ConstantRegistry.getDatabase(refName);
       const queryArgs = normalizeQueryArgs(
         Array.from({ length: Math.min(argData.length, argLength) }, (_, idx) => argData[idx]),
@@ -579,7 +583,7 @@ export class FetchClient {
         [`${refName}Insight${capSuffix}`]: modelInsight,
       };
     });
-    this.#handlerFactory.set(names.getInit, () => async (...args: unknown[]) => {
+    this.#setHandlerFactory(names.getInit, () => async (...args: unknown[]) => {
       const initFn = this.#requireHandler<(...args: unknown[]) => Promise<Record<string, unknown>>>(
         names.init,
         names.getInit,

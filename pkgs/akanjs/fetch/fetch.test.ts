@@ -630,6 +630,33 @@ describe("FetchClient HTTP generation", () => {
     ]);
   });
 
+  test("refreshes cached handlers when a serialized signal is applied again", async () => {
+    setMockFetch();
+    jsonResponses.push("before", "after");
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+
+    expect(await client.handler.getThing("1234567890abcdef12345678", [], null)).toBe("before");
+
+    client.applySignal({
+      service: {
+        endpoint: {
+          getThing: {
+            type: "query",
+            path: "/changed/:id",
+            args: [arg("param", "id", { refName: "ID" }), arg("search", "version")],
+            returns: { refName: "String" },
+          },
+        },
+      },
+    });
+
+    expect(await client.handler.getThing("1234567890abcdef12345678", "v2")).toBe("after");
+    expect(fetchCalls.map((call) => call.url)).toEqual([
+      "https://api.example/custom/1234567890abcdef12345678",
+      "https://api.example/changed/1234567890abcdef12345678?version=v2",
+    ]);
+  });
+
   test("does not require database constants while only indexing shared database signals", () => {
     const missingConstantSignal: SerializedSignal = {
       prefix: "missingConstant",
