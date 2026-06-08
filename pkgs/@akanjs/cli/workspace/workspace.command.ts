@@ -38,6 +38,13 @@ export class WorkspaceCommand extends command("workspace", [WorkspaceScript], ({
         { dirname: dir, installLibs: libs, init, ...(registry ? { registryUrl: registry } : {}) },
       );
     }),
+  generateAgentRules: target({ desc: "Generate AGENTS.md and optional Cursor rules for Akan coding agents" })
+    .option("overwrite", Boolean, { desc: "Overwrite existing agent rule files", default: false })
+    .option("cursorRules", Boolean, { desc: "Generate .cursor/rules/akan.mdc", default: true })
+    .with(Workspace)
+    .exec(async function (overwrite, cursorRules, workspace) {
+      await this.workspaceScript.generateAgentRules(workspace, { overwrite, cursorRules });
+    }),
   lint: target({ desc: "Lint and fix code in a specific app/lib/pkg" })
     .with(Exec)
     .option("fix", Boolean, { default: true })

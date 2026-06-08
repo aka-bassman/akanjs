@@ -63,6 +63,19 @@ describe("WorkspaceCommand", () => {
 
     expect(calls).toEqual([["my-repo", "app", { dirname: ".", installLibs: false, init: false }]]);
   });
+
+  test("delegates generateAgentRules with overwrite options", async () => {
+    const command = CommandContainer.get(WorkspaceCommand);
+    const workspace = createFakeExecutor("workspace");
+    const calls: unknown[] = [];
+    command.workspaceScript.generateAgentRules = async (...args: unknown[]) => {
+      calls.push(args);
+    };
+    const handler = getTargetMetas(WorkspaceCommand).find((meta) => meta.key === "generateAgentRules")?.handler;
+    await handler?.call(command, true, false, workspace);
+
+    expect(calls).toEqual([[workspace, { overwrite: true, cursorRules: false }]]);
+  });
 });
 
 describe("WorkspaceScript", () => {
@@ -146,6 +159,24 @@ describe("WorkspaceScript", () => {
       recorder.calls.filter((call) => call.name === "lint").map((call) => (call.args[0] as { name: string }).name),
     ).toEqual(["app", "lib", "pkg"]);
   });
+
+  test("delegates agent rule generation to the workspace runner", async () => {
+    const script = CommandContainer.get(WorkspaceScript);
+    const recorder = createCallRecorder();
+    const workspace = createFakeExecutor("workspace", {}, recorder);
+    script.workspaceRunner.generateAgentRules = async (...args: unknown[]) => {
+      recorder.record("generateAgentRules", ...args);
+      return [{ filePath: "/workspace/AGENTS.md", content: "" }];
+    };
+
+    await script.generateAgentRules(workspace as never, { overwrite: true, cursorRules: false });
+
+    expect(recorder.names()).toEqual(["workspace.spinning", "generateAgentRules", "spinner.succeed"]);
+    expect(recorder.calls.find((call) => call.name === "generateAgentRules")?.args).toEqual([
+      workspace,
+      { overwrite: true, cursorRules: false },
+    ]);
+  });
 });
 
 describe("WorkspaceRunner", () => {
@@ -199,6 +230,23 @@ describe("WorkspaceRunner", () => {
     } finally {
       process.chdir(cwd);
     }
+  });
+
+  test("generates agent rule files without overwriting by default", async () => {
+    const runner = new WorkspaceRunner();
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+
+    await runner.generateAgentRules(workspace);
+    expect(await Bun.file(`${root}/AGENTS.md`).text()).toContain("repo Agent Guide");
+    expect(await Bun.file(`${root}/.cursor/rules/akan.mdc`).text()).toContain("Akan.js Workspace Rules");
+
+    await Bun.write(`${root}/AGENTS.md`, "custom\n");
+    await runner.generateAgentRules(workspace);
+    expect(await Bun.file(`${root}/AGENTS.md`).text()).toBe("custom\n");
+
+    await runner.generateAgentRules(workspace, { overwrite: true, cursorRules: false });
+    expect(await Bun.file(`${root}/AGENTS.md`).text()).toContain("repo Agent Guide");
   });
 
   test("writes local registry config before installing generated workspace dependencies", async () => {

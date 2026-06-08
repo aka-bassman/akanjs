@@ -139,6 +139,10 @@ describe("Executor filesystem helpers", () => {
     expect(await readFile(path.join(root, "workspace/.gitignore"), "utf8")).toContain("node_modules");
     expect(await readFile(path.join(root, "workspace/.env"), "utf8")).toContain("AKAN_PUBLIC_REPO_NAME");
     expect(await readFile(path.join(root, "workspace/.vscode/settings.json"), "utf8")).toContain("typescript.tsdk");
+    expect(await readFile(path.join(root, "workspace/.cursor/rules/akan.mdc"), "utf8")).toContain(
+      "Akan.js Workspace Rules",
+    );
+    expect(await readFile(path.join(root, "workspace/AGENTS.md"), "utf8")).toContain("sample Agent Guide");
     expect(await readFile(path.join(root, "workspace/biome.json"), "utf8")).toContain(
       "./node_modules/@akanjs/devkit/lint/no-import-client-functions.grit",
     );
