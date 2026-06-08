@@ -35,12 +35,11 @@ export interface SsrFromRscInput {
    * guaranteeing one React instance across rscClient and every route
    * chunk.
    *
-   * Injection happens via a stream transform, not React children, because
-   * React Fizz hoists `<link rel="modulepreload">` (generated from
-   * `bootstrapModules`) to the top of `<head>`, which would otherwise sit
-   * before any importmap rendered via JSX. The spec is strict: import maps
-   * must be acquired before any module script fetch starts, including
-   * modulepreload.
+   * Injection happens via a stream transform, not React children, because the
+   * spec is strict: import maps must be acquired before any module script fetch
+   * starts, including modulepreload. Akan writes bootstrap module preloads
+   * directly after this importmap and delays the executable module script until
+   * the Fizz HTML stream has completed.
    */
   importmap?: Record<string, string>;
   theme?: AkanTheme;

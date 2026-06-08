@@ -75,7 +75,6 @@ export class SsrFromRscRenderer {
 
     const renderHtml = () =>
       renderToReadableStream(<Root />, {
-        bootstrapModules: input.bootstrapModules,
         bootstrapScriptContent: bootstrap,
       });
     const htmlStream =
@@ -83,6 +82,7 @@ export class SsrFromRscRenderer {
 
     const withHeadScripts = SsrFromRscRenderer.#injectHeadScriptsIntoHead(htmlStream, {
       importmap: input.importmap,
+      bootstrapModules: input.bootstrapModules,
       theme: input.theme,
       injectThemeInitScript: input.injectThemeInitScript,
     });
@@ -90,6 +90,7 @@ export class SsrFromRscRenderer {
     return SsrFromRscRenderer.#appendRscScriptsAfterHtml(
       withHeadScripts,
       SsrFromRscRenderer.#sanitizeFlightForClient(rscForClient),
+      input.bootstrapModules,
       input.request,
     );
   }
@@ -143,32 +144,35 @@ export class SsrFromRscRenderer {
    * tag in the outgoing HTML stream.
    *
    * We do this as a stream transform (rather than as a React child inside
-   * `<head>`) because React 19's Float pipeline hoists
-   * `<link rel="modulepreload">` for every entry in `bootstrapModules` to the
-   * top of `<head>`. An importmap rendered via JSX ends up *after* those
-   * hoisted preloads, which — per the HTML spec — is too late: once the
-   * browser starts a module script fetch for a preload, the document's
-   * "allow-import-maps" bit flips to false and no further importmap can be
-   * acquired. By writing the importmap before any of React's own `<head>`
-   * output reaches the wire, we guarantee the browser sees it first.
+   * `<head>`) so importmaps are acquired before any modulepreload can start.
+   * The spec is strict: once the browser starts a module script fetch for a
+   * preload, the document's "allow-import-maps" bit flips to false and no
+   * further importmap can be acquired.
    *
    * The transform operates on UTF-8 bytes until it has spliced the tag, then
    * becomes a pure passthrough to avoid any further per-chunk overhead.
    */
   static #injectHeadScriptsIntoHead(
     stream: ReadableStream<Uint8Array>,
-    options: { importmap?: Record<string, string>; theme?: AkanTheme; injectThemeInitScript?: boolean },
+    options: {
+      importmap?: Record<string, string>;
+      bootstrapModules?: string[];
+      theme?: AkanTheme;
+      injectThemeInitScript?: boolean;
+    },
   ): ReadableStream<Uint8Array> {
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
-    const { importmap, theme, injectThemeInitScript } = options;
+    const { importmap, bootstrapModules, theme, injectThemeInitScript } = options;
     const htmlTheme = theme && theme !== "css" && theme !== "system" ? theme : undefined;
     const importmapTag =
       importmap && Object.keys(importmap).length > 0
         ? `<script type="importmap">${JSON.stringify({ imports: importmap })}</script>`
         : "";
+    const modulePreloadTags = SsrFromRscRenderer.#createBootstrapModulePreloadTags(bootstrapModules);
     const shouldInjectThemeScript = theme === "system" || (theme === undefined && injectThemeInitScript);
-    const tags = `${shouldInjectThemeScript ? SsrFromRscRenderer.#themeInitScript : ""}${importmapTag}`;
+    const themeInitTag = shouldInjectThemeScript ? SsrFromRscRenderer.#themeInitScript : "";
+    const tags = `${themeInitTag}${importmapTag}${modulePreloadTags}`;
     if (!tags && !htmlTheme) return stream;
     const htmlOpenRe = /<html(\s[^>]*)?>/i;
     const headOpenRe = /<head(\s[^>]*)?>/i;
@@ -220,6 +224,20 @@ export class SsrFromRscRenderer {
     return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
+  static #createBootstrapModulePreloadTags(bootstrapModules?: string[]): string {
+    if (!bootstrapModules?.length) return "";
+    return bootstrapModules
+      .map((src) => `<link rel="modulepreload" href="${SsrFromRscRenderer.#escapeHtmlAttr(src)}">`)
+      .join("");
+  }
+
+  static #createBootstrapModuleScriptTags(bootstrapModules?: string[]): string {
+    if (!bootstrapModules?.length) return "";
+    return bootstrapModules
+      .map((src) => `<script type="module" src="${SsrFromRscRenderer.#escapeHtmlAttr(src)}"></script>`)
+      .join("");
+  }
+
   // React-server-dom-webpack/server emits a Flight hint of the form
   // `:HL["<href>","stylesheet"]\n` for every `<link rel="stylesheet">` in the
   // server tree. That string is forwarded verbatim to the browser which then
@@ -257,9 +275,11 @@ export class SsrFromRscRenderer {
   static #appendRscScriptsAfterHtml(
     htmlStream: ReadableStream<Uint8Array>,
     rscClientStream: ReadableStream<Uint8Array>,
+    bootstrapModules?: string[],
     request?: Request,
   ): ReadableStream<Uint8Array> {
     const encoder = new TextEncoder();
+    const bootstrapModuleScripts = SsrFromRscRenderer.#createBootstrapModuleScriptTags(bootstrapModules);
 
     return new ReadableStream<Uint8Array>({
       start(controller) {
@@ -282,6 +302,11 @@ export class SsrFromRscRenderer {
           } finally {
             reader.releaseLock();
           }
+
+          // Do not let React emit async bootstrap module scripts in the middle
+          // of the Fizz stream. Cached modules can otherwise execute before
+          // `$RC(...)` restores streamed Suspense segments into the DOM.
+          if (bootstrapModuleScripts && !errored) controller.enqueue(encoder.encode(bootstrapModuleScripts));
 
           // Inline RSC scripts must not be interleaved with arbitrary HTML bytes:
           // Fizz may split inside SVG path data or attributes, corrupting markup.

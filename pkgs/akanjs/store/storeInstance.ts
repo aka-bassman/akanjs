@@ -1,5 +1,5 @@
 import { ACTION_META, STATE_DERIVED_META, STATE_INIT_META } from "akanjs/base";
-import { Translator } from "akanjs/client/translator";
+import { Translator } from "akanjs/client";
 import { capitalize, Logger, parseAkanI18nEnv } from "akanjs/common";
 import { produce } from "immer";
 import type { RefObject } from "react";
