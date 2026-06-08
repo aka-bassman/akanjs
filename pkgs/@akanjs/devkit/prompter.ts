@@ -11,10 +11,7 @@ interface FileUpdateRequestProps {
 export class Prompter {
   static async #getGuidelineRoot() {
     const dirname = getDirname(import.meta.url);
-    const candidates = [
-      `${dirname}/guidelines`,
-      `${dirname}/../cli/guidelines`,
-    ];
+    const candidates = [`${dirname}/guidelines`, `${dirname}/../cli/guidelines`];
     for (const candidate of candidates) {
       try {
         await fsPromise.access(candidate);
@@ -28,13 +25,15 @@ export class Prompter {
 
   static async selectGuideline() {
     const guidelineRoot = await Prompter.#getGuidelineRoot();
-    const guideNames = (await fsPromise.readdir(guidelineRoot)).filter(
-      (name) => !name.startsWith("_"),
-    );
+    const guideNames = await Prompter.listGuidelines();
     return await select({
       message: "Select a guideline",
       choices: guideNames.map((name) => ({ name, value: name })),
     });
+  }
+  static async listGuidelines() {
+    const guidelineRoot = await Prompter.#getGuidelineRoot();
+    return (await fsPromise.readdir(guidelineRoot)).filter((name) => !name.startsWith("_")).sort();
   }
   static async getGuideJson(guideName: string): Promise<GuideGenerateJson> {
     const guidelineRoot = await Prompter.#getGuidelineRoot();

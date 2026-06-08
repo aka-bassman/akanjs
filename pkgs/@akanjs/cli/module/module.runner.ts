@@ -11,13 +11,15 @@ export class ModuleRunner extends runner("module") {
       dict: { model: serviceName, sysName: module.sys.name },
     });
 
-    const [dictionaryContent, serviceContent, signalContent, storeContent] = await Promise.all([
+    const [abstractContent, dictionaryContent, serviceContent, signalContent, storeContent] = await Promise.all([
+      module.readFile(`${serviceName}.abstract.md`),
       module.readFile(`${serviceName}.dictionary.ts`),
       module.readFile(`${serviceName}.service.ts`),
       module.readFile(`${serviceName}.signal.ts`),
       module.readFile(`${serviceName}.store.ts`),
     ]);
     return {
+      abstract: { filename: `${serviceName}.abstract.md`, content: abstractContent },
       dictionary: { filename: `${serviceName}.dictionary.ts`, content: dictionaryContent },
       service: { filename: `${serviceName}.service.ts`, content: serviceContent },
       signal: { filename: `${serviceName}.signal.ts`, content: signalContent },
@@ -59,6 +61,7 @@ export class ModuleRunner extends runner("module") {
     });
 
     const [
+      abstractContent,
       constantContent,
       dictionaryContent,
       serviceContent,
@@ -70,6 +73,7 @@ export class ModuleRunner extends runner("module") {
       zoneContent,
       utilContent,
     ] = await Promise.all([
+      module.readFile(`${module.name}.abstract.md`),
       module.readFile(`${module.name}.constant.ts`),
       module.readFile(`${module.name}.dictionary.ts`),
       module.readFile(`${module.name}.service.ts`),
@@ -82,6 +86,7 @@ export class ModuleRunner extends runner("module") {
       module.readFile(`${module.name}.Util.tsx`),
     ]);
     return {
+      abstract: { filename: `${module.name}.abstract.md`, content: abstractContent },
       constant: { filename: `${module.name}.constant.ts`, content: constantContent },
       dictionary: { filename: `${module.name}.dictionary.ts`, content: dictionaryContent },
       service: { filename: `${module.name}.service.ts`, content: serviceContent },

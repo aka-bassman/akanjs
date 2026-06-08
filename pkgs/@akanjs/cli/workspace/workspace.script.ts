@@ -48,6 +48,14 @@ export class WorkspaceScript extends script("workspace", [
     // Logger.rawLog(`\n💡 Run \`akan deploy\` to deploy the workspace to the cloud.`);
     Logger.rawLog(`\n👋 Happy coding!`);
   }
+  async generateAgentRules(
+    workspace: Workspace,
+    { overwrite = false, cursorRules = true }: { overwrite?: boolean; cursorRules?: boolean } = {},
+  ) {
+    const spinner = workspace.spinning("Generating agent rules...");
+    const files = await this.workspaceRunner.generateAgentRules(workspace, { overwrite, cursorRules });
+    spinner.succeed(`Agent rules ready (${files.length} file${files.length === 1 ? "" : "s"})`);
+  }
   async lint(exec: Exec, workspace: Workspace, { fix = true }: { fix?: boolean } = {}) {
     if (exec instanceof AppExecutor) await this.applicationScript.sync(exec);
     else if (exec instanceof LibExecutor) await this.libraryScript.syncLibrary(exec);

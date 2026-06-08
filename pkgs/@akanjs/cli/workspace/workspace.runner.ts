@@ -20,6 +20,35 @@ const defaultWorkspacePeerDependencies = new Set([
 ]);
 
 export class WorkspaceRunner extends runner("workspace") {
+  async generateAgentRules(
+    workspace: Workspace,
+    { overwrite = false, cursorRules = true }: { overwrite?: boolean; cursorRules?: boolean } = {},
+  ) {
+    const [appNames] = await workspace.getExecs();
+    const dict = {
+      repoName: workspace.repoName,
+      appName: appNames[0] ?? "app",
+    };
+    const created = await workspace.applyTemplate({
+      basePath: ".",
+      template: "workspaceRoot/AGENTS.md.template",
+      dict,
+      overwrite,
+    });
+
+    if (!cursorRules) return created;
+
+    return [
+      ...created,
+      ...(await workspace.applyTemplate({
+        basePath: ".cursor/rules",
+        template: "workspaceRoot/.cursor/rules/akan.mdc.template",
+        dict,
+        overwrite,
+      })),
+    ];
+  }
+
   async createWorkspace(
     repoName: string,
     appName: string,

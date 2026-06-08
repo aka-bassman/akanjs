@@ -1,128 +1,70 @@
 # Akan.js
 
-> Akan.js is a Bun-first full-stack TypeScript framework for building web, app-oriented clients, servers, APIs, databases, and deployment surfaces from one consistent codebase.
-
-Akan.js focuses on business code over framework wiring. It uses strict conventions, shared domain modules, type-safe services, generated clients, SQLite-first data paths, and a single Bun runtime from local development to production.
-
-This file points LLMs to the current Akan.js website content. Legacy docs, demo-only routes, modal tests, and runtime inspection pages are intentionally omitted.
-
-## Core Site
-
-- [Home](https://akanjs.com/): product overview, installation, platform surfaces, automation examples, and positioning.
-- [Blog](https://akanjs.com/blog): product notes, release notes, performance reports, and framework philosophy.
+Akan.js is a Bun-first full-stack TypeScript framework where business definitions drive web, app, server, data, and deployment surfaces.
 
 ## Start Here
 
-- [Quick Start](https://akanjs.com/docs/intro/quickstart): create and run a new Akan workspace.
-- [Fundamentals](https://akanjs.com/docs/intro/fundamentals): core ideas behind Akan applications.
-- [Practice](https://akanjs.com/docs/intro/practice): guided hands-on introduction.
+- Full LLM context: /llms-full.txt
+- Quick start: /llms/pages/docs/intro/quickstart.md
+- Fundamentals: /llms/pages/docs/intro/fundamentals.md
+- Agent workspace rules: /llms/pages/docs/core/folder-rule.md
 
-## Tutorials
+## Recommended Reading Order
 
-- [Show Details](https://akanjs.com/docs/tutorials/view): present detailed domain data in UI.
-- [Modifying Status](https://akanjs.com/docs/tutorials/util): update state through domain utilities.
-- [Interact in Service](https://akanjs.com/docs/tutorials/service): coordinate business logic inside services.
-- [Displaying with Slice](https://akanjs.com/docs/tutorials/slice): render list-oriented data with slices.
-- [UX with Pages](https://akanjs.com/docs/tutorials/page): compose page-level user experiences.
-- [Using Scalar](https://akanjs.com/docs/tutorials/scalar): define and use scalar types.
-- [Using Insight](https://akanjs.com/docs/tutorials/insight): inspect generated application knowledge.
-- [Relate Data](https://akanjs.com/docs/tutorials/relation): connect related domain data.
+- Quick Start: /llms/pages/docs/intro/quickstart.md
+- Fundamentals: /llms/pages/docs/intro/fundamentals.md
+- Folder Rule: /llms/pages/docs/core/folder-rule.md
+- File Rule: /llms/pages/docs/core/file-rule.md
+- Akan Runtime: /llms/pages/docs/core/runtime.md
+- App Config: /llms/pages/docs/core/config.md
+- Data Layer: /llms/pages/docs/core/data-layer.md
+- Commands: /llms/pages/references/cli/overview.md
+- akanjs/base: /llms/pages/references/akanjs/base.md
+- akanjs/signal: /llms/pages/references/akanjs/signal.md
+- akanjs/server: /llms/pages/references/akanjs/server.md
+- Overview: /llms/pages/conventions/module/overview.md
+- CRUD: /llms/pages/cheatsheet/interface/crud.md
+- Testing: /llms/pages/cheatsheet/dev/test.md
 
-## Core Concepts
+## P0 Documentation Mirrors
 
-- [Akan Runtime](https://akanjs.com/docs/core/runtime): Bun runtime, environment variables, server execution, and deployment runtime behavior.
-- [File Based Routing](https://akanjs.com/docs/core/routing): route generation from page files.
-- [Multi Client](https://akanjs.com/docs/core/multi-client): web and app-oriented client surfaces.
-- [App Config](https://akanjs.com/docs/core/config): `akan.config.ts` application configuration.
-- [Folder Rule](https://akanjs.com/docs/core/folder-rule): allowed application and library folder structure.
-- [File Rule](https://akanjs.com/docs/core/file-rule): naming and placement rules for Akan source files.
-- [Data Layer](https://akanjs.com/docs/core/data-layer): schema, document, service, signal, and store data flow.
+- Business Service: /llms/pages/docs/arch/backend.md
+- CSS And Styling: /llms/pages/docs/arch/css.md
+- UI Architecture: /llms/pages/docs/arch/frontend.md
+- Runtime And Infra: /llms/pages/docs/arch/infra.md
+- Mobile App Architecture: /llms/pages/docs/arch/mobile.md
+- Architecture Overview: /llms/pages/docs/arch/overview.md
+- App Config: /llms/pages/docs/core/config.md
+- Data Layer: /llms/pages/docs/core/data-layer.md
+- File Rule: /llms/pages/docs/core/file-rule.md
+- Folder Rule: /llms/pages/docs/core/folder-rule.md
+- Multi Client: /llms/pages/docs/core/multi-client.md
+- File Based Routing: /llms/pages/docs/core/routing.md
+- Akan Runtime: /llms/pages/docs/core/runtime.md
+- Fundamentals: /llms/pages/docs/intro/fundamentals.md
+- Practice: /llms/pages/docs/intro/practice.md
+- Quick Start: /llms/pages/docs/intro/quickstart.md
+- akanjs/base: /llms/pages/references/akanjs/base.md
+- akanjs/client: /llms/pages/references/akanjs/client.md
+- akanjs/common: /llms/pages/references/akanjs/common.md
+- akanjs/constant: /llms/pages/references/akanjs/constant.md
+- akanjs/fetch: /llms/pages/references/akanjs/fetch.md
+- akanjs/server: /llms/pages/references/akanjs/server.md
+- akanjs/signal: /llms/pages/references/akanjs/signal.md
+- akanjs/webkit: /llms/pages/references/akanjs/webkit.md
+- Application: /llms/pages/references/cli/application.md
+- Cloud: /llms/pages/references/cli/cloud.md
+- Library: /llms/pages/references/cli/library.md
+- Module: /llms/pages/references/cli/module.md
+- Commands: /llms/pages/references/cli/overview.md
+- Package: /llms/pages/references/cli/package.md
+- Page: /llms/pages/references/cli/page.md
+- Scalar: /llms/pages/references/cli/scalar.md
+- Workspace: /llms/pages/references/cli/workspace.md
 
-## Architecture
+## Agent Notes
 
-- [Architecture Overview](https://akanjs.com/docs/arch/overview): high-level system architecture.
-- [Runtime And Infra](https://akanjs.com/docs/arch/infra): runtime, infrastructure, and deployment model.
-- [UI Architecture](https://akanjs.com/docs/arch/frontend): UI and client architecture.
-- [Business Service](https://akanjs.com/docs/arch/backend): backend and service architecture.
-- [Mobile App Architecture](https://akanjs.com/docs/arch/mobile): app-oriented client architecture.
-- [CSS And Styling](https://akanjs.com/docs/arch/css): styling conventions and CSS approach.
-
-## Conventions
-
-- [Workspace Structure](https://akanjs.com/conventions/workspace/structure): monorepo and workspace layout.
-- [Format & Lint](https://akanjs.com/conventions/workspace/lint): formatting, linting, and code quality conventions.
-- [Assets](https://akanjs.com/conventions/applib/asset): `public/` and `private/` asset rules.
-- [Components](https://akanjs.com/conventions/applib/ui): `ui/` component placement.
-- [Server Utils](https://akanjs.com/conventions/applib/srvkit): `srvkit/` server utility placement.
-- [Web Utils](https://akanjs.com/conventions/applib/webkit): `webkit/` browser utility placement.
-- [Common Utils](https://akanjs.com/conventions/applib/common): shared `common/` utility placement.
-- [App Config](https://akanjs.com/conventions/applib/config): application config conventions.
-- [Domain Overview](https://akanjs.com/conventions/module/overview): domain module shape.
-- [Domain Constants](https://akanjs.com/conventions/module/constant): `model.constant.ts`.
-- [Domain Dictionary](https://akanjs.com/conventions/module/dictionary): `model.dictionary.ts`.
-- [Domain Document](https://akanjs.com/conventions/module/document): `model.document.ts`.
-- [Domain Service](https://akanjs.com/conventions/module/service): `model.service.ts`.
-- [Domain Signal](https://akanjs.com/conventions/module/signal): `model.signal.ts`.
-- [Domain Store](https://akanjs.com/conventions/module/store): `model.store.ts`.
-- [Domain UI Files](https://akanjs.com/conventions/module/template): `Model.Template.tsx` and related domain UI files.
-- [Scalar Overview](https://akanjs.com/conventions/scalar/overview): scalar module shape.
-- [Service Overview](https://akanjs.com/conventions/service/overview): service module shape.
-
-## References
-
-- [CLI Commands](https://akanjs.com/references/cli/overview): command overview.
-- [CLI Workspace](https://akanjs.com/references/cli/workspace): workspace commands.
-- [CLI Application](https://akanjs.com/references/cli/application): application commands.
-- [CLI Library](https://akanjs.com/references/cli/library): library commands.
-- [CLI Module](https://akanjs.com/references/cli/module): module commands.
-- [CLI Scalar](https://akanjs.com/references/cli/scalar): scalar commands.
-- [CLI Package](https://akanjs.com/references/cli/package): package commands.
-- [CLI Page](https://akanjs.com/references/cli/page): page commands.
-- [CLI Cloud](https://akanjs.com/references/cli/cloud): cloud commands.
-- [akanjs/base](https://akanjs.com/references/akanjs/base): base runtime APIs.
-- [akanjs/common](https://akanjs.com/references/akanjs/common): common utilities.
-- [akanjs/constant](https://akanjs.com/references/akanjs/constant): constant and schema APIs.
-- [akanjs/fetch](https://akanjs.com/references/akanjs/fetch): fetch and API client APIs.
-- [akanjs/signal](https://akanjs.com/references/akanjs/signal): signal APIs.
-- [akanjs/server](https://akanjs.com/references/akanjs/server): server APIs.
-- [akanjs/client](https://akanjs.com/references/akanjs/client): client APIs.
-- [akanjs/webkit](https://akanjs.com/references/akanjs/webkit): web client utilities.
-- [UI Overview](https://akanjs.com/references/ui/overview): UI package overview.
-- [UI Core](https://akanjs.com/references/ui/core): core UI components.
-- [UI Display](https://akanjs.com/references/ui/display): display components.
-- [UI Forms](https://akanjs.com/references/ui/forms): form components.
-- [UI Overlays](https://akanjs.com/references/ui/overlays): dialog, modal, and overlay components.
-- [UI System](https://akanjs.com/references/ui/system): system UI components.
-
-## Cheatsheets
-
-- [Authorization](https://akanjs.com/cheatsheet/general/auth): auth patterns.
-- [Schema Design](https://akanjs.com/cheatsheet/general/schema): schema modeling patterns.
-- [Edge Computing](https://akanjs.com/cheatsheet/general/edge): edge execution patterns.
-- [File Management](https://akanjs.com/cheatsheet/general/file): file upload and management patterns.
-- [Single Sign-On](https://akanjs.com/cheatsheet/general/sso): SSO integration patterns.
-- [DataList & Enum](https://akanjs.com/cheatsheet/general/datalist): enum and data-list usage.
-- [CRUD](https://akanjs.com/cheatsheet/interface/crud): CRUD interface patterns.
-- [Endpoint](https://akanjs.com/cheatsheet/interface/endpoint): endpoint design patterns.
-- [Form](https://akanjs.com/cheatsheet/interface/form): form patterns.
-- [Logging](https://akanjs.com/cheatsheet/observability/logging): logging patterns.
-- [Dependency Injection](https://akanjs.com/cheatsheet/observability/di): DI patterns.
-- [Error Handling](https://akanjs.com/cheatsheet/observability/error): error handling patterns.
-- [Metrics](https://akanjs.com/cheatsheet/observability/metrics): metrics patterns.
-- [Caching](https://akanjs.com/cheatsheet/performance/caching): caching patterns.
-- [Image Optimization](https://akanjs.com/cheatsheet/performance/image): image optimization.
-- [Lazy Loading](https://akanjs.com/cheatsheet/performance/lazy): lazy-loading patterns.
-- [Querying](https://akanjs.com/cheatsheet/performance/query): query patterns.
-- [Queueing](https://akanjs.com/cheatsheet/performance/queue): queue patterns.
-- [Realtime](https://akanjs.com/cheatsheet/performance/realtime): realtime patterns.
-- [Documentation](https://akanjs.com/cheatsheet/dev/docs): documentation workflows.
-- [Script](https://akanjs.com/cheatsheet/dev/script): scripting workflows.
-- [Docker](https://akanjs.com/cheatsheet/dev/docker): Docker deployment notes.
-- [Kubernetes](https://akanjs.com/cheatsheet/dev/k8s): Kubernetes deployment notes.
-- [PWA](https://akanjs.com/cheatsheet/dev/pwa): progressive web app notes.
-
-## Blog
-
-- [Akan.js benchmark results](https://akanjs.com/blog/benchmark): HTTP, Signal API, and document DB performance measurements.
-- [Akan.js v2 is here](https://akanjs.com/blog/v2release): Bun-first v2 release direction and runtime changes.
-- [Developers should spend their lives on work that matters](https://akanjs.com/blog/manifesto): Akan.js philosophy, conventions, and agent-friendly development.
+- Prefer Markdown mirrors for context loading and source docs for visual examples.
+- Respect Akan generated-file boundaries before editing application code.
+- Start feature work from domain intent: constants, signals, services, stores, then UI.
+- Verify changes with the relevant `akan lint`, `akan test`, or `akan build` command.
