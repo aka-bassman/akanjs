@@ -111,6 +111,22 @@ export default function Page() {
         ko: "선택적인 cloud authentication, LLM setting, project question, update를 설정합니다.",
       }),
     },
+    {
+      title: "Agent Tooling",
+      href: "/references/cli/overview",
+      commands: [
+        "context --format json",
+        "doctor --format json",
+        "guideline list",
+        "guideline show framework",
+        "agent install cursor",
+        "mcp",
+      ],
+      desc: l.trans({
+        en: "Expose workspace context, module abstracts, diagnostics, guideline instructions, agent rules, and read-only MCP tools.",
+        ko: "workspace context, module abstract, diagnostic, guideline instruction, agent rule, read-only MCP tool을 제공합니다.",
+      }),
+    },
   ];
 
   return (

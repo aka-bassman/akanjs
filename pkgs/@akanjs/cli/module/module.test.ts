@@ -19,11 +19,14 @@ describe("ModuleRunner", () => {
 
     const files = await runner.createModuleTemplate(module);
 
+    expect(files.abstract.filename).toBe("post.abstract.md");
+    expect(files.abstract.content).toContain("Module Abstract");
     expect(files.constant.filename).toBe("post.constant.ts");
     expect(files.dictionary.filename).toBe("post.dictionary.ts");
     expect(files.service.content).toContain("serve");
     expect(files.signal.content).toContain("signal");
     expect(await Bun.file(`${module.cwdPath}/post.constant.ts`).exists()).toBe(true);
+    expect(await Bun.file(`${module.cwdPath}/post.abstract.md`).exists()).toBe(true);
     expect(await Bun.file(`${module.cwdPath}/Post.View.tsx`).exists()).toBe(true);
   });
 
@@ -35,11 +38,14 @@ describe("ModuleRunner", () => {
 
     const files = await runner.createService(service);
 
+    expect(files.abstract.filename).toBe("localBuild.abstract.md");
+    expect(files.abstract.content).toContain("Service Abstract");
     expect(files.service.filename).toBe("localBuild.service.ts");
     expect(files.service.content).toContain('serve("localBuild" as const');
     expect(files.signal.content).toContain("LocalBuildEndpoint");
     expect(files.store.content).toContain('store("localBuild" as const');
     expect(await Bun.file(`${app.cwdPath}/lib/_localBuild/localBuild.service.ts`).exists()).toBe(true);
+    expect(await Bun.file(`${app.cwdPath}/lib/_localBuild/localBuild.abstract.md`).exists()).toBe(true);
     expect(await Bun.file(`${app.cwdPath}/lib/_localBuild/localBuild.signal.ts`).exists()).toBe(true);
     expect(await Bun.file(`${app.cwdPath}/lib/_localBuild/localBuild.store.ts`).exists()).toBe(true);
     expect(await Bun.file(`${app.cwdPath}/lib/_localBuild/localBuild.dictionary.ts`).exists()).toBe(true);

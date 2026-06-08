@@ -37,6 +37,21 @@ akan create-module <module-name>
 akan create-scalar <scalar-name>
 ```
 
+## Agent And MCP Commands
+
+```bash
+akan context --format markdown
+akan context --format json --module <module-name>
+akan doctor --format json
+akan guideline list
+akan guideline show framework
+akan agent install cursor
+akan mcp
+```
+
+These commands expose Akan workspace structure, module abstracts, diagnostics, and guideline instructions for
+coding agents. The MCP server is read-only and is intended to provide context rather than edit files directly.
+
 Package maintenance commands are also exposed through the same executable:
 
 ```bash

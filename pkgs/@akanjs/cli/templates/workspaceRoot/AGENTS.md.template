@@ -11,6 +11,8 @@ the framework generate the repeated surfaces.
 - `apps/<app>/lib/<model>` contains database-backed domain modules.
 - `apps/<app>/lib/_<service>` contains service modules that are not database document models.
 - `apps/<app>/lib/__scalar/<scalar>` contains reusable scalar/value types.
+- Module abstracts live beside module code as `<model>.abstract.md`, `<service>.abstract.md`, or
+  `<scalar>.abstract.md`.
 
 ## Generated Files
 
@@ -43,6 +45,8 @@ Common generated files include:
 Use the local module shape before adding a new abstraction.
 
 - `<model>.constant.ts` defines model, enum, scalar, and schema intent.
+- `<model>.abstract.md` defines business intent, domain rules, workflows, and agent notes that are not obvious
+  from code.
 - `<model>.dictionary.ts` defines labels, descriptions, messages, and i18n metadata.
 - `<model>.signal.ts` defines typed endpoint contracts.
 - `<model>.document.ts` owns persistence and document queries.
@@ -56,13 +60,14 @@ Use the local module shape before adding a new abstraction.
 
 ## Agent Workflow
 
-1. Read the nearby module and convention before creating files.
+1. Read the nearby module and convention before creating files. If `*.abstract.md` exists, read it first.
 2. Put new files in the established Akan location instead of adding parallel architecture.
 3. Prefer CLI generation commands for new apps, libraries, modules, scalars, pages, and generated references.
 4. Keep server-only logic out of client surfaces and client-only code out of server imports.
 5. Treat `AKAN_PUBLIC_*` env vars as public. Never put secrets in them.
 6. Add or update tests when behavior, contracts, or CLI output changes.
-7. Run the smallest relevant verification command after changes.
+7. Update `*.abstract.md` when business invariants, workflows, or public behavior change.
+8. Run the smallest relevant verification command after changes.
 
 ## Common Commands
 

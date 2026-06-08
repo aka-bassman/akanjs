@@ -1,6 +1,7 @@
 export * from "./aiEditor";
 export * from "./akanApp";
 export * from "./akanConfig";
+export * from "./akanContext";
 export * from "./applicationBuildReporter";
 export * from "./applicationBuildRunner";
 export * from "./applicationReleasePackager";
