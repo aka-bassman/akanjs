@@ -8,6 +8,9 @@ import type { ClientManifest } from "./artifact";
 import type { SsrLateRedirect } from "./ssrTypes";
 import type { BaseBuildArtifact, CssAsset } from "./types";
 
+// This is a bounded queue guard, not a pause/resume backpressure protocol.
+// If the host stream cannot drain IPC chunks quickly enough, the render fails
+// fast and the worker is cancelled instead of buffering unbounded Flight data.
 const DEFAULT_RSC_HOST_MAX_PENDING_CHUNKS = 256;
 
 export interface RscPending {
@@ -48,6 +51,13 @@ export function isRscHostPendingChunkOverflow(pendingChunks: number, maxPendingC
   return pendingChunks > maxPendingChunks;
 }
 
+function createRscRenderAbortError(reason?: unknown): Error {
+  if (reason instanceof Error) return reason;
+  const error = new Error(reason === undefined ? "rsc render aborted" : String(reason));
+  error.name = "AbortError";
+  return error;
+}
+
 export function createIdempotentRscRenderCancel(onCancel: (reason?: unknown) => void): (reason?: unknown) => void {
   let cancelled = false;
   return (reason?: unknown) => {
@@ -63,6 +73,8 @@ export function createRscHostRenderStream(input: {
   sendRenderOrQueue: () => void;
   cancelRender: (reason?: unknown) => void;
   maxPendingChunks?: number;
+  signal?: AbortSignal;
+  onPendingChunkOverflow?: () => void;
 }): Promise<RscRenderResult> {
   let settled = false;
   let stream!: ReadableStream<Uint8Array>;
@@ -80,15 +92,31 @@ export function createRscHostRenderStream(input: {
   };
   const maxPendingChunks = input.maxPendingChunks ?? getRscHostMaxPendingChunks();
   let pendingChunks = 0;
+  let removeAbortListener: (() => void) | undefined;
+  const cleanupAbortListener = () => {
+    removeAbortListener?.();
+    removeAbortListener = undefined;
+  };
   const cancelRender = createIdempotentRscRenderCancel((reason) => {
     input.deletePending();
     settleLateControl(null);
     input.cancelRender(reason);
+    cleanupAbortListener();
   });
 
   return new Promise<RscRenderResult>((resolve, reject) => {
     stream = new ReadableStream<Uint8Array>({
       start: (controller) => {
+        const abortRender = () => {
+          const error = createRscRenderAbortError(input.signal?.reason);
+          cancelRender(error);
+          if (!settled) {
+            settled = true;
+            reject(error);
+            return;
+          }
+          controller.error(error);
+        };
         const settleStream = () => {
           if (settled) return;
           settled = true;
@@ -106,6 +134,7 @@ export function createRscHostRenderStream(input: {
             if (isRscHostPendingChunkOverflow(pendingChunks, maxPendingChunks)) {
               const msg = `rsc worker host queue exceeded ${maxPendingChunks} pending chunks`;
               const error = new Error(msg);
+              input.onPendingChunkOverflow?.();
               cancelRender(error);
               controller.error(error);
               return;
@@ -114,11 +143,13 @@ export function createRscHostRenderStream(input: {
           },
           onEnd: () => {
             settleLateControl(null);
+            cleanupAbortListener();
             settleStream();
             controller.close();
           },
           onError: (msg) => {
             settleLateControl(null);
+            cleanupAbortListener();
             if (!settled) {
               settled = true;
               reject(new Error(msg));
@@ -128,6 +159,7 @@ export function createRscHostRenderStream(input: {
           },
           onRedirect: (location, method, status) => {
             settleLateControl(null);
+            cleanupAbortListener();
             if (!settled) {
               settled = true;
               resolve({ type: "redirect", location, method, status });
@@ -141,6 +173,7 @@ export function createRscHostRenderStream(input: {
           },
           onNotFound: () => {
             settleLateControl(null);
+            cleanupAbortListener();
             if (!settled) {
               settled = true;
               resolve({ type: "not-found" });
@@ -150,6 +183,14 @@ export function createRscHostRenderStream(input: {
             controller.error(new Error("not-found after stream started"));
           },
         });
+        if (input.signal) {
+          if (input.signal.aborted) {
+            abortRender();
+            return;
+          }
+          input.signal.addEventListener("abort", abortRender, { once: true });
+          removeAbortListener = () => input.signal?.removeEventListener("abort", abortRender);
+        }
         input.sendRenderOrQueue();
       },
       cancel: (reason) => {
@@ -253,6 +294,7 @@ export class RscWorker {
   #recycleCount = 0;
   #lastRecycleReason: string | undefined;
   #lastWorkerMetrics: AkanMetricsReport = {};
+  #hostPendingChunkOverflowCount = 0;
   #restartTimer: ReturnType<typeof setTimeout> | null = null;
   #recycleTimer: ReturnType<typeof setTimeout> | null = null;
   #rollingRecycle: { oldProc: Bun.Subprocess<"ignore", "inherit", "inherit">; reason: string } | null = null;
@@ -329,7 +371,10 @@ export class RscWorker {
     });
   }
 
-  renderWithMeta(req: Request, options: { clientManifest?: ClientManifest } = {}): Promise<RscRenderResult> {
+  renderWithMeta(
+    req: Request,
+    options: { clientManifest?: ClientManifest; signal?: AbortSignal } = {},
+  ): Promise<RscRenderResult> {
     const requestId = crypto.randomUUID();
     return createRscHostRenderStream({
       setPending: (pending) => {
@@ -343,6 +388,10 @@ export class RscWorker {
       },
       cancelRender: () => {
         this.#cancelRender(requestId);
+      },
+      signal: options.signal,
+      onPendingChunkOverflow: () => {
+        this.#hostPendingChunkOverflowCount += 1;
       },
     });
   }
@@ -364,8 +413,18 @@ export class RscWorker {
   }
 
   getMetrics(): AkanMetricsReport {
-    return {
-      ...this.#lastWorkerMetrics,
+    const {
+      rscWorkerPid: _rscWorkerPid,
+      rscWorkerStatus: _rscWorkerStatus,
+      rscWorkerRestartCount: _rscWorkerRestartCount,
+      rscWorkerRecycleCount: _rscWorkerRecycleCount,
+      rscWorkerLastRecycleReason: _rscWorkerLastRecycleReason,
+      rscPendingRenderCount: _rscPendingRenderCount,
+      rscQueuedSendCount: _rscQueuedSendCount,
+      rscHostPendingChunkOverflowCount: _rscHostPendingChunkOverflowCount,
+      ...workerMetrics
+    } = this.#lastWorkerMetrics;
+    return Object.assign(workerMetrics, {
       rscWorkerPid: this.#proc.pid,
       rscWorkerStatus: this.#status,
       rscWorkerRestartCount: this.#restartCount,
@@ -373,7 +432,8 @@ export class RscWorker {
       rscWorkerLastRecycleReason: this.#lastRecycleReason,
       rscPendingRenderCount: this.#pending.size,
       rscQueuedSendCount: this.#queuedSends.length,
-    };
+      rscHostPendingChunkOverflowCount: this.#hostPendingChunkOverflowCount,
+    });
   }
 
   restartWhenIdle(reason: string): boolean {

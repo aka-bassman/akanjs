@@ -359,6 +359,7 @@ export class WebRouter {
           });
           const result = await this.#rsc.renderWithMeta(rscReq, {
             clientManifest: manifest.clientManifest,
+            signal: req.signal,
           });
           if (result.type === "redirect")
             return createRscRedirectResponse(result.location, result.method, result.status);
@@ -460,6 +461,7 @@ export class WebRouter {
           }
           const rscResult = await this.#rsc.renderWithMeta(req, {
             clientManifest: manifest.clientManifest,
+            signal: req.signal,
           });
           if (rscResult.type === "redirect")
             return Response.redirect(new URL(rscResult.location, url.origin), rscResult.status);

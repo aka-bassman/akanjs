@@ -57,6 +57,7 @@ export interface AkanMetricsReport {
   rscWorkerLastRecycleReason?: string;
   rscPendingRenderCount?: number;
   rscQueuedSendCount?: number;
+  rscHostPendingChunkOverflowCount?: number;
   rscRenderCount?: number;
   rscInFlightRenderCount?: number;
   rscLastRenderedPath?: string;

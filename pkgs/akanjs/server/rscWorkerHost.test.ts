@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
-  createRscHostRenderStream,
   createIdempotentRscRenderCancel,
+  createRscHostRenderStream,
   getRscHostMaxPendingChunks,
   isRscHostPendingChunkOverflow,
   nextRscHostPendingChunkCount,
@@ -11,10 +11,11 @@ import { type CachedRscReplayMessage, replayCachedRscResult } from "./rscWorkerR
 
 const decoder = new TextDecoder();
 
-function createHostRenderHarness(options: { maxPendingChunks?: number } = {}) {
+function createHostRenderHarness(options: { maxPendingChunks?: number; signal?: AbortSignal } = {}) {
   let pending: RscPending | undefined;
   let deletePendingCount = 0;
   let sendCount = 0;
+  let pendingChunkOverflowCount = 0;
   const cancelReasons: unknown[] = [];
   const result = createRscHostRenderStream({
     setPending: (nextPending) => {
@@ -31,6 +32,10 @@ function createHostRenderHarness(options: { maxPendingChunks?: number } = {}) {
       cancelReasons.push(reason);
     },
     maxPendingChunks: options.maxPendingChunks,
+    signal: options.signal,
+    onPendingChunkOverflow: () => {
+      pendingChunkOverflowCount += 1;
+    },
   });
 
   return {
@@ -41,6 +46,7 @@ function createHostRenderHarness(options: { maxPendingChunks?: number } = {}) {
     },
     deletePendingCount: () => deletePendingCount,
     sendCount: () => sendCount,
+    pendingChunkOverflowCount: () => pendingChunkOverflowCount,
     cancelReasons,
   };
 }
@@ -117,7 +123,19 @@ describe("RscWorker host render stream", () => {
     await expect(result.lateControl).resolves.toBeNull();
   });
 
-  test("errors and cancels when pending chunks exceed the cap", async () => {
+  test("rejects and cancels when the request aborts before the stream starts", async () => {
+    const controller = new AbortController();
+    const harness = createHostRenderHarness({ signal: controller.signal });
+    const reason = new Error("client disconnected before first Flight chunk");
+
+    controller.abort(reason);
+
+    await expect(harness.result).rejects.toBe(reason);
+    expect(harness.deletePendingCount()).toBe(1);
+    expect(harness.cancelReasons).toEqual([reason]);
+  });
+
+  test("fails fast and cancels when pending chunks exceed the bounded queue cap", async () => {
     const harness = createHostRenderHarness({ maxPendingChunks: 1 });
 
     harness.pending().onChunk(new Uint8Array([1]));
@@ -136,6 +154,7 @@ describe("RscWorker host render stream", () => {
     expect(harness.deletePendingCount()).toBe(1);
     expect(harness.cancelReasons).toHaveLength(1);
     expect(harness.cancelReasons[0]).toBeInstanceOf(Error);
+    expect(harness.pendingChunkOverflowCount()).toBe(1);
     await expect(result.lateControl).resolves.toBeNull();
   });
 
