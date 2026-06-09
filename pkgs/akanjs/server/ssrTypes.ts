@@ -19,6 +19,13 @@ export interface SsrChunkRegistryStats {
   ssrChunkEvictionCount: number;
 }
 
+export interface SsrLateRedirect {
+  type: "redirect";
+  location: string;
+  method: "replace" | "push";
+  status: 303 | 307 | 308;
+}
+
 export interface SsrFromRscInput {
   request?: Request;
   rscStream: ReadableStream<Uint8Array>;
@@ -45,4 +52,5 @@ export interface SsrFromRscInput {
   importmap?: Record<string, string>;
   theme?: AkanTheme;
   injectThemeInitScript?: boolean;
+  lateControl?: Promise<SsrLateRedirect | null>;
 }

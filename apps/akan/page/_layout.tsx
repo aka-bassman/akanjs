@@ -1,6 +1,4 @@
 import "./styles.css";
-
-import { Auth } from "@libs/shared/ui";
 import type { Font, LayoutProps } from "akanjs/client";
 
 export const fonts: Font[] = [
@@ -77,10 +75,5 @@ export const head = (
 );
 
 export default function Layout({ children }: LayoutProps) {
-  return (
-    <>
-      {children}
-      <Auth.User />
-    </>
-  );
+  return children;
 }

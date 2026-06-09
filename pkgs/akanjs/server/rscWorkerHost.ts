@@ -5,6 +5,7 @@ import { type AkanI18nConfig, DEFAULT_AKAN_I18N, Logger } from "akanjs/common";
 import type { AkanTheme } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
 import type { ClientManifest } from "./artifact";
+import type { SsrLateRedirect } from "./ssrTypes";
 import type { BaseBuildArtifact, CssAsset } from "./types";
 
 interface RscPending {
@@ -13,6 +14,7 @@ interface RscPending {
   onError: (message: string) => void;
   onMeta?: (meta: { theme?: AkanTheme; status?: number }) => void;
   onRedirect?: (location: string, method: RscRedirectMethod, status: RscRedirectStatus) => void;
+  onLateRedirect?: (location: string, method: RscRedirectMethod, status: RscRedirectStatus) => void;
   onNotFound?: () => void;
 }
 
@@ -20,7 +22,13 @@ export type RscRedirectMethod = "replace" | "push";
 export type RscRedirectStatus = 303 | 307 | 308;
 
 export type RscRenderResult =
-  | { type: "stream"; stream: ReadableStream<Uint8Array>; theme?: AkanTheme; status?: number }
+  | {
+      type: "stream";
+      stream: ReadableStream<Uint8Array>;
+      theme?: AkanTheme;
+      status?: number;
+      lateControl: Promise<SsrLateRedirect | null>;
+    }
   | { type: "redirect"; location: string; method: RscRedirectMethod; status: RscRedirectStatus }
   | { type: "not-found" };
 
@@ -32,6 +40,13 @@ type RscInMsg =
   | { type: "chunk"; requestId: string; data: Uint8Array }
   | { type: "end"; requestId: string }
   | { type: "redirect"; requestId: string; location: string; method?: RscRedirectMethod; status?: RscRedirectStatus }
+  | {
+      type: "late-redirect";
+      requestId: string;
+      location: string;
+      method?: RscRedirectMethod;
+      status?: RscRedirectStatus;
+    }
   | { type: "not-found"; requestId: string }
   | { type: "metrics"; metrics: AkanMetricsReport }
   | { type: "error"; requestId: string; message: string; buildId?: number };
@@ -179,6 +194,7 @@ export class RscWorker {
       },
       cancel: () => {
         this.#pending.delete(requestId);
+        this.#cancelRender(requestId);
       },
     });
   }
@@ -189,13 +205,23 @@ export class RscWorker {
     let stream!: ReadableStream<Uint8Array>;
     let theme: AkanTheme | undefined;
     let status: number | undefined;
+    let resolveLateControl!: (control: SsrLateRedirect | null) => void;
+    const lateControl = new Promise<SsrLateRedirect | null>((resolve) => {
+      resolveLateControl = resolve;
+    });
+    let lateControlSettled = false;
+    const settleLateControl = (control: SsrLateRedirect | null) => {
+      if (lateControlSettled) return;
+      lateControlSettled = true;
+      resolveLateControl(control);
+    };
     const result = new Promise<RscRenderResult>((resolve, reject) => {
       stream = new ReadableStream<Uint8Array>({
         start: (controller) => {
           const settleStream = () => {
             if (settled) return;
             settled = true;
-            resolve({ type: "stream", stream, theme, status });
+            resolve({ type: "stream", stream, theme, status, lateControl });
           };
           this.#pending.set(requestId, {
             onMeta: (meta) => {
@@ -208,10 +234,12 @@ export class RscWorker {
               controller.enqueue(data);
             },
             onEnd: () => {
+              settleLateControl(null);
               settleStream();
               controller.close();
             },
             onError: (msg) => {
+              settleLateControl(null);
               if (!settled) {
                 settled = true;
                 reject(new Error(msg));
@@ -220,6 +248,7 @@ export class RscWorker {
               controller.error(new Error(msg));
             },
             onRedirect: (location, method, status) => {
+              settleLateControl(null);
               if (!settled) {
                 settled = true;
                 resolve({ type: "redirect", location, method, status });
@@ -228,7 +257,11 @@ export class RscWorker {
               }
               controller.error(new Error(`redirect after stream started: ${location}`));
             },
+            onLateRedirect: (location, method, status) => {
+              settleLateControl({ type: "redirect", location, method, status });
+            },
             onNotFound: () => {
+              settleLateControl(null);
               if (!settled) {
                 settled = true;
                 resolve({ type: "not-found" });
@@ -242,6 +275,8 @@ export class RscWorker {
         },
         cancel: () => {
           this.#pending.delete(requestId);
+          settleLateControl(null);
+          this.#cancelRender(requestId);
         },
       });
     });
@@ -428,6 +463,11 @@ export class RscWorker {
           p.onRedirect?.(message.location, message.method ?? "replace", message.status ?? 307),
         );
         return;
+      case "late-redirect":
+        this.#pending
+          .get(message.requestId)
+          ?.onLateRedirect?.(message.location, message.method ?? "replace", message.status ?? 307);
+        return;
       case "not-found":
         this.#resolvePending(message.requestId, (p) => p.onNotFound?.());
         return;
@@ -485,6 +525,16 @@ export class RscWorker {
       this.#resolvePending(requestId, (p) => p.onError("rsc worker is stopped"));
     } else {
       this.#queuedSends.push(send);
+    }
+  }
+
+  #cancelRender(requestId: string): void {
+    if (this.#status !== "ready") return;
+    try {
+      this.#proc.send({ type: "cancel", requestId });
+    } catch {
+      // The render stream is already detached on the host side. If the worker
+      // died between cancellation and this IPC send, its exit path will clean up.
     }
   }
 

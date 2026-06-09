@@ -84,6 +84,8 @@ export class AkanApp {
   #logWriter: RotatingLogWriter | null = null;
   #removeLogSink: (() => void) | null = null;
   readonly #childOutputBuffers = new Map<string, string>();
+  readonly #childStderrBlockBuffers = new Map<string, string[]>();
+  readonly #childStderrBlockTimers = new Map<string, ReturnType<typeof setTimeout>>();
   static readonly #ansiPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
   #gatewayMetrics: AkanMetricsReport = {};
   #proxyHopCount = 0;
@@ -1007,6 +1009,7 @@ export class AkanApp {
       if (remaining) this.#writeChildOutput(idx, role, type, bufferKey, remaining);
     } finally {
       this.#flushChildOutput(idx, role, type, bufferKey);
+      if (type === "stderr") this.#flushChildStderrBlock(idx, role, AkanApp.#childStderrBlockKey(idx, role));
     }
   }
 
@@ -1031,9 +1034,61 @@ export class AkanApp {
   }
 
   #writeChildOutputLine(idx: number, role: AkanChildRole, type: "stdout" | "stderr", line: string) {
+    if (type === "stderr" && this.#bufferChildStderrLine(idx, role, line)) return;
+    this.#writeChildOutputLineRaw(idx, role, type, line);
+  }
+
+  #writeChildOutputLineRaw(idx: number, role: AkanChildRole, type: "stdout" | "stderr", line: string) {
     const prefixedLine = `[child:${idx} ${role}] [${type}] ${line}`;
     process[type].write(prefixedLine);
     this.#logWriter?.write(`${idx}-${role}`, AkanApp.#stripAnsi(prefixedLine));
+  }
+
+  #bufferChildStderrLine(idx: number, role: AkanChildRole, line: string): boolean {
+    const key = AkanApp.#childStderrBlockKey(idx, role);
+    const block = this.#childStderrBlockBuffers.get(key) ?? [];
+    block.push(line);
+    this.#childStderrBlockBuffers.set(key, block);
+
+    const existingTimer = this.#childStderrBlockTimers.get(key);
+    if (existingTimer) clearTimeout(existingTimer);
+
+    if (line.trim() === "" || block.length >= 64) {
+      this.#flushChildStderrBlock(idx, role, key);
+      return true;
+    }
+
+    this.#childStderrBlockTimers.set(
+      key,
+      setTimeout(() => this.#flushChildStderrBlock(idx, role, key), 50),
+    );
+    return true;
+  }
+
+  #flushChildStderrBlock(idx: number, role: AkanChildRole, key: string) {
+    const timer = this.#childStderrBlockTimers.get(key);
+    if (timer) clearTimeout(timer);
+    this.#childStderrBlockTimers.delete(key);
+
+    const block = this.#childStderrBlockBuffers.get(key);
+    if (!block?.length) return;
+    this.#childStderrBlockBuffers.delete(key);
+
+    const text = block.join("");
+    if (AkanApp.#isBenignRsdwConnectionClosedBlock(text)) return;
+    for (const blockLine of block) this.#writeChildOutputLineRaw(idx, role, "stderr", blockLine);
+  }
+
+  static #childStderrBlockKey(idx: number, role: AkanChildRole): string {
+    return `${idx}:${role}:stderr`;
+  }
+
+  static #isBenignRsdwConnectionClosedBlock(text: string): boolean {
+    return (
+      text.includes('reportGlobalError(weakResponse, Error("Connection closed."))') &&
+      text.includes("error: Connection closed.") &&
+      text.includes("react-server-dom-webpack")
+    );
   }
 
   static #stripAnsi(msg: string) {

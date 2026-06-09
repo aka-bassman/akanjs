@@ -22,7 +22,7 @@ import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { ImageOptimizer } from "./imageOptimizer";
 import { createDefaultRobotsTxt } from "./robots";
-import { type RscRedirectMethod, type RscRedirectStatus, RscWorker } from "./rscWorkerHost";
+import { type RscRedirectMethod, type RscRedirectStatus, type RscRenderResult, RscWorker } from "./rscWorkerHost";
 import { createDefaultSitemapXml, getSitemapBasePath } from "./sitemap";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
 import { createSystemPageResponse, getSystemPageHomeHref } from "./systemPages";
@@ -55,6 +55,35 @@ export function createRscStreamResponse(stream: BodyInit, status = 200): Respons
       "Cache-Control": "no-store",
     },
   });
+}
+
+export async function createRscNavigationStreamResponse(
+  result: Extract<RscRenderResult, { type: "stream" }>,
+): Promise<Response> {
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  const reader = result.stream.getReader();
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      byteLength += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const lateControl = await result.lateControl;
+  if (lateControl?.type === "redirect")
+    return createRscRedirectResponse(lateControl.location, lateControl.method, lateControl.status);
+  const body = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return createRscStreamResponse(body, result.status ?? 200);
 }
 
 export function normalizeRscTargetUrlForHostBasePath(
@@ -294,7 +323,7 @@ export class WebRouter {
           if (result.type === "not-found") return WebRouter.#rscNotFoundResponse();
           if (result.status && result.status >= 500)
             return this.#renderRscErrorResponse("__rsc", "Internal Server Error");
-          return createRscStreamResponse(result.stream, result.status ?? 200);
+          return createRscNavigationStreamResponse(result);
         } catch (err) {
           return this.#renderRscErrorResponse("__rsc", err);
         }
@@ -402,6 +431,7 @@ export class WebRouter {
             extraBootstrapInline: !this.#prodMode ? HMR_CLIENT_SCRIPT : undefined,
             importmap: this.#artifact.vendorMap,
             theme: themeCookieExists ? undefined : (rscResult.theme ?? "system"),
+            lateControl: rscResult.lateControl,
           });
           const responseStatus = rscResult.status ?? 200;
           const responseHeaders = WebRouter.#htmlResponseHeaders(responseStatus);

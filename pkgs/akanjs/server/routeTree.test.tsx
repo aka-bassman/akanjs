@@ -1,3 +1,4 @@
+import { describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
 import { RouteElementComposer } from "./routeElementComposer";
@@ -216,4 +217,5 @@ describe("RouteTreeBuilder implicit locale", () => {
     expect(unmatchedHtml).toContain("docs missing");
     expect(unmatchedHtml).toContain("/ko/docs/missing/path");
   });
+
 });

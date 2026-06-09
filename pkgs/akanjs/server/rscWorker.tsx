@@ -32,6 +32,10 @@ interface RenderMsg {
   headers?: Record<string, string>;
   clientManifest?: ClientManifest;
 }
+interface CancelMsg {
+  type: "cancel";
+  requestId: string;
+}
 interface ReloadMsg {
   type: "reload";
   clientManifest: ClientManifest;
@@ -44,11 +48,19 @@ interface UpdateCssAssetsMsg {
   type: "updateCssAssets";
   cssAssets: Record<string, { cssUrl: string; cssRelPath: string }>;
 }
-type InMsg = InitMsg | RenderMsg | ReloadMsg | UpdateCssAssetsMsg;
+type InMsg = InitMsg | RenderMsg | CancelMsg | ReloadMsg | UpdateCssAssetsMsg;
 type RenderControl =
   | { type: "redirect"; location: string; method: "replace" | "push"; status: RedirectStatus }
   | { type: "not-found" }
   | { type: "error"; error: unknown };
+interface FlightRenderResult {
+  chunks: Uint8Array[];
+  bytes: number;
+  chunksCount: number;
+  control: RenderControl | null;
+  lateControlSent: boolean;
+  cancelled: boolean;
+}
 
 interface RscRendererStats {
   renderCount: number;
@@ -128,6 +140,8 @@ class RscRenderer {
   };
   readonly #routeStats = new Map<string, RouteRenderStats>();
   readonly #resultCache = new Map<string, CachedRscResult>();
+  readonly #activeRenderReaders = new Map<string, ReadableStreamDefaultReader<Uint8Array>>();
+  readonly #cancelledRenderRequests = new Set<string>();
   #resultCacheHits = 0;
   #resultCacheMisses = 0;
   #resultCacheBypass = 0;
@@ -158,6 +172,10 @@ class RscRenderer {
         this.#logger.verbose(`received render requestId=${msg.requestId} url=${msg.url} method=${msg.method ?? "GET"}`);
         void this.#handleRender(msg);
         return;
+      case "cancel":
+        this.#logger.verbose(`received cancel requestId=${msg.requestId}`);
+        this.#handleCancel(msg.requestId);
+        return;
       case "reload":
         this.#logger.verbose(`received reload buildId=${msg.buildId}`);
         void this.#handleReload(msg);
@@ -167,6 +185,16 @@ class RscRenderer {
         this.#cssAssets = msg.cssAssets;
         return;
     }
+  }
+
+  #handleCancel(requestId: string): void {
+    this.#cancelledRenderRequests.add(requestId);
+    const reader = this.#activeRenderReaders.get(requestId);
+    if (!reader) return;
+    void reader.cancel().catch(() => {
+      // Cancellation is best-effort; the render loop also checks
+      // `#cancelledRenderRequests` before sending more chunks.
+    });
   }
 
   async #handleInit(msg: InitMsg): Promise<void> {
@@ -306,21 +334,32 @@ class RscRenderer {
           return;
         }
         const theme = cookies().get("theme")?.value;
-        const element = match ? await this.#renderMatched(urlObj, match, theme) : await this.#renderNotFound(urlObj);
+        const searchParams = RouteTreeBuilder.parseSearchParams(urlObj.search);
+        let element: ReactNode;
+        if (match) element = await this.#renderMatched(urlObj, match, theme, searchParams);
+        else element = await this.#renderNotFound(urlObj);
         this.#logger.verbose(`render[${requestId}] starting Flight stream`);
-        const result = await this.#renderFlightElement(element, msg.clientManifest ?? this.#clientManifest);
+        const result = await this.#renderFlightElement(element, msg.clientManifest ?? this.#clientManifest, {
+          requestId,
+          collectChunks: cacheKey !== null,
+          status: match ? undefined : 404,
+        });
+        if (result.cancelled) return;
         const control = result.control;
         if (control) {
           this.#stats.lastRenderKind = control.type;
+          if (result.lateControlSent) {
+            this.#logger.verbose(`render[${requestId}] late ${control.type} delivered after stream start`);
+            return;
+          }
           if (!match && control.type === "error") {
             const systemResult = await this.#renderFlightElement(
               this.#renderSystemNotFound(urlObj),
               msg.clientManifest ?? this.#clientManifest,
+              { requestId, status: 404 },
             );
+            if (systemResult.cancelled) return;
             if (!systemResult.control) {
-              this.#send({ type: "meta", requestId, theme: getRequestTheme(), status: 404 });
-              for (const chunk of systemResult.chunks) this.#send({ type: "chunk", requestId, data: chunk });
-              this.#send({ type: "end", requestId });
               return;
             }
           }
@@ -332,7 +371,7 @@ class RscRenderer {
               kind: control.type,
               route: match.pathRoute,
               params: match.params,
-              searchParams: RouteTreeBuilder.parseSearchParams(urlObj.search),
+              searchParams,
               pathname: urlObj.pathname,
               url: urlObj,
               error: control.type === "error" ? control.error : undefined,
@@ -345,9 +384,9 @@ class RscRenderer {
           return;
         }
         this.#stats.lastFlightBytes = result.bytes;
-        this.#stats.lastFlightChunks = result.chunks.length;
+        this.#stats.lastFlightChunks = result.chunksCount;
         this.#stats.totalFlightBytes += result.bytes;
-        this.#stats.totalFlightChunks += result.chunks.length;
+        this.#stats.totalFlightChunks += result.chunksCount;
         this.#stats.lastRenderDurationMs = Date.now() - startedAt;
         const afterLoadedKeys = RouteTreeBuilder.getCacheStats().loadedModuleKeys;
         this.#stats.lastRenderLoadedModules = afterLoadedKeys.filter((key) => !beforeLoadedKeys.includes(key));
@@ -358,17 +397,12 @@ class RscRenderer {
           this.#setCachedResult(cacheKey, {
             chunks: result.chunks,
             bytes: result.bytes,
-            chunksCount: result.chunks.length,
+            chunksCount: result.chunksCount,
             theme: responseTheme,
           });
-        this.#send({ type: "meta", requestId, theme: responseTheme, status: match ? undefined : 404 });
-        for (const chunk of result.chunks) {
-          this.#send({ type: "chunk", requestId, data: chunk });
-        }
         this.#logger.verbose(
-          `render[${requestId}] done chunks=${result.chunks.length} bytes=${result.bytes} in ${Date.now() - startedAt}ms`,
+          `render[${requestId}] done chunks=${result.chunksCount} bytes=${result.bytes} in ${Date.now() - startedAt}ms`,
         );
-        this.#send({ type: "end", requestId });
       });
     } catch (error) {
       if (isAkanRedirectError(error)) {
@@ -435,6 +469,8 @@ class RscRenderer {
         message: error instanceof Error ? error.message : String(error),
       });
     } finally {
+      this.#activeRenderReaders.delete(requestId);
+      this.#cancelledRenderRequests.delete(requestId);
       this.#stats.inFlightRenderCount = Math.max(0, this.#stats.inFlightRenderCount - 1);
     }
   }
@@ -484,7 +520,12 @@ class RscRenderer {
   async #renderFlightElement(
     element: ReactNode,
     clientManifest: ClientManifest,
-  ): Promise<{ chunks: Uint8Array[]; bytes: number; control: RenderControl | null }> {
+    options: {
+      requestId?: string;
+      collectChunks?: boolean;
+      status?: number;
+    } = {},
+  ): Promise<FlightRenderResult> {
     const controlRef: { current: RenderControl | null } = { current: null };
     const stream = await renderToReadableStream(element, clientManifest, {
       onError: (error) => {
@@ -506,20 +547,76 @@ class RscRenderer {
       },
     });
     const reader = stream.getReader();
+    if (options.requestId) this.#activeRenderReaders.set(options.requestId, reader);
     let bytes = 0;
+    let chunksCount = 0;
+    let sentMeta = false;
+    let sentChunk = false;
+    let lateControlSent = false;
     const chunks: Uint8Array[] = [];
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (controlRef.current) {
-        await reader.cancel();
-        break;
+    const sendMeta = () => {
+      if (!options.requestId || sentMeta) return;
+      sentMeta = true;
+      this.#send({ type: "meta", requestId: options.requestId, theme: getRequestTheme(), status: options.status });
+    };
+    const sendLateRedirect = () => {
+      if (!options.requestId || lateControlSent || controlRef.current?.type !== "redirect") return;
+      lateControlSent = true;
+      this.#send({
+        type: "late-redirect",
+        requestId: options.requestId,
+        location: controlRef.current.location,
+        method: controlRef.current.method,
+        status: controlRef.current.status,
+      });
+    };
+    try {
+      while (true) {
+        if (options.requestId && this.#cancelledRenderRequests.has(options.requestId)) {
+          await reader.cancel();
+          return { chunks, bytes, chunksCount, control: null, lateControlSent, cancelled: true };
+        }
+        const { value, done } = await reader.read();
+        if (controlRef.current && !sentChunk) {
+          await reader.cancel();
+          return { chunks, bytes, chunksCount, control: controlRef.current, lateControlSent, cancelled: false };
+        }
+        if (controlRef.current && sentChunk) sendLateRedirect();
+        if (done) break;
+        const chunk = value instanceof Uint8Array ? value : new Uint8Array(value as ArrayBufferLike);
+        bytes += chunk.byteLength;
+        chunksCount += 1;
+        if (options.collectChunks) chunks.push(chunk);
+        if (options.requestId) {
+          sendMeta();
+          this.#send({ type: "chunk", requestId: options.requestId, data: chunk });
+          sentChunk = true;
+        }
       }
-      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value as ArrayBufferLike);
-      bytes += chunk.byteLength;
-      chunks.push(chunk);
+    } catch (error) {
+      if (options.requestId && this.#cancelledRenderRequests.has(options.requestId)) {
+        return { chunks, bytes, chunksCount, control: null, lateControlSent, cancelled: true };
+      }
+      throw error;
+    } finally {
+      if (options.requestId) this.#activeRenderReaders.delete(options.requestId);
+      reader.releaseLock();
     }
-    return { chunks, bytes, control: controlRef.current };
+    if (controlRef.current && sentChunk) sendLateRedirect();
+    if (controlRef.current && !sentChunk)
+      return { chunks, bytes, chunksCount, control: controlRef.current, lateControlSent, cancelled: false };
+    if (options.requestId) {
+      sendMeta();
+      this.#send({ type: "end", requestId: options.requestId });
+    }
+    return {
+      chunks,
+      bytes,
+      chunksCount,
+      control: lateControlSent ? controlRef.current : null,
+      lateControlSent,
+      cancelled: false,
+    };
   }
 
   async #trySendFallbackRender({
@@ -555,15 +652,16 @@ class RscRenderer {
         digest: kind === "error" ? "AKAN_RENDER_ERROR" : undefined,
       });
       if (!element) return false;
-      const result = await this.#renderFlightElement(element, clientManifest);
+      const result = await this.#renderFlightElement(element, clientManifest, {
+        requestId,
+        status: kind === "not-found" ? 404 : 500,
+      });
+      if (result.cancelled) return true;
       if (result.control) return false;
-      this.#send({ type: "meta", requestId, theme: getRequestTheme(), status: kind === "not-found" ? 404 : 500 });
-      for (const chunk of result.chunks) this.#send({ type: "chunk", requestId, data: chunk });
-      this.#send({ type: "end", requestId });
       this.#stats.lastFlightBytes = result.bytes;
-      this.#stats.lastFlightChunks = result.chunks.length;
+      this.#stats.lastFlightChunks = result.chunksCount;
       this.#stats.totalFlightBytes += result.bytes;
-      this.#stats.totalFlightChunks += result.chunks.length;
+      this.#stats.totalFlightChunks += result.chunksCount;
       return true;
     } catch (fallbackError) {
       this.#logger.error(
@@ -735,8 +833,8 @@ class RscRenderer {
     url: URL,
     match: { pathRoute: PathRoute; params: Record<string, string> },
     theme?: string,
+    searchParams = RouteTreeBuilder.parseSearchParams(url.search),
   ): Promise<ReactNode> {
-    const searchParams = RouteTreeBuilder.parseSearchParams(url.search);
     this.#logger.verbose(
       `composing route element pathname=${url.pathname} search=${url.search || "(none)"} params=${JSON.stringify(match.params)}`,
     );
@@ -745,7 +843,11 @@ class RscRenderer {
       params: match.params,
       searchParams,
     });
-    const body = RouteElementComposer.compose({ pathRoute: match.pathRoute, params: match.params, searchParams });
+    const body = RouteElementComposer.compose({
+      pathRoute: match.pathRoute,
+      params: match.params,
+      searchParams,
+    });
     return (
       <html
         lang={match.params.lang ?? this.#i18n.defaultLocale}

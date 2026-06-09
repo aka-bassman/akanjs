@@ -1,5 +1,51 @@
 import { describe, expect, test } from "bun:test";
-import { createInlineRscScript, encodeInlineRscChunk, SsrChunkRegistry } from "./ssrFromRscRenderer";
+import {
+  createInlineRscScript,
+  createSoftRedirectScript,
+  ExpectedLateRedirectStderrSuppressor,
+  encodeInlineRscChunk,
+  interleaveRscScriptsWithHtml,
+  SsrChunkRegistry,
+  sanitizeFlightForClientStream,
+} from "./ssrFromRscRenderer";
+
+const encoder = new TextEncoder();
+const rscBootstrap = `<script>self.__RSC_CHUNKS__=[];self.__RSC_PUSH__=function(type,data){self.__RSC_CHUNKS__.push([type,data]);};</script>`;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function textStream(chunks: Array<{ text: string; delayMs?: number }>): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      for (const chunk of chunks) {
+        if (chunk.delayMs) await sleep(chunk.delayMs);
+        controller.enqueue(encoder.encode(chunk.text));
+      }
+      controller.close();
+    },
+  });
+}
+
+async function withCapturedStderr<T>(fn: () => Promise<T>): Promise<{ result: T; output: string; restored: boolean }> {
+  const originalWrite = process.stderr.write;
+  let output = "";
+  const captureWrite = ((chunk: unknown, ...args: unknown[]) => {
+    output +=
+      typeof chunk === "string" ? chunk : chunk instanceof Uint8Array ? Buffer.from(chunk).toString() : String(chunk);
+    const callback = args.find((arg): arg is () => void => typeof arg === "function");
+    callback?.();
+    return true;
+  }) as typeof process.stderr.write;
+  process.stderr.write = captureWrite;
+  try {
+    const result = await fn();
+    return { result, output, restored: process.stderr.write === captureWrite };
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+}
 
 describe("SsrChunkRegistry", () => {
   test("evicts least recently used chunk groups while preserving aliases", () => {
@@ -41,5 +87,192 @@ describe("inline RSC chunks", () => {
     expect(script).toContain("self.__RSC_PUSH__(1,");
     expect(script).not.toContain("</script><!--");
     expect(script).toContain("\\u003c/script\\u003e\\u003c!--\\u2028\\u2029");
+  });
+
+  test("replaces Akan redirect error rows for browser-bound Flight", async () => {
+    const raw = [
+      ':HL["/style.css","stylesheet"]\n',
+      'c7:D{"time":1}\n',
+      'c7:E{"digest":"AKAN_REDIRECT","name":"AkanRedirectError","message":"Redirect to /target"}\n',
+    ].join("");
+    const stream = textStream([{ text: raw.slice(0, 20) }, { text: raw.slice(20) }]);
+    const output = await new Response(sanitizeFlightForClientStream(stream)).text();
+
+    expect(output).toContain(':HL["/style.css","style"]');
+    expect(output).toContain("c7:null\n");
+    expect(output).not.toContain("AKAN_REDIRECT");
+    expect(output).not.toContain("AkanRedirectError");
+  });
+});
+
+describe("inline RSC interleaving", () => {
+  test("flushes ready RSC scripts between HTML chunks", async () => {
+    const html = textStream([
+      { text: `<main>one${rscBootstrap}`, delayMs: 5 },
+      { text: "two</main>", delayMs: 20 },
+    ]);
+    const rsc = textStream([{ text: "A" }]);
+    const output = await new Response(interleaveRscScriptsWithHtml(html, rsc)).text();
+    const firstHtmlIndex = output.indexOf("<main>one");
+    const scriptIndex = output.indexOf(createInlineRscScript(encoder.encode("A")));
+    const secondHtmlIndex = output.indexOf("two</main>");
+
+    expect(firstHtmlIndex).toBeGreaterThanOrEqual(0);
+    expect(output.indexOf(rscBootstrap)).toBeGreaterThan(firstHtmlIndex);
+    expect(scriptIndex).toBeGreaterThan(firstHtmlIndex);
+    expect(secondHtmlIndex).toBeGreaterThan(scriptIndex);
+  });
+
+  test("does not wait for delayed RSC chunks before flushing HTML", async () => {
+    const html = textStream([{ text: `<main>one${rscBootstrap}` }, { text: "two</main>" }]);
+    const rsc = textStream([{ text: "late", delayMs: 20 }]);
+    const output = await new Response(interleaveRscScriptsWithHtml(html, rsc)).text();
+    const firstHtmlIndex = output.indexOf("<main>one");
+    const secondHtmlIndex = output.indexOf("two</main>");
+    const scriptIndex = output.indexOf(createInlineRscScript(encoder.encode("late")));
+
+    expect(firstHtmlIndex).toBeGreaterThanOrEqual(0);
+    expect(secondHtmlIndex).toBeGreaterThan(firstHtmlIndex);
+    expect(scriptIndex).toBeGreaterThan(secondHtmlIndex);
+    expect(output).toContain("<script>self.__RSC_CLOSE__()</script>");
+  });
+
+  test("keeps bootstrap module scripts before the final RSC drain", async () => {
+    const bootstrap = `<script type="module" src="/rsc-client.js"></script>`;
+    const html = textStream([{ text: `<main>shell${rscBootstrap}</main>` }]);
+    const rsc = textStream([{ text: "final", delayMs: 20 }]);
+    const output = await new Response(
+      interleaveRscScriptsWithHtml(html, rsc, { bootstrapModuleScripts: bootstrap }),
+    ).text();
+    const htmlIndex = output.indexOf("<main>shell");
+    const bootstrapIndex = output.indexOf(bootstrap);
+    const scriptIndex = output.indexOf(createInlineRscScript(encoder.encode("final")));
+    const closeIndex = output.indexOf("<script>self.__RSC_CLOSE__()</script>");
+
+    expect(htmlIndex).toBeGreaterThanOrEqual(0);
+    expect(bootstrapIndex).toBeGreaterThan(htmlIndex);
+    expect(scriptIndex).toBeGreaterThan(bootstrapIndex);
+    expect(closeIndex).toBeGreaterThan(scriptIndex);
+  });
+
+  test("emits late redirect as a soft redirect script at an HTML chunk boundary", async () => {
+    const redirect = {
+      type: "redirect" as const,
+      location: "/login?next=%2Fdashboard",
+      method: "replace" as const,
+      status: 307 as const,
+    };
+    const lateControl = sleep(8).then(() => redirect);
+    const html = textStream([
+      { text: "<main>shell", delayMs: 5 },
+      { text: `${rscBootstrap}content</main>`, delayMs: 20 },
+      { text: "<footer>tail</footer>", delayMs: 20 },
+    ]);
+    const rsc = textStream([{ text: "flight" }]);
+    const output = await new Response(interleaveRscScriptsWithHtml(html, rsc, { lateControl })).text();
+    const firstHtmlIndex = output.indexOf("<main>shell");
+    const redirectIndex = output.indexOf(createSoftRedirectScript(redirect));
+    const secondHtmlIndex = output.indexOf("content</main>");
+    const thirdHtmlIndex = output.indexOf("<footer>tail</footer>");
+
+    expect(firstHtmlIndex).toBeGreaterThanOrEqual(0);
+    expect(secondHtmlIndex).toBeGreaterThan(firstHtmlIndex);
+    expect(redirectIndex).toBeGreaterThan(secondHtmlIndex);
+    expect(thirdHtmlIndex).toBeGreaterThan(redirectIndex);
+    expect(output).toContain(createInlineRscScript(encoder.encode("flight")));
+    expect(output).toContain("<script>self.__RSC_CLOSE__()</script>");
+  });
+
+  test("flushes complete RSC stream after a late redirect", async () => {
+    const redirect = {
+      type: "redirect" as const,
+      location: "/login",
+      method: "replace" as const,
+      status: 307 as const,
+    };
+    const html = textStream([{ text: `<main>shell${rscBootstrap}</main>` }]);
+    const rsc = textStream([{ text: "before" }, { text: "after", delayMs: 15 }]);
+    const output = await new Response(
+      interleaveRscScriptsWithHtml(html, rsc, { lateControl: sleep(5).then(() => redirect) }),
+    ).text();
+    const redirectIndex = output.indexOf(createSoftRedirectScript(redirect));
+    const beforeIndex = output.indexOf(createInlineRscScript(encoder.encode("before")));
+    const afterIndex = output.indexOf(createInlineRscScript(encoder.encode("after")));
+    const closeIndex = output.indexOf("<script>self.__RSC_CLOSE__()</script>");
+
+    expect(redirectIndex).toBeGreaterThanOrEqual(0);
+    expect(beforeIndex).toBeGreaterThanOrEqual(0);
+    expect(afterIndex).toBeGreaterThan(beforeIndex);
+    expect(closeIndex).toBeGreaterThan(afterIndex);
+  });
+
+  test("bounds pending RSC scripts while preserving HTML-first flushing", async () => {
+    let maxPending = 0;
+    const html = textStream([
+      { text: `<main>first${rscBootstrap}`, delayMs: 20 },
+      { text: "second</main>", delayMs: 20 },
+    ]);
+    const rsc = textStream([{ text: "A" }, { text: "B" }, { text: "C" }]);
+    const output = await new Response(
+      interleaveRscScriptsWithHtml(html, rsc, {
+        maxPendingRscScripts: 1,
+        onPendingRscScriptsSize: (size) => {
+          maxPending = Math.max(maxPending, size);
+        },
+      }),
+    ).text();
+
+    expect(maxPending).toBeLessThanOrEqual(1);
+    expect(output.indexOf("<main>first")).toBeGreaterThanOrEqual(0);
+    expect(output).toContain(createInlineRscScript(encoder.encode("A")));
+    expect(output).toContain(createInlineRscScript(encoder.encode("B")));
+    expect(output).toContain(createInlineRscScript(encoder.encode("C")));
+    expect(output).toContain("second</main>");
+  });
+});
+
+describe("late redirect stderr suppression", () => {
+  const benignConnectionClosed = [
+    '4673 |       reportGlobalError(weakResponse, Error("Connection closed."));\n',
+    "error: Connection closed.\n",
+    "    at close (/repo/node_modules/react-server-dom-webpack/cjs/react-server-dom-webpack-client.node.development.js:4673:39)\n\n",
+  ].join("");
+
+  test("suppresses benign RSDW connection-close output for late redirects", async () => {
+    const { output, restored } = await withCapturedStderr(async () => {
+      const suppressor = ExpectedLateRedirectStderrSuppressor.start(
+        Promise.resolve({ type: "redirect", location: "/login", method: "replace", status: 307 }),
+      );
+      process.stderr.write(benignConnectionClosed);
+      await sleep(30);
+      suppressor?.stop();
+    });
+
+    expect(output).toBe("");
+    expect(restored).toBe(true);
+  });
+
+  test("passes through non-benign stderr output", async () => {
+    const { output } = await withCapturedStderr(async () => {
+      const suppressor = ExpectedLateRedirectStderrSuppressor.start(
+        Promise.resolve({ type: "redirect", location: "/login", method: "replace", status: 307 }),
+      );
+      process.stderr.write("real application error\n");
+      await sleep(30);
+      suppressor?.stop();
+    });
+
+    expect(output).toBe("real application error\n");
+  });
+
+  test("does not suppress connection-close output without a late redirect", async () => {
+    const { output } = await withCapturedStderr(async () => {
+      const suppressor = ExpectedLateRedirectStderrSuppressor.start(Promise.resolve(null));
+      process.stderr.write(benignConnectionClosed);
+      await sleep(30);
+      suppressor?.stop();
+    });
+
+    expect(output).toBe(benignConnectionClosed);
   });
 });
