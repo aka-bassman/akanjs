@@ -28,6 +28,15 @@ function textStream(chunks: Array<{ text: string; delayMs?: number }>): Readable
   });
 }
 
+function byteStream(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+}
+
 async function withCapturedStderr<T>(fn: () => Promise<T>): Promise<{ result: T; output: string; restored: boolean }> {
   const originalWrite = process.stderr.write;
   let output = "";
@@ -102,6 +111,46 @@ describe("inline RSC chunks", () => {
     expect(output).toContain("c7:null\n");
     expect(output).not.toContain("AKAN_REDIRECT");
     expect(output).not.toContain("AkanRedirectError");
+  });
+
+  test("preserves non UTF-8 rows while sanitizing adjacent text rows", async () => {
+    const invalidRow = new Uint8Array([0xff, 0x00, 0x0a]);
+    const stylesheetRow = encoder.encode(':HL["/style.css","stylesheet"]\n');
+    const output = new Uint8Array(
+      await new Response(sanitizeFlightForClientStream(byteStream([invalidRow, stylesheetRow]))).arrayBuffer(),
+    );
+    const rewrittenStylesheetRow = encoder.encode(':HL["/style.css","style"]\n');
+
+    expect([...output.slice(0, invalidRow.byteLength)]).toEqual([...invalidRow]);
+    expect([...output.slice(invalidRow.byteLength)]).toEqual([...rewrittenStylesheetRow]);
+  });
+
+  test("sanitizes complete rows split across arbitrary byte boundaries", async () => {
+    const raw = encoder.encode(
+      [
+        'a:D{"text":"한글 😀"}\n',
+        ':HL["/style.css","stylesheet"]\n',
+        'c7:E{"digest":"AKAN_REDIRECT","name":"AkanRedirectError","message":"Redirect"}\n',
+      ].join(""),
+    );
+    const output = await new Response(
+      sanitizeFlightForClientStream(byteStream([raw.slice(0, 7), raw.slice(7, 31), raw.slice(31)])),
+    ).text();
+
+    expect(output).toContain('a:D{"text":"한글 😀"}\n');
+    expect(output).toContain(':HL["/style.css","style"]\n');
+    expect(output).toContain("c7:null\n");
+    expect(output).not.toContain("AKAN_REDIRECT");
+  });
+
+  test("preserves non-redirect error rows for React Flight error handling", async () => {
+    const raw = [
+      'nf:E{"digest":"AKAN_NOT_FOUND","name":"AkanNotFoundError","message":"Not Found"}\n',
+      'er:E{"digest":"AKAN_RENDER_ERROR","name":"Error","message":"Boom"}\n',
+    ].join("");
+    const output = await new Response(sanitizeFlightForClientStream(textStream([{ text: raw }]))).text();
+
+    expect(output).toBe(raw);
   });
 });
 
@@ -274,5 +323,29 @@ describe("late redirect stderr suppression", () => {
     });
 
     expect(output).toBe(benignConnectionClosed);
+  });
+
+  test("does not install the process-wide stderr hook in production by default", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousSuppress = process.env.AKAN_SUPPRESS_LATE_REDIRECT_STDERR;
+    process.env.NODE_ENV = "production";
+    delete process.env.AKAN_SUPPRESS_LATE_REDIRECT_STDERR;
+    try {
+      const { output } = await withCapturedStderr(async () => {
+        const suppressor = ExpectedLateRedirectStderrSuppressor.start(
+          Promise.resolve({ type: "redirect", location: "/login", method: "replace", status: 307 }),
+        );
+        expect(suppressor).toBeNull();
+        process.stderr.write(benignConnectionClosed);
+        await sleep(30);
+      });
+
+      expect(output).toBe(benignConnectionClosed);
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+      if (previousSuppress === undefined) delete process.env.AKAN_SUPPRESS_LATE_REDIRECT_STDERR;
+      else process.env.AKAN_SUPPRESS_LATE_REDIRECT_STDERR = previousSuppress;
+    }
   });
 });

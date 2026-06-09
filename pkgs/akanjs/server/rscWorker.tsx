@@ -561,6 +561,9 @@ class RscRenderer {
     };
     const sendLateRedirect = () => {
       if (!options.requestId || lateControlSent || controlRef.current?.type !== "redirect") return;
+      // Once Flight bytes have left the worker, only redirects can still be
+      // represented as a browser navigation. notFound/error stay in Flight and
+      // are handled by React's error path.
       lateControlSent = true;
       this.#send({
         type: "late-redirect",

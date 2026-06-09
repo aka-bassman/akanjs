@@ -103,7 +103,7 @@ describe("WebRouter RSC stream response", () => {
     });
   });
 
-  test("returns buffered Flight when there is no late redirect", async () => {
+  test("buffers RSC navigation Flight until P7 streaming decode lands", async () => {
     const response = await createRscNavigationStreamResponse({
       type: "stream",
       stream: new ReadableStream<Uint8Array>({

@@ -60,6 +60,9 @@ export function createRscStreamResponse(stream: BodyInit, status = 200): Respons
 export async function createRscNavigationStreamResponse(
   result: Extract<RscRenderResult, { type: "stream" }>,
 ): Promise<Response> {
+  // P6 makes full document SSR stream from the worker as chunks arrive. Client
+  // navigation still buffers until P7 so late redirects can keep using the
+  // existing in-band Akan redirect envelope.
   const chunks: Uint8Array[] = [];
   let byteLength = 0;
   const reader = result.stream.getReader();

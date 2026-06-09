@@ -118,31 +118,54 @@ function sanitizeFlightRows(
   stream: ReadableStream<Uint8Array>,
   options: { rewriteStylesheetHints?: boolean } = {},
 ): ReadableStream<Uint8Array> {
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
   const encoder = new TextEncoder();
   const hlStylesheetRe = /(:HL\["[^"\\]*(?:\\.[^"\\]*)*",)"stylesheet"(\])/g;
-  const redirectErrorRowRe = /(^|\n)([0-9a-z]+):E(\{[^\n]*"digest":"AKAN_REDIRECT"[^\n]*\})\n/g;
-  let buffered = "";
+  const redirectErrorRowRe = /^([0-9a-z]+):E(\{[^\n]*"digest":"AKAN_REDIRECT"[^\n]*\})(\n?)$/;
+  let buffered: Uint8Array<ArrayBuffer> = new Uint8Array(0);
 
-  const sanitizeCompleteRows = (text: string): string =>
-    (options.rewriteStylesheetHints ? text.replace(hlStylesheetRe, `$1"style"$2`) : text).replace(
+  const concatBytes = (left: Uint8Array, right: Uint8Array): Uint8Array<ArrayBuffer> => {
+    const combined = new Uint8Array(left.byteLength + right.byteLength);
+    combined.set(left, 0);
+    combined.set(right, left.byteLength);
+    return combined;
+  };
+
+  const sanitizeRow = (row: Uint8Array): Uint8Array => {
+    let text: string;
+    try {
+      text = decoder.decode(row);
+    } catch {
+      return row;
+    }
+    const sanitized = (options.rewriteStylesheetHints ? text.replace(hlStylesheetRe, `$1"style"$2`) : text).replace(
       redirectErrorRowRe,
-      "$1$2:null\n",
+      "$1:null$3",
     );
+    return sanitized === text ? row : encoder.encode(sanitized);
+  };
+
+  const enqueueCompleteRows = (chunk: Uint8Array, controller: TransformStreamDefaultController<Uint8Array>) => {
+    buffered = concatBytes(buffered, chunk);
+    let rowStart = 0;
+    for (let index = 0; index < buffered.byteLength; index += 1) {
+      if (buffered[index] !== 10) continue;
+      controller.enqueue(sanitizeRow(buffered.slice(rowStart, index + 1)));
+      rowStart = index + 1;
+    }
+    buffered = rowStart === 0 ? buffered : buffered.slice(rowStart);
+  };
 
   return stream.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
-        buffered += decoder.decode(chunk, { stream: true });
-        const lastNewline = buffered.lastIndexOf("\n");
-        if (lastNewline === -1) return;
-        const complete = buffered.slice(0, lastNewline + 1);
-        buffered = buffered.slice(lastNewline + 1);
-        controller.enqueue(encoder.encode(sanitizeCompleteRows(complete)));
+        enqueueCompleteRows(chunk, controller);
       },
       flush(controller) {
-        buffered += decoder.decode();
-        if (buffered) controller.enqueue(encoder.encode(sanitizeCompleteRows(buffered)));
+        if (buffered.byteLength > 0) {
+          controller.enqueue(sanitizeRow(buffered));
+          buffered = new Uint8Array(0);
+        }
       },
     }),
   );
@@ -181,6 +204,9 @@ export class ExpectedLateRedirectStderrSuppressor {
 
   static start(lateControl?: Promise<SsrLateRedirect | null>): ExpectedLateRedirectStderrSuppressor | null {
     if (!lateControl) return null;
+    // This is a process-wide stderr hook, so keep it out of production unless
+    // explicitly requested for diagnosis.
+    if (process.env.NODE_ENV === "production" && process.env.AKAN_SUPPRESS_LATE_REDIRECT_STDERR !== "1") return null;
     const suppressor = new ExpectedLateRedirectStderrSuppressor(lateControl);
     ExpectedLateRedirectStderrSuppressor.#active.add(suppressor);
     ExpectedLateRedirectStderrSuppressor.#install();
