@@ -6,7 +6,7 @@ import type {
   RedirectStatus,
 } from "akanjs/client";
 import { type AkanI18nConfig, DEFAULT_AKAN_I18N, getBasePathFromPathname, Logger } from "akanjs/common";
-import { cookies, getRequest, getRequestTheme, requestStorage } from "akanjs/fetch";
+import { cookies, getRequest, getRequestTheme, requestStorage, updateRequestPolicy } from "akanjs/fetch";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-server-dom-webpack/server.node";
 import type { ClientManifest } from "./artifact";
@@ -280,6 +280,7 @@ class RscRenderer {
         const match = RouteTreeBuilder.match(urlObj.pathname, this.#pathRoutes);
         activeRoute.match = match;
         const routeId = match?.pathRoute.path ?? "__not_found__";
+        updateRequestPolicy({ routeId });
         this.#stats.lastRenderRouteId = routeId;
         this.#stats.lastRenderKind = match ? "route" : "not-found";
         if (match)
@@ -619,6 +620,11 @@ class RscRenderer {
   async #getResultCacheKey(request: Request, url: URL, pathRoute: PathRoute): Promise<string | null> {
     const config = await pathRoute.renderPage.getPageConfig?.();
     const ttl = RscRenderer.#normalizeCacheTtl(config?.rscCacheTtl);
+    updateRequestPolicy({
+      rscCache: config?.rscCache,
+      rscCacheTtl: config?.rscCacheTtl,
+      cacheable: config?.rscCache === "public" || ttl !== null,
+    });
     if (config?.rscCache !== "public" && ttl === null) {
       this.#resultCacheBypass += 1;
       return null;

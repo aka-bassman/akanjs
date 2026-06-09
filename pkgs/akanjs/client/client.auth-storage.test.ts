@@ -22,6 +22,29 @@ const makeJwt = (payload: Record<string, unknown>) => {
   return `header.${encoded}.signature`;
 };
 
+const requestCookies = () => {
+  const map = new Map<string, { name: string; value: string }>();
+  for (const segment of (requestState.request?.headers.get("cookie") ?? "").split(";")) {
+    const trimmed = segment.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const name = trimmed.slice(0, eq).trim();
+    const raw = trimmed.slice(eq + 1).trim();
+    const value = raw.startsWith("j:") ? (JSON.parse(raw.slice(2)) as string) : raw;
+    map.set(name, { name, value });
+  }
+  return map;
+};
+
+const requestHeaders = () => {
+  const map = new Map<string, string>();
+  requestState.request?.headers.forEach((value, key) => {
+    map.set(key, value);
+  });
+  return map;
+};
+
 beforeAll(() => {
   mock.module("akanjs/base", () => ({
     getEnv: () => ({
@@ -48,6 +71,8 @@ beforeAll(() => {
     requestStorage: {
       getStore: () => requestState.request,
     },
+    cookies: requestCookies,
+    headers: requestHeaders,
   }));
   mock.module("./useClient", () => ({
     msg: {

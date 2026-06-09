@@ -47,6 +47,16 @@ export function createRscRedirectResponse(
   });
 }
 
+export function createRscStreamResponse(stream: BodyInit, status = 200): Response {
+  return new Response(stream, {
+    status,
+    headers: {
+      "Content-Type": "text/x-component; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 export function normalizeRscTargetUrlForHostBasePath(
   targetUrl: URL,
   options: {
@@ -281,16 +291,10 @@ export class WebRouter {
           });
           if (result.type === "redirect")
             return createRscRedirectResponse(result.location, result.method, result.status);
-          if (result.type === "not-found") return WebRouter.#rscRedirectResponse("/404", "replace");
-          if (result.status === 404) return WebRouter.#rscRedirectResponse("/404", "replace");
+          if (result.type === "not-found") return WebRouter.#rscNotFoundResponse();
           if (result.status && result.status >= 500)
             return this.#renderRscErrorResponse("__rsc", "Internal Server Error");
-          return new Response(result.stream, {
-            headers: {
-              "Content-Type": "text/x-component; charset=utf-8",
-              "Cache-Control": "no-store",
-            },
-          });
+          return createRscStreamResponse(result.stream, result.status ?? 200);
         } catch (err) {
           return this.#renderRscErrorResponse("__rsc", err);
         }
@@ -671,8 +675,11 @@ export class WebRouter {
     if (!last || last.index === undefined) return `${html}\n${snippet}`;
     return `${html.slice(0, last.index)}${snippet}\n${html.slice(last.index)}`;
   }
-  static #rscRedirectResponse(location: string, method: "replace" | "push") {
-    return createRscRedirectResponse(location, method);
+  static #rscNotFoundResponse(): Response {
+    return new Response("Not Found", {
+      status: 404,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+    });
   }
   #getProductionRouteCache() {
     return new RouteClientCache({

@@ -1,6 +1,7 @@
 import { createElement, type ReactNode, startTransition, use, useLayoutEffect, useState } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { createFromReadableStream } from "react-server-dom-webpack/client.browser";
+import { isRscPayloadResponse } from "./rscHttp";
 
 type InlineRscChunk = [1, string] | [3, string];
 
@@ -75,7 +76,7 @@ async function fetchRsc(href: string, options: { buildId?: number } = {}): Promi
     await globalThis.__AKAN_RSC_NAVIGATE__?.(redirect, { replace: method !== "push", scrollToTop: true });
     return { type: "redirected", status };
   }
-  if (!res.ok || !res.body) throw new Error(`[rscClient] RSC fetch failed ${res.status} ${res.statusText}`);
+  if (!isRscPayloadResponse(res)) throw new Error(`[rscClient] RSC fetch failed ${res.status} ${res.statusText}`);
   // Buffer the entire Flight payload before constructing the thenable. The root
   // `use(thenable)` lives at the document root with no Suspense boundary above it
   // (see Root / ssrFromRscRenderer), so any mid-render suspension during a client

@@ -1,15 +1,35 @@
-export interface RequestStorage {
-  run<T>(store: Request, callback: () => T): T;
-  getStore(): Request | undefined;
+export type AkanTheme = "css" | "system" | (string & {});
+
+export interface AkanRequestPolicy {
+  routeId?: string;
+  rscCache?: "public" | false;
+  rscCacheTtl?: number;
+  cacheable?: boolean;
+  revalidate?: number | false;
+  tags: Set<string>;
 }
 
-export type AkanTheme = "css" | "system" | (string & {});
+export interface AkanDynamicUsage {
+  headers: boolean;
+  cookies: boolean;
+}
+
+export interface AkanRequestStore {
+  request: Request;
+  theme?: AkanTheme;
+  queryCache: Map<string, Promise<unknown>>;
+  policy: AkanRequestPolicy;
+  dynamicUsage: AkanDynamicUsage;
+}
+
+export interface RequestStorage {
+  run<T>(store: Request | AkanRequestStore, callback: () => T): T;
+  getStore(): AkanRequestStore | undefined;
+}
 
 declare global {
   var __AKAN_REQUEST_STORAGE__: RequestStorage | undefined;
-  var __AKAN_REQUEST_THEME__: WeakMap<Request, AkanTheme> | undefined;
-  var __AKAN_REQUEST_QUERY_CACHE__: WeakMap<Request, Map<string, Promise<unknown>>> | undefined;
-  var __AKAN_REQUEST_FALLBACK_STACK__: Request[] | undefined;
+  var __AKAN_REQUEST_FALLBACK_STACK__: AkanRequestStore[] | undefined;
 }
 
 let _requestStorage: RequestStorage | null = null;
@@ -21,42 +41,69 @@ if (typeof window === "undefined") {
     // from that chain can then be observed as `null` during evaluation
     // (notably `FetchClient` in `akanjs/client/useClient.ts`).
     const { AsyncLocalStorage } = require("node:async_hooks") as typeof import("node:async_hooks");
-    globalThis.__AKAN_REQUEST_STORAGE__ ??= new AsyncLocalStorage() as RequestStorage;
+    const als = new AsyncLocalStorage<AkanRequestStore>();
+    globalThis.__AKAN_REQUEST_STORAGE__ ??= {
+      run<T>(store: Request | AkanRequestStore, callback: () => T): T {
+        return als.run(normalizeRequestStore(store), callback);
+      },
+      getStore(): AkanRequestStore | undefined {
+        return als.getStore();
+      },
+    };
     _requestStorage = globalThis.__AKAN_REQUEST_STORAGE__;
   } catch {}
 }
 
 export const requestStorage: RequestStorage | null = _requestStorage;
 
-function requestThemeMap(): WeakMap<Request, AkanTheme> {
-  globalThis.__AKAN_REQUEST_THEME__ ??= new WeakMap<Request, AkanTheme>();
-  return globalThis.__AKAN_REQUEST_THEME__;
+function createRequestPolicy(): AkanRequestPolicy {
+  return { tags: new Set() };
 }
 
-function requestQueryCacheMap(): WeakMap<Request, Map<string, Promise<unknown>>> {
-  globalThis.__AKAN_REQUEST_QUERY_CACHE__ ??= new WeakMap<Request, Map<string, Promise<unknown>>>();
-  return globalThis.__AKAN_REQUEST_QUERY_CACHE__;
+export function createRequestStore(
+  request: Request,
+  policy: Partial<Omit<AkanRequestPolicy, "tags">> = {},
+): AkanRequestStore {
+  return {
+    request,
+    queryCache: new Map(),
+    policy: { ...createRequestPolicy(), ...policy },
+    dynamicUsage: { headers: false, cookies: false },
+  };
+}
+
+function isRequestStore(store: Request | AkanRequestStore | undefined): store is AkanRequestStore {
+  return Boolean(store && typeof store === "object" && "request" in store && store.request instanceof Request);
+}
+
+function normalizeRequestStore(store: Request | AkanRequestStore): AkanRequestStore {
+  return isRequestStore(store) ? store : createRequestStore(store);
+}
+
+function getActiveRequestStore(): AkanRequestStore | undefined {
+  const store = requestStorage?.getStore() as Request | AkanRequestStore | undefined;
+  if (store) return isRequestStore(store) ? store : createRequestStore(store);
+  return globalThis.__AKAN_REQUEST_FALLBACK_STACK__?.at(-1);
 }
 
 /** Stores theme preference on the active request when server rendering. */
 export function setRequestTheme(theme: AkanTheme | undefined): void {
-  const req = getRequest();
-  if (!req || theme === undefined) return;
-  requestThemeMap().set(req, theme);
+  const store = getRequestStore();
+  if (!store || theme === undefined) return;
+  store.theme = theme;
 }
 
 export function getRequestTheme(): AkanTheme | undefined {
-  const req = getRequest();
-  if (!req) return undefined;
-  return requestThemeMap().get(req);
+  return getRequestStore()?.theme;
 }
 
 export function pushRequestFallback(req: Request): () => void {
   globalThis.__AKAN_REQUEST_FALLBACK_STACK__ ??= [];
   const stack = globalThis.__AKAN_REQUEST_FALLBACK_STACK__;
-  stack.push(req);
+  const store = createRequestStore(req);
+  stack.push(store);
   return () => {
-    const index = stack.lastIndexOf(req);
+    const index = stack.lastIndexOf(store);
     if (index >= 0) stack.splice(index, 1);
   };
 }
@@ -65,34 +112,53 @@ export function pushRequestFallback(req: Request): () => void {
 // request's headers/cookies. Kept in akanjs/fetch (no heavy client deps) so
 // they can be imported from inside the RSC worker without pulling `akanjs/
 // client`'s useClient macro chain.
+/** Returns the active server request store from AsyncLocalStorage or the fallback stack. */
+export function getRequestStore(): AkanRequestStore | undefined {
+  return getActiveRequestStore();
+}
+
 /** Returns the active server request from AsyncLocalStorage or the fallback stack. */
 export function getRequest(): Request | undefined {
-  return requestStorage?.getStore() ?? globalThis.__AKAN_REQUEST_FALLBACK_STACK__?.at(-1);
+  return getRequestStore()?.request;
+}
+
+export function getRequestPolicy(): AkanRequestPolicy | undefined {
+  return getRequestStore()?.policy;
+}
+
+export function updateRequestPolicy(
+  patch: Partial<Omit<AkanRequestPolicy, "tags">> & { tags?: Iterable<string> },
+): AkanRequestPolicy | undefined {
+  const policy = getRequestPolicy();
+  if (!policy) return undefined;
+  const { tags, ...rest } = patch;
+  Object.assign(policy, rest);
+  if (tags) for (const tag of tags) policy.tags.add(tag);
+  return policy;
+}
+
+export function getRequestDynamicUsage(): AkanDynamicUsage | undefined {
+  return getRequestStore()?.dynamicUsage;
 }
 
 /** Deduplicates a promise-producing query within the active request. */
 export function memoizeRequestQuery<T>(key: string, factory: () => Promise<T>): Promise<T> {
-  const req = getRequest();
-  if (!req) return factory();
-  const cacheMap = requestQueryCacheMap();
-  let cache = cacheMap.get(req);
-  if (!cache) {
-    cache = new Map<string, Promise<unknown>>();
-    cacheMap.set(req, cache);
-  }
-  const existing = cache.get(key);
+  const store = getRequestStore();
+  if (!store) return factory();
+  const existing = store.queryCache.get(key);
   if (existing) return existing as Promise<T>;
   const promise = factory();
-  cache.set(key, promise);
+  store.queryCache.set(key, promise);
   return promise;
 }
 
 /** Returns current request headers as a Map, or an empty Map outside a request. */
 export function headers(): Map<string, string> {
-  const req = getRequest();
+  const store = getRequestStore();
   const map = new Map<string, string>();
-  if (!req) return map;
-  req.headers.forEach((value, key) => {
+  if (!store) return map;
+  store.dynamicUsage.headers = true;
+  store.request.headers.forEach((value, key) => {
     map.set(key, value);
   });
   return map;
@@ -129,7 +195,8 @@ export function parseCookieHeader(cookieHeader: string): Map<string, CookieEntry
 
 /** Returns parsed cookies from the current request, or an empty Map outside a request. */
 export function cookies(): Map<string, CookieEntry> {
-  const req = getRequest();
-  if (!req) return new Map();
-  return parseCookieHeader(req.headers.get("cookie") ?? "");
+  const store = getRequestStore();
+  if (!store) return new Map();
+  store.dynamicUsage.cookies = true;
+  return parseCookieHeader(store.request.headers.get("cookie") ?? "");
 }

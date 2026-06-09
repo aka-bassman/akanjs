@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_AKAN_I18N } from "akanjs/common";
-import { createRscRedirectResponse, normalizeRscTargetUrlForHostBasePath } from "./webRouter";
+import { createRscRedirectResponse, createRscStreamResponse, normalizeRscTargetUrlForHostBasePath } from "./webRouter";
 
 describe("WebRouter RSC target normalization", () => {
   test("maps public host paths to the hidden basePath route for RSC navigation", () => {
@@ -62,5 +62,16 @@ describe("WebRouter RSC redirect response", () => {
       method: "push",
       status: 308,
     });
+  });
+});
+
+describe("WebRouter RSC stream response", () => {
+  test("preserves 404 status for not-found Flight payloads", async () => {
+    const response = createRscStreamResponse("flight", 404);
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Content-Type")).toBe("text/x-component; charset=utf-8");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    await expect(response.text()).resolves.toBe("flight");
   });
 });

@@ -7,12 +7,16 @@ import { HttpClient } from "./client/httpClient";
 import { WsClient } from "./client/wsClient";
 import {
   cookies,
+  getRequestDynamicUsage,
+  getRequestPolicy,
+  getRequestStore,
   getRequestTheme,
   headers,
   memoizeRequestQuery,
   parseCookieHeader,
   requestStorage,
   setRequestTheme,
+  updateRequestPolicy,
 } from "./requestStorage";
 
 type FetchCall = { url: string; init?: RequestInit };
@@ -381,7 +385,14 @@ describe("requestStorage utilities", () => {
         calls += 1;
         return "b";
       });
-      return { a, b, auth: headers().get("authorization"), jwt: cookies().get("jwt")?.value, theme: getRequestTheme() };
+      return {
+        a,
+        b,
+        auth: headers().get("authorization"),
+        jwt: cookies().get("jwt")?.value,
+        theme: getRequestTheme(),
+        request: getRequestStore()?.request,
+      };
     });
     const second = await requestStorage.run(reqB, async () => {
       const value = await memoizeRequestQuery("same", async () => {
@@ -399,11 +410,59 @@ describe("requestStorage utilities", () => {
       return "outside-b";
     });
 
-    expect(first).toEqual({ a: "a", b: "a", auth: "Bearer request", jwt: "requestJwt", theme: "css" });
+    expect(first).toEqual({
+      a: "a",
+      b: "a",
+      auth: "Bearer request",
+      jwt: "requestJwt",
+      theme: "css",
+      request: reqA,
+    });
     expect(second).toEqual({ value: "b", jwt: "otherJwt", theme: undefined });
     expect(outsideA).toBe("outside-a");
     expect(outsideB).toBe("outside-b");
     expect(calls).toBe(4);
+  });
+
+  test("records dynamic usage and request policy without changing cache behavior", async () => {
+    if (!requestStorage) return;
+    const req = new Request("https://example.test/policy", {
+      headers: { cookie: "theme=css", "x-locale": "ko" },
+    });
+
+    const result = await requestStorage.run(req, async () => {
+      updateRequestPolicy({
+        routeId: "/:lang/example",
+        rscCache: "public",
+        rscCacheTtl: 60,
+        cacheable: true,
+        tags: ["example"],
+      });
+      const before = { ...getRequestDynamicUsage() };
+      headers();
+      cookies();
+      const after = getRequestDynamicUsage();
+      const policy = getRequestPolicy();
+      return {
+        before,
+        after,
+        routeId: policy?.routeId,
+        rscCache: policy?.rscCache,
+        rscCacheTtl: policy?.rscCacheTtl,
+        cacheable: policy?.cacheable,
+        tags: [...(policy?.tags ?? [])],
+      };
+    });
+
+    expect(result).toEqual({
+      before: { headers: false, cookies: false },
+      after: { headers: true, cookies: true },
+      routeId: "/:lang/example",
+      rscCache: "public",
+      rscCacheTtl: 60,
+      cacheable: true,
+      tags: ["example"],
+    });
   });
 });
 
@@ -671,7 +730,7 @@ describe("FetchClient HTTP generation", () => {
     expect(() => new FetchClient("https://api.example", {}, { missingConstant: missingConstantSignal })).not.toThrow();
     expect(() => new FetchClient("https://shared.example")).not.toThrow();
     expect(() =>
-      FetchClient.build<any>({}, { missingConstant: missingConstantSignal }, { connect: false }),
+      FetchClient.build<{ fetch: unknown }>({}, { missingConstant: missingConstantSignal }, { connect: false }),
     ).not.toThrow();
   });
 });
