@@ -1,6 +1,6 @@
 import { getEnv } from "akanjs/base";
 import { parseAkanI18nEnv } from "akanjs/common";
-import { getRequest, headers } from "akanjs/fetch";
+import { getRequest, untrackedHeaders } from "akanjs/fetch";
 import type { ReactNode } from "react";
 import { Translator } from "./translator";
 
@@ -33,7 +33,7 @@ const getPageInfo = (): { locale: string; path: string } => {
     const locale = activeLocale ?? (hasLocalePrefix ? firstSegment : defaultLocale);
     return { locale, path: hasLocalePrefix ? `/${rest.join("/")}` : window.location.pathname };
   }
-  const h = headers();
+  const h = untrackedHeaders();
   // Honor explicit proxy/middleware headers when present; otherwise derive
   // locale+path from the request URL itself so unadorned dev requests (e.g.
   // `curl /en/hello`) still work.
@@ -66,11 +66,11 @@ const msg = {
   warning: () => null,
   loading: () => null,
 } as {
-  info: (key: TransMessage<any>, option?: TransMessageOption) => void;
-  success: (key: TransMessage<any>, option?: TransMessageOption) => void;
-  error: (key: TransMessage<any>, option?: TransMessageOption) => void;
-  warning: (key: TransMessage<any>, option?: TransMessageOption) => void;
-  loading: (key: TransMessage<any>, option?: TransMessageOption) => void;
+  info: (key: TransMessage<Record<string, unknown>>, option?: TransMessageOption) => void;
+  success: (key: TransMessage<Record<string, unknown>>, option?: TransMessageOption) => void;
+  error: (key: TransMessage<Record<string, unknown>>, option?: TransMessageOption) => void;
+  warning: (key: TransMessage<Record<string, unknown>>, option?: TransMessageOption) => void;
+  loading: (key: TransMessage<Record<string, unknown>>, option?: TransMessageOption) => void;
 };
 
 export const makePageProto = <

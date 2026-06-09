@@ -109,9 +109,14 @@ export function createInlineRscScript(chunk: Uint8Array): string {
   return `<script>self.__RSC_PUSH__(${type},${htmlEscapeJsonString(data)})</script>`;
 }
 
+function escapeHtmlAttr(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export function createSoftRedirectScript(redirect: SsrLateRedirect): string {
   const method = redirect.method === "push" ? "assign" : "replace";
-  return `<script>window.location.${method}(${htmlEscapeJsonString(redirect.location)})</script>`;
+  const fallback = `<noscript><meta http-equiv="refresh" content="0;url=${escapeHtmlAttr(redirect.location)}"></noscript>`;
+  return `${fallback}<script>window.location.${method}(${htmlEscapeJsonString(redirect.location)})</script>`;
 }
 
 function sanitizeFlightRows(

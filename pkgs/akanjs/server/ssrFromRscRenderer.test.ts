@@ -99,6 +99,20 @@ describe("inline RSC chunks", () => {
     expect(script).toContain("\\u003c/script\\u003e\\u003c!--\\u2028\\u2029");
   });
 
+  test("adds a no-JS meta refresh fallback for soft redirects", () => {
+    const script = createSoftRedirectScript({
+      type: "redirect",
+      location: `/login?next=/a&label="x"`,
+      method: "replace",
+      status: 307,
+    });
+
+    expect(script).toContain(
+      `<noscript><meta http-equiv="refresh" content="0;url=/login?next=/a&amp;label=&quot;x&quot;"></noscript>`,
+    );
+    expect(script).toContain(`window.location.replace("/login?next=/a\\u0026label=\\"x\\"")`);
+  });
+
   test("replaces Akan redirect error rows for browser-bound Flight", async () => {
     const raw = [
       ':HL["/style.css","stylesheet"]\n',

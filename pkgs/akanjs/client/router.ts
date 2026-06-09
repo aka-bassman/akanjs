@@ -62,8 +62,8 @@ export class AkanNotFoundError extends Error {
 }
 
 function getServerRequestContext() {
-  const { getRequest, headers } = require("akanjs/fetch");
-  return { getRequest, headers } as { getRequest: () => Request; headers: () => Map<string, string> };
+  const { getRequest, untrackedHeaders } = require("akanjs/fetch");
+  return { getRequest, headers: untrackedHeaders } as { getRequest: () => Request; headers: () => Map<string, string> };
 }
 
 const getConfiguredBasePaths = () => new Set(parseBasePaths(process.env.AKAN_PUBLIC_BASE_PATHS));

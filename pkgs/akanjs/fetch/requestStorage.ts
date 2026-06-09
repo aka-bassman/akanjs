@@ -153,15 +153,20 @@ export function memoizeRequestQuery<T>(key: string, factory: () => Promise<T>): 
 }
 
 /** Returns current request headers as a Map, or an empty Map outside a request. */
-export function headers(): Map<string, string> {
+export function headers(options: { trackDynamic?: boolean } = {}): Map<string, string> {
   const store = getRequestStore();
   const map = new Map<string, string>();
   if (!store) return map;
-  store.dynamicUsage.headers = true;
+  if (options.trackDynamic !== false) store.dynamicUsage.headers = true;
   store.request.headers.forEach((value, key) => {
     map.set(key, value);
   });
   return map;
+}
+
+/** Reads headers for framework internals without marking the user route dynamic. */
+export function untrackedHeaders(): Map<string, string> {
+  return headers({ trackDynamic: false });
 }
 
 export interface CookieEntry {
@@ -194,9 +199,14 @@ export function parseCookieHeader(cookieHeader: string): Map<string, CookieEntry
 }
 
 /** Returns parsed cookies from the current request, or an empty Map outside a request. */
-export function cookies(): Map<string, CookieEntry> {
+export function cookies(options: { trackDynamic?: boolean } = {}): Map<string, CookieEntry> {
   const store = getRequestStore();
   if (!store) return new Map();
-  store.dynamicUsage.cookies = true;
+  if (options.trackDynamic !== false) store.dynamicUsage.cookies = true;
   return parseCookieHeader(store.request.headers.get("cookie") ?? "");
+}
+
+/** Reads cookies for framework internals without marking the user route dynamic. */
+export function untrackedCookies(): Map<string, CookieEntry> {
+  return cookies({ trackDynamic: false });
 }

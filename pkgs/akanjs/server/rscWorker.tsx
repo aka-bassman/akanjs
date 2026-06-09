@@ -6,7 +6,7 @@ import type {
   RedirectStatus,
 } from "akanjs/client";
 import { type AkanI18nConfig, DEFAULT_AKAN_I18N, getBasePathFromPathname, Logger } from "akanjs/common";
-import { cookies, getRequest, getRequestTheme, requestStorage, updateRequestPolicy } from "akanjs/fetch";
+import { getRequest, getRequestTheme, requestStorage, untrackedCookies, updateRequestPolicy } from "akanjs/fetch";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-server-dom-webpack/server.node";
 import type { ClientManifest } from "./artifact";
@@ -338,7 +338,7 @@ class RscRenderer {
           });
           return;
         }
-        const theme = cookies().get("theme")?.value;
+        const theme = untrackedCookies().get("theme")?.value;
         const searchParams = RouteTreeBuilder.parseSearchParams(urlObj.search);
         let element: ReactNode;
         if (match) element = await this.#renderMatched(urlObj, match, theme, searchParams);
@@ -749,7 +749,7 @@ class RscRenderer {
       url.pathname,
       url.search,
       request.headers.get("accept-language") ?? "",
-      cookies().get("theme")?.value ?? "",
+      untrackedCookies().get("theme")?.value ?? "",
       ttl ?? 30,
     ].join("\n");
   }
@@ -818,7 +818,7 @@ class RscRenderer {
     });
     if (!body) return null;
     const routeHead = "resolveHead" in route ? await route.resolveHead?.({ params, searchParams }) : undefined;
-    const theme = cookies().get("theme")?.value;
+    const theme = untrackedCookies().get("theme")?.value;
     return (
       <html
         lang={params.lang ?? RscRenderer.#getLocale(pathname, this.#i18n)}

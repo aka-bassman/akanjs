@@ -16,6 +16,8 @@ import {
   parseCookieHeader,
   requestStorage,
   setRequestTheme,
+  untrackedCookies,
+  untrackedHeaders,
   updateRequestPolicy,
 } from "./requestStorage";
 
@@ -462,6 +464,36 @@ describe("requestStorage utilities", () => {
       rscCacheTtl: 60,
       cacheable: true,
       tags: ["example"],
+    });
+  });
+
+  test("reads framework internals without marking the request dynamic", async () => {
+    if (!requestStorage) return;
+    const req = new Request("https://example.test/internal", {
+      headers: { cookie: "theme=dark", "x-locale": "ko" },
+    });
+
+    const result = await requestStorage.run(req, async () => {
+      const internal = {
+        locale: untrackedHeaders().get("x-locale"),
+        theme: untrackedCookies().get("theme")?.value,
+        usage: { ...getRequestDynamicUsage() },
+      };
+      headers();
+      cookies();
+      return {
+        internal,
+        afterPublicRead: { ...getRequestDynamicUsage() },
+      };
+    });
+
+    expect(result).toEqual({
+      internal: {
+        locale: "ko",
+        theme: "dark",
+        usage: { headers: false, cookies: false },
+      },
+      afterPublicRead: { headers: true, cookies: true },
     });
   });
 });

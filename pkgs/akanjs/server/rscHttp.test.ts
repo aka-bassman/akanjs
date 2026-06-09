@@ -28,4 +28,13 @@ describe("RSC HTTP helpers", () => {
 
     expect(isRscPayloadResponse(response)).toBe(false);
   });
+
+  test("rejects non-RSC server error fallbacks so navigation can hard-reload", () => {
+    const response = new Response("Internal Server Error", {
+      status: 500,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+
+    expect(isRscPayloadResponse(response)).toBe(false);
+  });
 });
