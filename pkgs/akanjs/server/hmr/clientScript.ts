@@ -6,8 +6,8 @@
 // Protocol (see wsHub.ts `HmrMessage` for the TypeScript shape):
 //   { type: "hello", buildId, cssAssets }  → initial handshake on connect
 //   { type: "reload", buildId }          → full page refresh
-//   { type: "rsc-refresh", buildId }     → full page refresh
-//   { type: "client-refresh", buildId }  → full page refresh
+//   { type: "rsc-refresh", buildId }     → RSC tree refresh without document reload
+//   { type: "client-refresh", buildId }  → React Fast Refresh, with RSC fallback
 //   { type: "css-update", cssAssets }    → atomic current-subroute <link> swap, no reload
 //   { type: "error", message }           → forwarded build error, console only
 //
@@ -62,11 +62,11 @@ export const HMR_CLIENT_SCRIPT = `(function(){
         return;
       }
       if (msg.type === "rsc-refresh") {
-        reloadForHmr(msg);
+        refreshRsc(msg);
         return;
       }
       if (msg.type === "client-refresh") {
-        reloadForHmr(msg);
+        refreshClient(msg);
         return;
       }
       if (msg.type === "css-update") {
@@ -88,13 +88,6 @@ export const HMR_CLIENT_SCRIPT = `(function(){
     attempts = Math.min(attempts + 1, 6);
     var delay = Math.min(30000, 250 * Math.pow(2, attempts - 1));
     setTimeout(connect, delay);
-  }
-
-  // goseoghyeon: CSR route registry keeps stale module refs, so JS/RSC HMR uses full reload for now.
-  function reloadForHmr(msg){
-    try { self.__AKAN_RSC_CLEAR_CACHE__ && self.__AKAN_RSC_CLEAR_CACHE__(); } catch(e){}
-    if (msg && msg.buildId != null) lastBuildId = msg.buildId;
-    location.reload();
   }
 
   function ensureOverlay(){

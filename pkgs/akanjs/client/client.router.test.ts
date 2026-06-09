@@ -274,8 +274,18 @@ describe("router", () => {
       router.redirect("/users?tab=a");
     } catch (error) {
       expect(error).toBeInstanceOf(AkanRedirectError);
-      expect((error as Error & { location: string; method: string }).location).toBe("/en/admin/users?tab=a");
-      expect((error as Error & { method: string }).method).toBe("replace");
+      expect((error as Error & { location: string; method: string; status: number }).location).toBe(
+        "/en/admin/users?tab=a",
+      );
+      expect((error as Error & { method: string; status: number }).method).toBe("replace");
+      expect((error as Error & { status: number }).status).toBe(307);
+    }
+    try {
+      router.redirect("/users?tab=a", { method: "push", status: 308 });
+    } catch (error) {
+      expect(error).toBeInstanceOf(AkanRedirectError);
+      expect((error as Error & { method: string; status: number }).method).toBe("push");
+      expect((error as Error & { status: number }).status).toBe(308);
     }
     envState.operationMode = "main";
     expect(() => router.redirect("/users?tab=a")).toThrow(AkanRedirectError);

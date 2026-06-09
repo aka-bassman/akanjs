@@ -5,11 +5,115 @@ import { renderToReadableStream } from "react-dom/server.browser";
 import { createFromNodeStream } from "react-server-dom-webpack/client.node";
 import type { SsrChunkRegistryStats, SsrFromRscInput } from "./ssrTypes";
 
+const DEFAULT_SSR_CHUNK_REGISTRY_MAX_ENTRIES = 1024;
+
+interface SsrChunkRegistryEntry<T> {
+  keys: Set<string>;
+  lruKey: string;
+  value: T;
+}
+
+export class SsrChunkRegistry<T> {
+  readonly #entriesByKey = new Map<string, SsrChunkRegistryEntry<T>>();
+  readonly #lru = new Map<string, SsrChunkRegistryEntry<T>>();
+  #evictionCount = 0;
+
+  constructor(readonly maxEntries = DEFAULT_SSR_CHUNK_REGISTRY_MAX_ENTRIES) {}
+
+  get size(): number {
+    return this.#entriesByKey.size;
+  }
+
+  get evictionCount(): number {
+    return this.#evictionCount;
+  }
+
+  get(key: string): T | undefined {
+    const entry = this.#entriesByKey.get(key);
+    if (!entry) return undefined;
+    this.#touch(entry);
+    return entry.value;
+  }
+
+  set(keys: string[], value: T): void {
+    const uniqueKeys = [...new Set(keys)].filter(Boolean);
+    if (uniqueKeys.length === 0) return;
+
+    let entry = uniqueKeys
+      .map((key) => this.#entriesByKey.get(key))
+      .find((item): item is SsrChunkRegistryEntry<T> => Boolean(item));
+    if (!entry) {
+      entry = { keys: new Set(), lruKey: uniqueKeys[0] as string, value };
+    }
+    entry.value = value;
+
+    for (const key of uniqueKeys) {
+      const existing = this.#entriesByKey.get(key);
+      if (existing && existing !== entry) {
+        existing.keys.delete(key);
+        if (existing.keys.size === 0) this.#lru.delete(existing.lruKey);
+      }
+      entry.keys.add(key);
+      this.#entriesByKey.set(key, entry);
+    }
+
+    this.#touch(entry);
+    this.#evict(entry);
+  }
+
+  #touch(entry: SsrChunkRegistryEntry<T>): void {
+    this.#lru.delete(entry.lruKey);
+    this.#lru.set(entry.lruKey, entry);
+  }
+
+  #evict(protectedEntry: SsrChunkRegistryEntry<T>): void {
+    const maxEntries = this.maxEntries > 0 ? this.maxEntries : DEFAULT_SSR_CHUNK_REGISTRY_MAX_ENTRIES;
+    while (this.#entriesByKey.size > maxEntries) {
+      const oldest = this.#lru.entries().next().value as [string, SsrChunkRegistryEntry<T>] | undefined;
+      if (!oldest) return;
+      const [lruKey, entry] = oldest;
+      if (entry === protectedEntry && this.#lru.size === 1) return;
+      if (entry === protectedEntry) {
+        this.#touch(entry);
+        continue;
+      }
+      this.#lru.delete(lruKey);
+      for (const key of entry.keys) this.#entriesByKey.delete(key);
+      this.#evictionCount += 1;
+    }
+  }
+}
+
+export type InlineRscChunk = readonly [1, string] | readonly [3, string];
+
+export function encodeInlineRscChunk(chunk: Uint8Array): InlineRscChunk {
+  try {
+    return [1, new TextDecoder("utf-8", { fatal: true }).decode(chunk)];
+  } catch {
+    return [3, Buffer.from(chunk).toString("base64")];
+  }
+}
+
+export function htmlEscapeJsonString(value: string): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
+export function createInlineRscScript(chunk: Uint8Array): string {
+  const [type, data] = encodeInlineRscChunk(chunk);
+  return `<script>self.__RSC_PUSH__(${type},${htmlEscapeJsonString(data)})</script>`;
+}
+
 export class SsrFromRscRenderer {
   static readonly #chunkRegistryStats: SsrChunkRegistryStats = {
     ssrChunkRegistrySize: 0,
     ssrChunkLoadCount: 0,
     ssrChunkCacheHitCount: 0,
+    ssrChunkEvictionCount: 0,
   };
 
   // Inline bootstrap that runs as a classic script BEFORE any <script type="module">.
@@ -36,7 +140,7 @@ export class SsrFromRscRenderer {
   self.__webpack_get_script_filename__ = function(chunkId) { return chunkId; };
   self.__RSC_CHUNKS__ = [];
   self.__RSC_CLOSED__ = false;
-  self.__RSC_PUSH__ = function(b64){ self.__RSC_CHUNKS__.push(b64); };
+  self.__RSC_PUSH__ = function(type,data){ self.__RSC_CHUNKS__.push([type,data]); };
   self.__RSC_CLOSE__ = function(){ self.__RSC_CLOSED__ = true; };
 })();`;
 
@@ -117,18 +221,18 @@ export class SsrFromRscRenderer {
     // specifier, which bypasses Bun's module cache naturally. The
     // `?v=<digits>` stripping below is defensive for any caller that still
     // appends a version query to keep the pre-existing registry keys stable.
-    const registry = new Map<string, Record<string, unknown>>();
+    const registry = new SsrChunkRegistry<Record<string, unknown>>(SsrFromRscRenderer.#getSsrChunkRegistryMaxEntries());
     g.__webpack_chunk_load__ = async (chunkId: string) => {
-      if (registry.has(chunkId)) {
+      if (registry.get(chunkId)) {
         SsrFromRscRenderer.#chunkRegistryStats.ssrChunkCacheHitCount += 1;
         return;
       }
       const mod = (await import(chunkId)) as Record<string, unknown>;
-      registry.set(chunkId, mod);
       const canonical = chunkId.replace(/\?v=\d+$/, "");
-      registry.set(canonical, mod);
+      registry.set([chunkId, canonical], mod);
       SsrFromRscRenderer.#chunkRegistryStats.ssrChunkLoadCount += 1;
       SsrFromRscRenderer.#chunkRegistryStats.ssrChunkRegistrySize = registry.size;
+      SsrFromRscRenderer.#chunkRegistryStats.ssrChunkEvictionCount = registry.evictionCount;
     };
     g.__webpack_require__ = (id: string) => {
       const mod = registry.get(id);
@@ -137,6 +241,11 @@ export class SsrFromRscRenderer {
       }
       return mod;
     };
+  }
+
+  static #getSsrChunkRegistryMaxEntries(): number {
+    const parsed = Number.parseInt(process.env.AKAN_SSR_CHUNK_REGISTRY_MAX_ENTRIES ?? "", 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SSR_CHUNK_REGISTRY_MAX_ENTRIES;
   }
 
   /**
@@ -316,8 +425,7 @@ export class SsrFromRscRenderer {
               const { value, done } = await rscReader.read();
               if (done) break;
               if (errored) return;
-              const b64 = Buffer.from(value).toString("base64");
-              controller.enqueue(encoder.encode(`<script>self.__RSC_PUSH__(${JSON.stringify(b64)})</script>`));
+              controller.enqueue(encoder.encode(createInlineRscScript(value)));
             }
           } finally {
             rscReader.releaseLock();

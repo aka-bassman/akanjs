@@ -85,6 +85,7 @@ export interface AkanMetricsReport {
   ssrChunkRegistrySize?: number;
   ssrChunkLoadCount?: number;
   ssrChunkCacheHitCount?: number;
+  ssrChunkEvictionCount?: number;
   httpFullSsrCount?: number;
   httpRscNavigationCount?: number;
   httpStaticAssetCount?: number;

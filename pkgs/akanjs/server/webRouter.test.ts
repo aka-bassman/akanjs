@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_AKAN_I18N } from "akanjs/common";
-import { normalizeRscTargetUrlForHostBasePath } from "./webRouter";
+import { createRscRedirectResponse, normalizeRscTargetUrlForHostBasePath } from "./webRouter";
 
 describe("WebRouter RSC target normalization", () => {
   test("maps public host paths to the hidden basePath route for RSC navigation", () => {
@@ -45,5 +45,22 @@ describe("WebRouter RSC target normalization", () => {
 
     expect(normalized.url.href).toBe("https://akanjs.com/en/akanjs/docs/intro/quickstart");
     expect(normalized.basePath).toBe("akanjs");
+  });
+});
+
+describe("WebRouter RSC redirect response", () => {
+  test("uses the Akan RSC redirect envelope with status metadata", async () => {
+    const response = createRscRedirectResponse("/target", "push", 308);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Akan-Redirect")).toBe("/target");
+    expect(response.headers.get("X-Akan-Redirect-Method")).toBe("push");
+    expect(response.headers.get("X-Akan-Redirect-Status")).toBe("308");
+    await expect(response.json()).resolves.toEqual({
+      type: "redirect",
+      location: "/target",
+      method: "push",
+      status: 308,
+    });
   });
 });

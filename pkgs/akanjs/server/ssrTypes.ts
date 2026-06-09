@@ -16,6 +16,7 @@ export interface SsrChunkRegistryStats {
   ssrChunkRegistrySize: number;
   ssrChunkLoadCount: number;
   ssrChunkCacheHitCount: number;
+  ssrChunkEvictionCount: number;
 }
 
 export interface SsrFromRscInput {

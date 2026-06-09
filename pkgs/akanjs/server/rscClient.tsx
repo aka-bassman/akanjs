@@ -2,10 +2,12 @@ import { createElement, type ReactNode, startTransition, use, useLayoutEffect, u
 import { hydrateRoot } from "react-dom/client";
 import { createFromReadableStream } from "react-server-dom-webpack/client.browser";
 
+type InlineRscChunk = [1, string] | [3, string];
+
 declare global {
-  var __RSC_CHUNKS__: string[] | undefined;
+  var __RSC_CHUNKS__: InlineRscChunk[] | undefined;
   var __RSC_CLOSED__: boolean | undefined;
-  var __RSC_PUSH__: ((b64: string) => void) | undefined;
+  var __RSC_PUSH__: ((type: InlineRscChunk[0], data: string) => void) | undefined;
   var __RSC_CLOSE__: (() => void) | undefined;
   var __AKAN_RSC_NAVIGATE__:
     | ((href: string, options?: { replace?: boolean; scrollToTop?: boolean }) => Promise<void>)
@@ -21,15 +23,20 @@ function decodeBase64(b64: string): Uint8Array {
   return bytes;
 }
 
+function decodeInlineRscChunk([type, data]: InlineRscChunk): Uint8Array {
+  if (type === 1) return new TextEncoder().encode(data);
+  return decodeBase64(data);
+}
+
 type RscThenable = Promise<ReactNode>;
-type RscFetchResult = { type: "rsc"; thenable: RscThenable } | { type: "redirected" };
+type RscFetchResult = { type: "rsc"; thenable: RscThenable } | { type: "redirected"; status?: number };
 const MAX_RSC_CACHE_ENTRIES = 32;
 
 function createInitialRscStream(): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller) {
       const queued = globalThis.__RSC_CHUNKS__ ?? [];
-      for (const b64 of queued) controller.enqueue(decodeBase64(b64));
+      for (const chunk of queued) controller.enqueue(decodeInlineRscChunk(chunk));
       globalThis.__RSC_CHUNKS__ = [];
 
       if (globalThis.__RSC_CLOSED__) {
@@ -37,7 +44,7 @@ function createInitialRscStream(): ReadableStream<Uint8Array> {
         return;
       }
 
-      globalThis.__RSC_PUSH__ = (b64: string) => controller.enqueue(decodeBase64(b64));
+      globalThis.__RSC_PUSH__ = (type, data) => controller.enqueue(decodeInlineRscChunk([type, data]));
       globalThis.__RSC_CLOSE__ = () => controller.close();
     },
   });
@@ -63,8 +70,10 @@ async function fetchRsc(href: string, options: { buildId?: number } = {}): Promi
   const redirect = res.headers.get("X-Akan-Redirect");
   if (redirect) {
     const method = res.headers.get("X-Akan-Redirect-Method");
+    const statusHeader = res.headers.get("X-Akan-Redirect-Status");
+    const status = statusHeader ? Number(statusHeader) : undefined;
     await globalThis.__AKAN_RSC_NAVIGATE__?.(redirect, { replace: method !== "push", scrollToTop: true });
-    return { type: "redirected" };
+    return { type: "redirected", status };
   }
   if (!res.ok || !res.body) throw new Error(`[rscClient] RSC fetch failed ${res.status} ${res.statusText}`);
   // Buffer the entire Flight payload before constructing the thenable. The root

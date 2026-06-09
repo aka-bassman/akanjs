@@ -35,12 +35,18 @@ interface CSRClientRouterOption extends RouterOptions {
   router: RouterInstance;
 }
 export type RedirectMethod = "replace" | "push";
+export type RedirectStatus = 303 | 307 | 308;
+export interface RedirectOptions {
+  method?: RedirectMethod;
+  status?: RedirectStatus;
+}
 
 export class AkanRedirectError extends Error {
   readonly digest = "AKAN_REDIRECT";
   constructor(
     readonly location: string,
     readonly method: RedirectMethod = "replace",
+    readonly status: RedirectStatus = 307,
   ) {
     super(`Redirect to ${location}`);
     this.name = "AkanRedirectError";
@@ -251,7 +257,9 @@ class Router {
     this.#instance.refresh();
     return undefined as never;
   }
-  redirect(href: string): never {
+  redirect(href: string, options: RedirectOptions = {}): never {
+    const method = options.method ?? "replace";
+    const status = options.status ?? 307;
     if (getEnv().side === "server") {
       const { getRequest, headers: requestHeaders } = getServerRequestContext();
       const h = requestHeaders();
@@ -262,9 +270,9 @@ class Router {
       const basePath = getServerBasePath(reqPathname, lang, h.get("x-base-path") ?? undefined, this.#prefix);
       const { pathname, href: fullHref } = getPathInfo(href, lang, shouldExposeBasePath() ? basePath : "");
       Logger.log(`redirect to:${pathname}`);
-      throw new AkanRedirectError(fullHref, "replace");
+      throw new AkanRedirectError(fullHref, method, status);
     } else {
-      this.#instance.replace(href);
+      this.#instance[method](href);
     }
     return undefined as never;
   }

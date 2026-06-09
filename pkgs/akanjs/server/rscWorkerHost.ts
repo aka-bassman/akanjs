@@ -12,15 +12,16 @@ interface RscPending {
   onEnd: () => void;
   onError: (message: string) => void;
   onMeta?: (meta: { theme?: AkanTheme; status?: number }) => void;
-  onRedirect?: (location: string, method: RscRedirectMethod) => void;
+  onRedirect?: (location: string, method: RscRedirectMethod, status: RscRedirectStatus) => void;
   onNotFound?: () => void;
 }
 
 export type RscRedirectMethod = "replace" | "push";
+export type RscRedirectStatus = 303 | 307 | 308;
 
 export type RscRenderResult =
   | { type: "stream"; stream: ReadableStream<Uint8Array>; theme?: AkanTheme; status?: number }
-  | { type: "redirect"; location: string; method: RscRedirectMethod }
+  | { type: "redirect"; location: string; method: RscRedirectMethod; status: RscRedirectStatus }
   | { type: "not-found" };
 
 type RscInMsg =
@@ -30,7 +31,7 @@ type RscInMsg =
   | { type: "meta"; requestId: string; theme?: AkanTheme; status?: number }
   | { type: "chunk"; requestId: string; data: Uint8Array }
   | { type: "end"; requestId: string }
-  | { type: "redirect"; requestId: string; location: string; method?: RscRedirectMethod }
+  | { type: "redirect"; requestId: string; location: string; method?: RscRedirectMethod; status?: RscRedirectStatus }
   | { type: "not-found"; requestId: string }
   | { type: "metrics"; metrics: AkanMetricsReport }
   | { type: "error"; requestId: string; message: string; buildId?: number };
@@ -218,10 +219,10 @@ export class RscWorker {
               }
               controller.error(new Error(msg));
             },
-            onRedirect: (location, method) => {
+            onRedirect: (location, method, status) => {
               if (!settled) {
                 settled = true;
-                resolve({ type: "redirect", location, method });
+                resolve({ type: "redirect", location, method, status });
                 controller.close();
                 return;
               }
@@ -423,7 +424,9 @@ export class RscWorker {
         this.#resolvePending(message.requestId, (p) => p.onEnd());
         return;
       case "redirect":
-        this.#resolvePending(message.requestId, (p) => p.onRedirect?.(message.location, message.method ?? "replace"));
+        this.#resolvePending(message.requestId, (p) =>
+          p.onRedirect?.(message.location, message.method ?? "replace", message.status ?? 307),
+        );
         return;
       case "not-found":
         this.#resolvePending(message.requestId, (p) => p.onNotFound?.());
