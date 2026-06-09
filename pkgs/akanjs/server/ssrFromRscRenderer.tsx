@@ -334,6 +334,7 @@ export function interleaveRscScriptsWithHtml(
     maxPendingRscScripts?: number;
     onPendingRscScriptsSize?: (size: number) => void;
     onComplete?: () => void;
+    onCancel?: (reason?: unknown) => void;
     request?: Request;
   } = {},
 ): ReadableStream<Uint8Array> {
@@ -349,16 +350,24 @@ export function interleaveRscScriptsWithHtml(
   let lateControlDone = !options.lateControl;
   let htmlReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   let rscReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let cancelled = false;
+
+  const cancelUpstream = (reason?: unknown) => {
+    if (cancelled) return;
+    cancelled = true;
+    while (queueDrainResolvers.length > 0) queueDrainResolvers.shift()?.();
+    while (scriptAvailableResolvers.length > 0) scriptAvailableResolvers.shift()?.();
+    if (htmlReader) void htmlReader.cancel(reason).catch(() => {});
+    if (rscReader) void rscReader.cancel(reason).catch(() => {});
+    options.onCancel?.(reason);
+  };
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
       const fail = (err: unknown) => {
         if (errored) return;
         errored = true;
-        while (queueDrainResolvers.length > 0) queueDrainResolvers.shift()?.();
-        while (scriptAvailableResolvers.length > 0) scriptAvailableResolvers.shift()?.();
-        if (htmlReader) void htmlReader.cancel(err).catch(() => {});
-        if (rscReader) void rscReader.cancel(err).catch(() => {});
+        cancelUpstream(err);
         controller.error(err);
       };
 
@@ -469,10 +478,7 @@ export function interleaveRscScriptsWithHtml(
     },
     cancel(reason) {
       errored = true;
-      while (queueDrainResolvers.length > 0) queueDrainResolvers.shift()?.();
-      while (scriptAvailableResolvers.length > 0) scriptAvailableResolvers.shift()?.();
-      if (htmlReader) void htmlReader.cancel(reason).catch(() => {});
-      if (rscReader) void rscReader.cancel(reason).catch(() => {});
+      cancelUpstream(reason);
       options.onComplete?.();
     },
   });
@@ -607,6 +613,7 @@ export class SsrFromRscRenderer {
       input.request,
       input.lateControl,
       () => stderrSuppressor?.stop(),
+      input.onCancel,
     );
   }
 
@@ -796,6 +803,7 @@ export class SsrFromRscRenderer {
     request?: Request,
     lateControl?: Promise<SsrLateRedirect | null>,
     onComplete?: () => void,
+    onCancel?: (reason?: unknown) => void,
   ): ReadableStream<Uint8Array> {
     const bootstrapModuleScripts = SsrFromRscRenderer.#createBootstrapModuleScriptTags(bootstrapModules);
     // Interleave only at HTML chunk boundaries. Fizz may split arbitrary bytes
@@ -808,6 +816,7 @@ export class SsrFromRscRenderer {
       bootstrapModuleScripts,
       lateControl,
       onComplete,
+      onCancel,
       request,
     });
   }

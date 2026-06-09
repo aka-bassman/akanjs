@@ -13,6 +13,7 @@ import type { ClientManifest } from "./artifact";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { RouteElementComposer } from "./routeElementComposer";
 import { type PagesContext, RouteTreeBuilder } from "./routeTreeBuilder";
+import { replayCachedRscResult } from "./rscWorkerReplay";
 import { createSystemPageDocument, getSystemPageHomeHref } from "./systemPages";
 
 interface InitMsg {
@@ -328,9 +329,13 @@ class RscRenderer {
           this.#stats.totalFlightBytes += cached.bytes;
           this.#stats.totalFlightChunks += cached.chunksCount;
           this.#recordRouteStats(routeId, cached.bytes, this.#stats.lastRenderDurationMs);
-          this.#send({ type: "meta", requestId, theme: cached.theme });
-          for (const chunk of cached.chunks) this.#send({ type: "chunk", requestId, data: chunk });
-          this.#send({ type: "end", requestId });
+          await replayCachedRscResult({
+            requestId,
+            chunks: cached.chunks,
+            theme: cached.theme,
+            send: (message) => this.#send(message),
+            isCancelled: () => this.#cancelledRenderRequests.has(requestId),
+          });
           return;
         }
         const theme = cookies().get("theme")?.value;
@@ -1000,4 +1005,4 @@ class RscRenderer {
   }
 }
 
-new RscRenderer().start();
+if (import.meta.main) new RscRenderer().start();

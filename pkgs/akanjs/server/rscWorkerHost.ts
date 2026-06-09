@@ -8,7 +8,9 @@ import type { ClientManifest } from "./artifact";
 import type { SsrLateRedirect } from "./ssrTypes";
 import type { BaseBuildArtifact, CssAsset } from "./types";
 
-interface RscPending {
+const DEFAULT_RSC_HOST_MAX_PENDING_CHUNKS = 256;
+
+export interface RscPending {
   onChunk: (data: Uint8Array) => void;
   onEnd: () => void;
   onError: (message: string) => void;
@@ -28,9 +30,137 @@ export type RscRenderResult =
       theme?: AkanTheme;
       status?: number;
       lateControl: Promise<SsrLateRedirect | null>;
+      cancel: (reason?: unknown) => void;
     }
   | { type: "redirect"; location: string; method: RscRedirectMethod; status: RscRedirectStatus }
   | { type: "not-found" };
+
+export function getRscHostMaxPendingChunks(value = process.env.AKAN_RSC_HOST_MAX_PENDING_CHUNKS): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_RSC_HOST_MAX_PENDING_CHUNKS;
+}
+
+export function nextRscHostPendingChunkCount(currentPendingChunks: number, desiredSize: number | null): number {
+  return desiredSize !== null && desiredSize <= 0 ? currentPendingChunks + 1 : 0;
+}
+
+export function isRscHostPendingChunkOverflow(pendingChunks: number, maxPendingChunks: number): boolean {
+  return pendingChunks > maxPendingChunks;
+}
+
+export function createIdempotentRscRenderCancel(onCancel: (reason?: unknown) => void): (reason?: unknown) => void {
+  let cancelled = false;
+  return (reason?: unknown) => {
+    if (cancelled) return;
+    cancelled = true;
+    onCancel(reason);
+  };
+}
+
+export function createRscHostRenderStream(input: {
+  setPending: (pending: RscPending) => void;
+  deletePending: () => void;
+  sendRenderOrQueue: () => void;
+  cancelRender: (reason?: unknown) => void;
+  maxPendingChunks?: number;
+}): Promise<RscRenderResult> {
+  let settled = false;
+  let stream!: ReadableStream<Uint8Array>;
+  let theme: AkanTheme | undefined;
+  let status: number | undefined;
+  let resolveLateControl!: (control: SsrLateRedirect | null) => void;
+  const lateControl = new Promise<SsrLateRedirect | null>((resolve) => {
+    resolveLateControl = resolve;
+  });
+  let lateControlSettled = false;
+  const settleLateControl = (control: SsrLateRedirect | null) => {
+    if (lateControlSettled) return;
+    lateControlSettled = true;
+    resolveLateControl(control);
+  };
+  const maxPendingChunks = input.maxPendingChunks ?? getRscHostMaxPendingChunks();
+  let pendingChunks = 0;
+  const cancelRender = createIdempotentRscRenderCancel((reason) => {
+    input.deletePending();
+    settleLateControl(null);
+    input.cancelRender(reason);
+  });
+
+  return new Promise<RscRenderResult>((resolve, reject) => {
+    stream = new ReadableStream<Uint8Array>({
+      start: (controller) => {
+        const settleStream = () => {
+          if (settled) return;
+          settled = true;
+          resolve({ type: "stream", stream, theme, status, lateControl, cancel: cancelRender });
+        };
+        input.setPending({
+          onMeta: (meta) => {
+            theme = meta.theme;
+            status = meta.status;
+            settleStream();
+          },
+          onChunk: (data) => {
+            settleStream();
+            pendingChunks = nextRscHostPendingChunkCount(pendingChunks, controller.desiredSize);
+            if (isRscHostPendingChunkOverflow(pendingChunks, maxPendingChunks)) {
+              const msg = `rsc worker host queue exceeded ${maxPendingChunks} pending chunks`;
+              const error = new Error(msg);
+              cancelRender(error);
+              controller.error(error);
+              return;
+            }
+            controller.enqueue(data);
+          },
+          onEnd: () => {
+            settleLateControl(null);
+            settleStream();
+            controller.close();
+          },
+          onError: (msg) => {
+            settleLateControl(null);
+            if (!settled) {
+              settled = true;
+              reject(new Error(msg));
+              return;
+            }
+            controller.error(new Error(msg));
+          },
+          onRedirect: (location, method, status) => {
+            settleLateControl(null);
+            if (!settled) {
+              settled = true;
+              resolve({ type: "redirect", location, method, status });
+              controller.close();
+              return;
+            }
+            controller.error(new Error(`redirect after stream started: ${location}`));
+          },
+          onLateRedirect: (location, method, status) => {
+            settleLateControl({ type: "redirect", location, method, status });
+          },
+          onNotFound: () => {
+            settleLateControl(null);
+            if (!settled) {
+              settled = true;
+              resolve({ type: "not-found" });
+              controller.close();
+              return;
+            }
+            controller.error(new Error("not-found after stream started"));
+          },
+        });
+        input.sendRenderOrQueue();
+      },
+      cancel: (reason) => {
+        cancelRender(reason);
+      },
+      pull: () => {
+        pendingChunks = Math.max(0, pendingChunks - 1);
+      },
+    });
+  });
+}
 
 type RscInMsg =
   | { type: "hello" }
@@ -201,86 +331,20 @@ export class RscWorker {
 
   renderWithMeta(req: Request, options: { clientManifest?: ClientManifest } = {}): Promise<RscRenderResult> {
     const requestId = crypto.randomUUID();
-    let settled = false;
-    let stream!: ReadableStream<Uint8Array>;
-    let theme: AkanTheme | undefined;
-    let status: number | undefined;
-    let resolveLateControl!: (control: SsrLateRedirect | null) => void;
-    const lateControl = new Promise<SsrLateRedirect | null>((resolve) => {
-      resolveLateControl = resolve;
+    return createRscHostRenderStream({
+      setPending: (pending) => {
+        this.#pending.set(requestId, pending);
+      },
+      deletePending: () => {
+        this.#pending.delete(requestId);
+      },
+      sendRenderOrQueue: () => {
+        this.#sendRenderOrQueue(requestId, req, options.clientManifest);
+      },
+      cancelRender: () => {
+        this.#cancelRender(requestId);
+      },
     });
-    let lateControlSettled = false;
-    const settleLateControl = (control: SsrLateRedirect | null) => {
-      if (lateControlSettled) return;
-      lateControlSettled = true;
-      resolveLateControl(control);
-    };
-    const result = new Promise<RscRenderResult>((resolve, reject) => {
-      stream = new ReadableStream<Uint8Array>({
-        start: (controller) => {
-          const settleStream = () => {
-            if (settled) return;
-            settled = true;
-            resolve({ type: "stream", stream, theme, status, lateControl });
-          };
-          this.#pending.set(requestId, {
-            onMeta: (meta) => {
-              theme = meta.theme;
-              status = meta.status;
-              settleStream();
-            },
-            onChunk: (data) => {
-              settleStream();
-              controller.enqueue(data);
-            },
-            onEnd: () => {
-              settleLateControl(null);
-              settleStream();
-              controller.close();
-            },
-            onError: (msg) => {
-              settleLateControl(null);
-              if (!settled) {
-                settled = true;
-                reject(new Error(msg));
-                return;
-              }
-              controller.error(new Error(msg));
-            },
-            onRedirect: (location, method, status) => {
-              settleLateControl(null);
-              if (!settled) {
-                settled = true;
-                resolve({ type: "redirect", location, method, status });
-                controller.close();
-                return;
-              }
-              controller.error(new Error(`redirect after stream started: ${location}`));
-            },
-            onLateRedirect: (location, method, status) => {
-              settleLateControl({ type: "redirect", location, method, status });
-            },
-            onNotFound: () => {
-              settleLateControl(null);
-              if (!settled) {
-                settled = true;
-                resolve({ type: "not-found" });
-                controller.close();
-                return;
-              }
-              controller.error(new Error("not-found after stream started"));
-            },
-          });
-          this.#sendRenderOrQueue(requestId, req, options.clientManifest);
-        },
-        cancel: () => {
-          this.#pending.delete(requestId);
-          settleLateControl(null);
-          this.#cancelRender(requestId);
-        },
-      });
-    });
-    return result;
   }
 
   kill(): void {

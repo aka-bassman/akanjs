@@ -62,8 +62,6 @@ export default function SsrLink({
         if (!router.isInitialized || !rscNavigationReady) return;
         event.preventDefault();
         try {
-          Logger.log(`pathChange-start:${requestHref}`);
-          window.parent.postMessage({ type: "pathChange", href: requestHref }, "*");
           if (replace) router.replace(href, { scrollToTop });
           else router.push(href, { scrollToTop });
         } catch (error) {

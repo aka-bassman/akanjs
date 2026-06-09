@@ -1,11 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_AKAN_I18N } from "akanjs/common";
 import {
+  cacheHtmlWhileStreaming,
+  cancelStreamForHeadResponse,
   createRscNavigationStreamResponse,
   createRscRedirectResponse,
   createRscStreamResponse,
   normalizeRscTargetUrlForHostBasePath,
 } from "./webRouter";
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 describe("WebRouter RSC target normalization", () => {
   test("maps public host paths to the hidden basePath route for RSC navigation", () => {
@@ -90,6 +99,7 @@ describe("WebRouter RSC stream response", () => {
         },
       }),
       lateControl: Promise.resolve({ type: "redirect", location: "/target", method: "replace", status: 307 }),
+      cancel: () => {},
     });
 
     expect(response.status).toBe(200);
@@ -114,10 +124,61 @@ describe("WebRouter RSC stream response", () => {
       }),
       status: 404,
       lateControl: Promise.resolve(null),
+      cancel: () => {},
     });
 
     expect(response.status).toBe(404);
     expect(response.headers.get("Content-Type")).toBe("text/x-component; charset=utf-8");
     await expect(response.text()).resolves.toBe("flight");
+  });
+});
+
+describe("WebRouter HTML cache streaming", () => {
+  test("passes through the first chunk before caching the completed HTML", async () => {
+    let cachedHtml = "";
+    const stream = cacheHtmlWhileStreaming(
+      new ReadableStream<Uint8Array>({
+        async start(controller) {
+          controller.enqueue(encoder.encode("<html>first"));
+          await sleep(20);
+          controller.enqueue(encoder.encode("second</html>"));
+          controller.close();
+        },
+      }),
+      (html) => {
+        cachedHtml = html;
+      },
+    );
+    const reader = stream.getReader();
+
+    const first = await reader.read();
+    expect(first.done).toBe(false);
+    expect(decoder.decode(first.value)).toBe("<html>first");
+    expect(cachedHtml).toBe("");
+
+    let rest = "";
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      rest += decoder.decode(next.value);
+    }
+
+    expect(rest).toBe("second</html>");
+    expect(cachedHtml).toBe("<html>firstsecond</html>");
+  });
+
+  test("cancels the unused HTML stream for HEAD responses", async () => {
+    let cancelledReason: unknown;
+    const reason = new Error("HEAD response does not consume body");
+    const stream = new ReadableStream<Uint8Array>({
+      cancel(actualReason) {
+        cancelledReason = actualReason;
+      },
+    });
+
+    cancelStreamForHeadResponse(stream, reason);
+    await sleep(0);
+
+    expect(cancelledReason).toBe(reason);
   });
 });

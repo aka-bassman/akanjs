@@ -53,4 +53,5 @@ export interface SsrFromRscInput {
   theme?: AkanTheme;
   injectThemeInitScript?: boolean;
   lateControl?: Promise<SsrLateRedirect | null>;
+  onCancel?: (reason?: unknown) => void;
 }

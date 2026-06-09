@@ -10,6 +10,7 @@ import {
 } from "./ssrFromRscRenderer";
 
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 const rscBootstrap = `<script>self.__RSC_CHUNKS__=[];self.__RSC_PUSH__=function(type,data){self.__RSC_CHUNKS__.push([type,data]);};</script>`;
 
 function sleep(ms: number): Promise<void> {
@@ -186,6 +187,54 @@ describe("inline RSC interleaving", () => {
     expect(output).toContain("<script>self.__RSC_CLOSE__()</script>");
   });
 
+  test("flushes the first HTML and RSC script before a delayed second Flight chunk", async () => {
+    const firstScript = createInlineRscScript(encoder.encode("first"));
+    const secondScript = createInlineRscScript(encoder.encode("second"));
+    let releaseSecond!: () => void;
+    let secondReleased = false;
+    const html = textStream([
+      { text: `<main>shell${rscBootstrap}`, delayMs: 5 },
+      { text: "tail</main>", delayMs: 20 },
+    ]);
+    const rsc = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(encoder.encode("first"));
+        await new Promise<void>((resolve) => {
+          releaseSecond = () => {
+            secondReleased = true;
+            resolve();
+          };
+        });
+        controller.enqueue(encoder.encode("second"));
+        controller.close();
+      },
+    });
+    const reader = interleaveRscScriptsWithHtml(html, rsc).getReader();
+    let output = "";
+
+    while (!output.includes(firstScript)) {
+      const next = await Promise.race([reader.read(), sleep(30).then(() => null)]);
+      if (!next) throw new Error("timed out waiting for the first streamed RSC script");
+      expect(next.done).toBe(false);
+      output += decoder.decode(next.value);
+    }
+
+    expect(output).toContain("<main>shell");
+    expect(output).toContain(firstScript);
+    expect(output).not.toContain(secondScript);
+    expect(secondReleased).toBe(false);
+
+    releaseSecond();
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      output += decoder.decode(next.value);
+    }
+
+    expect(output).toContain(secondScript);
+    expect(output).toContain("<script>self.__RSC_CLOSE__()</script>");
+  });
+
   test("keeps bootstrap module scripts before the final RSC drain", async () => {
     const bootstrap = `<script type="module" src="/rsc-client.js"></script>`;
     const html = textStream([{ text: `<main>shell${rscBootstrap}</main>` }]);
@@ -277,6 +326,43 @@ describe("inline RSC interleaving", () => {
     expect(output).toContain(createInlineRscScript(encoder.encode("B")));
     expect(output).toContain(createInlineRscScript(encoder.encode("C")));
     expect(output).toContain("second</main>");
+  });
+
+  test("propagates consumer cancel to upstream streams once", async () => {
+    let htmlCancelled = 0;
+    let rscCancelled = 0;
+    let cancelCount = 0;
+    const reason = new Error("client disconnected");
+    const html = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(`<main>shell${rscBootstrap}`));
+      },
+      cancel() {
+        htmlCancelled += 1;
+      },
+    });
+    const rsc = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("flight"));
+      },
+      cancel() {
+        rscCancelled += 1;
+      },
+    });
+    const reader = interleaveRscScriptsWithHtml(html, rsc, {
+      onCancel: (actualReason) => {
+        cancelCount += 1;
+        expect(actualReason).toBe(reason);
+      },
+    }).getReader();
+
+    await reader.read();
+    await reader.cancel(reason);
+    await reader.cancel(reason);
+
+    expect(cancelCount).toBe(1);
+    expect(htmlCancelled).toBe(1);
+    expect(rscCancelled).toBe(1);
   });
 });
 

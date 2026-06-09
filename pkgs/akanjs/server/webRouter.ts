@@ -57,6 +57,45 @@ export function createRscStreamResponse(stream: BodyInit, status = 200): Respons
   });
 }
 
+export function cacheHtmlWhileStreaming(
+  stream: ReadableStream<Uint8Array>,
+  onComplete: (html: string) => void,
+): ReadableStream<Uint8Array> {
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  const decoder = new TextDecoder();
+
+  return stream.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        chunks.push(chunk.slice());
+        byteLength += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+      flush() {
+        const body = new Uint8Array(byteLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+          body.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        try {
+          onComplete(decoder.decode(body));
+        } catch {
+          // Cache writes must not fail the already completed response stream.
+        }
+      },
+    }),
+  );
+}
+
+export function cancelStreamForHeadResponse(stream: ReadableStream<Uint8Array>, reason: unknown): void {
+  void stream.cancel(reason).catch(() => {
+    // The response will not expose a body. Cancellation is best-effort because
+    // upstream streams may already be closed by the time HEAD handling runs.
+  });
+}
+
 export async function createRscNavigationStreamResponse(
   result: Extract<RscRenderResult, { type: "stream" }>,
 ): Promise<Response> {
@@ -435,20 +474,32 @@ export class WebRouter {
             importmap: this.#artifact.vendorMap,
             theme: themeCookieExists ? undefined : (rscResult.theme ?? "system"),
             lateControl: rscResult.lateControl,
+            onCancel: (reason) => {
+              rscResult.cancel(reason);
+            },
           });
           const responseStatus = rscResult.status ?? 200;
           const responseHeaders = WebRouter.#htmlResponseHeaders(responseStatus);
-          if (htmlCacheKey && responseStatus === 200) {
-            const html = await new Response(htmlStream).text();
-            this.#setCachedHtml(htmlCacheKey, html);
-            return new Response(html, {
-              headers: {
-                "Content-Type": "text/html; charset=utf-8",
-                "X-Akan-Cache": "MISS",
-              },
-            });
+          if (req.method === "HEAD") {
+            const headers = new Headers(responseHeaders);
+            if (htmlCacheKey && responseStatus === 200) headers.set("X-Akan-Cache", "MISS");
+            cancelStreamForHeadResponse(htmlStream, new Error("HEAD response does not consume body"));
+            return new Response(null, { status: responseStatus, headers });
           }
-          return new Response(req.method === "HEAD" ? null : htmlStream, {
+          if (htmlCacheKey && responseStatus === 200) {
+            const headers = new Headers(responseHeaders);
+            headers.set("X-Akan-Cache", "MISS");
+            return new Response(
+              cacheHtmlWhileStreaming(htmlStream, (html) => {
+                this.#setCachedHtml(htmlCacheKey, html);
+              }),
+              {
+                status: responseStatus,
+                headers,
+              },
+            );
+          }
+          return new Response(htmlStream, {
             status: responseStatus,
             headers: responseHeaders,
           });
