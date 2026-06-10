@@ -4,9 +4,11 @@ import type {
   LayoutFallbackRoute,
   LayoutNotFoundRender,
   PathRoute,
+  ResolvedHead,
   RouteRender,
 } from "akanjs/client";
 import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode, Suspense } from "react";
+import { resolveHeadResult } from "./metadata";
 
 export class RouteElementComposer {
   static compose({
@@ -43,7 +45,25 @@ export class RouteElementComposer {
     params: Record<string, string>;
     searchParams: Record<string, string | string[]>;
   }): Promise<Head | null | undefined> {
-    return pathRoute.resolveHead?.({ params, searchParams });
+    return (
+      await RouteElementComposer.resolveHeadWithMetadata({
+        pathRoute,
+        params,
+        searchParams,
+      })
+    ).node;
+  }
+
+  static async resolveHeadWithMetadata({
+    pathRoute,
+    params,
+    searchParams,
+  }: {
+    pathRoute: PathRoute;
+    params: Record<string, string>;
+    searchParams: Record<string, string[] | string>;
+  }): Promise<ResolvedHead> {
+    return resolveHeadResult(await pathRoute.resolveHead?.({ params, searchParams }));
   }
 
   static async composeFallback({

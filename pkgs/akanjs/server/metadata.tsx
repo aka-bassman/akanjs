@@ -1,4 +1,4 @@
-import type { AkanMetadata, Head, PageProps } from "akanjs/client";
+import type { AkanMetadata, Head, ResolvedHead, ResolveHeadResult } from "akanjs/client";
 import type { ReactNode } from "react";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -47,7 +47,7 @@ function renderAlternates(metadata: AkanMetadata): ReactNode[] {
   if (alternates.canonical) nodes.push(<link key="canonical" rel="canonical" href={alternates.canonical} />);
   if (alternates.languages) {
     for (const [lang, href] of Object.entries(alternates.languages)) {
-      nodes.push(<link key={`alternate:${lang}`} rel="alternate" hrefLang={lang} href={href} />);
+      nodes.push(<link key={`metadata:alternate:${lang}`} rel="alternate" hrefLang={lang} href={href} />);
     }
   }
   return nodes;
@@ -78,8 +78,37 @@ export function renderMetadata(metadata: AkanMetadata): Head {
   );
 }
 
+export function hasExplicitLanguageAlternates(metadata: AkanMetadata | null | undefined): boolean {
+  return Boolean(metadata?.alternates?.languages && Object.keys(metadata.alternates.languages).length > 0);
+}
+
+export function shouldRenderLocaleAlternates(options: {
+  isSpecialRoute?: boolean;
+  hasExplicitLanguageAlternates?: boolean;
+}): boolean {
+  return options.isSpecialRoute !== true && options.hasExplicitLanguageAlternates !== true;
+}
+
+export function isResolvedHead(value: unknown): value is ResolvedHead {
+  return isRecord(value) && "node" in value && "hasExplicitLanguageAlternates" in value;
+}
+
+export function resolveMetadataHead(metadata: AkanMetadata): ResolvedHead {
+  return {
+    node: renderMetadata(metadata),
+    hasExplicitLanguageAlternates: hasExplicitLanguageAlternates(metadata),
+  };
+}
+
+export function resolveHeadExport(value: Head | AkanMetadata | null | undefined): ResolvedHead {
+  return isAkanMetadata(value) ? resolveMetadataHead(value) : { node: value, hasExplicitLanguageAlternates: false };
+}
+
+export function resolveHeadResult(value: ResolveHeadResult): ResolvedHead {
+  if (isResolvedHead(value)) return value;
+  return resolveHeadExport(value as Head | AkanMetadata | null | undefined);
+}
+
 export function normalizeHead(value: Head | AkanMetadata | null | undefined): Head | null | undefined {
   return isAkanMetadata(value) ? renderMetadata(value) : value;
 }
-
-export type GenerateMetadata = (props: PageProps) => AkanMetadata | Promise<AkanMetadata | null | undefined>;

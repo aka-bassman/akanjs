@@ -29,8 +29,14 @@ describe("resolveSsrPageEntries", () => {
     const groupedLayoutPath = path.join(pageRoot, "(home)", "_layout.tsx");
 
     await write(path.join(appRoot, "env", "env.client.ts"), "export const env = {};\n");
-    await write(rootLayoutPath, 'export const theme = "dark";\nexport const fonts = [{ name: "pretendard" }];\n');
-    await write(groupedLayoutPath, "export default function Layout({ children }) { return children; }\n");
+    await write(
+      rootLayoutPath,
+      'export const theme = "dark";\nexport const fonts = [{ name: "pretendard" }];\nexport const metadata = { title: "Root" };\n',
+    );
+    await write(
+      groupedLayoutPath,
+      'export function generateMetadata() { return { title: "Home" }; }\nexport default function Layout({ children }) { return children; }\n',
+    );
 
     const entries = await resolveSsrPageEntries({
       appCwdPath: appRoot,
@@ -46,6 +52,15 @@ describe("resolveSsrPageEntries", () => {
     const generatedSource = await Bun.file(groupedRoot?.moduleAbsPath ?? "").text();
     expect(generatedSource).toContain('import * as inheritedLayout from "../../../page/_layout.tsx";');
     expect(generatedSource).not.toContain("<System.Provider");
+    expect(generatedSource).toContain("export async function generateMetadata(props: PageProps)");
+    expect(generatedSource).toContain("if (userLayout.generateMetadata) return userLayout.generateMetadata(props);");
+    expect(generatedSource).toContain("if (userLayout.metadata !== undefined) return userLayout.metadata;");
+    expect(generatedSource).toContain(
+      "if (inheritedLayout.generateMetadata) return inheritedLayout.generateMetadata(props);",
+    );
+    expect(generatedSource).toContain("return inheritedLayout.metadata;");
+    expect(generatedSource).not.toContain("Object.keys(userLayout.metadata)");
+    expect(generatedSource).not.toContain("Object.keys(inheritedLayout.metadata)");
     expect(generatedSource).toContain("export const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;");
     expect(generatedSource).toContain("export const Error = userLayout.Error ?? inheritedLayout.Error;");
     expect(generatedSource).toContain(

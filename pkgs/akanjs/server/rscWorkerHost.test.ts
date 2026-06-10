@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { shouldRenderLocaleAlternates } from "./metadata";
 import {
   createIdempotentRscRenderCancel,
   createRscHostRenderStream,
@@ -69,6 +70,15 @@ describe("RscWorker host pending chunk cap", () => {
   test("fails only after pending chunks exceed the configured cap", () => {
     expect(isRscHostPendingChunkOverflow(2, 2)).toBe(false);
     expect(isRscHostPendingChunkOverflow(3, 2)).toBe(true);
+  });
+});
+
+describe("RscWorker locale alternates policy", () => {
+  test("skips automatic alternates for special routes or explicit metadata languages", () => {
+    expect(shouldRenderLocaleAlternates({})).toBe(true);
+    expect(shouldRenderLocaleAlternates({ isSpecialRoute: true })).toBe(false);
+    expect(shouldRenderLocaleAlternates({ hasExplicitLanguageAlternates: true })).toBe(false);
+    expect(shouldRenderLocaleAlternates({ isSpecialRoute: false, hasExplicitLanguageAlternates: false })).toBe(true);
   });
 });
 

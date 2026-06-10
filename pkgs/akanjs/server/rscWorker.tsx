@@ -30,6 +30,7 @@ import {
   resolveRouteCacheStoreTtl,
   shouldStoreRouteCache,
 } from "./cachePolicy";
+import { shouldRenderLocaleAlternates } from "./metadata";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { RouteElementComposer } from "./routeElementComposer";
 import { type PagesContext, RouteTreeBuilder } from "./routeTreeBuilder";
@@ -916,7 +917,17 @@ class RscRenderer {
       digest,
     });
     if (!body) return null;
-    const routeHead = "resolveHead" in route ? await route.resolveHead?.({ params, searchParams }) : undefined;
+    const routeHead =
+      "resolveHead" in route
+        ? await RouteElementComposer.resolveHeadWithMetadata({
+            pathRoute: route,
+            params,
+            searchParams,
+          })
+        : { node: undefined, hasExplicitLanguageAlternates: false };
+    const renderLocaleAlternates = shouldRenderLocaleAlternates({
+      hasExplicitLanguageAlternates: routeHead.hasExplicitLanguageAlternates,
+    });
     const theme = untrackedCookies().get("theme")?.value;
     return (
       <html
@@ -927,8 +938,8 @@ class RscRenderer {
           <meta key="charset" charSet="utf-8" />
           <meta key="viewport" name="viewport" content="width=device-width, initial-scale=1" />
           <meta key="robots" name="robots" content="noindex" />
-          {routeHead ?? this.#renderDefaultHead()}
-          {this.#renderLocaleAlternates(url)}
+          {routeHead.node ?? this.#renderDefaultHead()}
+          {renderLocaleAlternates ? this.#renderLocaleAlternates(url) : null}
           {this.#renderStylesheet(pathname)}
         </head>
         <body key="body">{body}</body>
@@ -945,10 +956,14 @@ class RscRenderer {
     this.#logger.verbose(
       `composing route element pathname=${url.pathname} search=${url.search || "(none)"} params=${JSON.stringify(match.params)}`,
     );
-    const routeHead = await RouteElementComposer.resolveHead({
+    const routeHead = await RouteElementComposer.resolveHeadWithMetadata({
       pathRoute: match.pathRoute,
       params: match.params,
       searchParams,
+    });
+    const renderLocaleAlternates = shouldRenderLocaleAlternates({
+      isSpecialRoute: match.pathRoute.isSpecialRoute,
+      hasExplicitLanguageAlternates: routeHead.hasExplicitLanguageAlternates,
     });
     const body = RouteElementComposer.compose({
       pathRoute: match.pathRoute,
@@ -963,8 +978,8 @@ class RscRenderer {
         <head key="head">
           <meta key="charset" charSet="utf-8" />
           <meta key="viewport" name="viewport" content="width=device-width, initial-scale=1" />
-          {routeHead ?? this.#renderDefaultHead()}
-          {match.pathRoute.isSpecialRoute ? null : this.#renderLocaleAlternates(url)}
+          {routeHead.node ?? this.#renderDefaultHead()}
+          {renderLocaleAlternates ? this.#renderLocaleAlternates(url) : null}
           {this.#renderStylesheet(url.pathname)}
         </head>
         <body key="body">{body}</body>

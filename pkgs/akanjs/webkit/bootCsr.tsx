@@ -286,12 +286,14 @@ function validateRouteModuleExports(key: string, mod: RouteModule) {
   const parsed = parseRouteModuleKey(key);
   const allowed =
     parsed.kind === "page"
-      ? new Set(["default", "pageConfig", "head", "generateHead", "Loading"])
+      ? new Set(["default", "pageConfig", "head", "metadata", "generateHead", "generateMetadata", "Loading"])
       : parsed.isInternalRootLayout
         ? new Set([
             "default",
             "head",
+            "metadata",
             "generateHead",
+            "generateMetadata",
             "fonts",
             "manifest",
             "theme",
@@ -303,7 +305,7 @@ function validateRouteModuleExports(key: string, mod: RouteModule) {
             "NotFound",
             "Error",
           ])
-        : new Set(["default", "head", "generateHead", "Loading", "NotFound", "Error"]);
+        : new Set(["default", "head", "metadata", "generateHead", "generateMetadata", "Loading", "NotFound", "Error"]);
   for (const exportName of Object.keys(mod)) {
     if (!allowed.has(exportName)) {
       throw new Error(`[route-convention] unsupported export "${exportName}" in ${key}`);
@@ -311,5 +313,17 @@ function validateRouteModuleExports(key: string, mod: RouteModule) {
   }
   if ("head" in mod && "generateHead" in mod) {
     throw new Error(`[route-convention] head and generateHead cannot both be exported in ${key}`);
+  }
+  if (
+    !parsed.isInternalRootLayout &&
+    ("head" in mod || "generateHead" in mod) &&
+    ("metadata" in mod || "generateMetadata" in mod)
+  ) {
+    throw new Error(
+      `[route-convention] head/generateHead and metadata/generateMetadata cannot both be exported in ${key}`,
+    );
+  }
+  if ("metadata" in mod && "generateMetadata" in mod) {
+    throw new Error(`[route-convention] metadata and generateMetadata cannot both be exported in ${key}`);
   }
 }

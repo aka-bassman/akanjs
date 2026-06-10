@@ -1,5 +1,4 @@
 import type {
-  Head,
   LayoutFallbackRoute,
   LayoutModule,
   LayoutProps,
@@ -19,7 +18,7 @@ import {
   parseRouteModuleKey,
   routeSegmentToTreePath,
 } from "akanjs/common";
-import { normalizeHead } from "./metadata";
+import { resolveHeadExport, resolveMetadataHead } from "./metadata";
 
 export type PagesContext = Record<string, () => Promise<RouteModule>>;
 
@@ -299,7 +298,11 @@ export class RouteTreeBuilder {
     if ("head" in mod && "generateHead" in mod) {
       throw new Error(`[route-convention] head and generateHead cannot both be exported in ${key}`);
     }
-    if (("head" in mod || "generateHead" in mod) && ("metadata" in mod || "generateMetadata" in mod)) {
+    if (
+      !parsed.isInternalRootLayout &&
+      ("head" in mod || "generateHead" in mod) &&
+      ("metadata" in mod || "generateMetadata" in mod)
+    ) {
       throw new Error(
         `[route-convention] head/generateHead and metadata/generateMetadata cannot both be exported in ${key}`,
       );
@@ -332,9 +335,16 @@ export class RouteTreeBuilder {
           routeRender.NotFound = layoutMod.NotFound;
           routeRender.Error = layoutMod.Error;
         }
-        if (mod.generateHead) return normalizeHead(await mod.generateHead(props));
-        if (mod.generateMetadata) return normalizeHead(await mod.generateMetadata(props));
-        return normalizeHead((mod.head ?? mod.metadata) as Head | null | undefined);
+        if (mod.generateHead) {
+          const head = await mod.generateHead(props);
+          if (head !== null && head !== undefined) return resolveHeadExport(head);
+        }
+        if (mod.generateMetadata) {
+          const metadata = await mod.generateMetadata(props);
+          return metadata === null || metadata === undefined ? metadata : resolveMetadataHead(metadata);
+        }
+        if (mod.head !== undefined) return mod.head === null ? null : resolveHeadExport(mod.head);
+        return mod.metadata === undefined ? undefined : resolveMetadataHead(mod.metadata);
       },
     };
     if (kind === "page") {

@@ -58,7 +58,12 @@ export interface LayoutErrorProps extends LayoutNotFoundProps {
 }
 export type Head = ReactNode;
 export type GenerateHead = (props: PageProps) => PromiseOrObject<Head | null | undefined>;
-export type ResolveHead = (props: PageProps) => PromiseOrObject<Head | null | undefined>;
+export interface ResolvedHead {
+  node: Head | null | undefined;
+  hasExplicitLanguageAlternates: boolean;
+}
+export type ResolveHeadResult = Head | ResolvedHead | null | undefined;
+export type ResolveHead = (props: PageProps) => PromiseOrObject<ResolveHeadResult>;
 export type HeadProps = PageProps;
 export type PageRender = (props: PageProps) => PromiseOrObject<ReactNode>;
 export type LayoutRender = (props: LayoutProps) => PromiseOrObject<ReactNode>;
@@ -125,13 +130,14 @@ export interface AkanMetadata {
     languages?: Record<string, string>;
   };
 }
+export type GenerateMetadata = (props: PageProps) => PromiseOrObject<AkanMetadata | null | undefined>;
 export interface PageModule {
   default?: PageRender;
   pageConfig?: PageConfig;
   head?: Head;
   metadata?: AkanMetadata;
   generateHead?: GenerateHead;
-  generateMetadata?: (props: PageProps) => PromiseOrObject<AkanMetadata | null | undefined>;
+  generateMetadata?: GenerateMetadata;
   Loading?: PageLoadingRender;
 }
 export interface LayoutModule {
@@ -139,7 +145,7 @@ export interface LayoutModule {
   head?: Head;
   metadata?: AkanMetadata;
   generateHead?: GenerateHead;
-  generateMetadata?: (props: PageProps) => PromiseOrObject<AkanMetadata | null | undefined>;
+  generateMetadata?: GenerateMetadata;
   fonts?: ReactFont[];
   manifest?: WebAppManifest;
   theme?: string;
