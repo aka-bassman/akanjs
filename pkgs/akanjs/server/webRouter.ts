@@ -99,33 +99,12 @@ export function cancelStreamForHeadResponse(stream: ReadableStream<Uint8Array>, 
 export async function createRscNavigationStreamResponse(
   result: Extract<RscRenderResult, { type: "stream" }>,
 ): Promise<Response> {
-  // P6 makes full document SSR stream from the worker as chunks arrive. Client
-  // navigation still buffers until P7 so late redirects can keep using the
-  // existing in-band Akan redirect envelope.
-  const chunks: Uint8Array[] = [];
-  let byteLength = 0;
-  const reader = result.stream.getReader();
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      byteLength += value.byteLength;
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  const lateControl = await result.lateControl;
-  if (lateControl?.type === "redirect")
-    return createRscRedirectResponse(lateControl.location, lateControl.method, lateControl.status);
-  const body = new Uint8Array(byteLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return createRscStreamResponse(body, result.status ?? 200);
+  // P7a streams normal RSC navigation payloads immediately. Redirects that are
+  // known before stream start still use the header envelope in the caller;
+  // redirects discovered after Flight bytes have left the worker are handled as
+  // client-side navigation failures/hard reloads instead of introducing an
+  // Akan-specific sideband protocol into the Flight stream.
+  return createRscStreamResponse(result.stream, result.status ?? 200);
 }
 
 export function normalizeRscTargetUrlForHostBasePath(

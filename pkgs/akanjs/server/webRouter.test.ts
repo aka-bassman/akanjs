@@ -89,7 +89,7 @@ describe("WebRouter RSC stream response", () => {
     await expect(response.text()).resolves.toBe("flight");
   });
 
-  test("turns late redirects into the RSC redirect envelope", async () => {
+  test("leaves late redirects in the streamed Flight payload for client fallback", async () => {
     const response = await createRscNavigationStreamResponse({
       type: "stream",
       stream: new ReadableStream<Uint8Array>({
@@ -103,17 +103,47 @@ describe("WebRouter RSC stream response", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("X-Akan-Redirect")).toBe("/target");
-    expect(response.headers.get("X-Akan-Redirect-Method")).toBe("replace");
-    await expect(response.json()).resolves.toEqual({
-      type: "redirect",
-      location: "/target",
-      method: "replace",
-      status: 307,
-    });
+    expect(response.headers.get("Content-Type")).toBe("text/x-component; charset=utf-8");
+    expect(response.headers.get("X-Akan-Redirect")).toBeNull();
+    await expect(response.text()).resolves.toBe('0:E{"digest":"AKAN_REDIRECT"}\n');
   });
 
-  test("buffers RSC navigation Flight until P7 streaming decode lands", async () => {
+  test("streams RSC navigation Flight without waiting for completion", async () => {
+    let releaseSecond!: () => void;
+    const response = await createRscNavigationStreamResponse({
+      type: "stream",
+      stream: new ReadableStream<Uint8Array>({
+        async start(controller) {
+          controller.enqueue(encoder.encode("first"));
+          await new Promise<void>((resolve) => {
+            releaseSecond = resolve;
+          });
+          controller.enqueue(encoder.encode("second"));
+          controller.close();
+        },
+      }),
+      lateControl: new Promise(() => {}),
+      cancel: () => {},
+    });
+    const reader = response.body?.getReader();
+    expect(reader).toBeDefined();
+
+    const first = await reader?.read();
+    expect(first?.done).toBe(false);
+    expect(decoder.decode(first?.value)).toBe("first");
+
+    const secondRead = reader?.read();
+    const pendingSecond = await Promise.race([secondRead, sleep(20).then(() => null)]);
+    expect(pendingSecond).toBeNull();
+
+    releaseSecond();
+    const second = await secondRead;
+    expect(second?.done).toBe(false);
+    expect(decoder.decode(second?.value)).toBe("second");
+    await reader?.cancel();
+  });
+
+  test("preserves RSC navigation status while streaming", async () => {
     const response = await createRscNavigationStreamResponse({
       type: "stream",
       stream: new ReadableStream<Uint8Array>({

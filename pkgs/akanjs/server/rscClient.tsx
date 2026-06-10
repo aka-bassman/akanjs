@@ -1,7 +1,7 @@
 import { createElement, type ReactNode, startTransition, use, useLayoutEffect, useState } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { createFromReadableStream } from "react-server-dom-webpack/client.browser";
-import { isRscPayloadResponse } from "./rscHttp";
+import { getRscPayloadStream, guardRscRedirectRows, type RscRedirectRow } from "./rscHttp";
 
 type InlineRscChunk = [1, string] | [3, string];
 
@@ -32,6 +32,14 @@ function decodeInlineRscChunk([type, data]: InlineRscChunk): Uint8Array {
 type RscThenable = Promise<ReactNode>;
 type RscFetchResult = { type: "rsc"; thenable: RscThenable } | { type: "redirected"; status?: number };
 const MAX_RSC_CACHE_ENTRIES = 32;
+let documentNavigationFallbackInFlight = false;
+
+class RscRedirectNavigationStarted extends Error {
+  constructor(readonly location: string) {
+    super("[rscClient] RSC redirect navigation started");
+    this.name = "RscRedirectNavigationStarted";
+  }
+}
 
 function createInitialRscStream(): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
@@ -60,12 +68,30 @@ function createRscThenable(stream: ReadableStream<Uint8Array>): RscThenable {
 }
 
 function hardNavigateAfterRscFailure(target: string, replace = false, error?: unknown): void {
+  if (documentNavigationFallbackInFlight) return;
+  documentNavigationFallbackInFlight = true;
   console.warn(`[rscClient] RSC navigation failed, falling back to document navigation: ${String(error)}`);
   if (replace) window.location.replace(target);
   else window.location.assign(target);
 }
 
-async function fetchRsc(href: string, options: { buildId?: number } = {}): Promise<RscFetchResult> {
+function navigateAfterRscRedirect(target: string, replace = true): Error {
+  const error = new RscRedirectNavigationStarted(target);
+  const navigate = globalThis.__AKAN_RSC_NAVIGATE__;
+  if (!navigate) {
+    hardNavigateAfterRscFailure(target, replace, error);
+    return error;
+  }
+  void navigate(target, { replace, scrollToTop: true }).catch((navError) => {
+    hardNavigateAfterRscFailure(target, replace, navError);
+  });
+  return error;
+}
+
+async function fetchRsc(
+  href: string,
+  options: { buildId?: number; replaceOnRedirect?: boolean } = {},
+): Promise<RscFetchResult> {
   const endpoint = new URL("/__rsc", window.location.origin);
   endpoint.searchParams.set("url", href);
   if (options.buildId !== undefined) endpoint.searchParams.set("buildId", String(options.buildId));
@@ -82,22 +108,25 @@ async function fetchRsc(href: string, options: { buildId?: number } = {}): Promi
     await globalThis.__AKAN_RSC_NAVIGATE__?.(redirect, { replace: method !== "push", scrollToTop: true });
     return { type: "redirected", status };
   }
-  if (!isRscPayloadResponse(res)) throw new Error(`[rscClient] RSC fetch failed ${res.status} ${res.statusText}`);
-  // Buffer the entire Flight payload before constructing the thenable. The root
-  // `use(thenable)` lives at the document root with no Suspense boundary above it
-  // (see Root / ssrFromRscRenderer), so any mid-render suspension during a client
-  // navigation transition has no fallback and can leave the transition stuck —
-  // committing only when a later navigation flushes the pending lane. Materializing
-  // the payload up front means all RSC rows are present and every referenced client
-  // module `import()` starts immediately, so the committed render does not suspend.
-  const buffer = await res.arrayBuffer();
-  const completeStream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(new Uint8Array(buffer));
-      controller.close();
-    },
+  const stream = getRscPayloadStream(res);
+  if (!stream) throw new Error(`[rscClient] RSC fetch failed ${res.status} ${res.statusText}`);
+  let rejectRedirect!: (error: Error) => void;
+  const redirectThenable = new Promise<never>((_, reject) => {
+    rejectRedirect = reject;
   });
-  return { type: "rsc", thenable: createRscThenable(completeStream) };
+  const handleRedirect = (redirect: RscRedirectRow) => {
+    const location = redirect.location ? normalizeHref(redirect.location) : href;
+    const error = navigateAfterRscRedirect(location, true);
+    rejectRedirect(error);
+  };
+  const guardedStream = guardRscRedirectRows(stream, {
+    onRedirect: handleRedirect,
+  });
+  const thenable = Promise.race([createRscThenable(guardedStream), redirectThenable]);
+  return {
+    type: "rsc",
+    thenable,
+  };
 }
 
 const rscCache = new Map<string, RscThenable>();
@@ -133,7 +162,7 @@ function Root(): ReactNode {
     const target = normalizeHref(window.location.href);
     rscCache.delete(target);
     try {
-      const next = await fetchRsc(target, options);
+      const next = await fetchRsc(target, { ...options, replaceOnRedirect: true });
       if (next.type === "redirected") return;
       rememberRsc(target, next.thenable);
       await next.thenable;
@@ -142,6 +171,7 @@ function Root(): ReactNode {
       });
     } catch (error) {
       rscCache.delete(target);
+      if (error instanceof RscRedirectNavigationStarted) return;
       hardNavigateAfterRscFailure(target, true, error);
     }
   };
@@ -153,7 +183,7 @@ function Root(): ReactNode {
     try {
       let next = rscCache.get(target);
       if (!next) {
-        const fetched = await fetchRsc(target);
+        const fetched = await fetchRsc(target, { replaceOnRedirect: options.replace });
         if (fetched.type === "redirected") return;
         next = fetched.thenable;
         rememberRsc(target, next);
@@ -170,6 +200,7 @@ function Root(): ReactNode {
       });
     } catch (error) {
       rscCache.delete(target);
+      if (error instanceof RscRedirectNavigationStarted) return;
       if (navId === navigationSeq) hardNavigateAfterRscFailure(target, options.replace, error);
     }
   };
