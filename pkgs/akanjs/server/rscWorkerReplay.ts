@@ -1,5 +1,8 @@
+import type { RouteCacheRenderState } from "./cachePolicy";
+
 export type CachedRscReplayMessage =
   | { type: "meta"; requestId: string; theme?: string; status?: number }
+  | { type: "cache-state"; requestId: string; state: RouteCacheRenderState }
   | { type: "chunk"; requestId: string; data: Uint8Array }
   | { type: "end"; requestId: string };
 
@@ -12,6 +15,7 @@ export async function replayCachedRscResult(input: {
   chunks: readonly Uint8Array[];
   theme?: string;
   status?: number;
+  cacheState?: RouteCacheRenderState;
   send: (message: CachedRscReplayMessage) => void;
   isCancelled: () => boolean;
   yieldEveryChunks?: number;
@@ -24,6 +28,7 @@ export async function replayCachedRscResult(input: {
   const yieldToHost = input.yieldToHost ?? yieldToHostEventLoop;
   if (input.isCancelled()) return false;
   input.send({ type: "meta", requestId: input.requestId, theme: input.theme, status: input.status });
+  input.send({ type: "cache-state", requestId: input.requestId, state: input.cacheState ?? { cacheable: true } });
   for (let index = 0; index < input.chunks.length; index += 1) {
     if (input.isCancelled()) return false;
     input.send({ type: "chunk", requestId: input.requestId, data: input.chunks[index] });

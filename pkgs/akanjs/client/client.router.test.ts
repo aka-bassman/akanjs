@@ -52,6 +52,7 @@ beforeAll(() => {
     },
     getRequest: () => requestState.request,
     headers: () => requestState.headers,
+    untrackedHeaders: () => requestState.headers,
   }));
 });
 

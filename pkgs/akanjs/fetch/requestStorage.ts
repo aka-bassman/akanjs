@@ -2,8 +2,6 @@ export type AkanTheme = "css" | "system" | (string & {});
 
 export interface AkanRequestPolicy {
   routeId?: string;
-  rscCache?: "public" | false;
-  rscCacheTtl?: number;
   cacheable?: boolean;
   revalidate?: number | false;
   tags: Set<string>;
@@ -97,10 +95,10 @@ export function getRequestTheme(): AkanTheme | undefined {
   return getRequestStore()?.theme;
 }
 
-export function pushRequestFallback(req: Request): () => void {
+export function pushRequestFallback(storeOrRequest: Request | AkanRequestStore): () => void {
   globalThis.__AKAN_REQUEST_FALLBACK_STACK__ ??= [];
   const stack = globalThis.__AKAN_REQUEST_FALLBACK_STACK__;
-  const store = createRequestStore(req);
+  const store = normalizeRequestStore(storeOrRequest);
   stack.push(store);
   return () => {
     const index = stack.lastIndexOf(store);
@@ -118,12 +116,33 @@ export function getRequestStore(): AkanRequestStore | undefined {
 }
 
 /** Returns the active server request from AsyncLocalStorage or the fallback stack. */
-export function getRequest(): Request | undefined {
-  return getRequestStore()?.request;
+export function getRequest(options: { trackDynamic?: boolean } = {}): Request | undefined {
+  const store = getRequestStore();
+  if (!store) return undefined;
+  if (options.trackDynamic !== false) {
+    store.dynamicUsage.headers = true;
+    store.dynamicUsage.cookies = true;
+  }
+  return store.request;
+}
+
+/** Reads the framework's active server request without marking the user route dynamic. */
+export function untrackedRequest(): Request | undefined {
+  return getRequest({ trackDynamic: false });
 }
 
 export function getRequestPolicy(): AkanRequestPolicy | undefined {
   return getRequestStore()?.policy;
+}
+
+function combineMinPolicyRevalidate(
+  current: number | false | undefined,
+  next: number | false | undefined,
+): number | false | undefined {
+  if (next === undefined) return current;
+  if (current === false || next === false) return false;
+  if (current === undefined) return next;
+  return Math.min(current, next);
 }
 
 export function updateRequestPolicy(
@@ -131,8 +150,9 @@ export function updateRequestPolicy(
 ): AkanRequestPolicy | undefined {
   const policy = getRequestPolicy();
   if (!policy) return undefined;
-  const { tags, ...rest } = patch;
+  const { tags, revalidate, ...rest } = patch;
   Object.assign(policy, rest);
+  policy.revalidate = combineMinPolicyRevalidate(policy.revalidate, revalidate);
   if (tags) for (const tag of tags) policy.tags.add(tag);
   return policy;
 }

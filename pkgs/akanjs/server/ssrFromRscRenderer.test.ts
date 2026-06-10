@@ -128,6 +128,13 @@ describe("inline RSC chunks", () => {
     expect(output).not.toContain("AkanRedirectError");
   });
 
+  test("replaces encoded Akan redirect digest rows for browser-bound Flight", async () => {
+    const raw = 'c8:E{"digest":"AKAN_REDIRECT;push;308;%2Flogin%3Fnext%3D%252Fdashboard","name":"Error"}\n';
+    const output = await new Response(sanitizeFlightForClientStream(textStream([{ text: raw }]))).text();
+
+    expect(output).toBe("c8:null\n");
+  });
+
   test("preserves non UTF-8 rows while sanitizing adjacent text rows", async () => {
     const invalidRow = new Uint8Array([0xff, 0x00, 0x0a]);
     const stylesheetRow = encoder.encode(':HL["/style.css","stylesheet"]\n');

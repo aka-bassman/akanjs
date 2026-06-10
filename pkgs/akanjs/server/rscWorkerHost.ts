@@ -5,6 +5,7 @@ import { type AkanI18nConfig, DEFAULT_AKAN_I18N, Logger } from "akanjs/common";
 import type { AkanTheme } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
 import type { ClientManifest } from "./artifact";
+import type { RouteCacheRenderState } from "./cachePolicy";
 import type { SsrLateRedirect } from "./ssrTypes";
 import type { BaseBuildArtifact, CssAsset } from "./types";
 
@@ -18,6 +19,7 @@ export interface RscPending {
   onEnd: () => void;
   onError: (message: string) => void;
   onMeta?: (meta: { theme?: AkanTheme; status?: number }) => void;
+  onCacheState?: (state: RouteCacheRenderState) => void;
   onRedirect?: (location: string, method: RscRedirectMethod, status: RscRedirectStatus) => void;
   onLateRedirect?: (location: string, method: RscRedirectMethod, status: RscRedirectStatus) => void;
   onNotFound?: () => void;
@@ -26,6 +28,11 @@ export interface RscPending {
 export type RscRedirectMethod = "replace" | "push";
 export type RscRedirectStatus = 303 | 307 | 308;
 
+export interface RscWorkerInvalidateCacheMessage {
+  type: "invalidate-cache";
+  reason?: string;
+}
+
 export type RscRenderResult =
   | {
       type: "stream";
@@ -33,6 +40,7 @@ export type RscRenderResult =
       theme?: AkanTheme;
       status?: number;
       lateControl: Promise<SsrLateRedirect | null>;
+      cacheState: Promise<RouteCacheRenderState>;
       cancel: (reason?: unknown) => void;
     }
   | { type: "redirect"; location: string; method: RscRedirectMethod; status: RscRedirectStatus }
@@ -67,6 +75,10 @@ export function createIdempotentRscRenderCancel(onCancel: (reason?: unknown) => 
   };
 }
 
+export function createRscWorkerInvalidateCacheMessage(reason?: string): RscWorkerInvalidateCacheMessage {
+  return reason ? { type: "invalidate-cache", reason } : { type: "invalidate-cache" };
+}
+
 export function createRscHostRenderStream(input: {
   setPending: (pending: RscPending) => void;
   deletePending: () => void;
@@ -81,14 +93,24 @@ export function createRscHostRenderStream(input: {
   let theme: AkanTheme | undefined;
   let status: number | undefined;
   let resolveLateControl!: (control: SsrLateRedirect | null) => void;
+  let resolveCacheState!: (state: RouteCacheRenderState) => void;
   const lateControl = new Promise<SsrLateRedirect | null>((resolve) => {
     resolveLateControl = resolve;
   });
+  const cacheState = new Promise<RouteCacheRenderState>((resolve) => {
+    resolveCacheState = resolve;
+  });
   let lateControlSettled = false;
+  let cacheStateSettled = false;
   const settleLateControl = (control: SsrLateRedirect | null) => {
     if (lateControlSettled) return;
     lateControlSettled = true;
     resolveLateControl(control);
+  };
+  const settleCacheState = (state: RouteCacheRenderState) => {
+    if (cacheStateSettled) return;
+    cacheStateSettled = true;
+    resolveCacheState(state);
   };
   const maxPendingChunks = input.maxPendingChunks ?? getRscHostMaxPendingChunks();
   let pendingChunks = 0;
@@ -100,6 +122,7 @@ export function createRscHostRenderStream(input: {
   const cancelRender = createIdempotentRscRenderCancel((reason) => {
     input.deletePending();
     settleLateControl(null);
+    settleCacheState({ cacheable: false, reason: "cancelled" });
     input.cancelRender(reason);
     cleanupAbortListener();
   });
@@ -120,7 +143,7 @@ export function createRscHostRenderStream(input: {
         const settleStream = () => {
           if (settled) return;
           settled = true;
-          resolve({ type: "stream", stream, theme, status, lateControl, cancel: cancelRender });
+          resolve({ type: "stream", stream, theme, status, lateControl, cacheState, cancel: cancelRender });
         };
         input.setPending({
           onMeta: (meta) => {
@@ -143,12 +166,14 @@ export function createRscHostRenderStream(input: {
           },
           onEnd: () => {
             settleLateControl(null);
+            settleCacheState({ cacheable: false, reason: "missing-cache-state" });
             cleanupAbortListener();
             settleStream();
             controller.close();
           },
           onError: (msg) => {
             settleLateControl(null);
+            settleCacheState({ cacheable: false, reason: "error" });
             cleanupAbortListener();
             if (!settled) {
               settled = true;
@@ -159,6 +184,7 @@ export function createRscHostRenderStream(input: {
           },
           onRedirect: (location, method, status) => {
             settleLateControl(null);
+            settleCacheState({ cacheable: false, reason: "redirect" });
             cleanupAbortListener();
             if (!settled) {
               settled = true;
@@ -171,8 +197,12 @@ export function createRscHostRenderStream(input: {
           onLateRedirect: (location, method, status) => {
             settleLateControl({ type: "redirect", location, method, status });
           },
+          onCacheState: (state) => {
+            settleCacheState(state);
+          },
           onNotFound: () => {
             settleLateControl(null);
+            settleCacheState({ cacheable: false, reason: "not-found" });
             cleanupAbortListener();
             if (!settled) {
               settled = true;
@@ -208,6 +238,7 @@ type RscInMsg =
   | { type: "ready" }
   | { type: "reloaded"; buildId: number }
   | { type: "meta"; requestId: string; theme?: AkanTheme; status?: number }
+  | { type: "cache-state"; requestId: string; state: RouteCacheRenderState }
   | { type: "chunk"; requestId: string; data: Uint8Array }
   | { type: "end"; requestId: string }
   | { type: "redirect"; requestId: string; location: string; method?: RscRedirectMethod; status?: RscRedirectStatus }
@@ -396,6 +427,17 @@ export class RscWorker {
     });
   }
 
+  invalidateRouteResultCache(reason?: string): void {
+    if (this.#status !== "ready") return;
+    try {
+      this.#proc.send(createRscWorkerInvalidateCacheMessage(reason));
+    } catch (error) {
+      this.#logger.warn(
+        `rsc worker cache invalidate send failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   kill(): void {
     this.#killed = true;
     this.#status = "stopped";
@@ -544,6 +586,10 @@ export class RscWorker {
 
   #handleMessage(message: RscInMsg, proc: Bun.Subprocess<"ignore", "inherit", "inherit">): void {
     if (proc !== this.#proc) return;
+    if (message.type === "cache-state") {
+      this.#pending.get(message.requestId)?.onCacheState?.(message.state);
+      return;
+    }
     switch (message.type) {
       case "hello":
         // Re-injecting `#clientManifest` / `#cssAssets` here is what makes crash

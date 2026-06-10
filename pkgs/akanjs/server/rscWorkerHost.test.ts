@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   createIdempotentRscRenderCancel,
   createRscHostRenderStream,
+  createRscWorkerInvalidateCacheMessage,
   getRscHostMaxPendingChunks,
   isRscHostPendingChunkOverflow,
   nextRscHostPendingChunkCount,
@@ -213,6 +214,13 @@ describe("RscWorker render cancellation", () => {
   });
 });
 
+describe("RscWorker cache invalidation", () => {
+  test("creates an invalidate-cache worker message with optional reason", () => {
+    expect(createRscWorkerInvalidateCacheMessage()).toEqual({ type: "invalidate-cache" });
+    expect(createRscWorkerInvalidateCacheMessage("manual")).toEqual({ type: "invalidate-cache", reason: "manual" });
+  });
+});
+
 describe("RscWorker cached result replay", () => {
   test("stops replaying cached chunks when cancellation is observed", async () => {
     const messages: CachedRscReplayMessage[] = [];
@@ -222,6 +230,7 @@ describe("RscWorker cached result replay", () => {
       requestId: "request-1",
       chunks: [new Uint8Array([1]), new Uint8Array([2])],
       theme: "dark",
+      cacheState: { cacheable: true, revalidate: 30 },
       send: (message) => {
         messages.push(message);
       },
@@ -232,8 +241,13 @@ describe("RscWorker cached result replay", () => {
     });
 
     expect(completed).toBe(false);
-    expect(messages.map((message) => message.type)).toEqual(["meta", "chunk"]);
+    expect(messages.map((message) => message.type)).toEqual(["meta", "cache-state", "chunk"]);
     expect(messages[0]).toEqual({ type: "meta", requestId: "request-1", theme: "dark", status: undefined });
-    expect(messages[1]).toEqual({ type: "chunk", requestId: "request-1", data: new Uint8Array([1]) });
+    expect(messages[1]).toEqual({
+      type: "cache-state",
+      requestId: "request-1",
+      state: { cacheable: true, revalidate: 30 },
+    });
+    expect(messages[2]).toEqual({ type: "chunk", requestId: "request-1", data: new Uint8Array([1]) });
   });
 });

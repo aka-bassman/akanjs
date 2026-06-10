@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { type AkanTheme, pushRequestFallback, requestStorage } from "akanjs/fetch";
+import { type AkanRequestStore, type AkanTheme, pushRequestFallback, requestStorage } from "akanjs/fetch";
 import { type ReactNode, use } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
 import { createFromNodeStream } from "react-server-dom-webpack/client.node";
@@ -126,7 +126,7 @@ function sanitizeFlightRows(
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const encoder = new TextEncoder();
   const hlStylesheetRe = /(:HL\["[^"\\]*(?:\\.[^"\\]*)*",)"stylesheet"(\])/g;
-  const redirectErrorRowRe = /^([0-9a-z]+):E(\{[^\n]*"digest":"AKAN_REDIRECT"[^\n]*\})(\n?)$/;
+  const redirectErrorRowRe = /^([0-9a-z]+):E(\{[^\n]*"digest":"AKAN_REDIRECT(?:;[^"]*)?"[^\n]*\})(\n?)$/;
   let buffered: Uint8Array<ArrayBuffer> = new Uint8Array(0);
 
   const concatBytes = (left: Uint8Array, right: Uint8Array): Uint8Array<ArrayBuffer> => {
@@ -341,6 +341,7 @@ export function interleaveRscScriptsWithHtml(
     onComplete?: () => void;
     onCancel?: (reason?: unknown) => void;
     request?: Request;
+    requestStore?: AkanRequestStore;
   } = {},
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
@@ -470,7 +471,8 @@ export function interleaveRscScriptsWithHtml(
       };
 
       const runPump = () => {
-        const cleanup = options.request ? pushRequestFallback(options.request) : undefined;
+        const requestContext = options.requestStore ?? options.request;
+        const cleanup = requestContext ? pushRequestFallback(requestContext) : undefined;
         return pump()
           .catch(fail)
           .finally(() => {
@@ -478,7 +480,8 @@ export function interleaveRscScriptsWithHtml(
             options.onComplete?.();
           });
       };
-      if (options.request && requestStorage) void requestStorage.run(options.request, runPump);
+      const requestContext = options.requestStore ?? options.request;
+      if (requestContext && requestStorage) void requestStorage.run(requestContext, runPump);
       else void runPump();
     },
     cancel(reason) {
@@ -601,8 +604,9 @@ export class SsrFromRscRenderer {
       renderToReadableStream(<Root />, {
         bootstrapScriptContent: bootstrap,
       });
+    const requestContext = input.requestStore ?? input.request;
     const htmlStream =
-      input.request && requestStorage ? await requestStorage.run(input.request, renderHtml) : await renderHtml();
+      requestContext && requestStorage ? await requestStorage.run(requestContext, renderHtml) : await renderHtml();
 
     const withHeadScripts = SsrFromRscRenderer.#injectHeadScriptsIntoHead(htmlStream, {
       importmap: input.importmap,
@@ -616,6 +620,7 @@ export class SsrFromRscRenderer {
       SsrFromRscRenderer.#sanitizeFlightForClient(rscForClient),
       input.bootstrapModules,
       input.request,
+      input.requestStore,
       input.lateControl,
       () => stderrSuppressor?.stop(),
       input.onCancel,
@@ -806,6 +811,7 @@ export class SsrFromRscRenderer {
     rscClientStream: ReadableStream<Uint8Array>,
     bootstrapModules?: string[],
     request?: Request,
+    requestStore?: AkanRequestStore,
     lateControl?: Promise<SsrLateRedirect | null>,
     onComplete?: () => void,
     onCancel?: (reason?: unknown) => void,
@@ -823,6 +829,7 @@ export class SsrFromRscRenderer {
       onComplete,
       onCancel,
       request,
+      requestStore,
     });
   }
 }

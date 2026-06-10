@@ -7,6 +7,8 @@ import { HttpClient } from "./client/httpClient";
 import { WsClient } from "./client/wsClient";
 import {
   cookies,
+  createRequestStore,
+  getRequest,
   getRequestDynamicUsage,
   getRequestPolicy,
   getRequestStore,
@@ -18,6 +20,7 @@ import {
   setRequestTheme,
   untrackedCookies,
   untrackedHeaders,
+  untrackedRequest,
   updateRequestPolicy,
 } from "./requestStorage";
 
@@ -435,9 +438,8 @@ describe("requestStorage utilities", () => {
     const result = await requestStorage.run(req, async () => {
       updateRequestPolicy({
         routeId: "/:lang/example",
-        rscCache: "public",
-        rscCacheTtl: 60,
         cacheable: true,
+        revalidate: 60,
         tags: ["example"],
       });
       const before = { ...getRequestDynamicUsage() };
@@ -449,9 +451,8 @@ describe("requestStorage utilities", () => {
         before,
         after,
         routeId: policy?.routeId,
-        rscCache: policy?.rscCache,
-        rscCacheTtl: policy?.rscCacheTtl,
         cacheable: policy?.cacheable,
+        revalidate: policy?.revalidate,
         tags: [...(policy?.tags ?? [])],
       };
     });
@@ -460,10 +461,75 @@ describe("requestStorage utilities", () => {
       before: { headers: false, cookies: false },
       after: { headers: true, cookies: true },
       routeId: "/:lang/example",
-      rscCache: "public",
-      rscCacheTtl: 60,
       cacheable: true,
+      revalidate: 60,
       tags: ["example"],
+    });
+  });
+
+  test("combines request policy revalidate values with min lifetime semantics", async () => {
+    if (!requestStorage) return;
+    const req = new Request("https://example.test/revalidate");
+
+    const result = await requestStorage.run(req, async () => {
+      updateRequestPolicy({ revalidate: 60 });
+      updateRequestPolicy({ revalidate: 120 });
+      const afterLonger = getRequestPolicy()?.revalidate;
+      updateRequestPolicy({ routeId: "/keep-existing" });
+      const afterUndefinedPatch = getRequestPolicy()?.revalidate;
+      updateRequestPolicy({ revalidate: false });
+      const afterNoStore = getRequestPolicy()?.revalidate;
+      updateRequestPolicy({ revalidate: 10 });
+      return {
+        afterLonger,
+        afterUndefinedPatch,
+        afterNoStore,
+        afterShorterAfterNoStore: getRequestPolicy()?.revalidate,
+      };
+    });
+
+    expect(result).toEqual({
+      afterLonger: 60,
+      afterUndefinedPatch: 60,
+      afterNoStore: false,
+      afterShorterAfterNoStore: false,
+    });
+  });
+
+  test("runs with an explicit request store that remains observable after the callback", async () => {
+    if (!requestStorage) return;
+    const store = createRequestStore(new Request("https://example.test/explicit-store"));
+
+    await requestStorage.run(store, async () => {
+      headers();
+      updateRequestPolicy({ revalidate: 30 });
+    });
+
+    expect(store.dynamicUsage).toEqual({ headers: true, cookies: false });
+    expect(store.policy.revalidate).toBe(30);
+  });
+
+  test("marks public raw request access dynamic while keeping internal access untracked", async () => {
+    if (!requestStorage) return;
+    const req = new Request("https://example.test/raw", {
+      headers: { cookie: "jwt=secret", authorization: "Bearer token" },
+    });
+
+    const result = await requestStorage.run(req, async () => {
+      const internalReq = untrackedRequest();
+      const afterInternalRead = { ...getRequestDynamicUsage() };
+      const publicReq = getRequest();
+      return {
+        sameRequest: internalReq === req && publicReq === req,
+        afterInternalRead,
+        afterPublicRead: { ...getRequestDynamicUsage() },
+      };
+    });
+
+    expect(result).toEqual({
+      sameRequest: true,
+      afterInternalRead: { headers: false, cookies: false },
+      afterPublicRead: { headers: true, cookies: true },
     });
   });
 

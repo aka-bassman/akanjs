@@ -1,4 +1,4 @@
-import type { AkanTheme } from "akanjs/fetch";
+import type { AkanRequestStore, AkanTheme } from "akanjs/fetch";
 
 export interface SsrManifestEntry {
   id: string;
@@ -28,6 +28,7 @@ export interface SsrLateRedirect {
 
 export interface SsrFromRscInput {
   request?: Request;
+  requestStore?: AkanRequestStore;
   rscStream: ReadableStream<Uint8Array>;
   ssrManifest: SsrManifest;
   bootstrapModules?: string[];

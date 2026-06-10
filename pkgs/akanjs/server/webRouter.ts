@@ -8,7 +8,7 @@ import {
   Logger,
   parseAkanI18nEnv,
 } from "akanjs/common";
-import { parseCookieHeader } from "akanjs/fetch";
+import { type AkanRequestStore, createRequestStore, parseCookieHeader } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
 import {
   type BuilderRpc,
@@ -17,6 +17,19 @@ import {
   RouteSeedIndexStore,
   RoutesManifestStore,
 } from "./artifact";
+import {
+  createRouteCacheEntry,
+  getClientFacingOrigin,
+  isPublicRouteCacheableRequest,
+  isRouteCachePathAllowed,
+  LruTtlCache,
+  normalizeRouteCacheTtl,
+  parsePositiveInt,
+  type RouteCacheEntry,
+  type RouteCacheRenderState,
+  resolveRouteCacheStoreTtl,
+  shouldStoreRouteCache,
+} from "./cachePolicy";
 import { DevHmrController } from "./hmr";
 import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
@@ -57,22 +70,36 @@ export function createRscStreamResponse(stream: BodyInit, status = 200): Respons
   });
 }
 
+export function createRscNotFoundFallbackResponse(): Response {
+  return createRscStreamResponse("0:null\n", 404);
+}
+
 export function cacheHtmlWhileStreaming(
   stream: ReadableStream<Uint8Array>,
   onComplete: (html: string) => void,
+  options: { shouldCache?: () => boolean | Promise<boolean>; maxBodyBytes?: number | null } = {},
 ): ReadableStream<Uint8Array> {
   const chunks: Uint8Array[] = [];
   let byteLength = 0;
+  let exceededMaxBodyBytes = false;
   const decoder = new TextDecoder();
 
   return stream.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
-        chunks.push(chunk.slice());
-        byteLength += chunk.byteLength;
+        if (!exceededMaxBodyBytes) {
+          byteLength += chunk.byteLength;
+          if (options.maxBodyBytes && byteLength > options.maxBodyBytes) {
+            exceededMaxBodyBytes = true;
+            chunks.length = 0;
+          } else {
+            chunks.push(chunk.slice());
+          }
+        }
         controller.enqueue(chunk);
       },
-      flush() {
+      async flush() {
+        if (exceededMaxBodyBytes) return;
         const body = new Uint8Array(byteLength);
         let offset = 0;
         for (const chunk of chunks) {
@@ -80,6 +107,7 @@ export function cacheHtmlWhileStreaming(
           offset += chunk.byteLength;
         }
         try {
+          if (options.shouldCache && !(await options.shouldCache())) return;
           onComplete(decoder.decode(body));
         } catch {
           // Cache writes must not fail the already completed response stream.
@@ -96,14 +124,43 @@ export function cancelStreamForHeadResponse(stream: ReadableStream<Uint8Array>, 
   });
 }
 
+export function resolveHtmlRouteCacheStoreTtl(input: {
+  baseTtl: number;
+  workerCacheState: RouteCacheRenderState;
+  hostRequestStore: AkanRequestStore;
+  lateControl?: { type: "redirect" } | null;
+}): number | null {
+  if (input.lateControl?.type === "redirect") return null;
+  const workerTtl = resolveRouteCacheStoreTtl(input.baseTtl, input.workerCacheState);
+  if (workerTtl === null) return null;
+  const hostCacheState = shouldStoreRouteCache({
+    policy: input.hostRequestStore.policy,
+    dynamicUsage: input.hostRequestStore.dynamicUsage,
+  });
+  return resolveRouteCacheStoreTtl(workerTtl, hostCacheState);
+}
+
+export function isHtmlRouteCachePathAllowed(
+  pathname: string,
+  env: {
+    [key: string]: string | undefined;
+    AKAN_HTML_RESULT_CACHE_PATHS?: string;
+    AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS?: string;
+  } = process.env as Record<string, string | undefined>,
+): boolean {
+  return isRouteCachePathAllowed(pathname, {
+    allow: env.AKAN_HTML_RESULT_CACHE_PATHS,
+    deny: env.AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS,
+  });
+}
+
 export async function createRscNavigationStreamResponse(
   result: Extract<RscRenderResult, { type: "stream" }>,
 ): Promise<Response> {
   // P7a streams normal RSC navigation payloads immediately. Redirects that are
   // known before stream start still use the header envelope in the caller;
-  // redirects discovered after Flight bytes have left the worker are handled as
-  // client-side navigation failures/hard reloads instead of introducing an
-  // Akan-specific sideband protocol into the Flight stream.
+  // redirects discovered after Flight bytes have left the worker stay in the
+  // Flight stream with an Akan digest that the client strips before RSDW sees it.
   return createRscStreamResponse(result.stream, result.status ?? 200);
 }
 
@@ -157,7 +214,6 @@ interface WebRouterOptions {
 }
 
 interface CachedHtmlResult {
-  expiresAt: number;
   html: string;
 }
 
@@ -178,7 +234,9 @@ export class WebRouter {
     csr: 0,
     image: 0,
   };
-  readonly #htmlCache = new Map<string, CachedHtmlResult>();
+  readonly #htmlCache = new LruTtlCache<CachedHtmlResult>(
+    parsePositiveInt(process.env.AKAN_HTML_RESULT_CACHE_MAX_ENTRIES) ?? 100,
+  );
   #htmlCacheHits = 0;
   #htmlCacheMisses = 0;
   #htmlCacheBypass = 0;
@@ -428,8 +486,8 @@ export class WebRouter {
         try {
           this.#requestStats.fullSsr += 1;
           const manifest = await this.#ensureRoute(url);
-          const htmlCacheKey = this.#getHtmlCacheKey(req, url);
-          const cachedHtml = htmlCacheKey ? this.#getCachedHtml(htmlCacheKey) : null;
+          const htmlCacheEntry = this.#getHtmlCacheEntry(req, url);
+          const cachedHtml = htmlCacheEntry ? this.#getCachedHtml(htmlCacheEntry.key) : null;
           if (cachedHtml) {
             return new Response(cachedHtml, {
               headers: {
@@ -446,8 +504,10 @@ export class WebRouter {
             return Response.redirect(new URL(rscResult.location, url.origin), rscResult.status);
           if (rscResult.type === "not-found") return this.#renderNotFoundResponse(req, url);
           const themeCookieExists = WebRouter.#hasCookie(req, "theme");
+          const hostRequestStore = createRequestStore(req);
           const htmlStream = await new SsrFromRscRenderer().render({
             request: req,
+            requestStore: hostRequestStore,
             rscStream: rscResult.stream,
             ssrManifest: manifest.ssrManifest,
             bootstrapModules: [this.#artifact.rscClientUrl],
@@ -455,7 +515,7 @@ export class WebRouter {
             importmap: this.#artifact.vendorMap,
             theme: themeCookieExists ? undefined : (rscResult.theme ?? "system"),
             lateControl: rscResult.lateControl,
-            onCancel: (reason) => {
+            onCancel: (reason: unknown) => {
               rscResult.cancel(reason);
             },
           });
@@ -463,17 +523,38 @@ export class WebRouter {
           const responseHeaders = WebRouter.#htmlResponseHeaders(responseStatus);
           if (req.method === "HEAD") {
             const headers = new Headers(responseHeaders);
-            if (htmlCacheKey && responseStatus === 200) headers.set("X-Akan-Cache", "MISS");
+            if (htmlCacheEntry && responseStatus === 200) headers.set("X-Akan-Cache", "MISS");
             cancelStreamForHeadResponse(htmlStream, new Error("HEAD response does not consume body"));
             return new Response(null, { status: responseStatus, headers });
           }
-          if (htmlCacheKey && responseStatus === 200) {
+          if (htmlCacheEntry && responseStatus === 200) {
             const headers = new Headers(responseHeaders);
             headers.set("X-Akan-Cache", "MISS");
+            let htmlStoreTtl = htmlCacheEntry.ttl;
+            const shouldCacheHtml = Promise.all([rscResult.lateControl, rscResult.cacheState]).then(
+              ([control, cacheState]) => {
+                const storeTtl = resolveHtmlRouteCacheStoreTtl({
+                  baseTtl: htmlCacheEntry.ttl,
+                  workerCacheState: cacheState,
+                  hostRequestStore,
+                  lateControl: control,
+                });
+                if (storeTtl === null) return false;
+                htmlStoreTtl = storeTtl;
+                return true;
+              },
+            );
             return new Response(
-              cacheHtmlWhileStreaming(htmlStream, (html) => {
-                this.#setCachedHtml(htmlCacheKey, html);
-              }),
+              cacheHtmlWhileStreaming(
+                htmlStream,
+                (html) => {
+                  this.#setCachedHtml(htmlCacheEntry.key, html, htmlStoreTtl);
+                },
+                {
+                  shouldCache: () => shouldCacheHtml,
+                  maxBodyBytes: parsePositiveInt(process.env.AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES),
+                },
+              ),
               {
                 status: responseStatus,
                 headers,
@@ -517,24 +598,19 @@ export class WebRouter {
       httpHtmlCacheBypass: this.#htmlCacheBypass,
     };
   }
+
+  /** @internal Clears local route result caches owned by the host and RSC worker. */
+  invalidateRouteCaches(reason?: string): void {
+    this.#htmlCache.clear();
+    this.#rsc.invalidateRouteResultCache(reason);
+  }
+
   /**
    * Reconstruct origin as the browser saw it when behind Ingress / reverse proxies
    * (prevents `/__rsc` same-origin rejecting because `req.url` is internal).
    */
   static #clientFacingOrigin(req: Request): string {
-    const parsed = new URL(req.url);
-    const fwdProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-    const fwdHost = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-    const hostFallback = fwdHost ?? req.headers.get("host");
-    const protoFallback = fwdProto ?? parsed.protocol.slice(0, -1); // strip trailing ':'
-    if (hostFallback && protoFallback) {
-      try {
-        return new URL(`${protoFallback}://${hostFallback}`).origin;
-      } catch {
-        /* fallthrough */
-      }
-    }
-    return parsed.origin;
+    return getClientFacingOrigin(req);
   }
 
   static #basePathForRequestHost(req: Request, subRoutes: Record<string, string[]>): string | null {
@@ -561,33 +637,25 @@ export class WebRouter {
   static #hasCookie(req: Request, name: string): boolean {
     return parseCookieHeader(req.headers.get("cookie") ?? "").has(name);
   }
-  #getHtmlCacheKey(req: Request, url: URL): string | null {
+  #getHtmlCacheEntry(req: Request, url: URL): RouteCacheEntry | null {
     if (!this.#prodMode || process.env.AKAN_HTML_RESULT_CACHE !== "1") {
       this.#htmlCacheBypass += 1;
       return null;
     }
-    if (!WebRouter.#isPublicCacheableRequest(req)) {
+    if (!isPublicRouteCacheableRequest(req)) {
       this.#htmlCacheBypass += 1;
       return null;
     }
-    if (!WebRouter.#isHtmlCachePathAllowed(url.pathname)) {
+    if (!isHtmlRouteCachePathAllowed(url.pathname)) {
       this.#htmlCacheBypass += 1;
       return null;
     }
-    const ttl = WebRouter.#htmlCacheTtlSeconds();
-    if (ttl <= 0) {
+    const ttl = normalizeRouteCacheTtl(process.env.AKAN_HTML_RESULT_CACHE_TTL);
+    if (ttl === null) {
       this.#htmlCacheBypass += 1;
       return null;
     }
-    return [
-      WebRouter.#clientFacingOrigin(req),
-      req.headers.get("x-base-path") ?? "",
-      url.pathname,
-      url.search,
-      req.headers.get("accept-language") ?? "",
-      WebRouter.#cookieValue(req, "theme") ?? "",
-      ttl,
-    ].join("\n");
+    return createRouteCacheEntry({ request: req, url, theme: WebRouter.#cookieValue(req, "theme"), ttl });
   }
 
   #getCachedHtml(cacheKey: string): string | null {
@@ -596,56 +664,16 @@ export class WebRouter {
       this.#htmlCacheMisses += 1;
       return null;
     }
-    if (cached.expiresAt <= Date.now()) {
-      this.#htmlCache.delete(cacheKey);
-      this.#htmlCacheMisses += 1;
-      return null;
-    }
     this.#htmlCacheHits += 1;
     return cached.html;
   }
 
-  #setCachedHtml(cacheKey: string, html: string): void {
-    const ttl = Number.parseInt(cacheKey.split("\n").at(-1) ?? "30", 10);
-    const maxEntries = WebRouter.#positiveIntEnv("AKAN_HTML_RESULT_CACHE_MAX_ENTRIES") ?? 100;
-    while (this.#htmlCache.size >= maxEntries) {
-      const firstKey = this.#htmlCache.keys().next().value;
-      if (!firstKey) break;
-      this.#htmlCache.delete(firstKey);
-    }
-    this.#htmlCache.set(cacheKey, { html, expiresAt: Date.now() + ttl * 1000 });
+  #setCachedHtml(cacheKey: string, html: string, ttl: number): void {
+    this.#htmlCache.set(cacheKey, { html }, ttl);
   }
 
   static #cookieValue(req: Request, name: string): string | undefined {
     return parseCookieHeader(req.headers.get("cookie") ?? "").get(name)?.value;
-  }
-
-  static #isPublicCacheableRequest(req: Request): boolean {
-    if (req.method !== "GET") return false;
-    if (req.headers.has("authorization")) return false;
-    const cookie = req.headers.get("cookie");
-    if (!cookie) return true;
-    return [...parseCookieHeader(cookie).keys()].every((name) => name === "theme" || name.startsWith("akan_public_"));
-  }
-
-  static #htmlCacheTtlSeconds(): number {
-    return WebRouter.#positiveIntEnv("AKAN_HTML_RESULT_CACHE_TTL") ?? 30;
-  }
-
-  static #isHtmlCachePathAllowed(pathname: string): boolean {
-    const prefixes = (process.env.AKAN_HTML_RESULT_CACHE_PATHS ?? "")
-      .split(",")
-      .map((prefix) => prefix.trim())
-      .filter(Boolean);
-    if (prefixes.length === 0) return false;
-    return prefixes.some(
-      (prefix) => pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`),
-    );
-  }
-
-  static #positiveIntEnv(name: string): number | null {
-    const parsed = Number.parseInt(process.env[name] ?? "", 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }
 
   static #isImageOptimizerPath(pathname: string): boolean {
@@ -741,10 +769,7 @@ export class WebRouter {
     return `${html.slice(0, last.index)}${snippet}\n${html.slice(last.index)}`;
   }
   static #rscNotFoundResponse(): Response {
-    return new Response("Not Found", {
-      status: 404,
-      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
-    });
+    return createRscNotFoundFallbackResponse();
   }
   #getProductionRouteCache() {
     return new RouteClientCache({

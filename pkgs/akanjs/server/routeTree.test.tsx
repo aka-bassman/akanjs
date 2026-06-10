@@ -80,6 +80,37 @@ describe("RouteTreeBuilder implicit locale", () => {
     ).toBe("root");
   });
 
+  test("resolves declarative metadata exports into head elements", async () => {
+    const routes = new RouteTreeBuilder({
+      "./__root_layout.tsx": async () => ({
+        default: ({ children }: { children: ReactNode }) => children,
+        metadata: { title: "Root", description: "Root description" },
+      }),
+      "./docs.tsx": async () => ({
+        default: () => null,
+        generateMetadata: () => ({
+          title: "Docs",
+          openGraph: { title: "OG Docs", images: ["/og.png"] },
+          alternates: { canonical: "https://example.com/docs" },
+        }),
+      }),
+    }).build();
+    const matched = RouteTreeBuilder.match("/ko/docs", routes);
+    if (!matched) throw new Error("route did not match");
+
+    const head = await RouteElementComposer.resolveHead({
+      pathRoute: matched.pathRoute,
+      params: matched.params,
+      searchParams: {},
+    });
+    const html = await renderToText(head);
+
+    expect(html).toContain("<title>Docs</title>");
+    expect(html).toContain('property="og:title"');
+    expect(html).toContain('content="OG Docs"');
+    expect(html).toContain('href="https://example.com/docs"');
+  });
+
   test("supports route groups, repeated search params, and cached lazy modules", async () => {
     let loadCount = 0;
     const routes = new RouteTreeBuilder({
@@ -152,6 +183,19 @@ describe("RouteTreeBuilder implicit locale", () => {
           searchParams: {},
         }),
     ).rejects.toThrow('[route-convention] unsupported export "NotFound"');
+
+    const routesWithConflictingHead = new RouteTreeBuilder({
+      "./bad-head.tsx": async () => ({ default: () => null, head: "x", metadata: { title: "x" } }) as never,
+    }).build();
+    const badHead = RouteTreeBuilder.match("/ko/bad-head", routesWithConflictingHead);
+    expect(
+      badHead &&
+        RouteElementComposer.resolveHead({
+          pathRoute: badHead.pathRoute,
+          params: badHead.params,
+          searchParams: {},
+        }),
+    ).rejects.toThrow("head/generateHead and metadata/generateMetadata cannot both be exported");
   });
 
   test("composes nearest layout NotFound and Error fallbacks", async () => {
@@ -217,5 +261,4 @@ describe("RouteTreeBuilder implicit locale", () => {
     expect(unmatchedHtml).toContain("docs missing");
     expect(unmatchedHtml).toContain("/ko/docs/missing/path");
   });
-
 });

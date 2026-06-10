@@ -1,6 +1,6 @@
 import { getEnv } from "akanjs/base";
 import { parseAkanI18nEnv } from "akanjs/common";
-import { getRequest, untrackedHeaders } from "akanjs/fetch";
+import { untrackedHeaders, untrackedRequest } from "akanjs/fetch";
 import type { ReactNode } from "react";
 import { Translator } from "./translator";
 
@@ -40,7 +40,7 @@ const getPageInfo = (): { locale: string; path: string } => {
   const localeHeader = h.get("x-locale");
   const pathHeader = h.get("x-path");
   if (localeHeader && pathHeader) return { locale: localeHeader, path: pathHeader };
-  const req = getRequest();
+  const req = untrackedRequest();
   if (req) {
     const urlPath = new URL(req.url).pathname;
     const [, firstSegment = "", ...rest] = urlPath.split("/");

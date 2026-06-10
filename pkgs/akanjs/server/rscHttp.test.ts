@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { getRscPayloadStream, guardRscRedirectRows, isRscPayloadResponse, RSC_CONTENT_TYPE } from "./rscHttp";
+import {
+  encodeAkanRedirectDigest,
+  getRscPayloadStream,
+  guardRscRedirectRows,
+  isRscPayloadResponse,
+  RSC_CONTENT_TYPE,
+} from "./rscHttp";
 
 const encoder = new TextEncoder();
 
@@ -94,5 +100,33 @@ describe("RSC HTTP helpers", () => {
 
     await expect(new Response(stream).text()).resolves.toBe("a:null\n");
     expect(redirects).toEqual([{ rowId: "a", location: "/target" }]);
+  });
+
+  test("reads redirect metadata from the digest without relying on error messages", async () => {
+    const digest = encodeAkanRedirectDigest({
+      location: "/login?next=%2Fdashboard&label=한글",
+      method: "push",
+      status: 308,
+    });
+    const row = `b:E{"digest":"${digest}","name":"Error"}\n`;
+    const redirects: Array<{ rowId: string; location?: string; method?: string; status?: number }> = [];
+    const stream = guardRscRedirectRows(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(row));
+          controller.close();
+        },
+      }),
+      {
+        onRedirect: (redirect) => {
+          redirects.push(redirect);
+        },
+      },
+    );
+
+    await expect(new Response(stream).text()).resolves.toBe("b:null\n");
+    expect(redirects).toEqual([
+      { rowId: "b", location: "/login?next=%2Fdashboard&label=한글", method: "push", status: 308 },
+    ]);
   });
 });

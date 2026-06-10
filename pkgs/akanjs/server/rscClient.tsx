@@ -2,6 +2,12 @@ import { createElement, type ReactNode, startTransition, use, useLayoutEffect, u
 import { hydrateRoot } from "react-dom/client";
 import { createFromReadableStream } from "react-server-dom-webpack/client.browser";
 import { getRscPayloadStream, guardRscRedirectRows, type RscRedirectRow } from "./rscHttp";
+import {
+  commitLatestRscNavigation,
+  deleteRscCacheEntryIfCurrent,
+  observeRscNavigation,
+  rememberRscCacheEntry,
+} from "./rscNavigationState";
 
 type InlineRscChunk = [1, string] | [3, string];
 
@@ -75,23 +81,23 @@ function hardNavigateAfterRscFailure(target: string, replace = false, error?: un
   else window.location.assign(target);
 }
 
-function navigateAfterRscRedirect(target: string, replace = true): Error {
+function navigateAfterRscRedirect(target: string, replace = true): void {
   const error = new RscRedirectNavigationStarted(target);
   const navigate = globalThis.__AKAN_RSC_NAVIGATE__;
   if (!navigate) {
     hardNavigateAfterRscFailure(target, replace, error);
-    return error;
+    return;
   }
   void navigate(target, { replace, scrollToTop: true }).catch((navError) => {
     hardNavigateAfterRscFailure(target, replace, navError);
   });
-  return error;
 }
 
 async function fetchRsc(
   href: string,
-  options: { buildId?: number; replaceOnRedirect?: boolean } = {},
+  options: { buildId?: number; replaceOnRedirect?: boolean; shouldApplyNavigation?: () => boolean } = {},
 ): Promise<RscFetchResult> {
+  const shouldApplyNavigation = options.shouldApplyNavigation ?? (() => true);
   const endpoint = new URL("/__rsc", window.location.origin);
   endpoint.searchParams.set("url", href);
   if (options.buildId !== undefined) endpoint.searchParams.set("buildId", String(options.buildId));
@@ -105,24 +111,26 @@ async function fetchRsc(
     const method = res.headers.get("X-Akan-Redirect-Method");
     const statusHeader = res.headers.get("X-Akan-Redirect-Status");
     const status = statusHeader ? Number(statusHeader) : undefined;
-    await globalThis.__AKAN_RSC_NAVIGATE__?.(redirect, { replace: method !== "push", scrollToTop: true });
+    if (shouldApplyNavigation())
+      await globalThis.__AKAN_RSC_NAVIGATE__?.(redirect, { replace: method !== "push", scrollToTop: true });
     return { type: "redirected", status };
   }
   const stream = getRscPayloadStream(res);
   if (!stream) throw new Error(`[rscClient] RSC fetch failed ${res.status} ${res.statusText}`);
-  let rejectRedirect!: (error: Error) => void;
-  const redirectThenable = new Promise<never>((_, reject) => {
-    rejectRedirect = reject;
-  });
+  let thenable: RscThenable | undefined;
   const handleRedirect = (redirect: RscRedirectRow) => {
+    if (!shouldApplyNavigation()) return;
     const location = redirect.location ? normalizeHref(redirect.location) : href;
-    const error = navigateAfterRscRedirect(location, true);
-    rejectRedirect(error);
+    if (thenable) deleteRscCacheEntryIfCurrent(rscCache, href, thenable);
+    navigateAfterRscRedirect(
+      location,
+      redirect.method ? redirect.method !== "push" : (options.replaceOnRedirect ?? true),
+    );
   };
   const guardedStream = guardRscRedirectRows(stream, {
     onRedirect: handleRedirect,
   });
-  const thenable = Promise.race([createRscThenable(guardedStream), redirectThenable]);
+  thenable = createRscThenable(guardedStream);
   return {
     type: "rsc",
     thenable,
@@ -133,16 +141,6 @@ const rscCache = new Map<string, RscThenable>();
 const initialThenable = createRscThenable(createInitialRscStream());
 rscCache.set(normalizeHref(window.location.href), initialThenable);
 let navigationSeq = 0;
-
-function rememberRsc(href: string, thenable: RscThenable): void {
-  rscCache.delete(href);
-  rscCache.set(href, thenable);
-  while (rscCache.size > MAX_RSC_CACHE_ENTRIES) {
-    const oldest = rscCache.keys().next().value;
-    if (!oldest) break;
-    rscCache.delete(oldest);
-  }
-}
 
 function Root(): ReactNode {
   const [thenable, setThenable] = useState<RscThenable>(initialThenable);
@@ -159,20 +157,38 @@ function Root(): ReactNode {
   };
 
   globalThis.__AKAN_RSC_REFRESH__ = async (options = {}) => {
+    const navId = ++navigationSeq;
     const target = normalizeHref(window.location.href);
     rscCache.delete(target);
     try {
-      const next = await fetchRsc(target, { ...options, replaceOnRedirect: true });
+      const next = await fetchRsc(target, {
+        ...options,
+        replaceOnRedirect: true,
+        shouldApplyNavigation: () => navId === navigationSeq,
+      });
       if (next.type === "redirected") return;
-      rememberRsc(target, next.thenable);
-      await next.thenable;
-      startTransition(() => {
-        setThenable(next.thenable);
+      observeRscNavigation({
+        cache: rscCache,
+        href: target,
+        thenable: next.thenable,
+        navId,
+        getCurrentNavId: () => navigationSeq,
+        isExpectedNavigationError: (error) => error instanceof RscRedirectNavigationStarted,
+        onLatestError: (error) => hardNavigateAfterRscFailure(target, true, error),
+      });
+      commitLatestRscNavigation({
+        cache: rscCache,
+        href: target,
+        thenable: next.thenable,
+        maxEntries: MAX_RSC_CACHE_ENTRIES,
+        startTransition,
+        commitThenable: setThenable,
+        navId,
+        getCurrentNavId: () => navigationSeq,
       });
     } catch (error) {
-      rscCache.delete(target);
       if (error instanceof RscRedirectNavigationStarted) return;
-      hardNavigateAfterRscFailure(target, true, error);
+      if (navId === navigationSeq) hardNavigateAfterRscFailure(target, true, error);
     }
   };
 
@@ -183,23 +199,41 @@ function Root(): ReactNode {
     try {
       let next = rscCache.get(target);
       if (!next) {
-        const fetched = await fetchRsc(target, { replaceOnRedirect: options.replace });
+        const fetched = await fetchRsc(target, {
+          replaceOnRedirect: options.replace,
+          shouldApplyNavigation: () => navId === navigationSeq,
+        });
         if (fetched.type === "redirected") return;
         next = fetched.thenable;
-        rememberRsc(target, next);
       } else {
-        rememberRsc(target, next);
+        rememberRscCacheEntry(rscCache, target, next, MAX_RSC_CACHE_ENTRIES);
       }
-      await next;
-      if (navId !== navigationSeq) return;
-      startTransition(() => {
-        setThenable(next as RscThenable);
-        if (options.replace) window.history.replaceState(null, "", target);
-        else window.history.pushState(null, "", target);
-        if (scrollToTop) setScrollToTopTick((tick) => tick + 1);
+      observeRscNavigation({
+        cache: rscCache,
+        href: target,
+        thenable: next,
+        navId,
+        getCurrentNavId: () => navigationSeq,
+        isExpectedNavigationError: (error) => error instanceof RscRedirectNavigationStarted,
+        onLatestError: (error) => hardNavigateAfterRscFailure(target, options.replace, error),
+      });
+      commitLatestRscNavigation({
+        cache: rscCache,
+        href: target,
+        thenable: next,
+        maxEntries: MAX_RSC_CACHE_ENTRIES,
+        startTransition,
+        commitThenable: setThenable,
+        updateHistory: () => {
+          if (options.replace) window.history.replaceState(null, "", target);
+          else window.history.pushState(null, "", target);
+        },
+        scrollToTop,
+        bumpScrollToTop: () => setScrollToTopTick((tick) => tick + 1),
+        navId,
+        getCurrentNavId: () => navigationSeq,
       });
     } catch (error) {
-      rscCache.delete(target);
       if (error instanceof RscRedirectNavigationStarted) return;
       if (navId === navigationSeq) hardNavigateAfterRscFailure(target, options.replace, error);
     }
