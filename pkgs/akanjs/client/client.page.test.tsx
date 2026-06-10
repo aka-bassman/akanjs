@@ -58,6 +58,8 @@ beforeAll(() => {
     requestStorage: { getStore: () => undefined },
     getRequest: () => requestState.request,
     headers: () => requestState.headers,
+    untrackedRequest: () => requestState.request,
+    untrackedHeaders: () => requestState.headers,
   }));
   mock.module("akanjs/signal", () => ({
     Exception: class Exception extends Error {
