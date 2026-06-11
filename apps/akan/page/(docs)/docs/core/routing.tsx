@@ -210,12 +210,21 @@ export function Loading() {
         />
         <Code.Snippet
           title="Static metadata example"
-          code={`export const metadata = {
+          code={`import type { AkanMetadata } from "akanjs/client";
+
+export const metadata = {
   title: "Projects",
   description: "Browse your projects",
   openGraph: { title: "Projects", images: ["/og/projects.png"] },
-  alternates: { canonical: "https://example.com/projects" },
-};`}
+  twitter: { card: "summary_large_image", images: ["/og/projects.png"] },
+  alternates: {
+    canonical: "https://example.com/projects",
+    languages: {
+      ko: "https://example.com/ko/projects",
+      en: "https://example.com/en/projects",
+    },
+  },
+} satisfies AkanMetadata;`}
         />
         <div className="space-y-1">
           {[
