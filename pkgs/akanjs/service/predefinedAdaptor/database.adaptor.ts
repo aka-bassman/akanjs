@@ -593,20 +593,8 @@ export class SqliteDocumentStore {
   }
 
   async update(id: string, patch: DocumentRecord) {
-    const current = await this.pickById(id);
-    const doc = this.hydrate(this.prepareDocument({ ...current, ...patch, id, updatedAt: dayjs() }), current);
-    await this.runHooks("save", "update", doc, "pre");
-    await this.runHooks("update", "update", doc, "pre");
-    const row = this.toRow(doc);
-    await this.owner
-      .getConnection()
-      .prepare(
-        `UPDATE ${quoteIdent(this.table)} SET "createdAt" = ?, "updatedAt" = ?, "removedAt" = ?, "_doc" = ? WHERE "id" = ?`,
-      )
-      .run(row.createdAt, row.updatedAt, row.removedAt, row._doc, id);
-    await this.runHooks("update", "update", doc, "post");
-    await this.runHooks("save", "update", doc, "post");
-    return doc;
+    const current = await this.pickByIdForWrite(id);
+    return await this.writeUpdatedDocument(id, { ...current, ...patch, id, updatedAt: dayjs() }, current);
   }
 
   async remove(id: string) {
@@ -614,19 +602,20 @@ export class SqliteDocumentStore {
   }
 
   async updateOneByQuery(query: DocumentQuery, update: DocumentUpdate, options: DocumentUpdateOptions = {}) {
-    const doc = await this.findOne(query);
+    const doc = await this.findOneForWrite(query);
     if (!doc) {
       if (!options.upsert) return { acknowledged: true, matchedCount: 0, modifiedCount: 0, upsertedId: null };
       const inserted = await this.create(this.applyDocumentUpdate(this.extractInsertBase(query), update, true));
       return { acknowledged: true, matchedCount: 0, modifiedCount: 1, upsertedId: inserted.id };
     }
-    await this.update(doc.id, this.applyDocumentUpdate(doc, update));
+    await this.writeUpdatedDocument(doc.id as string, this.applyDocumentUpdate(doc, update), doc);
     return { acknowledged: true, matchedCount: 1, modifiedCount: 1, upsertedId: null };
   }
 
   async updateManyByQuery(query: DocumentQuery, update: DocumentUpdate) {
-    const docs = await this.find(query);
-    for (const doc of docs) await this.update(doc.id, this.applyDocumentUpdate(doc, update));
+    const docs = await this.findForWrite(query);
+    for (const doc of docs)
+      await this.writeUpdatedDocument(doc.id as string, this.applyDocumentUpdate(doc, update), doc);
     return { acknowledged: true, matchedCount: docs.length, modifiedCount: docs.length };
   }
 
@@ -656,12 +645,12 @@ export class SqliteDocumentStore {
     const limit = limitValue ? ` LIMIT ${limitValue}` : "";
     const offset = skipValue ? ` OFFSET ${skipValue}` : "";
     const order = options.sample ? "ORDER BY random()" : `ORDER BY ${this.compiler.orderBy(options.sort ?? undefined)}`;
-    const projection = this.normalizeProjection(options.select);
+    const projection = this.resolveProjection(options.select);
     if (projection) {
       const rows = await this.prepareReadStmt(
         `SELECT ${this.projectionSql(projection)} FROM ${quoteIdent(this.table)} WHERE ${where} ${order}${limit}${offset}`,
       ).all<ProjectedSqliteDocumentRow>(...params);
-      return rows.map((row) => this.fromProjectedRow(row, projection));
+      return rows.map((row) => this.hydrate(this.fromProjectedRow(row, projection)));
     }
     const rows = await this.prepareReadStmt(
       `SELECT * FROM ${quoteIdent(this.table)} WHERE ${where} ${order}${limit}${offset}`,
@@ -922,8 +911,20 @@ export class SqliteDocumentStore {
     const fields = Object.entries(select)
       .filter(([, included]) => included)
       .map(([field]) => field);
-    if (!fields.length) return null;
     return [...new Set(fields.filter((field) => field !== "_doc"))];
+  }
+
+  private resolveProjection(select: ProjectionOption): string[] | null {
+    const projection = this.normalizeProjection(select);
+    if (projection !== null) return projection;
+    return this.defaultProjection();
+  }
+
+  private defaultProjection(): string[] | null {
+    const fields = this.database.doc[FIELD_META] as unknown as FieldMap;
+    const entries = Object.entries(fields).filter(([key]) => !BASE_COLUMNS.has(key));
+    if (!entries.some(([, field]) => field.getProps().select === false)) return null;
+    return entries.flatMap(([key, field]) => (field.getProps().select === false ? [] : [key]));
   }
 
   private projectionSql(fields: string[]) {
@@ -942,16 +943,62 @@ export class SqliteDocumentStore {
   private fromProjectedRow(row: ProjectedSqliteDocumentRow, fields: string[]) {
     const doc: DocumentRecord = {
       id: row.id,
-      createdAt: Number(row.createdAt),
-      updatedAt: Number(row.updatedAt),
-      removedAt: row.removedAt ? Number(row.removedAt) : undefined,
+      createdAt: dayjs(Number(row.createdAt)),
+      updatedAt: dayjs(Number(row.updatedAt)),
+      removedAt: row.removedAt ? dayjs(Number(row.removedAt)) : undefined,
     };
     const jsonFields = fields.filter((field) => !BASE_COLUMNS.has(field));
     for (const [idx, field] of jsonFields.entries()) {
       const value = this.parseProjectedValue(row[this.projectionAlias(idx)]);
       const props = (this.database.doc[FIELD_META] as unknown as FieldMap)[field]?.getProps?.();
-      doc[field] = props ? this.decodeFieldValue(value, props) : value;
+      if (value === null && props?.default !== undefined && props.default !== null && !props.nullable) {
+        doc[field] =
+          typeof props.default === "function" ? (props.default as (data: unknown) => unknown)(doc) : props.default;
+      } else {
+        doc[field] = props ? this.decodeFieldValue(value, props) : value;
+      }
     }
+    return doc;
+  }
+
+  private async findForWrite(query?: DocumentQuery, options: FindManyOptions = {}) {
+    const { where, params } = this.safeQuery(query);
+    const limitValue = Number(options.limit ?? 0);
+    const skipValue = Number(options.skip ?? 0);
+    const limit = limitValue ? ` LIMIT ${limitValue}` : "";
+    const offset = skipValue ? ` OFFSET ${skipValue}` : "";
+    const order = options.sample ? "ORDER BY random()" : `ORDER BY ${this.compiler.orderBy(options.sort ?? undefined)}`;
+    const rows = await this.prepareReadStmt(
+      `SELECT * FROM ${quoteIdent(this.table)} WHERE ${where} ${order}${limit}${offset}`,
+    ).all<SqliteDocumentRow>(...params);
+    return rows.map((row) => this.hydrate(this.fromRow(row)));
+  }
+
+  private async findOneForWrite(query?: DocumentQuery, options: FindOneOptions = {}) {
+    return (
+      (await this.findForWrite(query, { ...options, limit: 1, sample: options.sample ? 1 : undefined })).at(0) ?? null
+    );
+  }
+
+  private async pickByIdForWrite(id: string) {
+    const doc = await this.findOneForWrite({ id } as DocumentQuery);
+    if (!doc) throw new Error(`No Document (${this.table}): ${id}`);
+    return doc;
+  }
+
+  private async writeUpdatedDocument(id: string, data: DocumentRecord, originalData: DocumentRecord) {
+    const doc = this.hydrate(this.prepareDocument({ ...data, id, updatedAt: dayjs() }), originalData);
+    await this.runHooks("save", "update", doc, "pre");
+    await this.runHooks("update", "update", doc, "pre");
+    const row = this.toRow(doc);
+    await this.owner
+      .getConnection()
+      .prepare(
+        `UPDATE ${quoteIdent(this.table)} SET "createdAt" = ?, "updatedAt" = ?, "removedAt" = ?, "_doc" = ? WHERE "id" = ?`,
+      )
+      .run(row.createdAt, row.updatedAt, row.removedAt, row._doc, id);
+    await this.runHooks("update", "update", doc, "post");
+    await this.runHooks("save", "update", doc, "post");
     return doc;
   }
 

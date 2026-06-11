@@ -111,7 +111,7 @@ describe("via and ConstantField", () => {
     expect(nameField.modelRef).toBe(String);
     expect(metadataField.isMap).toBe(true);
     expect(metadataField.of).toBe(String);
-    expect(passwordField.fieldType).toBe("hidden");
+    expect(passwordField.fieldType).toBe("secret");
     expect(passwordField.select).toBe(false);
 
     expect(UserFull.getDefault()).toMatchObject({

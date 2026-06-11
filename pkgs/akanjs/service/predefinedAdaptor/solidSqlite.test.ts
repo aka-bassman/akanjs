@@ -58,7 +58,10 @@ class TicketTestInput extends via((f) => ({
   transactionAt: f(Date, { default: dayjs(0) }),
   histories: f([TicketHistory]),
 })) {}
-class TicketTestObject extends via(TicketTestInput, (f) => ({})) {}
+class TicketTestObject extends via(TicketTestInput, (f) => ({
+  hiddenNote: f.hidden(String),
+  secretToken: f.secret(String),
+})) {}
 class TicketTestLight extends via(TicketTestObject, ["title"] as const, () => ({})) {}
 class TicketTestFull extends via(TicketTestObject, TicketTestLight, () => ({})) {}
 class TicketTestInsight extends via(TicketTestFull, (f) => ({
@@ -324,6 +327,45 @@ describe("solid sqlite utilities", () => {
       const fetched = await store.pickById(created.id);
       expect(fetched.histories[0]).toMatchObject({ action: "open", content: [], count: 0, flag: false });
       expect(fetched.histories[1]).toMatchObject({ action: "close", content: [], count: 0, flag: false });
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("excludes secret fields from default reads while preserving them on update", async () => {
+    const db = new Database(":memory:", { strict: true, create: true });
+    const client = new TestSqliteClient(db);
+    const owner = new TestDatabaseOwner(client);
+    const store = new SqliteDocumentStore(owner, ticketTestConstant, ticketTestDatabase, new DocumentSchema());
+
+    try {
+      await client.execute(
+        `CREATE TABLE IF NOT EXISTS "_akan_meta" ("key" TEXT PRIMARY KEY NOT NULL, "value" TEXT NOT NULL, "updatedAt" INTEGER NOT NULL)`,
+      );
+      await store.ensure();
+
+      const created = await store.create({
+        title: "Secret",
+        histories: [],
+        hiddenNote: "server-visible",
+        secretToken: "token-1",
+      });
+      const fetched = await store.pickById(created.id);
+      const selected = await store.pickOne({ id: created.id }, { select: { secretToken: true } });
+
+      expect(fetched.hiddenNote).toBe("server-visible");
+      expect(fetched).not.toHaveProperty("secretToken");
+      expect(selected.secretToken).toBe("token-1");
+
+      await store.update(created.id, { title: "Updated" });
+      const row = await client
+        .prepare(`SELECT "_doc" FROM "sqliteTicketTest" WHERE "id" = ?`)
+        .get<{ _doc: string }>(created.id);
+      const stored = JSON.parse(row?._doc ?? "{}");
+      const updated = await store.pickOne({ id: created.id }, { select: { title: true, secretToken: true } });
+
+      expect(stored.secretToken).toBe("token-1");
+      expect(updated).toMatchObject({ title: "Updated", secretToken: "token-1" });
     } finally {
       await client.close();
     }

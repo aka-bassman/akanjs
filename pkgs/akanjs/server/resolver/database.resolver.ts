@@ -246,16 +246,16 @@ export class DatabaseResolver {
         return await timedQuery(() => this.__store.findIds(find, { sort, skip, limit, sample }));
       }
       async __find(query?: QueryOf<any>, queryOption?: FindQueryOption): Promise<any | null> {
-        const { find, sort, skip, sample } = getFindQuery(query, queryOption);
-        return await timedQuery(() => this.__store.findOne(find, { sort, skip, sample }));
+        const { find, sort, skip, sample, select } = getFindQuery(query, queryOption);
+        return await timedQuery(() => this.__store.findOne(find, { sort, skip, sample, select }));
       }
       async __findId(query?: QueryOf<any>, queryOption?: FindQueryOption): Promise<string | null> {
         const { find, sort, skip, sample } = getFindQuery(query, queryOption);
         return await timedQuery(() => this.__store.findId(find, { sort, skip, sample }));
       }
       async __pick(query?: QueryOf<any>, queryOption?: FindQueryOption): Promise<any> {
-        const { find, sort, skip, sample } = getFindQuery(query, queryOption);
-        return await this.__store.pickOne(find, { sort, skip, sample });
+        const { find, sort, skip, sample, select } = getFindQuery(query, queryOption);
+        return await this.__store.pickOne(find, { sort, skip, sample, select });
       }
       async __pickId(query?: QueryOf<any>, queryOption?: FindQueryOption): Promise<string> {
         const { find, sort, skip, sample } = getFindQuery(query, queryOption);

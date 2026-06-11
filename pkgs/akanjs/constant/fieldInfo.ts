@@ -56,8 +56,10 @@ export type ExtractFieldInfoObject<Obj extends FieldInfoObject> = {
     : never;
 };
 
+export type ConstantFieldKind = "property" | "hidden" | "secret" | "resolve";
+
 export interface ConstantFieldProps<
-  FieldType extends "property" | "hidden" | "resolve" = "property" | "hidden" | "resolve",
+  FieldType extends ConstantFieldKind = ConstantFieldKind,
   FieldValue = any,
   MapValue = any,
   Metadata = { [key: string]: any },
@@ -87,7 +89,7 @@ export const fieldPresets = ["email", "password", "url"] as const;
 export type FieldPreset = (typeof fieldPresets)[number];
 
 class FieldInfo<
-  FieldType extends "property" | "hidden" | "resolve" = any,
+  FieldType extends ConstantFieldKind = any,
   Value extends ConstantFieldTypeInput | null = null,
   ExplicitType = unknown,
   MapValue = Value extends MapConstructor ? typeof PrimitiveScalar : never,
@@ -121,7 +123,7 @@ class FieldInfo<
 }
 
 interface ConstantFieldBuildProps<
-  FieldType extends "property" | "hidden" | "resolve" = any,
+  FieldType extends ConstantFieldKind = any,
   FieldValue = any,
   MapValue = any,
   Metadata = any,
@@ -172,7 +174,7 @@ export type FieldInfoObjectToFieldObject<Obj extends FieldInfoObject> = {
 
 /** Runtime metadata for a single Akan constant field. */
 export class ConstantField<
-  FieldType extends "property" | "hidden" | "resolve" = "property" | "hidden" | "resolve",
+  FieldType extends ConstantFieldKind = ConstantFieldKind,
   Value extends ConstantFieldTypeInput | null = any,
   FieldValue = any,
   MapValue = any,
@@ -244,7 +246,7 @@ export class ConstantField<
   }
 
   static fromFieldInfo<
-    FieldType extends "property" | "hidden" | "resolve" = any,
+    FieldType extends ConstantFieldKind = any,
     Value extends ConstantFieldTypeInput | null = null,
     FieldValue = any,
     MapValue = any,
@@ -341,11 +343,11 @@ type FieldOption<
   _FieldToValue = FieldToValue<Value, MapValue> | null | undefined,
 > =
   | Omit<
-      ConstantFieldProps<"property" | "hidden" | "resolve", _FieldToValue, MapValue, Metadata>,
+      ConstantFieldProps<ConstantFieldKind, _FieldToValue, MapValue, Metadata>,
       "enum" | "meta" | "nullable" | "fieldType" | "select"
     >
   | Omit<
-      ConstantFieldProps<"property" | "hidden" | "resolve", SingleValue<_FieldToValue>, MapValue, Metadata>,
+      ConstantFieldProps<ConstantFieldKind, SingleValue<_FieldToValue>, MapValue, Metadata>,
       "enum" | "meta" | "nullable" | "fieldType" | "select"
     >[];
 
@@ -392,9 +394,9 @@ field.secret = <
   value: Value,
   option: FieldOption<Value, MapValue> = {},
 ) =>
-  new FieldInfo<"hidden", Value | null, ExplicitType | null, MapValue>(value, {
+  new FieldInfo<"secret", Value | null, ExplicitType | null, MapValue>(value, {
     ...option,
-    fieldType: "hidden",
+    fieldType: "secret",
     select: false,
     nullable: true,
   });
