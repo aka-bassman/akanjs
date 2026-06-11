@@ -35,7 +35,11 @@ function decodeInlineRscChunk([type, data]: InlineRscChunk): Uint8Array {
   return decodeBase64(data);
 }
 
-type RscThenable = Promise<ReactNode>;
+type RscThenable = Promise<ReactNode> & {
+  status?: "pending" | "fulfilled" | "rejected";
+  value?: ReactNode;
+  reason?: unknown;
+};
 type RscFetchResult = { type: "rsc"; thenable: RscThenable } | { type: "redirected"; status?: number };
 const MAX_RSC_CACHE_ENTRIES = 32;
 let documentNavigationFallbackInFlight = false;
@@ -69,8 +73,35 @@ function normalizeHref(href: string): string {
   return new URL(href, window.location.origin).href;
 }
 
+/**
+ * Mirror React's thenable protocol (status/value/reason) onto the Flight thenable.
+ *
+ * Without this, `use(thenable)` cannot tell an already-resolved native Promise apart
+ * from a pending one: it suspends the root transition once and relies on React's
+ * ping -> retry -> re-commit path. That path intermittently lost the re-commit when
+ * sync store updates raced the suspended transition, leaving the previous page DOM
+ * visible even though the navigation pipeline completed. With the status tracked,
+ * `use()` returns the fulfilled payload synchronously and the committed transition
+ * renders the new tree in a single pass.
+ */
+function trackRscThenable(thenable: RscThenable): RscThenable {
+  if (thenable.status !== undefined) return thenable;
+  thenable.status = "pending";
+  thenable.then(
+    (value) => {
+      thenable.status = "fulfilled";
+      thenable.value = value;
+    },
+    (reason) => {
+      thenable.status = "rejected";
+      thenable.reason = reason;
+    },
+  );
+  return thenable;
+}
+
 function createRscThenable(stream: ReadableStream<Uint8Array>): RscThenable {
-  return createFromReadableStream<ReactNode>(stream) as RscThenable;
+  return trackRscThenable(createFromReadableStream<ReactNode>(stream) as RscThenable);
 }
 
 function hardNavigateAfterRscFailure(target: string, replace = false, error?: unknown): void {
@@ -176,6 +207,9 @@ function Root(): ReactNode {
         isExpectedNavigationError: (error) => error instanceof RscRedirectNavigationStarted,
         onLatestError: (error) => hardNavigateAfterRscFailure(target, true, error),
       });
+      // Commit only once the payload root is fulfilled so `use()` never suspends the
+      // root transition (see trackRscThenable). Staleness is re-checked by navId below.
+      await next.thenable;
       commitLatestRscNavigation({
         cache: rscCache,
         href: target,
@@ -217,6 +251,9 @@ function Root(): ReactNode {
         isExpectedNavigationError: (error) => error instanceof RscRedirectNavigationStarted,
         onLatestError: (error) => hardNavigateAfterRscFailure(target, options.replace, error),
       });
+      // Commit only once the payload root is fulfilled so `use()` never suspends the
+      // root transition (see trackRscThenable). Staleness is re-checked by navId below.
+      await next;
       commitLatestRscNavigation({
         cache: rscCache,
         href: target,

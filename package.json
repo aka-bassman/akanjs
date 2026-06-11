@@ -181,14 +181,14 @@
     "puppeteer": "^24.43.1",
     "qrcode": "^1.5.4",
     "qrcode.react": "^4.2.0",
-    "react": "19.2.6",
+    "react": "19.2.7",
     "react-chartjs-2": "^5.3.1",
     "react-copy-to-clipboard": "^5.1.1",
     "react-countup": "^6.5.3",
     "react-datepicker": "^9.1.0",
     "react-daum-postcode": "^4.0.0",
     "react-device-detect": "^2.2.3",
-    "react-dom": "19.2.6",
+    "react-dom": "19.2.7",
     "react-easy-crop": "^5.5.7",
     "react-globe.gl": "^2.38.0",
     "react-icons": "^5.6.0",
@@ -197,7 +197,7 @@
     "react-pdf": "^10.4.1",
     "react-refresh": "^0.18.0",
     "react-server-dom-bun": "0.0.0-experimental-603e6108-20241029",
-    "react-server-dom-webpack": "^19.2.6",
+    "react-server-dom-webpack": "^19.2.7",
     "react-simple-image-viewer": "^1.2.2",
     "react-simple-pull-to-refresh": "^1.3.4",
     "react-spring": "^10.0.4",
@@ -218,5 +218,8 @@
     "tailwindcss": "^4.3.0",
     "ua-parser-js": "^2.0.9",
     "zustand": "^5.0.13"
+  },
+  "patchedDependencies": {
+    "react-dom@19.2.7": "patches/react-dom@19.2.7.patch"
   }
 }
