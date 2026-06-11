@@ -25,7 +25,14 @@ export class ContextCommand extends command("context", [ContextScript], ({ publi
     .exec(async function (format, strict, workspace) {
       await this.contextScript.doctor(workspace, { format: format as "text" | "json", strict });
     }),
-  mcp: target({ desc: "Start the read-only Akan MCP server over stdio" })
+  mcpInstall: target({ desc: "Install the Akan MCP server config for Cursor" })
+    .arg("target", String, { desc: "cursor", nullable: true })
+    .option("force", Boolean, { desc: "overwrite an existing Akan MCP server entry", default: false })
+    .with(Workspace)
+    .exec(async function (targetName, force, workspace) {
+      await this.contextScript.mcpInstall(workspace, targetName, { force });
+    }),
+  mcp: target({ desc: "Start the read-only Akan MCP server over stdio", stdio: true })
     .with(Workspace)
     .exec(async function (workspace) {
       await this.contextScript.mcp(workspace);

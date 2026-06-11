@@ -14,6 +14,12 @@ export class ContextScript extends script("context", [ContextRunner]) {
     Logger.rawLog(await this.contextRunner.doctor(workspace, options));
   }
 
+  async mcpInstall(workspace: Workspace, target: string | null, { force = false }: { force?: boolean } = {}) {
+    if (target && target !== "cursor") throw new Error(`Unknown MCP install target: ${target}. Use cursor.`);
+    const written = await this.contextRunner.installMcp(workspace, "cursor", { force });
+    Logger.rawLog(`Akan MCP server installed for Cursor:\n- ${written}`);
+  }
+
   async mcp(workspace: Workspace) {
     await this.contextRunner.runMcp(workspace);
   }

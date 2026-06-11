@@ -39,6 +39,41 @@ describe("ContextRunner", () => {
   test("explains the MCP command", () => {
     expect(new ContextRunner().explainCommand("mcp")).toContain("read-only Akan MCP server");
   });
+
+  test("installs Cursor MCP config while preserving existing servers", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    await writeText(
+      `${root}/.cursor/mcp.json`,
+      `${JSON.stringify({ mcpServers: { existing: { type: "stdio", command: "node", args: ["server.js"] } } }, null, 2)}\n`,
+    );
+
+    const written = await new ContextRunner().installMcp(workspace, "cursor");
+    const config = (await workspace.readJson(".cursor/mcp.json")) as {
+      mcpServers: Record<string, { type: string; command: string; args: string[] }>;
+    };
+
+    expect(written).toBe(".cursor/mcp.json");
+    expect(config.mcpServers.existing).toEqual({ type: "stdio", command: "node", args: ["server.js"] });
+    expect(config.mcpServers.akan).toEqual({
+      type: "stdio",
+      command: "bash",
+      args: ["-lc", `cd "${"$"}{workspaceFolder}" && akan mcp`],
+    });
+  });
+
+  test("requires force before overwriting an existing Akan MCP server entry", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    await writeText(
+      `${root}/.cursor/mcp.json`,
+      `${JSON.stringify({ mcpServers: { akan: { type: "stdio", command: "other" } } }, null, 2)}\n`,
+    );
+    const runner = new ContextRunner();
+
+    await expect(runner.installMcp(workspace, "cursor")).rejects.toThrow('already has an "akan" MCP server');
+    await expect(runner.installMcp(workspace, "cursor", { force: true })).resolves.toBe(".cursor/mcp.json");
+  });
 });
 
 describe("AgentRunner", () => {

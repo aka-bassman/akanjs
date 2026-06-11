@@ -336,7 +336,7 @@ It may cause unexpected behavior. Run \`akan update\` to update latest akanjs.`,
         };
 
         programCommand.action(async (...args: unknown[]) => {
-          Logger.rawLog();
+          if (!targetMeta.targetOption.stdio) Logger.rawLog();
           const cmdArgs = args.slice(0, args.length - 2);
           const opt = args[args.length - 2] as Record<string, unknown>;
           const commandArgs = [] as unknown[];
@@ -364,7 +364,7 @@ It may cause unexpected behavior. Run \`akan update\` to update latest akanjs.`,
 
           try {
             await targetMeta.handler.call(cmd, ...commandArgs);
-            Logger.rawLog();
+            if (!targetMeta.targetOption.stdio) Logger.rawLog();
           } catch (e) {
             printCliError(e);
             throw e;

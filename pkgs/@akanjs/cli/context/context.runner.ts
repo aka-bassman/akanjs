@@ -6,6 +6,10 @@ type JsonRpcRequest = {
   method: string;
   params?: Record<string, unknown>;
 };
+type McpFraming = "content-length" | "newline";
+type CursorMcpConfig = {
+  mcpServers?: Record<string, unknown>;
+};
 
 const jsonText = (value: unknown) => JSON.stringify(value, null, 2);
 
@@ -31,6 +35,13 @@ const resourceList = [
   { uri: "akan://workspace/apps", name: "Workspace apps", mimeType: "application/json" },
   { uri: "akan://workspace/modules", name: "Workspace modules", mimeType: "application/json" },
 ];
+const cursorMcpConfigPath = ".cursor/mcp.json";
+const cursorWorkspaceFolder = "$" + "{workspaceFolder}";
+const akanCursorMcpServer = {
+  type: "stdio",
+  command: "bash",
+  args: ["-lc", `cd "${cursorWorkspaceFolder}" && akan mcp`],
+};
 
 export class ContextRunner extends runner("context") {
   async getContext(
@@ -61,16 +72,40 @@ export class ContextRunner extends runner("context") {
     return await Prompter.getInstruction(name);
   }
 
+  async installMcp(workspace: Workspace, target: "cursor", { force = false }: { force?: boolean } = {}) {
+    if (target !== "cursor") throw new Error(`Unknown MCP install target: ${target}. Use cursor.`);
+    const existing = (await workspace.exists(cursorMcpConfigPath))
+      ? ((await workspace.readJson(cursorMcpConfigPath)) as CursorMcpConfig)
+      : {};
+    const mcpServers = existing.mcpServers ?? {};
+    const currentAkanServer = mcpServers.akan;
+    if (currentAkanServer && !force && JSON.stringify(currentAkanServer) !== JSON.stringify(akanCursorMcpServer)) {
+      throw new Error(`${cursorMcpConfigPath} already has an "akan" MCP server. Re-run with --force to overwrite it.`);
+    }
+    const nextConfig: CursorMcpConfig = {
+      ...existing,
+      mcpServers: {
+        ...mcpServers,
+        akan: akanCursorMcpServer,
+      },
+    };
+    await workspace.writeFile(cursorMcpConfigPath, `${JSON.stringify(nextConfig, null, 2)}\n`);
+    return cursorMcpConfigPath;
+  }
+
   async runMcp(workspace: Workspace) {
     const decoder = new TextDecoder();
     let buffer = "";
-    const respond = (id: JsonRpcRequest["id"], result: unknown) => {
-      const payload = JSON.stringify({ jsonrpc: "2.0", id, result });
-      process.stdout.write(`Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`);
+    const writeMessage = (message: unknown, framing: McpFraming) => {
+      const payload = JSON.stringify(message);
+      if (framing === "newline") process.stdout.write(`${payload}\n`);
+      else process.stdout.write(`Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`);
     };
-    const respondError = (id: JsonRpcRequest["id"], code: number, message: string) => {
-      const payload = JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } });
-      process.stdout.write(`Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`);
+    const respond = (id: JsonRpcRequest["id"], result: unknown, framing: McpFraming) => {
+      writeMessage({ jsonrpc: "2.0", id, result }, framing);
+    };
+    const respondError = (id: JsonRpcRequest["id"], code: number, message: string, framing: McpFraming) => {
+      writeMessage({ jsonrpc: "2.0", id, error: { code, message } }, framing);
     };
     const readResource = async (uri: string) => {
       const context = await AkanContextAnalyzer.analyze(workspace);
@@ -93,35 +128,46 @@ export class ContextRunner extends runner("context") {
       }
       throw new Error(`Unknown resource: ${uri}`);
     };
-    const handle = async (request: JsonRpcRequest) => {
+    const handle = async (request: JsonRpcRequest, framing: McpFraming) => {
       const params = request.params ?? {};
       if (request.method === "initialize") {
-        respond(request.id, {
-          protocolVersion: "2024-11-05",
-          capabilities: { tools: {}, resources: {} },
-          serverInfo: { name: "akan", version: process.env.AKAN_VERSION ?? "0.0.0" },
-        });
+        respond(
+          request.id,
+          {
+            protocolVersion: "2024-11-05",
+            capabilities: { tools: {}, resources: {} },
+            serverInfo: { name: "akan", version: process.env.AKAN_VERSION ?? "0.0.0" },
+          },
+          framing,
+        );
       } else if (request.method === "tools/list") {
-        respond(request.id, {
-          tools: [
-            { name: "get_workspace_summary", inputSchema: { type: "object", properties: {} } },
-            { name: "list_apps", inputSchema: { type: "object", properties: {} } },
-            { name: "list_modules", inputSchema: { type: "object", properties: {} } },
-            {
-              name: "get_module_context",
-              inputSchema: { type: "object", properties: { module: { type: "string" } } },
-            },
-            {
-              name: "get_guideline",
-              inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
-            },
-            {
-              name: "explain_command",
-              inputSchema: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
-            },
-            { name: "doctor_workspace", inputSchema: { type: "object", properties: { strict: { type: "boolean" } } } },
-          ],
-        });
+        respond(
+          request.id,
+          {
+            tools: [
+              { name: "get_workspace_summary", inputSchema: { type: "object", properties: {} } },
+              { name: "list_apps", inputSchema: { type: "object", properties: {} } },
+              { name: "list_modules", inputSchema: { type: "object", properties: {} } },
+              {
+                name: "get_module_context",
+                inputSchema: { type: "object", properties: { module: { type: "string" } } },
+              },
+              {
+                name: "get_guideline",
+                inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+              },
+              {
+                name: "explain_command",
+                inputSchema: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
+              },
+              {
+                name: "doctor_workspace",
+                inputSchema: { type: "object", properties: { strict: { type: "boolean" } } },
+              },
+            ],
+          },
+          framing,
+        );
       } else if (request.method === "tools/call") {
         const name = params.name as string;
         const args = (params.arguments ?? {}) as Record<string, unknown>;
@@ -141,34 +187,58 @@ export class ContextRunner extends runner("context") {
           if (name === "explain_command") return this.explainCommand(args.command as string);
           throw new Error(`Unknown tool: ${name}`);
         })();
-        respond(request.id, {
-          content: [{ type: "text", text: typeof result === "string" ? result : jsonText(result) }],
-        });
+        respond(
+          request.id,
+          {
+            content: [{ type: "text", text: typeof result === "string" ? result : jsonText(result) }],
+          },
+          framing,
+        );
       } else if (request.method === "resources/list") {
-        respond(request.id, { resources: resourceList });
+        respond(request.id, { resources: resourceList }, framing);
       } else if (request.method === "resources/read") {
-        respond(request.id, { contents: [await readResource(params.uri as string)] });
+        respond(request.id, { contents: [await readResource(params.uri as string)] }, framing);
       } else if (!request.method.endsWith("/initialized")) {
-        respondError(request.id, -32601, `Unknown method: ${request.method}`);
+        respondError(request.id, -32601, `Unknown method: ${request.method}`, framing);
       }
+    };
+    const parseContentLengthMessage = async () => {
+      const headerEnd = buffer.indexOf("\r\n\r\n");
+      if (headerEnd < 0) return false;
+      const header = buffer.slice(0, headerEnd);
+      const match = /Content-Length:\s*(\d+)/i.exec(header);
+      if (!match) {
+        buffer = buffer.slice(headerEnd + 4);
+        return true;
+      }
+      const length = Number(match[1]);
+      const bodyStart = headerEnd + 4;
+      const bodyEnd = bodyStart + length;
+      if (buffer.length < bodyEnd) return false;
+      const body = buffer.slice(bodyStart, bodyEnd);
+      buffer = buffer.slice(bodyEnd);
+      await handle(JSON.parse(body) as JsonRpcRequest, "content-length");
+      return true;
+    };
+    const parseLineMessage = async () => {
+      const lineEnd = buffer.indexOf("\n");
+      if (lineEnd < 0) return false;
+      const line = buffer.slice(0, lineEnd).trim();
+      buffer = buffer.slice(lineEnd + 1);
+      if (!line) return true;
+      await handle(JSON.parse(line) as JsonRpcRequest, "newline");
+      return true;
     };
     const parse = async () => {
       while (true) {
-        const headerEnd = buffer.indexOf("\r\n\r\n");
-        if (headerEnd < 0) return;
-        const header = buffer.slice(0, headerEnd);
-        const match = /Content-Length:\s*(\d+)/i.exec(header);
-        if (!match) {
-          buffer = buffer.slice(headerEnd + 4);
-          continue;
+        buffer = buffer.trimStart();
+        if (/^Content-Length:/i.test(buffer)) {
+          if (await parseContentLengthMessage()) continue;
+          return;
         }
-        const length = Number(match[1]);
-        const bodyStart = headerEnd + 4;
-        const bodyEnd = bodyStart + length;
-        if (buffer.length < bodyEnd) return;
-        const body = buffer.slice(bodyStart, bodyEnd);
-        buffer = buffer.slice(bodyEnd);
-        await handle(JSON.parse(body) as JsonRpcRequest);
+        if (buffer.includes("\r\n\r\n") && (await parseContentLengthMessage())) continue;
+        if (await parseLineMessage()) continue;
+        return;
       }
     };
     for await (const chunk of Bun.stdin.stream()) {
