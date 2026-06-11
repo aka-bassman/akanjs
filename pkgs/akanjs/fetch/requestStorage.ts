@@ -157,6 +157,10 @@ export function updateRequestPolicy(
   return policy;
 }
 
+export function cacheTag(...tags: string[]): AkanRequestPolicy | undefined {
+  return updateRequestPolicy({ tags: tags.filter(Boolean) });
+}
+
 export function getRequestDynamicUsage(): AkanDynamicUsage | undefined {
   return getRequestStore()?.dynamicUsage;
 }

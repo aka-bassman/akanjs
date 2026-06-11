@@ -4,6 +4,7 @@ import { createRequestStore } from "akanjs/fetch";
 import {
   createRouteCacheEntry,
   isPublicRouteCacheableRequest,
+  type RouteCacheInvalidation,
   type RouteCacheRenderState,
   resolveRouteCacheStoreTtl,
   shouldStoreRouteCache,
@@ -36,10 +37,10 @@ type FullSsrHandler = (req: Request) => Response | Promise<Response>;
 
 interface FakeRscWorker {
   renderCalls: Request[];
-  invalidations: Array<string | undefined>;
+  invalidations: Array<string | RouteCacheInvalidation | undefined>;
   ready: Promise<void>;
   renderWithMeta(req: Request): Promise<RscRenderResult>;
-  invalidateRouteResultCache(reason?: string): void;
+  invalidateRouteResultCache(invalidation?: string | RouteCacheInvalidation): void;
   kill(): void;
   reload(): Promise<void>;
   getMetrics(): Record<string, unknown>;
@@ -76,8 +77,8 @@ function createFakeRscWorker(
         cancel: () => {},
       };
     },
-    invalidateRouteResultCache(reason) {
-      this.invalidations.push(reason);
+    invalidateRouteResultCache(invalidation) {
+      this.invalidations.push(invalidation);
     },
     kill() {},
     async reload() {},
@@ -427,6 +428,7 @@ describe("WebRouter HTML cache streaming", () => {
 
     expect(dynamicState).toEqual({
       cacheable: false,
+      routeId: "/docs",
       revalidate: 60,
       tags: ["docs"],
       dynamicUsage: { headers: true, cookies: false },
@@ -434,6 +436,7 @@ describe("WebRouter HTML cache streaming", () => {
     });
     expect(redirectState).toEqual({
       cacheable: false,
+      routeId: "/docs",
       revalidate: 60,
       tags: ["docs"],
       dynamicUsage: { headers: false, cookies: false },
@@ -728,5 +731,97 @@ describe("WebRouter full SSR cache orchestration", () => {
       await expect(third.text()).resolves.toContain("/docs/invalidate:render-2");
       expect(fakeWorker.renderCalls).toHaveLength(2);
     });
+  });
+
+  test("invalidates only matching HTML cache entries by tag", async () => {
+    const fakeWorker = createFakeRscWorker((req) => {
+      const pathname = new URL(req.url).pathname;
+      return {
+        cacheState: {
+          cacheable: true,
+          routeId: pathname,
+          revalidate: 30,
+          tags: pathname.startsWith("/docs") ? ["docs"] : ["blog"],
+        },
+      };
+    });
+
+    await withFullSsrCacheHarness(
+      async ({ fullSsr, router }) => {
+        const docsFirst = await fullSsr(new Request("https://example.test/docs/tagged"));
+        expect(docsFirst.headers.get("X-Akan-Cache")).toBe("MISS");
+        await expect(docsFirst.text()).resolves.toContain("/docs/tagged:render-1");
+
+        const blogFirst = await fullSsr(new Request("https://example.test/blog/tagged"));
+        expect(blogFirst.headers.get("X-Akan-Cache")).toBe("MISS");
+        const blogHtml = await blogFirst.text();
+        expect(blogHtml).toContain("/blog/tagged:render-2");
+
+        const docsHit = await fullSsr(new Request("https://example.test/docs/tagged"));
+        expect(docsHit.headers.get("X-Akan-Cache")).toBe("HIT");
+        await docsHit.text();
+        const blogHit = await fullSsr(new Request("https://example.test/blog/tagged"));
+        expect(blogHit.headers.get("X-Akan-Cache")).toBe("HIT");
+        await expect(blogHit.text()).resolves.toBe(blogHtml);
+
+        router.invalidateRouteCaches({ tags: ["docs"], reason: "manual" });
+        expect(fakeWorker.invalidations).toEqual([{ tags: ["docs"], reason: "manual" }]);
+
+        const docsAfterInvalidate = await fullSsr(new Request("https://example.test/docs/tagged"));
+        expect(docsAfterInvalidate.headers.get("X-Akan-Cache")).toBe("MISS");
+        await expect(docsAfterInvalidate.text()).resolves.toContain("/docs/tagged:render-3");
+
+        const blogAfterInvalidate = await fullSsr(new Request("https://example.test/blog/tagged"));
+        expect(blogAfterInvalidate.headers.get("X-Akan-Cache")).toBe("HIT");
+        await expect(blogAfterInvalidate.text()).resolves.toBe(blogHtml);
+      },
+      { worker: fakeWorker, htmlCachePaths: "/docs,/blog" },
+    );
+  });
+
+  test("invalidates only matching HTML cache entries by path", async () => {
+    const fakeWorker = createFakeRscWorker((req) => {
+      const pathname = new URL(req.url).pathname;
+      return {
+        cacheState: {
+          cacheable: true,
+          routeId: pathname,
+          revalidate: 30,
+          tags: [pathname.startsWith("/docs") ? "docs" : "blog"],
+        },
+      };
+    });
+
+    await withFullSsrCacheHarness(
+      async ({ fullSsr, router }) => {
+        const docsFirst = await fullSsr(new Request("https://example.test/docs/path"));
+        expect(docsFirst.headers.get("X-Akan-Cache")).toBe("MISS");
+        await expect(docsFirst.text()).resolves.toContain("/docs/path:render-1");
+
+        const blogFirst = await fullSsr(new Request("https://example.test/blog/path"));
+        expect(blogFirst.headers.get("X-Akan-Cache")).toBe("MISS");
+        const blogHtml = await blogFirst.text();
+        expect(blogHtml).toContain("/blog/path:render-2");
+
+        const docsHit = await fullSsr(new Request("https://example.test/docs/path"));
+        expect(docsHit.headers.get("X-Akan-Cache")).toBe("HIT");
+        await docsHit.text();
+        const blogHit = await fullSsr(new Request("https://example.test/blog/path"));
+        expect(blogHit.headers.get("X-Akan-Cache")).toBe("HIT");
+        await expect(blogHit.text()).resolves.toBe(blogHtml);
+
+        router.invalidateRouteCaches({ paths: ["/docs"], reason: "path" });
+        expect(fakeWorker.invalidations).toEqual([{ paths: ["/docs"], reason: "path" }]);
+
+        const docsAfterInvalidate = await fullSsr(new Request("https://example.test/docs/path"));
+        expect(docsAfterInvalidate.headers.get("X-Akan-Cache")).toBe("MISS");
+        await expect(docsAfterInvalidate.text()).resolves.toContain("/docs/path:render-3");
+
+        const blogAfterInvalidate = await fullSsr(new Request("https://example.test/blog/path"));
+        expect(blogAfterInvalidate.headers.get("X-Akan-Cache")).toBe("HIT");
+        await expect(blogAfterInvalidate.text()).resolves.toBe(blogHtml);
+      },
+      { worker: fakeWorker, htmlCachePaths: "/docs,/blog" },
+    );
   });
 });

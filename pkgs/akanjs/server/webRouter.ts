@@ -20,14 +20,17 @@ import {
 import {
   createRouteCacheEntry,
   getClientFacingOrigin,
+  hasRouteCacheInvalidationScope,
   isPublicRouteCacheableRequest,
   isRouteCachePathAllowed,
   LruTtlCache,
   normalizeRouteCacheTtl,
   parsePositiveInt,
   type RouteCacheEntry,
+  type RouteCacheInvalidation,
   type RouteCacheRenderState,
   resolveRouteCacheStoreTtl,
+  shouldInvalidateRouteCacheEntry,
   shouldStoreRouteCache,
 } from "./cachePolicy";
 import { DevHmrController } from "./hmr";
@@ -227,6 +230,9 @@ interface WebRouterOptions {
 
 interface CachedHtmlResult {
   html: string;
+  pathname: string;
+  routeId?: string;
+  tags?: string[];
 }
 
 export class WebRouter {
@@ -543,6 +549,7 @@ export class WebRouter {
             const headers = new Headers(responseHeaders);
             headers.set("X-Akan-Cache", "MISS");
             let htmlStoreTtl = htmlCacheEntry.ttl;
+            let htmlCacheMetadata: Omit<CachedHtmlResult, "html"> = { pathname: url.pathname };
             const shouldCacheHtml = Promise.all([rscResult.lateControl, rscResult.cacheState]).then(
               ([control, cacheState]) => {
                 const storeTtl = resolveHtmlRouteCacheStoreTtl({
@@ -553,6 +560,11 @@ export class WebRouter {
                 });
                 if (storeTtl === null) return false;
                 htmlStoreTtl = storeTtl;
+                htmlCacheMetadata = {
+                  pathname: url.pathname,
+                  routeId: cacheState.routeId,
+                  tags: cacheState.tags,
+                };
                 return true;
               },
             );
@@ -560,7 +572,7 @@ export class WebRouter {
               cacheHtmlWhileStreaming(
                 htmlStream,
                 (html) => {
-                  this.#setCachedHtml(htmlCacheEntry.key, html, htmlStoreTtl);
+                  this.#setCachedHtml(htmlCacheEntry.key, html, htmlStoreTtl, htmlCacheMetadata);
                 },
                 {
                   shouldCache: () => shouldCacheHtml,
@@ -611,10 +623,24 @@ export class WebRouter {
     };
   }
 
-  /** @internal Clears local route result caches owned by the host and RSC worker. */
-  invalidateRouteCaches(reason?: string): void {
-    this.#htmlCache.clear();
-    this.#rsc.invalidateRouteResultCache(reason);
+  /** @internal Clears or scopes invalidation for local route result caches owned by the host and RSC worker. */
+  invalidateRouteCaches(invalidation?: string | RouteCacheInvalidation): void {
+    const payload = typeof invalidation === "string" ? { reason: invalidation } : invalidation;
+    if (!hasRouteCacheInvalidationScope(payload)) {
+      this.#htmlCache.clear();
+    } else if (payload) {
+      this.#htmlCache.invalidate((_key, value) =>
+        shouldInvalidateRouteCacheEntry(
+          {
+            pathname: value.pathname,
+            routeId: value.routeId,
+            tags: value.tags,
+          },
+          payload,
+        ),
+      );
+    }
+    this.#rsc.invalidateRouteResultCache(invalidation);
   }
 
   /**
@@ -680,8 +706,8 @@ export class WebRouter {
     return cached.html;
   }
 
-  #setCachedHtml(cacheKey: string, html: string, ttl: number): void {
-    this.#htmlCache.set(cacheKey, { html }, ttl);
+  #setCachedHtml(cacheKey: string, html: string, ttl: number, metadata: Omit<CachedHtmlResult, "html">): void {
+    this.#htmlCache.set(cacheKey, { html, ...metadata }, ttl);
   }
 
   static #cookieValue(req: Request, name: string): string | undefined {

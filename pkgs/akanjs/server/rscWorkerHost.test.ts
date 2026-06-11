@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { LruTtlCache } from "./cachePolicy";
 import { shouldRenderLocaleAlternates } from "./metadata";
+import { type CachedRscResult, invalidateCachedRscResults } from "./rscWorkerCache";
 import {
   createIdempotentRscRenderCancel,
   createRscHostRenderStream,
@@ -252,6 +254,40 @@ describe("RscWorker cache invalidation", () => {
   test("creates an invalidate-cache worker message with optional reason", () => {
     expect(createRscWorkerInvalidateCacheMessage()).toEqual({ type: "invalidate-cache" });
     expect(createRscWorkerInvalidateCacheMessage("manual")).toEqual({ type: "invalidate-cache", reason: "manual" });
+    expect(createRscWorkerInvalidateCacheMessage({ tags: ["docs"], paths: ["/docs"], reason: "tagged" })).toEqual({
+      type: "invalidate-cache",
+      reason: "tagged",
+      tags: ["docs"],
+      paths: ["/docs"],
+    });
+  });
+
+  test("invalidates cached RSC results by tag and path scope", () => {
+    const makeResult = (pathname: string, tags: string[]): CachedRscResult => ({
+      chunks: [],
+      bytes: 0,
+      chunksCount: 0,
+      pathname,
+      routeId: pathname,
+      tags,
+      cacheState: { cacheable: true, routeId: pathname, tags },
+    });
+    const cache = new LruTtlCache<CachedRscResult>(10);
+    cache.set("docs", makeResult("/docs/intro", ["docs"]), 30);
+    cache.set("blog", makeResult("/blog/intro", ["blog"]), 30);
+    cache.set("api", makeResult("/api/reference", ["api"]), 30);
+
+    invalidateCachedRscResults(cache, { tags: ["docs"] });
+    expect(cache.get("docs")).toBeNull();
+    expect(cache.get("blog")?.pathname).toBe("/blog/intro");
+    expect(cache.get("api")?.pathname).toBe("/api/reference");
+
+    invalidateCachedRscResults(cache, { paths: ["/api"] });
+    expect(cache.get("api")).toBeNull();
+    expect(cache.get("blog")?.pathname).toBe("/blog/intro");
+
+    invalidateCachedRscResults(cache, { reason: "manual" });
+    expect(cache.get("blog")).toBeNull();
   });
 });
 

@@ -22,6 +22,7 @@ import {
   LruTtlCache,
   parsePositiveInt,
   type RouteCacheEntry,
+  type RouteCacheInvalidation,
   type RouteCacheRenderState,
   resolvePublicRouteCacheEntry,
   resolveRouteCacheStoreTtl,
@@ -32,6 +33,7 @@ import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { RouteElementComposer } from "./routeElementComposer";
 import { type PagesContext, RouteTreeBuilder } from "./routeTreeBuilder";
 import { encodeAkanRedirectDigest } from "./rscHttp";
+import { type CachedRscResult, invalidateCachedRscResults } from "./rscWorkerCache";
 import { replayCachedRscResult } from "./rscWorkerReplay";
 import type { RscTraceMetadata } from "./ssrTypes";
 import { createSystemPageDocument, getSystemPageHomeHref } from "./systemPages";
@@ -72,6 +74,8 @@ interface UpdateCssAssetsMsg {
 interface InvalidateCacheMsg {
   type: "invalidate-cache";
   reason?: string;
+  tags?: string[];
+  paths?: string[];
 }
 type InMsg = InitMsg | RenderMsg | CancelMsg | ReloadMsg | UpdateCssAssetsMsg | InvalidateCacheMsg;
 type RenderControl =
@@ -114,14 +118,6 @@ interface RouteRenderStats {
   count: number;
   flightBytes: number;
   totalDurationMs: number;
-}
-
-interface CachedRscResult {
-  chunks: Uint8Array[];
-  bytes: number;
-  chunksCount: number;
-  theme?: string;
-  cacheState: RouteCacheRenderState;
 }
 
 export function isAkanRedirectError(error: unknown): error is AkanRedirectError {
@@ -219,7 +215,7 @@ class RscRenderer {
         return;
       case "invalidate-cache":
         this.#logger.verbose(`received invalidate-cache reason=${msg.reason ?? "(none)"}`);
-        this.#resultCache.clear();
+        this.#invalidateResultCache(msg);
         return;
     }
   }
@@ -232,6 +228,10 @@ class RscRenderer {
       // Cancellation is best-effort; the render loop also checks
       // `#cancelledRenderRequests` before sending more chunks.
     });
+  }
+
+  #invalidateResultCache(invalidation: RouteCacheInvalidation): void {
+    invalidateCachedRscResults(this.#resultCache, invalidation);
   }
 
   async #handleInit(msg: InitMsg): Promise<void> {
@@ -412,6 +412,9 @@ class RscRenderer {
                   chunks,
                   bytes,
                   chunksCount,
+                  pathname: urlObj.pathname,
+                  routeId,
+                  tags: cacheState.tags,
                   theme: getRequestTheme(),
                   cacheState,
                 },

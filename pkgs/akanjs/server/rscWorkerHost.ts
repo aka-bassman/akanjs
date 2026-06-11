@@ -5,7 +5,7 @@ import { type AkanI18nConfig, DEFAULT_AKAN_I18N, Logger } from "akanjs/common";
 import type { AkanTheme } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
 import type { ClientManifest } from "./artifact";
-import type { RouteCacheRenderState } from "./cachePolicy";
+import type { RouteCacheInvalidation, RouteCacheRenderState } from "./cachePolicy";
 import type { RscTraceMetadata, SsrLateRedirect } from "./ssrTypes";
 import type { BaseBuildArtifact, CssAsset } from "./types";
 
@@ -31,6 +31,8 @@ export type RscRedirectStatus = 303 | 307 | 308;
 export interface RscWorkerInvalidateCacheMessage {
   type: "invalidate-cache";
   reason?: string;
+  tags?: string[];
+  paths?: string[];
 }
 
 export type RscRenderResult =
@@ -76,8 +78,17 @@ export function createIdempotentRscRenderCancel(onCancel: (reason?: unknown) => 
   };
 }
 
-export function createRscWorkerInvalidateCacheMessage(reason?: string): RscWorkerInvalidateCacheMessage {
-  return reason ? { type: "invalidate-cache", reason } : { type: "invalidate-cache" };
+export function createRscWorkerInvalidateCacheMessage(
+  invalidation?: string | RouteCacheInvalidation,
+): RscWorkerInvalidateCacheMessage {
+  if (!invalidation) return { type: "invalidate-cache" };
+  if (typeof invalidation === "string") return { type: "invalidate-cache", reason: invalidation };
+  return {
+    type: "invalidate-cache",
+    reason: invalidation.reason,
+    tags: invalidation.tags,
+    paths: invalidation.paths,
+  };
 }
 
 export function createRscHostRenderStream(input: {
@@ -430,10 +441,10 @@ export class RscWorker {
     });
   }
 
-  invalidateRouteResultCache(reason?: string): void {
+  invalidateRouteResultCache(invalidation?: string | RouteCacheInvalidation): void {
     if (this.#status !== "ready") return;
     try {
-      this.#proc.send(createRscWorkerInvalidateCacheMessage(reason));
+      this.#proc.send(createRscWorkerInvalidateCacheMessage(invalidation));
     } catch (error) {
       this.#logger.warn(
         `rsc worker cache invalidate send failed: ${error instanceof Error ? error.message : String(error)}`,

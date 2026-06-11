@@ -6,6 +6,7 @@ import { FetchClient } from "./client/fetchClient";
 import { HttpClient } from "./client/httpClient";
 import { WsClient } from "./client/wsClient";
 import {
+  cacheTag,
   cookies,
   createRequestStore,
   getRequest,
@@ -494,6 +495,20 @@ describe("requestStorage utilities", () => {
       afterNoStore: false,
       afterShorterAfterNoStore: false,
     });
+  });
+
+  test("accumulates cache tags on the active request policy", async () => {
+    expect(cacheTag("outside")).toBeUndefined();
+    if (!requestStorage) return;
+    const req = new Request("https://example.test/tags");
+
+    const tags = await requestStorage.run(req, async () => {
+      cacheTag("docs", "", "intro");
+      cacheTag("docs", "api");
+      return [...(getRequestPolicy()?.tags ?? [])];
+    });
+
+    expect(tags).toEqual(["docs", "intro", "api"]);
   });
 
   test("runs with an explicit request store that remains observable after the callback", async () => {

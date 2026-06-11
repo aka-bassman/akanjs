@@ -10,9 +10,22 @@ export interface RouteCacheKeyInput {
 
 export interface RouteCacheRenderState {
   cacheable: boolean;
+  routeId?: string;
   revalidate?: number | false;
   tags?: string[];
   dynamicUsage?: AkanDynamicUsage;
+  reason?: string;
+}
+
+export interface RouteCacheMetadata {
+  pathname: string;
+  routeId?: string;
+  tags?: string[];
+}
+
+export interface RouteCacheInvalidation {
+  tags?: string[];
+  paths?: string[];
   reason?: string;
 }
 
@@ -149,6 +162,7 @@ export function shouldStoreRouteCache(input: {
   lateRedirect?: boolean;
 }): RouteCacheRenderState {
   const dynamicUsage = input.dynamicUsage ? { ...input.dynamicUsage } : undefined;
+  const routeId = input.policy?.routeId;
   const tags = input.policy ? [...input.policy.tags] : undefined;
   const revalidate = combineMinRevalidate(input.policy?.revalidate);
   if (input.renderControlType) {
@@ -156,11 +170,38 @@ export function shouldStoreRouteCache(input: {
       input.renderControlType === "redirect" && input.lateRedirect
         ? "late-redirect"
         : `render-${input.renderControlType}`;
-    return { cacheable: false, revalidate, tags, dynamicUsage, reason };
+    return { cacheable: false, routeId, revalidate, tags, dynamicUsage, reason };
   }
   if (dynamicUsage?.headers || dynamicUsage?.cookies)
-    return { cacheable: false, revalidate, tags, dynamicUsage, reason: "dynamic-request-api" };
-  return { cacheable: input.policy?.cacheable !== false, revalidate, tags, dynamicUsage };
+    return { cacheable: false, routeId, revalidate, tags, dynamicUsage, reason: "dynamic-request-api" };
+  return { cacheable: input.policy?.cacheable !== false, routeId, revalidate, tags, dynamicUsage };
+}
+
+export function hasRouteCacheInvalidationScope(invalidation?: RouteCacheInvalidation): boolean {
+  return Boolean(invalidation?.tags?.length || invalidation?.paths?.length);
+}
+
+export function shouldInvalidateRouteCacheEntry(
+  metadata: RouteCacheMetadata,
+  invalidation: RouteCacheInvalidation,
+): boolean {
+  if (invalidation.tags?.length) {
+    const entryTags = new Set(metadata.tags ?? []);
+    if (invalidation.tags.some((tag) => entryTags.has(tag))) return true;
+  }
+  if (invalidation.paths?.length) {
+    return invalidation.paths.some((path) => {
+      if (!path) return false;
+      const normalized = path.startsWith("/") ? path : `/${path}`;
+      return (
+        metadata.pathname === normalized ||
+        metadata.pathname.startsWith(normalized.endsWith("/") ? normalized : `${normalized}/`) ||
+        metadata.routeId === normalized ||
+        Boolean(metadata.routeId?.startsWith(normalized.endsWith("/") ? normalized : `${normalized}/`))
+      );
+    });
+  }
+  return false;
 }
 
 export class LruTtlCache<T> {

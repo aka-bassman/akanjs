@@ -12,6 +12,7 @@ import {
   resolveAutoRouteCacheTtl,
   resolvePublicRouteCacheEntry,
   resolveRouteCacheStoreTtl,
+  shouldInvalidateRouteCacheEntry,
   shouldStoreRouteCache,
 } from "./cachePolicy";
 
@@ -240,6 +241,16 @@ describe("route cache policy helpers", () => {
         renderControlType: "not-found",
       }),
     ).toMatchObject({ cacheable: false, reason: "render-not-found" });
+  });
+
+  test("matches route cache invalidations by tag and path prefix", () => {
+    const metadata = { pathname: "/docs/intro", routeId: "/:lang/docs/intro", tags: ["docs", "intro"] };
+
+    expect(shouldInvalidateRouteCacheEntry(metadata, { tags: ["docs"] })).toBe(true);
+    expect(shouldInvalidateRouteCacheEntry(metadata, { tags: ["blog"] })).toBe(false);
+    expect(shouldInvalidateRouteCacheEntry(metadata, { paths: ["/docs"] })).toBe(true);
+    expect(shouldInvalidateRouteCacheEntry(metadata, { paths: ["/docs-private"] })).toBe(false);
+    expect(shouldInvalidateRouteCacheEntry(metadata, { paths: ["/:lang/docs"] })).toBe(true);
   });
 
   test("evicts least recently used entries and expires stale entries", async () => {
