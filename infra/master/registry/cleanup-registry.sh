@@ -30,11 +30,21 @@ total_count=$(echo "${manifests_without_tags}" | wc -w)
 
 for manifest in ${manifests_without_tags}; do
 	repo=$(find . -type f -path "*/_manifests/revisions/sha256/${manifest}/link" | awk -F "_manifest"  '{print $(NF-1)}' | sed 's#^./\(.*\)/#\1#')
-	
-	if ! curl -s -f -X DELETE "${REGISTRY_URL}/v2/${repo}/manifests/sha256:${manifest}" > /dev/null; then
-		echo "Failed to delete ${repo}@sha256:${manifest}, skipping." >&2
-		continue
-	fi
+
+	delete_status="$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "${REGISTRY_URL}/v2/${repo}/manifests/sha256:${manifest}")" || delete_status="000"
+
+	case "${delete_status}" in
+		2*)
+			;;
+		000|401|403|405)
+			echo "Registry refused delete request for ${repo}@sha256:${manifest} with HTTP ${delete_status}. Check registry connectivity, login credentials, delete permissions, and delete-enabled config." >&2
+			exit 1
+			;;
+		*)
+			echo "Failed to delete ${repo}@sha256:${manifest} with HTTP ${delete_status}, skipping." >&2
+			continue
+			;;
+	esac
 
 	count=$((count + 1))
 	echo "Deleted ${count} of ${total_count} manifests."
