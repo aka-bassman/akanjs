@@ -26,6 +26,14 @@ export interface SsrLateRedirect {
   status: 303 | 307 | 308;
 }
 
+export interface RscTraceMetadata {
+  navId?: string;
+  pathname: string;
+  routeId: string;
+  cache: "hit" | "miss" | "bypass";
+  cacheKeyHash?: string;
+}
+
 export interface SsrFromRscInput {
   request?: Request;
   requestStore?: AkanRequestStore;

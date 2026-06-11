@@ -21,6 +21,16 @@ export interface RouteCacheEntry {
   ttl: number;
 }
 
+export interface PublicRouteCacheEntryInput extends RouteCacheKeyInput {
+  env: {
+    enabled?: string | null;
+    ttl?: string | null;
+    allow?: string | null;
+    deny?: string | null;
+  };
+  defaultTtl?: number;
+}
+
 export type RouteCacheRenderControlType = "redirect" | "not-found" | "error";
 
 export function parsePositiveInt(value: string | undefined | null): number | null {
@@ -111,6 +121,18 @@ export function createRouteCacheKey({ request, url, theme = "" }: RouteCacheKeyI
 
 export function createRouteCacheEntry(input: RouteCacheKeyInput & { ttl: number }): RouteCacheEntry {
   return { key: createRouteCacheKey(input), ttl: input.ttl };
+}
+
+export function resolvePublicRouteCacheEntry(input: PublicRouteCacheEntryInput): RouteCacheEntry | null {
+  const ttl = resolveAutoRouteCacheTtl({
+    enabled: input.env.enabled,
+    ttl: input.env.ttl,
+    defaultTtl: input.defaultTtl,
+  });
+  if (ttl === null) return null;
+  if (!isRouteCachePathAllowed(input.url.pathname, { allow: input.env.allow, deny: input.env.deny })) return null;
+  if (!isPublicRouteCacheableRequest(input.request)) return null;
+  return createRouteCacheEntry({ request: input.request, url: input.url, theme: input.theme, ttl });
 }
 
 export function resolveRouteCacheStoreTtl(baseTtl: number, state: RouteCacheRenderState): number | null {

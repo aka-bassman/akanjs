@@ -151,11 +151,21 @@ const parseEnvFile = (envPath: string): Record<string, string> => {
   return env;
 };
 
-const PAGE_ROUTE_EXPORTS = new Set(["default", "pageConfig", "head", "generateHead", "Loading"]);
+const PAGE_ROUTE_EXPORTS = new Set([
+  "default",
+  "pageConfig",
+  "head",
+  "metadata",
+  "generateHead",
+  "generateMetadata",
+  "Loading",
+]);
 const ROOT_LAYOUT_EXPORTS = new Set([
   "default",
   "head",
+  "metadata",
   "generateHead",
+  "generateMetadata",
   "fonts",
   "manifest",
   "theme",
@@ -166,7 +176,16 @@ const ROOT_LAYOUT_EXPORTS = new Set([
   "NotFound",
   "Error",
 ]);
-const LAYOUT_ROUTE_EXPORTS = new Set(["default", "head", "generateHead", "Loading", "NotFound", "Error"]);
+const LAYOUT_ROUTE_EXPORTS = new Set([
+  "default",
+  "head",
+  "metadata",
+  "generateHead",
+  "generateMetadata",
+  "Loading",
+  "NotFound",
+  "Error",
+]);
 
 function validateRouteSourceExports(
   source: string,
@@ -220,6 +239,18 @@ function validateRouteSourceExports(
   }
   if (exported.has("head") && exported.has("generateHead")) {
     throw new Error(`[route-convention] head and generateHead cannot both be exported in ${filePath}`);
+  }
+  if (
+    !options.rootLayout &&
+    (exported.has("head") || exported.has("generateHead")) &&
+    (exported.has("metadata") || exported.has("generateMetadata"))
+  ) {
+    throw new Error(
+      `[route-convention] head/generateHead and metadata/generateMetadata cannot both be exported in ${filePath}`,
+    );
+  }
+  if (exported.has("metadata") && exported.has("generateMetadata")) {
+    throw new Error(`[route-convention] metadata and generateMetadata cannot both be exported in ${filePath}`);
   }
 }
 

@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import { type AkanRequestStore, type AkanTheme, pushRequestFallback, requestStorage } from "akanjs/fetch";
-import { type ReactNode, use } from "react";
+import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
 import { createFromNodeStream } from "react-server-dom-webpack/client.node";
 import type { SsrChunkRegistryStats, SsrFromRscInput, SsrLateRedirect } from "./ssrTypes";
@@ -446,7 +446,6 @@ export function interleaveRscScriptsWithHtml(
             if (done || errored) break;
             controller.enqueue(value);
             bootstrapDetector.observe(value);
-            flushPendingRscScripts();
           }
         } finally {
           htmlReader.releaseLock();
@@ -592,18 +591,18 @@ export class SsrFromRscRenderer {
       input.lateControl,
     );
 
-    function Root(): ReactNode {
-      return use(thenable);
-    }
-
     const bootstrap = input.extraBootstrapInline
       ? `${SsrFromRscRenderer.#clientBootstrap}\n${input.extraBootstrapInline}`
       : SsrFromRscRenderer.#clientBootstrap;
 
-    const renderHtml = () =>
-      renderToReadableStream(<Root />, {
+    const renderHtml = async () => {
+      const root = await thenable;
+      const stream = await renderToReadableStream(root, {
         bootstrapScriptContent: bootstrap,
       });
+      await stream.allReady;
+      return stream;
+    };
     const requestContext = input.requestStore ?? input.request;
     const htmlStream =
       requestContext && requestStorage ? await requestStorage.run(requestContext, renderHtml) : await renderHtml();

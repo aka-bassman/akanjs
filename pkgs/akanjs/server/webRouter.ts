@@ -38,6 +38,7 @@ import { createDefaultRobotsTxt } from "./robots";
 import { type RscRedirectMethod, type RscRedirectStatus, type RscRenderResult, RscWorker } from "./rscWorkerHost";
 import { createDefaultSitemapXml, getSitemapBasePath } from "./sitemap";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
+import type { RscTraceMetadata } from "./ssrTypes";
 import { createSystemPageResponse, getSystemPageHomeHref } from "./systemPages";
 import type { BaseBuildArtifact, HttpRoutes, RenderState } from "./types";
 
@@ -72,6 +73,15 @@ export function createRscStreamResponse(stream: BodyInit, status = 200): Respons
 
 export function createRscNotFoundFallbackResponse(): Response {
   return createRscStreamResponse("0:null\n", 404);
+}
+
+function appendRscTraceHeaders(headers: Headers, trace?: RscTraceMetadata): void {
+  if (!trace) return;
+  if (trace.navId) headers.set("X-Akan-Rsc-Nav-Id", trace.navId);
+  headers.set("X-Akan-Rsc-Pathname", trace.pathname);
+  headers.set("X-Akan-Rsc-Route", trace.routeId);
+  headers.set("X-Akan-Rsc-Cache", trace.cache);
+  if (trace.cacheKeyHash) headers.set("X-Akan-Rsc-Cache-Key", trace.cacheKeyHash);
 }
 
 export function cacheHtmlWhileStreaming(
@@ -161,7 +171,9 @@ export async function createRscNavigationStreamResponse(
   // known before stream start still use the header envelope in the caller;
   // redirects discovered after Flight bytes have left the worker stay in the
   // Flight stream with an Akan digest that the client strips before RSDW sees it.
-  return createRscStreamResponse(result.stream, result.status ?? 200);
+  const response = createRscStreamResponse(result.stream, result.status ?? 200);
+  appendRscTraceHeaders(response.headers, result.trace);
+  return response;
 }
 
 export function normalizeRscTargetUrlForHostBasePath(

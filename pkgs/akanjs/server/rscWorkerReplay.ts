@@ -1,7 +1,8 @@
 import type { RouteCacheRenderState } from "./cachePolicy";
+import type { RscTraceMetadata } from "./ssrTypes";
 
 export type CachedRscReplayMessage =
-  | { type: "meta"; requestId: string; theme?: string; status?: number }
+  | { type: "meta"; requestId: string; theme?: string; status?: number; trace?: RscTraceMetadata }
   | { type: "cache-state"; requestId: string; state: RouteCacheRenderState }
   | { type: "chunk"; requestId: string; data: Uint8Array }
   | { type: "end"; requestId: string };
@@ -15,6 +16,7 @@ export async function replayCachedRscResult(input: {
   chunks: readonly Uint8Array[];
   theme?: string;
   status?: number;
+  trace?: RscTraceMetadata;
   cacheState?: RouteCacheRenderState;
   send: (message: CachedRscReplayMessage) => void;
   isCancelled: () => boolean;
@@ -27,7 +29,14 @@ export async function replayCachedRscResult(input: {
       : 1;
   const yieldToHost = input.yieldToHost ?? yieldToHostEventLoop;
   if (input.isCancelled()) return false;
-  input.send({ type: "meta", requestId: input.requestId, theme: input.theme, status: input.status });
+  const metaMessage: CachedRscReplayMessage = {
+    type: "meta",
+    requestId: input.requestId,
+    theme: input.theme,
+    status: input.status,
+  };
+  if (input.trace) metaMessage.trace = input.trace;
+  input.send(metaMessage);
   input.send({ type: "cache-state", requestId: input.requestId, state: input.cacheState ?? { cacheable: true } });
   for (let index = 0; index < input.chunks.length; index += 1) {
     if (input.isCancelled()) return false;

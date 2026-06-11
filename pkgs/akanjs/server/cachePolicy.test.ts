@@ -10,6 +10,7 @@ import {
   normalizeRouteCacheTtl,
   parsePositiveInt,
   resolveAutoRouteCacheTtl,
+  resolvePublicRouteCacheEntry,
   resolveRouteCacheStoreTtl,
   shouldStoreRouteCache,
 } from "./cachePolicy";
@@ -133,6 +134,48 @@ describe("route cache policy helpers", () => {
     expect(isRouteCachePathAllowed("/docs-private", { allow: "/docs" })).toBe(false);
     expect(isRouteCachePathAllowed("/docs/private-ish", { allow: "/docs", deny: "/docs/private" })).toBe(true);
     expect(isRouteCachePathAllowed("/docs", { allow: " /blog, /docs ", deny: "/blog" })).toBe(true);
+  });
+
+  test("resolves public route cache entries behind env opt-in and request gates", () => {
+    const request = new Request("https://example.test/docs/intro?x=1", {
+      headers: { cookie: "theme=dark", "accept-language": "ko" },
+    });
+    const url = new URL(request.url);
+    const env = {
+      enabled: "1",
+      ttl: "45",
+      allow: "/docs",
+      deny: "/docs/private",
+    };
+
+    const entry = resolvePublicRouteCacheEntry({ request, url, theme: "dark", env });
+    expect(entry).toEqual({
+      key: createRouteCacheKey({ request, url, theme: "dark" }),
+      ttl: 45,
+    });
+    expect(resolvePublicRouteCacheEntry({ request, url, theme: "light", env })?.key).not.toBe(entry?.key);
+    expect(resolvePublicRouteCacheEntry({ request, url, env: { ...env, enabled: "0" } })).toBeNull();
+    expect(
+      resolvePublicRouteCacheEntry({
+        request,
+        url: new URL("https://example.test/docs/private/secret"),
+        env,
+      }),
+    ).toBeNull();
+    expect(
+      resolvePublicRouteCacheEntry({
+        request: new Request(request.url, { headers: { authorization: "Bearer token" } }),
+        url,
+        env,
+      }),
+    ).toBeNull();
+    expect(
+      resolvePublicRouteCacheEntry({
+        request: new Request(request.url, { headers: { cookie: "session=secret" } }),
+        url,
+        env,
+      }),
+    ).toBeNull();
   });
 
   test("resolves cache store TTL using min lifetime semantics", () => {

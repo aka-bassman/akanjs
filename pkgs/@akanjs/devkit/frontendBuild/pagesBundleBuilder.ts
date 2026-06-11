@@ -64,6 +64,7 @@ export class PagesBundleBuilder {
       define: this.#define(),
       plugins: [
         PagesBundleBuilder.createPagesEntryPlugin(entrySource),
+        PagesBundleBuilder.createServerCssStubPlugin(),
         await createExternalizeFrameworkPlugin({ app: this.#app, extra: akanConfig.externalLibs }),
         akanConfig.barrelImports.length > 0
           ? await createBarrelImportsPlugin(this.#app, {
@@ -130,6 +131,18 @@ export class PagesBundleBuilder {
         build.onLoad({ filter: /^akan-pages-entry$/, namespace: "akan-virtual" }, () => ({
           contents: source,
           loader: "tsx",
+        }));
+      },
+    };
+  }
+
+  static createServerCssStubPlugin(): BunPlugin {
+    return {
+      name: "akan-server-css-stub",
+      setup(build) {
+        build.onLoad({ filter: /\.css$/ }, () => ({
+          contents: "",
+          loader: "js",
         }));
       },
     };

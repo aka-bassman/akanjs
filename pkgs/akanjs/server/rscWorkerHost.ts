@@ -6,7 +6,7 @@ import type { AkanTheme } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
 import type { ClientManifest } from "./artifact";
 import type { RouteCacheRenderState } from "./cachePolicy";
-import type { SsrLateRedirect } from "./ssrTypes";
+import type { RscTraceMetadata, SsrLateRedirect } from "./ssrTypes";
 import type { BaseBuildArtifact, CssAsset } from "./types";
 
 // This is a bounded queue guard, not a pause/resume backpressure protocol.
@@ -18,7 +18,7 @@ export interface RscPending {
   onChunk: (data: Uint8Array) => void;
   onEnd: () => void;
   onError: (message: string) => void;
-  onMeta?: (meta: { theme?: AkanTheme; status?: number }) => void;
+  onMeta?: (meta: { theme?: AkanTheme; status?: number; trace?: RscTraceMetadata }) => void;
   onCacheState?: (state: RouteCacheRenderState) => void;
   onRedirect?: (location: string, method: RscRedirectMethod, status: RscRedirectStatus) => void;
   onLateRedirect?: (location: string, method: RscRedirectMethod, status: RscRedirectStatus) => void;
@@ -39,6 +39,7 @@ export type RscRenderResult =
       stream: ReadableStream<Uint8Array>;
       theme?: AkanTheme;
       status?: number;
+      trace?: RscTraceMetadata;
       lateControl: Promise<SsrLateRedirect | null>;
       cacheState: Promise<RouteCacheRenderState>;
       cancel: (reason?: unknown) => void;
@@ -92,6 +93,7 @@ export function createRscHostRenderStream(input: {
   let stream!: ReadableStream<Uint8Array>;
   let theme: AkanTheme | undefined;
   let status: number | undefined;
+  let trace: RscTraceMetadata | undefined;
   let resolveLateControl!: (control: SsrLateRedirect | null) => void;
   let resolveCacheState!: (state: RouteCacheRenderState) => void;
   const lateControl = new Promise<SsrLateRedirect | null>((resolve) => {
@@ -143,12 +145,13 @@ export function createRscHostRenderStream(input: {
         const settleStream = () => {
           if (settled) return;
           settled = true;
-          resolve({ type: "stream", stream, theme, status, lateControl, cacheState, cancel: cancelRender });
+          resolve({ type: "stream", stream, theme, status, trace, lateControl, cacheState, cancel: cancelRender });
         };
         input.setPending({
           onMeta: (meta) => {
             theme = meta.theme;
             status = meta.status;
+            trace = meta.trace;
             settleStream();
           },
           onChunk: (data) => {
@@ -237,7 +240,7 @@ type RscInMsg =
   | { type: "hello" }
   | { type: "ready" }
   | { type: "reloaded"; buildId: number }
-  | { type: "meta"; requestId: string; theme?: AkanTheme; status?: number }
+  | { type: "meta"; requestId: string; theme?: AkanTheme; status?: number; trace?: RscTraceMetadata }
   | { type: "cache-state"; requestId: string; state: RouteCacheRenderState }
   | { type: "chunk"; requestId: string; data: Uint8Array }
   | { type: "end"; requestId: string }
@@ -623,7 +626,9 @@ export class RscWorker {
         this.#pending.get(message.requestId)?.onChunk(message.data);
         return;
       case "meta":
-        this.#pending.get(message.requestId)?.onMeta?.({ theme: message.theme, status: message.status });
+        this.#pending
+          .get(message.requestId)
+          ?.onMeta?.({ theme: message.theme, status: message.status, trace: message.trace });
         return;
       case "end":
         this.#resolvePending(message.requestId, (p) => p.onEnd());

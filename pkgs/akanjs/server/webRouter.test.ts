@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_AKAN_I18N } from "akanjs/common";
 import { createRequestStore } from "akanjs/fetch";
-import type { RouteCacheRenderState } from "./cachePolicy";
+import {
+  createRouteCacheEntry,
+  isPublicRouteCacheableRequest,
+  type RouteCacheRenderState,
+  resolveRouteCacheStoreTtl,
+  shouldStoreRouteCache,
+} from "./cachePolicy";
 import type { RscRenderResult } from "./rscWorkerHost";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
 import type { SsrLateRedirect } from "./ssrTypes";
@@ -265,6 +271,34 @@ describe("WebRouter RSC stream response", () => {
     await expect(response.text()).resolves.toBe('0:E{"digest":"AKAN_REDIRECT"}\n');
   });
 
+  test("exposes RSC navigation trace metadata on response headers", async () => {
+    const response = await createRscNavigationStreamResponse({
+      type: "stream",
+      stream: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode("0:null\n"));
+          controller.close();
+        },
+      }),
+      trace: {
+        navId: "7",
+        pathname: "/en/docs",
+        routeId: "/:lang/docs",
+        cache: "hit",
+        cacheKeyHash: "abc123",
+      },
+      lateControl: Promise.resolve(null),
+      cacheState: Promise.resolve({ cacheable: true }),
+      cancel: () => {},
+    });
+
+    expect(response.headers.get("X-Akan-Rsc-Nav-Id")).toBe("7");
+    expect(response.headers.get("X-Akan-Rsc-Pathname")).toBe("/en/docs");
+    expect(response.headers.get("X-Akan-Rsc-Route")).toBe("/:lang/docs");
+    expect(response.headers.get("X-Akan-Rsc-Cache")).toBe("hit");
+    expect(response.headers.get("X-Akan-Rsc-Cache-Key")).toBe("abc123");
+  });
+
   test("streams RSC navigation Flight without waiting for completion", async () => {
     let releaseSecond!: () => void;
     const response = await createRscNavigationStreamResponse({
@@ -301,6 +335,31 @@ describe("WebRouter RSC stream response", () => {
     await reader?.cancel();
   });
 
+  test("propagates RSC navigation response cancellation to the source stream", async () => {
+    let cancelledReason: unknown;
+    const response = await createRscNavigationStreamResponse({
+      type: "stream",
+      stream: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode("first"));
+        },
+        cancel(reason) {
+          cancelledReason = reason;
+        },
+      }),
+      lateControl: new Promise(() => {}),
+      cacheState: Promise.resolve({ cacheable: false, reason: "cancelled" }),
+      cancel: () => {},
+    });
+    const reader = response.body?.getReader();
+    const reason = new Error("client disconnected");
+
+    await reader?.read();
+    await reader?.cancel(reason);
+
+    expect(cancelledReason).toBe(reason);
+  });
+
   test("preserves RSC navigation status while streaming", async () => {
     const response = await createRscNavigationStreamResponse({
       type: "stream",
@@ -318,11 +377,73 @@ describe("WebRouter RSC stream response", () => {
 
     expect(response.status).toBe(404);
     expect(response.headers.get("Content-Type")).toBe("text/x-component; charset=utf-8");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     await expect(response.text()).resolves.toBe("flight");
   });
 });
 
 describe("WebRouter HTML cache streaming", () => {
+  test("uses public route cache identity without mixing TTL into the key", () => {
+    const request = new Request("https://example.test/docs?tab=a", {
+      headers: {
+        "accept-language": "ko",
+        cookie: "theme=dark",
+        "x-base-path": "akanjs",
+        "x-locale": "ko",
+      },
+    });
+    const url = new URL(request.url);
+
+    expect(isPublicRouteCacheableRequest(request)).toBe(true);
+    expect(isPublicRouteCacheableRequest(new Request(request, { headers: { authorization: "Bearer token" } }))).toBe(
+      false,
+    );
+    expect(
+      isPublicRouteCacheableRequest(
+        new Request("https://example.test/docs", {
+          headers: { cookie: "theme=dark; session=private" },
+        }),
+      ),
+    ).toBe(false);
+
+    const shortTtl = createRouteCacheEntry({ request, url, theme: "dark", ttl: 5 });
+    const longTtl = createRouteCacheEntry({ request, url, theme: "dark", ttl: 60 });
+    expect(shortTtl.key).toBe(longTtl.key);
+    expect(shortTtl.ttl).toBe(5);
+    expect(longTtl.ttl).toBe(60);
+  });
+
+  test("blocks route cache writes for dynamic request APIs and render controls", () => {
+    const dynamicState = shouldStoreRouteCache({
+      policy: { routeId: "/docs", revalidate: 60, tags: new Set(["docs"]) },
+      dynamicUsage: { headers: true, cookies: false },
+    });
+    const redirectState = shouldStoreRouteCache({
+      policy: { routeId: "/docs", revalidate: 60, tags: new Set(["docs"]) },
+      dynamicUsage: { headers: false, cookies: false },
+      renderControlType: "redirect",
+      lateRedirect: true,
+    });
+
+    expect(dynamicState).toEqual({
+      cacheable: false,
+      revalidate: 60,
+      tags: ["docs"],
+      dynamicUsage: { headers: true, cookies: false },
+      reason: "dynamic-request-api",
+    });
+    expect(redirectState).toEqual({
+      cacheable: false,
+      revalidate: 60,
+      tags: ["docs"],
+      dynamicUsage: { headers: false, cookies: false },
+      reason: "late-redirect",
+    });
+    expect(resolveRouteCacheStoreTtl(120, { cacheable: true, revalidate: 30 })).toBe(30);
+    expect(resolveRouteCacheStoreTtl(120, dynamicState)).toBeNull();
+    expect(resolveRouteCacheStoreTtl(120, { cacheable: true, revalidate: false })).toBeNull();
+  });
+
   test("uses shared allow and deny semantics for HTML cache paths", () => {
     const env = {
       AKAN_HTML_RESULT_CACHE_PATHS: " /docs, /blog ",
@@ -447,6 +568,15 @@ describe("WebRouter HTML cache streaming", () => {
         baseTtl: 120,
         workerCacheState: { cacheable: true, revalidate: 60 },
         hostRequestStore: hostStore,
+      }),
+    ).toBeNull();
+    hostStore.dynamicUsage.headers = false;
+    expect(
+      resolveHtmlRouteCacheStoreTtl({
+        baseTtl: 120,
+        workerCacheState: { cacheable: true, revalidate: 60 },
+        hostRequestStore: hostStore,
+        lateControl: { type: "redirect" },
       }),
     ).toBeNull();
   });

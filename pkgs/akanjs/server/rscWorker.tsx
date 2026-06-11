@@ -19,14 +19,11 @@ import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-server-dom-webpack/server.node";
 import type { ClientManifest } from "./artifact";
 import {
-  createRouteCacheEntry,
-  isPublicRouteCacheableRequest,
-  isRouteCachePathAllowed,
   LruTtlCache,
   parsePositiveInt,
   type RouteCacheEntry,
   type RouteCacheRenderState,
-  resolveAutoRouteCacheTtl,
+  resolvePublicRouteCacheEntry,
   resolveRouteCacheStoreTtl,
   shouldStoreRouteCache,
 } from "./cachePolicy";
@@ -36,6 +33,7 @@ import { RouteElementComposer } from "./routeElementComposer";
 import { type PagesContext, RouteTreeBuilder } from "./routeTreeBuilder";
 import { encodeAkanRedirectDigest } from "./rscHttp";
 import { replayCachedRscResult } from "./rscWorkerReplay";
+import type { RscTraceMetadata } from "./ssrTypes";
 import { createSystemPageDocument, getSystemPageHomeHref } from "./systemPages";
 
 interface InitMsg {
@@ -87,6 +85,12 @@ interface FlightRenderResult {
   control: RenderControl | null;
   lateControlSent: boolean;
   cancelled: boolean;
+}
+
+function hashRscTraceCacheKey(cacheKey: string): string {
+  let hash = 5381;
+  for (let index = 0; index < cacheKey.length; index += 1) hash = (hash * 33) ^ cacheKey.charCodeAt(index);
+  return (hash >>> 0).toString(36);
 }
 
 interface RscRendererStats {
@@ -351,6 +355,16 @@ class RscRenderer {
         else this.#logger.verbose(`render[${requestId}] no route matched pathname=${urlObj.pathname} — rendering 404`);
         const beforeLoadedKeys = RouteTreeBuilder.getCacheStats().loadedModuleKeys;
         const cacheEntry = match ? this.#getResultCacheEntry(request, urlObj) : null;
+        const traceBase = {
+          navId: requestId,
+          pathname: urlObj.pathname,
+          routeId,
+          ...(cacheEntry ? { cacheKeyHash: hashRscTraceCacheKey(cacheEntry.key) } : {}),
+        };
+        const trace: RscTraceMetadata = {
+          ...traceBase,
+          cache: cacheEntry ? "miss" : "bypass",
+        };
         const cached = cacheEntry ? this.#getCachedResult(cacheEntry.key) : null;
         if (cached) {
           this.#stats.lastRenderDurationMs = Date.now() - startedAt;
@@ -366,6 +380,7 @@ class RscRenderer {
             chunks: cached.chunks,
             theme: cached.theme,
             cacheState: cached.cacheState,
+            trace: { ...traceBase, cache: "hit" },
             send: (message) => this.#send(message),
             isCancelled: () => this.#cancelledRenderRequests.has(requestId),
           });
@@ -381,6 +396,7 @@ class RscRenderer {
           requestId,
           collectChunks: cacheEntry !== null,
           status: match ? undefined : 404,
+          trace,
           onComplete: ({ chunks, bytes, chunksCount, control, lateControlSent }) => {
             const cacheState = shouldStoreRouteCache({
               policy: getRequestPolicy(),
@@ -417,7 +433,7 @@ class RscRenderer {
             const systemResult = await this.#renderFlightElement(
               this.#renderSystemNotFound(urlObj),
               msg.clientManifest ?? this.#clientManifest,
-              { requestId, status: 404 },
+              { requestId, status: 404, trace },
             );
             if (systemResult.cancelled) return;
             if (!systemResult.control) {
@@ -437,6 +453,7 @@ class RscRenderer {
               url: urlObj,
               error: control.type === "error" ? control.error : undefined,
               clientManifest: msg.clientManifest ?? this.#clientManifest,
+              trace,
             }))
           ) {
             return;
@@ -447,6 +464,7 @@ class RscRenderer {
               requestId,
               url: urlObj,
               clientManifest: msg.clientManifest ?? this.#clientManifest,
+              trace,
             }))
           ) {
             return;
@@ -600,6 +618,7 @@ class RscRenderer {
       requestId?: string;
       collectChunks?: boolean;
       status?: number;
+      trace?: RscTraceMetadata;
       onComplete?: (result: {
         chunks: Uint8Array[];
         bytes: number;
@@ -644,7 +663,13 @@ class RscRenderer {
     const sendMeta = () => {
       if (!options.requestId || sentMeta) return;
       sentMeta = true;
-      this.#send({ type: "meta", requestId: options.requestId, theme: getRequestTheme(), status: options.status });
+      this.#send({
+        type: "meta",
+        requestId: options.requestId,
+        theme: getRequestTheme(),
+        status: options.status,
+        trace: options.trace,
+      });
     };
     const sendLateRedirect = () => {
       if (!options.requestId || lateControlSent || controlRef.current?.type !== "redirect") return;
@@ -727,6 +752,7 @@ class RscRenderer {
     url,
     error,
     clientManifest,
+    trace,
   }: {
     requestId: string;
     kind: "not-found" | "error";
@@ -737,6 +763,7 @@ class RscRenderer {
     url: URL;
     error?: unknown;
     clientManifest: ClientManifest;
+    trace?: RscTraceMetadata;
   }): Promise<boolean> {
     try {
       const element = await this.#renderFallbackDocument({
@@ -753,6 +780,7 @@ class RscRenderer {
       const result = await this.#renderFlightElement(element, clientManifest, {
         requestId,
         status: kind === "not-found" ? 404 : 500,
+        trace,
       });
       if (result.cancelled) return true;
       if (result.control) return false;
@@ -775,15 +803,18 @@ class RscRenderer {
     requestId,
     url,
     clientManifest,
+    trace,
   }: {
     requestId: string;
     url: URL;
     clientManifest: ClientManifest;
+    trace?: RscTraceMetadata;
   }): Promise<boolean> {
     try {
       const result = await this.#renderFlightElement(this.#renderSystemNotFound(url), clientManifest, {
         requestId,
         status: 404,
+        trace,
       });
       if (result.cancelled) return true;
       if (result.control) return false;
@@ -845,28 +876,19 @@ class RscRenderer {
   }
 
   #getResultCacheEntry(request: Request, url: URL): RouteCacheEntry | null {
-    const ttl = resolveAutoRouteCacheTtl({
-      enabled: process.env.AKAN_RSC_RESULT_CACHE,
-      ttl: process.env.AKAN_RSC_RESULT_CACHE_TTL,
-    });
-    if (ttl === null) {
-      this.#resultCacheBypass += 1;
-      return null;
-    }
-    if (
-      !isRouteCachePathAllowed(url.pathname, {
+    const entry = resolvePublicRouteCacheEntry({
+      request,
+      url,
+      theme: untrackedCookies().get("theme")?.value,
+      env: {
+        enabled: process.env.AKAN_RSC_RESULT_CACHE,
+        ttl: process.env.AKAN_RSC_RESULT_CACHE_TTL,
         allow: process.env.AKAN_RSC_RESULT_CACHE_PATHS,
         deny: process.env.AKAN_RSC_RESULT_CACHE_EXCLUDE_PATHS,
-      })
-    ) {
-      this.#resultCacheBypass += 1;
-      return null;
-    }
-    if (!isPublicRouteCacheableRequest(request)) {
-      this.#resultCacheBypass += 1;
-      return null;
-    }
-    return createRouteCacheEntry({ request, url, theme: untrackedCookies().get("theme")?.value, ttl });
+      },
+    });
+    if (!entry) this.#resultCacheBypass += 1;
+    return entry;
   }
 
   #getCachedResult(cacheKey: string): CachedRscResult | null {

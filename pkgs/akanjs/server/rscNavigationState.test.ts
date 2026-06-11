@@ -148,6 +148,29 @@ describe("RSC navigation state helpers", () => {
     expect(errors).toEqual([]);
   });
 
+  test("does not remove a newer same-href navigation when a stale thenable rejects", async () => {
+    const cache = new Map<string, Promise<string>>();
+    const staleThenable = Promise.reject(new Error("stale"));
+    staleThenable.catch(() => {});
+    const latestThenable = Promise.resolve("latest");
+    const errors: unknown[] = [];
+
+    cache.set("/same", latestThenable);
+    observeRscNavigation({
+      cache,
+      href: "/same",
+      thenable: staleThenable,
+      navId: 1,
+      getCurrentNavId: () => 2,
+      onLatestError: (error) => errors.push(error),
+    });
+
+    await tick();
+
+    expect(cache.get("/same")).toBe(latestThenable);
+    expect(errors).toEqual([]);
+  });
+
   test("ignores expected redirect navigation errors", async () => {
     const cache = new Map<string, Promise<string>>();
     const redirectError = new Error("redirect started");

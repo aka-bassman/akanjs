@@ -205,6 +205,30 @@ describe("RscWorker host render stream", () => {
       status: 308,
     });
   });
+
+  test("preserves worker cache state that arrives before stream end", async () => {
+    const harness = createHostRenderHarness();
+
+    harness.pending().onMeta?.({});
+    const result = await harness.result;
+    expect(result.type).toBe("stream");
+    if (result.type !== "stream") throw new Error("expected stream result");
+
+    harness.pending().onCacheState?.({
+      cacheable: true,
+      revalidate: 15,
+      dynamicUsage: { headers: false, cookies: false },
+    });
+    harness.pending().onChunk(new TextEncoder().encode("flight"));
+    harness.pending().onEnd();
+
+    expect(await new Response(result.stream).text()).toBe("flight");
+    await expect(result.cacheState).resolves.toEqual({
+      cacheable: true,
+      revalidate: 15,
+      dynamicUsage: { headers: false, cookies: false },
+    });
+  });
 });
 
 describe("RscWorker render cancellation", () => {
@@ -259,5 +283,39 @@ describe("RscWorker cached result replay", () => {
       state: { cacheable: true, revalidate: 30 },
     });
     expect(messages[2]).toEqual({ type: "chunk", requestId: "request-1", data: new Uint8Array([1]) });
+  });
+
+  test("forwards cached replay trace metadata in the meta message", async () => {
+    const messages: CachedRscReplayMessage[] = [];
+    const completed = await replayCachedRscResult({
+      requestId: "request-2",
+      chunks: [],
+      trace: {
+        navId: "9",
+        pathname: "/en/docs",
+        routeId: "/:lang/docs",
+        cache: "hit",
+        cacheKeyHash: "cache-key",
+      },
+      send: (message) => {
+        messages.push(message);
+      },
+      isCancelled: () => false,
+    });
+
+    expect(completed).toBe(true);
+    expect(messages[0]).toEqual({
+      type: "meta",
+      requestId: "request-2",
+      theme: undefined,
+      status: undefined,
+      trace: {
+        navId: "9",
+        pathname: "/en/docs",
+        routeId: "/:lang/docs",
+        cache: "hit",
+        cacheKeyHash: "cache-key",
+      },
+    });
   });
 });

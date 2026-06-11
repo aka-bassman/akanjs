@@ -8,6 +8,7 @@ import { CsrArtifactBuilder } from "./csrArtifactBuilder";
 import { CssCompiler, isIgnoredNodeModuleSource } from "./cssCompiler";
 import { CssImportResolver } from "./cssImportResolver";
 import { HmrChangeClassifier } from "./hmrChangeClassifier";
+import { PagesBundleBuilder } from "./pagesBundleBuilder";
 import { PagesEntrySourceGenerator } from "./pagesEntrySourceGenerator";
 import { RoutesManifestArtifactSerializer } from "./routesManifestArtifactSerializer";
 import { prepareCssAsset } from "./ssrBaseArtifactBuilder";
@@ -92,6 +93,32 @@ describe("PagesEntrySourceGenerator", () => {
     expect(source).toContain('"./typed.tsx": { loader: async () => page2, isAsyncDefault: true },');
     expect(source).toContain('"./expression.tsx": { loader: async () => page3, isAsyncDefault: true },');
     expect(source).toContain('"./named-export.tsx": { loader: async () => page4, isAsyncDefault: true },');
+  });
+});
+
+describe("PagesBundleBuilder", () => {
+  test("stubs CSS imports in the server pages bundle", async () => {
+    const root = await makeTempRoot();
+    const entry = path.join(root, "entry.tsx");
+    const css = path.join(root, "styles.css");
+    const outdir = path.join(root, "out");
+    await write(entry, ['import "./styles.css";', "export const marker = 1;", ""].join("\n"));
+    await write(
+      css,
+      ['@plugin "daisyui" {', "  themes: false;", "}", "@theme {", "  --color-primary: red;", "}", ""].join("\n"),
+    );
+
+    const result = await Bun.build({
+      entrypoints: [entry],
+      outdir,
+      target: "bun",
+      format: "esm",
+      plugins: [PagesBundleBuilder.createServerCssStubPlugin()],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.logs).toEqual([]);
+    expect(result.outputs.some((output) => output.kind === "entry-point")).toBe(true);
   });
 });
 
