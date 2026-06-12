@@ -1,10 +1,12 @@
 import { round, sleep } from "./lib";
 
 interface AkanMetricsResponse {
+  rooms?: number;
+  sockets?: number;
   gateway?: { rssBytes?: number; cpuUserMicros?: number; cpuSystemMicros?: number; eventLoopLagP99Ms?: number };
   proxyHop?: { meanMs?: number; maxMs?: number } | null;
   children?: Array<{
-    metrics?: { rssBytes?: number; eventLoopLagP99Ms?: number; trace?: unknown };
+    metrics?: { rssBytes?: number; eventLoopLagP99Ms?: number; activeWebSockets?: number; trace?: unknown };
   }>;
 }
 
@@ -13,6 +15,9 @@ export interface ResourceSummary {
   avgRssMb: number | null;
   peakCpuPct: number | null;
   eventLoopLagP99Ms: number | null;
+  maxRooms?: number | null;
+  maxTrackedSockets?: number | null;
+  maxActiveWebSockets?: number | null;
   proxyHopMeanMs?: number | null;
   samples: number;
   trace?: unknown;
@@ -29,6 +34,9 @@ export class ResourceSampler {
   #cpuSamples: number[] = [];
   #lagSamples: number[] = [];
   #proxyHop: number[] = [];
+  #roomSamples: number[] = [];
+  #trackedSocketSamples: number[] = [];
+  #activeWebSocketSamples: number[] = [];
   #lastTrace: unknown;
 
   constructor(private readonly opts: { pid?: number; metricsUrl?: string; intervalMs?: number }) {}
@@ -51,9 +59,11 @@ export class ResourceSampler {
       const data = (await res.json()) as AkanMetricsResponse;
       let rss = data.gateway?.rssBytes ?? 0;
       let lag = data.gateway?.eventLoopLagP99Ms ?? 0;
+      let activeWebSockets = 0;
       for (const child of data.children ?? []) {
         rss += child.metrics?.rssBytes ?? 0;
         lag = Math.max(lag, child.metrics?.eventLoopLagP99Ms ?? 0);
+        activeWebSockets += child.metrics?.activeWebSockets ?? 0;
         // Workers report metrics on an interval, so keep the richest trace seen (most
         // endpoints) rather than the latest, which can be a pre-load empty snapshot.
         const trace = child.metrics?.trace as { endpoints?: unknown[] } | undefined;
@@ -64,6 +74,9 @@ export class ResourceSampler {
       }
       if (rss) this.#rssSamples.push(rss / 1024 / 1024);
       if (lag) this.#lagSamples.push(lag);
+      if (typeof data.rooms === "number") this.#roomSamples.push(data.rooms);
+      if (typeof data.sockets === "number") this.#trackedSocketSamples.push(data.sockets);
+      if (activeWebSockets) this.#activeWebSocketSamples.push(activeWebSockets);
       if (data.proxyHop?.meanMs != null) this.#proxyHop.push(data.proxyHop.meanMs);
     } catch {
       // metrics endpoint not ready / transient
@@ -100,6 +113,9 @@ export class ResourceSampler {
       avgRssMb: round(avg(this.#rssSamples)),
       peakCpuPct: round(max(this.#cpuSamples)),
       eventLoopLagP99Ms: round(p99(this.#lagSamples)),
+      maxRooms: round(max(this.#roomSamples)),
+      maxTrackedSockets: round(max(this.#trackedSocketSamples)),
+      maxActiveWebSockets: round(max(this.#activeWebSocketSamples)),
       proxyHopMeanMs: this.#proxyHop.length ? round(avg(this.#proxyHop)) : null,
       samples: this.#rssSamples.length,
       trace: this.#lastTrace,

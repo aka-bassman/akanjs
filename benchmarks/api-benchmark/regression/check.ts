@@ -20,8 +20,10 @@ interface RunRecord {
   result?: {
     rps?: number;
     iterationsPerSec?: number;
+    messagesPerSec?: number;
     latencyMs?: { p99?: number };
     iterationMs?: { p99?: number };
+    deliveryLatencyMs?: { p99?: number };
   } | null;
   resource?: { maxRssMb?: number | null };
 }
@@ -38,8 +40,9 @@ interface Baseline {
 const BASELINE_DIR = path.join(BENCH_ROOT, "regression", "baselines");
 
 const extract = (record: RunRecord) => {
-  const p99Ms = record.result?.latencyMs?.p99 ?? record.result?.iterationMs?.p99 ?? null;
-  const rps = record.result?.rps ?? record.result?.iterationsPerSec ?? null;
+  const p99Ms =
+    record.result?.latencyMs?.p99 ?? record.result?.iterationMs?.p99 ?? record.result?.deliveryLatencyMs?.p99 ?? null;
+  const rps = record.result?.rps ?? record.result?.iterationsPerSec ?? record.result?.messagesPerSec ?? null;
   const maxRssMb = record.resource?.maxRssMb ?? null;
   return { p99Ms, rps, maxRssMb };
 };

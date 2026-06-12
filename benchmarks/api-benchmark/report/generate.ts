@@ -44,11 +44,18 @@ interface RunRecord {
     errorRate?: number;
     latencyMs?: { p50?: number; med?: number; p99?: number; max?: number };
     iterationMs?: { p99?: number };
+    connections?: number;
+    messagesPerSec?: number;
+    dropRate?: number;
+    deliveryLatencyMs?: { p50?: number; p95?: number; p99?: number; max?: number };
   } | null;
   resource?: {
     maxRssMb?: number | null;
     peakCpuPct?: number | null;
     eventLoopLagP99Ms?: number | null;
+    maxRooms?: number | null;
+    maxTrackedSockets?: number | null;
+    maxActiveWebSockets?: number | null;
     proxyHopMeanMs?: number | null;
     trace?: TraceSnapshot;
   };
@@ -60,6 +67,11 @@ interface RunRecord {
 }
 
 const fmt = (v: number | null | undefined, suffix = "") => (typeof v === "number" ? `${v}${suffix}` : "—");
+const fmtPct = (v: number | null | undefined) => (typeof v === "number" ? `${Math.round(v * 1000) / 10}%` : "—");
+const rssPer1k = (rssMb: number | null | undefined, connections: number | null | undefined) =>
+  typeof rssMb === "number" && typeof connections === "number" && connections > 0
+    ? Math.round((rssMb / (connections / 1000)) * 100) / 100
+    : null;
 
 const surfaceLabel = (surface: string) =>
   (
@@ -115,6 +127,8 @@ const main = async () => {
     "> Goal: show that akanjs measures at a reasonable level versus mainstream frameworks, and surface internal hotspots to improve. These are not claims of strict superiority.",
   );
   lines.push("");
+  lines.push("> **Akan.js target version:** 2.2.12.");
+  lines.push("");
   lines.push(
     "> **Runtime caveat:** rows tagged `(node)` run on Node.js, the rest on Bun. Cross-runtime numbers are indicative only — differences partly reflect the runtime, not just the framework.",
   );
@@ -136,6 +150,23 @@ const main = async () => {
     if (surface === "signal") lines.push("_Normal Signal request path without DB, isolating framework overhead._");
     if (surface === "db")
       lines.push("_Document DB business path including DB access, hydration, DataLoader, and serialization._");
+    if (surface === "websocket") {
+      lines.push(
+        "_1 publisher to N subscribers fan-out. Local stress rows include load-generator and OS scheduling caveats._",
+      );
+      lines.push("");
+      lines.push(
+        "| Target | Runtime | Connections | Msg/s | p50 delivery (ms) | p99 delivery (ms) | Drop % | Peak RSS (MB) | RSS/1k conn (MB) | Event-loop lag p99 (ms) | SLO |",
+      );
+      lines.push("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |");
+      for (const r of recs.sort((a, b) => (b.result?.messagesPerSec ?? 0) - (a.result?.messagesPerSec ?? 0))) {
+        const connections = r.result?.connections;
+        lines.push(
+          `| ${r.targetLabel} | ${r.runtime} | ${fmt(connections)} | ${fmt(r.result?.messagesPerSec && Math.round(r.result.messagesPerSec))} | ${fmt(r.result?.deliveryLatencyMs?.p50)} | ${fmt(r.result?.deliveryLatencyMs?.p99)} | ${fmtPct(r.result?.dropRate)} | ${fmt(r.resource?.maxRssMb)} | ${fmt(rssPer1k(r.resource?.maxRssMb, connections))} | ${fmt(r.resource?.eventLoopLagP99Ms)} | ${sloLabel(r.slo)} |`,
+        );
+      }
+      continue;
+    }
     lines.push("");
     lines.push("| Target | Runtime | Scenario | RPS | p50 (ms) | p99 (ms) | Err % | Peak RSS (MB) | SLO |");
     lines.push("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | :---: |");
@@ -245,7 +276,10 @@ const main = async () => {
       surface,
       labels: recs.map((r) => r.targetLabel),
       rps: recs.map((r) => Math.round(r.result?.rps ?? r.result?.iterationsPerSec ?? 0)),
-      p99Ms: recs.map((r) => r.result?.latencyMs?.p99 ?? r.result?.iterationMs?.p99 ?? null),
+      p99Ms: recs.map(
+        (r) => r.result?.latencyMs?.p99 ?? r.result?.iterationMs?.p99 ?? r.result?.deliveryLatencyMs?.p99 ?? null,
+      ),
+      messagesPerSec: recs.map((r) => Math.round(r.result?.messagesPerSec ?? 0)),
       rssMb: recs.map((r) => r.resource?.maxRssMb ?? null),
       runtime: recs.map((r) => r.runtime),
     })),

@@ -80,6 +80,7 @@ const competitor = (
   env: { PORT: String(port) },
   port,
   baseUrl: `http://127.0.0.1:${port}`,
+  wsUrl: surfaces.includes("websocket") ? `ws://127.0.0.1:${port}/ws` : undefined,
   paths: canonicalPaths(),
   surfaces,
 });
@@ -104,11 +105,15 @@ const AKAN_ADMIN_CREDENTIALS = {
   accountId: process.env.BENCH_AKAN_ADMIN_ACCOUNT_ID ?? "bench-admin@akanjs.com",
   password: process.env.BENCH_AKAN_ADMIN_PASSWORD ?? "benchadmin1234",
 };
+const AKAN_DEFAULT_DEV_PORT = 8283;
+const AKAN_PORT = Number(process.env.BENCH_AKAN_PORT ?? String(AKAN_DEFAULT_DEV_PORT));
+const AKAN_PORT_OFFSET = AKAN_PORT - AKAN_DEFAULT_DEV_PORT;
 
 export const TARGETS: Record<string, Target> = {
   "raw-bun": competitor("raw-bun", "raw Bun.serve", "competitors/raw-bun/server.ts", 4001, "bun", "bun", [
     "pure_http",
     "rest",
+    "websocket",
     "fullstack",
   ]),
   elysia: competitor("elysia", "ElysiaJS (Bun)", "competitors/elysia/server.ts", 4002, "bun", "bun", [
@@ -145,6 +150,10 @@ export const TARGETS: Record<string, Target> = {
     cwd: path.resolve(BENCH_ROOT, ".."),
     env: {
       AKAN_PUBLIC_OPERATION_MODE: "local",
+      PORT_OFFSET: String(AKAN_PORT_OFFSET),
+      PORT: String(AKAN_PORT),
+      AKAN_PUBLIC_CLIENT_PORT: String(AKAN_PORT),
+      AKAN_PUBLIC_SERVER_PORT: String(AKAN_PORT),
       SERVER_MODE: "all",
       AKAN_PUBLIC_LOG_LEVEL: "warn",
       AKAN_LOG_FILE_LEVEL: "warn",
@@ -152,10 +161,10 @@ export const TARGETS: Record<string, Target> = {
       AKAN_MEMORY_LOG: "1",
       AKAN_MEMORY_LOG_INTERVAL_MS: "1000",
     },
-    port: 8282,
-    baseUrl: "http://127.0.0.1:8282",
-    wsUrl: "ws://127.0.0.1:8282/api/ws",
-    metricsUrl: "http://127.0.0.1:8282/_akan/app/metrics",
+    port: AKAN_PORT,
+    baseUrl: `http://127.0.0.1:${AKAN_PORT}`,
+    wsUrl: `ws://127.0.0.1:${AKAN_PORT}/api/ws`,
+    metricsUrl: `http://127.0.0.1:${AKAN_PORT}/_akan/app/metrics`,
     paths: AKAN_USER_PATHS,
     loginCredentials: AKAN_ADMIN_CREDENTIALS,
     seed: { count: Number(process.env.BENCH_AKAN_SEED ?? "10000"), bodyKey: "data" },
@@ -171,6 +180,10 @@ export const TARGETS: Record<string, Target> = {
     cwd: path.resolve(BENCH_ROOT, ".."),
     env: {
       AKAN_PUBLIC_OPERATION_MODE: "cluster",
+      PORT_OFFSET: String(AKAN_PORT_OFFSET),
+      PORT: String(AKAN_PORT),
+      AKAN_PUBLIC_CLIENT_PORT: String(AKAN_PORT),
+      AKAN_PUBLIC_SERVER_PORT: String(AKAN_PORT),
       SERVER_MODE: "federation",
       AKAN_PUBLIC_LOG_LEVEL: "warn",
       AKAN_LOG_FILE_LEVEL: "warn",
@@ -179,10 +192,10 @@ export const TARGETS: Record<string, Target> = {
       AKAN_MEMORY_LOG: "1",
       AKAN_MEMORY_LOG_INTERVAL_MS: "1000",
     },
-    port: 8282,
-    baseUrl: "http://127.0.0.1:8282",
-    wsUrl: "ws://127.0.0.1:8282/api/ws",
-    metricsUrl: "http://127.0.0.1:8282/_akan/app/metrics",
+    port: AKAN_PORT,
+    baseUrl: `http://127.0.0.1:${AKAN_PORT}`,
+    wsUrl: `ws://127.0.0.1:${AKAN_PORT}/api/ws`,
+    metricsUrl: `http://127.0.0.1:${AKAN_PORT}/_akan/app/metrics`,
     paths: AKAN_USER_PATHS,
     loginCredentials: AKAN_ADMIN_CREDENTIALS,
     seed: { count: Number(process.env.BENCH_AKAN_SEED ?? "10000"), bodyKey: "data" },

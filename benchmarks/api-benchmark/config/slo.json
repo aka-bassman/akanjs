@@ -45,10 +45,11 @@
       "maxErrorRate": 0.001
     },
     "websocket_fanout": {
-      "description": "1 publisher to N subscribers fan-out latency and message throughput.",
+      "description": "Local 1 publisher to N subscribers fan-out latency and message throughput.",
       "maxP99Ms": 50,
       "minMsgPerSec": 40000,
-      "maxConnections": 10000
+      "maxConnections": 1000,
+      "maxDropRate": 0.001
     },
     "ssr_rsc": {
       "description": "Server-rendered page TTFB and render throughput. EXPERIMENTAL react-server-dom-bun; treat vs Next.js as maturity-caveated.",

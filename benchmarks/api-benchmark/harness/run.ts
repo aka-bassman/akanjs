@@ -118,7 +118,7 @@ const SCENARIOS: Record<string, ScenarioSpec[]> = {
   ],
   websocket: [
     {
-      id: "websocket_echo",
+      id: "websocket_fanout",
       surface: "websocket",
       script: "websocket.js",
       axis: "realistic",
@@ -143,6 +143,8 @@ const parseArgs = () => {
     duration: get("--duration", "30s") as string,
     warmup: get("--warmup", "10s") as string,
     rps: Number(get("--rps", "0")),
+    msgPerSec: Number(get("--msg-per-sec", "50")),
+    roomId: get("--room-id", "bench-room") as string,
     idMax: Number(get("--id-max", "9999")),
     skipMissingK6: args.includes("--skip-missing-k6"),
   };
@@ -268,7 +270,17 @@ const needsAuthOrSeed = (scenarios: ScenarioSpec[]) =>
   );
 
 const evaluateSlo = (
-  slo: Record<string, { maxP99Ms?: number; minRps?: number; maxErrorRate?: number }>,
+  slo: Record<
+    string,
+    {
+      maxP99Ms?: number;
+      minRps?: number;
+      maxErrorRate?: number;
+      minMsgPerSec?: number;
+      maxConnections?: number;
+      maxDropRate?: number;
+    }
+  >,
   sloKey: string,
   summary: Record<string, unknown>,
 ) => {
@@ -276,18 +288,39 @@ const evaluateSlo = (
   if (!target) return { sloKey, checks: [], pass: true };
   const checks: Array<{ metric: string; value: number | null; bound: number; op: string; pass: boolean }> = [];
   const latency = (summary.latencyMs ?? summary.iterationMs) as { p99?: number } | undefined;
+  const deliveryLatency = summary.deliveryLatencyMs as { p99?: number } | undefined;
   const rps = (summary.rps ?? summary.iterationsPerSec) as number | undefined;
+  const messagesPerSec = summary.messagesPerSec as number | undefined;
+  const connections = summary.connections as number | undefined;
   const errorRate = summary.errorRate as number | undefined;
-  if (target.maxP99Ms != null && latency?.p99 != null)
+  const dropRate = summary.dropRate as number | undefined;
+  const p99Ms = latency?.p99 ?? deliveryLatency?.p99;
+  if (target.maxP99Ms != null && p99Ms != null)
     checks.push({
       metric: "p99Ms",
-      value: latency.p99,
+      value: p99Ms,
       bound: target.maxP99Ms,
       op: "<=",
-      pass: latency.p99 <= target.maxP99Ms,
+      pass: p99Ms <= target.maxP99Ms,
     });
   if (target.minRps != null && rps != null)
     checks.push({ metric: "rps", value: rps, bound: target.minRps, op: ">=", pass: rps >= target.minRps });
+  if (target.minMsgPerSec != null && messagesPerSec != null)
+    checks.push({
+      metric: "msgPerSec",
+      value: messagesPerSec,
+      bound: target.minMsgPerSec,
+      op: ">=",
+      pass: messagesPerSec >= target.minMsgPerSec,
+    });
+  if (target.maxConnections != null && connections != null)
+    checks.push({
+      metric: "connections",
+      value: connections,
+      bound: target.maxConnections,
+      op: ">=",
+      pass: connections >= target.maxConnections,
+    });
   if (target.maxErrorRate != null && errorRate != null)
     checks.push({
       metric: "errorRate",
@@ -295,6 +328,14 @@ const evaluateSlo = (
       bound: target.maxErrorRate,
       op: "<=",
       pass: errorRate <= target.maxErrorRate,
+    });
+  if (target.maxDropRate != null && dropRate != null)
+    checks.push({
+      metric: "dropRate",
+      value: dropRate,
+      bound: target.maxDropRate,
+      op: "<=",
+      pass: dropRate <= target.maxDropRate,
     });
   return { sloKey, checks, pass: checks.every((c) => c.pass) };
 };
@@ -364,6 +405,8 @@ const main = async () => {
           WARMUP: opts.warmup,
           VUS: String(opts.vus),
           RPS: String(opts.rps),
+          MSG_PER_SEC: String(opts.msgPerSec),
+          ROOM_ID: opts.roomId,
           ID_MAX: String(opts.idMax),
           TOKEN: token,
           PATH_PING: target.paths.ping,
@@ -401,7 +444,7 @@ const main = async () => {
           scenario: scenario.id,
           surface: scenario.surface,
           axis: scenario.axis,
-          config: { vus: opts.vus, duration: opts.duration, rps: opts.rps },
+          config: { vus: opts.vus, duration: opts.duration, rps: opts.rps, msgPerSec: opts.msgPerSec },
           readyMs: Math.round(readyMs),
           result: summary,
           resource,

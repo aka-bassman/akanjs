@@ -17,7 +17,7 @@ Seven surfaces, two deployment modes (`single` = SQLite, `cluster` = Postgres + 
 | Signal API / no-DB | `signal_no_db` normal Signal query, no DB | akanjs single/cluster |
 | REST | ping (minimal), find/create (realistic) | raw `Bun.serve`, Elysia, Hono, Fastify (node) |
 | DB | find-one, list, relation (DataLoader) | raw `bun:sqlite`; Prisma / Drizzle (optional, see below) |
-| WebSocket | echo RTT + connection scaling | raw Bun WS (and the akan `/api/ws` pubsub) |
+| WebSocket | 1 publisher → N subscribers fan-out + connection scaling | raw Bun WS (and the akan `/api/ws` pubsub) |
 | SSR/RSC | TTFB, render throughput | Next.js (manual target; maturity-caveated) |
 | Full-stack | login → list → create → read | Next.js + Prisma (manual target) |
 
@@ -50,7 +50,7 @@ be separated from handler time (which comes from the request trace).
 - [Bun](https://bun.sh) (already required by this repo)
 - [k6](https://k6.io/docs/get-started/installation/) for HTTP/WS load generation
 - Node 22+ (only for the Fastify competitor; uses `--experimental-strip-types`)
-- Install competitor deps: `cd benchmarks && bun install`
+- Install competitor deps: `cd benchmarks/api-benchmark && bun install`
 
 Run the load generator on a separate machine/core set from the server when possible; on
 macOS raise `ulimit -n` before high-connection WebSocket runs.
@@ -58,7 +58,7 @@ macOS raise `ulimit -n` before high-connection WebSocket runs.
 ## Quick start
 
 ```bash
-cd benchmarks
+cd benchmarks/api-benchmark
 bun install
 
 # 1. Compare pure HTTP/runtime overhead across Bun-native competitors
@@ -80,11 +80,52 @@ bun harness/run.ts --target akan-single --suite db --scenario db_list --vus 100 
 # 4. Cold start / idle footprint
 bun harness/coldstart.ts --all --iterations 5
 
-# 5. Generate the report (comparison matrix + tracing hotspots + backlog)
+# 5. WebSocket fan-out (local 1k baseline; Akan.js 2.2.12 target)
+bun harness/run.ts --target akan-single --suite websocket --vus 1000 --duration 60s --msg-per-sec 50
+bun harness/run.ts --target raw-bun     --suite websocket --vus 1000 --duration 60s --msg-per-sec 50
+
+# 6. Generate the report (comparison matrix + tracing hotspots + backlog)
 bun report/generate.ts <runId>
 ```
 
 `<runId>` is printed at the end of each run and is the `results/<runId>/` folder name.
+
+## WebSocket fan-out
+
+The WebSocket surface measures `1 publisher -> N subscribers` fan-out using the same
+frame shape for akanjs and raw Bun:
+
+```json
+{
+  "subscribe": { "key": "benchFanout", "data": ["bench-room"], "subscribe": true },
+  "publish": { "key": "benchPublish", "data": ["bench-room", 1, 1710000000000] }
+}
+```
+
+For akanjs, the built-in target uses the `minimal` app's benchmark-only Signal endpoints
+on `/api/ws`. For raw Bun, `/ws` implements the same `sub`/`pub` response shape so the
+k6 script can compare the pubsub layer overhead against a native Bun baseline.
+
+Local baseline runs:
+
+```bash
+cd benchmarks/api-benchmark
+bun harness/run.ts --target akan-single --suite websocket --vus 1000 --duration 60s --msg-per-sec 50
+bun harness/run.ts --target raw-bun     --suite websocket --vus 1000 --duration 60s --msg-per-sec 50
+```
+
+High-connection local stress runs should raise the file descriptor limit first and should
+be labelled separately from the 1k comparison baseline:
+
+```bash
+ulimit -n 20000
+bun harness/run.ts --target akan-single --suite websocket --vus 5000 --duration 60s --msg-per-sec 10
+bun harness/run.ts --target akan-single --suite websocket --vus 10000 --duration 60s --msg-per-sec 5
+```
+
+The 5k/10k rows are local stress profiles. Interpret them with RSS, event-loop lag, drop
+rate, and k6 load-generator limits in mind. The first publishable comparison target is
+the 1k local median across repeated runs.
 
 ## Tracing (internal improvement)
 
@@ -193,7 +234,7 @@ The verified `user`/`admin` paths (find/relation public; list/create need the ad
 ```
 
 To benchmark a different app, copy `targets.local.json.example` to a gitignored
-`benchmarks/targets.local.json` and override the relevant fields (or set `BENCH_AKAN_APP`).
+`benchmarks/api-benchmark/targets.local.json` and override the relevant fields (or set `BENCH_AKAN_APP`).
 The legacy `ping` path intentionally remains the light public fetch (`lightUser`) for continuity.
 Use `pureHttp` and `signalNoDb` for the isolated no-DB tracks.
 
@@ -207,7 +248,7 @@ that exposes the same canonical endpoints against the same dataset, then registe
 ## Directory layout
 
 ```
-benchmarks/
+benchmarks/api-benchmark/
   config/slo.json            # absolute SLO targets + regression ratios
   competitors/               # minimal servers exposing identical endpoints
     shared/{dataset,jwt}.ts  # shared seed data + JWT (applied to all targets)
