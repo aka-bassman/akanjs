@@ -456,7 +456,8 @@ export class RscRenderer {
         const traceBase = createTraceBase(safePatchDecision, patchCacheEntry?.key ?? cacheEntry?.key);
         const cachedPatch = patchCacheEntry ? this.#getCachedPatchResult(patchCacheEntry.key) : null;
         if (
-          cachedPatch &&
+          cachedPatch?.patch &&
+          patchCacheEntry &&
           isCachedRscPatchMetadataCompatible({
             cached: cachedPatch.patch,
             targetRouterState,
@@ -584,7 +585,8 @@ export class RscRenderer {
               }) &&
               patchCacheEntry &&
               targetRouterState &&
-              effectivePatchDecision.patch
+              effectivePatchDecision.patch &&
+              storeTtl !== null
             ) {
               this.#setCachedPatchResult(
                 patchCacheEntry.key,

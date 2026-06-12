@@ -803,6 +803,46 @@ describe("WebRouter full SSR cache orchestration", () => {
     expect(bootstrapInlines[0]).toContain(`self.__AKAN_RSC_INITIAL_STATE__=${JSON.stringify(encodedState)};`);
   });
 
+  test("renders worker not-found streams as full document 404 responses", async () => {
+    const fakeWorker = createFakeRscWorker(() => ({
+      status: 404,
+      cacheState: { cacheable: false, reason: "render-not-found" },
+    }));
+
+    await withFullSsrCacheHarness(
+      async ({ fullSsr }) => {
+        const response = await fullSsr(new Request("https://example.test/docs/missing"));
+
+        expect(response.status).toBe(404);
+        expect(response.headers.get("X-Akan-Cache")).toBeNull();
+        await expect(response.text()).resolves.toContain("/docs/missing:render-1");
+      },
+      { worker: fakeWorker },
+    );
+  });
+
+  test("uses the host system page only when worker not-found fallback rendering is unavailable", async () => {
+    const fakeWorker: FakeRscWorker = {
+      ...createFakeRscWorker(),
+      async renderWithMeta(req) {
+        this.renderCalls.push(req);
+        return { type: "not-found" };
+      },
+    };
+
+    await withFullSsrCacheHarness(
+      async ({ fullSsr, fakeWorker }) => {
+        const response = await fullSsr(new Request("https://example.test/docs/missing"));
+
+        expect(response.status).toBe(404);
+        expect(response.headers.get("Cache-Control")).toContain("no-store");
+        await expect(response.text()).resolves.toContain("Page not found");
+        expect(fakeWorker.renderCalls).toHaveLength(1);
+      },
+      { worker: fakeWorker },
+    );
+  });
+
   test("stores completed full SSR HTML and serves the next request from cache", async () => {
     await withFullSsrCacheHarness(async ({ fullSsr, fakeWorker }) => {
       const first = await fullSsr(new Request("https://example.test/docs"));

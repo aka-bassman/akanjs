@@ -57,6 +57,42 @@ describe("CloudScript", () => {
     expect(recorder.names()).toEqual(["workspace.spinning", "update", "spinner.succeed", "workspace.spawn"]);
     expect(recorder.calls.at(-1)?.args).toEqual(["akan", ["--version"], { stdio: "inherit" }]);
   });
+
+  test("verifies dist packages before deploying Akan packages", async () => {
+    const script = CommandContainer.get(CloudScript);
+    const recorder = createCallRecorder();
+    const workspace = createFakeExecutor("workspace", {}, recorder);
+    script.cloudRunner.getAkanPkgs = async (...args) => {
+      recorder.record("getAkanPkgs", ...args);
+      return ["akanjs", "@akanjs/cli"];
+    };
+    script.packageScript.updateWorskpaceRootPackageJson = async (...args) =>
+      recorder.record("updateRootPackageJson", ...args);
+    script.applicationScript.test = async (...args) => recorder.record("test", ...args);
+    script.packageScript.buildPackage = async (...args) => recorder.record("buildPackage", ...args);
+    script.packageScript.verifyAkanPublishPackages = async (...args) =>
+      recorder.record("verifyAkanPublishPackages", ...args);
+    script.cloudRunner.deployAkan = async (...args) => recorder.record("deployAkan", ...args);
+
+    await script.deployAkan(workspace as never, { test: true, registryUrl: "http://127.0.0.1:4873" });
+
+    expect(recorder.names()).toEqual([
+      "getAkanPkgs",
+      "updateRootPackageJson",
+      "test",
+      "test",
+      "buildPackage",
+      "buildPackage",
+      "verifyAkanPublishPackages",
+      "deployAkan",
+    ]);
+    expect(recorder.calls.at(-2)?.args).toEqual([workspace]);
+    expect(recorder.calls.at(-1)?.args).toEqual([
+      workspace,
+      ["akanjs", "@akanjs/cli"],
+      { registryUrl: "http://127.0.0.1:4873" },
+    ]);
+  });
 });
 
 describe("CloudRunner", () => {

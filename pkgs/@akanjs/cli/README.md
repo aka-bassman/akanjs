@@ -58,7 +58,15 @@ Package maintenance commands are also exposed through the same executable:
 akan build-package akanjs
 akan build-package @akanjs/cli
 akan build-package @akanjs/devkit
+akan build-package create-akan-workspace
+akan verify-akan-publish-packages
+akan smoke-registry --test=true --tag=rc
 ```
+
+Publish Akan framework packages from `dist/pkgs/*` only. `verify-akan-publish-packages` runs `npm pack --dry-run --json`
+against the built packages and checks metadata that must be correct before `deploy-akan` or local registry smoke.
+For repository releases, prefer `bun run release:build-packages && bun run release:verify-packages` so the CLI package
+artifact is built last and is not overwritten by the root `akan` bootstrap script.
 
 ## Package Boundary
 

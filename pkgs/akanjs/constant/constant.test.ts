@@ -27,6 +27,11 @@ const ComplexInput = via((f) => ({
 }));
 ConstantRegistry.buildScalar("constantTestComplex", ComplexInput, { ComplexInput });
 
+const BooleanState = via((f) => ({
+  enabled: f(Boolean),
+}));
+ConstantRegistry.buildScalar("constantTestBooleanState", BooleanState, { BooleanState });
+
 const UserInput = via((f) => ({
   name: f(String),
   age: f(Int, { default: 20 }),
@@ -247,6 +252,16 @@ describe("ConstantRegistry", () => {
 });
 
 describe("serialize, deserialize, purify, and immerify", () => {
+  test("normalizes numeric boolean values from persisted rows", () => {
+    expect(serialize(Boolean, 0, 1, "object", {})).toBe(true);
+    expect(serialize(Boolean, 0, 0, "object", {})).toBe(false);
+    expect(deserialize(Boolean, 0, 1, {})).toBe(true);
+    expect(deserialize(Boolean, 0, 0, {})).toBe(false);
+    expect(serialize(BooleanState, 0, { enabled: 1 }, "object", {})).toEqual({ enabled: true });
+    expect(serialize(BooleanState, 0, { enabled: 0 }, "object", {})).toEqual({ enabled: false });
+    expect(() => serialize(Boolean, 0, 2, "object", {})).toThrow("Invalid Boolean value: 2");
+  });
+
   test("handles arrays and nullable values", () => {
     const serialized = serialize(String, 1, ["a", "b"], "object", {});
     expect(serialized).toEqual(["a", "b"] as never);

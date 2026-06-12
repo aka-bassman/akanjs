@@ -12,12 +12,12 @@ function resolveAkanSegmentOutletReference(): typeof AkanSegmentOutlet {
       registerClientReference<T>(proxyImplementation: T, id: string, exportName: string): T;
     };
     return registerClientReference(
-      createAkanSegmentOutletServerReference as typeof AkanSegmentOutlet,
+      createAkanSegmentOutletServerReference as unknown as typeof AkanSegmentOutlet,
       AKAN_SEGMENT_OUTLET_REFERENCE_ID,
       "AkanSegmentOutlet",
     );
   } catch {
-    return createAkanSegmentOutletServerReference as typeof AkanSegmentOutlet;
+    return createAkanSegmentOutletServerReference as unknown as typeof AkanSegmentOutlet;
   }
 }
 

@@ -146,9 +146,11 @@ export class RouteElementComposer {
       );
       const segment = segments?.[i];
       if (segment?.kind === "page") {
+        const routeSegments = segments;
+        if (!routeSegments) continue;
         const outletKey =
           createAkanSegmentOutletKey(
-            segments.slice(0, i + 1).map((item) => item.key),
+            routeSegments.slice(0, i + 1).map((item) => item.key),
             i,
           ) ?? segment.key;
         element = <AkanSegmentOutletReference segmentKey={outletKey}>{element}</AkanSegmentOutletReference>;

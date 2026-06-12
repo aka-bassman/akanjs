@@ -207,12 +207,12 @@ declare global {
     [PRIMITIVE_CLIENT_VALUE]: boolean;
     [PRIMITIVE_DEFAULT_VALUE]: boolean;
     [PRIMITIVE_EXAMPLE_VALUE]: boolean;
-    validate(value: boolean): boolean;
-    parseValue(input: boolean): boolean;
-    serializeValue(value: boolean): boolean;
-    _parse(input: boolean): boolean;
-    _serialize(value: boolean): boolean;
-    _checkValue(value: boolean): void;
+    validate(value: boolean | number): boolean;
+    parseValue(input: boolean | number): boolean | number;
+    serializeValue(value: boolean | number): boolean | number;
+    _parse(input: boolean | number): boolean;
+    _serialize(value: boolean | number): boolean;
+    _checkValue(value: boolean | number): void;
   }
   interface DateConstructor {
     refName: "Date";
@@ -304,19 +304,26 @@ Object.assign(String, scalarPrimitiveStatics, {
 PrimitiveRegistry.register(String);
 
 // Boolean
+const normalizeBooleanPrimitiveValue = (value: boolean | number): boolean | null => {
+  if (typeof value === "boolean") return value;
+  if (value === 1) return true;
+  if (value === 0) return false;
+  return null;
+};
+
 Object.assign(Boolean, {
   ...scalarPrimitiveStatics,
   refName: "Boolean",
   [PRIMITIVE_DEFAULT_VALUE]: false,
   [PRIMITIVE_EXAMPLE_VALUE]: true,
-  validate(value: boolean) {
-    return typeof value === "boolean";
+  validate(value: boolean | number) {
+    return normalizeBooleanPrimitiveValue(value) !== null;
   },
-  parseValue(input: boolean) {
-    return Boolean(input);
+  parseValue(input: boolean | number) {
+    return normalizeBooleanPrimitiveValue(input) ?? input;
   },
-  serializeValue(value: boolean) {
-    return Boolean(value);
+  serializeValue(value: boolean | number) {
+    return normalizeBooleanPrimitiveValue(value) ?? value;
   },
 });
 PrimitiveRegistry.register(Boolean);

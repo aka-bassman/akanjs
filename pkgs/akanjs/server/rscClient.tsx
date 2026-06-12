@@ -1,4 +1,4 @@
-import { createElement, type ReactNode, startTransition, use, useLayoutEffect, useState } from "react";
+import { createElement, type ReactNode, startTransition, type Usable, use, useLayoutEffect, useState } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { createFromReadableStream } from "react-server-dom-webpack/client.browser";
 import {
@@ -511,7 +511,7 @@ function Root(): ReactNode {
     }
   };
 
-  return use(thenable);
+  return use(thenable as Usable<ReactNode>);
 }
 
 window.addEventListener("popstate", () => {

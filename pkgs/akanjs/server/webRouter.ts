@@ -556,7 +556,7 @@ export class WebRouter {
           });
           if (rscResult.type === "redirect")
             return Response.redirect(new URL(rscResult.location, url.origin), rscResult.status);
-          if (rscResult.type === "not-found") return this.#renderNotFoundResponse(req, url);
+          if (rscResult.type === "not-found") return this.#renderSystemNotFoundFallbackResponse(req, url);
           const themeCookieExists = WebRouter.#hasCookie(req, "theme");
           const hostRequestStore = createRequestStore(req);
           const extraBootstrapInline = [
@@ -792,7 +792,7 @@ export class WebRouter {
       ssrManifest: WebRouter.#mergeSsrManifest(this.#artifact.rscRuntimeSsrManifest, manifest.ssrManifest),
     };
   }
-  #renderNotFoundResponse(req: Request, url: URL): Promise<Response> {
+  #renderSystemNotFoundFallbackResponse(req: Request, url: URL): Promise<Response> {
     return createSystemPageResponse({
       kind: "not-found",
       method: req.method,
@@ -949,9 +949,10 @@ export class WebRouter {
   }
 
   static #mergeSsrManifest(...manifests: Array<SsrManifest | undefined>): SsrManifest {
+    const definedManifests = manifests.filter((manifest): manifest is SsrManifest => Boolean(manifest));
     return {
       moduleLoading: null,
-      moduleMap: Object.assign({}, ...manifests.filter(Boolean).map((manifest) => manifest.moduleMap)),
+      moduleMap: Object.assign({}, ...definedManifests.map((manifest) => manifest.moduleMap)),
     };
   }
 

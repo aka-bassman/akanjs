@@ -114,14 +114,14 @@ export function createAkanSegmentCacheTree<T>(node: RscNavigationCacheNode<T>): 
   const routerState = node.routerState;
   if (!routerState || routerState.segments.length === 0) return null;
 
-  const root = createAkanSegmentCacheNode({
+  const root = createAkanSegmentCacheNode<T>({
     segment: routerState.segments[0],
     href: node.href,
     routerState,
   });
   let current = root;
   for (let index = 1; index < routerState.segments.length; index++) {
-    const child = createAkanSegmentCacheNode({
+    const child = createAkanSegmentCacheNode<T>({
       segment: routerState.segments[index],
       href: node.href,
       routerState,

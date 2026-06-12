@@ -47,6 +47,7 @@ export class CloudScript extends script("cloud", [CloudRunner, ApplicationScript
     const pkgs = akanPkgs.map((pkgName) => PkgExecutor.from(workspace, pkgName));
     if (test) for (const pkg of pkgs) await this.applicationScript.test(pkg);
     for (const pkg of pkgs) await this.packageScript.buildPackage(pkg);
+    await this.packageScript.verifyAkanPublishPackages(workspace);
     await this.cloudRunner.deployAkan(workspace, akanPkgs, { registryUrl });
   }
   async update(workspace: Workspace, tag: string = "latest", { registryUrl }: { registryUrl?: string } = {}) {

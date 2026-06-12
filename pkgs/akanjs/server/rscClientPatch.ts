@@ -27,10 +27,10 @@ function guardRscPatchControlRows(
   onControl: (reason: Extract<AkanSegmentPatchFailureReason, "redirect-in-patch" | "error-in-patch">) => void,
 ): ReadableStream<Uint8Array> {
   const decoder = new TextDecoder("utf-8", { fatal: true });
-  let buffered = new Uint8Array(0);
+  let buffered = new Uint8Array(new ArrayBuffer(0));
 
-  const concat = (left: Uint8Array, right: Uint8Array): Uint8Array => {
-    const combined = new Uint8Array(left.byteLength + right.byteLength);
+  const concat = (left: Uint8Array, right: Uint8Array): Uint8Array<ArrayBuffer> => {
+    const combined = new Uint8Array(new ArrayBuffer(left.byteLength + right.byteLength));
     combined.set(left, 0);
     combined.set(right, left.byteLength);
     return combined;
@@ -63,7 +63,7 @@ function guardRscPatchControlRows(
         if (buffered.byteLength === 0) return;
         inspectRow(buffered);
         controller.enqueue(buffered);
-        buffered = new Uint8Array(0);
+        buffered = new Uint8Array(new ArrayBuffer(0));
       },
     }),
   );

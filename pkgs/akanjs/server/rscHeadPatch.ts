@@ -36,7 +36,7 @@ export function canApplyAkanHeadSnapshotPatch(snapshot: AkanHeadSnapshotV1): boo
 export function prepareAkanHeadSnapshotPatch(snapshot: AkanHeadSnapshotV1): PreparedAkanHeadSnapshotPatch | null {
   try {
     if (getAkanHeadSnapshotPatchFailureReason(snapshot)) return null;
-    const existing = [...document.head.querySelectorAll(AKAN_ROUTE_HEAD_SELECTOR)];
+    const existing = [...document.head.querySelectorAll<HTMLElement>(AKAN_ROUTE_HEAD_SELECTOR)];
     if (!existing[0]) return null;
     return {
       existing,
