@@ -9,7 +9,7 @@ import {
   resolveRouteCacheStoreTtl,
   shouldStoreRouteCache,
 } from "./cachePolicy";
-import { encodeAkanRouterState } from "./routeState";
+import { encodeAkanRouterState, encodeAkanRscPatchSegmentPath } from "./routeState";
 import type { RscRenderResult } from "./rscWorkerHost";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
 import type { SsrLateRedirect } from "./ssrTypes";
@@ -21,6 +21,7 @@ import {
   createRscNotFoundFallbackResponse,
   createRscRedirectResponse,
   createRscStreamResponse,
+  DEFAULT_HTML_RESULT_CACHE_MAX_BODY_BYTES,
   isHtmlRouteCachePathAllowed,
   normalizeRscTargetUrlForHostBasePath,
   resolveHtmlRouteCacheStoreTtl,
@@ -109,7 +110,11 @@ async function withFullSsrCacheHarness<T>(
   run: (input: { fullSsr: FullSsrHandler; fakeWorker: FakeRscWorker; router: WebRouter }) => Promise<T>,
   options: {
     worker?: FakeRscWorker;
+    nodeEnv?: string;
+    htmlCacheEnabled?: string;
     htmlCachePaths?: string;
+    htmlCacheMaxBodyBytes?: string;
+    onRenderInput?: (input: Parameters<SsrFromRscRenderer["render"]>[0]) => void;
   } = {},
 ): Promise<T> {
   const envSnapshot = {
@@ -122,22 +127,28 @@ async function withFullSsrCacheHarness<T>(
     AKAN_HTML_RESULT_CACHE_PATHS: process.env.AKAN_HTML_RESULT_CACHE_PATHS,
     AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS: process.env.AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS,
     AKAN_HTML_RESULT_CACHE_TTL: process.env.AKAN_HTML_RESULT_CACHE_TTL,
+    AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES: process.env.AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES,
   };
-  process.env.NODE_ENV = "production";
+  process.env.NODE_ENV = options.nodeEnv ?? "production";
   process.env.AKAN_PUBLIC_APP_NAME = "akan-test";
   process.env.AKAN_PUBLIC_REPO_NAME = "akan";
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.test";
   process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
-  process.env.AKAN_HTML_RESULT_CACHE = "1";
-  process.env.AKAN_HTML_RESULT_CACHE_PATHS = options.htmlCachePaths ?? "/docs";
+  if (options.htmlCacheEnabled === undefined) delete process.env.AKAN_HTML_RESULT_CACHE;
+  else process.env.AKAN_HTML_RESULT_CACHE = options.htmlCacheEnabled;
+  if (options.htmlCachePaths === undefined) delete process.env.AKAN_HTML_RESULT_CACHE_PATHS;
+  else process.env.AKAN_HTML_RESULT_CACHE_PATHS = options.htmlCachePaths;
   delete process.env.AKAN_HTML_RESULT_CACHE_EXCLUDE_PATHS;
   process.env.AKAN_HTML_RESULT_CACHE_TTL = "30";
+  if (options.htmlCacheMaxBodyBytes === undefined) delete process.env.AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES;
+  else process.env.AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES = options.htmlCacheMaxBodyBytes;
 
   const originalRender = SsrFromRscRenderer.prototype.render;
   let renderCount = 0;
   SsrFromRscRenderer.prototype.render = async (
     input: Parameters<SsrFromRscRenderer["render"]>[0],
   ): Promise<ReadableStream<Uint8Array>> => {
+    options.onRenderInput?.(input);
     renderCount += 1;
     const pathname = input.request ? new URL(input.request.url).pathname : "/unknown";
     return new ReadableStream<Uint8Array>({
@@ -287,10 +298,15 @@ describe("WebRouter RSC stream response", () => {
         pathname: "/en/docs",
         routeId: "/:lang/docs",
         cache: "hit",
+        cacheReason: "env-opt-out",
         cacheKeyHash: "abc123",
-        partial: "candidate",
-        partialReason: "common-prefix",
+        partial: "patch",
+        partialReason: "sibling-page",
         partialCommonPrefixLength: 2,
+        patchStartIndex: 2,
+        patchSegmentPath: encodeAkanRscPatchSegmentPath(["root:/:0", "layout:/docs:1", "page:/:lang/docs:2"]),
+        patchStartSegment: "page:/:lang/docs:2",
+        patchHeadSafe: true,
         routeState: encodeAkanRouterState({
           version: 1,
           buildId: 9,
@@ -308,10 +324,62 @@ describe("WebRouter RSC stream response", () => {
     expect(response.headers.get("X-Akan-Rsc-Pathname")).toBe("/en/docs");
     expect(response.headers.get("X-Akan-Rsc-Route")).toBe("/:lang/docs");
     expect(response.headers.get("X-Akan-Rsc-Cache")).toBe("hit");
+    expect(response.headers.get("X-Akan-Rsc-Cache-Reason")).toBe("env-opt-out");
     expect(response.headers.get("X-Akan-Rsc-Cache-Key")).toBe("abc123");
-    expect(response.headers.get("X-Akan-Rsc-Partial")).toBe("candidate");
-    expect(response.headers.get("X-Akan-Rsc-Partial-Reason")).toBe("common-prefix");
+    expect(response.headers.get("X-Akan-Rsc-Partial")).toBe("patch");
+    expect(response.headers.get("X-Akan-Rsc-Partial-Reason")).toBe("sibling-page");
     expect(response.headers.get("X-Akan-Rsc-Partial-Common-Prefix")).toBe("2");
+    expect(response.headers.get("X-Akan-Rsc-Patch-Start-Index")).toBe("2");
+    expect(response.headers.get("X-Akan-Rsc-Patch-Segment-Path")).toBeTruthy();
+    expect(response.headers.get("X-Akan-Rsc-Patch-Start-Segment")).toBe("page:/:lang/docs:2");
+    expect(response.headers.get("X-Akan-Rsc-Patch-Head-Safe")).toBe("1");
+    expect(response.headers.get("X-Akan-Rsc-State")).toBeTruthy();
+  });
+
+  test("exposes same-route searchParams patch trace metadata on response headers", async () => {
+    const response = await createRscNavigationStreamResponse({
+      type: "stream",
+      stream: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode("0:null\n"));
+          controller.close();
+        },
+      }),
+      trace: {
+        navId: "8",
+        pathname: "/en/docs",
+        routeId: "/:lang/docs",
+        partial: "patch",
+        partialReason: "same-route-search-params",
+        partialCommonPrefixLength: 3,
+        patchStartIndex: 2,
+        patchSegmentPath: encodeAkanRscPatchSegmentPath(["root:/:0", "layout:/docs:1", "page:/:lang/docs:2"]),
+        patchStartSegment: "page:/:lang/docs:2",
+        patchHeadSafe: true,
+        routeState: encodeAkanRouterState({
+          version: 1,
+          buildId: 9,
+          href: "https://example.test/en/docs?page=2",
+          routeId: "/:lang/docs",
+          segments: [
+            { kind: "root-layout", path: "/", key: "root:/:0" },
+            { kind: "layout", path: "/docs", key: "layout:/docs:1" },
+            { kind: "page", path: "/:lang/docs", key: "page:/:lang/docs:2" },
+          ],
+        }),
+      },
+      lateControl: Promise.resolve(null),
+      cacheState: Promise.resolve({ cacheable: true }),
+      cancel: () => {},
+    });
+
+    expect(response.headers.get("X-Akan-Rsc-Partial")).toBe("patch");
+    expect(response.headers.get("X-Akan-Rsc-Partial-Reason")).toBe("same-route-search-params");
+    expect(response.headers.get("X-Akan-Rsc-Partial-Common-Prefix")).toBe("3");
+    expect(response.headers.get("X-Akan-Rsc-Patch-Start-Index")).toBe("2");
+    expect(response.headers.get("X-Akan-Rsc-Patch-Segment-Path")).toBeTruthy();
+    expect(response.headers.get("X-Akan-Rsc-Patch-Start-Segment")).toBe("page:/:lang/docs:2");
+    expect(response.headers.get("X-Akan-Rsc-Patch-Head-Safe")).toBe("1");
     expect(response.headers.get("X-Akan-Rsc-State")).toBeTruthy();
   });
 
@@ -475,6 +543,7 @@ describe("WebRouter HTML cache streaming", () => {
     expect(isHtmlRouteCachePathAllowed("/docs/private/child", env)).toBe(false);
     expect(isHtmlRouteCachePathAllowed("/docs/private-ish", env)).toBe(true);
     expect(isHtmlRouteCachePathAllowed("/other", env)).toBe(false);
+    expect(isHtmlRouteCachePathAllowed("/other", {}, { defaultAllow: true })).toBe(true);
   });
 
   test("passes through the first chunk before caching the completed HTML", async () => {
@@ -635,6 +704,7 @@ describe("WebRouter HTML cache streaming", () => {
 
   test("passes through completed HTML but skips caching when the body cap is exceeded", async () => {
     let cachedHtml = "";
+    let skipReason: string | undefined;
     const stream = cacheHtmlWhileStreaming(
       new ReadableStream<Uint8Array>({
         start(controller) {
@@ -647,11 +717,16 @@ describe("WebRouter HTML cache streaming", () => {
       },
       {
         maxBodyBytes: 4,
+        onSkip: (reason) => {
+          skipReason = reason;
+        },
       },
     );
 
     await expect(new Response(stream).text()).resolves.toBe("<html>too-large</html>");
     expect(cachedHtml).toBe("");
+    expect(skipReason).toBe("body-too-large");
+    expect(DEFAULT_HTML_RESULT_CACHE_MAX_BODY_BYTES).toBeGreaterThan(0);
   });
 
   test("cancels the unused HTML stream for HEAD responses", async () => {
@@ -671,6 +746,63 @@ describe("WebRouter HTML cache streaming", () => {
 });
 
 describe("WebRouter full SSR cache orchestration", () => {
+  test("treats client-aborted SSR renders as closed requests instead of fatal errors", async () => {
+    const worker: FakeRscWorker = {
+      ...createFakeRscWorker(),
+      async renderWithMeta() {
+        throw new Error("The connection was closed.");
+      },
+    };
+
+    await withFullSsrCacheHarness(
+      async ({ fullSsr }) => {
+        const response = await fullSsr(new Request("https://example.test/docs"));
+
+        expect(response.status).toBe(499);
+        expect(await response.text()).toBe("");
+      },
+      { worker },
+    );
+  });
+
+  test("injects the initial RSC route state into the client bootstrap", async () => {
+    const encodedState = encodeAkanRouterState({
+      version: 1,
+      buildId: 1,
+      href: "https://example.test/docs",
+      routeId: "/docs",
+      segments: [{ kind: "page", path: "/docs", key: "page:/docs:0" }],
+    });
+    const worker = createFakeRscWorker(() => ({ cacheState: { cacheable: true, revalidate: 5 } }));
+    const originalRenderWithMeta = worker.renderWithMeta.bind(worker);
+    worker.renderWithMeta = async (req) => {
+      const result = await originalRenderWithMeta(req);
+      if (result.type !== "stream") return result;
+      return {
+        ...result,
+        trace: {
+          pathname: new URL(req.url).pathname,
+          routeId: "/docs",
+          cache: "bypass",
+          routeState: encodedState,
+        },
+      };
+    };
+    const bootstrapInlines: Array<string | undefined> = [];
+
+    await withFullSsrCacheHarness(
+      async ({ fullSsr }) => {
+        await fullSsr(new Request("https://example.test/docs"));
+      },
+      {
+        worker,
+        onRenderInput: (input) => bootstrapInlines.push(input.extraBootstrapInline),
+      },
+    );
+
+    expect(bootstrapInlines[0]).toContain(`self.__AKAN_RSC_INITIAL_STATE__=${JSON.stringify(encodedState)};`);
+  });
+
   test("stores completed full SSR HTML and serves the next request from cache", async () => {
     await withFullSsrCacheHarness(async ({ fullSsr, fakeWorker }) => {
       const first = await fullSsr(new Request("https://example.test/docs"));
@@ -684,6 +816,64 @@ describe("WebRouter full SSR cache orchestration", () => {
       await expect(second.text()).resolves.toBe(firstHtml);
       expect(fakeWorker.renderCalls).toHaveLength(1);
     });
+  });
+
+  test("keeps production HTML cache on by default and allows explicit env opt-out", async () => {
+    await withFullSsrCacheHarness(async ({ fullSsr, fakeWorker }) => {
+      const first = await fullSsr(new Request("https://example.test/uncurated"));
+      expect(first.headers.get("X-Akan-Cache")).toBe("MISS");
+      await first.text();
+
+      const second = await fullSsr(new Request("https://example.test/uncurated"));
+      expect(second.headers.get("X-Akan-Cache")).toBe("HIT");
+      await second.text();
+      expect(fakeWorker.renderCalls).toHaveLength(1);
+    });
+
+    await withFullSsrCacheHarness(
+      async ({ fullSsr, fakeWorker }) => {
+        const first = await fullSsr(new Request("https://example.test/uncurated"));
+        expect(first.headers.get("X-Akan-Cache")).toBe("BYPASS");
+        expect(first.headers.get("X-Akan-Cache-Reason")).toBe("env-opt-out");
+        await first.text();
+
+        const second = await fullSsr(new Request("https://example.test/uncurated"));
+        expect(second.headers.get("X-Akan-Cache")).toBe("BYPASS");
+        await second.text();
+        expect(fakeWorker.renderCalls).toHaveLength(2);
+      },
+      { htmlCacheEnabled: "0" },
+    );
+  });
+
+  test("does not populate HTML cache from HEAD responses", async () => {
+    await withFullSsrCacheHarness(async ({ fullSsr, fakeWorker }) => {
+      const head = await fullSsr(new Request("https://example.test/docs/head", { method: "HEAD" }));
+      expect(head.headers.get("X-Akan-Cache")).toBe("BYPASS");
+      expect(head.headers.get("X-Akan-Cache-Reason")).toBe("request-not-public");
+      await head.text();
+
+      const get = await fullSsr(new Request("https://example.test/docs/head"));
+      expect(get.headers.get("X-Akan-Cache")).toBe("MISS");
+      await expect(get.text()).resolves.toContain("/docs/head:render-2");
+      expect(fakeWorker.renderCalls).toHaveLength(2);
+    });
+  });
+
+  test("does not store full SSR HTML when the body cap is exceeded", async () => {
+    await withFullSsrCacheHarness(
+      async ({ fullSsr, fakeWorker }) => {
+        const first = await fullSsr(new Request("https://example.test/docs/large"));
+        expect(first.headers.get("X-Akan-Cache")).toBe("MISS");
+        await expect(first.text()).resolves.toContain("/docs/large:render-1");
+
+        const second = await fullSsr(new Request("https://example.test/docs/large"));
+        expect(second.headers.get("X-Akan-Cache")).toBe("MISS");
+        await expect(second.text()).resolves.toContain("/docs/large:render-2");
+        expect(fakeWorker.renderCalls).toHaveLength(2);
+      },
+      { htmlCacheMaxBodyBytes: "4" },
+    );
   });
 
   test("does not store full SSR HTML when worker cache state is uncacheable", async () => {

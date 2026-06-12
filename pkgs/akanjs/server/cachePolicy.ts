@@ -42,7 +42,20 @@ export interface PublicRouteCacheEntryInput extends RouteCacheKeyInput {
     deny?: string | null;
   };
   defaultTtl?: number;
+  defaultEnabled?: boolean;
+  defaultAllow?: boolean;
 }
+
+export type RouteCacheBypassReason =
+  | "env-opt-out"
+  | "dev-default-off"
+  | "ttl-disabled"
+  | "path-excluded"
+  | "request-not-public";
+
+export type RouteCacheEntryDecision =
+  | { entry: RouteCacheEntry; reason?: undefined }
+  | { entry: null; reason: RouteCacheBypassReason };
 
 export type RouteCacheRenderControlType = "redirect" | "not-found" | "error";
 
@@ -62,8 +75,10 @@ export function resolveAutoRouteCacheTtl(input: {
   enabled?: string | null;
   ttl?: string | null;
   defaultTtl?: number;
+  defaultEnabled?: boolean;
 }): number | null {
-  if (input.enabled !== "1") return null;
+  if (input.enabled === "0") return null;
+  if (input.enabled !== "1" && !input.defaultEnabled) return null;
   return normalizeRouteCacheTtl(input.ttl, input.defaultTtl ?? DEFAULT_ROUTE_CACHE_TTL_SECONDS);
 }
 
@@ -102,7 +117,7 @@ export function isPublicRouteCacheableRequest(request: Request): boolean {
 
 export function isRouteCachePathAllowed(
   pathname: string,
-  options: { allow?: string | null; deny?: string | null } = {},
+  options: { allow?: string | null; deny?: string | null; defaultAllow?: boolean } = {},
 ): boolean {
   const matches = (raw: string | null | undefined) => {
     const prefixes = (raw ?? "")
@@ -116,6 +131,7 @@ export function isRouteCachePathAllowed(
   };
   if (matches(options.deny)) return false;
   const allow = options.allow ?? "";
+  if (!allow.trim() && options.defaultAllow) return true;
   return matches(allow);
 }
 
@@ -136,16 +152,31 @@ export function createRouteCacheEntry(input: RouteCacheKeyInput & { ttl: number 
   return { key: createRouteCacheKey(input), ttl: input.ttl };
 }
 
-export function resolvePublicRouteCacheEntry(input: PublicRouteCacheEntryInput): RouteCacheEntry | null {
+export function resolvePublicRouteCacheEntryDecision(input: PublicRouteCacheEntryInput): RouteCacheEntryDecision {
+  if (input.env.enabled === "0") return { entry: null, reason: "env-opt-out" };
+  if (input.env.enabled !== "1" && !input.defaultEnabled) return { entry: null, reason: "dev-default-off" };
   const ttl = resolveAutoRouteCacheTtl({
     enabled: input.env.enabled,
     ttl: input.env.ttl,
     defaultTtl: input.defaultTtl,
+    defaultEnabled: input.defaultEnabled,
   });
-  if (ttl === null) return null;
-  if (!isRouteCachePathAllowed(input.url.pathname, { allow: input.env.allow, deny: input.env.deny })) return null;
-  if (!isPublicRouteCacheableRequest(input.request)) return null;
-  return createRouteCacheEntry({ request: input.request, url: input.url, theme: input.theme, ttl });
+  if (ttl === null) return { entry: null, reason: "ttl-disabled" };
+  if (
+    !isRouteCachePathAllowed(input.url.pathname, {
+      allow: input.env.allow,
+      deny: input.env.deny,
+      defaultAllow: input.defaultAllow,
+    })
+  ) {
+    return { entry: null, reason: "path-excluded" };
+  }
+  if (!isPublicRouteCacheableRequest(input.request)) return { entry: null, reason: "request-not-public" };
+  return { entry: createRouteCacheEntry({ request: input.request, url: input.url, theme: input.theme, ttl }) };
+}
+
+export function resolvePublicRouteCacheEntry(input: PublicRouteCacheEntryInput): RouteCacheEntry | null {
+  return resolvePublicRouteCacheEntryDecision(input).entry;
 }
 
 export function resolveRouteCacheStoreTtl(baseTtl: number, state: RouteCacheRenderState): number | null {

@@ -30,6 +30,14 @@ interface TraceSnapshot {
   enabled: boolean;
   endpoints: TraceEndpoint[];
 }
+interface ResourceSample {
+  tMs: number;
+  rssMb: number | null;
+  gatewayRssMb?: number | null;
+  workerRssMb?: number | null;
+  eventLoopLagP99Ms?: number | null;
+  gcDurationMs?: number | null;
+}
 interface RunRecord {
   target: string;
   targetLabel: string;
@@ -37,6 +45,7 @@ interface RunRecord {
   scenario: string;
   surface: string;
   axis: string;
+  config?: { duration?: string };
   readyMs?: number;
   result?: {
     rps?: number;
@@ -51,18 +60,43 @@ interface RunRecord {
   } | null;
   resource?: {
     maxRssMb?: number | null;
+    avgRssMb?: number | null;
     peakCpuPct?: number | null;
     eventLoopLagP99Ms?: number | null;
+    gcDurationP99Ms?: number | null;
+    rssGrowthMbPerHour?: number | null;
+    workerRestartCount?: number | null;
+    rscWorkerRestartCount?: number | null;
+    rscWorkerRecycleCount?: number | null;
     maxRooms?: number | null;
     maxTrackedSockets?: number | null;
     maxActiveWebSockets?: number | null;
     proxyHopMeanMs?: number | null;
+    timeSeries?: ResourceSample[];
     trace?: TraceSnapshot;
   };
   slo?: {
     pass: boolean;
     checks: Array<{ metric: string; value: number; bound: number; op: string; pass: boolean }>;
   } | null;
+  processSlo?: {
+    pass: boolean;
+    checks: Array<{ metric: string; value: number | null; bound: number; op: string; pass: boolean }>;
+  } | null;
+  processStability?: {
+    soak?: boolean;
+    sampleIntervalMs?: number;
+    soakWarmupWindowMs?: number;
+    rssGrowthMbPerHour?: number | null;
+    eventLoopLagP99Ms?: number | null;
+    gcDurationP99Ms?: number | null;
+    workerRestartCount?: number | null;
+    rscWorkerRestartCount?: number | null;
+    rscWorkerRecycleCount?: number | null;
+    errorRate?: number | null;
+    throughputDriftPct?: number | null;
+    p99LatencyDriftPct?: number | null;
+  };
   note?: string;
 }
 
@@ -93,6 +127,10 @@ const sloLabel = (slo: RunRecord["slo"]) => {
   if (!slo) return "—";
   return slo.pass ? "PASS" : "TARGET MISS";
 };
+const processSloLabel = (slo: RunRecord["processSlo"]) => {
+  if (!slo) return "—";
+  return slo.pass ? "PASS" : "TARGET MISS";
+};
 
 const main = async () => {
   const runId = process.argv[2];
@@ -108,7 +146,21 @@ const main = async () => {
     const rec = await readJson<RunRecord>(path.join(runDir, file));
     if (rec?.scenario) records.push(rec);
   }
-  if (!records.length) {
+  const coldstart = await readJson<{
+    records: Array<{
+      targetLabel: string;
+      runtime: string;
+      iterations?: number;
+      successes?: number;
+      failures?: number;
+      coldStartMs?: { p50?: number | null; p95?: number | null; min?: number | null; max?: number | null };
+      idleRssMb?: { p50?: number | null; p95?: number | null; min?: number | null; max?: number | null };
+      coldStartMsMedian?: number | null;
+      idleRssMbMedian?: number | null;
+      processSlo?: { pass: boolean };
+    }>;
+  }>(path.join(runDir, "coldstart.json"));
+  if (!records.length && !coldstart?.records?.length) {
     console.error(`No result records in ${runDir}.`);
     process.exit(1);
   }
@@ -140,9 +192,14 @@ const main = async () => {
 
   // 1. Comparison matrix
   lines.push("## 1. Comparison matrix");
-  for (const [surface, recs] of [...bySurface.entries()].sort(
+  const surfaceEntries = [...bySurface.entries()].sort(
     ([a], [b]) => surfaceOrder(a) - surfaceOrder(b) || a.localeCompare(b),
-  )) {
+  );
+  if (!surfaceEntries.length) {
+    lines.push("");
+    lines.push("_No request-load scenarios captured for this run._");
+  }
+  for (const [surface, recs] of surfaceEntries) {
     lines.push("");
     lines.push(`### ${surfaceLabel(surface)}`);
     if (surface === "pure_http")
@@ -183,9 +240,52 @@ const main = async () => {
     }
   }
 
+  // 2. Process stability
+  lines.push("");
+  lines.push("## 2. Process stability");
+  const soakRecords = records.filter((r) => r.processStability?.soak);
+  if (!coldstart?.records?.length && !soakRecords.length) {
+    lines.push("");
+    lines.push("_No cold start or soak process-stability data captured for this run._");
+  }
+  if (coldstart?.records?.length) {
+    lines.push("");
+    lines.push("### Cold start & idle footprint");
+    lines.push("");
+    lines.push(
+      "| Target | Runtime | Iterations | Failures | Cold p50 (ms) | Cold p95 (ms) | Idle RSS p50 (MB) | Idle RSS p95 (MB) | Process SLO |",
+    );
+    lines.push("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | :---: |");
+    for (const c of coldstart.records) {
+      const coldP50 = c.coldStartMs?.p50 ?? c.coldStartMsMedian;
+      const idleP50 = c.idleRssMb?.p50 ?? c.idleRssMbMedian;
+      lines.push(
+        `| ${c.targetLabel} | ${c.runtime} | ${fmt(c.successes ?? c.iterations)} | ${fmt(c.failures)} | ${fmt(coldP50)} | ${fmt(c.coldStartMs?.p95)} | ${fmt(idleP50)} | ${fmt(c.idleRssMb?.p95)} | ${c.processSlo ? (c.processSlo.pass ? "PASS" : "TARGET MISS") : "—"} |`,
+      );
+    }
+  }
+  if (soakRecords.length) {
+    lines.push("");
+    lines.push("### Soak stability");
+    lines.push("");
+    lines.push(
+      "| Target | Scenario | Duration | RSS growth (MB/h) | Peak RSS (MB) | Event-loop lag p99 (ms) | GC p99 (ms) | Worker restarts | RSC recycles | Err % | Process SLO |",
+    );
+    lines.push("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |");
+    for (const r of soakRecords) {
+      lines.push(
+        `| ${r.targetLabel} | ${r.scenario} | ${r.config?.duration ?? "—"} | ${fmt(r.resource?.rssGrowthMbPerHour)} | ${fmt(r.resource?.maxRssMb)} | ${fmt(r.resource?.eventLoopLagP99Ms)} | ${fmt(r.resource?.gcDurationP99Ms)} | ${fmt(r.resource?.workerRestartCount)} | ${fmt(r.resource?.rscWorkerRecycleCount)} | ${fmtPct(r.processStability?.errorRate)} | ${processSloLabel(r.processSlo)} |`,
+      );
+    }
+    lines.push("");
+    lines.push(
+      "_RSS growth is calculated after the configured soak warmup window. Throughput and p99 latency drift are reserved for a future k6 interval-output pass._",
+    );
+  }
+
   // 2. Tracing hotspots
   lines.push("");
-  lines.push("## 2. Tracing hotspots (akanjs internal)");
+  lines.push("## 3. Tracing hotspots (akanjs internal)");
   const traceRecords = records.filter((r) => r.resource?.trace?.enabled && r.resource.trace.endpoints.length);
   const backlog: string[] = [];
   if (!traceRecords.length) {
@@ -235,7 +335,7 @@ const main = async () => {
 
   // 3. Improvement backlog
   lines.push("");
-  lines.push("## 3. Improvement backlog");
+  lines.push("## 4. Improvement backlog");
   if (!backlog.length) {
     lines.push("");
     lines.push(
@@ -244,25 +344,6 @@ const main = async () => {
   } else {
     lines.push("");
     for (const item of [...new Set(backlog)]) lines.push(`- ${item}`);
-  }
-
-  // cold start (if present)
-  const coldstart = await readJson<{
-    records: Array<{
-      targetLabel: string;
-      runtime: string;
-      coldStartMsMedian: number | null;
-      idleRssMbMedian: number | null;
-    }>;
-  }>(path.join(runDir, "coldstart.json"));
-  if (coldstart?.records?.length) {
-    lines.push("");
-    lines.push("## 4. Cold start & idle footprint");
-    lines.push("");
-    lines.push("| Target | Runtime | Cold start (ms, median) | Idle RSS (MB, median) |");
-    lines.push("| --- | --- | ---: | ---: |");
-    for (const c of coldstart.records)
-      lines.push(`| ${c.targetLabel} | ${c.runtime} | ${fmt(c.coldStartMsMedian)} | ${fmt(c.idleRssMbMedian)} |`);
   }
 
   const reportFile = path.join(runDir, "report.md");
@@ -283,6 +364,30 @@ const main = async () => {
       rssMb: recs.map((r) => r.resource?.maxRssMb ?? null),
       runtime: recs.map((r) => r.runtime),
     })),
+    processStability: {
+      coldstart:
+        coldstart?.records?.map((record) => ({
+          targetLabel: record.targetLabel,
+          runtime: record.runtime,
+          coldStartP50Ms: record.coldStartMs?.p50 ?? record.coldStartMsMedian ?? null,
+          coldStartP95Ms: record.coldStartMs?.p95 ?? null,
+          idleRssP50Mb: record.idleRssMb?.p50 ?? record.idleRssMbMedian ?? null,
+          idleRssP95Mb: record.idleRssMb?.p95 ?? null,
+          failures: record.failures ?? null,
+        })) ?? [],
+      soak: soakRecords.map((record) => ({
+        target: record.target,
+        targetLabel: record.targetLabel,
+        scenario: record.scenario,
+        rssGrowthMbPerHour: record.resource?.rssGrowthMbPerHour ?? null,
+        eventLoopLagP99Ms: record.resource?.eventLoopLagP99Ms ?? null,
+        gcDurationP99Ms: record.resource?.gcDurationP99Ms ?? null,
+        workerRestartCount: record.resource?.workerRestartCount ?? null,
+        rscWorkerRestartCount: record.resource?.rscWorkerRestartCount ?? null,
+        rscWorkerRecycleCount: record.resource?.rscWorkerRecycleCount ?? null,
+        timeSeries: record.resource?.timeSeries ?? [],
+      })),
+    },
   };
   await Bun.write(path.join(runDir, "report.chartdata.json"), `${JSON.stringify(chartData, null, 2)}\n`);
 

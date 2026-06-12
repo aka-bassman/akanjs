@@ -337,13 +337,14 @@ export class RouteTreeBuilder {
         }
         if (mod.generateHead) {
           const head = await mod.generateHead(props);
-          if (head !== null && head !== undefined) return resolveHeadExport(head);
+          if (head !== null && head !== undefined) return resolveHeadExport(head, { includeHeadSnapshot: false });
         }
         if (mod.generateMetadata) {
           const metadata = await mod.generateMetadata(props);
           return metadata === null || metadata === undefined ? metadata : resolveMetadataHead(metadata);
         }
-        if (mod.head !== undefined) return mod.head === null ? null : resolveHeadExport(mod.head);
+        if (mod.head !== undefined)
+          return mod.head === null ? null : resolveHeadExport(mod.head, { includeHeadSnapshot: false });
         return mod.metadata === undefined ? undefined : resolveMetadataHead(mod.metadata);
       },
     };

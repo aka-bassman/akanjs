@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import {
   BENCH_ROOT,
@@ -28,35 +29,57 @@ const renderTemplate = (template: string, vars: Record<string, string>) =>
 
 const allowedPackageText = (stack: StackConfig) => stack.allowedPackages.map((pkg) => `- ${pkg}`).join("\n");
 
-const writeWorkspaceDocs = async (stack: StackConfig, scenario: string, workspace: string) => {
+const readPromptAppendix = async (stack: StackConfig, vars: Record<string, string>) => {
+  if (!stack.promptAppendix) return "";
+  const appendixPath = path.isAbsolute(stack.promptAppendix)
+    ? stack.promptAppendix
+    : path.join(BENCH_ROOT, stack.promptAppendix);
+  const appendix = await Bun.file(appendixPath).text();
+  return renderTemplate(appendix, vars).trim();
+};
+
+const writeWorkspaceDocs = async (stack: StackConfig, scenario: string, runId: string, workspace: string) => {
   const scenarioDir = path.join(BENCH_ROOT, "scenarios", scenario);
   const requirements = await Bun.file(path.join(scenarioDir, "requirements.md")).text();
   const repairLoop = await Bun.file(path.join(scenarioDir, "repair-loop.md")).text();
   const promptTemplate = await Bun.file(path.join(scenarioDir, "prompt.md")).text();
-  const prompt = renderTemplate(promptTemplate, {
+  const promptVars = {
     stackLabel: stack.label,
     allowedPackages: allowedPackageText(stack),
-  });
+  };
+  const basePrompt = renderTemplate(promptTemplate, promptVars).trim();
+  const appendix = await readPromptAppendix(stack, promptVars);
+  const prompt = [basePrompt, appendix].filter(Boolean).join("\n\n");
   const runbook = `# Benchmark Runbook
 
 Stack: ${stack.label}
 Scenario: ${scenario}
+Run ID: ${runId}
 
 ## Manual Cursor Steps
 
 1. Open this directory as its own Cursor workspace.
 2. Start one agent run using \`BENCHMARK_PROMPT.md\` exactly as written.
-3. If build or smoke verification fails, follow \`REPAIR_LOOP.md\`.
-4. Save the Cursor token report as \`cursor-report.json\`.
-5. Run verification from the benchmark package:
+3. Do not add framework hints or product requirements beyond \`BENCHMARK_PROMPT.md\`; any stack-specific appendix is already included there.
+4. If build or smoke verification fails, follow \`REPAIR_LOOP.md\` for at most three repair prompts.
+5. Save token and timing metadata as \`cursor-report.json\`. Use \`schemas/cursor-report.example.json\` as the stable shape when no direct export is available.
+6. Run verification and collection from the benchmark package:
 
 \`\`\`bash
 cd ${BENCH_ROOT}
-bun harness/verify.ts --run <runId> --stack ${stack.id}
-bun harness/collect.ts --run <runId> --stack ${stack.id} --cursor-report ${relativeToBench(path.join(workspace, "cursor-report.json"))}
+bun harness/verify.ts --run ${runId} --stack ${stack.id}
+bun harness/collect.ts --run ${runId} --stack ${stack.id} --cursor-report ${relativeToBench(path.join(workspace, "cursor-report.json"))}
 \`\`\`
 
-Do not add requirements or hints that are not present in the prompt.
+## Benchmark Commands
+
+- Build: \`${stack.buildCommand.join(" ")}\`
+- Lint: \`${stack.lintCommand?.join(" ") ?? "not configured"}\`
+- Convention check: \`${stack.conventionCheck ?? "not configured"}\`
+- Start: \`${stack.startCommand.join(" ")}\`
+- Base URL: \`${stack.baseUrl}\`
+
+If verification fails, use only the failed command, raw log, and failed acceptance list as repair input.
 `;
 
   await Bun.write(path.join(workspace, "REQUIREMENTS.md"), requirements);
@@ -108,15 +131,25 @@ const setupStack = async ({
   skipCommands: boolean;
 }) => {
   const workspace = workspacePath(runId, stack.id);
-  if ((await pathExists(workspace)) && !force) {
-    throw new Error(`${relativeToBench(workspace)} already exists. Use --force only after removing it intentionally.`);
+  if (await pathExists(workspace)) {
+    if (!force) {
+      throw new Error(
+        `${relativeToBench(workspace)} already exists. Use --force only after removing it intentionally.`,
+      );
+    }
+    await rm(workspace, { recursive: true, force: true });
   }
   await ensureDir(path.dirname(workspace));
 
   const commands: Array<{ command: string[]; cwd: string; success: boolean; durationMs: number; skipped?: boolean }> =
     [];
   const started = Date.now();
-  const vars = { workspacePath: workspace };
+  const vars = {
+    workspacePath: workspace,
+    // `create-akan-workspace` joins dirname with process.cwd(), so absolute dirs
+    // would be treated as nested paths under BENCH_ROOT.
+    workspaceParentPath: relativeToBench(path.dirname(workspace)),
+  };
 
   if (!skipCommands) {
     for (const spec of stack.setup) {
@@ -141,7 +174,7 @@ const setupStack = async ({
     }
   }
 
-  await writeWorkspaceDocs(stack, scenario, workspace);
+  await writeWorkspaceDocs(stack, scenario, runId, workspace);
   const versionFailures = skipCommands ? [] : await verifyStackVersions(stack, workspace);
   if (versionFailures.length) {
     throw new Error(`Version check failed for ${stack.id}: ${JSON.stringify(versionFailures)}`);

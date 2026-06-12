@@ -349,7 +349,11 @@ export class AkanServer {
         sentAt: message.sentAt,
         pid: process.pid,
       } satisfies AkanIpcMessage);
-    else if (message.type === "shutdown") void this.stop();
+    else if (message.type === "shutdown") {
+      void this.stop()
+        .then(() => process.exit(0))
+        .catch(() => process.exit(1));
+    }
   }
 
   #startMetricsReporting() {

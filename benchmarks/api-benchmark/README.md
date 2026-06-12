@@ -77,18 +77,117 @@ bun harness/run.ts --target akan-single --suite db --vus 100 --duration 60s
 # Run one scenario in isolation when tuning an SLO miss.
 bun harness/run.ts --target akan-single --suite db --scenario db_list --vus 100 --duration 60s
 
-# 4. Cold start / idle footprint
-bun harness/coldstart.ts --all --iterations 5
+# 4. Production cold start / idle footprint
+(cd ../.. && bun run akan build minimal)
+bun harness/coldstart.ts --target akan-built-single --iterations 5
 
-# 5. WebSocket fan-out (local 1k baseline; Akan.js 2.2.12 target)
+# 5. Process stability soak (local reliability profile)
+bun harness/run.ts --target akan-built-single --suite signal --scenario signal_no_db --vus 50 --duration 30m --soak --sample-interval 5000 --soak-warmup-window 5m
+
+# 6. WebSocket fan-out (local 1k baseline; Akan.js 2.2.12 target)
 bun harness/run.ts --target akan-single --suite websocket --vus 1000 --duration 60s --msg-per-sec 50
 bun harness/run.ts --target raw-bun     --suite websocket --vus 1000 --duration 60s --msg-per-sec 50
 
-# 6. Generate the report (comparison matrix + tracing hotspots + backlog)
+# 7. Generate the report (comparison matrix + tracing hotspots + backlog)
 bun report/generate.ts <runId>
 ```
 
 `<runId>` is printed at the end of each run and is the `results/<runId>/` folder name.
+
+## Cold start, idle memory, and soak
+
+The process-stability track is about operational reliability rather than peak RPS. It records:
+
+- cold start ready time p50/p95 using `/_akan/app/health` for akanjs targets;
+- idle RSS after a configurable settle window;
+- soak RSS time series, RSS growth MB/hour, event-loop lag p99, GC duration p99, worker restart count and RSC worker recycle/restart count.
+
+### Dev start vs production runtime
+
+Use `akan-single` only for local development start profiling. It runs `bun run akan start minimal`,
+so CLI bootstrap and app preparation are included in the measured time.
+
+Use `akan-built-single` for publishable cold start and soak numbers. It assumes `dist/apps/minimal/main.js`
+already exists, starts that production artifact with `bun main.js`, and measures only process spawn
+to ready health. Build time is intentionally excluded.
+
+Fast smoke run:
+
+```bash
+cd benchmarks/api-benchmark
+(cd ../.. && bun run akan build minimal)
+RUN_ID="$(date -u +%Y-%m-%dT%H-%M-%S-prod-smoke)"
+bun harness/coldstart.ts --target akan-built-single --iterations 2 --settle 3000 --run-id "$RUN_ID"
+bun harness/run.ts --target akan-built-single --suite signal --scenario signal_no_db --vus 5 --duration 30s --soak --sample-interval 1000 --soak-warmup-window 5s --run-id "$RUN_ID"
+bun report/generate.ts "$RUN_ID"
+```
+
+Publishable local soak baseline:
+
+```bash
+cd benchmarks/api-benchmark
+(cd ../.. && bun run akan build minimal)
+RUN_ID="$(date -u +%Y-%m-%dT%H-%M-%S-soak)"
+bun harness/coldstart.ts --target akan-built-single --iterations 10 --settle 60000 --run-id "$RUN_ID"
+bun harness/run.ts --target akan-built-single --suite signal --scenario signal_no_db --vus 50 --duration 30m --soak --sample-interval 5000 --soak-warmup-window 5m --run-id "$RUN_ID"
+bun report/generate.ts "$RUN_ID"
+```
+
+### Production comparison run
+
+Built competitor targets use prebuilt JS artifacts under `dist/competitors/<target>/server.js`,
+so cold start excludes the TypeScript loader. This mirrors `akan-built-single`, which starts
+the prebuilt `dist/apps/minimal/main.js` artifact.
+
+Targets included in the production comparison set:
+
+- `akan-built-single` — built Akan minimal app, Bun gateway + worker.
+- `raw-bun-built` — raw `Bun.serve` artifact.
+- `elysia-built` — Elysia artifact on Bun.
+- `hono-built` — Hono artifact on Bun.
+- `raw-sqlite-built` — raw `bun:sqlite` artifact on Bun.
+- `fastify-built` — Fastify artifact on Node.
+
+Fast smoke:
+
+```bash
+cd benchmarks/api-benchmark
+bun run build:all-production
+RUN_ID="$(date -u +%Y-%m-%dT%H-%M-%S-prod-compare-smoke)"
+for target in akan-built-single raw-bun-built elysia-built hono-built fastify-built; do
+  bun harness/coldstart.ts --target "$target" --iterations 2 --settle 3000 --run-id "$RUN_ID"
+  bun harness/run.ts --target "$target" --suite pure_http --scenario pure_http_no_db --vus 5 --duration 10s --warmup 1s --soak --sample-interval 1000 --soak-warmup-window 3s --run-id "$RUN_ID"
+done
+bun report/generate.ts "$RUN_ID"
+```
+
+Publishable local comparison baseline:
+
+```bash
+cd benchmarks/api-benchmark
+bun run compare:production:30m
+```
+
+The wrapper script prints the generated `RUN_ID` and final report path. Override defaults with
+environment variables when needed:
+
+```bash
+cd benchmarks/api-benchmark
+RUN_ID=local-prod-compare TARGETS="akan-built-single raw-bun-built elysia-built hono-built fastify-built" bun run compare:production:30m
+SKIP_BUILD=1 DURATION=10m VUS=25 bun run compare:production:30m
+DRY_RUN=1 bun run compare:production:30m
+```
+
+`--sample-interval` defaults to `5000` in soak mode to keep long-run JSON files manageable.
+Use `--sample-interval 1000` when investigating a short regression. RSS growth is calculated
+after `--soak-warmup-window` (default `5m`) so cache and server warmup do not look like a leak.
+
+Interpret local soak numbers with machine caveats: keep background jobs quiet, avoid mixing
+different hardware in the same baseline, and treat `akan-cluster` separately because worker
+counts and external infra change the memory profile.
+Competitor targets do not expose Akan's internal metrics endpoint, so event-loop lag, GC
+duration and worker restart columns are expected to show `—` unless those servers are
+instrumented in a later pass.
 
 ## WebSocket fan-out
 
@@ -191,6 +290,14 @@ Current first target bands:
 
 Reports show `TARGET MISS` when a row misses these optimization bands. That is distinct from
 request failure; use the `Err %` column for HTTP/application errors.
+
+Process SLO targets are evaluated separately in the report's Process stability section:
+
+- cold start p95 under 1500ms;
+- idle RSS under 150MB for the minimal single target;
+- event-loop lag p99 under 20ms;
+- soak RSS growth under 25MB/hour;
+- soak error rate under 0.1%.
 
 ## akanjs target setup (important)
 

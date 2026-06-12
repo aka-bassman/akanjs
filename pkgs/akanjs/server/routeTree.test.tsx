@@ -1,11 +1,35 @@
 import { describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
+import { isValidElement } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
 import { RouteElementComposer } from "./routeElementComposer";
 import { RouteTreeBuilder } from "./routeTreeBuilder";
+import { AkanSegmentOutletReference } from "./rscSegmentOutletReference";
 
 async function renderToText(node: ReactNode): Promise<string> {
   return new Response(await renderToReadableStream(node)).text();
+}
+
+function containsElementType(node: ReactNode, type: unknown): boolean {
+  if (Array.isArray(node)) return node.some((child) => containsElementType(child, type));
+  if (!isValidElement(node)) return false;
+  if (node.type === type) return true;
+  const props = node.props as { children?: ReactNode; fallback?: ReactNode };
+  return containsElementType(props.children, type) || containsElementType(props.fallback, type);
+}
+
+function findElementProp(node: ReactNode, type: unknown, propName: string): unknown {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const value = findElementProp(child, type, propName);
+      if (value !== undefined) return value;
+    }
+    return undefined;
+  }
+  if (!isValidElement(node)) return undefined;
+  const props = node.props as { children?: ReactNode; fallback?: ReactNode; [key: string]: unknown };
+  if (node.type === type) return props[propName];
+  return findElementProp(props.children, type, propName) ?? findElementProp(props.fallback, type, propName);
 }
 
 describe("RouteTreeBuilder implicit locale", () => {
@@ -138,7 +162,15 @@ describe("RouteTreeBuilder implicit locale", () => {
     const html = await renderToText(head);
 
     expect(resolvedHead.hasExplicitLanguageAlternates).toBe(true);
-    expect(html).toContain("<title>Docs ko</title>");
+    expect(resolvedHead.headSnapshot?.version).toBe(1);
+    expect(resolvedHead.headSnapshot?.nodes[0]).toEqual({ tag: "title", text: "Docs ko" });
+    expect(resolvedHead.headSnapshot?.nodes[1]).toEqual({
+      tag: "meta",
+      attrs: { name: "description", content: "Section api" },
+    });
+    expect(html).toContain("Docs ko</title>");
+    expect(html).toContain('data-akan-head="route"');
+    expect(html).toContain('data-akan-head-key="title:0"');
     expect(html).toContain('name="description"');
     expect(html).toContain('content="Section api"');
     expect(html).toContain('name="robots"');
@@ -159,6 +191,53 @@ describe("RouteTreeBuilder implicit locale", () => {
     expect(html).toContain('hrefLang="en"');
     expect(html).toContain('href="https://example.com/en/docs"');
     expect(html).not.toContain("Root description");
+  });
+
+  test("resolves query-dependent metadata snapshots from target search params", async () => {
+    const routes = new RouteTreeBuilder({
+      "./__root_layout.tsx": async () => ({
+        default: ({ children }: { children: ReactNode }) => children,
+      }),
+      "./docs.tsx": async () => ({
+        default: () => null,
+        generateMetadata: ({ searchParams }) => {
+          const page = String(searchParams.page ?? "1");
+          return {
+            title: `Docs page ${page}`,
+            description: `Listing page ${page}`,
+            alternates: { canonical: `https://example.com/docs?page=${page}` },
+          };
+        },
+      }),
+    }).build();
+    const matched = RouteTreeBuilder.match("/ko/docs", routes);
+    if (!matched) throw new Error("route did not match");
+
+    const first = await RouteElementComposer.resolveHeadWithMetadata({
+      pathRoute: matched.pathRoute,
+      params: matched.params,
+      searchParams: { page: "1" },
+    });
+    const second = await RouteElementComposer.resolveHeadWithMetadata({
+      pathRoute: matched.pathRoute,
+      params: matched.params,
+      searchParams: { page: "2" },
+    });
+
+    expect(first.headSnapshot?.nodes).toContainEqual({ tag: "title", text: "Docs page 1" });
+    expect(first.headSnapshot?.nodes).toContainEqual({
+      tag: "link",
+      attrs: { rel: "canonical", href: "https://example.com/docs?page=1" },
+    });
+    expect(second.headSnapshot?.nodes).toContainEqual({ tag: "title", text: "Docs page 2" });
+    expect(second.headSnapshot?.nodes).toContainEqual({
+      tag: "meta",
+      attrs: { name: "description", content: "Listing page 2" },
+    });
+    expect(second.headSnapshot?.nodes).toContainEqual({
+      tag: "link",
+      attrs: { rel: "canonical", href: "https://example.com/docs?page=2" },
+    });
   });
 
   test("renders empty metadata exports as empty head fragments", async () => {
@@ -213,8 +292,14 @@ describe("RouteTreeBuilder implicit locale", () => {
       params: matched.params,
       searchParams: {},
     });
+    const resolvedHead = await RouteElementComposer.resolveHeadWithMetadata({
+      pathRoute: matched.pathRoute,
+      params: matched.params,
+      searchParams: {},
+    });
 
     expect(head as unknown).toEqual({ custom: "value" });
+    expect(resolvedHead.headSnapshot).toBeUndefined();
   });
 
   test("keeps automatic language alternates enabled for canonical-only metadata", async () => {
@@ -312,11 +397,11 @@ describe("RouteTreeBuilder implicit locale", () => {
       }),
     );
 
-    expect(guideHtml).toContain("<title>Guide</title>");
+    expect(guideHtml).toContain("Guide</title>");
     expect(guideHtml).not.toContain("Docs layout description");
     expect(guideHtml).not.toContain("Docs Site");
     expect(guideHtml).not.toContain("/root-og.png");
-    expect(referenceHtml).toContain("<title>Docs Layout</title>");
+    expect(referenceHtml).toContain("Docs Layout</title>");
     expect(referenceHtml).toContain("Docs layout description");
     expect(referenceHtml).toContain("Docs Site");
   });
@@ -502,5 +587,80 @@ describe("RouteTreeBuilder implicit locale", () => {
     const unmatchedHtml = await renderToText(unmatchedNotFound);
     expect(unmatchedHtml).toContain("docs missing");
     expect(unmatchedHtml).toContain("/ko/docs/missing/path");
+  });
+
+  test("composes route suffix renders", async () => {
+    const routes = new RouteTreeBuilder({
+      "./__root_layout.tsx": async () => ({
+        default: ({ children }: { children: ReactNode }) => <main>root:{children}</main>,
+      }),
+      "./docs/_layout.tsx": async () => ({
+        default: ({ children }: { children: ReactNode }) => <section>docs:{children}</section>,
+      }),
+      "./docs/api.tsx": async () => ({ default: () => <article>api</article> }),
+    }).build();
+    const matched = RouteTreeBuilder.match("/ko/docs/api", routes);
+    if (!matched) throw new Error("route did not match");
+
+    const suffix = RouteElementComposer.composeSuffix({
+      pathRoute: matched.pathRoute,
+      params: matched.params,
+      searchParams: {},
+      patchStartIndex: 2,
+    });
+    const invalidSuffix = RouteElementComposer.composeSuffix({
+      pathRoute: matched.pathRoute,
+      params: matched.params,
+      searchParams: {},
+      patchStartIndex: 99,
+    });
+
+    expect(await renderToText(suffix)).toContain("api");
+    expect(await renderToText(suffix)).not.toContain("docs:");
+    expect(invalidSuffix).toBeNull();
+  });
+
+  test("wraps full page renders in a guarded segment outlet without wrapping suffix renders", () => {
+    const previous = process.env.AKAN_PUBLIC_RSC_PARTIAL_COMMIT;
+    try {
+      const routes = new RouteTreeBuilder({
+        "./__root_layout.tsx": async () => ({
+          default: ({ children }: { children: ReactNode }) => <main>root:{children}</main>,
+        }),
+        "./docs/_layout.tsx": async () => ({
+          default: ({ children }: { children: ReactNode }) => <section>docs:{children}</section>,
+        }),
+        "./docs/api.tsx": async () => ({ default: () => <article>api</article> }),
+      }).build();
+      const matched = RouteTreeBuilder.match("/ko/docs/api", routes);
+      if (!matched) throw new Error("route did not match");
+
+      process.env.AKAN_PUBLIC_RSC_PARTIAL_COMMIT = "0";
+      const guardOff = RouteElementComposer.compose({
+        pathRoute: matched.pathRoute,
+        params: matched.params,
+        searchParams: {},
+      });
+      process.env.AKAN_PUBLIC_RSC_PARTIAL_COMMIT = "1";
+      const guardOn = RouteElementComposer.compose({
+        pathRoute: matched.pathRoute,
+        params: matched.params,
+        searchParams: {},
+      });
+      const suffix = RouteElementComposer.composeSuffix({
+        pathRoute: matched.pathRoute,
+        params: matched.params,
+        searchParams: {},
+        patchStartIndex: 2,
+      });
+
+      expect(containsElementType(guardOff, AkanSegmentOutletReference)).toBe(false);
+      expect(containsElementType(guardOn, AkanSegmentOutletReference)).toBe(true);
+      expect(findElementProp(guardOn, AkanSegmentOutletReference, "segmentKey")).toBe("slot:layout:/:lang:1:2");
+      expect(containsElementType(suffix, AkanSegmentOutletReference)).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.AKAN_PUBLIC_RSC_PARTIAL_COMMIT;
+      else process.env.AKAN_PUBLIC_RSC_PARTIAL_COMMIT = previous;
+    }
   });
 });

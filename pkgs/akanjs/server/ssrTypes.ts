@@ -31,10 +31,16 @@ export interface RscTraceMetadata {
   pathname: string;
   routeId: string;
   cache: "hit" | "miss" | "bypass";
+  cacheReason?: string;
   cacheKeyHash?: string;
-  partial?: "full" | "candidate" | "fallback";
+  partial?: "full" | "candidate" | "patch" | "fallback";
   partialReason?: string;
   partialCommonPrefixLength?: number;
+  patchStartIndex?: number;
+  patchSegmentPath?: string;
+  patchStartSegment?: string;
+  patchHeadSafe?: boolean;
+  patchHeadSnapshot?: string;
   routeState?: string;
 }
 

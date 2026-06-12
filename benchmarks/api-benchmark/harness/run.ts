@@ -1,6 +1,6 @@
 import path from "node:path";
 import { BENCH_ROOT, ensureDir, RESULTS_DIR, readJson, sleep, spawnServer, waitForHttp, which, writeJson } from "./lib";
-import { ResourceSampler } from "./resourceSampler";
+import { ResourceSampler, type ResourceSummary } from "./resourceSampler";
 import { loadTargets, type Target } from "./targets";
 
 /**
@@ -137,17 +137,30 @@ const parseArgs = () => {
   return {
     all: args.includes("--all"),
     target: get("--target"),
-    suites: (get("--suite", "rest") as string).split(","),
+    runId: get("--run-id"),
+    soak: args.includes("--soak"),
+    suites: (get("--suite", args.includes("--soak") ? "signal,db" : "rest") as string).split(","),
     scenarios: (get("--scenario", "") as string).split(",").filter(Boolean),
     vus: Number(get("--vus", "50")),
     duration: get("--duration", "30s") as string,
     warmup: get("--warmup", "10s") as string,
+    sampleIntervalMs: Number(get("--sample-interval", args.includes("--soak") ? "5000" : "1000")),
+    soakWarmupWindowMs: parseDurationMs(get("--soak-warmup-window", "5m") as string),
     rps: Number(get("--rps", "0")),
     msgPerSec: Number(get("--msg-per-sec", "50")),
     roomId: get("--room-id", "bench-room") as string,
     idMax: Number(get("--id-max", "9999")),
     skipMissingK6: args.includes("--skip-missing-k6"),
   };
+};
+
+const parseDurationMs = (value: string): number => {
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)(ms|s|m|h)?$/);
+  if (!match) return 0;
+  const amount = Number(match[1]);
+  const unit = match[2] ?? "ms";
+  const multipliers: Record<string, number> = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 };
+  return Math.round(amount * multipliers[unit]);
 };
 
 const runK6 = async (
@@ -340,11 +353,84 @@ const evaluateSlo = (
   return { sloKey, checks, pass: checks.every((c) => c.pass) };
 };
 
+const evaluateProcessSlo = (
+  processSlo: {
+    eventLoopLagP99Ms?: number;
+    soakRssGrowthMbPerHour?: number;
+  },
+  resource: ResourceSummary,
+  summary: Record<string, unknown> | null,
+  soak: boolean,
+) => {
+  const checks: Array<{ metric: string; value: number | null; bound: number; op: string; pass: boolean }> = [];
+  if (processSlo.eventLoopLagP99Ms != null && resource.eventLoopLagP99Ms != null) {
+    checks.push({
+      metric: "eventLoopLagP99Ms",
+      value: resource.eventLoopLagP99Ms,
+      bound: processSlo.eventLoopLagP99Ms,
+      op: "<=",
+      pass: resource.eventLoopLagP99Ms <= processSlo.eventLoopLagP99Ms,
+    });
+  }
+  if (soak && processSlo.soakRssGrowthMbPerHour != null && resource.rssGrowthMbPerHour != null) {
+    checks.push({
+      metric: "rssGrowthMbPerHour",
+      value: resource.rssGrowthMbPerHour,
+      bound: processSlo.soakRssGrowthMbPerHour,
+      op: "<=",
+      pass: resource.rssGrowthMbPerHour <= processSlo.soakRssGrowthMbPerHour,
+    });
+  }
+  const errorRate = summary?.errorRate as number | undefined;
+  if (soak && errorRate != null) {
+    checks.push({
+      metric: "soakErrorRate",
+      value: errorRate,
+      bound: 0.001,
+      op: "<=",
+      pass: errorRate <= 0.001,
+    });
+  }
+  return { checks, pass: checks.every((check) => check.pass) };
+};
+
+const summarizeProcessStability = (
+  opts: ReturnType<typeof parseArgs>,
+  summary: Record<string, unknown> | null,
+  resource: ResourceSummary,
+) => ({
+  soak: opts.soak,
+  sampleIntervalMs: opts.sampleIntervalMs,
+  soakWarmupWindowMs: opts.soakWarmupWindowMs,
+  rssGrowthMbPerHour: resource.rssGrowthMbPerHour ?? null,
+  eventLoopLagP99Ms: resource.eventLoopLagP99Ms ?? null,
+  gcDurationP99Ms: resource.gcDurationP99Ms ?? null,
+  workerRestartCount: resource.workerRestartCount ?? null,
+  rscWorkerRestartCount: resource.rscWorkerRestartCount ?? null,
+  rscWorkerRecycleCount: resource.rscWorkerRecycleCount ?? null,
+  errorRate: (summary?.errorRate as number | undefined) ?? null,
+  throughputDriftPct: null,
+  p99LatencyDriftPct: null,
+  driftNote: "k6 summary output is aggregate-only; interval drift is reserved for a future k6 time-series output.",
+});
+
+const assertBuildArtifact = async (target: Target): Promise<void> => {
+  if (!target.requiresBuildArtifact) return;
+  if (await Bun.file(target.requiresBuildArtifact).exists()) return;
+  throw new Error(
+    `${target.name} requires a production artifact at ${target.requiresBuildArtifact}. Run \`${target.buildCommandHint ?? "bun run akan build <app>"}\` first.`,
+  );
+};
+
 const main = async () => {
   const opts = parseArgs();
   const targets = await loadTargets();
-  const slo =
-    (await readJson<{ surfaces: Record<string, never> }>(path.join(BENCH_ROOT, "config", "slo.json")))?.surfaces ?? {};
+  const sloConfig = await readJson<{
+    surfaces?: Record<string, never>;
+    process?: { eventLoopLagP99Ms?: number; soakRssGrowthMbPerHour?: number };
+  }>(path.join(BENCH_ROOT, "config", "slo.json"));
+  const slo = sloConfig?.surfaces ?? {};
+  const processSlo = sloConfig?.process ?? {};
 
   if (!(await which("k6")) && !opts.skipMissingK6) {
     console.error(
@@ -359,7 +445,7 @@ const main = async () => {
     process.exit(1);
   }
 
-  const runId = new Date().toISOString().replace(/[:.]/g, "-");
+  const runId = opts.runId ?? new Date().toISOString().replace(/[:.]/g, "-");
   const runDir = path.join(RESULTS_DIR, runId);
   await ensureDir(runDir);
   console.info(`Run ${runId} -> ${runDir}`);
@@ -377,8 +463,10 @@ const main = async () => {
     const traceFile =
       process.env.AKAN_TRACE === "1" && target.metricsUrl ? path.join(runDir, `${target.name}.trace.json`) : undefined;
     const serverEnv = traceFile ? { ...target.env, AKAN_TRACE_FILE: traceFile } : target.env;
-    const server = spawnServer(target.cmd, serverEnv, target.cwd ?? BENCH_ROOT);
+    let server: ReturnType<typeof spawnServer> | undefined;
     try {
+      await assertBuildArtifact(target);
+      server = spawnServer(target.cmd, serverEnv, target.cwd ?? BENCH_ROOT);
       const readyMs = await waitForTargetReady(target, 60_000);
       console.info(`ready in ${Math.round(readyMs)}ms (pid ${server.pid})`);
       const selectedScenarios = opts.suites.flatMap((suite) =>
@@ -395,7 +483,12 @@ const main = async () => {
         if (scenario.auth && !token)
           console.warn(`  ${scenario.id}: no token (set BENCH_TOKEN for ${target.name}); running unauthenticated.`);
         const resultFile = path.join(runDir, `${target.name}__${scenario.id}.k6.json`);
-        const sampler = new ResourceSampler({ pid: server.pid, metricsUrl: target.metricsUrl, intervalMs: 1_000 });
+        const sampler = new ResourceSampler({
+          pid: server.pid,
+          metricsUrl: target.metricsUrl,
+          intervalMs: opts.sampleIntervalMs,
+          slopeWarmupMs: opts.soak ? opts.soakWarmupWindowMs : 0,
+        });
         sampler.start();
 
         const env: Record<string, string> = {
@@ -444,11 +537,21 @@ const main = async () => {
           scenario: scenario.id,
           surface: scenario.surface,
           axis: scenario.axis,
-          config: { vus: opts.vus, duration: opts.duration, rps: opts.rps, msgPerSec: opts.msgPerSec },
+          config: {
+            vus: opts.vus,
+            duration: opts.duration,
+            rps: opts.rps,
+            msgPerSec: opts.msgPerSec,
+            soak: opts.soak,
+            sampleIntervalMs: opts.sampleIntervalMs,
+            soakWarmupWindowMs: opts.soakWarmupWindowMs,
+          },
           readyMs: Math.round(readyMs),
           result: summary,
           resource,
           slo: summary ? evaluateSlo(slo as never, scenario.sloKey, summary) : null,
+          processSlo: evaluateProcessSlo(processSlo, resource, summary, opts.soak),
+          processStability: summarizeProcessStability(opts, summary, resource),
           note: target.notes,
         };
         await writeJson(path.join(runDir, `${target.name}__${scenario.id}.json`), record);
@@ -456,7 +559,7 @@ const main = async () => {
     } catch (error) {
       console.error(`Target ${target.name} failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
-      await server.stop();
+      await server?.stop();
     }
   }
 

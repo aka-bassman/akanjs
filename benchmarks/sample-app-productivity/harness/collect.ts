@@ -130,6 +130,33 @@ const qualityCounters = async (workspace: string, classification: LocClassificat
   };
 };
 
+const resolveBenchPath = (value: string): string => (path.isAbsolute(value) ? value : path.join(BENCH_ROOT, value));
+
+const emptyLint = (): VerificationSummary["lint"] => ({
+  success: true,
+  durationMs: null,
+  command: null,
+  logFile: null,
+  skipped: true,
+  note: "Lint result was not present in the verification record.",
+});
+
+const emptyConvention = (): VerificationSummary["convention"] => ({
+  success: true,
+  checker: null,
+  durationMs: null,
+  logFile: null,
+  skipped: true,
+  violations: [],
+  metrics: {},
+  note: "Convention result was not present in the verification record.",
+});
+
+const metricNumber = (metrics: Record<string, number | boolean | string | null>, key: string): number | null => {
+  const value = metrics[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+};
+
 const main = async () => {
   const args = parseArgs({ run: "smoke", mode: "repair-loop", iteration: "1" });
   const runId = String(args["run-id"] ?? args.run);
@@ -143,25 +170,42 @@ const main = async () => {
   if (!stack) throw new Error(`Unknown stack: ${stackId}`);
 
   const workspace = workspacePath(runId, stack.id);
+  if (!(await pathExists(workspace))) {
+    throw new Error(`Missing workspace for ${stack.id}: ${relativeToBench(workspace)}. Run harness/setup.ts first.`);
+  }
   const setup = await readJson<SetupRecord>(setupPath(runId, stack.id));
   const verification = await readJson<VerificationSummary>(verificationPath(runId, stack.id));
-  if (!verification) throw new Error(`Missing verification record for ${stack.id}. Run harness/verify.ts first.`);
+  if (!verification) {
+    throw new Error(
+      `Missing verification record for ${stack.id}: ${relativeToBench(
+        verificationPath(runId, stack.id),
+      )}. Run harness/verify.ts first.`,
+    );
+  }
 
   const cursorReportPath = args["cursor-report"]
-    ? path.resolve(String(args["cursor-report"]))
+    ? resolveBenchPath(String(args["cursor-report"]))
     : path.join(workspace, "cursor-report.json");
   const cursorReport = normalizeCursorReport(await readJson<Partial<CursorReport>>(cursorReportPath));
   const classification = await readJson<LocClassification>(path.join(BENCH_ROOT, "config", "loc-classification.json"));
   if (!classification) throw new Error("Missing config/loc-classification.json");
 
   const code = await classifyLoc(workspace, classification);
-  const quality = await qualityCounters(workspace, classification);
+  const lint = verification.lint ?? emptyLint();
+  const convention = verification.convention ?? emptyConvention();
+  const baseQuality = await qualityCounters(workspace, classification);
+  const quality = {
+    ...baseQuality,
+    conventionViolationCount: convention.violations.length,
+    forbiddenDependencyCount: metricNumber(convention.metrics, "forbiddenDependencyCount"),
+  };
   const lockfile = await findFirstExisting(workspace, LOCKFILES);
   const lockfileHash = lockfile ? await hashFile(lockfile) : null;
   const packages = await readPackageVersions(workspace);
   const notes = [...(cursorReport.notes ?? [])];
+  if (!setup) notes.push(`Setup record not found at ${relativeToBench(setupPath(runId, stack.id))}.`);
   if (!(await pathExists(cursorReportPath)))
-    notes.push(`Cursor report not found at ${cursorReportPath}; token fields are null.`);
+    notes.push(`Cursor report not found at ${relativeToBench(cursorReportPath)}; token fields are null.`);
 
   const record: RunRecord = {
     runId,
@@ -183,6 +227,8 @@ const main = async () => {
     agentRuns: cursorReport.agentRuns,
     build: verification.build,
     tests: verification.tests,
+    lint,
+    convention,
     code,
     quality,
     acceptance: verification.acceptance,

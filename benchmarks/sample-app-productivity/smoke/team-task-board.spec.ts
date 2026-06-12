@@ -27,55 +27,64 @@ const selectOptionLike = async (page: Page, control: Locator, preferred: RegExp,
 };
 
 test("team task board main flow", async ({ page }) => {
-  await page.goto(baseUrl);
-  if (
-    await page
-      .getByText(/task/i)
-      .count()
-      .then((count) => count === 0)
-  ) {
-    await page.goto(`${baseUrl}/tasks`);
-  }
+  await test.step("open task list", async () => {
+    await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+    if (
+      await page
+        .getByText(/task/i)
+        .count()
+        .then((count) => count === 0)
+    ) {
+      await page.goto(`${baseUrl}/tasks`, { waitUntil: "domcontentloaded" });
+    }
 
-  const taskList = page
-    .getByTestId("task-list")
-    .or(page.getByRole("list"))
-    .or(page.getByText(/Draft onboarding/i));
-  await expect(taskList.first()).toBeVisible();
+    const taskList = page
+      .getByTestId("task-list")
+      .or(page.getByRole("list"))
+      .or(page.getByText(/Draft onboarding/i));
+    await expect(taskList.first()).toBeVisible();
+  });
 
   const title = `Smoke task ${Date.now()}`;
-  await byTestIdOrLabel(page, "new-task-title", /title|task/i).fill(title);
-  const description = byTestIdOrLabel(page, "new-task-description", /description/i);
-  if ((await description.count()) > 0) await description.first().fill("Created by productivity benchmark smoke test.");
+  await test.step("create and assign task", async () => {
+    await byTestIdOrLabel(page, "new-task-title", /title|task/i).fill(title);
+    const description = byTestIdOrLabel(page, "new-task-description", /description/i);
+    if ((await description.count()) > 0)
+      await description.first().fill("Created by productivity benchmark smoke test.");
 
-  const assignee = byTestIdOrLabel(page, "assignee-select", /assignee|user/i);
-  if ((await assignee.count()) > 0) await selectOptionLike(page, assignee.first(), /Mina|Joon|Alex/i, "Mina Kim");
+    const assignee = byTestIdOrLabel(page, "assignee-select", /assignee|user/i);
+    if ((await assignee.count()) > 0) await selectOptionLike(page, assignee.first(), /Mina|Joon|Alex/i, "Mina Kim");
 
-  await firstExisting(
-    page.getByTestId("create-task"),
-    page.getByRole("button", { name: /create|add|save/i }),
-    page.getByText(/create|add|save/i),
-  ).then((button) => button.click());
-  await expect(page.getByText(title)).toBeVisible();
+    await firstExisting(
+      page.getByTestId("create-task"),
+      page.getByRole("button", { name: /create|add|save/i }),
+      page.getByText(/create|add|save/i),
+    ).then((button) => button.click());
+    await expect(page.getByText(title)).toBeVisible();
+  });
 
-  const createdRow = page
-    .getByText(title)
-    .locator("xpath=ancestor::*[self::li or self::tr or self::article or self::div][1]");
-  const statusControl = createdRow
-    .getByTestId("task-status")
-    .or(createdRow.getByLabel(/status/i))
-    .or(page.getByTestId("task-status"))
-    .or(page.getByLabel(/status/i));
-  await selectOptionLike(page, statusControl.first(), /done|complete|in progress/i, "done");
+  await test.step("change status and filter", async () => {
+    const createdRow = page
+      .getByText(title)
+      .locator("xpath=ancestor::*[self::li or self::tr or self::article or self::div][1]");
+    const statusControl = createdRow
+      .getByTestId("task-status")
+      .or(createdRow.getByLabel(/status/i))
+      .or(page.getByTestId("task-status"))
+      .or(page.getByLabel(/status/i));
+    await selectOptionLike(page, statusControl.first(), /done|complete|in progress/i, "done");
 
-  const filter = byTestIdOrLabel(page, "status-filter", /filter|status/i);
-  if ((await filter.count()) > 0) await selectOptionLike(page, filter.first(), /done|all/i, "done");
-  await expect(page.getByText(title)).toBeVisible();
+    const filter = byTestIdOrLabel(page, "status-filter", /filter|status/i);
+    if ((await filter.count()) > 0) await selectOptionLike(page, filter.first(), /done|all/i, "done");
+    await expect(page.getByText(title)).toBeVisible();
+  });
 
-  await page.getByText(title).first().click();
-  const detail = page.getByTestId("task-detail").or(page.getByText(/Created by productivity benchmark smoke test/i));
-  await expect(detail.first()).toBeVisible();
+  await test.step("show detail and persist after reload", async () => {
+    await page.getByText(title).first().click();
+    const detail = page.getByTestId("task-detail").or(page.getByText(/Created by productivity benchmark smoke test/i));
+    await expect(detail.first()).toBeVisible();
 
-  await page.reload();
-  await expect(page.getByText(title)).toBeVisible();
+    await page.reload();
+    await expect(page.getByText(title)).toBeVisible();
+  });
 });

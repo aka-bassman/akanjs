@@ -9,11 +9,13 @@ const main = async () => {
   const stack = args.stack ? String(args.stack) : null;
   const all = Boolean(args.all) || !stack;
   const skipCommands = Boolean(args["skip-commands"]);
+  const force = Boolean(args.force);
 
   const setupArgs = ["harness/setup.ts", "--scenario", scenario, "--run", runId];
   if (all) setupArgs.push("--all");
   else setupArgs.push("--stack", stack as string);
   if (skipCommands) setupArgs.push("--skip-commands");
+  if (force) setupArgs.push("--force");
 
   const setup = await runCommand(["bun", ...setupArgs], { cwd: BENCH_ROOT });
   if (!setup.success) {
@@ -28,11 +30,25 @@ const main = async () => {
   lines.push(`# Manual Cursor Run Instructions — ${runId}`);
   lines.push("");
   lines.push("Open each workspace in Cursor and run `BENCHMARK_PROMPT.md` exactly as written.");
-  lines.push("After each run, save Cursor token usage to `cursor-report.json`, then verify and collect.");
+  lines.push(
+    "Do not add stack-specific implementation hints beyond the prompt; any stack appendix is already included there.",
+  );
+  lines.push("If verification fails, follow `REPAIR_LOOP.md`.");
+  lines.push(
+    "After the final attempt, save token and timing metadata to `cursor-report.json`, then verify and collect.",
+  );
+  lines.push("Use `schemas/cursor-report.example.json` when Cursor does not provide every field directly.");
   lines.push("");
   for (const item of stacks) {
     const workspace = workspacePath(runId, item.id);
     lines.push(`## ${item.label}`);
+    lines.push("");
+    lines.push(`Workspace: \`${relativeToBench(workspace)}\``);
+    lines.push(`Build command: \`${item.buildCommand.join(" ")}\``);
+    lines.push(`Lint command: \`${item.lintCommand?.join(" ") ?? "not configured"}\``);
+    lines.push(`Convention check: \`${item.conventionCheck ?? "not configured"}\``);
+    lines.push(`Start command: \`${item.startCommand.join(" ")}\``);
+    lines.push(`Base URL: \`${item.baseUrl}\``);
     lines.push("");
     lines.push("```bash");
     lines.push(`cursor ${workspace}`);

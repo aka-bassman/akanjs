@@ -18,6 +18,12 @@ export interface PageConfig {
   bottomInset?: boolean | number;
   gesture?: boolean;
   cache?: boolean;
+  /**
+   * Opt in to guarded RSC page suffix commits when the page does not require
+   * head/metadata updates and the retained route chain head is invariant for
+   * sibling navigations under the same layout.
+   */
+  rscPatchHeadSafe?: boolean;
   topSafeAreaColor?: string;
   bottomSafeAreaColor?: string;
 }
@@ -58,9 +64,19 @@ export interface LayoutErrorProps extends LayoutNotFoundProps {
 }
 export type Head = ReactNode;
 export type GenerateHead = (props: PageProps) => PromiseOrObject<Head | null | undefined>;
+export interface AkanHeadSnapshotNode {
+  tag: "title" | "meta" | "link";
+  attrs?: Record<string, string>;
+  text?: string;
+}
+export interface AkanHeadSnapshotV1 {
+  version: 1;
+  nodes: AkanHeadSnapshotNode[];
+}
 export interface ResolvedHead {
   node: Head | null | undefined;
   hasExplicitLanguageAlternates: boolean;
+  headSnapshot?: AkanHeadSnapshotV1;
 }
 export type ResolveHeadResult = Head | ResolvedHead | null | undefined;
 export type ResolveHead = (props: PageProps) => PromiseOrObject<ResolveHeadResult>;

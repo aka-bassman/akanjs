@@ -7,12 +7,18 @@ interface StackSummary {
   label: string;
   runs: number;
   passedRuns: number;
+  lintPassedRuns: number;
+  conventionPassedRuns: number;
   failRate: number;
+  tokenCoverage: number;
   medianTokens: number | null;
   medianWallClockMs: number | null;
   medianLoc: number | null;
   medianGlueLoc: number | null;
   medianAppSourceLoc: number | null;
+  medianTestLoc: number | null;
+  medianGeneratedOrLockLoc: number | null;
+  medianConventionViolations: number | null;
 }
 
 const fmt = (value: number | null | undefined, suffix = "") =>
@@ -20,7 +26,10 @@ const fmt = (value: number | null | undefined, suffix = "") =>
 
 const pct = (value: number) => `${Math.round(value * 100)}%`;
 
-const passed = (record: RunRecord) => record.build.success && record.tests.success;
+const lintPassed = (record: RunRecord) => record.lint?.success ?? true;
+const conventionPassed = (record: RunRecord) => record.convention?.success ?? true;
+const passed = (record: RunRecord) =>
+  record.build.success && record.tests.success && lintPassed(record) && conventionPassed(record);
 
 const stackSummary = (records: RunRecord[]): StackSummary[] => {
   const groups = new Map<string, RunRecord[]>();
@@ -30,12 +39,18 @@ const stackSummary = (records: RunRecord[]): StackSummary[] => {
   return [...groups.entries()]
     .map(([stack, stackRecords]) => {
       const passedRuns = stackRecords.filter(passed).length;
+      const lintPassedRuns = stackRecords.filter(lintPassed).length;
+      const conventionPassedRuns = stackRecords.filter(conventionPassed).length;
+      const tokenRecords = stackRecords.filter((record) => record.tokens.total != null).length;
       return {
         stack,
         label: stackRecords[0]?.stackLabel ?? stack,
         runs: stackRecords.length,
         passedRuns,
+        lintPassedRuns,
+        conventionPassedRuns,
         failRate: stackRecords.length ? 1 - passedRuns / stackRecords.length : 0,
+        tokenCoverage: stackRecords.length ? tokenRecords / stackRecords.length : 0,
         medianTokens: median(
           stackRecords.map((record) => record.tokens.total).filter((value): value is number => value != null),
         ),
@@ -45,6 +60,13 @@ const stackSummary = (records: RunRecord[]): StackSummary[] => {
         medianLoc: median(stackRecords.map((record) => record.code.loc)),
         medianGlueLoc: median(stackRecords.map((record) => record.code.glueLoc)),
         medianAppSourceLoc: median(stackRecords.map((record) => record.code.appSourceLoc)),
+        medianTestLoc: median(stackRecords.map((record) => record.code.testLoc)),
+        medianGeneratedOrLockLoc: median(stackRecords.map((record) => record.code.generatedOrLockLoc)),
+        medianConventionViolations: median(
+          stackRecords
+            .map((record) => record.quality?.conventionViolationCount)
+            .filter((value): value is number => value != null),
+        ),
       };
     })
     .sort((a, b) => a.stack.localeCompare(b.stack));
@@ -95,11 +117,15 @@ const main = async () => {
   lines.push("");
   lines.push("## Summary");
   lines.push("");
-  lines.push("| Stack | Runs | Pass | Fail rate | Median tokens | Median wall-clock | LOC | Glue LOC | App LOC |");
-  lines.push("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+  lines.push(
+    "| Stack | Runs | Pass | Lint pass | Convention pass | Fail rate | Token coverage | Median tokens | Median wall-clock | LOC | Glue LOC | App LOC | Test LOC | Generated/lock LOC | Convention violations |",
+  );
+  lines.push(
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+  );
   for (const summary of summaries) {
     lines.push(
-      `| ${summary.label} | ${summary.runs} | ${summary.passedRuns} | ${pct(summary.failRate)} | ${fmt(summary.medianTokens)} | ${fmt(summary.medianWallClockMs, "ms")} | ${fmt(summary.medianLoc)} | ${fmt(summary.medianGlueLoc)} | ${fmt(summary.medianAppSourceLoc)} |`,
+      `| ${summary.label} | ${summary.runs} | ${summary.passedRuns} | ${summary.lintPassedRuns} | ${summary.conventionPassedRuns} | ${pct(summary.failRate)} | ${pct(summary.tokenCoverage)} | ${fmt(summary.medianTokens)} | ${fmt(summary.medianWallClockMs, "ms")} | ${fmt(summary.medianLoc)} | ${fmt(summary.medianGlueLoc)} | ${fmt(summary.medianAppSourceLoc)} | ${fmt(summary.medianTestLoc)} | ${fmt(summary.medianGeneratedOrLockLoc)} | ${fmt(summary.medianConventionViolations)} |`,
     );
   }
 
@@ -111,7 +137,11 @@ const main = async () => {
   lines.push(`- Akan wall-clock time: ${fmt(akan?.medianWallClockMs, "ms")}`);
   lines.push(`- Competitor median wall-clock time: ${fmt(competitorMedianWallClockMs, "ms")}`);
   lines.push(`- Akan final acceptance pass: ${akan ? `${akan.passedRuns}/${akan.runs}` : "n/a"}`);
+  lines.push(`- Akan lint pass: ${akan ? `${akan.lintPassedRuns}/${akan.runs}` : "n/a"}`);
+  lines.push(`- Akan convention pass: ${akan ? `${akan.conventionPassedRuns}/${akan.runs}` : "n/a"}`);
   lines.push(`- Akan generated LOC: ${fmt(akan?.medianLoc)}`);
+  lines.push(`- Akan glue LOC: ${fmt(akan?.medianGlueLoc)}`);
+  lines.push(`- Akan convention violations: ${fmt(akan?.medianConventionViolations)}`);
 
   const failed = records.filter((record) => !passed(record));
   lines.push("");
@@ -123,7 +153,11 @@ const main = async () => {
     lines.push("");
     for (const record of failed) {
       const failedAcceptance = record.acceptance.filter((item) => !item.pass).map((item) => item.id);
-      lines.push(`- ${record.stack} iteration ${record.iteration}: failed ${failedAcceptance.join(", ") || "unknown"}`);
+      const conventionFailures = record.convention?.violations.map((item) => item.id) ?? [];
+      const suffix = conventionFailures.length ? `; convention ${conventionFailures.join(", ")}` : "";
+      lines.push(
+        `- ${record.stack} iteration ${record.iteration}: failed ${failedAcceptance.join(", ") || "unknown"}${suffix}`,
+      );
     }
   }
 
@@ -145,7 +179,11 @@ const main = async () => {
       akanWallClockMs: akan?.medianWallClockMs ?? null,
       competitorMedianWallClockMs,
       akanFinalAcceptancePass: akan ? akan.passedRuns === akan.runs : null,
+      akanLintPass: akan ? akan.lintPassedRuns === akan.runs : null,
+      akanConventionPass: akan ? akan.conventionPassedRuns === akan.runs : null,
       akanGeneratedLoc: akan?.medianLoc ?? null,
+      akanGlueLoc: akan?.medianGlueLoc ?? null,
+      akanConventionViolations: akan?.medianConventionViolations ?? null,
     },
   };
 

@@ -46,6 +46,9 @@ export interface Target {
    * whose documents use string ids that cannot be synthesised client-side.
    */
   seed?: { count: number; bodyKey: string };
+  /** Required file for prebuilt targets. Missing artifacts fail fast with buildCommandHint. */
+  requiresBuildArtifact?: string;
+  buildCommandHint?: string;
   notes?: string;
 }
 
@@ -85,6 +88,33 @@ const competitor = (
   surfaces,
 });
 
+const builtCompetitor = (
+  name: string,
+  label: string,
+  port: number,
+  runtime: Runtime,
+  runtimeLabel: "bun" | "node",
+  surfaces: Target["surfaces"],
+): Target => {
+  const artifact = path.join(BENCH_ROOT, "dist", "competitors", name, "server.js");
+  return {
+    name: `${name}-built`,
+    label,
+    runtime,
+    runtimeLabel,
+    cmd: runtime === "node" ? ["node", artifact] : ["bun", artifact],
+    env: { PORT: String(port) },
+    port,
+    baseUrl: `http://127.0.0.1:${port}`,
+    wsUrl: surfaces.includes("websocket") ? `ws://127.0.0.1:${port}/ws` : undefined,
+    paths: canonicalPaths(),
+    surfaces,
+    requiresBuildArtifact: artifact,
+    buildCommandHint: "bun run build:competitors",
+    notes: "Production-like competitor artifact: prebuilt JS server, excludes TypeScript loader startup.",
+  };
+};
+
 /**
  * Signal endpoint paths for an app exposing the shared `user` model + `admin` auth.
  * Routes are `/api/<refName>/<endpoint>/<params>` (see signal.resolver.ts). Verified against
@@ -105,9 +135,13 @@ const AKAN_ADMIN_CREDENTIALS = {
   accountId: process.env.BENCH_AKAN_ADMIN_ACCOUNT_ID ?? "bench-admin@akanjs.com",
   password: process.env.BENCH_AKAN_ADMIN_PASSWORD ?? "benchadmin1234",
 };
+const REPO_ROOT = path.resolve(BENCH_ROOT, "..", "..");
+const AKAN_APP_NAME = process.env.BENCH_AKAN_APP ?? "minimal";
+const AKAN_BUILT_CWD = path.join(REPO_ROOT, "dist", "apps", AKAN_APP_NAME);
+const AKAN_BUILT_MAIN = path.join(AKAN_BUILT_CWD, "main.js");
 const AKAN_DEFAULT_DEV_PORT = 8283;
-const AKAN_PORT = Number(process.env.BENCH_AKAN_PORT ?? String(AKAN_DEFAULT_DEV_PORT));
-const AKAN_PORT_OFFSET = AKAN_PORT - AKAN_DEFAULT_DEV_PORT;
+const AKAN_PORT_OFFSET = Number(process.env.PORT_OFFSET ?? "0");
+const AKAN_PORT = Number(process.env.BENCH_AKAN_PORT ?? String(AKAN_DEFAULT_DEV_PORT + AKAN_PORT_OFFSET));
 
 export const TARGETS: Record<string, Target> = {
   "raw-bun": competitor("raw-bun", "raw Bun.serve", "competitors/raw-bun/server.ts", 4001, "bun", "bun", [
@@ -137,6 +171,29 @@ export const TARGETS: Record<string, Target> = {
     "db",
     "fullstack",
   ]),
+  "raw-bun-built": builtCompetitor("raw-bun", "raw Bun.serve (built)", 4001, "bun", "bun", [
+    "pure_http",
+    "rest",
+    "websocket",
+    "fullstack",
+  ]),
+  "elysia-built": builtCompetitor("elysia", "ElysiaJS (built / Bun)", 4002, "bun", "bun", [
+    "pure_http",
+    "rest",
+    "fullstack",
+  ]),
+  "hono-built": builtCompetitor("hono", "Hono (built / Bun)", 4003, "bun", "bun", ["pure_http", "rest", "fullstack"]),
+  "fastify-built": builtCompetitor("fastify", "Fastify (built / Node)", 4004, "node", "node", [
+    "pure_http",
+    "rest",
+    "fullstack",
+  ]),
+  "raw-sqlite-built": builtCompetitor("raw-sqlite", "raw bun:sqlite (built)", 4005, "bun", "bun", [
+    "pure_http",
+    "rest",
+    "db",
+    "fullstack",
+  ]),
 
   // akanjs targets. The start command and Signal paths depend on the app under test.
   // Defaults assume an app named "minimal" with a `user` model, served via the gateway on :8282.
@@ -146,7 +203,7 @@ export const TARGETS: Record<string, Target> = {
     label: "akanjs (single / SQLite)",
     runtime: "bun",
     runtimeLabel: "bun",
-    cmd: ["bun", "run", "akan", "start", process.env.BENCH_AKAN_APP ?? "minimal"],
+    cmd: ["bun", "run", "akan", "start", AKAN_APP_NAME],
     cwd: path.resolve(BENCH_ROOT, ".."),
     env: {
       AKAN_PUBLIC_OPERATION_MODE: "local",
@@ -169,14 +226,53 @@ export const TARGETS: Record<string, Target> = {
     loginCredentials: AKAN_ADMIN_CREDENTIALS,
     seed: { count: Number(process.env.BENCH_AKAN_SEED ?? "10000"), bodyKey: "data" },
     surfaces: ["pure_http", "signal", "rest", "db", "websocket", "fullstack", "ssr"],
-    notes: "Single-process mode: SQLite document store, in-process cache/queue/pubsub.",
+    notes:
+      "Dev/local start mode: includes CLI bootstrap and app preparation time; do not use this row for production cold start claims.",
+  },
+  "akan-built-single": {
+    name: "akan-built-single",
+    label: "akanjs (built single / SQLite)",
+    runtime: "bun",
+    runtimeLabel: "bun",
+    cmd: ["bun", "main.js"],
+    cwd: AKAN_BUILT_CWD,
+    env: {
+      NODE_ENV: "production",
+      USE_AKANJS_PKGS: "true",
+      AKAN_PUBLIC_REPO_NAME: process.env.AKAN_PUBLIC_REPO_NAME ?? "Ieading-flight-guidance",
+      AKAN_PUBLIC_SERVE_DOMAIN: process.env.AKAN_PUBLIC_SERVE_DOMAIN ?? "akanjs.com",
+      AKAN_PUBLIC_APP_NAME: AKAN_APP_NAME,
+      AKAN_PUBLIC_ENV: process.env.AKAN_PUBLIC_ENV ?? "local",
+      AKAN_PUBLIC_OPERATION_MODE: "local",
+      PORT_OFFSET: String(AKAN_PORT_OFFSET),
+      PORT: String(AKAN_PORT),
+      AKAN_PUBLIC_CLIENT_PORT: String(AKAN_PORT),
+      AKAN_PUBLIC_SERVER_PORT: String(AKAN_PORT),
+      SERVER_MODE: "all",
+      AKAN_PUBLIC_LOG_LEVEL: "warn",
+      AKAN_LOG_FILE_LEVEL: "warn",
+      AKAN_BENCH_SKIP_REQUEST_ID: "1",
+      AKAN_MEMORY_LOG: "1",
+      AKAN_MEMORY_LOG_INTERVAL_MS: "1000",
+    },
+    port: AKAN_PORT,
+    baseUrl: `http://127.0.0.1:${AKAN_PORT}`,
+    wsUrl: `ws://127.0.0.1:${AKAN_PORT}/api/ws`,
+    metricsUrl: `http://127.0.0.1:${AKAN_PORT}/_akan/app/metrics`,
+    paths: AKAN_USER_PATHS,
+    loginCredentials: AKAN_ADMIN_CREDENTIALS,
+    seed: { count: Number(process.env.BENCH_AKAN_SEED ?? "10000"), bodyKey: "data" },
+    surfaces: ["pure_http", "signal", "rest", "db", "websocket", "fullstack", "ssr"],
+    requiresBuildArtifact: AKAN_BUILT_MAIN,
+    buildCommandHint: `bun run akan build ${AKAN_APP_NAME}`,
+    notes: "Production artifact mode: prebuilt dist app, excludes build/dev preparation time from cold start.",
   },
   "akan-cluster": {
     name: "akan-cluster",
     label: "akanjs (cluster / Postgres+Redis)",
     runtime: "bun",
     runtimeLabel: "bun",
-    cmd: ["bun", "run", "akan", "start", process.env.BENCH_AKAN_APP ?? "minimal"],
+    cmd: ["bun", "run", "akan", "start", AKAN_APP_NAME],
     cwd: path.resolve(BENCH_ROOT, ".."),
     env: {
       AKAN_PUBLIC_OPERATION_MODE: "cluster",

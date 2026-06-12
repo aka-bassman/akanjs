@@ -121,12 +121,13 @@ export function createSoftRedirectScript(redirect: SsrLateRedirect): string {
 
 function sanitizeFlightRows(
   stream: ReadableStream<Uint8Array>,
-  options: { rewriteStylesheetHints?: boolean } = {},
+  options: { rewriteStylesheetHints?: boolean; dropDebugInfoRows?: boolean } = {},
 ): ReadableStream<Uint8Array> {
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const encoder = new TextEncoder();
   const hlStylesheetRe = /(:HL\["[^"\\]*(?:\\.[^"\\]*)*",)"stylesheet"(\])/g;
   const redirectErrorRowRe = /^([0-9a-z]+):E(\{[^\n]*"digest":"AKAN_REDIRECT(?:;[^"]*)?"[^\n]*\})(\n?)$/;
+  const debugInfoRowRe = /^[0-9a-z]+:D/;
   let buffered: Uint8Array<ArrayBuffer> = new Uint8Array(0);
 
   const concatBytes = (left: Uint8Array, right: Uint8Array): Uint8Array<ArrayBuffer> => {
@@ -143,6 +144,7 @@ function sanitizeFlightRows(
     } catch {
       return row;
     }
+    if (options.dropDebugInfoRows && debugInfoRowRe.test(text)) return new Uint8Array(0);
     const sanitized = (options.rewriteStylesheetHints ? text.replace(hlStylesheetRe, `$1"style"$2`) : text).replace(
       redirectErrorRowRe,
       "$1:null$3",
@@ -178,6 +180,10 @@ function sanitizeFlightRows(
 
 export function sanitizeFlightForClientStream(stream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
   return sanitizeFlightRows(stream, { rewriteStylesheetHints: true });
+}
+
+export function sanitizeFlightForSsrStream(stream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  return sanitizeFlightRows(stream, { dropDebugInfoRows: true });
 }
 
 type StderrWrite = typeof process.stderr.write;
@@ -584,7 +590,7 @@ export class SsrFromRscRenderer {
     // other is relayed to the client as inline <script> tags for hydration.
     const [rscForSsr, rscForClient] = input.rscStream.tee();
 
-    const ssrNodeStream = Readable.fromWeb(sanitizeFlightRows(rscForSsr) as never);
+    const ssrNodeStream = Readable.fromWeb(sanitizeFlightForSsrStream(rscForSsr) as never);
     const stderrSuppressor = ExpectedLateRedirectStderrSuppressor.start(input.lateControl);
     const thenable = SsrFromRscRenderer.#suppressExpectedLateRedirectError(
       createFromNodeStream(ssrNodeStream, input.ssrManifest),

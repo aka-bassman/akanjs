@@ -9,6 +9,9 @@ import type {
 } from "akanjs/client";
 import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode, Suspense } from "react";
 import { resolveHeadResult } from "./metadata";
+import { type AkanRouteSegmentState, createAkanRouteSegments, createAkanSegmentOutletKey } from "./routeState";
+import { isAkanRscPartialCommitEnabled } from "./rscPartialCommit";
+import { AkanSegmentOutletReference } from "./rscSegmentOutletReference";
 
 export class RouteElementComposer {
   static compose({
@@ -20,20 +23,32 @@ export class RouteElementComposer {
     params: Record<string, string>;
     searchParams: Record<string, string | string[]>;
   }): ReactNode {
-    const renders = [...pathRoute.renderRootLayouts, ...pathRoute.renderLayouts, pathRoute.renderPage];
-    let element: ReactNode = null;
-    for (let i = renders.length - 1; i >= 0; i--) {
-      const routeRender = renders[i];
-      if (!routeRender) continue;
-      element = (
-        <Suspense fallback={RouteElementComposer.#composeLoadingFallback(renders.slice(i), params)}>
-          <RouteElementComposer.AsyncRender routeRender={routeRender} params={params} searchParams={searchParams}>
-            {element}
-          </RouteElementComposer.AsyncRender>
-        </Suspense>
-      );
-    }
-    return element;
+    return RouteElementComposer.composeRenders({
+      renders: RouteElementComposer.#getRenderStack(pathRoute),
+      segments: isAkanRscPartialCommitEnabled() ? createAkanRouteSegments(pathRoute) : undefined,
+      params,
+      searchParams,
+    });
+  }
+
+  static composeSuffix({
+    pathRoute,
+    params,
+    searchParams,
+    patchStartIndex,
+  }: {
+    pathRoute: PathRoute;
+    params: Record<string, string>;
+    searchParams: Record<string, string | string[]>;
+    patchStartIndex: number;
+  }): ReactNode | null {
+    const renders = RouteElementComposer.#getRenderStack(pathRoute);
+    if (!Number.isInteger(patchStartIndex) || patchStartIndex < 0 || patchStartIndex >= renders.length) return null;
+    return RouteElementComposer.composeRenders({
+      renders: renders.slice(patchStartIndex),
+      params,
+      searchParams,
+    });
   }
 
   static async resolveHead({
@@ -109,10 +124,12 @@ export class RouteElementComposer {
 
   static composeRenders({
     renders,
+    segments,
     params,
     searchParams,
   }: {
     renders: RouteRender[];
+    segments?: AkanRouteSegmentState[];
     params: Record<string, string>;
     searchParams: Record<string, string | string[]>;
   }): ReactNode {
@@ -127,6 +144,15 @@ export class RouteElementComposer {
           </RouteElementComposer.AsyncRender>
         </Suspense>
       );
+      const segment = segments?.[i];
+      if (segment?.kind === "page") {
+        const outletKey =
+          createAkanSegmentOutletKey(
+            segments.slice(0, i + 1).map((item) => item.key),
+            i,
+          ) ?? segment.key;
+        element = <AkanSegmentOutletReference segmentKey={outletKey}>{element}</AkanSegmentOutletReference>;
+      }
     }
     return element;
   }
@@ -197,6 +223,10 @@ export class RouteElementComposer {
   static #normalizeReactChildren(children: ReactNode): ReactNode {
     if (Array.isArray(children)) return Children.toArray(children).map(RouteElementComposer.#normalizeReactNode);
     return RouteElementComposer.#normalizeReactNode(children);
+  }
+
+  static #getRenderStack(pathRoute: PathRoute): RouteRender[] {
+    return [...pathRoute.renderRootLayouts, ...pathRoute.renderLayouts, pathRoute.renderPage];
   }
 
   static #composeLoadingFallback(renders: RouteRender[], params: Record<string, string>): ReactNode {

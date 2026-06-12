@@ -28,11 +28,14 @@ export interface StackConfig {
   runtime: "bun" | "node";
   packagePolicy: "published-fixed" | "latest-stable-locked";
   allowedPackages: string[];
+  promptAppendix?: string | null;
   setup: CommandSpec[];
   installCommand: string[] | null;
   baseUrl: string;
   startCommand: string[];
   buildCommand: string[];
+  lintCommand?: string[] | null;
+  conventionCheck?: "akanjs" | null;
   versionChecks: VersionCheck[];
 }
 
@@ -75,6 +78,24 @@ export interface VerificationSummary {
     failed: number | null;
     logFile: string | null;
   };
+  lint: {
+    success: boolean;
+    durationMs: number | null;
+    command: string[] | null;
+    logFile: string | null;
+    skipped: boolean;
+    note?: string;
+  };
+  convention: {
+    success: boolean;
+    checker: string | null;
+    durationMs: number | null;
+    logFile: string | null;
+    skipped: boolean;
+    violations: Array<{ id: string; label: string; path?: string; details?: string }>;
+    metrics: Record<string, number | boolean | string | null>;
+    note?: string;
+  };
   acceptance: Array<{ id: string; label: string; pass: boolean; note?: string }>;
 }
 
@@ -98,6 +119,8 @@ export interface RunRecord {
   agentRuns: number | null;
   build: VerificationSummary["build"];
   tests: VerificationSummary["tests"];
+  lint: VerificationSummary["lint"];
+  convention: VerificationSummary["convention"];
   code: {
     files: number;
     loc: number;
@@ -111,6 +134,8 @@ export interface RunRecord {
     explicitApiClientBoilerplateCount: number | null;
     schemaDuplicationCount: number | null;
     frameworkConfigCount: number | null;
+    conventionViolationCount: number | null;
+    forbiddenDependencyCount: number | null;
   };
   acceptance: VerificationSummary["acceptance"];
   dependencies: {
@@ -147,7 +172,14 @@ export const writeJson = async (file: string, data: unknown): Promise<void> => {
   await Bun.write(file, `${JSON.stringify(data, null, 2)}\n`);
 };
 
-export const pathExists = async (file: string): Promise<boolean> => Bun.file(file).exists();
+export const pathExists = async (file: string): Promise<boolean> => {
+  try {
+    await stat(file);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export const loadStackConfig = async (): Promise<StackConfigFile> => {
   const config = await readJson<StackConfigFile>(path.join(BENCH_ROOT, "config", "stacks.json"));

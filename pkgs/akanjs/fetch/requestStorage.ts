@@ -157,6 +157,7 @@ export function updateRequestPolicy(
   return policy;
 }
 
+/** @internal Route cache tag collection is reserved for framework-owned cache policy experiments. */
 export function cacheTag(...tags: string[]): AkanRequestPolicy | undefined {
   return updateRequestPolicy({ tags: tags.filter(Boolean) });
 }

@@ -7,6 +7,7 @@ import {
   interleaveRscScriptsWithHtml,
   SsrChunkRegistry,
   sanitizeFlightForClientStream,
+  sanitizeFlightForSsrStream,
 } from "./ssrFromRscRenderer";
 
 const encoder = new TextEncoder();
@@ -163,6 +164,17 @@ describe("inline RSC chunks", () => {
     expect(output).toContain(':HL["/style.css","style"]\n');
     expect(output).toContain("c7:null\n");
     expect(output).not.toContain("AKAN_REDIRECT");
+  });
+
+  test("drops debug info rows only for the SSR decoder branch", async () => {
+    const raw = encoder.encode(['a:D{"time":1}\n', 'b:["$","main",null,{}]\n'].join(""));
+    const clientOutput = await new Response(sanitizeFlightForClientStream(byteStream([raw]))).text();
+    const ssrOutput = await new Response(
+      sanitizeFlightForSsrStream(byteStream([raw.slice(0, 5), raw.slice(5, 18), raw.slice(18)])),
+    ).text();
+
+    expect(clientOutput).toContain('a:D{"time":1}\n');
+    expect(ssrOutput).toBe('b:["$","main",null,{}]\n');
   });
 
   test("preserves non-redirect error rows for React Flight error handling", async () => {

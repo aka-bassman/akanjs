@@ -67,6 +67,7 @@ export class AkanApp {
   readonly #artifactDir: string;
   readonly #replica: AkanReplicaConfig;
   readonly #runtimeDir: string;
+  readonly #socketRunId = `${process.pid}-${Date.now().toString(36)}`;
   readonly #port: number;
   readonly #wsBasePort: number;
   readonly #children = new Map<number, ChildState>();
@@ -273,7 +274,7 @@ export class AkanApp {
 
     child.restartPending = true;
     child.ready = false;
-    child.status = reason === "health-timeout" ? "unhealthy" : "exited";
+    child.status = reason === "health-timeout" || reason === "upstream-open-failed" ? "unhealthy" : "exited";
     child.upstream = undefined;
     child.healthPath = undefined;
     this.#invalidateFederationChildCache();
@@ -336,6 +337,7 @@ export class AkanApp {
   }
 
   async #stopChildForRestart(child: ChildState, proc: Bun.Subprocess<"ignore", "pipe", "pipe">, reason: string) {
+    if (reason.startsWith("exit:") || proc.killed) return;
     if (!proc.killed) {
       this.#sendToChild(child, { type: "shutdown", signal: reason } satisfies AkanIpcMessage);
     }
@@ -573,10 +575,25 @@ export class AkanApp {
         redirect: "manual",
       });
       return this.#proxyResponse(upstreamRes);
+    } catch (error) {
+      if (AkanApp.#isUpstreamOpenFailure(error)) {
+        this.logger.error(
+          `Child ${child.idx}/${child.role} upstream is unreachable (${child.upstream.socketPath}); restarting`,
+        );
+        this.#scheduleChildRestart(child, child.proc, "upstream-open-failed");
+        return new Response("Federation child upstream is unreachable; restarting", { status: 503 });
+      }
+      throw error;
     } finally {
       child.metrics.activeRequests = Math.max(0, (child.metrics.activeRequests ?? 1) - 1);
       if (traced) this.#recordProxyHop(performance.now() - hopStart);
     }
+  }
+
+  static #isUpstreamOpenFailure(error: unknown): boolean {
+    if (!error || typeof error !== "object") return false;
+    const candidate = error as { code?: unknown; message?: unknown };
+    return candidate.code === "FailedToOpenSocket" || String(candidate.message ?? "").includes("FailedToOpenSocket");
   }
 
   /**
@@ -708,7 +725,7 @@ export class AkanApp {
 
   #getChildUpstream(idx: number, role: AkanChildRole): GatewayUpstream {
     return {
-      http: { type: "unix", socketPath: path.join(this.#runtimeDir, `akan-child-${idx}.sock`) },
+      http: { type: "unix", socketPath: path.join(this.#runtimeDir, `akan-child-${this.#socketRunId}-${idx}.sock`) },
       ws: role === "batch" ? undefined : { type: "tcp", host: "127.0.0.1", port: this.#wsBasePort + idx },
     };
   }
@@ -930,11 +947,17 @@ export class AkanApp {
         void this.#scheduleChildRestart(child, child.proc, "health-timeout");
         return;
       }
-      this.#sendToChild(child, {
+      const sent = this.#sendToChild(child, {
         type: "health.ping",
         nonce: crypto.randomUUID(),
         sentAt: now,
       } satisfies AkanIpcMessage);
+      if (!sent) {
+        child.status = "unhealthy";
+        this.#invalidateFederationChildCache();
+        void this.#scheduleChildRestart(child, child.proc, "health-send-failed");
+        return;
+      }
     }
   }
 

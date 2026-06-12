@@ -10,23 +10,24 @@
         "create-akan-workspace@2.2.12",
         "akanjs@2.2.12"
       ],
+      "promptAppendix": "scenarios/team-task-board/prompt.akanjs.md",
       "setup": [
         {
           "cmd": "bunx",
           "args": [
             "create-akan-workspace@2.2.12",
-            "team-task-board",
+            "akanjs",
             "--app",
             "taskboard",
             "--dir",
-            "{{workspacePath}}",
+            "{{workspaceParentPath}}",
             "--init",
             "true"
           ]
         }
       ],
       "installCommand": null,
-      "baseUrl": "http://127.0.0.1:8283",
+      "baseUrl": "http://127.0.0.1:8282",
       "startCommand": [
         "bun",
         "run",
@@ -41,6 +42,14 @@
         "build",
         "taskboard"
       ],
+      "lintCommand": [
+        "bun",
+        "run",
+        "akan",
+        "lint",
+        "taskboard"
+      ],
+      "conventionCheck": "akanjs",
       "versionChecks": [
         {
           "file": "package.json",
@@ -62,6 +71,7 @@
         "@prisma/client",
         "typescript"
       ],
+      "promptAppendix": "scenarios/team-task-board/prompt.next-prisma.md",
       "setup": [
         {
           "cmd": "bunx",
@@ -104,6 +114,8 @@
         "run",
         "build"
       ],
+      "lintCommand": null,
+      "conventionCheck": null,
       "versionChecks": []
     },
     {
@@ -121,6 +133,7 @@
         "react-dom",
         "typescript"
       ],
+      "promptAppendix": "scenarios/team-task-board/prompt.hono-drizzle.md",
       "setup": [
         {
           "cmd": "bunx",
@@ -167,6 +180,8 @@
         "run",
         "build"
       ],
+      "lintCommand": null,
+      "conventionCheck": null,
       "versionChecks": []
     },
     {
@@ -184,6 +199,7 @@
         "react-dom",
         "typescript"
       ],
+      "promptAppendix": "scenarios/team-task-board/prompt.elysia-drizzle.md",
       "setup": [
         {
           "cmd": "bunx",
@@ -230,6 +246,8 @@
         "run",
         "build"
       ],
+      "lintCommand": null,
+      "conventionCheck": null,
       "versionChecks": []
     },
     {
@@ -247,6 +265,7 @@
         "react-dom",
         "typescript"
       ],
+      "promptAppendix": "scenarios/team-task-board/prompt.fastify-prisma.md",
       "setup": [
         {
           "cmd": "bunx",
@@ -293,6 +312,8 @@
         "run",
         "build"
       ],
+      "lintCommand": null,
+      "conventionCheck": null,
       "versionChecks": []
     }
   ]

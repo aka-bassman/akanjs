@@ -348,7 +348,7 @@ export class RscWorker {
   };
 
   constructor(artifact: BaseBuildArtifact) {
-    this.#clientManifest = {};
+    this.#clientManifest = artifact.rscRuntimeClientManifest ?? {};
     this.#pagesBundlePath = artifact.pagesBundlePath;
     this.#pagesBundleBuildId = artifact.pagesBundleBuildId;
     this.#cssAssets = artifact.cssAssets ?? {};
@@ -575,12 +575,24 @@ export class RscWorker {
     this.#status = "starting";
     const workerPath = this.#resolveWorkerPath();
     let proc!: Bun.Subprocess<"ignore", "inherit", "inherit">;
+    const earlyMessages: RscInMsg[] = [];
     proc = Bun.spawn(["bun", "--conditions", "react-server", workerPath], {
-      ipc: (message: RscInMsg) => this.#handleMessage(message, proc),
+      ipc: (message: RscInMsg) => {
+        if (!proc) {
+          earlyMessages.push(message);
+          return;
+        }
+        this.#handleMessage(message, proc);
+      },
       stdio: ["ignore", "inherit", "inherit"],
       serialization: "advanced",
       env: { ...process.env },
     });
+    if (earlyMessages.length > 0) {
+      setTimeout(() => {
+        for (const message of earlyMessages.splice(0)) this.#handleMessage(message, proc);
+      }, 0);
+    }
     proc.exited.then((code) => this.#handleExit(proc, code));
     return proc;
   }
