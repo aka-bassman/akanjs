@@ -32,6 +32,10 @@ export interface RscTraceMetadata {
   routeId: string;
   cache: "hit" | "miss" | "bypass";
   cacheKeyHash?: string;
+  partial?: "full" | "candidate" | "fallback";
+  partialReason?: string;
+  partialCommonPrefixLength?: number;
+  routeState?: string;
 }
 
 export interface SsrFromRscInput {

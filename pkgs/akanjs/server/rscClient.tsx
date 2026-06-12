@@ -1,12 +1,19 @@
 import { createElement, type ReactNode, startTransition, use, useLayoutEffect, useState } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { createFromReadableStream } from "react-server-dom-webpack/client.browser";
+import {
+  type AkanRouterStateV1,
+  appendAkanRouterStateRequestHeaders,
+  readAkanRouterStateResponseHeader,
+} from "./routeState";
 import { getRscPayloadStream, guardRscRedirectRows, type RscRedirectRow } from "./rscHttp";
 import {
   commitLatestRscNavigation,
+  createRscNavigationCacheNode,
   deleteRscCacheEntryIfCurrent,
-  observeRscNavigation,
-  rememberRscCacheEntry,
+  observeRscNavigationNode,
+  type RscNavigationCacheNode,
+  rememberRscCacheNode,
 } from "./rscNavigationState";
 
 type InlineRscChunk = [1, string] | [3, string];
@@ -40,7 +47,8 @@ type RscThenable = Promise<ReactNode> & {
   value?: ReactNode;
   reason?: unknown;
 };
-type RscFetchResult = { type: "rsc"; thenable: RscThenable } | { type: "redirected"; status?: number };
+type RscCacheNode = RscNavigationCacheNode<RscThenable>;
+type RscFetchResult = { type: "rsc"; node: RscCacheNode } | { type: "redirected"; status?: number };
 const MAX_RSC_CACHE_ENTRIES = 32;
 let documentNavigationFallbackInFlight = false;
 
@@ -132,8 +140,10 @@ async function fetchRsc(
   const endpoint = new URL("/__rsc", window.location.origin);
   endpoint.searchParams.set("url", href);
   if (options.buildId !== undefined) endpoint.searchParams.set("buildId", String(options.buildId));
+  const headers = new Headers({ Accept: "text/x-component", "Cache-Control": "no-cache" });
+  appendAkanRouterStateRequestHeaders(headers, currentRouterState);
   const res = await fetch(endpoint, {
-    headers: { Accept: "text/x-component", "Cache-Control": "no-cache" },
+    headers,
     credentials: "same-origin",
     cache: "no-store",
   });
@@ -148,11 +158,11 @@ async function fetchRsc(
   }
   const stream = getRscPayloadStream(res);
   if (!stream) throw new Error(`[rscClient] RSC fetch failed ${res.status} ${res.statusText}`);
-  let thenable: RscThenable | undefined;
+  const nodeRef: { current?: RscCacheNode } = {};
   const handleRedirect = (redirect: RscRedirectRow) => {
     if (!shouldApplyNavigation()) return;
     const location = redirect.location ? normalizeHref(redirect.location) : href;
-    if (thenable) deleteRscCacheEntryIfCurrent(rscCache, href, thenable);
+    if (nodeRef.current) deleteRscCacheEntryIfCurrent(rscCache, href, nodeRef.current);
     navigateAfterRscRedirect(
       location,
       redirect.method ? redirect.method !== "push" : (options.replaceOnRedirect ?? true),
@@ -161,17 +171,34 @@ async function fetchRsc(
   const guardedStream = guardRscRedirectRows(stream, {
     onRedirect: handleRedirect,
   });
-  thenable = createRscThenable(guardedStream);
+  const thenable = createRscThenable(guardedStream);
+  const node = createRscNavigationCacheNode({
+    href,
+    thenable,
+    routerState: readAkanRouterStateResponseHeader(res.headers),
+  });
+  nodeRef.current = node;
   return {
     type: "rsc",
-    thenable,
+    node,
   };
 }
 
-const rscCache = new Map<string, RscThenable>();
+const rscCache = new Map<string, RscCacheNode>();
 const initialThenable = createRscThenable(createInitialRscStream());
-rscCache.set(normalizeHref(window.location.href), initialThenable);
+const initialNode = createRscNavigationCacheNode({
+  href: normalizeHref(window.location.href),
+  thenable: initialThenable,
+  routerState: null,
+});
+rscCache.set(initialNode.href, initialNode);
+let currentRouterState: AkanRouterStateV1 | null = null;
 let navigationSeq = 0;
+
+function rememberCommittedRouteState(node: RscCacheNode): void {
+  if (!node.routerState) return;
+  currentRouterState = node.routerState;
+}
 
 function Root(): ReactNode {
   const [thenable, setThenable] = useState<RscThenable>(initialThenable);
@@ -184,7 +211,15 @@ function Root(): ReactNode {
 
   globalThis.__AKAN_RSC_CLEAR_CACHE__ = () => {
     rscCache.clear();
-    rscCache.set(normalizeHref(window.location.href), thenable);
+    const href = normalizeHref(window.location.href);
+    rscCache.set(
+      href,
+      createRscNavigationCacheNode({
+        href,
+        thenable,
+        routerState: currentRouterState,
+      }),
+    );
   };
 
   globalThis.__AKAN_RSC_REFRESH__ = async (options = {}) => {
@@ -198,10 +233,9 @@ function Root(): ReactNode {
         shouldApplyNavigation: () => navId === navigationSeq,
       });
       if (next.type === "redirected") return;
-      observeRscNavigation({
+      observeRscNavigationNode({
         cache: rscCache,
-        href: target,
-        thenable: next.thenable,
+        node: next.node,
         navId,
         getCurrentNavId: () => navigationSeq,
         isExpectedNavigationError: (error) => error instanceof RscRedirectNavigationStarted,
@@ -209,17 +243,18 @@ function Root(): ReactNode {
       });
       // Commit only once the payload root is fulfilled so `use()` never suspends the
       // root transition (see trackRscThenable). Staleness is re-checked by navId below.
-      await next.thenable;
-      commitLatestRscNavigation({
+      await next.node.thenable;
+      const committed = commitLatestRscNavigation({
         cache: rscCache,
         href: target,
-        thenable: next.thenable,
+        thenable: next.node,
         maxEntries: MAX_RSC_CACHE_ENTRIES,
         startTransition,
-        commitThenable: setThenable,
+        commitThenable: (node) => setThenable(node.thenable),
         navId,
         getCurrentNavId: () => navigationSeq,
       });
+      if (committed) rememberCommittedRouteState(next.node);
     } catch (error) {
       if (error instanceof RscRedirectNavigationStarted) return;
       if (navId === navigationSeq) hardNavigateAfterRscFailure(target, true, error);
@@ -231,21 +266,20 @@ function Root(): ReactNode {
     const target = normalizeHref(href);
     const scrollToTop = options.scrollToTop ?? true;
     try {
-      let next = rscCache.get(target);
-      if (!next) {
+      let nextNode = rscCache.get(target);
+      if (!nextNode) {
         const fetched = await fetchRsc(target, {
           replaceOnRedirect: options.replace,
           shouldApplyNavigation: () => navId === navigationSeq,
         });
         if (fetched.type === "redirected") return;
-        next = fetched.thenable;
+        nextNode = fetched.node;
       } else {
-        rememberRscCacheEntry(rscCache, target, next, MAX_RSC_CACHE_ENTRIES);
+        rememberRscCacheNode(rscCache, nextNode, MAX_RSC_CACHE_ENTRIES);
       }
-      observeRscNavigation({
+      observeRscNavigationNode({
         cache: rscCache,
-        href: target,
-        thenable: next,
+        node: nextNode,
         navId,
         getCurrentNavId: () => navigationSeq,
         isExpectedNavigationError: (error) => error instanceof RscRedirectNavigationStarted,
@@ -253,14 +287,14 @@ function Root(): ReactNode {
       });
       // Commit only once the payload root is fulfilled so `use()` never suspends the
       // root transition (see trackRscThenable). Staleness is re-checked by navId below.
-      await next;
-      commitLatestRscNavigation({
+      await nextNode.thenable;
+      const committed = commitLatestRscNavigation({
         cache: rscCache,
         href: target,
-        thenable: next,
+        thenable: nextNode,
         maxEntries: MAX_RSC_CACHE_ENTRIES,
         startTransition,
-        commitThenable: setThenable,
+        commitThenable: (node) => setThenable(node.thenable),
         updateHistory: () => {
           if (options.replace) window.history.replaceState(null, "", target);
           else window.history.pushState(null, "", target);
@@ -270,6 +304,7 @@ function Root(): ReactNode {
         navId,
         getCurrentNavId: () => navigationSeq,
       });
+      if (committed) rememberCommittedRouteState(nextNode);
     } catch (error) {
       if (error instanceof RscRedirectNavigationStarted) return;
       if (navId === navigationSeq) hardNavigateAfterRscFailure(target, options.replace, error);

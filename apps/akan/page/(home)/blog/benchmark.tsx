@@ -89,6 +89,37 @@ const dbComparison = [
   { name: "Akan DB List", runtime: "Bun", rps: 5_268, p99: 14.957, note: "document + Signal path" },
 ];
 
+const productivityMetrics = [
+  {
+    name: "Cursor tokens",
+    desc: {
+      en: "Input, output, cache read/write, and total tokens from Cursor's report.",
+      ko: "Cursor 리포트의 input, output, cache read/write, total token입니다.",
+    },
+  },
+  {
+    name: "Repair-loop time",
+    desc: {
+      en: "Wall-clock time from the first prompt to final build and smoke-test result.",
+      ko: "첫 prompt부터 최종 build 및 smoke-test 결과까지의 wall-clock time입니다.",
+    },
+  },
+  {
+    name: "Generated LOC",
+    desc: {
+      en: "Changed files and LOC split into app source, framework glue, tests, and generated or lockfile output.",
+      ko: "변경 파일과 LOC를 app source, framework glue, test, generated 또는 lockfile output으로 나눕니다.",
+    },
+  },
+  {
+    name: "Acceptance pass",
+    desc: {
+      en: "A shared Playwright smoke test verifies list, create, status update, assignee, filter, detail, and persistence.",
+      ko: "공통 Playwright smoke test가 list, create, status update, assignee, filter, detail, persistence를 검증합니다.",
+    },
+  },
+];
+
 const formatRps = (value: number) => value.toLocaleString("en-US");
 const maxHttpComparisonRps = Math.max(...httpComparison.map((item) => item.rps));
 const maxDbComparisonRps = Math.max(...dbComparison.map((item) => item.rps));
@@ -191,6 +222,32 @@ export default function Page() {
               />
             ))}
           </div>
+        </section>
+
+        <section className="mt-12 rounded-3xl border border-base-content/10 p-6">
+          <p className="font-semibold text-base-content/50 text-sm uppercase tracking-[0.2em]">
+            {l.trans({ en: "Next benchmark", ko: "다음 벤치마크" })}
+          </p>
+          <h2 className="mt-3 font-bold text-2xl">
+            {l.trans({ en: "Sample App Productivity", ko: "Sample App Productivity" })}
+          </h2>
+          <p className="mt-4 text-base-content/75 leading-7">
+            {l.trans({
+              en: "A new productivity benchmark is prepared for the Team Task Board sample app. Each stack is built in an independent Cursor workspace with the same prompt, repair-loop rules, and smoke test. Akan uses the published 2.2.12 package rather than local source.",
+              ko: "Team Task Board 샘플 앱을 위한 생산성 벤치마크를 준비했습니다. 각 stack은 독립 Cursor workspace에서 동일한 prompt, repair-loop 규칙, smoke test로 구현합니다. Akan은 local source가 아니라 published 2.2.12 package를 사용합니다.",
+            })}
+          </p>
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            {productivityMetrics.map((item) => (
+              <div key={item.name} className="rounded-2xl bg-base-200/60 p-4">
+                <h3 className="font-bold">{item.name}</h3>
+                <p className="mt-2 text-base-content/70 text-sm leading-6">{l.trans(item.desc)}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-5 font-mono text-base-content/50 text-sm">
+            benchmarks/sample-app-productivity/results/&lt;runId&gt;/report.chartdata.json
+          </p>
         </section>
 
         <section className="mt-12">

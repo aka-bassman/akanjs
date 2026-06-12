@@ -38,6 +38,7 @@ import { HMR_CLIENT_SCRIPT } from "./hmr/clientScript";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { ImageOptimizer } from "./imageOptimizer";
 import { createDefaultRobotsTxt } from "./robots";
+import { AKAN_RSC_RESPONSE_STATE_HEADER } from "./routeState";
 import { type RscRedirectMethod, type RscRedirectStatus, type RscRenderResult, RscWorker } from "./rscWorkerHost";
 import { createDefaultSitemapXml, getSitemapBasePath } from "./sitemap";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
@@ -85,6 +86,12 @@ function appendRscTraceHeaders(headers: Headers, trace?: RscTraceMetadata): void
   headers.set("X-Akan-Rsc-Route", trace.routeId);
   headers.set("X-Akan-Rsc-Cache", trace.cache);
   if (trace.cacheKeyHash) headers.set("X-Akan-Rsc-Cache-Key", trace.cacheKeyHash);
+  if (trace.partial) headers.set("X-Akan-Rsc-Partial", trace.partial);
+  if (trace.partialReason) headers.set("X-Akan-Rsc-Partial-Reason", trace.partialReason);
+  if (trace.partialCommonPrefixLength !== undefined) {
+    headers.set("X-Akan-Rsc-Partial-Common-Prefix", String(trace.partialCommonPrefixLength));
+  }
+  if (trace.routeState) headers.set(AKAN_RSC_RESPONSE_STATE_HEADER, trace.routeState);
 }
 
 export function cacheHtmlWhileStreaming(

@@ -9,6 +9,7 @@ import {
   resolveRouteCacheStoreTtl,
   shouldStoreRouteCache,
 } from "./cachePolicy";
+import { encodeAkanRouterState } from "./routeState";
 import type { RscRenderResult } from "./rscWorkerHost";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
 import type { SsrLateRedirect } from "./ssrTypes";
@@ -287,6 +288,16 @@ describe("WebRouter RSC stream response", () => {
         routeId: "/:lang/docs",
         cache: "hit",
         cacheKeyHash: "abc123",
+        partial: "candidate",
+        partialReason: "common-prefix",
+        partialCommonPrefixLength: 2,
+        routeState: encodeAkanRouterState({
+          version: 1,
+          buildId: 9,
+          href: "https://example.test/en/docs",
+          routeId: "/:lang/docs",
+          segments: [{ kind: "page", path: "/:lang/docs", key: "page:/:lang/docs:0" }],
+        }),
       },
       lateControl: Promise.resolve(null),
       cacheState: Promise.resolve({ cacheable: true }),
@@ -298,6 +309,10 @@ describe("WebRouter RSC stream response", () => {
     expect(response.headers.get("X-Akan-Rsc-Route")).toBe("/:lang/docs");
     expect(response.headers.get("X-Akan-Rsc-Cache")).toBe("hit");
     expect(response.headers.get("X-Akan-Rsc-Cache-Key")).toBe("abc123");
+    expect(response.headers.get("X-Akan-Rsc-Partial")).toBe("candidate");
+    expect(response.headers.get("X-Akan-Rsc-Partial-Reason")).toBe("common-prefix");
+    expect(response.headers.get("X-Akan-Rsc-Partial-Common-Prefix")).toBe("2");
+    expect(response.headers.get("X-Akan-Rsc-State")).toBeTruthy();
   });
 
   test("streams RSC navigation Flight without waiting for completion", async () => {

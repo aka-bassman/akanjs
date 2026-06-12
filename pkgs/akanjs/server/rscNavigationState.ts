@@ -1,9 +1,25 @@
+import type { AkanRouterStateV1 } from "./routeState";
+
 export interface RscNavigationCache<T> {
   get(key: string): T | undefined;
   set(key: string, value: T): void;
   delete(key: string): boolean;
   keys(): IterableIterator<string>;
   readonly size: number;
+}
+
+export interface RscNavigationCacheNode<T> {
+  href: string;
+  thenable: T;
+  routerState: AkanRouterStateV1 | null;
+}
+
+export function createRscNavigationCacheNode<T>({
+  href,
+  thenable,
+  routerState,
+}: RscNavigationCacheNode<T>): RscNavigationCacheNode<T> {
+  return { href, thenable, routerState };
 }
 
 export function rememberRscCacheEntry<T>(
@@ -24,6 +40,14 @@ export function rememberRscCacheEntry<T>(
 export function deleteRscCacheEntryIfCurrent<T>(cache: RscNavigationCache<T>, href: string, thenable: T): boolean {
   if (cache.get(href) !== thenable) return false;
   return cache.delete(href);
+}
+
+export function rememberRscCacheNode<T>(
+  cache: RscNavigationCache<RscNavigationCacheNode<T>>,
+  node: RscNavigationCacheNode<T>,
+  maxEntries: number,
+): void {
+  rememberRscCacheEntry(cache, node.href, node, maxEntries);
 }
 
 interface CommitRscNavigationInput<T> {
@@ -89,6 +113,28 @@ export function observeRscNavigation<T extends PromiseLike<unknown>>({
 }): void {
   void Promise.resolve(thenable).catch((error) => {
     deleteRscCacheEntryIfCurrent(cache, href, thenable);
+    if (isExpectedNavigationError?.(error)) return;
+    if (navId === getCurrentNavId()) onLatestError(error);
+  });
+}
+
+export function observeRscNavigationNode<T extends PromiseLike<unknown>>({
+  cache,
+  node,
+  navId,
+  getCurrentNavId,
+  isExpectedNavigationError,
+  onLatestError,
+}: {
+  cache: RscNavigationCache<RscNavigationCacheNode<T>>;
+  node: RscNavigationCacheNode<T>;
+  navId: number;
+  getCurrentNavId: () => number;
+  isExpectedNavigationError?: (error: unknown) => boolean;
+  onLatestError: (error: unknown) => void;
+}): void {
+  void Promise.resolve(node.thenable).catch((error) => {
+    deleteRscCacheEntryIfCurrent(cache, node.href, node);
     if (isExpectedNavigationError?.(error)) return;
     if (navId === getCurrentNavId()) onLatestError(error);
   });

@@ -31,6 +31,12 @@ import {
 import { shouldRenderLocaleAlternates } from "./metadata";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { RouteElementComposer } from "./routeElementComposer";
+import {
+  createAkanRouterState,
+  encodeAkanRouterState,
+  readAkanRouterStateRequest,
+  resolveAkanRscPartialDecision,
+} from "./routeState";
 import { type PagesContext, RouteTreeBuilder } from "./routeTreeBuilder";
 import { encodeAkanRedirectDigest } from "./rscHttp";
 import { type CachedRscResult, invalidateCachedRscResults } from "./rscWorkerCache";
@@ -355,10 +361,29 @@ class RscRenderer {
         else this.#logger.verbose(`render[${requestId}] no route matched pathname=${urlObj.pathname} — rendering 404`);
         const beforeLoadedKeys = RouteTreeBuilder.getCacheStats().loadedModuleKeys;
         const cacheEntry = match ? this.#getResultCacheEntry(request, urlObj) : null;
+        const targetRouterState = match
+          ? createAkanRouterState({
+              pathRoute: match.pathRoute,
+              href: urlObj.href,
+              buildId: this.#pagesBundleBuildId,
+            })
+          : null;
+        const currentRouterState = readAkanRouterStateRequest(request.headers);
+        const partialDecision = targetRouterState
+          ? resolveAkanRscPartialDecision({
+              currentState: currentRouterState.state,
+              currentRoute: currentRouterState.currentRoute,
+              targetState: targetRouterState,
+            })
+          : { status: "full" as const, reason: "missing-route", commonPrefixLength: 0 };
         const traceBase = {
           navId: requestId,
           pathname: urlObj.pathname,
           routeId,
+          partial: partialDecision.status,
+          partialReason: partialDecision.reason ?? currentRouterState.reason,
+          partialCommonPrefixLength: partialDecision.commonPrefixLength,
+          ...(targetRouterState ? { routeState: encodeAkanRouterState(targetRouterState) } : {}),
           ...(cacheEntry ? { cacheKeyHash: hashRscTraceCacheKey(cacheEntry.key) } : {}),
         };
         const trace: RscTraceMetadata = {
