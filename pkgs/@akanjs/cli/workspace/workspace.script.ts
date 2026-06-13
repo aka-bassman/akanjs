@@ -35,6 +35,12 @@ export class WorkspaceScript extends script("workspace", [
       await this.libraryScript.installLibrary(workspace, "shared");
     }
     await this.applicationScript.createApplication(appName, workspace, { libs: installLibs ? ["util", "shared"] : [] });
+    await workspace.applyTemplate({
+      basePath: `apps/${appName}`,
+      template: "appSample",
+      dict: { appName },
+      options: { libs: installLibs ? ["util", "shared"] : [] },
+    });
     const gitSpinner = workspace.spinning("Initializing git repository and commit...");
     try {
       await workspace.commit("Initial commit", { init: true });

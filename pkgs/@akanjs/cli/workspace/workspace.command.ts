@@ -21,6 +21,7 @@ export class WorkspaceCommand extends command("workspace", [WorkspaceScript], ({
           value: true,
         },
       ],
+      default: false,
     })
     .option("init", Boolean, {
       desc: "Do you want to initialize the workspace? (Recommended)",

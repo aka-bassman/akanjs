@@ -26,7 +26,7 @@ pipeline {
                 stage("Prepare Master"){
                     steps{
                         sh "ssh -o StrictHostKeyChecking=no -i $SSH_KEY $MASTER_USER@$MASTER_HOST -p $MASTER_PORT \"mkdir -p $REPO_NAME/$BRANCH/node_modules && touch $REPO_NAME/$BRANCH/dummy.js\""
-                        sh "ssh -i $SSH_KEY -p $MASTER_PORT $MASTER_USER@$MASTER_HOST \"cd $REPO_NAME/$BRANCH && find . -maxdepth 1 ! -path . ! \\( -name node_modules -or -name bun-lock.yaml -or -name dist -or -name .git \\) -print0 | xargs -0 rm -r\""
+                        sh "ssh -i $SSH_KEY -p $MASTER_PORT $MASTER_USER@$MASTER_HOST \"cd $REPO_NAME/$BRANCH && find . -maxdepth 1 ! -path . ! \\( -name node_modules -or -name bun.lock -or -name dist -or -name .git \\) -print0 | xargs -0 rm -r\""
                         sh "scp -i $SSH_KEY -P $MASTER_PORT codebase.tar $MASTER_USER@$MASTER_HOST:~/$REPO_NAME/$BRANCH/codebase.tar"
                         sh "ssh -i $SSH_KEY -p $MASTER_PORT $MASTER_USER@$MASTER_HOST \"cd $REPO_NAME/$BRANCH && tar -xvf codebase.tar\""
                         sh "scp -i $SSH_KEY -P $MASTER_PORT $KUBE_SECRET $MASTER_USER@$MASTER_HOST:~/$REPO_NAME/$BRANCH/infra/master/regcred.yaml"

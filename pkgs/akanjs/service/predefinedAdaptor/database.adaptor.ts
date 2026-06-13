@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { InArgs, InValue, Client as LibsqlClient } from "@libsql/client";
-import { type BaseEnv, dayjs, FIELD_META, type PromiseOrObject } from "akanjs/base";
+import { type BaseEnv, dayjs, FIELD_META, PRIMITIVE_DEFAULT_VALUE, type PromiseOrObject } from "akanjs/base";
 import { type ConstantModel, getDefault } from "akanjs/constant";
 import {
   createDocumentId,
@@ -951,9 +951,16 @@ export class SqliteDocumentStore {
     for (const [idx, field] of jsonFields.entries()) {
       const value = this.parseProjectedValue(row[this.projectionAlias(idx)]);
       const props = (this.database.doc[FIELD_META] as unknown as FieldMap)[field]?.getProps?.();
-      if (value === null && props?.default !== undefined && props.default !== null && !props.nullable) {
-        doc[field] =
-          typeof props.default === "function" ? (props.default as (data: unknown) => unknown)(doc) : props.default;
+      if (value === null && !props?.nullable) {
+        if (props?.default != null) {
+          doc[field] =
+            typeof props.default === "function" ? (props.default as (data: unknown) => unknown)(doc) : props.default;
+        } else {
+          doc[field] =
+            ((props as Record<string, unknown>).modelRef as { [PRIMITIVE_DEFAULT_VALUE]?: unknown })?.[
+              PRIMITIVE_DEFAULT_VALUE
+            ] ?? null;
+        }
       } else {
         doc[field] = props ? this.decodeFieldValue(value, props) : value;
       }
@@ -1022,10 +1029,15 @@ export class SqliteDocumentStore {
       const value = payload[key];
       if (value === undefined) {
         const def = props.default;
-        if (def !== undefined && def !== null) {
+        if (def != null) {
           result[key] = typeof def === "function" ? (def as (data: unknown) => unknown)(payload) : def;
         } else if (props.nullable) {
           result[key] = null;
+        } else {
+          result[key] =
+            ((props as Record<string, unknown>).modelRef as { [PRIMITIVE_DEFAULT_VALUE]?: unknown })?.[
+              PRIMITIVE_DEFAULT_VALUE
+            ] ?? null;
         }
       } else {
         result[key] = this.decodeFieldValue(value, props);

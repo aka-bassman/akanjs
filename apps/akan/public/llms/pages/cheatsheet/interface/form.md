@@ -128,12 +128,12 @@ export default async function Page({ params }: PageProps) {
 
 ```ts
 export default async function Page({ params }: PageProps) {
-  const article = await fetch.viewArticle(params.articleId);
+  const articleEdit = await fetch.editArticle(params.articleId);
 
   return (
     <Load.Edit
       slice={fetch.slice.articleInBoard}
-      edit={article}
+      edit={articleEdit}
       type="form"
       onSubmit={`/article/${article.id}`}
     >

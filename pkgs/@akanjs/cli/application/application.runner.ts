@@ -33,7 +33,7 @@ export class ApplicationRunner extends runner("application") {
     await workspace.applyTemplate({
       basePath: `apps/${appName}`,
       template: "app",
-      dict: { appName, companyName: workspace.repoName, startDomain: "localhost" },
+      dict: { appName },
       options: { libs },
     });
     return AppExecutor.from(workspace, appName);

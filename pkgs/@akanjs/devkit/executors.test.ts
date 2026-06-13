@@ -152,13 +152,7 @@ describe("Executor filesystem helpers", () => {
     const root = await makeTempRoot();
     const exec = new Executor("fixture", root);
 
-    await exec.applyTemplate({
-      basePath: "app",
-      template: "app",
-      dict: { appName: "demo", companyName: "fixture", startDomain: "localhost" },
-      options: { libs: [] },
-    });
-
+    await exec.applyTemplate({ basePath: "app", template: "app", dict: { appName: "demo" }, options: { libs: [] } });
     const templateRoot = path.resolve(import.meta.dir, "../cli/templates/app/public");
     await expect(readFile(path.join(root, "app/public/logo.png"))).resolves.toEqual(
       await readFile(path.join(templateRoot, "logo.png")),

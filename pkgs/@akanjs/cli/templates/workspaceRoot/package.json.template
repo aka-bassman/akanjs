@@ -3,5 +3,8 @@
   "description": "<%= repoName %> workspace",
   "version": "0.0.1",
   "dependencies": {},
-  "devDependencies": {}
+  "devDependencies": {},
+  "patchedDependencies": {
+    "react-dom@19.2.7": "patches/react-dom@19.2.7.patch"
+  }
 }
