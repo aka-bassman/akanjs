@@ -1,9 +1,7 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
-  return {
-    filename: "noti.store.ts",
-    content: `import { dayjs } from "akanjs/base";
+  return `import type { Dayjs } from "akanjs/base";
 import { store } from "akanjs/store";
 
 // ===== noti.store.ts =====
@@ -14,10 +12,10 @@ import { store } from "akanjs/store";
 // Registered by akan scan into st.ts barrel.
 
 export class NotiStore extends store("noti" as const, () => ({
-  notiList: [] as { id: string; type: string; message: string; sentAt: dayjs.Dayjs }[],
+  notiList: [] as { id: string; type: string; message: string; sentAt: Dayjs }[],
   unreadCount: 0,
 })) {
-  addNoti(noti: { type: string; message: string; sentAt: dayjs.Dayjs }) {
+  addNoti(noti: { type: string; message: string; sentAt: Dayjs }) {
     const id = Math.random().toString(36).slice(2);
     this.set({
       notiList: [...(this.get().notiList ?? []), { ...noti, id }],
@@ -33,6 +31,5 @@ export class NotiStore extends store("noti" as const, () => ({
     });
   }
 }
-`,
-  };
+`;
 }

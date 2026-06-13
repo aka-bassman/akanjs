@@ -1,9 +1,7 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
-  return {
-    filename: "task.signal.ts",
-    content: `import { endpoint } from "akanjs/signal";
+  return `import { endpoint, internal, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
 import * as srv from "../srv";
@@ -20,6 +18,14 @@ import * as srv from "../srv";
 //   mergeTask(id, data) — create/update task
 // Manual endpoints below: only define endpoints that need custom business logic.
 // Registered by akan scan into sig.ts barrel.
+
+export class TaskInternal extends internal(srv.task, ({ interval }) => ({})) {}
+
+export class TaskSlice extends slice(srv.task, { guards: { root: Public, get: Public, cru: Public } }, (init) => ({
+  inPublic: init().exec(function () {
+    return this.taskService.queryAny();
+  }),
+})) {}
 
 export class TaskEndpoint extends endpoint(srv.task, ({ mutation }) => ({
   startTask: mutation(cnst.Task)
@@ -44,6 +50,5 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation }) => ({
 //   searchTask: query(cnst.LightTask).search("keyword", String).exec(...),
 //   // guards: authentication/authorization guards
 //   // export class TaskEndpoint extends endpoint(srv.task, { guards: { root: SignedIn } }, ({ query, mutation }) => ({})) {}
-`,
-  };
+`;
 }

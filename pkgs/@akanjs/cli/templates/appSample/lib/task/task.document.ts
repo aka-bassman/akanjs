@@ -1,9 +1,7 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
-  return {
-    filename: "task.document.ts",
-    content: `import { dayjs } from "akanjs/base";
+  return `import { dayjs } from "akanjs/base";
 import { by, from, into } from "akanjs/document";
 
 import { Err } from "../dict";
@@ -32,23 +30,22 @@ export class TaskFilter extends from(cnst.Task, (filter) => ({
   },
 })) {}
 
-export class TaskDocument extends by(cnst.Task) {
+export class Task extends by(cnst.Task) {
   start() {
     if (this.status !== "todo") throw new Err("task.error.cannotStartFromNonTodo");
     this.status = "inProgress";
-    this.workHistory.push({ action: cnst.WorkHistoryAction.started, at: dayjs() } as cnst.WorkHistoryEntry);
+    this.workHistory.push({ action: "completed", at: dayjs(), note: "" });
     return this;
   }
 
   complete() {
     if (this.status !== "inProgress") throw new Err("task.error.cannotCompleteFromNonInProgress");
     this.status = "completed";
-    this.workHistory.push({ action: cnst.WorkHistoryAction.completed, at: dayjs() } as cnst.WorkHistoryEntry);
+    this.workHistory.push({ action: "completed", at: dayjs(), note: "" });
     return this;
   }
 }
 
-export class TaskModel extends into(TaskDocument, TaskFilter, cnst.task, () => ({})) {}
-`,
-  };
+export class TaskModel extends into(Task, TaskFilter, cnst.task, () => ({})) {}
+`;
 }

@@ -1,14 +1,12 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
-  return {
-    filename: "workHistory.constant.ts",
-    content: `import { dayjs, enumOf } from "akanjs/base";
+  return `import { dayjs, enumOf } from "akanjs/base";
 import { via } from "akanjs/constant";
 
 // ===== workHistory.constant.ts =====
 // Convention: lib/__scalar/<type>/ — scalar modules use double-underscore prefix.
-// Scalars are embedded value shapes, reused across models via field([ScalarType], { default: [] }).
+// Scalars are embedded value shapes, reused across models via field([ScalarType]).
 // Define enums with enumOf() and entry classes with via() from akanjs/constant.
 
 // ---- Enum ----
@@ -21,10 +19,10 @@ export class WorkHistoryAction extends enumOf("workHistoryAction", [
 ] as const) {}
 
 // ---- Scalar Entry ----
-// WorkHistoryEntry: a single entry in a model's workHistory list
+// WorkHistory: a single entry in a model's workHistory list
 // Each status change in the owning model pushes a new entry into the list
-// field([WorkHistoryEntry], { default: [] }) in the parent model's Object layer
-export class WorkHistoryEntry extends via((field) => ({
+// field([WorkHistory]) in the parent model's Object layer
+export class WorkHistory extends via((field) => ({
   action: field(WorkHistoryAction),
   at: field(Date, { default: () => dayjs() }),
   note: field(String, { default: "" }),
@@ -33,6 +31,5 @@ export class WorkHistoryEntry extends via((field) => ({
 // ---- Expandable additional fields: ----
 //  - actor: field(String).optional() — who performed the action
 //  - previousStatus: field(TaskStatus).optional() — status before the change
-`,
-  };
+`;
 }

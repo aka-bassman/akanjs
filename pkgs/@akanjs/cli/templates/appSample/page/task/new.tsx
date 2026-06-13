@@ -3,9 +3,8 @@ import type { AppInfo, LibInfo } from "akanjs";
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
   return {
     filename: "new.tsx",
-    content: `import { fetch, usePage } from "@apps/${dict.appName}/client";
-import { Load } from "akanjs/ui";
-import { cnst, Task } from "@apps/${dict.appName}/client";
+    content: `import { type cnst, fetch, Task, usePage } from "@apps/${dict.appName}/client";
+import { Load, Link } from "akanjs/ui";
 
 // ===== page/task/new.tsx =====
 // Convention: Server-side form page using Load.Edit from akanjs/ui.
@@ -18,17 +17,23 @@ export default async function Page() {
   const taskForm: Partial<cnst.Task> = { status: "todo" };
 
   return (
-    <Load.Edit
-      slice={fetch.slice.task}
-      edit={taskForm}
-      type="form"
-      onCancel="back"
-      onSubmit="/task"
-    >
-      <Task.Template.General />
-    </Load.Edit>
+    <main className="mx-auto max-w-2xl px-6 py-8">
+      <div className="mb-6">
+        <Link href="/task" className="btn btn-ghost btn-sm">
+          ← Tasks
+        </Link>
+      </div>
+      <div className="mb-6">
+        <h1 className="font-extrabold text-3xl text-base-content">New Task</h1>
+        <p className="mt-1 text-base-content/60 text-sm">Create a new task with title and description</p>
+      </div>
+      <div className="rounded-xl border border-base-content/10 bg-base-100 p-6 shadow-sm">
+        <Load.Edit slice={fetch.slice.taskInPublic} edit={taskForm} type="form" onCancel="back" onSubmit="/task">
+          <Task.Template.General />
+        </Load.Edit>
+      </div>
+    </main>
   );
-}
-`,
+}`,
   };
 }

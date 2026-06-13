@@ -3,11 +3,9 @@ import type { AppInfo, LibInfo } from "akanjs";
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
   return {
     filename: "Task.Unit.tsx",
-    content: `import { type ModelProps, clsx } from "akanjs/client";
+    content: `import { type cnst, usePage } from "@apps/${dict.appName}/client";
+import { type ModelProps, clsx } from "akanjs/client";
 import { Layout } from "akanjs/ui";
-
-import * as cnst from "@apps/${dict.appName}/lib/cnst";
-import { usePage } from "@apps/${dict.appName}/client";
 
 // ===== Task.Unit.tsx =====
 // Convention: lib/<module>/ — PascalCase .tsx, Unit suffix = card/list-item component.
@@ -39,9 +37,7 @@ export const Card = ({ task, className, href }: CardProps) => {
     >
       <div className="flex items-start justify-between gap-2">
         <span className="font-semibold text-base-content">{task.title}</span>
-        <span className={clsx("badge badge-sm shrink-0", statusBadge)}>
-          {l(\`taskStatus.\${task.status}\`)}
-        </span>
+        <span className={clsx("badge badge-sm shrink-0", statusBadge)}>{l(\`taskStatus.\${task.status}\`)}</span>
       </div>
       {task.due && (
         <div className="mt-2 text-base-content/60 text-xs">
@@ -64,7 +60,6 @@ export const Card = ({ task, className, href }: CardProps) => {
 // Abstract: abstracted summary display (search results, previews)
 // export const Abstract = ({ task }: AbstractProps) => (
 //   <div className="text-sm">{task.title} — {l("taskStatus", task.status)}</div>
-// );
-`,
+// );`,
   };
 }

@@ -4,7 +4,7 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { a
   return {
     filename: "edit.tsx",
     content: `import { fetch, Task } from "@apps/${dict.appName}/client";
-import { Load } from "akanjs/ui";
+import { Load, Link } from "akanjs/ui";
 
 // ===== page/task/[taskId]/edit.tsx =====
 // Convention: Server-side edit form page using Load.Edit from akanjs/ui.
@@ -16,17 +16,25 @@ interface PageProps {
   params: { taskId: string };
 }
 export default async function Page({ params: { taskId } }: PageProps) {
-  const taskEdit = await fetch.editTask(taskId);
+  const { taskEdit } = await fetch.editTask(taskId);
 
   return (
-    <Load.Edit
-      slice={fetch.slice.task}
-      edit={taskEdit}
-      type="form"
-      onSubmit={\`/task/\${params.taskId}\`}
-    >
-      <Task.Template.General />
-    </Load.Edit>
+    <main className="mx-auto max-w-2xl px-6 py-8">
+      <div className="mb-6">
+        <Link href={\`/task/\${taskId}\`} className="btn btn-ghost btn-sm">
+          ← Back to Task
+        </Link>
+      </div>
+      <div className="mb-6">
+        <h1 className="font-extrabold text-3xl text-base-content">Edit Task</h1>
+        <p className="mt-1 text-base-content/60 text-sm">Update the task details</p>
+      </div>
+      <div className="rounded-xl border border-base-content/10 bg-base-100 p-6 shadow-sm">
+        <Load.Edit slice={fetch.slice.taskInPublic} edit={taskEdit} type="form" onSubmit={\`/task/\${taskId}\`}>
+          <Task.Template.General />
+        </Load.Edit>
+      </div>
+    </main>
   );
 }
 `,

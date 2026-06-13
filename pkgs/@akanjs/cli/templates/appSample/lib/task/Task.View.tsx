@@ -3,10 +3,8 @@ import type { AppInfo, LibInfo } from "akanjs";
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
   return {
     filename: "Task.View.tsx",
-    content: `import { clsx } from "akanjs/client";
-
-import * as cnst from "@apps/${dict.appName}/lib/cnst";
-import { usePage } from "@apps/${dict.appName}/client";
+    content: `import { type cnst, usePage } from "@apps/${dict.appName}/client";
+import { clsx } from "akanjs/client";
 
 // ===== Task.View.tsx =====
 // Convention: lib/<module>/ — PascalCase .tsx, View suffix = detail display component.
@@ -31,46 +29,40 @@ export const General = ({ className, task }: GeneralProps) => {
     <div className={clsx("flex w-full flex-col gap-4", className)}>
       <div>
         <h1 className="font-bold text-2xl text-base-content">{task.title}</h1>
-        <div className={clsx("mt-1 font-medium text-sm", statusColor)}>
-          {l(\`taskStatus.\${task.status}\`)}
-        </div>
+        <div className={clsx("mt-1 font-medium text-sm", statusColor)}>{l(\`taskStatus.\${task.status}\`)}</div>
       </div>
 
       {task.content && (
         <div className="rounded-lg border border-base-content/10 bg-base-100 p-4">
-          <p className="whitespace-pre-wrap text-base-content/80 text-sm">
-            {task.content}
-          </p>
+          <p className="whitespace-pre-wrap text-base-content/80 text-sm">{task.content}</p>
         </div>
       )}
 
       <div className="flex items-center gap-4 text-base-content/60 text-sm">
         <div>
-          <span className="font-medium">
-            {l("task.taskDueLabel")}{" "}
-          </span>
-          {task.due
-            ? task.due.toDate().toLocaleDateString()
-            : l("task.taskNoDue")}
+          <span className="font-medium">{l("task.taskDueLabel")} </span>
+          {task.due ? task.due.toDate().toLocaleDateString() : l("task.taskNoDue")}
         </div>
       </div>
 
       {task.workHistory && task.workHistory.length > 0 && (
-        <div className="mt-2 border-t border-base-content/10 pt-4">
-          <h3 className="font-semibold text-base-content text-sm mb-3">{l("task.taskWorkHistoryTitle")}</h3>
+        <div className="mt-2 border-base-content/10 border-t pt-4">
+          <h3 className="mb-3 font-semibold text-base-content text-sm">{l("task.taskWorkHistoryTitle")}</h3>
           <ul className="space-y-2">
             {task.workHistory.map((entry, i) => (
               <li key={i} className="flex items-start gap-3 text-sm">
-                <span className={clsx("badge badge-xs mt-0.5 shrink-0", {
-                  "badge-ghost": entry.action === "created",
-                  "badge-primary": entry.action === "started",
-                  "badge-success": entry.action === "completed",
-                })}>
+                <span
+                  className={clsx("badge badge-xs mt-0.5 shrink-0", {
+                    "badge-ghost": entry.action === "created",
+                    "badge-primary": entry.action === "started",
+                    "badge-success": entry.action === "completed",
+                  })}
+                >
                   {l(\`workHistoryAction.\${entry.action}\`)}
                 </span>
                 <div>
                   <span className="text-base-content/60">{entry.at.toDate().toLocaleString()}</span>
-                  {entry.note && <span className="text-base-content/50 ml-2">{entry.note}</span>}
+                  {entry.note && <span className="ml-2 text-base-content/50">{entry.note}</span>}
                 </div>
               </li>
             ))}

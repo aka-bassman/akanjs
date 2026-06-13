@@ -4,11 +4,9 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { a
   return {
     filename: "Task.Template.tsx",
     content: `"use client";
-
+import { st, usePage } from "@apps/${dict.appName}/client";
 import { clsx } from "akanjs/client";
 import { Field, Layout } from "akanjs/ui";
-
-import { st, usePage } from "@apps/${dict.appName}/client";
 
 // ===== Task.Template.tsx =====
 // Convention: lib/<module>/ — PascalCase .tsx, Template suffix = form/edit template component.
@@ -34,16 +32,14 @@ export const General = ({ className }: TaskEditProps) => {
         value={taskForm.title}
         onChange={st.do.setTitleOnTask}
       />
-      <Field.Text
+      <Field.TextArea
         label={l("task.content")}
         desc={l("task.content.desc")}
         value={taskForm.content}
         onChange={st.do.setContentOnTask}
-        multiline
       />
     </Layout.Template>
   );
-};
-`,
+};`,
   };
 }

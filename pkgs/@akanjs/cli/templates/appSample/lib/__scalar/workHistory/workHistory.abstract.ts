@@ -12,7 +12,7 @@ Scalar modules are embedded into models via field([ScalarType]), not stored inde
 They live under the double-underscore prefix to distinguish them from database models.
 
 Standard scalar layers:
-- workHistory.constant.ts — enum (WorkHistoryAction) + entry class (WorkHistoryEntry) defined via via() + enumOf()
+- workHistory.constant.ts — enum (WorkHistoryAction) + entry class (WorkHistory) defined via via() + enumOf()
 - workHistory.dictionary.ts — i18n via scalarDictionary() (fewer layers than modelDictionary)
 - workHistory.abstract.md — embedding rules and intent
 
@@ -20,14 +20,14 @@ Standard scalar layers:
 
 - Scalar modules use double-underscore prefix: lib/__scalar/workHistory/
 - Files drop the underscores: workHistory.constant.ts, not __workHistory.constant.ts
-- Models embed scalars via field([WorkHistoryEntry], { default: [] }) — list-of-scalar embedding
+- Models embed scalars via field([WorkHistory]) — list-of-scalar embedding
 
 ## Embedding Example (in task.constant.ts)
 
-TaskObject embeds a list of WorkHistoryEntry:
-  import { WorkHistoryEntry } from "../../__scalar/workHistory/workHistory.constant";
+TaskObject embeds a list of WorkHistory:
+  import { WorkHistory } from "../../__scalar/workHistory/workHistory.constant";
   export class TaskObject extends via(TaskInput, (field) => ({
-    workHistory: field([WorkHistoryEntry], { default: [] }),
+    workHistory: field([WorkHistory]),
   }))
 
 Each status change (create, start, complete) pushes a new entry.

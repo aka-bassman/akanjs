@@ -1,11 +1,9 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
-  return {
-    filename: "task.dictionary.ts",
-    content: `import { modelDictionary } from "akanjs/dictionary";
+  return `import { modelDictionary } from "akanjs/dictionary";
 
-import type { Task, LightTask } from "./task.constant";
+import type { Task, TaskStatus } from "./task.constant";
 import type { TaskFilter } from "./task.document";
 
 // ===== task.dictionary.ts =====
@@ -26,11 +24,6 @@ export const dictionary = modelDictionary(["en", "ko"])
     status: t(["Status", "상태"]).desc(["Current task status", "현재 작업 상태"]),
     due: t(["Due Date", "마감일"]).desc(["Deadline for completion", "완료 마감일"]),
     workHistory: t(["Work History", "작업 이력"]).desc(["Status change log", "상태 변경 기록"]),
-  }))
-  .lightModel<LightTask>((t) => ({
-    title: t(["Title", "제목"]),
-    status: t(["Status", "상태"]),
-    due: t(["Due", "마감"]),
   }))
   .query<TaskFilter>((fn) => ({
     byStatus: fn(["By Status", "상태별"]).arg((t) => ({
@@ -80,6 +73,5 @@ export const dictionary = modelDictionary(["en", "ko"])
     taskEdit: ["Edit", "수정"],
     taskNew: ["+ New Task", "+ 새 할 일"],
   });
-`,
-  };
+`;
 }

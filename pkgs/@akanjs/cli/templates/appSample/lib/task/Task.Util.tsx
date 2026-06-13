@@ -4,8 +4,7 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { a
   return {
     filename: "Task.Util.tsx",
     content: `"use client";
-
-import { st, usePage } from "@apps/${dict.appName}/client";
+import { fetch, st, usePage } from "@apps/${dict.appName}/client";
 import { Model } from "akanjs/ui";
 
 // ===== Task.Util.tsx =====
@@ -46,7 +45,7 @@ interface RemoveProps {
 }
 
 export const Remove = ({ taskId }: RemoveProps) => (
-  <Model.Remove modelId={taskId}>
+  <Model.Remove modelId={taskId} slice={fetch.slice.task}>
     <button className="btn btn-xs btn-ghost text-error">{usePage().l("task.taskRemove")}</button>
   </Model.Remove>
 );
@@ -63,7 +62,10 @@ export const Toolbox = ({ taskId, status }: ToolboxProps) => {
       <button tabIndex={0} className="btn btn-xs btn-ghost">
         ···
       </button>
-      <ul tabIndex={0} className="dropdown-content menu rounded-box z-[1] w-40 border border-base-content/10 bg-base-100 p-2 shadow">
+      <ul
+        tabIndex={0}
+        className="dropdown-content menu z-[1] w-40 rounded-box border border-base-content/10 bg-base-100 p-2 shadow"
+      >
         {status === "todo" && (
           <li>
             <button onClick={() => st.do.startTask(taskId)}>{l("task.taskStart")}</button>

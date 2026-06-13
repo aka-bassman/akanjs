@@ -88,6 +88,7 @@ describe("WorkspaceScript", () => {
       "workspace",
       {
         commit: async (...args: unknown[]) => recorder.record("commit", ...args),
+        applyTemplate: async (...args: unknown[]) => recorder.record("applyTemplate", ...args),
       },
       recorder,
     );
@@ -114,6 +115,7 @@ describe("WorkspaceScript", () => {
         "installLibrary",
         "installLibrary",
         "createApplication",
+        "applyTemplate",
         "workspace.spinning",
         "commit",
         "spinner.succeed",

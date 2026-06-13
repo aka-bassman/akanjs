@@ -4,10 +4,9 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { a
   return {
     filename: "Task.Zone.tsx",
     content: `"use client";
-
-import { fetch, Task, usePage } from "@apps/${dict.appName}/client";
-import { Load } from "akanjs/ui";
+import { Task, usePage } from "@apps/${dict.appName}/client";
 import type { ClientInit, ClientView } from "akanjs/fetch";
+import { Link, Load } from "akanjs/ui";
 
 import * as cnst from "../cnst";
 
@@ -32,16 +31,12 @@ export const Card = ({ className, init }: CardProps) => {
       renderEmpty={() => (
         <div className="flex flex-col items-center gap-4 py-16 text-center">
           <div className="text-base-content/40 text-lg">{l("task.taskNoTasks")}</div>
-          <button className="btn btn-primary btn-sm">{l("task.taskCreateFirst")}</button>
+          <Link href="/task/new">
+            <button className="btn btn-primary btn-sm">{l("task.taskCreateFirst")}</button>
+          </Link>
         </div>
       )}
-      renderItem={(task) => (
-        <Task.Unit.Card
-          key={task.id}
-          task={task}
-          href={\`/task/\${task.id}\`}
-        />
-      )}
+      renderItem={(task) => <Task.Unit.Card key={task.id} task={task} href={\`/task/\${task.id}\`} />}
     />
   );
 };
@@ -52,15 +47,8 @@ interface ViewProps {
 }
 
 export const View = ({ className, view }: ViewProps) => {
-  return (
-    <Load.View
-      className={className}
-      view={view}
-      renderView={(task) => <Task.View.General task={task} />}
-    />
-  );
+  return <Load.View className={className} view={view} renderView={(task) => <Task.View.General task={task} />} />;
 };
-
 `,
   };
 }

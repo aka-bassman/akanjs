@@ -1,10 +1,7 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
-  return {
-    filename: "noti.signal.ts",
-    content: `import { dayjs } from "akanjs/base";
-import { endpoint } from "akanjs/signal";
+  return `import { internal, endpoint } from "akanjs/signal";
 
 import * as srv from "../srv";
 
@@ -15,9 +12,9 @@ import * as srv from "../srv";
 // Client subscribes via fetch.subscribeSend((data) => { ... }).
 // Registered by akan scan into sig.ts barrel.
 
-export class NotiEndpoint extends endpoint(srv.noti, ({ pubsub }) => ({
+export class NotiInternal extends internal(srv.noti, () => ({})) {}
 
-})) {}
+export class NotiEndpoint extends endpoint(srv.noti, () => ({})) {}
 
 // ---- Expandable additional fields: ----
 //   history: query(NotiHistory)
@@ -25,6 +22,5 @@ export class NotiEndpoint extends endpoint(srv.noti, ({ pubsub }) => ({
 //     .exec(async function (userId) {
 //       return await this.notiService.getHistory(userId);
 //     }),
-`,
-  };
+`;
 }

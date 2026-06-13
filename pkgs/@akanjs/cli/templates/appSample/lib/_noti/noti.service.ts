@@ -1,10 +1,7 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
-  return {
-    filename: "noti.service.ts",
-    content: `import { serve } from "akanjs/service";
-import { dayjs } from "akanjs/base";
+  return `import { serve } from "akanjs/service";
 
 // ===== noti.service.ts =====
 // Convention: <module>.service.ts for a pure service module.
@@ -26,6 +23,5 @@ export class NotiService extends serve("noti" as const, () => ({})) {}
 //     return this.pushApi.send({ token, title, body });
 //   }
 // }
-`,
-  };
+`;
 }

@@ -1,12 +1,9 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
-  return {
-    filename: "task.service.ts",
-    content: `import { dayjs } from "akanjs/base";
+  return `import { dayjs } from "akanjs/base";
+import type { DataInputOf } from "akanjs/document";
 import { serve } from "akanjs/service";
-
-import * as cnst from "../cnst";
 import * as db from "../db";
 
 // ===== task.service.ts =====
@@ -21,10 +18,10 @@ import * as db from "../db";
 export class TaskService extends serve(db.task, () => ({})) {
   // Lifecycle hook: runs before every document creation.
   // Auto-injects the initial workHistory entry for the scalar embedding pattern.
-  _preCreate(data: cnst.TaskInput): cnst.TaskInput {
+  override _preCreate(data: DataInputOf<db.TaskInput, db.Task>): DataInputOf<db.TaskInput, db.Task> {
     return {
       ...data,
-      workHistory: [{ action: cnst.WorkHistoryAction.created, at: dayjs(), note: "" } as cnst.WorkHistoryEntry],
+      workHistory: [{ action: "created", at: dayjs(), note: "" }],
     };
   }
 
@@ -43,6 +40,5 @@ export class TaskService extends serve(db.task, () => ({})) {
 // export class TaskService extends serve(db.task, ({ service, use, signal, plug, env, memory }) => ({
 //   notiService: service<srv.NotiService>(),
 // })) {
-`,
-  };
+`;
 }

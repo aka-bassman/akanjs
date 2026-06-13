@@ -1,11 +1,9 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
-  return {
-    filename: "task.store.ts",
-    content: `import { store } from "akanjs/store";
+  return `import { store } from "akanjs/store";
 
-import { fetch, sig, msg } from "../useClient";
+import { fetch, msg, sig } from "../useClient";
 
 // ===== task.store.ts =====
 // Convention: <module>.store.ts — client-side state management for a database module.
@@ -40,6 +38,5 @@ export class TaskStore extends store(sig.task, () => ({})) {
 //     filterKeyword: "",
 //   })) { ... }
 // The auto-generated taskForm handles title, content, due states automatically.
-`,
-  };
+`;
 }
