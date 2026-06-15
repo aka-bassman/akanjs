@@ -1,28 +1,6 @@
-# accessStat Scalar Abstract
+# accessStat Abstract
+접근 로그를 request, device, ip, country 기준으로 요약한다.
 
-## Purpose
-
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Rules
+- 모든 통계 값은 정수이며 기본값은 0이다.
+- 세부 로그는 accessLog에 남기고 이 scalar는 집계 값만 담는다.

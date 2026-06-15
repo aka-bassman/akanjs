@@ -1,28 +1,7 @@
-# localFile Service Abstract
+# localFile Abstract
+blob storage의 공개 로컬 파일을 HTTP Response로 읽어 제공한다.
 
-## Purpose
-
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Rules
+- `private/`로 시작하는 경로는 localFile로 서빙하지 않는다.
+- endpoint 경로 뒤의 나머지 문자열을 storage path로 사용한다.
+- 서비스는 파일을 변환하지 않고 storage stream을 그대로 반환한다.

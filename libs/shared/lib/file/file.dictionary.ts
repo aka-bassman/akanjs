@@ -68,6 +68,17 @@ export const dictionary = modelDictionary(["en", "ko"])
         ]),
         parentId: t(["Parent Id", "상위 Id"]).desc(["Parent id to be uploaded", "상위 Id"]),
       })),
+    addFilesRestApi: fn(["Add Files (for RESTful API", "파일 추가 (RESTful API)"])
+      .desc(["Add files to the database (for RESTful API)", "데이터베이스에 파일 추가 (RESTful API)"])
+      .arg((t) => ({
+        files: t(["File Streams", "파일 스트림"]).desc(["File streams to be uploaded", "업로드할 파일 스트림"]),
+        metas: t(["File Metas", "파일 메타"]).desc(["File metas to be uploaded", "업로드할 파일 메타"]),
+        type: t(["Parent Type", "상위 타입"]).desc([
+          "Parent type of file in database",
+          "데이터베이스에 저장될 파일의 상위 타입",
+        ]),
+        parentId: t(["Parent Id", "상위 Id"]).desc(["Parent id to be uploaded", "상위 Id"]),
+      })),
     generatePdf: fn(["Export PDF", "PDF 내보내기"])
       .desc(["Export PDF to file", "PDF를 파일로 내보내기"])
       .arg((t) => ({

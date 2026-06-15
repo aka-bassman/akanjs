@@ -1,28 +1,7 @@
-# accessLog Scalar Abstract
+# accessLog Abstract
+요청 접근의 시간, 위치, IP, 브라우저, 디바이스 정보를 기록한다.
 
-## Purpose
-
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Rules
+- 위치 정보는 coordinate scalar를 사용한다.
+- at은 생성 시 현재 시각을 기본값으로 가진다.
+- period는 집계 구간 분류에 쓰는 정수 값이다.

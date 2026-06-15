@@ -1,28 +1,11 @@
 # privFile Abstract
+외부 공개 URL 없이 private storage 경로로만 접근하는 파일을 관리한다.
 
-## Purpose
+## Rules
+- private file은 `private/<purpose>/<group>/<id>` 경로에 저장한다.
+- 업로드 완료 전에는 privatePath를 비워 두고 진행률을 기록한다.
+- privatePath가 없으면 읽기와 저장을 허용하지 않는다.
+- 문서 삭제 시 private storage 데이터도 함께 삭제한다.
 
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Workflow
+- 로컬 파일을 private storage에 올린 뒤 active 상태와 privatePath를 확정한다.

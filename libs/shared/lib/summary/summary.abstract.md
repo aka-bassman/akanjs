@@ -1,28 +1,11 @@
 # summary Abstract
+여러 도메인의 집계값을 active 문서와 시간별 archive로 유지한다.
 
-## Purpose
+## Rules
+- active summary는 하나만 유지하고 중복 active 문서는 제거한다.
+- periodic archive는 현재 시간의 period type과 at 기준으로 upsert한다.
+- 집계 필드는 직접 count하거나 증감/이동 연산으로 갱신한다.
+- public 조회는 active summary만 캐시해 제공한다.
 
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Workflow
+- batch cron이 주기적으로 summarize 결과를 archive한다.

@@ -401,16 +401,6 @@ export const dictionary = modelDictionary(["en", "ko"])
         userId: t(["User ID", "유저 ID"]).desc(["User ID", "유저 ID"]),
         nickname: t(["Nickname", "닉네임"]).desc(["Nickname", "닉네임"]),
       })),
-    setRemoteAuthToken: fn(["Set Remote Auth Token", "원격 인증 토큰 설정"])
-      .desc(["Set Remote Auth Token", "원격 인증 토큰 설정"])
-      .arg((t) => ({
-        remoteId: t(["Remote ID", "원격 아이디"]).desc(["Remote ID", "원격 아이디"]),
-      })),
-    getRemoteAuthToken: fn(["Get Remote Auth Token", "원격 인증 토큰 조회"])
-      .desc(["Get Remote Auth Token", "원격 인증 토큰 조회"])
-      .arg((t) => ({
-        remoteId: t(["Remote ID", "원격 아이디"]).desc(["Remote ID", "원격 아이디"]),
-      })),
     refreshJwt: fn(["Refresh JWT", "JWT 갱신"]).desc(["Refresh JWT", "JWT 갱신"]),
   }))
   .error({

@@ -1,28 +1,7 @@
-# util Service Abstract
+# util Abstract
+util 라이브러리의 batch 루트 서비스와 공용 UI 상태 store를 제공한다.
 
-## Purpose
-
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Rules
+- service와 endpoint는 하위 util 기능을 묶는 빈 루트 컨테이너다.
+- store는 알림 권한과 지도 중심, zoom, bounds 상태를 관리한다.
+- 지도 화면 맞춤은 coordinate helper의 bounds/center/zoom 계산을 사용한다.

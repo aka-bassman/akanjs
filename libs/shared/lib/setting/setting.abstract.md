@@ -1,28 +1,7 @@
 # setting Abstract
+서비스 전역 설정을 단일 active setting 문서로 제공한다.
 
-## Purpose
-
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Rules
+- active setting이 없으면 기본값으로 즉시 생성한다.
+- 설정은 사용자 가입/재가입 정책 같은 공유 서비스 규칙에 사용된다.
+- 클라이언트 store는 별도 상태를 만들지 않고 signal 기반 설정을 따른다.

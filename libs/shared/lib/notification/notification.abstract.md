@@ -1,28 +1,11 @@
 # notification Abstract
+Firebase 토픽/토큰 구독과 푸시 발송 기록을 관리한다.
 
-## Purpose
+## Rules
+- 개인 알림 토픽은 `user-<userId>` 형식을 사용한다.
+- 전체 알림은 `all_users` 토픽으로 발송한다.
+- 푸시 발송 전 Notification 문서를 먼저 생성한다.
+- 이미지가 있으면 file 서비스에서 URL을 조회해 payload에 포함한다.
 
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Workflow
+- 사용자는 개인/전체 토픽을 구독하고, 관리자는 push notification을 발송한다.

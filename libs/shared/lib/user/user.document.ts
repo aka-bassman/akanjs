@@ -26,10 +26,12 @@ export class UserFilter extends from(cnst.User, (filter) => ({
     byAccountId: filter()
       .arg("accountId", String)
       .opt("statuses", [cnst.UserStatus])
-      .query((accountId, statuses, q) => ({
-        accountId,
-        ...(statuses?.length ? { status: q.oneOf(statuses) } : {}),
-      })),
+      .query((accountId, statuses, q) => {
+        return {
+          accountId,
+          ...(statuses?.length ? { status: q.oneOf(statuses) } : {}),
+        };
+      }),
     byPhone: filter()
       .arg("phone", String)
       .opt("statuses", [cnst.UserStatus])
@@ -411,11 +413,5 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
       { set: { "encourageInfo.inquiry": inquiry, "encourageInfo.inquiryAt": inquiryAt.toDate() } },
     );
     return !!modifiedCount;
-  }
-  async setRemoteAuthToken(remoteId: string, token: string) {
-    await this.userCache.set("remoteAuthToken", remoteId, token, { expireAt: dayjs().add(30, "second") });
-  }
-  async getRemoteAuthToken(remoteId: string) {
-    return await this.userCache.get<string>("remoteAuthToken", remoteId);
   }
 }

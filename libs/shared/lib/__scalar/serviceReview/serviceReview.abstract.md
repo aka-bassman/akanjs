@@ -1,28 +1,6 @@
-# serviceReview Scalar Abstract
+# serviceReview Abstract
+상담이나 통화 같은 서비스 경험 평가를 담는 공용 리뷰 값이다.
 
-## Purpose
-
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Rules
+- score는 0 이상의 정수이며 기본값은 0이다.
+- comment는 선택 입력으로 두고 평가 점수와 분리한다.

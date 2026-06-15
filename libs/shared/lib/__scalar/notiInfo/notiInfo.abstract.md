@@ -1,28 +1,7 @@
-# notiInfo Scalar Abstract
+# notiInfo Abstract
+사용자의 알림 선호도, 일시 중지 시각, 기기 토큰을 보관한다.
 
-## Purpose
-
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Rules
+- 알림 설정은 disagree, fewer, normal, block 중 하나다.
+- 기본 알림 설정은 `normal`이다.
+- device token은 사용자 단위로 추가/제거된다.

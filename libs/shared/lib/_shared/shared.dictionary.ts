@@ -52,4 +52,5 @@ export const dictionary = serviceDictionary(["en", "ko"])
     "editor-rowAfter": ["Insert row After", "행 뒤에 추가"],
     "editor-deleteRow": ["Delete row", "행 삭제"],
     "editor-excalidraw": ["Excalidraw", "엑스칼리드로우"],
+    more: ["More", "더보기"],
   });

@@ -207,11 +207,6 @@ pipeline {
         success {
             script {
                 discordSend description: "Build Succeed - $env.JOB_NAME $env.BUILD_NUMBER", link: env.BUILD_URL, result: currentBuild.currentResult, title: env.JOB_NAME, webhookURL: env.DISCORD_WEBHOOK
-                if(BRANCH != "debug" && env.GIT_PREVIOUS_SUCCESSFUL_COMMIT != null) {
-                    def commit_messages = sh(script: "git log $env.GIT_PREVIOUS_SUCCESSFUL_COMMIT..HEAD --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cD) %C(bold blue)<%an>%Creset'", returnStdout: true)
-                    commit_messages = commit_messages.trim().replaceAll("\\n", "\n")
-                    discordSend title: "$env.JOB_NAME:$env.BUILD_NUMBER 빌드 배포 완료", description: commit_messages, result: currentBuild.currentResult, customUsername: "Akan Update", customAvatarUrl: "https://media.discordapp.net/stickers/952935228865933363.png", webhookURL: env.DISCORD_PUBLIC_WEBHOOK
-                }
             }
         }
     }

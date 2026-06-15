@@ -1,28 +1,11 @@
 # file Abstract
+공개 파일 업로드, 원격 수집, 저장소 업로드 상태를 추적한다.
 
-## Purpose
+## Rules
+- 파일은 업로드 중 상태로 생성되고 저장소 업로드 완료 후 active가 된다.
+- stream/metas 개수는 항상 일치해야 한다.
+- 같은 origin 파일은 중복 생성하지 않고 기존 active 파일을 재사용한다.
+- 파일 삭제 시 저장소의 공개 데이터도 함께 삭제한다.
 
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Workflow
+- 업로드 진행률을 갱신하고 성공 시 URL, 이미지 요약, 크기 정보를 확정한다.

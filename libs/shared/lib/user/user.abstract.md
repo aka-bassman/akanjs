@@ -1,28 +1,13 @@
 # user Abstract
+사용자 가입, 인증, 프로필 심사, 상태 전이를 관리한다.
 
-## Purpose
+## Rules
+- active/dormant/restricted 계정의 accountId와 phone은 중복될 수 없다.
+- prepare 사용자는 인증 단계가 끝난 뒤 active로 전환된다.
+- password, phone code, SSO, refresh session은 cache와 security service로 검증한다.
+- 제한, 휴면, 탈퇴, 활성화는 summary 집계와 함께 움직인다.
 
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Workflow
+- prepare user 생성 후 nickname/profile/auth 정보를 채우고 activate한다.
+- 로그인은 access token과 refresh token session을 발급한다.
+- 관리자는 역할, 제한, 계정 정보, 프로필 상태를 조정할 수 있다.

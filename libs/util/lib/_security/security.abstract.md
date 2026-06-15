@@ -1,28 +1,8 @@
-# security Service Abstract
+# security Abstract
+JWT 서명/검증, AES 암복호화, refresh token 생성을 제공한다.
 
-## Purpose
-
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Rules
+- access token은 appName, environment, tokenType, sid, jti를 포함해 서명한다.
+- access token 만료는 15분, refresh token 만료는 30일 기준이다.
+- refresh token은 원문 대신 hash를 저장하도록 opaque token과 hash를 함께 만든다.
+- verifyToken은 현재 appName과 environment가 맞는 토큰만 해석한다.

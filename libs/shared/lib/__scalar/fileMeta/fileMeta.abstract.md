@@ -1,28 +1,6 @@
-# fileMeta Scalar Abstract
+# fileMeta Abstract
+업로드 요청에서 파일 문서 생성에 필요한 클라이언트 메타데이터를 전달한다.
 
-## Purpose
-
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Rules
+- size와 lastModifiedAt은 업로드 파일과 같은 순서의 stream에 대응한다.
+- fileId가 있으면 기존 ID로 파일 문서를 생성하거나 갱신할 수 있다.

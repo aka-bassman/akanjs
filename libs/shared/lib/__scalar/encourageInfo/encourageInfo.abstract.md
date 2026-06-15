@@ -1,28 +1,7 @@
-# encourageInfo Scalar Abstract
+# encourageInfo Abstract
+사용자의 journey와 inquiry 진행 상태 및 갱신 시점을 담는다.
 
-## Purpose
-
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Rules
+- journey와 inquiry는 각각 정해진 enum 단계만 가진다.
+- 각 상태는 별도 timestamp와 함께 갱신된다.
+- 기본 상태는 모두 `welcome`이다.

@@ -1,28 +1,7 @@
 # banner Abstract
+카테고리별로 노출할 배너와 연결 링크를 관리한다.
 
-## Purpose
-
-Describe the business concept, workflow, or reusable value this module owns.
-
-## Domain Rules
-
-- Add durable business invariants here.
-- Avoid repeating field types, labels, or implementation details that are already clear in code.
-
-## Data Meaning
-
-Explain important data meanings only when the code does not make the intent obvious.
-
-## Workflows
-
-Describe create, update, approval, deletion, state transition, integration, or normalization flows when relevant.
-
-## Agent Notes
-
-- Read this abstract before changing module behavior.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None documented yet.
+## Rules
+- 공개 조회는 카테고리 기준으로 제공한다.
+- 배너 생성, 수정, 삭제는 관리자 권한에서 수행한다.
+- 배너 이미지는 shared file 문서를 참조한다.
