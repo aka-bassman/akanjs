@@ -200,7 +200,7 @@ export class ConstantRegistry {
       _StateLight: null as unknown as GetStateObject<Light>,
       _StateInsight: null as unknown as GetStateObject<Insight>,
     };
-    ConstantRegistry.setDatabase(refName, cnst);
+    ConstantRegistry.setDatabase(refName, cnst as ConstantModel);
     Object.entries(constExports).forEach(([key, value]) => {
       if ((modelRefSet as Set<unknown>).has(value)) return;
       else if (typeof value === "function" && isEnum(value as Cls))

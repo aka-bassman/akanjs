@@ -14,6 +14,7 @@ import {
   createFakeExecutor,
   createTempApp,
   writeJson,
+  writeText,
 } from "../testHelpers";
 import { WorkspaceCommand } from "./workspace.command";
 import { WorkspaceRunner } from "./workspace.runner";
@@ -320,5 +321,55 @@ describe("WorkspaceRunner", () => {
     expect(AppExecutor.from(workspace, "demo")).toBeInstanceOf(AppExecutor);
     expect(LibExecutor.from(workspace, "shared")).toBeInstanceOf(LibExecutor);
     expect(PkgExecutor.from(workspace, "@sample/tool")).toBeInstanceOf(PkgExecutor);
+  });
+});
+
+describe("Scan convention validation", () => {
+  test("rejects files that do not follow the <module>.<type>.(ts|tsx) convention", async () => {
+    const { root, app } = await createTempApp("demo");
+    tempRoots.push(root);
+
+    await writeText(`${app.cwdPath}/lib/task/task.constant.ts`, "export const TaskStatus = {};\n");
+    await writeText(`${app.cwdPath}/lib/task/TaskHelpComponent.tsx`, "export const TaskHelp = () => null;\n");
+
+    await expect(app.scanSync({ write: false })).rejects.toThrow(
+      /apps\/demo\/lib\/task\/TaskHelpComponent.tsx: unsupported module file/,
+    );
+  });
+
+  test("rejects UI files with wrong module name prefix", async () => {
+    const { root, app } = await createTempApp("demo");
+    tempRoots.push(root);
+
+    await writeText(`${app.cwdPath}/lib/task/task.constant.ts`, "export const TaskStatus = {};\n");
+    await writeText(`${app.cwdPath}/lib/task/WrongName.Zone.tsx`, "export const WrongZone = () => null;\n");
+
+    await expect(app.scanSync({ write: false })).rejects.toThrow(
+      /apps\/demo\/lib\/task\/WrongName.Zone.tsx: module name mismatch: expected 'Task', got 'WrongName'/,
+    );
+  });
+
+  test("rejects non-UI files with wrong module name prefix", async () => {
+    const { root, app } = await createTempApp("demo");
+    tempRoots.push(root);
+
+    await writeText(`${app.cwdPath}/lib/task/task.constant.ts`, "export const TaskStatus = {};\n");
+    await writeText(`${app.cwdPath}/lib/task/wrongName.constant.ts`, "export const Wrong = {};\n");
+
+    await expect(app.scanSync({ write: false })).rejects.toThrow(
+      /apps\/demo\/lib\/task\/wrongName.constant.ts: module name mismatch: expected 'task', got 'wrongName'/,
+    );
+  });
+
+  test("allows properly named files in domain folders", async () => {
+    const { root, app } = await createTempApp("demo");
+    tempRoots.push(root);
+
+    await writeText(`${app.cwdPath}/lib/task/task.constant.ts`, "export const TaskStatus = {};\n");
+    await writeText(`${app.cwdPath}/lib/task/task.dictionary.ts`, "export const TaskDict = {};\n");
+    await writeText(`${app.cwdPath}/lib/task/Task.Zone.tsx`, "export const TaskZone = () => null;\n");
+
+    const scanInfo = await app.scanSync({ write: false });
+    expect(scanInfo.type).toBe("app");
   });
 });

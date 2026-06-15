@@ -1,4 +1,4 @@
-import { type Cls, FIELD_META, type MergeAllActionTypes, type UnCls } from "akanjs/base";
+import { type Cls, FIELD_META, type MergeAllActionTypes } from "akanjs/base";
 import { applyMixins } from "akanjs/common";
 import {
   type BaseObject,
@@ -24,7 +24,8 @@ export type Doc<M = any> = HydratedDocumentWithId<DocumentModel<M>>;
 export const by = <
   ModelCls,
   AddDbModels extends DatabaseCls[],
-  _DocModel = UnCls<ModelCls> extends BaseObject ? Doc<UnCls<ModelCls>> : DocumentModel<UnCls<ModelCls>>,
+  _DatabaseSchema = ModelCls extends { _DatabaseSchema: infer Schema } ? Schema : never,
+  _DocModel = _DatabaseSchema extends BaseObject ? Doc<_DatabaseSchema> : DocumentModel<_DatabaseSchema>,
 >(
   modelRef: ModelCls,
   ...addRefs: AddDbModels

@@ -167,23 +167,37 @@ async function validateModuleFiles(
     violations.push(`${getScanPath(exec, path.join(modulePath, dirname))}: unsupported module folder`);
   });
 
+  const uiModuleName = moduleName[0].toUpperCase() + moduleName.slice(1);
+
   files.forEach((filename) => {
     const filePath = path.join(modulePath, filename);
     if (filename === "index.ts" || filename === "index.tsx" || isAllowedTestFile(filename)) return;
     if (filename === `${moduleName}.abstract.md`) return;
 
-    const uiMatch = filename.match(/\.([A-Z][A-Za-z0-9]*)\.tsx$/);
+    const uiMatch = filename.match(/^([A-Z][A-Za-z0-9]+)\.([A-Z][A-Za-z0-9]*)\.tsx$/);
     if (uiMatch) {
-      const fileType = uiMatch[1];
+      const fileModuleName = uiMatch[1];
+      const fileType = uiMatch[2];
+      if (fileModuleName !== uiModuleName) {
+        violations.push(
+          `${getScanPath(exec, filePath)}: module name mismatch: expected '${uiModuleName}', got '${fileModuleName}'`,
+        );
+      }
       if (!moduleUiFileTypes[kind].has(fileType)) {
         violations.push(`${getScanPath(exec, filePath)}: unsupported ${kind} UI file`);
       }
       return;
     }
 
-    const nonUiMatch = filename.match(/\.([a-z][A-Za-z0-9]*)\.ts$/);
+    const nonUiMatch = filename.match(/^([a-z][a-zA-Z0-9]*)\.([a-z][a-z0-9]*)\.ts$/);
     if (nonUiMatch) {
-      const fileType = nonUiMatch[1];
+      const fileModuleName = nonUiMatch[1];
+      const fileType = nonUiMatch[2];
+      if (fileModuleName !== moduleName) {
+        violations.push(
+          `${getScanPath(exec, filePath)}: module name mismatch: expected '${moduleName}', got '${fileModuleName}'`,
+        );
+      }
       if (!moduleNonUiFileTypes[kind].has(fileType)) {
         violations.push(`${getScanPath(exec, filePath)}: unsupported ${kind} file`);
       }

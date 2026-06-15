@@ -129,7 +129,7 @@ const getBaseConstantClass = (field: FieldObject, modelType: ConstantType = "sca
     static relations: Set<ConstantCls> = new Set();
     static enums: Set<EnumInstance> = new Set();
     [immerable] = true;
-    constructor(obj?: Partial<typeof this>) {
+    constructor(obj?: Partial<unknown>) {
       this.set({
         ...(this.constructor as ConstantCls).getDefault(),
         ...((obj ?? {}) as Partial<typeof this>),
@@ -172,6 +172,15 @@ export interface ConstantStatics<Schema = any, FieldObj extends FieldObject = Fi
   relations: Set<ConstantCls>;
   enums: Set<EnumInstance>;
   text: { search: Set<string>; filter: Set<string>; children: { search: Set<string>; filter: Set<string> } };
+  _DatabaseSchema: {
+    [K in keyof Schema]: K extends keyof FieldObj
+      ? FieldObj[K] extends ConstantField<infer FieldType, any, any, any, any, any>
+        ? FieldType extends "hidden"
+          ? NonNullable<Schema[K]>
+          : Schema[K]
+        : Schema[K]
+      : Schema[K];
+  };
 }
 export type ConstantCls<Schema = any, FieldObj extends FieldObject = FieldObject> = (new (
   obj?: Partial<Schema>,
