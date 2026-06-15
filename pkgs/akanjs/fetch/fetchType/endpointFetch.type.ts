@@ -1,13 +1,15 @@
 import type { ENDPOINT_META, PromiseOrObject } from "akanjs/base";
 import type { FetchPolicy } from "akanjs/common";
-import type { EndpointCls, EndpointInfo } from "akanjs/signal";
+import type {
+  EndpInfoArgs,
+  EndpInfoClientReturns,
+  EndpInfoNullable,
+  EndpInfoReqType,
+  EndpointCls,
+  EndpointInfo,
+} from "akanjs/signal";
 
-type EndpInfoType<E> = E extends EndpointInfo<infer T, any, any, any, any, any, any, any, any, any> ? T : never;
-type EndpInfoArgs<E> = E extends EndpointInfo<any, any, any, infer A, any, any, any, any, any, any> ? A : never;
-type EndpInfoReturns<E> =
-  E extends EndpointInfo<any, any, any, any, any, any, any, infer R, any, infer N>
-    ? R | (N extends true ? null : never)
-    : never;
+type EndpInfoReturns<E> = EndpInfoClientReturns<E> | (EndpInfoNullable<E> extends true ? null : never);
 
 type QueryOrMutationFetchFn<E> = (
   ...args: [...EndpInfoArgs<E>, fetchPolicy?: FetchPolicy]
@@ -24,20 +26,23 @@ type PubsubSubscribeFn<E> = (
   ...args: [...EndpInfoArgs<E>, handleEvent: (data: EndpInfoReturns<E>) => PromiseOrObject<void>, options?: FetchPolicy]
 ) => () => void;
 
+type PrimaryFetchFn<E> =
+  EndpInfoReqType<E> extends "query" | "mutation"
+    ? QueryOrMutationFetchFn<E>
+    : EndpInfoReqType<E> extends "message"
+      ? MessageEmitFn<E>
+      : never;
+
 // Keys kept as-is: query / mutation / message (emit)
 type PrimaryFetchType<EInfoObj extends { [key: string]: EndpointInfo }> = {
-  [K in keyof EInfoObj as EndpInfoType<EInfoObj[K]> extends "query" | "mutation" | "message" ? K : never]: EndpInfoType<
-    EInfoObj[K]
-  > extends "query" | "mutation"
-    ? QueryOrMutationFetchFn<EInfoObj[K]>
-    : EndpInfoType<EInfoObj[K]> extends "message"
-      ? MessageEmitFn<EInfoObj[K]>
-      : never;
+  [K in keyof EInfoObj as EndpInfoReqType<EInfoObj[K]> extends "query" | "mutation" | "message"
+    ? K
+    : never]: PrimaryFetchFn<EInfoObj[K]>;
 };
 
 // Keys remapped to `subscribe${Key}`
 type PubsubFetchType<EInfoObj extends { [key: string]: EndpointInfo }> = {
-  [K in keyof EInfoObj as EndpInfoType<EInfoObj[K]> extends "pubsub"
+  [K in keyof EInfoObj as EndpInfoReqType<EInfoObj[K]> extends "pubsub"
     ? K extends string
       ? `subscribe${Capitalize<K>}`
       : never
@@ -46,7 +51,7 @@ type PubsubFetchType<EInfoObj extends { [key: string]: EndpointInfo }> = {
 
 // Keys remapped to `listen${Key}`
 type MessageListenFetchType<EInfoObj extends { [key: string]: EndpointInfo }> = {
-  [K in keyof EInfoObj as EndpInfoType<EInfoObj[K]> extends "message"
+  [K in keyof EInfoObj as EndpInfoReqType<EInfoObj[K]> extends "message"
     ? K extends string
       ? `listen${Capitalize<K>}`
       : never
