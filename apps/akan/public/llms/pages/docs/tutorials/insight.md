@@ -445,10 +445,6 @@ export class IcecreamOrderInsight extends via(IcecreamOrder, (field) => ({
     default: 0,
     accumulate: {},
   }),
-  activeOrderCount: field(Int, {
-    default: 0,
-    accumulate: { status: "active" },
-  }),
   fruitRingQty: field(Int, {
     default: 0,
     accumulate: { toppings: "fruitRings" },

@@ -15,26 +15,14 @@ export type FetchTypeOfSignal<Signal extends FetchSignalInput> =
         ? GetFetchTypeFromEndpoint<EndpCls>
         : unknown;
 
-type FetchKeysOfSignal<Signal> = Signal extends FetchSignalInput ? keyof FetchTypeOfSignal<Signal> : never;
-type FetchKeysOfSignals<Signals extends readonly FetchSignalInput[]> = FetchKeysOfSignal<Signals[number]>;
+type OverrideFetchType<Current, Next> = Omit<Current, keyof Next> & Next;
 
-type LastFetchValue<
-  Signals extends readonly FetchSignalInput[],
-  Key extends PropertyKey,
-  Current = never,
-> = Signals extends readonly [infer First extends FetchSignalInput, ...infer Rest extends readonly FetchSignalInput[]]
-  ? Key extends keyof FetchTypeOfSignal<First>
-    ? LastFetchValue<Rest, Key, FetchTypeOfSignal<First>[Key]>
-    : LastFetchValue<Rest, Key, Current>
-  : Current;
-
-export type MergeAllFetchTypes<Signals extends readonly FetchSignalInput[]> = [FetchKeysOfSignals<Signals>] extends [
-  never,
+export type MergeAllFetchTypes<Signals extends readonly FetchSignalInput[]> = Signals extends readonly [
+  infer First extends FetchSignalInput,
+  ...infer Rest extends readonly FetchSignalInput[],
 ]
-  ? unknown
-  : {
-      [Key in FetchKeysOfSignals<Signals>]: LastFetchValue<Signals, Key>;
-    };
+  ? OverrideFetchType<FetchTypeOfSignal<First>, MergeAllFetchTypes<Rest>>
+  : unknown;
 
 export type FetchClientType<Signals extends readonly FetchSignalInput[]> = FetchProxy<
   MergeAllFetchTypes<Signals>,
