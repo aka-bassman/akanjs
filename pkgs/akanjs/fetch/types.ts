@@ -12,12 +12,18 @@ export const getDefaultAccount = (): Account => {
   return { appName: env.appName, environment: env.environment };
 };
 
-type GetSliceNameFromSignal<Signal> = Signal extends DatabaseSignal
-  ? `${Signal["slice"]["baseName"]}${Capitalize<keyof Signal["slice"][typeof SLICE_META] & string>}`
-  : Signal extends { slice: { [K in infer Key]: SliceMeta } }
-    ? Key
-    : never;
-type GetSliceNamesFromSignals<Signals extends readonly unknown[]> = GetSliceNameFromSignal<Signals[number]>;
-export type GetSliceMetaObjFromDatabaseSignals<Signals extends readonly unknown[]> = {
-  [K in GetSliceNamesFromSignals<Signals>]: SliceMeta;
-};
+type GetSliceMetaObjFromSignal<Signal> = Signal extends {
+  _SliceMetaObj: infer SliceMetaObj extends Record<string, SliceMeta>;
+}
+  ? SliceMetaObj
+  : Signal extends DatabaseSignal
+    ? {
+        [K in `${Signal["slice"]["baseName"]}${Capitalize<keyof Signal["slice"][typeof SLICE_META] & string>}`]: SliceMeta;
+      }
+    : Record<never, never>;
+export type GetSliceMetaObjFromDatabaseSignals<
+  Signals extends readonly unknown[],
+  Acc extends Record<string, SliceMeta> = Record<never, never>,
+> = Signals extends readonly [infer First, ...infer Rest]
+  ? GetSliceMetaObjFromDatabaseSignals<Rest, Acc & GetSliceMetaObjFromSignal<First>>
+  : Acc;

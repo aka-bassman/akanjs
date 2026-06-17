@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { DataList, Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
-import type { SerializedArg, SerializedSignal } from "akanjs/signal";
-import { FetchClient } from "./client/fetchClient";
+import type {
+  DatabaseSignal,
+  EndpointCls,
+  EndpointInfo,
+  SerializedArg,
+  SerializedSignal,
+  SliceCls,
+} from "akanjs/signal";
+import { FetchClient, type FetchProxy } from "./client/fetchClient";
 import { HttpClient } from "./client/httpClient";
 import { WsClient } from "./client/wsClient";
+import type { FetchClientType, FetchTypeOfSignal, MergeAllFetchTypes, SliceMeta } from "./fetchType";
 import {
   cacheTag,
   cookies,
@@ -24,6 +32,79 @@ import {
   untrackedRequest,
   updateRequestPolicy,
 } from "./requestStorage";
+
+type Equal<Left, Right> =
+  (<Type>() => Type extends Left ? 1 : 2) extends <Type>() => Type extends Right ? 1 : 2 ? true : false;
+type Expect<Type extends true> = Type;
+type TypeRegressionBaseFetch = {
+  sharedEndpoint: () => "base";
+  baseOnlyEndpoint: () => "base-only";
+};
+type TypeRegressionAppFetch = {
+  sharedEndpoint: () => "app";
+  appOnlyEndpoint: () => "app-only";
+};
+type TypeRegressionBaseSlice = {
+  baseList: SliceMeta;
+};
+type TypeRegressionAppSlice = {
+  appList: SliceMeta;
+};
+type TypeRegressionMergedFetch = MergeAllFetchTypes<
+  readonly [
+    FetchProxy<TypeRegressionBaseFetch, TypeRegressionBaseSlice>,
+    FetchProxy<TypeRegressionAppFetch, TypeRegressionAppSlice>,
+  ]
+>;
+type TypeRegressionFetchClient = FetchClientType<
+  readonly [
+    FetchProxy<TypeRegressionBaseFetch, TypeRegressionBaseSlice>,
+    FetchProxy<TypeRegressionAppFetch, TypeRegressionAppSlice>,
+  ]
+>;
+type _FetchProxyTypeMarkerRegression = Expect<
+  Equal<FetchTypeOfSignal<FetchProxy<TypeRegressionBaseFetch>>, TypeRegressionBaseFetch>
+>;
+type _FetchProxyMergeOverrideRegression = Expect<Equal<ReturnType<TypeRegressionMergedFetch["sharedEndpoint"]>, "app">>;
+type _FetchProxyMergeRetainsBaseRegression = Expect<
+  Equal<ReturnType<TypeRegressionFetchClient["baseOnlyEndpoint"]>, "base-only">
+>;
+type _FetchProxySliceMetaRetainsBaseRegression = Expect<
+  Equal<TypeRegressionFetchClient["slice"]["baseList"], SliceMeta>
+>;
+type _FetchProxySliceMetaRetainsAppRegression = Expect<Equal<TypeRegressionFetchClient["slice"]["appList"], SliceMeta>>;
+type TypeRegressionSharedUser = { id: string };
+type TypeRegressionAppUser = TypeRegressionSharedUser & { githubInfo: { login: string } };
+type TypeRegressionUserEndpoint = EndpointCls<
+  never,
+  {
+    getSelf: EndpointInfo<
+      "query",
+      Record<string, unknown>,
+      [],
+      [],
+      [],
+      [],
+      StringConstructor,
+      TypeRegressionSharedUser
+    >;
+  }
+>;
+type TypeRegressionUserSlice = SliceCls<never> & {
+  srv: {
+    cnst: {
+      _Full: TypeRegressionAppUser;
+      _Light: Pick<TypeRegressionAppUser, "id">;
+      _Insight: { count: number };
+    };
+  };
+};
+type TypeRegressionUserFetch = FetchTypeOfSignal<
+  DatabaseSignal<never, TypeRegressionUserEndpoint, TypeRegressionUserSlice, never>
+>;
+type _DatabaseEndpointReturnExtendsToAppFullRegression = Expect<
+  Equal<Awaited<ReturnType<TypeRegressionUserFetch["getSelf"]>>, TypeRegressionAppUser>
+>;
 
 type FetchCall = { url: string; init?: RequestInit };
 const originalFetch = globalThis.fetch;

@@ -35,7 +35,7 @@ export type FetchProxy<
   SliceMetaObj extends Record<string, SliceMeta> = Record<never, never>,
 > = typeof global.fetch &
   FetchClient &
-  FetchType & { slice: SliceMetaObj; instance: FetchClient; _FetchType: FetchType };
+  FetchType & { slice: SliceMetaObj; instance: FetchClient; _FetchType: FetchType; _SliceMetaObj: SliceMetaObj };
 
 type ClientSignalMap<SigType extends { fetch: any }> = {
   [K in keyof SigType as SigType[K] extends DatabaseSignal<any, any, any, any>
@@ -665,8 +665,8 @@ export class FetchClient {
           (signal as DatabaseSignal | ServiceSignal).serializedSignal,
         );
       } else {
-        Object.assign(handler, (signal as FetchClient).handler);
-        Object.entries((signal as FetchClient).serializedSignal).forEach(([refName, signal]) => {
+        Object.assign(handler, signal.handler);
+        Object.entries(signal.serializedSignal).forEach(([refName, signal]) => {
           FetchClient.#mergeSerializedSignalInto(serializedSignal, refName, signal);
         });
       }

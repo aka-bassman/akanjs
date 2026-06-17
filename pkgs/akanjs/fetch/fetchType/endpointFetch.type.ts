@@ -7,58 +7,87 @@ import type {
   EndpInfoReqType,
   EndpointCls,
   EndpointInfo,
+  SliceCls,
 } from "akanjs/signal";
 
-type EndpInfoReturns<E> = EndpInfoClientReturns<E> | (EndpInfoNullable<E> extends true ? null : never);
+type ExtendedEndpointReturn<ClientReturns, Full, Light, Insight> = ClientReturns extends (infer R)[]
+  ? ExtendedEndpointReturn<R, Full, Light, Insight>[]
+  : Full extends ClientReturns
+    ? Full
+    : Light extends ClientReturns
+      ? Light
+      : Insight extends ClientReturns
+        ? Insight
+        : ClientReturns;
 
-type QueryOrMutationFetchFn<E> = (
+type EndpointClientReturns<E, SlceCls extends SliceCls | never> = [SlceCls] extends [never]
+  ? EndpInfoClientReturns<E>
+  : ExtendedEndpointReturn<
+      EndpInfoClientReturns<E>,
+      SlceCls["srv"]["cnst"]["_Full"],
+      SlceCls["srv"]["cnst"]["_Light"],
+      SlceCls["srv"]["cnst"]["_Insight"]
+    >;
+
+type EndpInfoReturns<E, SlceCls extends SliceCls | never> =
+  | EndpointClientReturns<E, SlceCls>
+  | (EndpInfoNullable<E> extends true ? null : never);
+
+type QueryOrMutationFetchFn<E, SlceCls extends SliceCls | never> = (
   ...args: [...EndpInfoArgs<E>, fetchPolicy?: FetchPolicy]
-) => Promise<EndpInfoReturns<E>>;
+) => Promise<EndpInfoReturns<E, SlceCls>>;
 
-type MessageEmitFn<E> = (...args: EndpInfoArgs<E>) => EndpInfoReturns<E>;
+type MessageEmitFn<E, SlceCls extends SliceCls | never> = (...args: EndpInfoArgs<E>) => EndpInfoReturns<E, SlceCls>;
 
-type MessageListenFn<E> = (
-  handleEvent: (data: EndpInfoReturns<E>) => PromiseOrObject<void>,
+type MessageListenFn<E, SlceCls extends SliceCls | never> = (
+  handleEvent: (data: EndpInfoReturns<E, SlceCls>) => PromiseOrObject<void>,
   options?: FetchPolicy,
 ) => () => void;
 
-type PubsubSubscribeFn<E> = (
-  ...args: [...EndpInfoArgs<E>, handleEvent: (data: EndpInfoReturns<E>) => PromiseOrObject<void>, options?: FetchPolicy]
+type PubsubSubscribeFn<E, SlceCls extends SliceCls | never> = (
+  ...args: [
+    ...EndpInfoArgs<E>,
+    handleEvent: (data: EndpInfoReturns<E, SlceCls>) => PromiseOrObject<void>,
+    options?: FetchPolicy,
+  ]
 ) => () => void;
 
-type PrimaryFetchFn<E> =
+type PrimaryFetchFn<E, SlceCls extends SliceCls | never> =
   EndpInfoReqType<E> extends "query" | "mutation"
-    ? QueryOrMutationFetchFn<E>
+    ? QueryOrMutationFetchFn<E, SlceCls>
     : EndpInfoReqType<E> extends "message"
-      ? MessageEmitFn<E>
+      ? MessageEmitFn<E, SlceCls>
       : never;
 
 // Keys kept as-is: query / mutation / message (emit)
-type PrimaryFetchType<EInfoObj extends { [key: string]: EndpointInfo }> = {
+type PrimaryFetchType<EInfoObj extends { [key: string]: EndpointInfo }, SlceCls extends SliceCls | never> = {
   [K in keyof EInfoObj as EndpInfoReqType<EInfoObj[K]> extends "query" | "mutation" | "message"
     ? K
-    : never]: PrimaryFetchFn<EInfoObj[K]>;
+    : never]: PrimaryFetchFn<EInfoObj[K], SlceCls>;
 };
 
 // Keys remapped to `subscribe${Key}`
-type PubsubFetchType<EInfoObj extends { [key: string]: EndpointInfo }> = {
+type PubsubFetchType<EInfoObj extends { [key: string]: EndpointInfo }, SlceCls extends SliceCls | never> = {
   [K in keyof EInfoObj as EndpInfoReqType<EInfoObj[K]> extends "pubsub"
     ? K extends string
       ? `subscribe${Capitalize<K>}`
       : never
-    : never]: PubsubSubscribeFn<EInfoObj[K]>;
+    : never]: PubsubSubscribeFn<EInfoObj[K], SlceCls>;
 };
 
 // Keys remapped to `listen${Key}`
-type MessageListenFetchType<EInfoObj extends { [key: string]: EndpointInfo }> = {
+type MessageListenFetchType<EInfoObj extends { [key: string]: EndpointInfo }, SlceCls extends SliceCls | never> = {
   [K in keyof EInfoObj as EndpInfoReqType<EInfoObj[K]> extends "message"
     ? K extends string
       ? `listen${Capitalize<K>}`
       : never
-    : never]: MessageListenFn<EInfoObj[K]>;
+    : never]: MessageListenFn<EInfoObj[K], SlceCls>;
 };
 
 export type GetFetchTypeFromEndpoint<
   EndpCls extends EndpointCls,
+  SlceCls extends SliceCls | never = never,
   _EndpointInfoObj extends { [key: string]: EndpointInfo } = EndpCls[typeof ENDPOINT_META],
-> = PrimaryFetchType<_EndpointInfoObj> & PubsubFetchType<_EndpointInfoObj> & MessageListenFetchType<_EndpointInfoObj>;
+> = PrimaryFetchType<_EndpointInfoObj, SlceCls> &
+  PubsubFetchType<_EndpointInfoObj, SlceCls> &
+  MessageListenFetchType<_EndpointInfoObj, SlceCls>;

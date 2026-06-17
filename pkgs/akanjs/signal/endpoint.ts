@@ -15,16 +15,6 @@ export interface EndpointCls<
   [ENDPOINT_META]: EndpointInfoObj;
 }
 
-type ExtendedEndpointReturn<ClientReturns, Full, Light, Insight> = ClientReturns extends (infer R)[]
-  ? ExtendedEndpointReturn<R, Full, Light, Insight>[]
-  : Full extends ClientReturns
-    ? Full
-    : Light extends ClientReturns
-      ? Light
-      : Insight extends ClientReturns
-        ? Insight
-        : ClientReturns;
-
 type EndpointMetaOf<EndpCls> = EndpCls extends EndpointCls<any, infer EndpointInfoObj> ? EndpointInfoObj : never;
 
 type MergeEndpointMetas<EndpClses extends readonly EndpointCls[], Acc = unknown> = EndpClses extends readonly [
@@ -33,41 +23,6 @@ type MergeEndpointMetas<EndpClses extends readonly EndpointCls[], Acc = unknown>
 ]
   ? MergeEndpointMetas<Rest, Assign<Acc, EndpointMetaOf<First>>>
   : Acc;
-
-type ExtendEndpoints<
-  SrvModule extends ServiceModel,
-  LibEndpoints extends readonly EndpointCls[],
-  _Full = NonNullable<SrvModule["cnst"]>["_Full"],
-  _Light = NonNullable<SrvModule["cnst"]>["_Light"],
-  _Insight = NonNullable<SrvModule["cnst"]>["_Insight"],
-  _Merged = MergeEndpointMetas<LibEndpoints>,
-> = {
-  [K in keyof _Merged]: _Merged[K] extends EndpointInfo<
-    infer ReqType,
-    infer Srvs,
-    infer ArgNames,
-    infer Args,
-    infer InternalArgs,
-    infer ServerArgs,
-    infer Returns,
-    infer ClientReturns,
-    infer ServerReturns,
-    infer Nullable
-  >
-    ? EndpointInfo<
-        ReqType,
-        Srvs,
-        ArgNames,
-        Args,
-        InternalArgs,
-        ServerArgs,
-        Returns,
-        ExtendedEndpointReturn<ClientReturns, _Full, _Light, _Insight>,
-        ServerReturns,
-        Nullable
-      >
-    : never;
-};
 
 /** Builds a typed endpoint adaptor from a service module and endpoint builder. */
 export function endpoint<
@@ -80,9 +35,7 @@ export function endpoint<
   ...libEndpoints: LibEndpoints
 ): EndpointCls<
   SrvModule,
-  LibEndpoints extends readonly []
-    ? ReturnType<Builder>
-    : Assign<ReturnType<Builder>, ExtendEndpoints<SrvModule, LibEndpoints>>
+  LibEndpoints extends readonly [] ? ReturnType<Builder> : Assign<ReturnType<Builder>, MergeEndpointMetas<LibEndpoints>>
 > {
   const srvKeys = [
     ...new Set([
