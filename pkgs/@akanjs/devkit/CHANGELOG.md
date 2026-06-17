@@ -1,5 +1,23 @@
 # @akanjs/devkit
 
+## 2.3.2
+
+### Patch Changes
+
+- d6db24d: Fix dev runtime refresh for client components, dictionaries, and signal metadata while keeping regenerated server page bundles aligned with live app signal definitions.
+- 1a48756: Add RSC partial navigation patch handling and supporting SSR build updates, plus benchmark harness improvements for validating production behavior.
+- Updated dependencies [940d6db]
+- Updated dependencies [d6db24d]
+- Updated dependencies [dc60773]
+- Updated dependencies [ffe68ec]
+- Updated dependencies [1a48756]
+- Updated dependencies [1a48756]
+- Updated dependencies [1a48756]
+- Updated dependencies [1a48756]
+- Updated dependencies [1a48756]
+- Updated dependencies [4fc2673]
+  - akanjs@2.4.0
+
 ## 2.2.12
 
 ### Patch Changes

@@ -1,5 +1,23 @@
 # akanjs
 
+## 2.3.2
+
+### Minor Changes
+
+- 1a48756: Add rich sample workspace template with full Akan.js module examples (task, noti, workHistory scalar) to help AI agents and developers bootstrap faster. Templates include database modules, service modules, scalars, UI components, server/client helpers, and comprehensive AGENTS.md with workflow recipes and auto-generated API reference.
+
+### Patch Changes
+
+- 940d6db: Optimize generated fetch client type inference while preserving ordered signal override semantics.
+- d6db24d: Fix dev runtime refresh for client components, dictionaries, and signal metadata while keeping regenerated server page bundles aligned with live app signal definitions.
+- dc60773: apply hidden and secret type safety on server side
+- ffe68ec: Fix fetch client type inference for composed app signals while preserving direct signal navigation.
+- 1a48756: Add the internal route cache tag boundary for SSR/RSC result caches, including cache tag collection and scoped tag/path invalidation across host and worker caches.
+- 1a48756: Fix intermittent SSR/RSC navigation stalls by upgrading React and patching React DOM to preserve pinged lanes during mid-render Suspense retries.
+- 1a48756: Add RSC partial navigation patch handling and supporting SSR build updates, plus benchmark harness improvements for validating production behavior.
+- 1a48756: Separate `field.secret` from `field.hidden` so secret fields are excluded from default server reads and only returned through explicit projections.
+- 4fc2673: Fix SSR hydration path seeding so route-aware links render consistently between server and client.
+
 ## 2.2.12
 
 ### Patch Changes
