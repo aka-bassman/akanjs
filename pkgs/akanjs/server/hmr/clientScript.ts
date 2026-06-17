@@ -24,6 +24,8 @@ export const HMR_CLIENT_SCRIPT = `(function(){
   var socket = null;
   var lastBuildId = null;
   var refreshRuntimePromise = null;
+  var refreshRuntime = null;
+  var pendingRefreshRegistrations = [];
   var refreshQueue = Promise.resolve();
   var overlayEl = null;
   var overlayLabelEl = null;
@@ -36,8 +38,16 @@ export const HMR_CLIENT_SCRIPT = `(function(){
 
   // Bun's React Fast Refresh transform can emit top-level calls to these globals
   // even when we fall back to full reload instead of applying React Refresh.
-  self.$RefreshReg$ = self.$RefreshReg$ || function(){};
+  self.$RefreshReg$ = self.$RefreshReg$ || function(type, id){
+    if (refreshRuntime) refreshRuntime.register(type, id);
+    else pendingRefreshRegistrations.push([type, id]);
+  };
   self.$RefreshSig$ = self.$RefreshSig$ || function(){ return function(type){ return type; }; };
+  // Start installing React Refresh before the application module graph loads.
+  // Injecting the runtime only on the first update is too late for React's renderer hook.
+  ensureRefreshRuntime().catch(function(err){
+    console.warn("[akan-hmr] React Refresh runtime preload failed", err);
+  });
 
   function connect(){
     try { socket = new WebSocket(url); }
@@ -211,9 +221,14 @@ export const HMR_CLIENT_SCRIPT = `(function(){
     refreshRuntimePromise = import("react-refresh/runtime").then(function(mod){
       var runtime = mod.default || mod;
       if (!self.__AKAN_REACT_REFRESH_READY__) {
+        refreshRuntime = runtime;
         runtime.injectIntoGlobalHook(self);
         self.$RefreshReg$ = function(type, id){ runtime.register(type, id); };
         self.$RefreshSig$ = runtime.createSignatureFunctionForTransform;
+        for (var i = 0; i < pendingRefreshRegistrations.length; i++) {
+          self.$RefreshReg$(pendingRefreshRegistrations[i][0], pendingRefreshRegistrations[i][1]);
+        }
+        pendingRefreshRegistrations = [];
         self.__AKAN_REACT_REFRESH_READY__ = true;
         self.__AKAN_REACT_REFRESH_RUNTIME__ = runtime;
       }

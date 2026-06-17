@@ -120,6 +120,32 @@ describe("PagesBundleBuilder", () => {
     expect(result.logs).toEqual([]);
     expect(result.outputs.some((output) => output.kind === "entry-point")).toBe(true);
   });
+
+  test("uses live server fetch instead of signal macro in server pages bundles", () => {
+    const source = [
+      'import { makePageProto, registerClientRuntime } from "akanjs/client";',
+      'import { FetchClient } from "akanjs/fetch";',
+      'import * as cnst from "./cnst";',
+      'import { getSerializedSignal } from "./sig" with { type: "macro" };',
+      'import type * as dict from "./dict";',
+      'import type * as signal from "./sig";',
+      "",
+      "const dictionary = {};",
+      "const pageProto = makePageProto<typeof dict>(dictionary);",
+      "const fetchProto = FetchClient.build<typeof signal>(cnst, getSerializedSignal(), { Err: pageProto.Err });",
+      'export const runtime = registerClientRuntime({ ...pageProto, ...fetchProto }, { scope: "app" });',
+      "",
+    ].join("\n");
+
+    const transformed = PagesBundleBuilder.transformServerUseClientFetchSource(source);
+
+    expect(transformed).toContain('import { fetch as serverFetch } from "./sig";');
+    expect(transformed).toContain(
+      "const fetchProto = FetchClient.build<typeof signal>(cnst, serverFetch.serializedSignal, { Err: pageProto.Err, base: serverFetch });",
+    );
+    expect(transformed).not.toContain("getSerializedSignal");
+    expect(transformed).not.toContain('with { type: "macro" }');
+  });
 });
 
 describe("CsrArtifactBuilder", () => {

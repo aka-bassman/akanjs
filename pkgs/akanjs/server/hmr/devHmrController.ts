@@ -12,6 +12,38 @@ import type { RenderState } from "../types";
 import type { ChangeKind } from "./changeBatch";
 import { type HmrWsData, HmrWsHub } from "./wsHub";
 
+const APP_RUNTIME_METADATA_BASENAMES = new Set(["dict.ts", "sig.ts", "useClient.ts"]);
+
+export function isAkanRuntimeMetadataFile(file: string): boolean {
+  const resolved = path.resolve(file);
+  const parts = resolved.split(/[\\/]+/).filter(Boolean);
+  const base = parts.at(-1);
+  if (!base) return false;
+
+  const parent = parts.at(-2);
+  if (parent === "lib" && APP_RUNTIME_METADATA_BASENAMES.has(base)) return true;
+
+  const libIndex = parts.lastIndexOf("lib");
+  if (libIndex < 0 || parts.length <= libIndex + 1) return false;
+  return base.endsWith(".dictionary.ts") || base.endsWith(".signal.ts");
+}
+
+export function manifestClientEntriesForFiles(
+  files: string[],
+  clientManifest: ClientManifest,
+  workspaceRoot = process.cwd(),
+): Set<string> {
+  const normalizedFiles = new Set(files.map((file) => path.resolve(file)));
+  const entries = new Set<string>();
+  for (const key of Object.keys(clientManifest)) {
+    const hashIdx = key.lastIndexOf("#");
+    const entryKey = hashIdx >= 0 ? key.slice(0, hashIdx) : key;
+    const resolved = path.isAbsolute(entryKey) ? path.resolve(entryKey) : path.resolve(workspaceRoot, entryKey);
+    if (normalizedFiles.has(resolved)) entries.add(resolved);
+  }
+  return entries;
+}
+
 export interface DevHmrControllerOptions {
   renderState: RenderState;
   rsc: RscWorker;
@@ -125,6 +157,10 @@ export class DevHmrController {
     return [...urls];
   }
 
+  static shouldFullReloadForRuntimeMetadata(files: string[]): boolean {
+    return files.some(isAkanRuntimeMetadataFile);
+  }
+
   #createBuilderRpc() {
     return new BuilderRpc({
       onInvalidate: (ev) => {
@@ -148,13 +184,17 @@ export class DevHmrController {
       },
       onPagesUpdated: async ({ bundlePath, buildId, generation, changedFiles }) => {
         const started = Date.now();
-        const staleClientEntries = this.#staleClientEntriesForFiles(changedFiles ?? []);
-        const routeIds = this.#routeIdsForFiles(changedFiles ?? [], staleClientEntries);
-        const fastRefreshCandidate = this.#isFastRefreshCandidate(changedFiles ?? []);
+        const files = changedFiles ?? [];
+        const runtimeMetadataChanged = DevHmrController.shouldFullReloadForRuntimeMetadata(files);
+        const staleClientEntries = runtimeMetadataChanged ? new Set<string>() : this.#staleClientEntriesForFiles(files);
+        const routeIds = runtimeMetadataChanged ? undefined : this.#routeIdsForFiles(files, staleClientEntries);
+        const fastRefreshCandidate = !runtimeMetadataChanged && this.#isFastRefreshCandidate(files);
         this.#logger.verbose(
-          `[SSR] pages-updated bundlePath=${bundlePath} buildId=${buildId} generation=${generation ?? "(unknown)"} files=${changedFiles?.length ?? 0} routes=${routeIds?.length ?? 0} fastRefresh=${fastRefreshCandidate} staleEntries=${staleClientEntries.size}`,
+          `[SSR] pages-updated bundlePath=${bundlePath} buildId=${buildId} generation=${generation ?? "(unknown)"} files=${files.length} routes=${routeIds?.length ?? 0} fastRefresh=${fastRefreshCandidate} staleEntries=${staleClientEntries.size} runtimeMetadata=${runtimeMetadataChanged}`,
         );
-        const dropped = this.#invalidateRoutes(changedFiles ?? [], routeIds, staleClientEntries);
+        const dropped = this.#invalidateRoutes(files, routeIds, staleClientEntries, {
+          forceClear: runtimeMetadataChanged,
+        });
         this.#renderState.buildId = buildId;
         const manifest = this.routeCache.snapshot();
         const reloadStarted = Date.now();
@@ -165,7 +205,7 @@ export class DevHmrController {
           pagesBundlePath: bundlePath,
         });
         this.#logger.verbose(`[SSR] rsc reload buildId=${buildId} in ${Date.now() - reloadStarted}ms`);
-        const shouldReload = this.#shouldFullReloadForFiles(changedFiles ?? [], routeIds);
+        const shouldReload = runtimeMetadataChanged || this.#shouldFullReloadForFiles(files, routeIds);
         if (shouldReload) this.#hub.broadcast({ type: "reload", buildId });
         else if (fastRefreshCandidate)
           this.#hub.broadcast({ type: "client-refresh", buildId, generation, changedFiles, routeIds });
@@ -233,9 +273,15 @@ export class DevHmrController {
     this.#dirtyFiles.clear();
   }
 
-  #invalidateRoutes(files: string[], routeIds: string[] | undefined, staleClientEntries = new Set<string>()): string[] {
+  #invalidateRoutes(
+    files: string[],
+    routeIds: string[] | undefined,
+    staleClientEntries = new Set<string>(),
+    { forceClear = false }: { forceClear?: boolean } = {},
+  ): string[] {
     this.#dirty.clear();
     this.#dirtyFiles.clear();
+    if (forceClear) return this.routeCache.clear();
     if (staleClientEntries.size > 0) {
       const staleKeys = this.#clientEntryManifestKeys(staleClientEntries);
       return this.routeCache.invalidateClientEntries({
@@ -268,6 +314,7 @@ export class DevHmrController {
 
   #isFastRefreshCandidate(files: string[]): boolean {
     if (!this.#fastRefreshEnabled || files.length === 0) return false;
+    if (manifestClientEntriesForFiles(files, this.routeCache.merged.clientManifest).size > 0) return true;
     return files.some((file) => {
       const resolved = path.resolve(file);
       return this.#recentClientEntries.has(resolved) || this.#recentClientFiles.has(resolved);
@@ -328,7 +375,7 @@ export class DevHmrController {
   }
 
   #staleClientEntriesForFiles(files: string[]): Set<string> {
-    const stale = new Set<string>();
+    const stale = manifestClientEntriesForFiles(files, this.routeCache.merged.clientManifest);
     for (const file of files) {
       const resolved = path.resolve(file);
       if (this.#recentClientEntries.has(resolved)) stale.add(resolved);

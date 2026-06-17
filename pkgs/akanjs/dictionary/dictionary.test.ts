@@ -297,6 +297,35 @@ describe("makeTrans", () => {
     expect(allDict.ja.dictionaryTestService.ready).toEqual({ t: "サービス準備完了" });
   });
 
+  test("keeps dictionary snapshots isolated between makeTrans calls", () => {
+    const first = makeTrans({
+      hotReloadService: {
+        dict: serviceDictionary(["en", "ko"])
+          .endpoint<TestServiceEndpoint>((fn) => ({
+            ping: fn(["Old Ping", "이전 핑"]),
+          }))
+          .translate({
+            stale: ["Stale", "오래됨"],
+          }),
+      } as never,
+    });
+    const second = makeTrans({
+      hotReloadService: {
+        dict: serviceDictionary(["en", "ko"])
+          .endpoint<TestServiceEndpoint>((fn) => ({
+            ping: fn(["New Ping", "새 핑"]),
+          }))
+          .translate({}),
+      } as never,
+    });
+
+    expect(first.translate("en", "hotReloadService.signal.ping" as never)).toBe("Old Ping");
+    expect(first.translate("en", "hotReloadService.stale" as never)).toBe("Stale");
+    expect(second.translate("en", "hotReloadService.signal.ping" as never)).toBe("New Ping");
+    expect(second.translate("en", "hotReloadService.stale" as never)).toBe("hotReloadService.stale");
+    expect((second.getAllDictionary().en.hotReloadService as Record<string, unknown>).stale).toBeUndefined();
+  });
+
   test("creates Err exceptions with dictionary error keys", () => {
     const err = new trans.Err("dictionaryTestItem.error.notFound" as never, { id: "1" });
     const conflict = new trans.Err.Conflict("dictionaryTestItem.error.notFound" as never);

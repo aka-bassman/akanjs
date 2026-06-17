@@ -5,7 +5,6 @@ import { Image } from "akanjs/ui";
 
 export default function Page() {
   const { l } = usePage();
-
   return (
     <Scroll>
       <Scroll.Slide id="icecream-business" title={l.trans({ en: "Icecream business", ko: "아이스크림 비즈니스" })}>

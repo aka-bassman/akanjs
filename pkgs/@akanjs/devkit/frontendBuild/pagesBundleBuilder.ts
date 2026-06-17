@@ -65,6 +65,7 @@ export class PagesBundleBuilder {
       plugins: [
         PagesBundleBuilder.createPagesEntryPlugin(entrySource),
         PagesBundleBuilder.createServerCssStubPlugin(),
+        PagesBundleBuilder.createServerUseClientFetchPlugin(),
         await createExternalizeFrameworkPlugin({ app: this.#app, extra: akanConfig.externalLibs }),
         akanConfig.barrelImports.length > 0
           ? await createBarrelImportsPlugin(this.#app, {
@@ -147,4 +148,38 @@ export class PagesBundleBuilder {
       },
     };
   }
+
+  static createServerUseClientFetchPlugin(): BunPlugin {
+    return {
+      name: "akan-server-use-client-fetch",
+      setup(build) {
+        build.onLoad({ filter: /[/\\]lib[/\\]useClient\.(ts|tsx|js|jsx)$/ }, async (args) => {
+          const source = await Bun.file(args.path).text();
+          const transformed = PagesBundleBuilder.transformServerUseClientFetchSource(source);
+          if (transformed === source) return undefined;
+          return { contents: transformed, loader: loaderFor(args.path) };
+        });
+      },
+    };
+  }
+
+  static transformServerUseClientFetchSource(source: string): string {
+    if (!source.includes(`with { type: "macro" }`) || !source.includes("FetchClient.build")) return source;
+    return source
+      .replace(
+        /import\s+\{\s*getSerializedSignal\s*\}\s+from\s+["']\.\/sig["']\s+with\s+\{\s*type\s*:\s*["']macro["']\s*\};/,
+        `import { fetch as serverFetch } from "./sig";`,
+      )
+      .replace(
+        /const\s+fetchProto\s*=\s*FetchClient\.build<[^;]+;/,
+        "const fetchProto = FetchClient.build<typeof signal>(cnst, serverFetch.serializedSignal, { Err: pageProto.Err, base: serverFetch });",
+      );
+  }
+}
+
+function loaderFor(absPath: string): "ts" | "tsx" | "js" | "jsx" {
+  if (absPath.endsWith(".tsx")) return "tsx";
+  if (absPath.endsWith(".jsx")) return "jsx";
+  if (absPath.endsWith(".ts")) return "ts";
+  return "js";
 }

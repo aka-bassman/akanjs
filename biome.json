@@ -81,7 +81,8 @@
           "fix": "safe"
         },
         "useParseIntRadix": "off",
-        "useExhaustiveDependencies": "off"
+        "useExhaustiveDependencies": "off",
+        "useHookAtTopLevel": "off"
       },
       "nursery": {
         "useSortedClasses": {

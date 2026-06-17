@@ -143,4 +143,44 @@ describe("Translator", () => {
     });
     await expect(translator.getDictionary("ja")).rejects.toThrow("Dictionary for language ja not found");
   });
+
+  test("replaces a locale dictionary snapshot without keeping stale keys", async () => {
+    const translator = new Translator({
+      en: {
+        user: {
+          greeting: { t: "Before" },
+          removed: { t: "Remove me" },
+        },
+      },
+    });
+
+    Translator.replace("en", {
+      user: {
+        greeting: { t: "After" },
+      },
+    });
+
+    expect(translator.translate("en", "user.greeting")).toBe("After");
+    expect(translator.translate("en", "user.removed")).toBe("user.removed");
+    expect(await translator.getDictionary("en")).toEqual({
+      user: {
+        greeting: { t: "After" },
+      },
+    });
+  });
+
+  test("skips repeated replace calls for the same dictionary snapshot", async () => {
+    const translator = new Translator({});
+    const snapshot = {
+      user: {
+        greeting: { t: "Hello" },
+      },
+    };
+
+    Translator.replace("en", snapshot);
+    const firstDictionary = await translator.getDictionary("en");
+    Translator.replace("en", snapshot);
+
+    expect(await translator.getDictionary("en")).toBe(firstDictionary);
+  });
 });

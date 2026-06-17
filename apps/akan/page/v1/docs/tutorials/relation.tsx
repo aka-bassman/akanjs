@@ -187,16 +187,15 @@ export const dictionary = modelDictionary(["en", "ko"])
             code={`
 import { serve } from "@akanjs/service";
 
-import * as db from "../db";
+import type * as db from "../db";
 import { Revert } from "../dict"; // [!code highlight:2]
 import type * as srv from "../srv";
 
 export class DeliveryService extends serve(db.delivery, ({ use, service }) => ({
   icecreamOrderService: service<srv.IcecreamOrderService>(), // [!code highlight]
 })) {
-  _preUpdate(id: string, data: db.DeliveryInput) { // [!code highlight:9]
+  _preUpdate(id: string, data: db.DeliveryInput): never { // [!code highlight:8]
     throw new Revert("delivery.error.cannotUpdateDelivery");
-    return data;
   }
   async _postCreate(delivery: db.Delivery) {
     for (const icecreamOrderId of delivery.icecreamOrders)

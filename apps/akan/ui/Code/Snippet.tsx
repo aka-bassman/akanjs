@@ -38,7 +38,7 @@ export const Snippet = ({
       wrapperClassName={wrapperClassName}
       copyText={copy ? copyText : undefined}
     >
-      <Raw className="p-2" language="typescript" theme={theme} code={trimmedCode} showLineNumbers={showLineNumbers} />
+      <Raw className="p-2" language={language} theme={theme} code={trimmedCode} showLineNumbers={showLineNumbers} />
     </CodeView>
   );
 };
