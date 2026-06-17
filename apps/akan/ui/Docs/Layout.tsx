@@ -20,7 +20,7 @@ interface LayoutProps {
 export const Layout = ({ children, menuMap }: LayoutProps) => {
   const { l, lang, path } = usePage();
   const pathCtx = usePathCtx();
-  const currentPath = getPathInfo(path, lang, pathCtx.prefix ?? "").path;
+  const currentPath = pathCtx.location?.pathRoute?.path ?? getPathInfo(path, lang, pathCtx.prefix ?? "").path;
 
   const closeMenu = () => {
     const checkbox = document.getElementById("mobile-menu-toggle") as HTMLInputElement | undefined;

@@ -43,6 +43,7 @@ interface ClientWrapperProps {
   children: ReactNode;
   theme?: AkanTheme;
   lang?: string;
+  path?: string;
   dictionary?: Record<string, Record<string, unknown>>;
   signals?: SerializedSignal[];
   reconnect?: boolean;
@@ -51,6 +52,7 @@ export const ClientWrapper = ({
   children,
   theme,
   lang = "en",
+  path,
   dictionary,
   signals = [],
   reconnect = true,
@@ -65,8 +67,12 @@ export const ClientWrapper = ({
     // This keeps client lookups aligned with the seeded + server-rendered locale (no hydration
     // mismatch) for base-path / cloud routing where the URL segment is not a reliable locale.
     // Skipped on the server (typeof window === "undefined") where locale is request-scoped.
-    if (typeof window !== "undefined") Translator.setActiveLocale(lang);
+    Translator.setActiveLocale(lang);
   }
+  Translator.setActivePath(path);
+  useEffect(() => {
+    Translator.markHydrated();
+  }, [path]);
   useLayoutEffect(() => {
     Logger.rawLog(logo);
   }, []);
@@ -85,6 +91,13 @@ interface ClientPathWrapperProps extends Omit<HTMLAttributes<HTMLDivElement>, "s
   wrapperRef?: RefObject<HTMLDivElement | null> | null;
   pageType?: "current" | "prev" | "cached";
   location?: Location;
+  initialHref?: string;
+  initialPath?: string;
+  initialPathname?: string;
+  initialParams?: Record<string, string>;
+  initialSearch?: string;
+  initialSearchParams?: Record<string, string | string[]>;
+  initialHash?: string;
   style?: TransitionStyle;
   prefix?: string;
   children?: ReactNode;
@@ -96,22 +109,29 @@ export const ClientPathWrapper = ({
   wrapperRef,
   pageType = "current",
   location,
+  initialHref,
+  initialPath,
+  initialPathname,
+  initialParams,
+  initialSearch,
+  initialSearchParams,
+  initialHash,
   prefix = "",
   children,
   layoutStyle = "web",
   ...props
 }: ClientPathWrapperProps) => {
-  const href = location?.href ?? (typeof window !== "undefined" ? window.location.href : "");
-  const hash = location?.hash ?? (typeof window !== "undefined" ? window.location.hash : "");
-  const pathname = location?.pathname ?? "/"; // ?? usePathname();
-  const params = location?.params ?? {}; // ?? (useParams() as unknown as Record<string, string>);
-  const searchParams = location?.searchParams ?? {}; //?? Object.fromEntries(useSearchParams());
-  const search = location?.search ?? (typeof window !== "undefined" ? window.location.search : "");
+  const href = location?.href ?? initialHref ?? (typeof window !== "undefined" ? window.location.href : "");
+  const hash = location?.hash ?? initialHash ?? (typeof window !== "undefined" ? window.location.hash : "");
+  const pathname = location?.pathname ?? initialPathname ?? "/"; // ?? usePathname();
+  const params = location?.params ?? initialParams ?? {}; // ?? (useParams() as unknown as Record<string, string>);
+  const searchParams = location?.searchParams ?? initialSearchParams ?? {}; //?? Object.fromEntries(useSearchParams());
+  const search = location?.search ?? initialSearch ?? (typeof window !== "undefined" ? window.location.search : "");
   const lang = params.lang;
   const firstPath = pathname.split("/")[2];
   const pathRoute: PathRoute = location?.pathRoute ?? {
-    path: `/${pathname.split("/").slice(2).join("/")}`,
-    pathSegments: pathname.split("/").slice(2),
+    path: initialPath ?? `/${pathname.split("/").slice(2).join("/")}`,
+    pathSegments: (initialPath ?? `/${pathname.split("/").slice(2).join("/")}`).split("/").filter(Boolean),
     renderPage: { render: () => <></> },
     pageState: defaultPageState,
     renderRootLayouts: [],

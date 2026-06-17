@@ -121,6 +121,21 @@ describe("makePageProto", () => {
     expect(page.l.trans({ en: "English", ko: "Korean" })).toBe("Korean");
   });
 
+  test("uses server-seeded browser path until hydration completes", async () => {
+    envState.mode = "browser";
+    installWindow("/en/client-path");
+    const { Translator } = await import("./translator");
+    const { makePageProto } = await import("./makePageProto");
+    const { usePage } = makePageProto(dictionary);
+
+    Translator.setActiveLocale("en");
+    Translator.setActivePath("/server-path");
+    expect(usePage()).toMatchObject({ lang: "en", path: "/server-path" });
+
+    Translator.markHydrated();
+    expect(usePage()).toMatchObject({ lang: "en", path: "/client-path" });
+  });
+
   test("uses server headers first and falls back to request URL", async () => {
     envState.mode = "server";
     const { makePageProto } = await import("./makePageProto");

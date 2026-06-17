@@ -23,15 +23,17 @@ interface ErrPayload extends ErrRestoreOption {
 const getPageInfo = (): { locale: string; path: string } => {
   const { defaultLocale, locales } = parseAkanI18nEnv();
   const localeSet = new Set(locales);
+  const activeLocale = Translator.getActiveLocale();
+  const activePath = Translator.getActivePath();
+  if (activePath) return { locale: activeLocale ?? defaultLocale, path: activePath };
   if (getEnv().side !== "server") {
     const [, firstSegment = "", ...rest] = window.location.pathname.split("/");
     const hasLocalePrefix = localeSet.has(firstSegment);
     // Prefer the server-resolved active locale (seeded via ClientWrapper) so client lookups match the
     // SSR render even when the URL's leading segment is not the locale (base-path / cloud routing).
     // Fall back to the URL segment for CSR or any pre-seed render.
-    const activeLocale = Translator.getActiveLocale();
     const locale = activeLocale ?? (hasLocalePrefix ? firstSegment : defaultLocale);
-    return { locale, path: hasLocalePrefix ? `/${rest.join("/")}` : window.location.pathname };
+    return { locale, path: activePath ?? (hasLocalePrefix ? `/${rest.join("/")}` : window.location.pathname) };
   }
   const h = untrackedHeaders();
   // Honor explicit proxy/middleware headers when present; otherwise derive

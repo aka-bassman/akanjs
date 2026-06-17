@@ -1,5 +1,5 @@
 import { getEnv } from "akanjs/base";
-import { clsx, type ReactFont, router, Translator, usePage, type WebAppManifest } from "akanjs/client";
+import { clsx, getPathInfo, type ReactFont, router, Translator, usePage, type WebAppManifest } from "akanjs/client";
 import { setRequestTheme } from "akanjs/fetch";
 import { Children, Fragment, type ReactNode, Suspense } from "react";
 import { FontCss } from "../fontCss";
@@ -35,10 +35,11 @@ const SSRProvider = ({
   of,
 }: SSRProviderProps) => {
   setRequestTheme(theme);
+  Translator.markHydrated();
 
   // Resolve the active locale exactly like `l()` does (getPageInfo / request), not via `params.lang`,
   // which is only populated when the matched route pattern contains `:lang` and can otherwise diverge.
-  const { lang: activeLocale } = usePage();
+  const { lang: activeLocale, path: activePath } = usePage();
 
   // Server (RSC worker) renders server components: seed every locale into the shared Translator. This is
   // free on the server (it never reaches the browser bundle) and makes server-component translations
@@ -53,20 +54,21 @@ const SSRProvider = ({
       of={of}
       loader={async () => {
         if (!router.isInitialized) router.init({ type: "ssr", side: "server", lang: activeLocale, prefix });
-        return { lang: activeLocale } as const;
+        return { lang: activeLocale, path: activePath } as const;
       }}
-      render={({ lang }) => (
+      render={({ lang, path }) => (
         <SSRWrapper
           className={className}
           appName={appName}
           lang={lang}
+          path={path}
           head={head}
           manifest={manifest}
           fonts={fonts}
           prefix={prefix}
           layoutStyle={layoutStyle}
         >
-          <ClientWrapper theme={theme} lang={lang} reconnect={reconnect} dictionary={activeDictionary}>
+          <ClientWrapper theme={theme} lang={lang} path={path} reconnect={reconnect} dictionary={activeDictionary}>
             <Fragment key="children">{Children.toArray(children)}</Fragment>
             <Suspense key="client-inner" fallback={null}>
               <ClientInner />
@@ -112,6 +114,7 @@ interface SSRWrapperProps {
   className?: string;
   appName: string;
   lang: "en" | "ko" | (string & {});
+  path: string;
   head?: ReactNode;
   manifest?: WebAppManifest;
   fonts?: ReactFont[];
@@ -126,59 +129,74 @@ const SSRWrapper = ({
   manifest,
   fonts = [],
   className,
+  lang,
+  path,
   prefix,
   layoutStyle = "web",
-}: SSRWrapperProps) => (
-  <>
-    <ServerFontFace key="fonts" fonts={fonts} />
-    <ManifestLink key="manifest" manifest={manifest} />
-    {head ? <Fragment key="head">{head}</Fragment> : null}
-    <div key="frame-root" id="frameRoot" className={className}>
-      <ClientPathWrapper layoutStyle={layoutStyle} prefix={prefix}>
-        <div key="top-safe-area" id="topSafeArea" className={clsx("fixed inset-x-0 top-0 bg-base-100")} />
-        <div key="page-containers" id="pageContainers" className={clsx("isolate")}>
-          <div id="pageContainer">
-            <div
-              id="pageContent"
-              className={clsx("relative isolate", {
-                "w-full": layoutStyle === "web",
-                "left-1/2 h-screen w-[600px] -translate-x-1/2": layoutStyle === "mobile",
-              })}
-            >
-              {Children.toArray(children)}
+}: SSRWrapperProps) => {
+  const { href, pathname, search, hash } = getPathInfo(path, lang, prefix ?? "");
+
+  return (
+    <>
+      <ServerFontFace key="fonts" fonts={fonts} />
+      <ManifestLink key="manifest" manifest={manifest} />
+      {head ? <Fragment key="head">{head}</Fragment> : null}
+      <div key="frame-root" id="frameRoot" className={className}>
+        <ClientPathWrapper
+          layoutStyle={layoutStyle}
+          prefix={prefix}
+          initialHref={href}
+          initialPath={path}
+          initialPathname={pathname}
+          initialParams={{ lang }}
+          initialSearch={search}
+          initialHash={hash}
+        >
+          <div key="top-safe-area" id="topSafeArea" className={clsx("fixed inset-x-0 top-0 bg-base-100")} />
+          <div key="page-containers" id="pageContainers" className={clsx("isolate")}>
+            <div id="pageContainer">
+              <div
+                id="pageContent"
+                className={clsx("relative isolate", {
+                  "w-full": layoutStyle === "web",
+                  "left-1/2 h-screen w-[600px] -translate-x-1/2": layoutStyle === "mobile",
+                })}
+              >
+                {Children.toArray(children)}
+              </div>
             </div>
           </div>
-        </div>
-        <div
-          key="top-inset"
-          id="topInsetContainer"
-          className={clsx("fixed inset-x-0 top-0 isolate bg-base-100", {
-            "left-1/2 w-[600px] -translate-x-1/2": layoutStyle === "mobile",
-            "w-full": layoutStyle === "web",
-          })}
-        >
-          <div id="topInsetContent" className={clsx("relative isolate size-full")} />
-        </div>
-        <div
-          key="top-left-action"
-          id="topLeftActionContainer"
-          className="absolute top-0 left-0 isolate flex aspect-1 items-center justify-center"
-        />
-        <div
-          key="bottom-inset"
-          id="bottomInsetContainer"
-          className={clsx("fixed inset-x-0 bottom-0 isolate", {
-            "left-1/2 w-[600px] -translate-x-1/2": layoutStyle === "mobile",
-            "w-full": layoutStyle === "web",
-          })}
-        >
-          <div id="bottomInsetContent" className="isolate size-full" />
-        </div>
-        <div key="bottom-safe-area" id="bottomSafeArea" className="fixed inset-x-0 bg-base-100" />
-      </ClientPathWrapper>
-    </div>
-  </>
-);
+          <div
+            key="top-inset"
+            id="topInsetContainer"
+            className={clsx("fixed inset-x-0 top-0 isolate bg-base-100", {
+              "left-1/2 w-[600px] -translate-x-1/2": layoutStyle === "mobile",
+              "w-full": layoutStyle === "web",
+            })}
+          >
+            <div id="topInsetContent" className={clsx("relative isolate size-full")} />
+          </div>
+          <div
+            key="top-left-action"
+            id="topLeftActionContainer"
+            className="absolute top-0 left-0 isolate flex aspect-1 items-center justify-center"
+          />
+          <div
+            key="bottom-inset"
+            id="bottomInsetContainer"
+            className={clsx("fixed inset-x-0 bottom-0 isolate", {
+              "left-1/2 w-[600px] -translate-x-1/2": layoutStyle === "mobile",
+              "w-full": layoutStyle === "web",
+            })}
+          >
+            <div id="bottomInsetContent" className="isolate size-full" />
+          </div>
+          <div key="bottom-safe-area" id="bottomSafeArea" className="fixed inset-x-0 bg-base-100" />
+        </ClientPathWrapper>
+      </div>
+    </>
+  );
+};
 SSR.Wrapper = SSRWrapper;
 
 export default SSRProvider;
