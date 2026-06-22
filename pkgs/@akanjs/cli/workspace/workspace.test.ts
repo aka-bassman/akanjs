@@ -38,6 +38,7 @@ describe("WorkspaceCommand", () => {
       ["Option", 3],
       ["Option", 4],
       ["Option", 5],
+      ["Option", 6],
     ]);
 
     const command = CommandContainer.get(WorkspaceCommand);

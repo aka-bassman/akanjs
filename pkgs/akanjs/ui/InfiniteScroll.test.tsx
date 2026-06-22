@@ -129,7 +129,7 @@ const renderInfiniteScroll = async (props: InfiniteScrollProps) => {
 describe("InfiniteScroll", () => {
   test("loads the next page once when the sentinel intersects", async () => {
     const addPageCalls: number[] = [];
-    const pageSelections: number[] = [];
+    const pageSelections: Array<[number, { scrollToTop?: boolean } | undefined]> = [];
 
     await renderInfiniteScroll({
       total: 30,
@@ -138,8 +138,8 @@ describe("InfiniteScroll", () => {
       onAddPage: async (page) => {
         addPageCalls.push(page);
       },
-      onPageSelect: (page) => {
-        pageSelections.push(page);
+      onPageSelect: (page, option) => {
+        pageSelections.push([page, option]);
       },
       children: "items",
     });
@@ -150,6 +150,6 @@ describe("InfiniteScroll", () => {
     await tick();
 
     expect(addPageCalls).toEqual([2]);
-    expect(pageSelections).toEqual([2]);
+    expect(pageSelections).toEqual([[2, { scrollToTop: false }]]);
   });
 });

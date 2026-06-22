@@ -57,7 +57,8 @@ export class WorkspaceRunner extends runner("workspace") {
       init = true,
       akanVersion,
       registryUrl,
-    }: { dirname?: string; init?: boolean; akanVersion: string; registryUrl?: string },
+      owner = "",
+    }: { dirname?: string; init?: boolean; akanVersion: string; registryUrl?: string; owner?: string },
   ) {
     const cwdPath = process.cwd();
     const workspaceRoot = path.join(cwdPath, dirname, repoName);
@@ -73,7 +74,7 @@ export class WorkspaceRunner extends runner("workspace") {
     await workspace.applyTemplate({
       basePath: ".",
       template: "workspaceRoot",
-      dict: { repoName, appName, serveDomain: "localhost" },
+      dict: { repoName, appName, serveDomain: "localhost", owner },
     });
     if (normalizedRegistryUrl) await workspace.writeFile(".npmrc", `registry=${normalizedRegistryUrl}/\n`);
     templateSpinner.succeed(`Workspace files created in ${dirname}/${repoName}`);

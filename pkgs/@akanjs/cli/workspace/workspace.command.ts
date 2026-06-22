@@ -31,12 +31,23 @@ export class WorkspaceCommand extends command("workspace", [WorkspaceScript], ({
       desc: "npm registry URL for installing Akan packages",
       default: process.env.AKAN_NPM_REGISTRY ?? "https://registry.npmjs.org",
     })
-    .exec(async function (workspaceName, app, dir, libs, init, registry) {
+    .option("owner", String, {
+      desc: "owner of the workspace",
+      default: process.env.GITHUB_OWNER,
+      nullable: true,
+    })
+    .exec(async function (workspaceName, app, dir, libs, init, registry, owner) {
       const appName = app || "app";
       await this.workspaceScript.createWorkspace(
         workspaceName.toLowerCase().replace(/ /g, "-"),
         appName.toLowerCase().replace(/ /g, "-"),
-        { dirname: dir, installLibs: libs, init, ...(registry ? { registryUrl: registry } : {}) },
+        {
+          dirname: dir,
+          installLibs: libs,
+          init,
+          owner,
+          ...(registry ? { registryUrl: registry } : {}),
+        },
       );
     }),
   generateAgentRules: target({ desc: "Generate AGENTS.md and optional Cursor rules for Akan coding agents" })

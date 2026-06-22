@@ -23,7 +23,8 @@ export class WorkspaceScript extends script("workspace", [
       installLibs = false,
       init = true,
       registryUrl,
-    }: { dirname?: string; installLibs?: boolean; init?: boolean; registryUrl?: string },
+      owner,
+    }: { dirname?: string; installLibs?: boolean; init?: boolean; registryUrl?: string; owner?: string | null },
   ) {
     const akanVersion = await this.packageScript.version(null, { log: false });
     const workspace = await this.workspaceRunner.createWorkspace(repoName, appName, {
@@ -31,6 +32,7 @@ export class WorkspaceScript extends script("workspace", [
       init,
       akanVersion,
       ...(registryUrl ? { registryUrl } : {}),
+      ...(owner ? { owner } : {}),
     });
     if (installLibs) {
       await this.libraryScript.installLibrary(workspace, "util");
