@@ -174,10 +174,8 @@ export interface ConstantStatics<Schema = any, FieldObj extends FieldObject = Fi
   text: { search: Set<string>; filter: Set<string>; children: { search: Set<string>; filter: Set<string> } };
   _DatabaseSchema: {
     [K in keyof Schema]: K extends keyof FieldObj
-      ? FieldObj[K] extends ConstantField<infer FieldType, any, any, any, any, any>
-        ? FieldType extends "hidden"
-          ? NonNullable<Schema[K]>
-          : Schema[K]
+      ? FieldObj[K]["fieldType"] extends "hidden"
+        ? NonNullable<Schema[K]>
         : Schema[K]
       : Schema[K];
   };
