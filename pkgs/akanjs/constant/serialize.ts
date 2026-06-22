@@ -35,7 +35,7 @@ const serializeInput = <Input = unknown>(
   { optional = false }: { optional?: boolean } = {},
 ): Input | Input[] => {
   if (arrDepth && Array.isArray(value))
-    return value.map((v) => serializeInput(v, inputRef, arrDepth - 1) as Input) as unknown as Input[];
+    return value.map((v) => serializeInput(v, inputRef, arrDepth - 1, serializeType) as Input) as unknown as Input[];
   else if ((inputRef as MapConstructor).prototype === Map.prototype) {
     const [valueRef] = getNonArrayModel(inputRef as Cls);
     const serializeFn = getSerializeFn(valueRef, { optional });
