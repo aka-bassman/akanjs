@@ -1,4 +1,5 @@
 import {
+  Any,
   applyFnToArrayObjects,
   type Cls,
   type Dayjs,
@@ -81,7 +82,7 @@ export const serialize = (
   { nullable = false, key }: { nullable?: boolean; key?: string },
 ) => {
   if (nullable && (value === null || value === undefined)) return null;
-  else if (!nullable && (value === null || value === undefined))
+  else if (!nullable && (value === null || value === undefined) && argRef !== Any)
     throw new Error(`Invalid Value (Nullable) in ${argRef} for value ${value}${key ? ` in ${key}` : ""}`);
   return serializeInput(value, argRef, arrDepth, serializeType, { optional: nullable }) as object[];
 };

@@ -30,6 +30,10 @@ export type DocumentModel<T> = T extends (infer S)[]
 export type FieldState<T> = T extends { id: string } ? T | null : T;
 export type DefaultOf<S> = GetStateObject<{ [K in keyof S]: FieldState<S[K]> }>;
 
+export type DefaultOfSchema<Schema, RelationKey extends string = never> = {
+  [K in keyof Schema]: Schema[K] | (K extends RelationKey ? null : never);
+};
+
 export type GetPlainObject<T, O extends string> = Omit<
   {
     [K in keyof T as T[K] extends (...args: never[]) => unknown

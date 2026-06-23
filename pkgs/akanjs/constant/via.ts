@@ -15,8 +15,8 @@ import {
   field,
   resolve,
 } from "./fieldInfo";
-import { makePurify, type PurifyFunc } from "./purify";
-import type { BaseInsight, BaseObject, ConstantType, DefaultOf, NonFunctionalKeys } from "./types";
+import { makePurify, type PurifiedModel, type PurifyFunc } from "./purify";
+import type { BaseInsight, BaseObject, ConstantType, DefaultOf, DefaultOfSchema, NonFunctionalKeys } from "./types";
 
 type BaseFields = "id" | "createdAt" | "updatedAt" | "removedAt";
 type WithBase<T> = T & BaseObject;
@@ -161,6 +161,28 @@ const makeBaseScalar = <FieldMap extends FieldInfoObject>(
 
 export interface ConstantMethods<Schema = any> {
   set: (obj: Partial<Schema>) => this;
+}
+
+export interface ConstantStaticsV2<
+  Schema = any,
+  OptionalKey extends string = never,
+  RelationKey extends string = never,
+  HiddenKey extends string = never,
+  SecretKey extends string = never,
+> {
+  [FIELD_META]: FieldObject;
+  getDefault: () => DefaultOfSchema<Schema, RelationKey>;
+  purify: PurifyFunc<Schema>;
+  modelType: ConstantType;
+  children: Set<ConstantCls>;
+  relations: Set<ConstantCls>;
+  enums: Set<EnumInstance>;
+  text: { search: Set<string>; filter: Set<string>; children: { search: Set<string>; filter: Set<string> } };
+  _RelationKey: RelationKey;
+  _HiddenKey: HiddenKey;
+  _SecretKey: SecretKey;
+  _DefaultOfSchema: DefaultOfSchema<Schema, RelationKey>;
+  _PurifiedSchema: PurifiedModel<Schema>;
 }
 
 export interface ConstantStatics<Schema = any, FieldObj extends FieldObject = FieldObject> {

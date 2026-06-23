@@ -49,11 +49,9 @@ export interface FieldInfoObject {
   [key: string]: FieldInfo<any, ConstantFieldTypeInput | null, any>;
 }
 export type ExtractFieldInfoObject<Obj extends FieldInfoObject> = {
-  [K in keyof Obj]: Obj[K] extends FieldInfo<any, infer FieldValue, infer ExplicitType, infer MapValue>
-    ? unknown extends ExplicitType
-      ? FieldToValue<FieldValue, MapValue>
-      : ExplicitType
-    : never;
+  [K in keyof Obj]: unknown extends Obj[K]["explicitType"]
+    ? FieldToValue<Obj[K]["value"], Obj[K]["mapValue"]>
+    : Obj[K]["explicitType"];
 };
 
 export type ConstantFieldKind = "property" | "hidden" | "secret" | "resolve";
@@ -98,6 +96,7 @@ class FieldInfo<
   readonly type: ConstantFieldTypeInput;
   readonly option: ConstantFieldProps;
   declare explicitType: ExplicitType;
+  declare mapValue: MapValue;
   constructor(value: Value, option: ConstantFieldProps<FieldType, any, MapValue>) {
     this.value = value;
     const [singleValue, arrDepth] = getNonArrayModel(value as Cls);
@@ -218,7 +217,6 @@ export class ConstantField<
   readonly arrDepth: number;
   readonly optArrDepth: number;
   readonly meta: Metadata;
-
   constructor(props: ConstantFieldBuildProps<FieldType, FieldValue, MapValue, Metadata>) {
     this.nullable = props.nullable as unknown as Nullable;
     this.ref = props.ref;
@@ -263,7 +261,7 @@ export class ConstantField<
     if (isMap && !option.of) throw new Error("Map type must have 'of' option");
 
     return new ConstantField({
-      nullable: option.nullable ?? ((option.default === "" ? true : false) as unknown as Nullable),
+      nullable: option.nullable ?? ((option.default === "") as unknown as Nullable),
       ref: option.ref,
       refPath: option.refPath,
       refType: option.refType,

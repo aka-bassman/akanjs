@@ -1,4 +1,5 @@
 import {
+  Any,
   applyFnToArrayObjects,
   type Cls,
   type Dayjs,
@@ -13,7 +14,14 @@ import {
 } from "akanjs/base";
 import { Logger } from "akanjs/common";
 
-import { type BaseObject, type ConstantCls, ConstantRegistry, type DefaultOf, type FieldProps } from ".";
+import {
+  type BaseObject,
+  type ConstantCls,
+  ConstantRegistry,
+  type DefaultOf,
+  type DefaultOfSchema,
+  type FieldProps,
+} from ".";
 
 type Purified<O> = O extends BaseObject
   ? string
@@ -43,6 +51,13 @@ export type PurifyFunc<Input, _DefaultInput = DefaultOf<Input>, _PurifiedInput =
   self: _DefaultInput,
   isChild?: boolean,
 ) => _PurifiedInput | null;
+
+export type PurifyFuncV2<
+  Input,
+  RelationKey extends string = never,
+  _DefaultInput = DefaultOfSchema<Input, RelationKey>,
+  _PurifiedInput = PurifiedModel<Input>,
+> = (self: _DefaultInput, isChild?: boolean) => _PurifiedInput | null;
 
 const getPurifyFn = (modelRef: Cls): ((value: unknown) => unknown) => {
   const [valueRef] = getNonArrayModel(modelRef);
@@ -87,7 +102,7 @@ const purify = (field: FieldProps, key: string, value: unknown, self: Record<str
     throw new Error(`Invalid String Value (Default) in ${key} for value ${value}`);
   if (field.validate && !field.validate(value, self))
     throw new Error(`Invalid Value (Failed to pass validation) / ${value} in ${key}`);
-  if (!field.nullable && !value && value !== 0 && value !== false)
+  if (!field.nullable && !value && value !== 0 && value !== false && (field.modelRef as Cls) !== Any)
     throw new Error(`Invalid Value (Nullable) in ${key} for value ${value}`);
 
   // 2. Convert Value
