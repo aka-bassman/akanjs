@@ -1,4 +1,4 @@
-import { applyFnToArrayObjects, type Cls, FIELD_META, PrimitiveRegistry, type PrimitiveScalar } from "akanjs/base";
+import { Any, applyFnToArrayObjects, type Cls, FIELD_META, PrimitiveRegistry, type PrimitiveScalar } from "akanjs/base";
 
 import { type ConstantCls, ConstantRegistry, type FieldProps } from ".";
 
@@ -64,7 +64,7 @@ export const deserialize = (
   { key, nullable = false, convertFn }: { key?: string; nullable?: boolean; convertFn?: (value: unknown) => unknown },
 ) => {
   if (nullable && (value === null || value === undefined)) return null;
-  else if (!nullable && (value === null || value === undefined))
+  else if (!nullable && (value === null || value === undefined) && argRef !== Any)
     throw new Error(`Invalid Value (Nullable) in ${key} ${argRef} for value ${value}`);
   return deserializeInput(value, argRef, arrDepth, convertFn) as object[];
 };

@@ -1,4 +1,14 @@
-import { type Cls, type EnumInstance, FIELD_META, type MergeAllKeyOfObjects, type MergeAllTypes } from "akanjs/base";
+import {
+  CLIENT_VALUE,
+  type Cls,
+  DEFAULT_VALUE,
+  type EnumInstance,
+  FIELD_META,
+  type MergeAllKeyOfObjects,
+  type MergeAllTypes,
+  PURIFIED_VALUE,
+  SERVER_VALUE,
+} from "akanjs/base";
 import { applyMixins } from "akanjs/common";
 import { immerable } from "immer";
 
@@ -15,8 +25,8 @@ import {
   field,
   resolve,
 } from "./fieldInfo";
-import { makePurify, type PurifyFunc } from "./purify";
-import type { BaseInsight, BaseObject, ConstantType, DefaultOf, NonFunctionalKeys } from "./types";
+import { makePurify, type PurifiedModel, type PurifyFunc } from "./purify";
+import type { BaseInsight, BaseObject, ConstantType, DefaultOf, DefaultOfSchema, NonFunctionalKeys } from "./types";
 
 type BaseFields = "id" | "createdAt" | "updatedAt" | "removedAt";
 type WithBase<T> = T & BaseObject;
@@ -163,6 +173,39 @@ export interface ConstantMethods<Schema = any> {
   set: (obj: Partial<Schema>) => this;
 }
 
+export interface ConstantStaticsV2<
+  Schema = any,
+  OptionalKey extends string = never,
+  RelationKey extends string = never,
+  PrimitiveKey extends string = never,
+  ScalarKey extends string = never,
+  EnumKey extends string = never,
+  MapKey extends string = never,
+  HiddenKey extends string = never,
+  SecretKey extends string = never,
+> {
+  [FIELD_META]: FieldObject;
+  getDefault: () => DefaultOfSchema<Schema, RelationKey>;
+  purify: PurifyFunc<Schema>;
+  modelType: ConstantType;
+  children: Set<ConstantCls>;
+  relations: Set<ConstantCls>;
+  enums: Set<EnumInstance>;
+  text: { search: Set<string>; filter: Set<string>; children: { search: Set<string>; filter: Set<string> } };
+  _OptionalKey: OptionalKey;
+  _RelationKey: RelationKey;
+  _PrimitiveKey: PrimitiveKey;
+  _ScalarKey: ScalarKey;
+  _EnumKey: EnumKey;
+  _MapKey: MapKey;
+  _HiddenKey: HiddenKey;
+  _SecretKey: SecretKey;
+  [SERVER_VALUE]: Schema;
+  [CLIENT_VALUE]: Schema;
+  [DEFAULT_VALUE]: DefaultOfSchema<Schema, RelationKey>;
+  [PURIFIED_VALUE]: PurifiedModel<Schema>;
+}
+
 export interface ConstantStatics<Schema = any, FieldObj extends FieldObject = FieldObject> {
   [FIELD_META]: FieldObj;
   getDefault: () => DefaultOf<Schema>;
@@ -180,10 +223,46 @@ export interface ConstantStatics<Schema = any, FieldObj extends FieldObject = Fi
       : Schema[K];
   };
 }
+
+type OptionalKeys<FieldObj extends FieldObject> = {
+  [K in keyof FieldObj]: FieldObj[K]["nullable"] extends true ? K : never;
+}[keyof FieldObj];
+type RelationKeys<FieldObj extends FieldObject> = {
+  [K in keyof FieldObj]: FieldObj[K]["_isRelation"] extends true ? K : never;
+}[keyof FieldObj];
+type PrimitiveKeys<FieldObj extends FieldObject> = {
+  [K in keyof FieldObj]: FieldObj[K]["_isPrimitive"] extends true ? K : never;
+}[keyof FieldObj];
+type ScalarKeys<FieldObj extends FieldObject> = {
+  [K in keyof FieldObj]: FieldObj[K]["_isScalar"] extends true ? K : never;
+}[keyof FieldObj];
+type EnumKeys<FieldObj extends FieldObject> = {
+  [K in keyof FieldObj]: FieldObj[K]["_isEnum"] extends true ? K : never;
+}[keyof FieldObj];
+type HiddenKeys<FieldObj extends FieldObject> = {
+  [K in keyof FieldObj]: FieldObj[K]["_isHidden"] extends true ? K : never;
+}[keyof FieldObj];
+type SecretKeys<FieldObj extends FieldObject> = {
+  [K in keyof FieldObj]: FieldObj[K]["_isSecret"] extends true ? K : never;
+}[keyof FieldObj];
+type MapKeys<FieldObj extends FieldObject> = {
+  [K in keyof FieldObj]: FieldObj[K]["_isMap"] extends true ? K : never;
+}[keyof FieldObj];
+
 export type ConstantCls<Schema = any, FieldObj extends FieldObject = FieldObject> = (new (
   obj?: Partial<Schema>,
 ) => Schema & ConstantMethods<Schema>) &
-  ConstantStatics<Schema, FieldObj>;
+  ConstantStaticsV2<
+    Schema,
+    OptionalKeys<FieldObj> & string,
+    RelationKeys<FieldObj> & string,
+    PrimitiveKeys<FieldObj> & string,
+    ScalarKeys<FieldObj> & string,
+    EnumKeys<FieldObj> & string,
+    MapKeys<FieldObj> & string,
+    HiddenKeys<FieldObj> & string,
+    SecretKeys<FieldObj> & string
+  >;
 
 declare global {
   // dummy type matching for Date, String, Boolean, Map constructors
