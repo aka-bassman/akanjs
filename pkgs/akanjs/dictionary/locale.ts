@@ -1,7 +1,7 @@
 import type { GetStateObject, MergedValues } from "akanjs/base";
 import type { BaseInsight, BaseObject } from "akanjs/constant";
-import type { FilterInfo, FilterInstance } from "akanjs/document";
-import type { EndpointInfo, SliceInfo } from "akanjs/signal";
+import type { FilterCls, FilterInfo, FilterInstance } from "akanjs/document";
+import type { EndpInfoArgNames, EndpointInfo, SliceInfo, SliceInfoArgNames, SliceInfoRefName } from "akanjs/signal";
 import type { ModelDictInfo, ScalarDictInfo, ServiceDictInfo } from ".";
 
 interface Trans {
@@ -16,46 +16,44 @@ interface FnTrans<ArgKey extends string> {
   desc?: string;
   arg?: { [key in ArgKey]: FieldTrans };
 }
-type FilterTranslatorKey<Filter extends FilterInstance> = {
-  [Key in keyof Filter["query"] & string]:
+type AnyFilterShape = FilterInstance<Record<string, FilterInfo>, Record<string, unknown>>;
+type DictFilterShape<Filter> = Filter extends FilterInstance
+  ? Filter
+  : Filter extends FilterCls<infer FilterShape>
+    ? FilterShape
+    : Filter extends { query: Record<string, FilterInfo>; sort: Record<string, unknown> }
+      ? Filter
+      : AnyFilterShape;
+type DictFilterQuery<Filter> = DictFilterShape<Filter>["query"];
+type DictFilterSort<Filter> = DictFilterShape<Filter>["sort"];
+type FilterTranslatorKey<Filter> = {
+  [Key in keyof DictFilterQuery<Filter> & string]:
     | `${Key}`
     | `${Key}.desc`
-    | (Filter["query"][Key] extends FilterInfo<infer ArgNames, any>
+    | (DictFilterQuery<Filter>[Key] extends FilterInfo<infer ArgNames, any>
         ? ArgNames[number] extends string
           ? `${Key}.arg.${ArgNames[number]}` | `${Key}.arg.${ArgNames[number]}.desc`
           : never
         : never);
-}[keyof Filter["query"] & string];
+}[keyof DictFilterQuery<Filter> & string];
 type EndpointTranslatorKey<Endpoint extends { [key: string]: EndpointInfo }> = {
   [Key in keyof Endpoint & string]:
     | `${Key}`
     | `${Key}.desc`
-    | `${Key}.arg.${Endpoint[Key]["argNames"][number]}`
-    | `${Key}.arg.${Endpoint[Key]["argNames"][number]}.desc`;
+    | `${Key}.arg.${EndpInfoArgNames<Endpoint[Key]>[number]}`
+    | `${Key}.arg.${EndpInfoArgNames<Endpoint[Key]>[number]}.desc`;
 }[keyof Endpoint & string];
 type SliceTranslatorKey<Slice> = {
-  [Key in keyof Slice & string]: Slice[Key] extends SliceInfo<
-    infer T,
-    any,
-    any,
-    any,
-    any,
-    any,
-    any,
-    infer ArgNames,
-    any,
-    any,
-    any
-  >
+  [Key in keyof Slice & string]: Slice[Key] extends infer Info extends SliceInfo
     ?
-        | `${T}List${Capitalize<Key>}`
-        | `${T}List${Capitalize<Key>}.desc`
-        | `${T}List${Capitalize<Key>}.arg.${ArgNames[number] | "skip" | "limit" | "sort"}`
-        | `${T}List${Capitalize<Key>}.arg.${ArgNames[number] | "skip" | "limit" | "sort"}.desc`
-        | `${T}Insight${Capitalize<Key>}`
-        | `${T}Insight${Capitalize<Key>}.desc`
-        | `${T}Insight${Capitalize<Key>}.arg.${ArgNames[number]}`
-        | `${T}Insight${Capitalize<Key>}.arg.${ArgNames[number]}.desc`
+        | `${SliceInfoRefName<Info>}List${Capitalize<Key>}`
+        | `${SliceInfoRefName<Info>}List${Capitalize<Key>}.desc`
+        | `${SliceInfoRefName<Info>}List${Capitalize<Key>}.arg.${SliceInfoArgNames<Info>[number] | "skip" | "limit" | "sort"}`
+        | `${SliceInfoRefName<Info>}List${Capitalize<Key>}.arg.${SliceInfoArgNames<Info>[number] | "skip" | "limit" | "sort"}.desc`
+        | `${SliceInfoRefName<Info>}Insight${Capitalize<Key>}`
+        | `${SliceInfoRefName<Info>}Insight${Capitalize<Key>}.desc`
+        | `${SliceInfoRefName<Info>}Insight${Capitalize<Key>}.arg.${SliceInfoArgNames<Info>[number]}`
+        | `${SliceInfoRefName<Info>}Insight${Capitalize<Key>}.arg.${SliceInfoArgNames<Info>[number]}.desc`
     : never;
 }[keyof Slice & string];
 
@@ -85,7 +83,7 @@ export type ModelTrans<
   T extends string,
   Model extends BaseObject,
   Insight extends BaseInsight,
-  Filter extends FilterInstance,
+  Filter,
   Slice extends { [key: string]: SliceInfo },
   Endpoint extends { [key: string]: EndpointInfo },
   ErrorKey extends string,
@@ -96,16 +94,16 @@ export type ModelTrans<
   model: { [K in keyof GetStateObject<Model>]: FieldTrans };
   insight: { [K in keyof GetStateObject<Insight>]: FieldTrans };
   query: {
-    [K in keyof Filter["query"]]: Filter["query"][K] extends FilterInfo<infer ArgNames, any>
+    [K in keyof DictFilterQuery<Filter>]: DictFilterQuery<Filter>[K] extends FilterInfo<infer ArgNames, any>
       ? FnTrans<ArgNames[number]>
       : never;
   };
-  sort: { [K in keyof Filter["sort"]]: FieldTrans };
+  sort: { [K in keyof DictFilterSort<Filter>]: FieldTrans };
   api: {
-    [K in keyof Endpoint]: FnTrans<Endpoint[K]["argNames"][number]>;
+    [K in keyof Endpoint]: FnTrans<EndpInfoArgNames<Endpoint[K]>[number]>;
   } & BaseModelCrudGetApiTrans<T> &
     MergedValues<{
-      [K in keyof Slice]: SliceApiTrans<Slice[K]["refName"], K & string, Slice[K]["argNames"][number]>;
+      [K in keyof Slice]: SliceApiTrans<SliceInfoRefName<Slice[K]>, K & string, SliceInfoArgNames<Slice[K]>[number]>;
     }>;
   error: { [K in ErrorKey]: Trans };
 } & { [K in EtcKey]: Trans };
@@ -113,7 +111,7 @@ export type ModelTranslatorKey<
   T extends string,
   Model,
   Insight,
-  Filter extends FilterInstance,
+  Filter,
   Slice extends { [key: string]: SliceInfo },
   Endpoint extends { [key: string]: EndpointInfo },
   EtcKey extends string,
@@ -123,7 +121,7 @@ export type ModelTranslatorKey<
   | `${T}.${keyof GetStateObject<Model> & string}${"" | ".desc"}`
   | `${T}.insight.${keyof GetStateObject<Insight> & string}${"" | ".desc"}`
   | `${T}.query.${FilterTranslatorKey<Filter>}`
-  | `${T}.sort.${keyof Filter["sort"] & string}${"" | ".desc"}`
+  | `${T}.sort.${keyof DictFilterSort<Filter> & string}${"" | ".desc"}`
   | `${T}.signal.${EndpointTranslatorKey<Endpoint> | SliceTranslatorKey<Slice>}`
   | `${T}.${EtcKey}`;
 
@@ -146,7 +144,7 @@ export type ServiceTrans<
   EtcKey extends string,
 > = {
   api: {
-    [K in keyof Endpoint]: FnTrans<Endpoint[K]["argNames"][number]>;
+    [K in keyof Endpoint]: FnTrans<EndpInfoArgNames<Endpoint[K]>[number]>;
   };
   error: { [K in ErrorKey]: Trans };
 } & { [K in EtcKey]: Trans };
@@ -171,7 +169,7 @@ export const registerModelTrans = <
   RefName extends string,
   Model extends BaseObject,
   Insight extends BaseInsight,
-  Filter extends FilterInstance,
+  Filter,
   Slice extends { [key: string]: SliceInfo },
   Endpoint extends { [key: string]: EndpointInfo },
   ModelDict extends ModelDictInfo<any>,

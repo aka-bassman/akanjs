@@ -1,8 +1,8 @@
 import { Any, applyFnToArrayObjects, type Cls, FIELD_META, PrimitiveRegistry, type PrimitiveScalar } from "akanjs/base";
 
-import { type ConstantCls, ConstantRegistry, type FieldProps } from ".";
+import { type ConstantCls, type ConstantModelRef, ConstantRegistry, type FieldProps } from ".";
 
-const getDeserializeFn = (inputRef: ConstantCls | PrimitiveScalar) => {
+const getDeserializeFn = (inputRef: ConstantModelRef | PrimitiveScalar) => {
   const deserializeFn = PrimitiveRegistry.has(inputRef as Cls)
     ? (value: unknown) => (inputRef as unknown as typeof PrimitiveScalar)._parse(value as never)
     : (value: unknown) => value as object;
@@ -13,14 +13,14 @@ const deserializeMap = (value: unknown, field: Pick<FieldProps, "of">) => {
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).map(([key, val]) => [
       key,
-      applyFnToArrayObjects(val, (v: never) => deserializeInput(v, field.of as ConstantCls, 0)),
+      applyFnToArrayObjects(val, (v: never) => deserializeInput(v, field.of as ConstantModelRef, 0)),
     ]),
   );
 };
 
 const deserializeInput = <Input = unknown>(
   value: Input | Input[],
-  inputRef: ConstantCls<Input> | PrimitiveScalar,
+  inputRef: ConstantModelRef<Input> | PrimitiveScalar,
   arrDepth: number,
   convertFn: (value: unknown) => unknown = (value: unknown) => value,
 ): Input | Input[] => {
@@ -58,7 +58,7 @@ const deserializeInput = <Input = unknown>(
 };
 
 export const deserialize = (
-  argRef: ConstantCls | PrimitiveScalar,
+  argRef: ConstantModelRef | PrimitiveScalar,
   arrDepth: number,
   value: unknown,
   { key, nullable = false, convertFn }: { key?: string; nullable?: boolean; convertFn?: (value: unknown) => unknown },

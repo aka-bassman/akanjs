@@ -7,6 +7,9 @@ import type {
   EndpInfoReqType,
   EndpointCls,
   EndpointInfo,
+  SlceCnstFull,
+  SlceCnstInsight,
+  SlceCnstLight,
   SliceCls,
 } from "akanjs/signal";
 
@@ -24,9 +27,9 @@ type EndpointClientReturns<E, SlceCls extends SliceCls | never> = [SlceCls] exte
   ? EndpInfoClientReturns<E>
   : ExtendedEndpointReturn<
       EndpInfoClientReturns<E>,
-      SlceCls["srv"]["cnst"]["_Full"],
-      SlceCls["srv"]["cnst"]["_Light"],
-      SlceCls["srv"]["cnst"]["_Insight"]
+      SlceCnstFull<SlceCls>,
+      SlceCnstLight<SlceCls>,
+      SlceCnstInsight<SlceCls>
     >;
 
 type EndpInfoReturns<E, SlceCls extends SliceCls | never> =

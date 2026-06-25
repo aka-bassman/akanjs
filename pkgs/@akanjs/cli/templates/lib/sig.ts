@@ -57,7 +57,7 @@ ${serviceModules.map((module) => `export const ${module} = SignalRegistry.regist
 
 export const fetchSignals = [${signalNames.join(", ")}] as const;
 export type Fetch = FetchClientType<typeof fetchSignals>;
-export const fetch: Fetch = FetchClient.from(...fetchSignals);
+export const fetch = FetchClient.from(...fetchSignals) as unknown as Fetch;
 
 export const getSerializedSignal = () => fetch.serializedSignal
 `;

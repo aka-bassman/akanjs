@@ -116,6 +116,22 @@ interface BaseSort {
   latest: { createdAt: -1 };
   oldest: { createdAt: 1 };
 }
+type LibFilterQuery<LibFilters extends FilterCls[]> = MergeAllDoubleKeyOfObjects<
+  LibFilters,
+  typeof FILTER_META,
+  "query"
+>;
+type LibFilterSort<LibFilters extends FilterCls[]> = MergeAllKeyOfTypes<LibFilters, "sort">;
+type FilterQuery<Full, LibFilters extends FilterCls[], Filter extends FilterInstance> = BaseQuery<Full> &
+  LibFilterQuery<LibFilters> &
+  Filter["query"];
+type FilterSort<LibFilters extends FilterCls[], Filter extends FilterInstance> = BaseSort &
+  LibFilterSort<LibFilters> &
+  Filter["sort"];
+type MergedFilterInstance<Full, LibFilters extends FilterCls[], Filter extends FilterInstance> = {
+  query: FilterQuery<Full, LibFilters, Filter>;
+  sort: FilterSort<LibFilters, Filter>;
+};
 
 export type ExtractQuery<Filter extends FilterInstance> = {
   [K in keyof Filter["query"]]: Filter["query"][K] extends FilterInfo<any, infer Args>
@@ -123,16 +139,24 @@ export type ExtractQuery<Filter extends FilterInstance> = {
     : never;
 };
 export type ExtractSort<Filter extends FilterInstance> = keyof Filter["sort"];
-export interface FilterCls<Filter extends FilterInstance = any> extends Cls<{ [key: string]: any }> {
+export interface FilterCls<Filter extends FilterInstance = any, Query = unknown, Sort = unknown>
+  extends Cls<{ [key: string]: any }> {
   [FILTER_META]: Filter;
   sortField: Set<string>;
+  _Query: Query;
+  _Sort: Sort;
 }
+export type FilterQueryOf<FilterRef extends FilterCls> = FilterRef extends { _Query: infer Query } ? Query : never;
+export type FilterSortOf<FilterRef extends FilterCls> = FilterRef extends { _Sort: infer Sort } ? Sort : never;
 
 export const from = <
   Full extends BaseObject,
   BuildFilter extends (filter: () => FilterInfo<[], [], Full>) => FilterInstance,
   LibFilters extends FilterCls[],
   _Filter extends ReturnType<BuildFilter>,
+  _MergedFilter extends FilterInstance = MergedFilterInstance<Full, LibFilters, _Filter>,
+  _Query = ExtractQuery<_MergedFilter>,
+  _Sort = ExtractSort<_MergedFilter>,
 >(
   modelRef: Cls<Full>,
   buildFilter: BuildFilter,
@@ -153,19 +177,7 @@ export const from = <
     },
     ...libFilterRefs.map((libFilterRef) => getFilterMeta(libFilterRef)),
   );
-  return Base as unknown as Cls<
-    {
-      query: BaseQuery<Full> & MergeAllDoubleKeyOfObjects<LibFilters, typeof FILTER_META, "query"> & _Filter["query"];
-      sort: BaseSort & MergeAllKeyOfTypes<LibFilters, "sort"> & _Filter["sort"];
-    },
-    {
-      [FILTER_META]: {
-        query: BaseQuery<Full> & MergeAllDoubleKeyOfObjects<LibFilters, typeof FILTER_META, "query"> & _Filter["query"];
-        sort: BaseSort & MergeAllKeyOfTypes<LibFilters, "sort"> & _Filter["sort"];
-      };
-      sortField: Set<string>;
-    }
-  >;
+  return Base as unknown as FilterCls<_MergedFilter, _Query, _Sort>;
 };
 
 interface ArgProps<Value = unknown> {

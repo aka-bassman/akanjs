@@ -30,9 +30,11 @@ export type DocumentModel<T> = T extends (infer S)[]
 export type FieldState<T> = T extends { id: string } ? T | null : T;
 export type DefaultOf<S> = GetStateObject<{ [K in keyof S]: FieldState<S[K]> }>;
 
-export type DefaultOfSchema<Schema, RelationKey extends string = never> = {
-  [K in keyof Schema]: Schema[K] | (K extends RelationKey ? null : never);
-};
+export type DefaultOfSchema<Schema, RelationKey = never> = [RelationKey] extends [never]
+  ? Schema
+  : {
+      [K in keyof Schema]: Schema[K] | (K extends RelationKey ? null : never);
+    };
 
 export type GetPlainObject<T, O extends string> = Omit<
   {
@@ -103,7 +105,9 @@ export interface TextDoc {
   [key: string]: string | TextDoc;
 }
 
-export type NonFunctionalKeys<T> = keyof T extends (...args: never[]) => unknown ? never : keyof T;
+export type NonFunctionalKeys<T> = {
+  [K in keyof T]: T[K] extends (...args: never[]) => unknown ? never : K;
+}[keyof T];
 
 export const unsetDate = dayjs(new Date("0000"));
 export const MAX_INT = 2147483647;

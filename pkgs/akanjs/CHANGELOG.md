@@ -1,5 +1,11 @@
 # akanjs
 
+## 2.3.5
+
+### Patch Changes
+
+- Fix Akan document and service type regressions for extended constant, document, signal, and store models.
+
 ## 2.3.2
 
 ### Minor Changes

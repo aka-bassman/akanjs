@@ -2,24 +2,35 @@ import type { GetStateObject, SLICE_META } from "akanjs/base";
 import type { FetchPolicy } from "akanjs/common";
 import type { ConstantModel, DefaultOf, ProtoFile, PurifiedModel } from "akanjs/constant";
 import type { DatabaseModel, ExtractSort, FilterInstance } from "akanjs/document";
-import type { SliceCls, SliceInfoArgs } from "akanjs/signal";
+import type {
+  SlceCnstCapitalizedRefName,
+  SlceCnstDefaultInput,
+  SlceCnstFull,
+  SlceCnstInput,
+  SlceCnstInsight,
+  SlceCnstLight,
+  SlceCnstPurifiedInput,
+  SlceCnstRefName,
+  SlceDbFilter,
+  SlceDbSort,
+  SliceCls,
+  SliceInfoArgs,
+} from "akanjs/signal";
 import type { ClientEdit, ClientInit, ClientView, EditReturn, InitReturn, ViewReturn } from "./appliedReturn.type";
 
 // Shortcut accessors — avoids re-typing the long lookup path and lets TS
 // memoize each access once per SlceCls instantiation.
 type _SliceMap<S extends SliceCls> = S[typeof SLICE_META];
-type _RefName<S extends SliceCls> = S["srv"]["cnst"]["refName"];
-type _Cap<S extends SliceCls> = S["srv"]["cnst"]["_CapitalizedRefName"];
-type _Input<S extends SliceCls> = S["srv"]["cnst"]["_Input"];
-type _Full<S extends SliceCls> = S["srv"]["cnst"]["_Full"];
-type _Light<S extends SliceCls> = S["srv"]["cnst"]["_Light"];
-type _Insight<S extends SliceCls> = S["srv"]["cnst"]["_Insight"];
-type _PurifiedInput<S extends SliceCls> = S["srv"]["cnst"]["_PurifiedInput"];
-type _DefaultInput<S extends SliceCls> = S["srv"]["cnst"]["_DefaultInput"];
-type _StateLight<S extends SliceCls> = S["srv"]["cnst"]["_StateLight"];
-type _StateInsight<S extends SliceCls> = S["srv"]["cnst"]["_StateInsight"];
-type _Filter<S extends SliceCls> = S["srv"]["db"]["_Filter"];
-type _Sort<S extends SliceCls> = S["srv"]["db"]["_Sort"];
+type _RefName<S extends SliceCls> = SlceCnstRefName<S>;
+type _Cap<S extends SliceCls> = SlceCnstCapitalizedRefName<S>;
+type _Input<S extends SliceCls> = SlceCnstInput<S>;
+type _Full<S extends SliceCls> = SlceCnstFull<S>;
+type _Light<S extends SliceCls> = SlceCnstLight<S>;
+type _Insight<S extends SliceCls> = SlceCnstInsight<S>;
+type _PurifiedInput<S extends SliceCls> = SlceCnstPurifiedInput<S>;
+type _DefaultInput<S extends SliceCls> = SlceCnstDefaultInput<S>;
+type _Filter<S extends SliceCls> = SlceDbFilter<S>;
+type _Sort<S extends SliceCls> = SlceDbSort<S>;
 type _LightWithId<S extends SliceCls> = _Light<S> extends { id: string } ? _Light<S> : { id: string };
 type _SliceFetchInitOption<S extends SliceCls> = FetchInitOption<_Input<S>, _Filter<S>, _DefaultInput<S>, _Sort<S>>;
 

@@ -1,7 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { dayjs, enumOf, FIELD_META, ID, Int, type PrimitiveScalar } from "akanjs/base";
 import { immerable } from "immer";
-import { ConstantField, ConstantRegistry, deserialize, immerify, serialize, via } from ".";
+import {
+  type ConstantCls,
+  ConstantField,
+  ConstantRegistry,
+  type DocumentModel,
+  deserialize,
+  type ExtractFieldInfoObject,
+  type FieldBuilder,
+  type FieldInfoObjectToFieldObject,
+  immerify,
+  type NonFunctionalKeys,
+  type PurifiedModel,
+  serialize,
+  via,
+} from ".";
 
 const Role = enumOf("ConstantTestRole", ["admin", "user"] as const);
 
@@ -46,6 +60,13 @@ const UserObject = via(UserInput, (f) => ({
 const UserLight = via(UserObject, ["name", "role"] as const, (r) => ({
   profileText: r(String, { text: "search" }),
 }));
+class MethodUserLight extends via(UserObject, ["name", "role"] as const, (r) => ({
+  profileText: r(String, { text: "search" }),
+})) {
+  hello() {
+    return "hello" as const;
+  }
+}
 const UserFull = via(UserObject, UserLight, (r) => ({
   addressLabel: r(String, { text: "filter" }),
 }));
@@ -79,6 +100,59 @@ ConstantRegistry.buildModel("constantTestTeam", TeamInput, TeamObject, TeamFull,
   TeamLight,
   TeamInsight,
 });
+
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+type Assert<T extends true> = T;
+
+const buildTypeOptimizedFields = (f: FieldBuilder) => ({
+  status: f(Role),
+  related: f(UserLight),
+  relatedList: f([UserLight]),
+  metadataMap: f(Map, { of: String }),
+  hiddenValue: f.hidden(String),
+  secretValue: f.secret(String),
+});
+const buildRelationMethodFields = (f: FieldBuilder) => ({
+  owner: f(MethodUserLight),
+  members: f([MethodUserLight]),
+});
+type TypeOptimizedFieldObject = FieldInfoObjectToFieldObject<ReturnType<typeof buildTypeOptimizedFields>>;
+type TypeOptimizedInputRef = ConstantCls<
+  ExtractFieldInfoObject<ReturnType<typeof buildTypeOptimizedFields>>,
+  TypeOptimizedFieldObject
+>;
+type RelationMethodSchema = ExtractFieldInfoObject<ReturnType<typeof buildRelationMethodFields>>;
+const TypeOptimizedExtendedInput = via(
+  (f) => ({
+    extraCount: f(Int),
+  }),
+  UserInput,
+);
+
+type _TypeOptimizedAssertions = [
+  Assert<Equal<TypeOptimizedInputRef["_EnumKey"], "status">>,
+  Assert<Equal<TypeOptimizedInputRef["_RelationKey"], "related" | "relatedList">>,
+  Assert<Equal<TypeOptimizedInputRef["_MapKey"], "metadataMap">>,
+  Assert<Equal<TypeOptimizedInputRef["_HiddenKey"], "hiddenValue">>,
+  Assert<Equal<TypeOptimizedInputRef["_SecretKey"], "secretValue">>,
+  Assert<
+    Equal<
+      keyof (typeof TypeOptimizedExtendedInput)["_OwnSchema"],
+      "name" | "age" | "role" | "tags" | "metadata" | "password" | "extraCount"
+    >
+  >,
+];
+type _RelationMethodAssertions = [
+  Assert<Equal<RelationMethodSchema["owner"], InstanceType<typeof MethodUserLight>>>,
+  Assert<Equal<RelationMethodSchema["members"], InstanceType<typeof MethodUserLight>[]>>,
+  Assert<Equal<ReturnType<RelationMethodSchema["owner"]["hello"]>, "hello">>,
+  Assert<Equal<ReturnType<InstanceType<typeof MethodUserLight>["set"]>, InstanceType<typeof MethodUserLight>>>,
+  Assert<Equal<DocumentModel<RelationMethodSchema>["owner"], string>>,
+  Assert<Equal<DocumentModel<RelationMethodSchema>["members"], string[]>>,
+  Assert<Equal<PurifiedModel<RelationMethodSchema>["owner"], string>>,
+  Assert<Equal<Extract<NonFunctionalKeys<InstanceType<typeof MethodUserLight>>, "hello">, never>>,
+  Assert<Equal<Extract<NonFunctionalKeys<InstanceType<typeof MethodUserLight>>, "name">, "name">>,
+];
 
 const validUserId = "1234567890abcdef12345678";
 const validChildId = "abcdefabcdefabcdefabcdef";
@@ -253,12 +327,16 @@ describe("ConstantRegistry", () => {
 
 describe("serialize, deserialize, purify, and immerify", () => {
   test("normalizes numeric boolean values from persisted rows", () => {
-    expect(serialize(Boolean, 0, 1, "object", {})).toBe(true);
-    expect(serialize(Boolean, 0, 0, "object", {})).toBe(false);
-    expect(deserialize(Boolean, 0, 1, {})).toBe(true);
-    expect(deserialize(Boolean, 0, 0, {})).toBe(false);
-    expect(serialize(BooleanState, 0, { enabled: 1 }, "object", {})).toEqual({ enabled: true });
-    expect(serialize(BooleanState, 0, { enabled: 0 }, "object", {})).toEqual({ enabled: false });
+    expect(serialize(Boolean, 0, 1, "object", {}) as unknown as boolean).toBe(true);
+    expect(serialize(Boolean, 0, 0, "object", {}) as unknown as boolean).toBe(false);
+    expect(deserialize(Boolean, 0, 1, {}) as unknown as boolean).toBe(true);
+    expect(deserialize(Boolean, 0, 0, {}) as unknown as boolean).toBe(false);
+    expect(serialize(BooleanState, 0, { enabled: 1 }, "object", {}) as unknown as { enabled: boolean }).toEqual({
+      enabled: true,
+    });
+    expect(serialize(BooleanState, 0, { enabled: 0 }, "object", {}) as unknown as { enabled: boolean }).toEqual({
+      enabled: false,
+    });
     expect(() => serialize(Boolean, 0, 2, "object", {})).toThrow("Invalid Boolean value: 2");
   });
 

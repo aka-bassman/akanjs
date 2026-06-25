@@ -3,6 +3,7 @@ import { ENDPOINT_META } from "akanjs/base";
 import { applyMixins } from "akanjs/common";
 import { type Adaptor, type AdaptorCls, dangerouslyAdapt, type ServiceModel } from "akanjs/service";
 import { buildEndpoint, type EndpointBuilder, type EndpointInfo } from "./endpointInfo";
+import type { SrvRefName } from "./types";
 
 export interface Endpoint extends Adaptor {}
 
@@ -10,7 +11,7 @@ export interface EndpointCls<
   SrvModule extends ServiceModel = ServiceModel,
   EndpointInfoObj extends { [key: string]: EndpointInfo } = { [key: string]: EndpointInfo },
 > extends AdaptorCls {
-  baseName: SrvModule["srv"]["refName"];
+  baseName: SrvRefName<SrvModule>;
   srv: SrvModule;
   [ENDPOINT_META]: EndpointInfoObj;
 }

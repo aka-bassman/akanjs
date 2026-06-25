@@ -10,7 +10,7 @@ import {
   type PrimitiveScalar,
 } from "akanjs/base";
 
-import type { ConstantCls } from ".";
+import type { ConstantCls, ConstantModelRef } from ".";
 
 export type Serialized<O> = O extends (infer V)[]
   ? Serialized<V>[]
@@ -30,7 +30,7 @@ const getSerializeFn = (inputRef: Cls, { optional = false }: { optional?: boolea
 };
 const serializeInput = <Input = unknown>(
   value: Input | Input[],
-  inputRef: ConstantCls<Input> | PrimitiveScalar,
+  inputRef: ConstantModelRef<Input> | PrimitiveScalar,
   arrDepth: number,
   serializeType: "input" | "object" = "object",
   { optional = false }: { optional?: boolean } = {},
@@ -75,7 +75,7 @@ const getRelationId = (value: unknown): unknown => {
 };
 
 export const serialize = (
-  argRef: ConstantCls | PrimitiveScalar,
+  argRef: ConstantModelRef | PrimitiveScalar,
   arrDepth: number,
   value: unknown,
   serializeType: "input" | "object" = "object",

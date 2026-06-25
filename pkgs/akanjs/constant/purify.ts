@@ -16,7 +16,7 @@ import { Logger } from "akanjs/common";
 
 import {
   type BaseObject,
-  type ConstantCls,
+  type ConstantModelRef,
   ConstantRegistry,
   type DefaultOf,
   type DefaultOfSchema,
@@ -90,7 +90,7 @@ const purify = (field: FieldProps, key: string, value: unknown, self: Record<str
   if (field.isMap && field.of) {
     const purifyFn = PrimitiveRegistry.has(field.of as Cls)
       ? getPurifyFn(field.of as Cls)
-      : (value: unknown) => makePurify(field.of as ConstantCls)(value as object);
+      : (value: unknown) => makePurify(field.of as ConstantModelRef)(value as object);
     return Object.fromEntries(
       [...(value as Map<string, unknown>).entries()].map(([key, val]) => [key, applyFnToArrayObjects(val, purifyFn)]),
     );
@@ -110,7 +110,7 @@ const purify = (field: FieldProps, key: string, value: unknown, self: Record<str
   return purifyFn(value);
 };
 
-export const makePurify = <I>(modelRef: ConstantCls<I>): PurifyFunc<I> => {
+export const makePurify = <I>(modelRef: ConstantModelRef<I>): PurifyFunc<I> => {
   const fn = ((self: Record<string, unknown>, isChild?: boolean): unknown => {
     try {
       if (isChild && !ConstantRegistry.isScalar(modelRef)) {

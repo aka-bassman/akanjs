@@ -10,6 +10,10 @@ import { type Service, serve } from "./serve";
 import { ServiceModel } from "./serviceModule";
 import type { DatabaseService } from "./types";
 
+type Equal<Left, Right> =
+  (<Type>() => Type extends Left ? 1 : 2) extends <Type>() => Type extends Right ? 1 : 2 ? true : false;
+type Expect<Type extends true> = Type;
+
 const TestItemInput = via((f) => ({
   title: f(String),
   category: f(String).optional(),
@@ -65,14 +69,84 @@ const testItemDatabase = DatabaseRegistry.buildModel(
   TestItemFilter,
 );
 
+const PromoteParentInput = via((f) => ({
+  name: f(String),
+}));
+const PromoteParentObject = via(PromoteParentInput, (f) => ({}));
+const PromoteParentLight = via(PromoteParentObject, ["name"] as const, (f) => ({}));
+const PromoteParentFull = via(PromoteParentObject, PromoteParentLight, (f) => ({}));
+const PromoteParentInsight = via(PromoteParentFull, (f) => ({}));
+const promoteParentConstant = ConstantRegistry.buildModel(
+  "serviceTestPromoteParent",
+  PromoteParentInput,
+  PromoteParentObject,
+  PromoteParentFull,
+  PromoteParentLight,
+  PromoteParentInsight,
+  { PromoteParentInput, PromoteParentObject, PromoteParentFull, PromoteParentLight, PromoteParentInsight },
+);
+class PromoteParentFilter extends from(PromoteParentFull, () => ({ query: {}, sort: {} })) {}
+class PromoteParentDoc extends by(PromoteParentFull) {}
+class PromoteParentModel extends into(PromoteParentDoc, PromoteParentFilter, promoteParentConstant, () => ({})) {}
+const promoteParentDatabase = DatabaseRegistry.buildModel(
+  "serviceTestPromoteParent",
+  PromoteParentInput as unknown as DatabaseCls<InstanceType<typeof PromoteParentInput>>,
+  PromoteParentDoc,
+  PromoteParentModel,
+  PromoteParentObject,
+  PromoteParentInsight,
+  PromoteParentFilter,
+);
+
+const PromoteChildInput = via((f) => ({
+  name: f(String),
+  extra: f(String).optional(),
+}));
+const PromoteChildObject = via(PromoteChildInput, (f) => ({}));
+const PromoteChildLight = via(PromoteChildObject, ["name", "extra"] as const, (f) => ({}));
+const PromoteChildFull = via(PromoteChildObject, PromoteChildLight, (f) => ({}));
+const PromoteChildInsight = via(PromoteChildFull, (f) => ({}));
+const promoteChildConstant = ConstantRegistry.buildModel(
+  "serviceTestPromoteChild",
+  PromoteChildInput,
+  PromoteChildObject,
+  PromoteChildFull,
+  PromoteChildLight,
+  PromoteChildInsight,
+  { PromoteChildInput, PromoteChildObject, PromoteChildFull, PromoteChildLight, PromoteChildInsight },
+);
+class PromoteChildFilter extends from(PromoteChildFull, () => ({ query: {}, sort: {} })) {}
+class PromoteChildDoc extends by(PromoteChildFull) {}
+class PromoteChildModel extends into(PromoteChildDoc, PromoteChildFilter, promoteChildConstant, () => ({})) {}
+const promoteChildDatabase = DatabaseRegistry.buildModel(
+  "serviceTestPromoteChild",
+  PromoteChildInput as unknown as DatabaseCls<InstanceType<typeof PromoteChildInput>>,
+  PromoteChildDoc,
+  PromoteChildModel,
+  PromoteChildObject,
+  PromoteChildInsight,
+  PromoteChildFilter,
+);
+
+class PromoteParentService extends serve(promoteParentDatabase, () => ({})) {
+  async getPromotedParentDoc() {
+    return await this.getServiceTestPromoteParent("parent");
+  }
+  async listPromotedParentDocs() {
+    return [await this.getServiceTestPromoteParent("parent")];
+  }
+}
+class PromoteChildService extends serve(promoteChildDatabase, () => ({}), PromoteParentService) {}
+type _PromotedLibServiceReturnAssertions = [
+  Expect<Equal<Awaited<ReturnType<PromoteChildService["getPromotedParentDoc"]>>, PromoteChildDoc>>,
+  Expect<Equal<Awaited<ReturnType<PromoteChildService["listPromotedParentDocs"]>>, PromoteChildDoc[]>>,
+];
+
 type TestDoc = { id: string; title: string; category?: string | null; score?: number; note?: string | null };
 type CallRecord = { method: string; args: unknown[] };
 type TestItemDocInstance = InstanceType<typeof TestItemDoc>;
 type TestItemDataInput = Parameters<DatabaseService["__libsPreCreate"]>[0];
 type TestHookServiceCls = { prototype: object };
-type Equal<Left, Right> =
-  (<Type>() => Type extends Left ? 1 : 2) extends <Type>() => Type extends Right ? 1 : 2 ? true : false;
-type Expect<Type extends true> = Type;
 
 const makeFakeDatabaseModel = () => {
   const calls: CallRecord[] = [];
