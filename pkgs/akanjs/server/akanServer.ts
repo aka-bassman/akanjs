@@ -10,6 +10,8 @@ import type {
   SolidConfig,
 } from "akanjs/service";
 import type { ServerSignal, ServerSignalCls, WebsocketPublishData } from "akanjs/signal";
+import { createOpenApiDocument } from "../signal/openapi";
+import { FetchSerializer } from "../signal/serializer";
 import type { AkanLib, AkanLibProps } from "./akanLib";
 import type { BuilderRpc } from "./artifact";
 import { DiLifecycle } from "./di/diLifecycle";
@@ -26,12 +28,18 @@ export interface AkanServerProps extends AkanLibProps {
   env?: BaseEnv;
   prefix?: string;
   websocketPrefix?: string;
+  openapi?: boolean;
+}
+
+export interface AkanServerOptions {
+  openapi?: boolean;
 }
 
 interface AkanAppPrepared {
   routes: SignalRoutes["routes"];
   routeOptions: SignalRoutes["routeOptions"];
   wsRoutes: WebsocketRoutes;
+  builtinRoutes: HttpRoutes;
   renderEnvRoutes: HttpRoutes;
   hmrHub: HmrWsHub | null;
   builderRpc: BuilderRpc | null;
@@ -65,6 +73,7 @@ export class AkanServer {
   readonly env: BaseEnv & { database?: DatabaseConfig; solid?: SolidConfig };
   prefix = "/api";
   websocketPrefix = "/ws";
+  openapi = AkanServer.#isOpenApiEnvEnabled();
   serverMode: "federation" | "batch" | "all";
   shutdownTimeoutMs = 30_000;
 
@@ -79,12 +88,14 @@ export class AkanServer {
       | "batch"
       | "all"
       | undefined) ?? "all",
-    ...libs: AkanLib[]
+    ...libsOrOptions: (AkanLib | AkanServerOptions)[]
   ) {
+    const { libs, options } = AkanServer.#splitLibsAndOptions(libsOrOptions);
     this.name = name;
     this.logger = new Logger(name);
     this.libs = libs;
     this.env = { ...env };
+    this.openapi = options?.openapi ?? this.openapi;
     this.serverMode = serverMode;
     this.#di = new DiLifecycle(this.env, serverMode, ...libs);
   }
@@ -94,6 +105,11 @@ export class AkanServer {
   }
   setWebsocketPrefix(websocketPrefix: string) {
     this.websocketPrefix = websocketPrefix;
+    return this;
+  }
+  setOpenApi(openapi = true) {
+    if (this.status !== "stopped") throw new Error("OpenAPI config must be set before app initialization.");
+    this.openapi = openapi;
     return this;
   }
   setDatabaseConfig(database: DatabaseConfig) {
@@ -171,6 +187,7 @@ export class AkanServer {
         routes,
         routeOptions,
         wsRoutes,
+        builtinRoutes: this.#createBuiltinRoutes(),
         renderEnvRoutes: {},
         hmrHub: null,
         builderRpc: null,
@@ -186,7 +203,17 @@ export class AkanServer {
     });
     const { renderEnvRoutes, hmrHub, builderRpc } = await webRouter.initializeRoute();
     const webProxyRunner = WebProxyRunner.create(this.#di.webProxies);
-    this.#prepared = { routes, routeOptions, wsRoutes, renderEnvRoutes, hmrHub, builderRpc, webRouter, webProxyRunner };
+    this.#prepared = {
+      routes,
+      routeOptions,
+      wsRoutes,
+      builtinRoutes: this.#createBuiltinRoutes(),
+      renderEnvRoutes,
+      hmrHub,
+      builderRpc,
+      webRouter,
+      webProxyRunner,
+    };
     this.status = "initialized";
     return this;
   }
@@ -201,7 +228,8 @@ export class AkanServer {
       : Number(process.env.AKAN_CHILD_WS_PORT || process.env.PORT || 8282);
     const unix = process.env.AKAN_CHILD_SOCKET || undefined;
     this.logger.verbose(`${this.name} is serving on ${unix ? `unix://${unix}` : `port ${port}`}`);
-    const { routes, routeOptions, wsRoutes, renderEnvRoutes, hmrHub, webRouter, webProxyRunner } = this.#prepared;
+    const { routes, routeOptions, wsRoutes, builtinRoutes, renderEnvRoutes, hmrHub, webRouter, webProxyRunner } =
+      this.#prepared;
     const websocketHandlers = {
       ...ApiRouter.buildWebsocketHandlers({
         wsRoutes,
@@ -221,6 +249,7 @@ export class AkanServer {
         prefix: this.prefix,
         websocketPrefix: this.websocketPrefix,
         routes,
+        builtinRoutes,
         routeOptions,
         renderEnvRoutes,
         upgradeAppWs: (req, data) => this.#server?.upgrade(req, { data }) ?? false,
@@ -237,6 +266,7 @@ export class AkanServer {
           prefix: this.prefix,
           websocketPrefix: this.websocketPrefix,
           routes,
+          builtinRoutes,
           routeOptions,
           renderEnvRoutes,
           upgradeAppWs: (req, data) => this.#wsServer?.upgrade(req, { data }) ?? false,
@@ -388,6 +418,47 @@ export class AkanServer {
     throw new Error(
       `${target} is not initialized while AkanServer status is "${this.status}". ` +
         "Call server.start() or server.init() first.",
+    );
+  }
+
+  #createBuiltinRoutes(): HttpRoutes {
+    if (!this.openapi) return {};
+    return {
+      "/openapi.json": {
+        GET: () =>
+          Response.json(
+            createOpenApiDocument(FetchSerializer.serializeRegistry(this.#di.live).signal, {
+              title: `${this.env.appName} API`,
+              version: "0.0.0",
+              servers: this.#getOpenApiServers(),
+            }),
+          ),
+      },
+    };
+  }
+
+  #getOpenApiServers() {
+    const serverHttpUri = (this.env as { serverHttpUri?: string }).serverHttpUri;
+    if (!serverHttpUri) return undefined;
+    return [{ url: serverHttpUri.replace(/\/api\/?$/, "") }];
+  }
+
+  static #splitLibsAndOptions(libsOrOptions: (AkanLib | AkanServerOptions)[]) {
+    const last = libsOrOptions.at(-1);
+    const options = AkanServer.#isServerOptions(last) ? last : undefined;
+    const libs = (options ? libsOrOptions.slice(0, -1) : libsOrOptions) as AkanLib[];
+    return { libs, options };
+  }
+
+  static #isServerOptions(value: AkanLib | AkanServerOptions | undefined): value is AkanServerOptions {
+    return Boolean(
+      value && !("database" in value) && !("service" in value) && !("scalar" in value) && "openapi" in value,
+    );
+  }
+
+  static #isOpenApiEnvEnabled() {
+    return [process.env.AKAN_OPENAPI, process.env.AKAN_PUBLIC_OPENAPI].some(
+      (value) => value === "true" || value === "1",
     );
   }
 

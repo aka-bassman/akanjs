@@ -46,6 +46,7 @@ export interface AkanAppOptions {
   runtimeDir?: string;
   port?: number;
   wsBasePort?: number;
+  openapi?: boolean;
 }
 
 interface AkanReplicaConfig {
@@ -70,6 +71,7 @@ export class AkanApp {
   readonly #socketRunId = `${process.pid}-${Date.now().toString(36)}`;
   readonly #port: number;
   readonly #wsBasePort: number;
+  readonly #openapi?: boolean;
   readonly #children = new Map<number, ChildState>();
   readonly #roomChildren = new Map<string, Set<number>>();
   readonly #childRooms = new Map<number, Set<string>>();
@@ -97,15 +99,17 @@ export class AkanApp {
   #stopping = false;
 
   constructor(serverPath = "./server", options: AkanAppOptions = {}) {
-    this.#serverPath = AkanApp.#resolveServerPath(options.serverPath ?? serverPath);
+    const resolvedOptions = options;
+    this.#serverPath = AkanApp.#resolveServerPath(resolvedOptions.serverPath ?? serverPath);
     this.#artifactDir = path.resolve(path.dirname(this.#serverPath), ".akan", "artifact");
-    this.#replica = AkanApp.#parseReplicaConfig(options.replica);
+    this.#replica = AkanApp.#parseReplicaConfig(resolvedOptions.replica);
     this.#runtimeDir =
-      (options.runtimeDir ?? process.env.AKAN_RUNTIME_DIR ?? process.env.NODE_ENV === "production")
+      (resolvedOptions.runtimeDir ?? process.env.AKAN_RUNTIME_DIR ?? process.env.NODE_ENV === "production")
         ? path.resolve(process.cwd(), "runtime")
         : path.resolve(process.cwd(), "local", "apps", process.env.AKAN_PUBLIC_APP_NAME ?? "unknown", "runtime");
-    this.#port = Number(options.port ?? process.env.PORT ?? 8282);
-    this.#wsBasePort = Number(options.wsBasePort ?? process.env.AKAN_WS_BASE_PORT ?? this.#port + 10_000);
+    this.#port = Number(resolvedOptions.port ?? process.env.PORT ?? 8282);
+    this.#wsBasePort = Number(resolvedOptions.wsBasePort ?? process.env.AKAN_WS_BASE_PORT ?? this.#port + 10_000);
+    this.#openapi = resolvedOptions.openapi;
   }
 
   static #resolveServerPath(serverPath: string) {
@@ -225,6 +229,7 @@ export class AkanApp {
         SERVER_MODE: role,
         AKAN_CHILD_SOCKET: upstream.http.socketPath,
         AKAN_CHILD_WS_PORT: upstream.ws ? String(upstream.ws.port) : "",
+        ...(this.#openapi === undefined ? {} : { AKAN_OPENAPI: this.#openapi ? "true" : "false" }),
       },
       ipc: (message) => this.#handleMessage(idx, message as AkanIpcMessage, proc),
       stdout: "pipe",
@@ -780,6 +785,7 @@ export class AkanApp {
       case "invalidate":
       case "css-updated":
       case "pages-updated":
+      case "build-status":
         this.#fanoutToFederation(message);
         return;
       case "build-route-res":
