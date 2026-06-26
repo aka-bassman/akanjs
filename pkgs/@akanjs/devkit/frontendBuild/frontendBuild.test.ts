@@ -338,6 +338,25 @@ describe("DevChangePlanner", () => {
       planner.plan({ generation: 2, files: [`${root}/apps/akan/akan.config.ts`], kinds: ["config"] }).actions,
     ).toEqual(["restart-dev-host"]);
   });
+
+  test("recycles builder for macro-backed dictionary and signal metadata changes", () => {
+    const root = "/repo";
+    const planner = new DevChangePlanner({ workspaceRoot: root });
+    const dictionaryPlan = planner.plan({
+      generation: 3,
+      files: [`${root}/apps/demo/lib/_demo/demo.dictionary.ts`],
+      kinds: ["code"],
+    });
+    const signalPlan = planner.plan({
+      generation: 4,
+      files: [`${root}/libs/shared/lib/admin/admin.signal.ts`],
+      kinds: ["code"],
+    });
+
+    expect(dictionaryPlan.actions).toEqual(["rebuild-client", "restart-backend", "restart-builder"]);
+    expect(dictionaryPlan.reasonByFile[`${root}/apps/demo/lib/_demo/demo.dictionary.ts`]).toContain("runtime-metadata");
+    expect(signalPlan.actions).toContain("restart-builder");
+  });
 });
 
 describe("CssImportResolver", () => {

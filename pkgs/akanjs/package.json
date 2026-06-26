@@ -1,6 +1,6 @@
 {
   "name": "akanjs",
-  "version": "2.3.5",
+  "version": "2.3.6-rc.2",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -141,7 +141,7 @@
     "chance": "^1.1.13",
     "cordova-plugin-purchase": "^13.16.0",
     "croner": "^10.0.1",
-    "daisyui": "^5.5.20",
+    "daisyui": "5.5.23",
     "ioredis": "^5.10.1",
     "mermaid": "^11.15.0",
     "postgres": "^3.4.9",

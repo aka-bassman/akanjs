@@ -20,6 +20,7 @@ export type DevChangeRole = "server" | "client" | "shared" | "barrel" | "config"
 
 export type DevChangeAction =
   | "restart-backend"
+  | "restart-builder"
   | "rebuild-client"
   | "rebuild-css"
   | "sync-generated"

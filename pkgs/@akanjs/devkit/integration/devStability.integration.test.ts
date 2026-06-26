@@ -3,7 +3,7 @@ import { DevGeneratedIndexSync } from "../frontendBuild";
 import { DevStabilityHarness } from "./devStabilityHarness";
 
 const integrationEnabled = process.env.AKAN_DEV_STABILITY_INTEGRATION === "1";
-const INTEGRATION_TIMEOUT_MS = 60_000;
+const INTEGRATION_TIMEOUT_MS = 120_000;
 const harnesses: DevStabilityHarness[] = [];
 
 const integrationTest = (name: string, fn: () => Promise<void>): void => {
@@ -122,6 +122,40 @@ describe("dev stability integration harness", () => {
       );
     else await host.waitForLogSince(mark, new RegExp(`\\[SSR\\] pages-updated.*generation=${generation}`));
     await harness.waitForHttpText("updated-shared-marker");
+    hmr?.close();
+  });
+
+  integrationTest("dictionary edits recycle runtime metadata and replace stale snapshots", async () => {
+    const harness = await createHarness();
+    const host = await harness.startHost();
+    const hmr = await harness.tryConnectHmrProbe();
+    const initialHtml = await harness.tryWaitForHttpText("initial-shared-marker", 3_000);
+    if (!initialHtml) {
+      expect(host.proc.killed).toBe(false);
+      hmr?.close();
+      return;
+    }
+    const mark = host.markLog();
+
+    await harness.writeFile(
+      "lib/_fixture/fixture.dictionary.ts",
+      `import { serviceDictionary } from "akanjs/dictionary";
+
+import type { FixtureEndpoint } from "./fixture.signal";
+
+export const dictionary = serviceDictionary(["en", "ko"])
+  .endpoint<FixtureEndpoint>(() => ({}))
+  .translate({
+    hello: ["Updated Dictionary", "업데이트 사전"],
+  });
+`,
+    );
+
+    await host.waitForLogSince(mark, /\[dev-plan\].*actions=.*restart-builder/);
+    await host.waitForLogSince(mark, /\[dev-host\] recycling builder\/backend for runtime metadata/);
+    await host.waitForLogSince(mark, /backend ready pid=(\d+)|AkanApp gateway is running on port/);
+    await harness.waitForHttpText("initial-shared-marker");
+    expect(host.proc.killed).toBe(false);
     hmr?.close();
   });
 

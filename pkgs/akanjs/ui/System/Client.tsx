@@ -63,12 +63,12 @@ export const ClientWrapper = ({
   signals = [],
   reconnect = true,
 }: ClientWrapperProps) => {
-  // Seed the active locale into the shared Translator before children render.
+  // Replace the active locale snapshot before children render.
   // SSR provides the active-locale dictionary as a prop (serialized via the RSC Flight payload);
   // this runs in both the SSR render process and the browser, so the first paint is translated
   // without shipping every locale in the client JS bundle. CSR seeds via the build-time macro instead.
   if (dictionary) {
-    Translator.seed(lang, dictionary);
+    Translator.replace(lang, dictionary);
     // On the browser, record the server-resolved locale as the source of truth for usePage()/l().
     // This keeps client lookups aligned with the seeded + server-rendered locale (no hydration
     // mismatch) for base-path / cloud routing where the URL segment is not a reliable locale.

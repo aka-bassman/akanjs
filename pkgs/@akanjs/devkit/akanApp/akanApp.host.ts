@@ -31,8 +31,12 @@ export const shouldRestartBackendByDevPlan = (
 ): boolean | null => {
   if (!message.devPlan) return null;
   if (message.devPlan.actions.includes("report-error")) return false;
+  if (message.devPlan.actions.includes("restart-builder")) return false;
   return message.devPlan.actions.includes("restart-backend");
 };
+
+export const shouldRestartBuilderByDevPlan = (message: Extract<BuilderMessage, { type: "invalidate" }>): boolean =>
+  message.devPlan?.actions.includes("restart-builder") ?? false;
 
 export const shouldRestartDevHostByDevPlan = (message: Extract<BuilderMessage, { type: "invalidate" }>): boolean =>
   message.devPlan?.actions.includes("restart-dev-host") ?? message.kinds.includes("config");
@@ -508,6 +512,14 @@ export class AkanAppHost {
     this.#sendToBackend(message);
   }
   async #handleInvalidate(message: Extract<BuilderMessage, { type: "invalidate" }>) {
+    if (shouldRestartBuilderByDevPlan(message)) {
+      try {
+        await this.#restartDevChildren(message);
+      } catch (err) {
+        this.#recordDevHostRestartFailure(message, err);
+      }
+      return;
+    }
     if (shouldRestartDevHostByDevPlan(message)) {
       this.#recordDevHostRestartRequired(message);
       return;
@@ -517,6 +529,29 @@ export class AkanAppHost {
       return;
     }
     this.#sendToBackend(message);
+  }
+  async #restartDevChildren(message: Extract<BuilderMessage, { type: "invalidate" }>): Promise<void> {
+    const generation = message.devPlan?.generation ?? message.generation;
+    this.logger.warn(
+      `[dev-host] recycling builder/backend for runtime metadata generation=${generation ?? "(unknown)"} files=${message.files.length}`,
+    );
+    if (this.#restartTimer) {
+      clearTimeout(this.#restartTimer);
+      this.#restartTimer = null;
+    }
+    if (this.#backendRecoveryTimer) {
+      clearTimeout(this.#backendRecoveryTimer);
+      this.#backendRecoveryTimer = null;
+    }
+    this.#pendingRestartReason = null;
+    this.#lastGoodFrontend = {};
+    this.#buildStatusByPhase.clear();
+    this.#pendingBuildStatusReplay = [];
+    await this.#stopBackend();
+    this.#stopBuilder();
+    await this.#backendGraph.refresh();
+    await this.#startBuilder();
+    this.#startBackend({ generation, files: message.files });
   }
   #recordLastGood(
     message: Extract<BuilderMessage, { type: "pages-updated" }> | Extract<BuilderMessage, { type: "css-updated" }>,
@@ -552,6 +587,20 @@ export class AkanAppHost {
       this.#recordBuildStatus(status);
       this.#sendOrQueueBuildStatus(status);
     }
+  }
+  #recordDevHostRestartFailure(message: Extract<BuilderMessage, { type: "invalidate" }>, err: unknown): void {
+    const generation = message.devPlan?.generation ?? message.generation ?? this.#nextBackendBuildStatusGeneration();
+    const detail = err instanceof Error ? err.message : String(err);
+    this.logger.warn(`[dev-host] runtime metadata restart failed generation=${generation}: ${detail}`);
+    const status: DevBuildStatus = {
+      generation,
+      phase: "scan",
+      ok: false,
+      files: message.files,
+      message: `Runtime metadata change requires restarting \`akan start\` to apply: ${detail}`,
+    };
+    this.#recordBuildStatus(status);
+    this.#sendOrQueueBuildStatus(status);
   }
   #recordBuildStatus(status: DevBuildStatus): void {
     const recovered = shouldMarkBuildPhaseRecovered(this.#buildStatusByPhase, status);

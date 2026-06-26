@@ -53,10 +53,9 @@ const SSRProvider = ({
   // which is only populated when the matched route pattern contains `:lang` and can otherwise diverge.
   const { lang: activeLocale, path: activePath } = usePage();
 
-  // Server (RSC worker) renders server components: seed every locale into the shared Translator. This is
-  // free on the server (it never reaches the browser bundle) and makes server-component translations
-  // resolve no matter how the locale is routed.
-  if (allDictionary) for (const [lng, dict] of Object.entries(allDictionary)) Translator.seed(lng, dict);
+  // Server (RSC worker) renders server components: replace every locale with the latest snapshot. This is
+  // free on the server (it never reaches the browser bundle) and avoids stale keys after dictionary edits.
+  if (allDictionary) for (const [lng, dict] of Object.entries(allDictionary)) Translator.replace(lng, dict);
 
   // Only the active locale is serialized to the client (Flight payload) to keep the browser bundle lean.
   const activeDictionary = allDictionary?.[activeLocale] ?? dictionary;

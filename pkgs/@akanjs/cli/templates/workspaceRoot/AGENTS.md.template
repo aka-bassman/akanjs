@@ -47,23 +47,26 @@ Use the local module shape before adding a new abstraction.
 - `<model>.signal.ts` defines typed endpoint contracts.
 - `<model>.document.ts` owns persistence and document queries.
 - `<model>.service.ts` owns business logic.
-- `<model>.store.ts` owns domain state and actions.
-- `<Model>.Template.tsx` owns form-oriented UI. Client components, with 'use client'.
+- `<model>.store.ts` owns reusable workflow state and actions that span loading, selections, messages, or multi-step client actions. Consume stores through generated `st.use.*` state and `st.do.*` actions.
+- `<Model>.Template.tsx` owns form-oriented UI, including local form inputs and submit/import interactions. Client components, with 'use client'.
 - `<Model>.Unit.tsx` owns list/item UI. Server components, no 'use client'.
 - `<Model>.View.tsx` owns detail UI. Server components, no 'use client'.
-- `<Model>.Zone.tsx` owns page/container integration. Client components, with 'use client'.
-- `<model>.Util.tsx` owns small module UI helpers. Client components, with 'use client'.
+- `<Model>.Zone.tsx` owns page/container integration and interactive loading or action flows that need client state. Client components, with 'use client'.
+- `<model>.Util.tsx` owns small module UI helpers, including buttons, import actions, and client-side navigation such as `router.push`. Client components, with 'use client'.
 
 ## Agent Workflow
 
 1. Read the nearby module and convention before creating files. If `*.abstract.md` exists, read it first.
 2. Put new files in the established Akan location instead of adding parallel architecture.
 3. Prefer CLI generation commands for new apps, libraries, modules, scalars, pages, and generated references.
-4. Keep server-only logic out of client surfaces and client-only code out of server imports.
-5. Treat `AKAN_PUBLIC_*` env vars as public. Never put secrets in them.
-6. Add or update tests when behavior, contracts, or CLI output changes.
-7. Update `*.abstract.md` when business invariants, workflows, or public behavior change.
-8. Run the smallest relevant verification command after changes.
+4. Keep page and layout files server-oriented: route-level `usePage`, headers, static layout, and `akanjs/ui` `Tab` composition belong there.
+5. Put interactive loading, submit/import actions, local form state, and `router.push` in client `Util`, `Template`, or `Zone` components.
+6. Prefer `Tab` for static mode selection instead of extra `useState`; render one focused client component inside each `Tab.Panel`.
+7. Keep server-only logic out of client surfaces and client-only code out of server imports.
+8. Treat `AKAN_PUBLIC_*` env vars as public. Never put secrets in them.
+9. Add or update tests when behavior, contracts, or CLI output changes.
+10. Update `*.abstract.md` when business invariants, workflows, or public behavior change.
+11. Run the smallest relevant verification command after changes.
 
 ## Common Commands
 

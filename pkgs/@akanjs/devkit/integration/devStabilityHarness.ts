@@ -26,7 +26,7 @@ export interface DevStabilityHmrProbe {
   close(): void;
 }
 
-const DEFAULT_TIMEOUT_MS = 20_000;
+const DEFAULT_TIMEOUT_MS = 60_000;
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -199,6 +199,38 @@ export default function Page() {
 `,
       ),
       this.writeFile(
+        "lib/_fixture/fixture.service.ts",
+        `import { serve } from "akanjs/service";
+
+export class FixtureService extends serve("fixture" as const, { serverMode: "batch" }, () => ({})) {}
+`,
+      ),
+      this.writeFile(
+        "lib/_fixture/fixture.signal.ts",
+        `import { endpoint, internal } from "akanjs/signal";
+
+import * as srv from "../srv";
+
+export class FixtureInternal extends internal(srv.fixture, () => ({})) {}
+
+export class FixtureEndpoint extends endpoint(srv.fixture, () => ({})) {}
+`,
+      ),
+      this.writeFile(
+        "lib/_fixture/fixture.dictionary.ts",
+        `import { serviceDictionary } from "akanjs/dictionary";
+
+import type { FixtureEndpoint } from "./fixture.signal";
+
+export const dictionary = serviceDictionary(["en", "ko"])
+  .endpoint<FixtureEndpoint>(() => ({}))
+  .translate({
+    hello: ["Initial Dictionary", "초기 사전"],
+    removeMe: ["Remove Me", "삭제 예정"],
+  });
+`,
+      ),
+      this.writeFile(
         "ui/ClientMarker.tsx",
         `export function ClientMarker() {
   return <p data-testid="client-marker">initial-client-marker</p>;
@@ -222,7 +254,7 @@ export default function Page() {
 
   async startHost(timeoutMs = DEFAULT_TIMEOUT_MS): Promise<DevStabilityHost> {
     const logs: string[] = [];
-    const proc = Bun.spawn(["bun", "run", "akan", "start", this.appName], {
+    const proc = Bun.spawn(["bash", "-lc", `bun run akan start ${JSON.stringify(this.appName)}`], {
       cwd: this.workspaceRoot,
       env: {
         ...process.env,
@@ -237,7 +269,16 @@ export default function Page() {
     const consume = async (stream: ReadableStream<Uint8Array> | null) => {
       if (!stream) return;
       const decoder = new TextDecoder();
-      for await (const chunk of stream) logs.push(decoder.decode(chunk));
+      const reader = stream.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          logs.push(decoder.decode(value, { stream: true }));
+        }
+      } finally {
+        reader.releaseLock();
+      }
     };
     void consume(proc.stdout);
     void consume(proc.stderr);

@@ -50,6 +50,7 @@ export class DevChangePlanner {
       const reasons = new Set<string>();
       const fileRoles = this.#rolesForFile(file, { isGenerated: generatedSet.has(path.resolve(file)), reasons });
       for (const role of fileRoles) roles.add(role);
+      if (reasons.has("runtime-metadata")) actions.add("restart-builder");
       if (reasons.size > 0) reasonByFile[path.resolve(file)] = [...reasons].sort();
     }
 
@@ -104,6 +105,9 @@ export class DevChangePlanner {
       roles.add("shared");
       reasons.add("shared-path");
     }
+    if (isSource && this.#isRuntimeMetadataFile(parts, base)) {
+      reasons.add("runtime-metadata");
+    }
 
     if (roles.has("server") && roles.has("client")) {
       roles.delete("server");
@@ -146,6 +150,14 @@ export class DevChangePlanner {
       SHARED_SUFFIXES.some((suffix) => base.endsWith(suffix)) ||
       RUNTIME_METADATA_BASENAMES.has(base)
     );
+  }
+
+  #isRuntimeMetadataFile(parts: string[], base: string): boolean {
+    const parent = parts.at(-2);
+    if (parent === "lib" && RUNTIME_METADATA_BASENAMES.has(base)) return true;
+    const libIndex = parts.lastIndexOf("lib");
+    if (libIndex < 0 || parts.length <= libIndex + 1) return false;
+    return base.endsWith(".dictionary.ts") || base.endsWith(".signal.ts");
   }
 
   #isBarrelFacetChild(parts: string[]): boolean {

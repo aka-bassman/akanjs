@@ -169,6 +169,25 @@ describe("Translator", () => {
     });
   });
 
+  test("replaces a full SSR dictionary snapshot after an earlier merge seed", async () => {
+    const translator = new Translator({});
+    Translator.seed("en", {
+      fixture: {
+        hello: { t: "Initial Dictionary" },
+        removeMe: { t: "Remove Me" },
+      },
+    });
+
+    Translator.replace("en", {
+      fixture: {
+        hello: { t: "Updated Dictionary" },
+      },
+    });
+
+    expect(translator.translate("en", "fixture.hello")).toBe("Updated Dictionary");
+    expect(translator.translate("en", "fixture.removeMe")).toBe("fixture.removeMe");
+  });
+
   test("skips repeated replace calls for the same dictionary snapshot", async () => {
     const translator = new Translator({});
     const snapshot = {

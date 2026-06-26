@@ -10,6 +10,7 @@ import {
   shouldQueueBuildStatusReplay,
   shouldReplaceLastGoodMessage,
   shouldRestartBackendByDevPlan,
+  shouldRestartBuilderByDevPlan,
   shouldRestartDevHostByDevPlan,
 } from "./akanApp.host";
 
@@ -37,6 +38,10 @@ describe("shouldRestartBackendByDevPlan", () => {
     expect(shouldRestartBackendByDevPlan(invalidateWithActions(["restart-backend", "report-error"]))).toBe(false);
   });
 
+  test("does not use backend-only restart when builder recycle is required", () => {
+    expect(shouldRestartBackendByDevPlan(invalidateWithActions(["restart-backend", "restart-builder"]))).toBe(false);
+  });
+
   test("falls back when no devPlan is present", () => {
     expect(
       shouldRestartBackendByDevPlan({
@@ -49,6 +54,10 @@ describe("shouldRestartBackendByDevPlan", () => {
 });
 
 describe("shouldRestartDevHostByDevPlan", () => {
+  test("detects explicit restart-builder actions", () => {
+    expect(shouldRestartBuilderByDevPlan(invalidateWithActions(["restart-builder"]))).toBe(true);
+  });
+
   test("detects explicit restart-dev-host actions", () => {
     expect(shouldRestartDevHostByDevPlan(invalidateWithActions(["restart-dev-host"]))).toBe(true);
   });
