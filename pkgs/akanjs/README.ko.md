@@ -1,6 +1,6 @@
 # Akan.js
 
-[English](https://unpkg.com/akanjs@latest/README.md) | [Docs](https://akanjs.com/docs) | [npm](https://www.npmjs.com/package/akanjs)
+[English](./README.md) | [Docs](https://akanjs.com/docs) | [npm](https://www.npmjs.com/package/akanjs)
 
 **한 줄의 비즈니스 코드로 웹·iOS·Android·서버·DB를 한 번에.**  
 **One line of business code ships web, iOS, Android, server, and database together.**
