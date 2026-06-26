@@ -11,6 +11,9 @@
 //   { type: "css-update", cssAssets }    → atomic current-subroute <link> swap, no reload
 //   { type: "sync-navigation", href }    → dev-only cross-client navigation sync
 //   { type: "error", message }           → forwarded build error, console only
+//   { type: "build-status", status }     → build error/recovery overlay
+//   { type: "ok", generation }           → legacy build recovery
+//   { type: "error", message }           → legacy forwarded build error
 //
 // The server-rendered HTML tags the "active" stylesheet with
 // data-akan-css="active" (see rscWorker.tsx) so swapCss can remove the stale
@@ -38,11 +41,13 @@ export const HMR_CLIENT_SCRIPT = `(function(){
   var refreshQueue = Promise.resolve();
   var overlayEl = null;
   var overlayLabelEl = null;
+  var overlayDetailEl = null;
   var overlayStyleEl = null;
   var overlayTimer = null;
   var overlayHideTimer = null;
   var overlayNextToken = 1;
   var overlayJobs = {};
+  var buildErrorStates = {};
   self.__AKAN_HMR_PHASE__ = null;
   self.__AKAN_DEV_SYNC_NAVIGATION__ = function(href, kind){
     if (self.__AKAN_DEV_SYNC_NAVIGATION_APPLYING__ || !syncNavigationEnabled || !socket || socket.readyState !== WebSocket.OPEN) return;
@@ -118,6 +123,20 @@ export const HMR_CLIENT_SCRIPT = `(function(){
         return;
       }
       if (msg.type === "error") { console.error("[akan-hmr]", msg.message); return; }
+      if (msg.type === "build-status") { handleBuildStatus(msg); return; }
+      if (msg.type === "ok") {
+        clearBuildErrorOverlay({
+          phase: "build",
+          generation: typeof msg.generation === "number" ? msg.generation : Number.MAX_SAFE_INTEGER,
+          files: 0
+        });
+        return;
+      }
+      if (msg.type === "error") {
+        console.error("[akan-hmr]", msg.message);
+        showBuildErrorOverlay({ phase: "build", generation: 0, message: msg.message, files: 0 });
+        return;
+      }
     });
     socket.addEventListener("close", function(){ socket = null; schedule(); });
     socket.addEventListener("error", function(){ try { socket && socket.close(); } catch(e){} });
@@ -135,18 +154,25 @@ export const HMR_CLIENT_SCRIPT = `(function(){
       overlayStyleEl = document.createElement("style");
       overlayStyleEl.textContent =
         "@keyframes akan-hmr-spin{to{transform:rotate(360deg)}}" +
-        ".__akan_hmr_overlay{position:fixed;left:16px;bottom:16px;z-index:2147483647;display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:999px;background:rgba(17,24,39,.94);color:#fff;font:500 13px/1.2 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;box-shadow:0 10px 28px rgba(0,0,0,.28);pointer-events:none;opacity:0;transform:translateY(6px);transition:opacity .15s ease,transform .15s ease;backdrop-filter:blur(8px)}" +
+        ".__akan_hmr_overlay{position:fixed;left:16px;bottom:16px;z-index:2147483647;display:flex;align-items:flex-start;gap:9px;max-width:min(420px,calc(100vw - 32px));padding:10px 12px;border-radius:16px;background:rgba(17,24,39,.94);color:#fff;font:500 13px/1.25 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;box-shadow:0 10px 28px rgba(0,0,0,.28);pointer-events:none;opacity:0;transform:translateY(6px);transition:opacity .15s ease,transform .15s ease;backdrop-filter:blur(8px)}" +
         ".__akan_hmr_overlay[data-show=true]{opacity:1;transform:translateY(0)}" +
-        ".__akan_hmr_spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.32);border-top-color:#fff;border-radius:999px;animation:akan-hmr-spin .75s linear infinite;flex:none}" +
+        ".__akan_hmr_overlay[data-status=error]{background:rgba(127,29,29,.96);border:1px solid rgba(252,165,165,.55)}" +
+        ".__akan_hmr_overlay[data-status=ok]{background:rgba(6,95,70,.94);border:1px solid rgba(110,231,183,.45)}" +
+        ".__akan_hmr_spinner{width:14px;height:14px;margin-top:1px;border:2px solid rgba(255,255,255,.32);border-top-color:#fff;border-radius:999px;animation:akan-hmr-spin .75s linear infinite;flex:none}" +
+        ".__akan_hmr_overlay[data-status=error] .__akan_hmr_spinner,.__akan_hmr_overlay[data-status=ok] .__akan_hmr_spinner{animation:none;border-color:rgba(255,255,255,.72);border-top-color:rgba(255,255,255,.72)}" +
+        ".__akan_hmr_body{display:flex;flex-direction:column;gap:3px;min-width:0}" +
+        ".__akan_hmr_detail{font:400 12px/1.35 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:rgba(255,255,255,.82);white-space:pre-wrap;overflow-wrap:anywhere}" +
         "@media (prefers-reduced-motion:reduce){.__akan_hmr_overlay{transition:none}.__akan_hmr_spinner{animation:none}}";
       document.head.appendChild(overlayStyleEl);
     }
     overlayEl = document.createElement("div");
     overlayEl.className = "__akan_hmr_overlay";
+    overlayEl.setAttribute("data-status", "updating");
     overlayEl.setAttribute("role", "status");
     overlayEl.setAttribute("aria-live", "polite");
-    overlayEl.innerHTML = '<span class="__akan_hmr_spinner" aria-hidden="true"></span><span data-akan-hmr-label>Updating...</span>';
+    overlayEl.innerHTML = '<span class="__akan_hmr_spinner" aria-hidden="true"></span><span class="__akan_hmr_body"><span data-akan-hmr-label>Updating...</span><span class="__akan_hmr_detail" data-akan-hmr-detail></span></span>';
     overlayLabelEl = overlayEl.querySelector("[data-akan-hmr-label]");
+    overlayDetailEl = overlayEl.querySelector("[data-akan-hmr-detail]");
     (document.body || document.documentElement).appendChild(overlayEl);
     return overlayEl;
   }
@@ -164,19 +190,25 @@ export const HMR_CLIENT_SCRIPT = `(function(){
   function showOverlayNow(){
     overlayTimer = null;
     if (activeOverlayTokens().length === 0) return;
+    if (hasBuildErrors()) {
+      renderBuildErrorOverlay();
+      return;
+    }
     var el = ensureOverlay();
+    el.setAttribute("data-status", "updating");
     if (overlayHideTimer) {
       clearTimeout(overlayHideTimer);
       overlayHideTimer = null;
     }
     if (overlayLabelEl) overlayLabelEl.textContent = latestOverlayLabel();
+    if (overlayDetailEl) overlayDetailEl.textContent = "";
     requestAnimationFrame(function(){ el.setAttribute("data-show", "true"); });
   }
 
   function beginHmrOverlay(label, immediate){
     var token = overlayNextToken++;
     overlayJobs[token] = label || "Updating...";
-    if (overlayLabelEl) overlayLabelEl.textContent = latestOverlayLabel();
+    if (!hasBuildErrors() && overlayLabelEl) overlayLabelEl.textContent = latestOverlayLabel();
     if (overlayHideTimer) {
       clearTimeout(overlayHideTimer);
       overlayHideTimer = null;
@@ -193,11 +225,15 @@ export const HMR_CLIENT_SCRIPT = `(function(){
   function setHmrOverlayLabel(token, label){
     if (!overlayJobs[token]) return;
     overlayJobs[token] = label || "Updating...";
-    if (overlayLabelEl) overlayLabelEl.textContent = latestOverlayLabel();
+    if (!hasBuildErrors() && overlayLabelEl) overlayLabelEl.textContent = latestOverlayLabel();
   }
 
   function endHmrOverlay(token){
     delete overlayJobs[token];
+    if (hasBuildErrors()) {
+      renderBuildErrorOverlay();
+      return;
+    }
     if (activeOverlayTokens().length > 0) {
       if (overlayLabelEl) overlayLabelEl.textContent = latestOverlayLabel();
       return;
@@ -214,8 +250,115 @@ export const HMR_CLIENT_SCRIPT = `(function(){
         overlayEl.parentNode.removeChild(overlayEl);
         overlayEl = null;
         overlayLabelEl = null;
+        overlayDetailEl = null;
       }
     }, 180);
+  }
+
+  function handleBuildStatus(msg){
+    if (msg.status === "error") {
+      showBuildErrorOverlay(msg);
+      return;
+    }
+    if (msg.status === "ok") clearBuildErrorOverlay(msg);
+  }
+
+  function showBuildErrorOverlay(msg){
+    var phase = msg.phase || "build";
+    var generation = typeof msg.generation === "number" ? msg.generation : 0;
+    var previous = buildErrorStates[phase];
+    if (previous && generation < previous.generation) return;
+    buildErrorStates[phase] = {
+      phase: msg.phase || "build",
+      generation: generation,
+      message: msg.message || "Build failed",
+      files: typeof msg.files === "number" ? msg.files : 0
+    };
+    console.error("[akan-hmr] build failed", buildErrorStates[phase]);
+    renderBuildErrorOverlay();
+  }
+
+  function renderBuildErrorOverlay(){
+    if (!hasBuildErrors()) return;
+    if (overlayTimer) {
+      clearTimeout(overlayTimer);
+      overlayTimer = null;
+    }
+    if (overlayHideTimer) {
+      clearTimeout(overlayHideTimer);
+      overlayHideTimer = null;
+    }
+    var el = ensureOverlay();
+    var phases = buildErrorPhases();
+    var latest = latestBuildErrorState();
+    el.setAttribute("data-status", "error");
+    if (overlayLabelEl) overlayLabelEl.textContent = "Build failed: " + phases.join(", ");
+    if (overlayDetailEl) overlayDetailEl.textContent = formatBuildStatusDetail(latest, phases.length);
+    requestAnimationFrame(function(){ el.setAttribute("data-show", "true"); });
+  }
+
+  function clearBuildErrorOverlay(msg){
+    var phase = msg.phase || "build";
+    var current = buildErrorStates[phase];
+    if (!current) return;
+    var generation = typeof msg.generation === "number" ? msg.generation : 0;
+    var recovered = phase === "backend" ? generation >= current.generation : generation > current.generation;
+    if (!recovered) return;
+    delete buildErrorStates[phase];
+    if (hasBuildErrors()) {
+      renderBuildErrorOverlay();
+      return;
+    }
+    if (overlayHideTimer) clearTimeout(overlayHideTimer);
+    var el = ensureOverlay();
+    el.setAttribute("data-status", "ok");
+    if (overlayLabelEl) overlayLabelEl.textContent = "Build recovered";
+    if (overlayDetailEl) overlayDetailEl.textContent = formatBuildStatusDetail(msg);
+    requestAnimationFrame(function(){ el.setAttribute("data-show", "true"); });
+    overlayHideTimer = setTimeout(function(){
+      if (activeOverlayTokens().length > 0) {
+        showOverlayNow();
+        return;
+      }
+      if (!overlayEl) return;
+      overlayEl.setAttribute("data-show", "false");
+      overlayHideTimer = setTimeout(function(){
+        if (overlayEl && activeOverlayTokens().length === 0 && !hasBuildErrors() && overlayEl.parentNode) {
+          overlayEl.parentNode.removeChild(overlayEl);
+          overlayEl = null;
+          overlayLabelEl = null;
+          overlayDetailEl = null;
+        }
+      }, 180);
+    }, 900);
+  }
+
+  function hasBuildErrors(){
+    return Object.keys(buildErrorStates).length > 0;
+  }
+
+  function buildErrorPhases(){
+    return Object.keys(buildErrorStates).sort();
+  }
+
+  function latestBuildErrorState(){
+    var phases = buildErrorPhases();
+    var latest = buildErrorStates[phases[0]];
+    for (var i = 1; i < phases.length; i++) {
+      var next = buildErrorStates[phases[i]];
+      if (!latest || next.generation >= latest.generation) latest = next;
+    }
+    return latest;
+  }
+
+  function formatBuildStatusDetail(msg, failedPhaseCount){
+    var parts = [];
+    if (typeof msg.generation === "number" && msg.generation > 0) parts.push("generation " + msg.generation);
+    if (typeof msg.files === "number") parts.push(msg.files + " file" + (msg.files === 1 ? "" : "s"));
+    if (failedPhaseCount > 1) parts.push(failedPhaseCount + " failed phases");
+    var prefix = parts.length > 0 ? parts.join(" · ") : "";
+    if (!msg.message) return prefix;
+    return prefix ? prefix + "\\n" + msg.message : msg.message;
   }
 
   function refreshRsc(msg){

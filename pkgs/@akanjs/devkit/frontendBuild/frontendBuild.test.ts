@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +7,8 @@ import type { RoutesManifest } from "akanjs/server";
 import { CsrArtifactBuilder } from "./csrArtifactBuilder";
 import { CssCompiler, isIgnoredNodeModuleSource } from "./cssCompiler";
 import { CssImportResolver } from "./cssImportResolver";
+import { DevChangePlanner } from "./devChangePlanner";
+import { DevGeneratedIndexSync } from "./devGeneratedIndexSync";
 import { HmrChangeClassifier } from "./hmrChangeClassifier";
 import { PagesBundleBuilder } from "./pagesBundleBuilder";
 import { PagesEntrySourceGenerator } from "./pagesEntrySourceGenerator";
@@ -249,6 +251,92 @@ describe("HmrChangeClassifier", () => {
     expect(classifier.classify(`/repo/apps/demo/node_modules/pkg/index.ts`)).toBe("ignore");
     expect(classifier.classify(`/repo/apps/demo/.akan/generated/page.tsx`)).toBe("ignore");
     expect(classifier.classify("/repo/apps/demo/public/logo.png")).toBe("ignore");
+  });
+});
+
+describe("DevGeneratedIndexSync", () => {
+  test("updates barrel facet index for file add and delete", async () => {
+    const root = await makeTempRoot();
+    const foo = path.join(root, "libs/shared/common/foo.ts");
+    const index = path.join(root, "libs/shared/common/index.ts");
+    const sync = new DevGeneratedIndexSync({ workspaceRoot: root });
+
+    await write(foo, "export const foo = 1;\n");
+    const added = await sync.syncForBatch([foo]);
+
+    expect(added.errors).toEqual([]);
+    expect(added.changedFiles).toEqual([index]);
+    expect(await readFile(index, "utf8")).toBe('export * from "./foo";\n');
+
+    await rm(foo);
+    const removed = await sync.syncForBatch([foo]);
+
+    expect(removed.errors).toEqual([]);
+    expect(removed.changedFiles).toEqual([index]);
+    expect(await Bun.file(index).exists()).toBe(false);
+  });
+
+  test("ignores server/client folders as barrel facets", async () => {
+    const root = await makeTempRoot();
+    const serverFile = path.join(root, "libs/shared/server/foo.ts");
+    const clientFile = path.join(root, "libs/shared/client/foo.ts");
+    const sync = new DevGeneratedIndexSync({ workspaceRoot: root });
+
+    await write(serverFile, "export const foo = 1;\n");
+    await write(clientFile, "export const foo = 1;\n");
+    const result = await sync.syncForBatch([serverFile, clientFile]);
+
+    expect(result.errors).toEqual([]);
+    expect(result.changedFiles).toEqual([]);
+  });
+
+  test("ignores individual module UI file changes for module index sync", async () => {
+    const root = await makeTempRoot();
+    const template = path.join(root, "libs/shared/lib/admin/Admin.Template.tsx");
+    const sync = new DevGeneratedIndexSync({ workspaceRoot: root });
+
+    await write(template, "export const Admin = () => null;\n");
+    const result = await sync.syncForBatch([template]);
+
+    expect(result.errors).toEqual([]);
+    expect(result.changedFiles).toEqual([]);
+  });
+});
+
+describe("DevChangePlanner", () => {
+  test("classifies server, client, shared, and generated barrel changes", () => {
+    const root = "/repo";
+    const planner = new DevChangePlanner({ workspaceRoot: root });
+    const generatedIndex = `${root}/libs/shared/common/index.ts`;
+    const plan = planner.plan({
+      generation: 7,
+      files: [
+        `${root}/libs/shared/lib/admin/admin.service.ts`,
+        `${root}/libs/shared/lib/admin/Admin.Template.tsx`,
+        `${root}/libs/shared/lib/admin/admin.constant.ts`,
+        `${root}/libs/shared/common/foo.ts`,
+      ],
+      kinds: ["code"],
+      generatedFiles: [generatedIndex],
+    });
+
+    expect(plan.generatedFiles).toEqual([generatedIndex]);
+    expect(plan.files).toContain(generatedIndex);
+    expect(plan.roles).toEqual(["barrel", "client", "server", "shared"]);
+    expect(plan.actions).toEqual(["rebuild-client", "restart-backend", "sync-generated"]);
+    expect(plan.reasonByFile[generatedIndex]).toContain("generated-index");
+  });
+
+  test("keeps css-only and config changes separate from backend restarts", () => {
+    const root = "/repo";
+    const planner = new DevChangePlanner({ workspaceRoot: root });
+
+    expect(
+      planner.plan({ generation: 1, files: [`${root}/apps/akan/page/style.css`], kinds: ["css"] }).actions,
+    ).toEqual(["rebuild-css"]);
+    expect(
+      planner.plan({ generation: 2, files: [`${root}/apps/akan/akan.config.ts`], kinds: ["config"] }).actions,
+    ).toEqual(["restart-dev-host"]);
   });
 });
 

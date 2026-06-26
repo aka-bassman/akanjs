@@ -3,6 +3,7 @@ import { Logger } from "akanjs/common";
 import {
   BuilderRpc,
   type ClientManifest,
+  type DevBuildStatus,
   RouteClientCache,
   type RouteSeedIndex,
   RouteSeedIndexStore,
@@ -10,7 +11,7 @@ import {
 import type { RscWorker } from "../rscWorkerHost";
 import type { RenderState } from "../types";
 import type { ChangeKind } from "./changeBatch";
-import { type HmrWsData, HmrWsHub } from "./wsHub";
+import { type HmrMessage, type HmrWsData, HmrWsHub } from "./wsHub";
 
 const APP_RUNTIME_METADATA_BASENAMES = new Set(["dict.ts", "sig.ts", "useClient.ts"]);
 
@@ -44,6 +45,34 @@ export function manifestClientEntriesForFiles(
   return entries;
 }
 
+export function devBuildStatusToHmrMessage(
+  status: DevBuildStatus,
+  previous?: DevBuildStatus,
+): Extract<HmrMessage, { type: "build-status" }> | null {
+  if (!status.ok) {
+    return {
+      type: "build-status",
+      status: "error",
+      generation: status.generation,
+      phase: status.phase,
+      message: status.message,
+      files: status.files.length,
+    };
+  }
+  if (!previous || previous.ok) return null;
+  const recovered =
+    status.phase === "backend" ? status.generation >= previous.generation : status.generation > previous.generation;
+  if (!recovered) return null;
+  return {
+    type: "build-status",
+    status: "ok",
+    generation: status.generation,
+    phase: status.phase,
+    message: status.message,
+    files: status.files.length,
+  };
+}
+
 export interface DevHmrControllerOptions {
   renderState: RenderState;
   rsc: RscWorker;
@@ -69,6 +98,7 @@ export class DevHmrController {
   readonly #clientEntriesByRouteId = new Map<string, Set<string>>();
   readonly #dirty = new Set<Exclude<ChangeKind, "ignore">>();
   readonly #dirtyFiles = new Set<string>();
+  readonly #buildStatusByPhase = new Map<DevBuildStatus["phase"], DevBuildStatus>();
 
   constructor({ renderState, rsc, seedIndex, upgradeHmrWs }: DevHmrControllerOptions) {
     this.#renderState = renderState;
@@ -166,6 +196,9 @@ export class DevHmrController {
       onInvalidate: (ev) => {
         this.#recordInvalidate(ev.files, new Set(ev.kinds), ev.generation);
       },
+      onBuildStatus: (status) => {
+        this.#recordBuildStatus(status);
+      },
       onCssUpdated: (css) => {
         const started = Date.now();
         const cssBytesByUrl = Object.fromEntries(
@@ -215,6 +248,17 @@ export class DevHmrController {
         );
       },
     });
+  }
+
+  #recordBuildStatus(status: DevBuildStatus): void {
+    const previous = this.#buildStatusByPhase.get(status.phase);
+    this.#buildStatusByPhase.set(status.phase, status);
+    const message = devBuildStatusToHmrMessage(status, previous);
+    if (!message) return;
+    this.#hub.broadcast(message);
+    this.#logger.verbose(
+      `[hmr] build-status status=${message.status} generation=${message.generation} phase=${message.phase} files=${message.files ?? 0}`,
+    );
   }
 
   #createRouteCache() {

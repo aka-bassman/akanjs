@@ -1,4 +1,5 @@
 import { Logger } from "akanjs/common";
+import type { BuildPhase } from "../artifact";
 
 export interface HmrWsData {
   kind: "akan-hmr";
@@ -22,6 +23,15 @@ export type HmrMessage =
     }
   | { type: "css-update"; cssAssets?: Record<string, { cssUrl: string; cssRelPath: string }> }
   | { type: "sync-navigation"; clientId: string; href: string; kind?: "push" | "replace" | "back" | "pop" }
+  | { type: "ok"; generation?: number }
+  | {
+      type: "build-status";
+      status: "building" | "error" | "ok";
+      generation: number;
+      phase: BuildPhase;
+      message?: string;
+      files?: number;
+    }
   | { type: "error"; message: string };
 
 export const HMR_WS_TOPIC = "__akan_hmr";
