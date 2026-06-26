@@ -1,5 +1,14 @@
 # @akanjs/cli
 
+## 2.3.6
+
+### Patch Changes
+
+- 1919062: Pin DaisyUI to 5.5.23 so generated workspaces and published CLI artifacts avoid the 5.6.x theme resolution regression.
+- 0802422: Remove the published CLI `types` export that points at an unpacked TypeScript source file.
+- Updated dependencies [0a4815a]
+  - akanjs@2.3.6
+
 ## 2.3.5
 
 ### Patch Changes

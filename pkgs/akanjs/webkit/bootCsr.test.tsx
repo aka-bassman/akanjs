@@ -63,6 +63,28 @@ beforeAll(() => {
       setActivePath: () => undefined,
     },
     getExplicitPageConfigKeys: () => ({}),
+    getPathInfo: (requestUrl: string, lang: string, prefix: string) => {
+      const [urlWithoutHash, hash = ""] = requestUrl.split("#");
+      const [url, search = ""] = urlWithoutHash.split("?");
+      const langLength = lang.length + 1;
+      const pathWithSubRoute = url === `/${lang}` ? "/" : url.startsWith(`/${lang}/`) ? url.slice(langLength) : url;
+      const prefixLength = prefix ? prefix.length + 1 : 0;
+      const path = !prefixLength
+        ? pathWithSubRoute
+        : pathWithSubRoute === `/${prefix}`
+          ? "/"
+          : pathWithSubRoute.startsWith(`/${prefix}`)
+            ? pathWithSubRoute.slice(prefixLength)
+            : pathWithSubRoute;
+      const subRoute = prefix ? `/${prefix}` : "";
+      const pathname = path.startsWith("http")
+        ? path
+        : path === "/"
+          ? `/${lang}${subRoute}`
+          : `/${lang}${subRoute}${path}`;
+      const href = `${pathname}${search ? `?${search}` : ""}${hash ? `#${hash}` : ""}`;
+      return { path, pathname, hash, search, href };
+    },
     debugFrame: () => undefined,
     initAuth: () => undefined,
     readCssSafeAreaInsets: () => ({ top: 0, bottom: 0 }),

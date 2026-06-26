@@ -1,5 +1,14 @@
 # @akanjs/devkit
 
+## 2.3.6
+
+### Patch Changes
+
+- 0a4815a: Improve `akan start` stability for incremental dev changes.
+- 1919062: Pin DaisyUI to 5.5.23 so generated workspaces and published CLI artifacts avoid the 5.6.x theme resolution regression.
+- Updated dependencies [0a4815a]
+  - akanjs@2.3.6
+
 ## 2.3.5
 
 ### Patch Changes

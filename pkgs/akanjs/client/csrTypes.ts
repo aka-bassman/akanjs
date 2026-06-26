@@ -20,10 +20,10 @@ export type PageSafeAreaConfig =
 export interface PageConfig {
   transition?: TransitionType;
   safeArea?: PageSafeAreaConfig;
-  /** Top chrome reservation in px. Use 0 or omit for no reservation. */
-  topInset?: number;
-  /** Bottom chrome reservation in px. Use 0 or omit for no reservation. */
-  bottomInset?: number;
+  /** Top chrome reservation in px. Use true for the default 48px reservation. */
+  topInset?: number | boolean;
+  /** Bottom chrome reservation in px. Use true for the default 48px reservation. */
+  bottomInset?: number | boolean;
   gesture?: boolean;
   cache?: boolean;
   /**

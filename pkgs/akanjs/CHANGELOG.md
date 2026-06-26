@@ -1,5 +1,11 @@
 # akanjs
 
+## 2.3.6
+
+### Patch Changes
+
+- 0a4815a: Improve `akan start` stability for incremental dev changes.
+
 ## 2.3.5
 
 ### Patch Changes

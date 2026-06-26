@@ -24,6 +24,7 @@ const pageConfigKeys = new Set<keyof PageConfig>([
   "bottomSafeAreaColor",
 ]);
 const transitionTypes = new Set<TransitionType>(["none", "fade", "bottomUp", "stack", "scaleOut"]);
+const DEFAULT_BOOLEAN_INSET = 48;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -43,26 +44,24 @@ export function validatePageConfig(routeKey: string, config?: PageConfig) {
     throw new Error(`[route-convention] unsupported pageConfig.transition "${pageConfig.transition}" in ${routeKey}`);
   }
   if (pageConfig.topInset !== undefined && !isValidInsetValue(pageConfig.topInset)) {
-    throw new Error(`[route-convention] pageConfig.topInset in ${routeKey} must be a non-negative px number.`);
+    throw new Error(
+      `[route-convention] pageConfig.topInset in ${routeKey} must be a boolean or non-negative px number.`,
+    );
   }
   if (pageConfig.bottomInset !== undefined && !isValidInsetValue(pageConfig.bottomInset)) {
-    throw new Error(`[route-convention] pageConfig.bottomInset in ${routeKey} must be a non-negative px number.`);
+    throw new Error(
+      `[route-convention] pageConfig.bottomInset in ${routeKey} must be a boolean or non-negative px number.`,
+    );
   }
   validateSafeAreaConfig(routeKey, pageConfig.safeArea);
 }
 
-function isValidInsetValue(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+function isValidInsetValue(value: unknown): value is NonNullable<PageConfig["topInset"]> {
+  return typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value) && value >= 0);
 }
 
 function validateSafeAreaConfig(routeKey: string, safeArea?: PageSafeAreaConfig) {
-  if (
-    safeArea === undefined ||
-    typeof safeArea === "boolean" ||
-    safeArea === "top" ||
-    safeArea === "bottom"
-  )
-    return;
+  if (safeArea === undefined || typeof safeArea === "boolean" || safeArea === "top" || safeArea === "bottom") return;
   if (!isRecord(safeArea)) throw new Error(`[route-convention] pageConfig.safeArea in ${routeKey} is invalid.`);
   for (const key of Object.keys(safeArea)) {
     if (key !== "top" && key !== "bottom" && key !== "android") {
@@ -134,13 +133,23 @@ export function resolvePageState({
     transition,
     topSafeArea: safeArea.top,
     bottomSafeArea: safeArea.bottom,
-    topInset: config.topInset ?? 0,
-    bottomInset: config.bottomInset ?? 0,
-    gesture: explicitKeys.gesture ? (config.gesture ?? false) : transition === "none" ? false : (config.gesture ?? false),
+    topInset: resolveInset(config.topInset),
+    bottomInset: resolveInset(config.bottomInset),
+    gesture: explicitKeys.gesture
+      ? (config.gesture ?? false)
+      : transition === "none"
+        ? false
+        : (config.gesture ?? false),
     cache: config.cache ?? false,
     topSafeAreaColor: config.topSafeAreaColor ?? "var(--color-base-100, Canvas)",
     bottomSafeAreaColor: config.bottomSafeAreaColor ?? "var(--color-base-100, Canvas)",
   };
+}
+
+function resolveInset(inset: PageConfig["topInset"]): number {
+  if (inset === true) return DEFAULT_BOOLEAN_INSET;
+  if (inset === false || inset === undefined) return 0;
+  return inset;
 }
 
 function getPlatformFrameProfile(platform: DevicePlatform): PageConfig {
@@ -184,7 +193,9 @@ function resolveSafeArea({
     safeArea === "bottom" ||
     (isRecord(safeArea) ? safeArea.bottom !== false : safeArea === undefined && platform !== "web");
   if (platform === "android") {
-    const androidMode = isRecord(safeArea) ? (safeArea.android as "auto" | "edge-to-edge" | "none" | undefined) : "auto";
+    const androidMode = isRecord(safeArea)
+      ? (safeArea.android as "auto" | "edge-to-edge" | "none" | undefined)
+      : "auto";
     if (androidMode === "none") return { top: 0, bottom: 0 };
     const source =
       androidMode === "edge-to-edge"

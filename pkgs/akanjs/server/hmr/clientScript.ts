@@ -122,7 +122,6 @@ export const HMR_CLIENT_SCRIPT = `(function(){
         }));
         return;
       }
-      if (msg.type === "error") { console.error("[akan-hmr]", msg.message); return; }
       if (msg.type === "build-status") { handleBuildStatus(msg); return; }
       if (msg.type === "ok") {
         clearBuildErrorOverlay({

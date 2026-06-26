@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  getExplicitPageConfigKeys,
-  mergePageConfigs,
-  resolvePageState,
-  validatePageConfig,
-} from "./frameConfig";
+import { getExplicitPageConfigKeys, mergePageConfigs, resolvePageState, validatePageConfig } from "./frameConfig";
 
 describe("frameConfig", () => {
   test("applies platform profiles and route roles as auto defaults", () => {
@@ -80,6 +75,25 @@ describe("frameConfig", () => {
     ).toMatchObject({ transition: "none", gesture: false, topInset: 0, bottomInset: 72 });
   });
 
+  test("resolves boolean inset config values", () => {
+    expect(
+      resolvePageState({
+        path: "/[lang]/explore/detail",
+        platform: "ios",
+        deviceSafeArea: { top: 11, bottom: 22 },
+        configChain: [{ topInset: true, bottomInset: true }],
+      }),
+    ).toMatchObject({ topInset: 48, bottomInset: 48 });
+    expect(
+      resolvePageState({
+        path: "/[lang]/explore/detail",
+        platform: "ios",
+        deviceSafeArea: { top: 11, bottom: 22 },
+        configChain: [{ topInset: false, bottomInset: false }],
+      }),
+    ).toMatchObject({ topInset: 0, bottomInset: 0 });
+  });
+
   test("keeps Android double-padding fallback unless edge-to-edge insets are reliable", () => {
     expect(
       resolvePageState({
@@ -115,8 +129,8 @@ describe("frameConfig", () => {
     expect(() => validatePageConfig("bad.tsx", { transition: "slide" as never })).toThrow(
       'unsupported pageConfig.transition "slide"',
     );
-    expect(() => validatePageConfig("bad.tsx", { topInset: true } as never)).toThrow(
-      "pageConfig.topInset in bad.tsx must be a non-negative px number.",
+    expect(() => validatePageConfig("bad.tsx", { topInset: -1 })).toThrow(
+      "pageConfig.topInset in bad.tsx must be a boolean or non-negative px number.",
     );
   });
 });
