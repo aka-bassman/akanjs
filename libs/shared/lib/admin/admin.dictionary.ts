@@ -18,7 +18,7 @@ export const dictionary = modelDictionary(["en", "ko"])
     lastLoginAt: t(["Last Login", "마지막 로그인"]).desc(["Last Login Description", "마지막 로그인 설명"]),
   }))
   .insight<AdminInsight>((t) => ({}))
-  .query<typeof AdminFilter>((fn) => ({
+  .query<AdminFilter>((fn) => ({
     byAccountId: fn(["By Account ID", "아이디별 조회"]).arg((t) => ({
       accountId: t(["Account ID", "아이디"]).desc(["Account ID Description", "아이디 설명"]),
     })),
@@ -28,8 +28,8 @@ export const dictionary = modelDictionary(["en", "ko"])
     admin: t(["Admin", "관리자"]).desc(["Admin Description", "관리자 설명"]),
     superAdmin: t(["Super Admin", "최고 관리자"]).desc(["Super Admin Description", "최고 관리자 설명"]),
   }))
-  .slice<typeof AdminSlice>((fn) => ({}))
-  .endpoint<typeof AdminEndpoint>((fn) => ({
+  .slice<AdminSlice>((fn) => ({}))
+  .endpoint<AdminEndpoint>((fn) => ({
     isAdminSystemInitialized: fn(["Is Admin System Initialized", "관리자 시스템 초기화 여부"]),
     createAdminWithInitialize: fn(["Create Admin With Initialize", "초기 관리자 생성"]).arg((t) => ({
       data: t(["Data", "데이터"]).desc(["Data Description", "데이터 설명"]),

@@ -1,7 +1,28 @@
-import type { GetStateObject, MergedValues } from "akanjs/base";
+import type {
+  ENDPOINT_DICT_SHAPE,
+  FILTER_DICT_SHAPE,
+  GetStateObject,
+  MergedValues,
+  SLICE_DICT_SHAPE,
+} from "akanjs/base";
 import type { BaseInsight, BaseObject } from "akanjs/constant";
-import type { FilterCls, FilterInfo, FilterInstance } from "akanjs/document";
-import type { EndpInfoArgNames, EndpointInfo, SliceInfo, SliceInfoArgNames, SliceInfoRefName } from "akanjs/signal";
+import type {
+  FilterCls,
+  FilterDictShape as FilterCompactShape,
+  FilterDictArgShape,
+  FilterInfo,
+  FilterInstance,
+} from "akanjs/document";
+import type {
+  EndpointCls,
+  EndpointDictShape as EndpointCompactShape,
+  EndpointInfo,
+  SliceCls,
+  SliceDictShape as SliceCompactShape,
+  SliceInfo,
+  SliceInfoArgNames,
+  SliceInfoRefName,
+} from "akanjs/signal";
 import type { ModelDictInfo, ScalarDictInfo, ServiceDictInfo } from ".";
 
 interface Trans {
@@ -16,35 +37,61 @@ interface FnTrans<ArgKey extends string> {
   desc?: string;
   arg?: { [key in ArgKey]: FieldTrans };
 }
-type AnyFilterShape = FilterInstance<Record<string, FilterInfo>, Record<string, unknown>>;
+type DictArgShape = { [key: string]: readonly string[] };
+type AnyFilterShape = FilterCompactShape<FilterInstance<Record<string, FilterInfo>, Record<string, unknown>>>;
 type DictFilterShape<Filter> =
   Filter extends FilterCls<infer FilterShape>
-    ? FilterShape
-    : Filter extends FilterInstance
-      ? Filter
-      : Filter extends { query: Record<string, FilterInfo>; sort: Record<string, unknown> }
-        ? Filter
-        : AnyFilterShape;
+    ? FilterCompactShape<FilterShape>
+    : Filter extends { readonly [FILTER_DICT_SHAPE]: infer CompactShape extends FilterDictArgShape }
+      ? CompactShape
+      : Filter extends FilterInstance
+        ? FilterCompactShape<Filter>
+        : Filter extends { query: Record<string, FilterInfo>; sort: Record<string, unknown> }
+          ? FilterCompactShape<Filter>
+          : Filter extends { query: DictArgShape; sort: Record<string, true> }
+            ? Filter
+            : AnyFilterShape;
 type DictFilterQuery<Filter> = DictFilterShape<Filter>["query"];
 type DictFilterSort<Filter> = DictFilterShape<Filter>["sort"];
+type DictArgNames<ArgNames> = ArgNames extends readonly string[] ? ArgNames[number] : never;
+type DictEndpointShape<Endpoint> =
+  Endpoint extends EndpointCls<infer _SrvModule, infer EndpointInfoObj>
+    ? EndpointCompactShape<EndpointInfoObj>
+    : Endpoint extends { readonly [ENDPOINT_DICT_SHAPE]: infer CompactShape extends DictArgShape }
+      ? CompactShape
+      : Endpoint extends DictArgShape
+        ? Endpoint
+        : Endpoint extends Record<string, EndpointInfo>
+          ? EndpointCompactShape<Endpoint>
+          : Record<never, never>;
+type DictSliceShape<Slice> =
+  Slice extends SliceCls<infer _SrvModule, infer SliceInfoObj>
+    ? SliceCompactShape<SliceInfoObj>
+    : Slice extends { readonly [SLICE_DICT_SHAPE]: infer CompactShape extends DictArgShape }
+      ? CompactShape
+      : Slice extends DictArgShape
+        ? Slice
+        : Slice extends Record<string, SliceInfo>
+          ? SliceCompactShape<Slice>
+          : Record<never, never>;
 type FilterTranslatorKey<Filter> = {
   [Key in keyof DictFilterQuery<Filter> & string]:
     | `${Key}`
     | `${Key}.desc`
-    | (DictFilterQuery<Filter>[Key] extends FilterInfo<infer ArgNames, infer _Args>
-        ? ArgNames[number] extends string
-          ? `${Key}.arg.${ArgNames[number]}` | `${Key}.arg.${ArgNames[number]}.desc`
-          : never
+    | (DictArgNames<DictFilterQuery<Filter>[Key]> extends string
+        ?
+            | `${Key}.arg.${DictArgNames<DictFilterQuery<Filter>[Key]>}`
+            | `${Key}.arg.${DictArgNames<DictFilterQuery<Filter>[Key]>}.desc`
         : never);
 }[keyof DictFilterQuery<Filter> & string];
-type EndpointTranslatorKey<Endpoint extends { [key: string]: EndpointInfo }> = {
-  [Key in keyof Endpoint & string]:
+type EndpointTranslatorKey<Endpoint> = {
+  [Key in keyof DictEndpointShape<Endpoint> & string]:
     | `${Key}`
     | `${Key}.desc`
-    | `${Key}.arg.${EndpInfoArgNames<Endpoint[Key]>[number]}`
-    | `${Key}.arg.${EndpInfoArgNames<Endpoint[Key]>[number]}.desc`;
-}[keyof Endpoint & string];
-type SliceTranslatorKey<Slice> = {
+    | `${Key}.arg.${DictArgNames<DictEndpointShape<Endpoint>[Key]>}`
+    | `${Key}.arg.${DictArgNames<DictEndpointShape<Endpoint>[Key]>}.desc`;
+}[keyof DictEndpointShape<Endpoint> & string];
+type FullSliceTranslatorKey<Slice> = {
   [Key in keyof Slice & string]: Slice[Key] extends infer Info extends SliceInfo
     ?
         | `${SliceInfoRefName<Info>}List${Capitalize<Key>}`
@@ -57,6 +104,21 @@ type SliceTranslatorKey<Slice> = {
         | `${SliceInfoRefName<Info>}Insight${Capitalize<Key>}.arg.${SliceInfoArgNames<Info>[number]}.desc`
     : never;
 }[keyof Slice & string];
+type CompactSliceTranslatorKey<T extends string, Slice> = {
+  [Key in keyof DictSliceShape<Slice> & string]: Key extends ""
+    ? never
+    :
+        | `${T}List${Capitalize<Key>}`
+        | `${T}List${Capitalize<Key>}.desc`
+        | `${T}List${Capitalize<Key>}.arg.${DictArgNames<DictSliceShape<Slice>[Key]> | "skip" | "limit" | "sort"}`
+        | `${T}List${Capitalize<Key>}.arg.${DictArgNames<DictSliceShape<Slice>[Key]> | "skip" | "limit" | "sort"}.desc`
+        | `${T}Insight${Capitalize<Key>}`
+        | `${T}Insight${Capitalize<Key>}.desc`
+        | `${T}Insight${Capitalize<Key>}.arg.${DictArgNames<DictSliceShape<Slice>[Key]>}`
+        | `${T}Insight${Capitalize<Key>}.arg.${DictArgNames<DictSliceShape<Slice>[Key]>}.desc`;
+}[keyof DictSliceShape<Slice> & string];
+type SliceTranslatorKey<T extends string, Slice> =
+  Slice extends Record<string, SliceInfo> ? FullSliceTranslatorKey<Slice> : CompactSliceTranslatorKey<T, Slice>;
 
 type SliceApiTrans<
   T extends string,
@@ -85,8 +147,8 @@ export type ModelTrans<
   Model extends BaseObject,
   Insight extends BaseInsight,
   Filter,
-  Slice extends { [key: string]: SliceInfo },
-  Endpoint extends { [key: string]: EndpointInfo },
+  Slice,
+  Endpoint,
   ErrorKey extends string,
   EtcKey extends string,
 > = {
@@ -95,35 +157,25 @@ export type ModelTrans<
   model: { [K in keyof GetStateObject<Model>]: FieldTrans };
   insight: { [K in keyof GetStateObject<Insight>]: FieldTrans };
   query: {
-    [K in keyof DictFilterQuery<Filter>]: DictFilterQuery<Filter>[K] extends FilterInfo<infer ArgNames, infer _Args>
-      ? FnTrans<ArgNames[number]>
-      : never;
+    [K in keyof DictFilterQuery<Filter>]: FnTrans<DictArgNames<DictFilterQuery<Filter>[K]>>;
   };
   sort: { [K in keyof DictFilterSort<Filter>]: FieldTrans };
   api: {
-    [K in keyof Endpoint]: FnTrans<EndpInfoArgNames<Endpoint[K]>[number]>;
+    [K in keyof DictEndpointShape<Endpoint>]: FnTrans<DictArgNames<DictEndpointShape<Endpoint>[K]>>;
   } & BaseModelCrudGetApiTrans<T> &
     MergedValues<{
-      [K in keyof Slice]: SliceApiTrans<SliceInfoRefName<Slice[K]>, K & string, SliceInfoArgNames<Slice[K]>[number]>;
+      [K in keyof DictSliceShape<Slice>]: SliceApiTrans<T, K & string, DictArgNames<DictSliceShape<Slice>[K]>>;
     }>;
   error: { [K in ErrorKey]: Trans };
 } & { [K in EtcKey]: Trans };
-export type ModelTranslatorKey<
-  T extends string,
-  Model,
-  Insight,
-  Filter,
-  Slice extends { [key: string]: SliceInfo },
-  Endpoint extends { [key: string]: EndpointInfo },
-  EtcKey extends string,
-> =
+export type ModelTranslatorKey<T extends string, Model, Insight, Filter, Slice, Endpoint, EtcKey extends string> =
   | `${T}.modelName`
   | `${T}.modelDesc`
   | `${T}.${keyof GetStateObject<Model> & string}${"" | ".desc"}`
   | `${T}.insight.${keyof GetStateObject<Insight> & string}${"" | ".desc"}`
   | `${T}.query.${FilterTranslatorKey<Filter>}`
   | `${T}.sort.${keyof DictFilterSort<Filter> & string}${"" | ".desc"}`
-  | `${T}.signal.${EndpointTranslatorKey<Endpoint> | SliceTranslatorKey<Slice>}`
+  | `${T}.signal.${EndpointTranslatorKey<Endpoint> | SliceTranslatorKey<T, Slice>}`
   | `${T}.${EtcKey}`;
 
 export type ScalarTrans<_T extends string, Model, ErrorKey extends string, EtcKey extends string> = {
@@ -138,22 +190,15 @@ export type ScalarTranslatorKey<T extends string, Model, EtcKey extends string> 
   | `${T}.${keyof GetStateObject<Model> & string}${"" | ".desc"}`
   | `${T}.${EtcKey}`;
 
-export type ServiceTrans<
-  _T extends string,
-  Endpoint extends { [key: string]: EndpointInfo },
-  ErrorKey extends string,
-  EtcKey extends string,
-> = {
+export type ServiceTrans<_T extends string, Endpoint, ErrorKey extends string, EtcKey extends string> = {
   api: {
-    [K in keyof Endpoint]: FnTrans<EndpInfoArgNames<Endpoint[K]>[number]>;
+    [K in keyof DictEndpointShape<Endpoint>]: FnTrans<DictArgNames<DictEndpointShape<Endpoint>[K]>>;
   };
   error: { [K in ErrorKey]: Trans };
 } & { [K in EtcKey]: Trans };
-export type ServiceTranslatorKey<
-  T extends string,
-  Endpoint extends { [key: string]: EndpointInfo },
-  EtcKey extends string,
-> = `${T}.signal.${EndpointTranslatorKey<Endpoint>}` | `${T}.${EtcKey}`;
+export type ServiceTranslatorKey<T extends string, Endpoint, EtcKey extends string> =
+  | `${T}.signal.${EndpointTranslatorKey<Endpoint>}`
+  | `${T}.${EtcKey}`;
 
 export type EnumTrans<EnumValue extends string | number> = {
   [key in EnumValue]: Trans;
@@ -174,8 +219,8 @@ export const registerModelTrans = <
   Model extends BaseObject,
   Insight extends BaseInsight,
   Filter,
-  Slice extends { [key: string]: SliceInfo },
-  Endpoint extends { [key: string]: EndpointInfo },
+  Slice,
+  Endpoint,
   ModelDict,
 >(
   modelDict: ModelDict,
@@ -233,7 +278,7 @@ export const registerScalarTrans = <T extends string, Model, ScalarDict>(
     : never;
 };
 
-export const registerServiceTrans = <T extends string, Endpoint extends { [key: string]: EndpointInfo }, ServiceDict>(
+export const registerServiceTrans = <T extends string, Endpoint, ServiceDict>(
   serviceDict: ServiceDict,
 ): ServiceDict extends ServiceDictInfo<infer _Languages, infer _EndpointKey, infer ErrorKey, infer EtcKey>
   ? DictModule<ServiceTranslatorKey<T, Endpoint, EtcKey>, `${T}.error.${ErrorKey}`>

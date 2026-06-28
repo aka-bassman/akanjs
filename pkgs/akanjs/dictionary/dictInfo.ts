@@ -1,40 +1,62 @@
-import type { GetStateObject } from "akanjs/base";
+import type { ENDPOINT_DICT_SHAPE, FILTER_DICT_SHAPE, GetStateObject, SLICE_DICT_SHAPE } from "akanjs/base";
 import { capitalize } from "akanjs/common";
 import type { BaseInsight, BaseObject } from "akanjs/constant";
-import type { BaseFilterQueryKey, BaseFilterSortKey, FilterCls, FilterInfo, FilterInstance } from "akanjs/document";
 import type {
-  EndpInfoArgNames,
+  BaseFilterQueryKey,
+  BaseFilterSortKey,
+  FilterCls,
+  FilterDictShape as FilterCompactShape,
+  FilterDictArgShape,
+  FilterInfo,
+  FilterInstance,
+} from "akanjs/document";
+import type {
   EndpointCls,
+  EndpointDictShape as EndpointCompactShape,
   EndpointInfo,
   SliceCls,
+  SliceDictShape as SliceCompactShape,
   SliceInfo,
-  SliceInfoArgNames,
 } from "akanjs/signal";
 import type { DictionaryNode, RootDictionary } from "./trans";
 
 type MutableDictionaryNode = DictionaryNode & { t?: string; desc?: DictionaryNode };
 type EnumValueKey = string | number;
-type AnyFilterShape = FilterInstance<Record<string, FilterInfo>, Record<string, unknown>>;
+type DictArgShape = { [key: string]: readonly string[] };
+type AnyFilterShape = FilterCompactShape<FilterInstance<Record<string, FilterInfo>, Record<string, unknown>>>;
 type DictFilterShape<Filter> =
   Filter extends FilterCls<infer FilterShape>
-    ? FilterShape
-    : Filter extends FilterInstance
-      ? Filter
-      : Filter extends { query: Record<string, FilterInfo>; sort: Record<string, unknown> }
-        ? Filter
-        : AnyFilterShape;
+    ? FilterCompactShape<FilterShape>
+    : Filter extends { readonly [FILTER_DICT_SHAPE]: infer CompactShape extends FilterDictArgShape }
+      ? CompactShape
+      : Filter extends FilterInstance
+        ? FilterCompactShape<Filter>
+        : Filter extends { query: Record<string, FilterInfo>; sort: Record<string, unknown> }
+          ? FilterCompactShape<Filter>
+          : Filter extends { query: DictArgShape; sort: Record<string, true> }
+            ? Filter
+            : AnyFilterShape;
 type DictSliceShape<Slice> =
   Slice extends SliceCls<infer _SrvModule, infer SliceInfoObj>
-    ? SliceInfoObj
-    : Slice extends Record<string, SliceInfo>
-      ? Slice
-      : Record<never, never>;
+    ? SliceCompactShape<SliceInfoObj>
+    : Slice extends { readonly [SLICE_DICT_SHAPE]: infer CompactShape extends DictArgShape }
+      ? CompactShape
+      : Slice extends DictArgShape
+        ? Slice
+        : Slice extends Record<string, SliceInfo>
+          ? SliceCompactShape<Slice>
+          : Record<never, never>;
 type DictEndpointShape<Endpoint> =
   Endpoint extends EndpointCls<infer _SrvModule, infer EndpointInfoObj>
-    ? EndpointInfoObj
-    : Endpoint extends Record<string, EndpointInfo>
-      ? Endpoint
-      : Record<never, never>;
+    ? EndpointCompactShape<EndpointInfoObj>
+    : Endpoint extends { readonly [ENDPOINT_DICT_SHAPE]: infer CompactShape extends DictArgShape }
+      ? CompactShape
+      : Endpoint extends DictArgShape
+        ? Endpoint
+        : Endpoint extends Record<string, EndpointInfo>
+          ? EndpointCompactShape<Endpoint>
+          : Record<never, never>;
+type DictArgNames<ArgNames> = ArgNames extends readonly string[] ? ArgNames[number] : never;
 type DictFilterQuery<Filter> = DictFilterShape<Filter>["query"];
 type DictFilterSort<Filter> = DictFilterShape<Filter>["sort"];
 
@@ -282,22 +304,14 @@ export class ModelDictInfo<
   }
   query<Filter>(
     translate: (fn: (trans: Languages) => FunctionTranslation<Languages>) => {
-      [K in Exclude<keyof DictFilterQuery<Filter>, QueryKey>]: DictFilterQuery<Filter>[K] extends FilterInfo<
-        infer ArgNames,
-        infer _Args,
-        infer _Model
-      >
-        ? FunctionTranslation<Languages, ArgNames[number]>
-        : never;
+      [K in Exclude<keyof DictFilterQuery<Filter>, QueryKey>]: FunctionTranslation<
+        Languages,
+        DictArgNames<DictFilterQuery<Filter>[K]>
+      >;
     },
   ) {
     Object.assign(this.queryDictionary, translate(fn), ModelDictInfo.baseQueryDictionary) as unknown as {
-      [K in keyof DictFilterQuery<Filter>]: FunctionTranslation<
-        Languages,
-        DictFilterQuery<Filter>[K] extends FilterInfo<infer ArgNames, infer _Args, infer _Model>
-          ? ArgNames[number]
-          : never
-      >;
+      [K in keyof DictFilterQuery<Filter>]: FunctionTranslation<Languages, DictArgNames<DictFilterQuery<Filter>[K]>>;
     };
     return this as unknown as ModelDictInfo<
       Languages,
@@ -363,10 +377,10 @@ export class ModelDictInfo<
   }
   slice<Slice>(
     translate: (fn: (trans: Languages) => FunctionTranslation<Languages>) => {
-      [K in Exclude<keyof DictSliceShape<Slice>, SliceKey>]: DictSliceShape<Slice>[K] extends infer Info extends
-        SliceInfo
-        ? FunctionTranslation<Languages, SliceInfoArgNames<Info>[number]>
-        : never;
+      [K in Exclude<keyof DictSliceShape<Slice>, SliceKey>]: FunctionTranslation<
+        Languages,
+        DictArgNames<DictSliceShape<Slice>[K]>
+      >;
     },
   ) {
     Object.assign(this.sliceDictionary, translate(fn), ModelDictInfo.baseSliceDictionary) as unknown as {
@@ -388,12 +402,10 @@ export class ModelDictInfo<
   }
   endpoint<Endpoint>(
     translate: (fn: (trans: Languages) => FunctionTranslation<Languages>) => {
-      [K in Exclude<
-        keyof DictEndpointShape<Endpoint>,
-        EndpointKey
-      >]: DictEndpointShape<Endpoint>[K] extends infer Info extends EndpointInfo
-        ? FunctionTranslation<Languages, EndpInfoArgNames<Info>[number]>
-        : never;
+      [K in Exclude<keyof DictEndpointShape<Endpoint>, EndpointKey>]: FunctionTranslation<
+        Languages,
+        DictArgNames<DictEndpointShape<Endpoint>[K]>
+      >;
     },
   ) {
     Object.assign(this.endpointDictionary, translate(fn)) as unknown as {
@@ -1010,9 +1022,10 @@ export class ServiceDictInfo<
   }
   endpoint<Endpoint>(
     translate: (fn: (trans: Languages) => FunctionTranslation<Languages>) => {
-      [K in keyof DictEndpointShape<Endpoint>]: DictEndpointShape<Endpoint>[K] extends infer Info extends EndpointInfo
-        ? FunctionTranslation<Languages, EndpInfoArgNames<Info>[number]>
-        : never;
+      [K in keyof DictEndpointShape<Endpoint>]: FunctionTranslation<
+        Languages,
+        DictArgNames<DictEndpointShape<Endpoint>[K]>
+      >;
     },
   ) {
     Object.assign(this.endpointDictionary, translate(fn)) as unknown as {
