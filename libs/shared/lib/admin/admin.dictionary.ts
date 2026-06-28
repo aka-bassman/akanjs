@@ -18,7 +18,7 @@ export const dictionary = modelDictionary(["en", "ko"])
     lastLoginAt: t(["Last Login", "마지막 로그인"]).desc(["Last Login Description", "마지막 로그인 설명"]),
   }))
   .insight<AdminInsight>((t) => ({}))
-  .query<AdminFilter>((fn) => ({
+  .query<typeof AdminFilter>((fn) => ({
     byAccountId: fn(["By Account ID", "아이디별 조회"]).arg((t) => ({
       accountId: t(["Account ID", "아이디"]).desc(["Account ID Description", "아이디 설명"]),
     })),
@@ -28,8 +28,8 @@ export const dictionary = modelDictionary(["en", "ko"])
     admin: t(["Admin", "관리자"]).desc(["Admin Description", "관리자 설명"]),
     superAdmin: t(["Super Admin", "최고 관리자"]).desc(["Super Admin Description", "최고 관리자 설명"]),
   }))
-  .slice<AdminSlice>((fn) => ({}))
-  .endpoint<AdminEndpoint>((fn) => ({
+  .slice<typeof AdminSlice>((fn) => ({}))
+  .endpoint<typeof AdminEndpoint>((fn) => ({
     isAdminSystemInitialized: fn(["Is Admin System Initialized", "관리자 시스템 초기화 여부"]),
     createAdminWithInitialize: fn(["Create Admin With Initialize", "초기 관리자 생성"]).arg((t) => ({
       data: t(["Data", "데이터"]).desc(["Data Description", "데이터 설명"]),
@@ -44,6 +44,9 @@ export const dictionary = modelDictionary(["en", "ko"])
       password: t(["Password", "패스워드"]).desc(["Password Description", "패스워드 설명"]),
     })),
     signoutAdmin: fn(["Sign out Admin", "관리자 로그아웃"]),
+    refreshAdminJwt: fn(["Refresh Admin JWT", "관리자 JWT 갱신"]).arg((t) => ({
+      refreshToken: t(["Refresh Token", "갱신 토큰"]).desc(["Refresh Token Description", "갱신 토큰 설명"]),
+    })),
     addAdminRole: fn(["Add Admin Role", "관리자 권한 추가"]).arg((t) => ({
       adminId: t(["Admin ID", "관리자 아이디"]).desc(["Admin ID Description", "관리자 아이디 설명"]),
       role: t(["Role", "권한"]).desc(["Role Description", "권한 설명"]),

@@ -17,20 +17,21 @@ interface FnTrans<ArgKey extends string> {
   arg?: { [key in ArgKey]: FieldTrans };
 }
 type AnyFilterShape = FilterInstance<Record<string, FilterInfo>, Record<string, unknown>>;
-type DictFilterShape<Filter> = Filter extends FilterInstance
-  ? Filter
-  : Filter extends FilterCls<infer FilterShape>
+type DictFilterShape<Filter> =
+  Filter extends FilterCls<infer FilterShape>
     ? FilterShape
-    : Filter extends { query: Record<string, FilterInfo>; sort: Record<string, unknown> }
+    : Filter extends FilterInstance
       ? Filter
-      : AnyFilterShape;
+      : Filter extends { query: Record<string, FilterInfo>; sort: Record<string, unknown> }
+        ? Filter
+        : AnyFilterShape;
 type DictFilterQuery<Filter> = DictFilterShape<Filter>["query"];
 type DictFilterSort<Filter> = DictFilterShape<Filter>["sort"];
 type FilterTranslatorKey<Filter> = {
   [Key in keyof DictFilterQuery<Filter> & string]:
     | `${Key}`
     | `${Key}.desc`
-    | (DictFilterQuery<Filter>[Key] extends FilterInfo<infer ArgNames, any>
+    | (DictFilterQuery<Filter>[Key] extends FilterInfo<infer ArgNames, infer _Args>
         ? ArgNames[number] extends string
           ? `${Key}.arg.${ArgNames[number]}` | `${Key}.arg.${ArgNames[number]}.desc`
           : never
@@ -94,7 +95,7 @@ export type ModelTrans<
   model: { [K in keyof GetStateObject<Model>]: FieldTrans };
   insight: { [K in keyof GetStateObject<Insight>]: FieldTrans };
   query: {
-    [K in keyof DictFilterQuery<Filter>]: DictFilterQuery<Filter>[K] extends FilterInfo<infer ArgNames, any>
+    [K in keyof DictFilterQuery<Filter>]: DictFilterQuery<Filter>[K] extends FilterInfo<infer ArgNames, infer _Args>
       ? FnTrans<ArgNames[number]>
       : never;
   };
@@ -125,7 +126,7 @@ export type ModelTranslatorKey<
   | `${T}.signal.${EndpointTranslatorKey<Endpoint> | SliceTranslatorKey<Slice>}`
   | `${T}.${EtcKey}`;
 
-export type ScalarTrans<T extends string, Model, ErrorKey extends string, EtcKey extends string> = {
+export type ScalarTrans<_T extends string, Model, ErrorKey extends string, EtcKey extends string> = {
   name: Trans;
   desc: Trans;
   model: { [K in keyof GetStateObject<Model>]: FieldTrans };
@@ -138,7 +139,7 @@ export type ScalarTranslatorKey<T extends string, Model, EtcKey extends string> 
   | `${T}.${EtcKey}`;
 
 export type ServiceTrans<
-  T extends string,
+  _T extends string,
   Endpoint extends { [key: string]: EndpointInfo },
   ErrorKey extends string,
   EtcKey extends string,
@@ -162,7 +163,10 @@ export type EnumTranslatorKey<EnumKey extends string> = `${EnumKey}.${string}${"
 export interface DictModule<DictKey extends string, ErrorKey extends string> {
   __Dict_Key__: DictKey;
   __Error_Key__: ErrorKey;
-  dict: ModelDictInfo<any> | ScalarDictInfo<any> | ServiceDictInfo<any>;
+  dict:
+    | ModelDictInfo<[string, ...string[]]>
+    | ScalarDictInfo<[string, ...string[]]>
+    | ServiceDictInfo<[string, ...string[]]>;
 }
 
 export const registerModelTrans = <
@@ -172,25 +176,37 @@ export const registerModelTrans = <
   Filter,
   Slice extends { [key: string]: SliceInfo },
   Endpoint extends { [key: string]: EndpointInfo },
-  ModelDict extends ModelDictInfo<any>,
+  ModelDict,
 >(
   modelDict: ModelDict,
-): ModelDict extends ModelDictInfo<any, any, any, any, any, infer EnumKey, any, any, any, infer ErrorKey, infer EtcKey>
+): ModelDict extends ModelDictInfo<
+  infer _Languages,
+  infer _ModelKey,
+  infer _InsightKey,
+  infer _QueryKey,
+  infer _SortKey,
+  infer EnumKey,
+  infer _BaseSignalKey,
+  infer _SliceKey,
+  infer _EndpointKey,
+  infer ErrorKey,
+  infer EtcKey
+>
   ? DictModule<
       ModelTranslatorKey<RefName, Model, Insight, Filter, Slice, Endpoint, EtcKey> | EnumTranslatorKey<EnumKey>,
       `${RefName}.error.${ErrorKey}`
     >
   : never => {
   return { dict: modelDict } as unknown as ModelDict extends ModelDictInfo<
-    any,
-    any,
-    any,
-    any,
-    any,
+    infer _Languages,
+    infer _ModelKey,
+    infer _InsightKey,
+    infer _QueryKey,
+    infer _SortKey,
     infer EnumKey,
-    any,
-    any,
-    any,
+    infer _BaseSignalKey,
+    infer _SliceKey,
+    infer _EndpointKey,
     infer ErrorKey,
     infer EtcKey
   >
@@ -203,12 +219,12 @@ export const registerModelTrans = <
 
 export const registerScalarTrans = <T extends string, Model, ScalarDict>(
   scalarDict: ScalarDict,
-): ScalarDict extends ScalarDictInfo<any, any, infer EnumKey, infer ErrorKey, infer EtcKey>
+): ScalarDict extends ScalarDictInfo<infer _Languages, infer _ModelKey, infer EnumKey, infer ErrorKey, infer EtcKey>
   ? DictModule<ScalarTranslatorKey<T, Model, EtcKey> | EnumTranslatorKey<EnumKey>, `${T}.error.${ErrorKey}`>
   : never => {
   return { dict: scalarDict } as unknown as ScalarDict extends ScalarDictInfo<
-    any,
-    any,
+    infer _Languages,
+    infer _ModelKey,
     infer EnumKey,
     infer ErrorKey,
     infer EtcKey
@@ -219,10 +235,15 @@ export const registerScalarTrans = <T extends string, Model, ScalarDict>(
 
 export const registerServiceTrans = <T extends string, Endpoint extends { [key: string]: EndpointInfo }, ServiceDict>(
   serviceDict: ServiceDict,
-): ServiceDict extends ServiceDictInfo<any, any, infer ErrorKey, infer EtcKey>
+): ServiceDict extends ServiceDictInfo<infer _Languages, infer _EndpointKey, infer ErrorKey, infer EtcKey>
   ? DictModule<ServiceTranslatorKey<T, Endpoint, EtcKey>, `${T}.error.${ErrorKey}`>
   : never => {
-  return { dict: serviceDict } as unknown as ServiceDict extends ServiceDictInfo<any, any, infer ErrorKey, infer EtcKey>
+  return { dict: serviceDict } as unknown as ServiceDict extends ServiceDictInfo<
+    infer _Languages,
+    infer _EndpointKey,
+    infer ErrorKey,
+    infer EtcKey
+  >
     ? DictModule<ServiceTranslatorKey<T, Endpoint, EtcKey>, `${T}.error.${ErrorKey}`>
     : never;
 };
