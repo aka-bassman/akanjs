@@ -9,6 +9,14 @@
 SEO 웹, iOS/Android 앱 패키지, 서버, 데이터베이스 계약, 인프라 산출물, 문서화까지 함께 이어지는
 Bun-first 풀스택 TypeScript 프레임워크입니다.
 
+<figure>
+  <video src="./apps/akan/public/multi-platform-dev.mp4" autoplay muted loop playsinline controls width="100%"></video>
+  <figcaption>
+    <strong>SSR, CSR, Android, iOS, server, database까지 동시개발</strong><br />
+    하나의 Akan.js 코드베이스에서 서버 렌더링, 클라이언트 렌더링, 모바일 앱, 서버, 데이터베이스까지 한 개발 흐름 안에서 함께 움직입니다.
+  </figcaption>
+</figure>
+
 ```bash
 bunx create-akan-workspace@latest
 ```

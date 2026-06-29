@@ -8,6 +8,15 @@ No more framework assembly, duplicated declarations, or per-platform rewrites. A
 full-stack TypeScript framework where business intent is written once, then compiled into SEO web surfaces,
 iOS and Android app packages, servers, database contracts, infrastructure artifacts, and documentation.
 
+<figure>
+  <video src="./apps/akan/public/multi-platform-dev.mp4" autoplay muted loop playsinline controls width="100%"></video>
+  <figcaption>
+    <strong>SSR, CSR, Android, iOS, server, and database development together</strong><br />
+    A single Akan.js codebase keeps server rendering, client rendering, mobile apps, server, and database
+    moving in one development flow.
+  </figcaption>
+</figure>
+
 ```bash
 bunx create-akan-workspace@latest
 ```
