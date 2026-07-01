@@ -1,62 +1,139 @@
-import { AkanContextAnalyzer, type AkanContextFormat, Prompter, runner, type Workspace } from "@akanjs/devkit";
+import {
+  AkanContextAnalyzer,
+  type AkanContextFormat,
+  type AkanMcpMode,
+  CommandContainer,
+  type CursorMcpConfig,
+  createAkanCursorMcpServer,
+  createWorkflowStepRegistry,
+  cursorMcpConfigPath,
+  type JsonRpcRequest,
+  jsonText,
+  type McpFraming,
+  Prompter,
+  renderDoctorText,
+  resourceList,
+  runner,
+  type WorkflowPlanInputs,
+  type Workspace,
+} from "@akanjs/devkit";
+import { ModuleScript } from "../module/module.script";
+import { PrimitiveScript } from "../primitive/primitive.script";
+import { RepairRunner } from "../repair/repair.runner";
+import { ScalarScript } from "../scalar/scalar.script";
+import { WorkflowRunner } from "../workflow/workflow.runner";
 
-type JsonRpcRequest = {
-  jsonrpc?: "2.0";
-  id?: string | number | null;
-  method: string;
-  params?: Record<string, unknown>;
-};
-type McpFraming = "content-length" | "newline";
-type CursorMcpConfig = {
-  mcpServers?: Record<string, unknown>;
-};
-
-const jsonText = (value: unknown) => JSON.stringify(value, null, 2);
-
-const renderDoctorText = (result: Awaited<ReturnType<typeof AkanContextAnalyzer.doctor>>) => {
-  const lines = [`Akan doctor status: ${result.status}`];
-  if (result.diagnostics.length === 0) {
-    lines.push("", "No Akan workspace diagnostics found.");
-  } else {
-    lines.push(
-      "",
-      ...result.diagnostics.map((diagnostic) =>
-        [
-          `[${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`,
-          diagnostic.path ? `  ${diagnostic.path}` : "",
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      ),
-    );
-  }
-  lines.push(
-    "",
-    "Generated file freshness:",
-    result.generatedFilesFreshness.message,
-    `Refresh: ${result.generatedFilesFreshness.refreshCommand}`,
-    "",
-    "Validation commands:",
-    ...result.validationCommands.map((command) => `- ${command}`),
-  );
-  return `${lines.join("\n")}\n`;
+type McpToolDefinition = {
+  name: string;
+  inputSchema: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
 };
 
-const resourceList = [
-  { uri: "akan://docs/framework", name: "Akan framework guide", mimeType: "text/markdown" },
-  { uri: "akan://guidelines/framework", name: "Framework guideline", mimeType: "text/markdown" },
-  { uri: "akan://guidelines/modelSignal", name: "Model signal guideline", mimeType: "text/markdown" },
-  { uri: "akan://workspace/summary", name: "Workspace summary", mimeType: "application/json" },
-  { uri: "akan://workspace/apps", name: "Workspace apps", mimeType: "application/json" },
-  { uri: "akan://workspace/modules", name: "Workspace modules", mimeType: "application/json" },
+const emptySchema = { type: "object" as const, properties: {} };
+const stringProperty = { type: "string" };
+const booleanProperty = { type: "boolean" };
+const objectProperty = { type: "object", additionalProperties: true };
+
+const parseJsonOutput = (output: string) => JSON.parse(output) as unknown;
+
+const stringArg = (args: Record<string, unknown>, key: string) => {
+  const value = args[key];
+  if (typeof value !== "string" || !value) throw new Error(`MCP tool argument "${key}" is required.`);
+  return value;
+};
+
+const workflowInputsArg = (args: Record<string, unknown>) => {
+  const value = args.inputs;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as WorkflowPlanInputs;
+};
+
+const createCliWorkflowStepRegistry = (workspace: Workspace) =>
+  createWorkflowStepRegistry({
+    workspace,
+    createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
+    createScalar: (sys, scalar) => CommandContainer.get(ScalarScript).createScalar(sys, scalar),
+    createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
+    addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
+    addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
+  });
+
+const readonlyMcpTools: McpToolDefinition[] = [
+  { name: "get_workspace_summary", inputSchema: emptySchema },
+  { name: "list_apps", inputSchema: emptySchema },
+  { name: "list_modules", inputSchema: emptySchema },
+  {
+    name: "get_module_context",
+    inputSchema: { type: "object", properties: { module: stringProperty }, required: ["module"] },
+  },
+  {
+    name: "get_guideline",
+    inputSchema: { type: "object", properties: { name: stringProperty }, required: ["name"] },
+  },
+  {
+    name: "explain_command",
+    inputSchema: { type: "object", properties: { command: stringProperty }, required: ["command"] },
+  },
+  {
+    name: "doctor_workspace",
+    inputSchema: { type: "object", properties: { strict: booleanProperty } },
+  },
+  { name: "get_validation_contract", inputSchema: emptySchema },
 ];
-const cursorMcpConfigPath = ".cursor/mcp.json";
-const cursorWorkspaceFolder = "$" + "{workspaceFolder}";
-const akanCursorMcpServer = {
-  type: "stdio",
-  command: "bash",
-  args: ["-lc", `cd "${cursorWorkspaceFolder}" && akan mcp`],
-};
+
+const planMcpTools: McpToolDefinition[] = [
+  { name: "list_workflows", inputSchema: emptySchema },
+  {
+    name: "explain_workflow",
+    inputSchema: { type: "object", properties: { workflow: stringProperty }, required: ["workflow"] },
+  },
+  {
+    name: "plan_workflow",
+    inputSchema: {
+      type: "object",
+      properties: { workflow: stringProperty, inputs: objectProperty },
+      required: ["workflow"],
+    },
+  },
+];
+
+const applyMcpTools: McpToolDefinition[] = [
+  {
+    name: "apply_workflow",
+    inputSchema: {
+      type: "object",
+      properties: { planPath: stringProperty, dryRun: booleanProperty },
+      required: ["planPath"],
+    },
+  },
+  {
+    name: "run_validation",
+    inputSchema: {
+      type: "object",
+      properties: { runIdOrPlan: stringProperty },
+      required: ["runIdOrPlan"],
+    },
+  },
+  {
+    name: "repair_generated",
+    inputSchema: { type: "object", properties: { app: stringProperty }, required: ["app"] },
+  },
+  {
+    name: "repair_imports",
+    inputSchema: { type: "object", properties: { target: stringProperty }, required: ["target"] },
+  },
+  {
+    name: "repair_module_shape",
+    inputSchema: {
+      type: "object",
+      properties: { app: stringProperty, module: stringProperty },
+      required: ["app", "module"],
+    },
+  },
+];
 
 export class ContextRunner extends runner("context") {
   async getContext(
@@ -72,7 +149,7 @@ export class ContextRunner extends runner("context") {
       module,
       includeAbstractContent: !!module,
     });
-    return format === "json" ? `${jsonText(context)}\n` : AkanContextAnalyzer.renderMarkdown(context, { module });
+    return format === "json" ? jsonText(context) : AkanContextAnalyzer.renderMarkdown(context, { module });
   }
 
   async doctor(
@@ -80,35 +157,145 @@ export class ContextRunner extends runner("context") {
     { format = "text", strict = false }: { format?: "text" | "json"; strict?: boolean } = {},
   ) {
     const result = await AkanContextAnalyzer.doctor(workspace, { strict });
-    return format === "json" ? `${jsonText(result)}\n` : renderDoctorText(result);
+    return format === "json" ? jsonText(result) : renderDoctorText(result);
   }
 
   async getGuidelineResource(name: string) {
     return await Prompter.getInstruction(name);
   }
 
-  async installMcp(workspace: Workspace, target: "cursor", { force = false }: { force?: boolean } = {}) {
+  async installMcp(
+    workspace: Workspace,
+    target: "cursor",
+    { force = false, mode = "readonly" }: { force?: boolean; mode?: AkanMcpMode } = {},
+  ) {
     if (target !== "cursor") throw new Error(`Unknown MCP install target: ${target}. Use cursor.`);
     const existing = (await workspace.exists(cursorMcpConfigPath))
       ? ((await workspace.readJson(cursorMcpConfigPath)) as CursorMcpConfig)
       : {};
     const mcpServers = existing.mcpServers ?? {};
     const currentAkanServer = mcpServers.akan;
-    if (currentAkanServer && !force && JSON.stringify(currentAkanServer) !== JSON.stringify(akanCursorMcpServer)) {
+    const nextAkanServer = createAkanCursorMcpServer(mode);
+    if (currentAkanServer && !force && JSON.stringify(currentAkanServer) !== JSON.stringify(nextAkanServer)) {
       throw new Error(`${cursorMcpConfigPath} already has an "akan" MCP server. Re-run with --force to overwrite it.`);
     }
     const nextConfig: CursorMcpConfig = {
       ...existing,
       mcpServers: {
         ...mcpServers,
-        akan: akanCursorMcpServer,
+        akan: nextAkanServer,
       },
     };
     await workspace.writeFile(cursorMcpConfigPath, `${JSON.stringify(nextConfig, null, 2)}\n`);
     return cursorMcpConfigPath;
   }
 
-  async runMcp(workspace: Workspace) {
+  listMcpTools(mode: AkanMcpMode = "readonly") {
+    if (mode === "readonly") return readonlyMcpTools;
+    if (mode === "plan") return [...readonlyMcpTools, ...planMcpTools];
+    return [...readonlyMcpTools, ...planMcpTools, ...applyMcpTools];
+  }
+
+  async callMcpTool(
+    workspace: Workspace,
+    name: string,
+    args: Record<string, unknown> = {},
+    { mode = "readonly" }: { mode?: AkanMcpMode } = {},
+  ) {
+    const availableTools = this.listMcpTools(mode);
+    if (!availableTools.some((tool) => tool.name === name)) {
+      throw new Error(`MCP tool "${name}" is not available in ${mode} mode.`);
+    }
+
+    if (
+      name === "get_workspace_summary" ||
+      name === "list_apps" ||
+      name === "list_modules" ||
+      name === "get_module_context"
+    ) {
+      const context = await AkanContextAnalyzer.analyze(workspace, {
+        module: (args.module as string | undefined) ?? null,
+        includeAbstractContent: name === "get_module_context",
+      });
+      if (name === "get_workspace_summary") return context;
+      if (name === "list_apps") return context.apps;
+      if (name === "list_modules") return AkanContextAnalyzer.findModules(context);
+      return AkanContextAnalyzer.findModules(context, args.module as string | undefined);
+    }
+
+    if (name === "get_guideline") return await Prompter.getInstruction(stringArg(args, "name"));
+    if (name === "doctor_workspace") return await AkanContextAnalyzer.doctor(workspace, { strict: !!args.strict });
+    if (name === "explain_command") return this.explainCommand(stringArg(args, "command"));
+    if (name === "get_validation_contract")
+      return {
+        schemaVersion: 1,
+        reports: ["WorkflowPlan", "WorkflowApplyReport", "WorkflowValidationRunReport", "RepairReport"],
+        modes: {
+          readonly: this.listMcpTools("readonly").map((tool) => tool.name),
+          plan: this.listMcpTools("plan").map((tool) => tool.name),
+          apply: this.listMcpTools("apply").map((tool) => tool.name),
+        },
+        validationCommands: [
+          "akan workflow validate <run-id-or-plan> --format json",
+          "akan workflow report <run-id> --format json",
+          "akan doctor --strict --format json",
+        ],
+        repairCommands: [
+          "akan repair generated --app <app-or-lib> --format json",
+          "akan repair format --target <app-or-lib-or-pkg> --format json",
+          "akan repair imports --target <app-or-lib-or-pkg> --format json",
+          "akan repair dictionary --app <app-or-lib> --module <module> --format json",
+          "akan repair module-shape --app <app-or-lib> --module <module> --format json",
+        ],
+      };
+
+    if (name === "list_workflows") return parseJsonOutput(new WorkflowRunner().list({ format: "json" }));
+    if (name === "explain_workflow")
+      return parseJsonOutput(new WorkflowRunner().explain(stringArg(args, "workflow"), { format: "json" }));
+    if (name === "plan_workflow")
+      return parseJsonOutput(
+        await new WorkflowRunner().plan(stringArg(args, "workflow"), workflowInputsArg(args), {
+          format: "json",
+        }),
+      );
+    if (name === "apply_workflow")
+      return parseJsonOutput(
+        await new WorkflowRunner().apply(stringArg(args, "planPath"), {
+          format: "json",
+          dryRun: !!args.dryRun,
+          registry: createCliWorkflowStepRegistry(workspace),
+        }),
+      );
+    if (name === "run_validation")
+      return parseJsonOutput(
+        await new WorkflowRunner().validate(stringArg(args, "runIdOrPlan"), { format: "json", workspace }),
+      );
+    if (name === "repair_generated")
+      return parseJsonOutput(
+        await new RepairRunner().repair("generated", { workspace, app: stringArg(args, "app"), format: "json" }),
+      );
+    if (name === "repair_imports")
+      return parseJsonOutput(
+        await new RepairRunner().repair("imports", {
+          workspace,
+          target: stringArg(args, "target"),
+          format: "json",
+        }),
+      );
+    if (name === "repair_module_shape")
+      return parseJsonOutput(
+        await new RepairRunner().repair("module-shape", {
+          workspace,
+          app: stringArg(args, "app"),
+          module: stringArg(args, "module"),
+          format: "json",
+        }),
+      );
+
+    throw new Error(`Unknown tool: ${name}`);
+  }
+
+  async runMcp(workspace: Workspace, { mode = "readonly" }: { mode?: AkanMcpMode } = {}) {
     const decoder = new TextDecoder();
     let buffer = "";
     const writeMessage = (message: unknown, framing: McpFraming) => {
@@ -128,10 +315,16 @@ export class ContextRunner extends runner("context") {
         return { uri, mimeType: "text/markdown", text: await Prompter.getInstruction("framework") };
       if (uri === "akan://guidelines/modelSignal")
         return { uri, mimeType: "text/markdown", text: await Prompter.getInstruction("modelSignal") };
-      if (uri === "akan://workspace/summary") return { uri, mimeType: "application/json", text: jsonText(context) };
-      if (uri === "akan://workspace/apps") return { uri, mimeType: "application/json", text: jsonText(context.apps) };
+      if (uri === "akan://workspace/summary")
+        return { uri, mimeType: "application/json", text: jsonText(context, { trailingNewline: false }) };
+      if (uri === "akan://workspace/apps")
+        return { uri, mimeType: "application/json", text: jsonText(context.apps, { trailingNewline: false }) };
       if (uri === "akan://workspace/modules")
-        return { uri, mimeType: "application/json", text: jsonText(AkanContextAnalyzer.findModules(context)) };
+        return {
+          uri,
+          mimeType: "application/json",
+          text: jsonText(AkanContextAnalyzer.findModules(context), { trailingNewline: false }),
+        };
       const abstractMatch = uri.match(/^akan:\/\/workspace\/modules\/(.+)\/abstract$/);
       if (abstractMatch) {
         const detailed = await AkanContextAnalyzer.analyze(workspace, {
@@ -159,56 +352,30 @@ export class ContextRunner extends runner("context") {
         respond(
           request.id,
           {
-            tools: [
-              { name: "get_workspace_summary", inputSchema: { type: "object", properties: {} } },
-              { name: "list_apps", inputSchema: { type: "object", properties: {} } },
-              { name: "list_modules", inputSchema: { type: "object", properties: {} } },
-              {
-                name: "get_module_context",
-                inputSchema: { type: "object", properties: { module: { type: "string" } } },
-              },
-              {
-                name: "get_guideline",
-                inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
-              },
-              {
-                name: "explain_command",
-                inputSchema: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
-              },
-              {
-                name: "doctor_workspace",
-                inputSchema: { type: "object", properties: { strict: { type: "boolean" } } },
-              },
-            ],
+            tools: this.listMcpTools(mode),
           },
           framing,
         );
       } else if (request.method === "tools/call") {
         const name = params.name as string;
         const args = (params.arguments ?? {}) as Record<string, unknown>;
-        const context = await AkanContextAnalyzer.analyze(workspace, {
-          module: (args.module as string | undefined) ?? null,
-          includeAbstractContent: name === "get_module_context",
-        });
-        const result = await (async () => {
-          if (name === "get_workspace_summary") return context;
-          if (name === "list_apps") return context.apps;
-          if (name === "list_modules") return AkanContextAnalyzer.findModules(context);
-          if (name === "get_module_context")
-            return AkanContextAnalyzer.findModules(context, args.module as string | undefined);
-          if (name === "get_guideline") return await Prompter.getInstruction(args.name as string);
-          if (name === "doctor_workspace")
-            return await AkanContextAnalyzer.doctor(workspace, { strict: !!args.strict });
-          if (name === "explain_command") return this.explainCommand(args.command as string);
-          throw new Error(`Unknown tool: ${name}`);
-        })();
-        respond(
-          request.id,
-          {
-            content: [{ type: "text", text: typeof result === "string" ? result : jsonText(result) }],
-          },
-          framing,
-        );
+        try {
+          const result = await this.callMcpTool(workspace, name, args, { mode });
+          respond(
+            request.id,
+            {
+              content: [
+                {
+                  type: "text",
+                  text: typeof result === "string" ? result : jsonText(result, { trailingNewline: false }),
+                },
+              ],
+            },
+            framing,
+          );
+        } catch (error) {
+          respondError(request.id, -32602, error instanceof Error ? error.message : String(error), framing);
+        }
       } else if (request.method === "resources/list") {
         respond(request.id, { resources: resourceList }, framing);
       } else if (request.method === "resources/read") {
@@ -271,6 +438,12 @@ export class ContextRunner extends runner("context") {
       "create-view": "`akan create-view --app <app> --module <module>` creates a module View component.",
       "create-unit": "`akan create-unit --app <app> --module <module>` creates a module Unit component.",
       "create-template": "`akan create-template --app <app> --module <module>` creates a module Template component.",
+      "create-ui":
+        "`akan create-ui --app <app-or-lib> --module <module> --surface <view|unit|template> --format json` creates one UI surface and returns a primitive write report.",
+      "add-field":
+        "`akan add-field --app <app-or-lib> --module <module> --field <field> --type <type> --format json` updates source constant/dictionary files and reports sync/lint next actions.",
+      "add-enum-field":
+        "`akan add-enum-field --app <app-or-lib> --module <module> --field <field> --values a,b --format json` adds an enum field to source constant/dictionary files without editing generated files.",
       sync: "`akan sync <app-or-lib>` refreshes generated Akan files from source conventions.",
       lint: "`akan lint <app-or-lib-or-pkg>` runs Biome linting after preparing generated files.",
       typecheck: "`akan typecheck <app-name>` runs an application typecheck after preparing generated files.",
@@ -279,15 +452,34 @@ export class ContextRunner extends runner("context") {
       doctor:
         "`akan doctor --strict --format json` reports agent-readable workspace convention diagnostics and validation hints.",
       "guideline show": "`akan guideline show <name>` prints an Akan codegen guideline instruction.",
-      workflow: "`akan workflow list` lists read-only Akan workflow specs that agents can plan from.",
+      workflow:
+        "`akan workflow list|explain|plan|apply|validate|report` lists, plans, applies, validates, and reports agent-readable Akan workflows.",
       "workflow list": "`akan workflow list` lists parseable read-only workflow specs.",
       "workflow explain":
         "`akan workflow explain <workflow>` explains inputs, optional surfaces, steps, and validation.",
       "workflow plan":
-        "`akan workflow plan <workflow> ... --format json` returns a read-only plan without modifying files.",
+        "`akan workflow plan <workflow> ... --out .akan/workflows/plans/<name>.json --format json` returns a read-only plan and can store a local plan artifact.",
+      "workflow apply":
+        "`akan workflow apply [--dry-run] <plan-path> --format json` reads an approved plan artifact and returns a workflow apply report.",
+      "workflow validate":
+        "`akan workflow validate <run-id-or-plan> --format json` runs validation commands from a plan or apply report and stores a structured run report.",
+      "workflow report":
+        "`akan workflow report <run-id> --format json` reads .akan/workflows/runs/<run-id>.json and prints the stored report.",
+      repair:
+        "`akan repair generated|format|imports|dictionary|module-shape --format json` runs narrow safe repairs or returns repair-oriented next actions.",
+      "repair generated": "`akan repair generated --app <app-or-lib> --format json` refreshes generated Akan files.",
+      "repair format":
+        "`akan repair format --target <app-or-lib-or-pkg> --format json` runs the lint/format repair path.",
+      "repair imports":
+        "`akan repair imports --target <app-or-lib-or-pkg> --format json` runs the import organization repair path.",
+      "repair dictionary":
+        "`akan repair dictionary --app <app-or-lib> --module <module> --format json` reports dictionary label repair candidates.",
+      "repair module-shape":
+        "`akan repair module-shape --app <app-or-lib> --module <module> --format json` reports missing module source files and source-safe next actions.",
       agent: "`akan agent install <target>` writes editor-specific agent rules with overwrite protection.",
-      mcp: "`akan mcp` starts the read-only Akan MCP server over stdio.",
-      "mcp-install": "`akan mcp-install cursor` installs the read-only Akan MCP server config for Cursor.",
+      mcp: "`akan mcp --mode readonly|plan|apply` starts the Akan MCP server over stdio with an explicit permission mode.",
+      "mcp-install":
+        "`akan mcp-install cursor --mode readonly|plan|apply` installs the Akan MCP server config for Cursor.",
     };
     return (
       explanations[command] ??

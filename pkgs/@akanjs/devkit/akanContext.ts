@@ -4,6 +4,7 @@ import { capitalize } from "akanjs/common";
 import { AppExecutor, LibExecutor, type SysExecutor, type WorkspaceExecutor } from "./executors";
 import { FileSys } from "./fileSys";
 import type { PackageJson } from "./types";
+import type { RepairAction } from "./workflow";
 
 export type AkanContextFormat = "json" | "markdown";
 export type AkanModuleKind = "domain" | "service" | "scalar";
@@ -59,6 +60,7 @@ export interface AkanDiagnostic {
   code: string;
   message: string;
   path?: string;
+  repairActions?: RepairAction[];
 }
 
 export interface AkanDoctorResult {
@@ -76,7 +78,75 @@ export interface AkanDoctorResult {
     verifyingCommands: string[];
   };
   validationCommands: string[];
+  repairActions: RepairAction[];
 }
+
+export type JsonRpcRequest = {
+  jsonrpc?: "2.0";
+  id?: string | number | null;
+  method: string;
+  params?: Record<string, unknown>;
+};
+
+export type McpFraming = "content-length" | "newline";
+export type AkanMcpMode = "readonly" | "plan" | "apply";
+
+export type CursorMcpConfig = {
+  mcpServers?: Record<string, unknown>;
+};
+
+export const resourceList = [
+  { uri: "akan://docs/framework", name: "Akan framework guide", mimeType: "text/markdown" },
+  { uri: "akan://guidelines/framework", name: "Framework guideline", mimeType: "text/markdown" },
+  { uri: "akan://guidelines/modelSignal", name: "Model signal guideline", mimeType: "text/markdown" },
+  { uri: "akan://workspace/summary", name: "Workspace summary", mimeType: "application/json" },
+  { uri: "akan://workspace/apps", name: "Workspace apps", mimeType: "application/json" },
+  { uri: "akan://workspace/modules", name: "Workspace modules", mimeType: "application/json" },
+];
+
+export const cursorMcpConfigPath = ".cursor/mcp.json";
+
+const cursorWorkspaceFolder = "$" + "{workspaceFolder}";
+
+export const createAkanCursorMcpServer = (mode: AkanMcpMode = "readonly") => ({
+  type: "stdio",
+  command: "bash",
+  args: ["-lc", `cd "${cursorWorkspaceFolder}" && akan mcp --mode ${mode}`],
+});
+
+export const akanCursorMcpServer = createAkanCursorMcpServer();
+
+export const renderDoctorText = (result: AkanDoctorResult) => {
+  const lines = [`Akan doctor status: ${result.status}`];
+  if (result.diagnostics.length === 0) {
+    lines.push("", "No Akan workspace diagnostics found.");
+  } else {
+    lines.push(
+      "",
+      ...result.diagnostics.map((diagnostic) =>
+        [
+          `[${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`,
+          diagnostic.path ? `  ${diagnostic.path}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      ),
+    );
+  }
+  lines.push(
+    "",
+    "Generated file freshness:",
+    result.generatedFilesFreshness.message,
+    `Refresh: ${result.generatedFilesFreshness.refreshCommand}`,
+    "",
+    "Repair actions:",
+    ...(result.repairActions.length ? result.repairActions.map((action) => `- ${action.command}`) : ["- none"]),
+    "",
+    "Validation commands:",
+    ...result.validationCommands.map((command) => `- ${command}`),
+  );
+  return `${lines.join("\n")}\n`;
+};
 
 export interface AkanContextOptions {
   app?: string | null;
@@ -118,6 +188,35 @@ const generatedFilesFreshness = {
   refreshCommand: "akan sync <app-or-lib>",
   verifyingCommands: ["akan lint <app-or-lib-or-pkg>", "akan build <app-name>"],
 };
+
+const repairAction = (
+  kind: RepairAction["kind"],
+  command: string,
+  reason: string,
+  safeToRun: boolean,
+): RepairAction => ({
+  kind,
+  command,
+  reason,
+  safeToRun,
+});
+
+const moduleShapeFiles = (module: AkanModuleContext) => {
+  if (module.kind === "service") {
+    return [`${module.name}.dictionary.ts`, `${module.name}.service.ts`, `${module.name}.signal.ts`];
+  }
+  if (module.kind === "scalar") return [`${module.name}.constant.ts`, `${module.name}.dictionary.ts`];
+  return [
+    `${module.name}.constant.ts`,
+    `${module.name}.dictionary.ts`,
+    `${module.name}.service.ts`,
+    `${module.name}.store.ts`,
+    `${module.name}.signal.ts`,
+  ];
+};
+
+const constantFieldNames = (content: string) =>
+  [...content.matchAll(/\b([A-Za-z_$][\w$]*)\s*:\s*field\(/g)].map((match) => match[1]).filter(Boolean);
 
 const appRootAllowFiles = new Set([
   "akan.app.json",
@@ -327,18 +426,35 @@ export class AkanContextAnalyzer {
   ): Promise<AkanDoctorResult> {
     const context = await AkanContextAnalyzer.analyze(workspace);
     const diagnostics: AkanDiagnostic[] = [];
+    const repairActions: RepairAction[] = [
+      repairAction("generated", "akan repair generated --app <app-or-lib>", "Refresh generated Akan files.", true),
+      repairAction(
+        "format",
+        "akan repair format --target <app-or-lib-or-pkg>",
+        "Run the formatter/linter repair path.",
+        true,
+      ),
+    ];
 
     for (const app of context.apps) {
       const appPath = path.join(workspace.workspaceRoot, app.path);
       for (const entry of await safeReadDir(appPath)) {
         const allowed = entry.isDirectory() ? appRootAllowDirs.has(entry.name) : appRootAllowFiles.has(entry.name);
         if (!allowed) {
+          const action = repairAction(
+            "module-shape",
+            `akan repair module-shape --app ${app.name}`,
+            "Review app root shape and remove or move the unknown entry.",
+            false,
+          );
           diagnostics.push({
             severity: "error",
             code: "app-root-unknown-entry",
             path: `${app.path}/${entry.name}`,
             message: `Unexpected ${entry.isDirectory() ? "folder" : "file"} in app root: ${app.path}/${entry.name}`,
+            repairActions: [action],
           });
+          repairActions.push(action);
         }
       }
     }
@@ -346,12 +462,64 @@ export class AkanContextAnalyzer {
     for (const sys of [...context.apps, ...context.libs]) {
       for (const module of sys.modules) {
         if (!module.abstract.exists) {
+          const action = repairAction(
+            "module-shape",
+            `akan repair module-shape --app ${sys.name} --module ${module.name}`,
+            "Create the missing module abstract or inspect required source files.",
+            false,
+          );
           diagnostics.push({
             severity: strict ? "error" : "warning",
             code: "module-abstract-missing",
             path: module.abstract.path,
             message: `${capitalize(module.kind)} module ${sys.name}:${module.name} should include ${module.abstract.path}`,
+            repairActions: [action],
           });
+          repairActions.push(action);
+        }
+        const missingFiles = moduleShapeFiles(module).filter((filename) => !module.files.includes(filename));
+        if (missingFiles.length) {
+          const action = repairAction(
+            "module-shape",
+            `akan repair module-shape --app ${sys.name} --module ${module.name}`,
+            "Review missing required module source files.",
+            false,
+          );
+          diagnostics.push({
+            severity: "error",
+            code: "module-shape-invalid",
+            path: module.path,
+            message: `${capitalize(module.kind)} module ${sys.name}:${module.name} is missing required files: ${missingFiles.join(", ")}`,
+            repairActions: [action],
+          });
+          repairActions.push(action);
+        }
+        if (module.kind !== "service" && module.files.includes(`${module.name}.dictionary.ts`)) {
+          const constantPath = path.join(workspace.workspaceRoot, module.path, `${module.name}.constant.ts`);
+          const dictionaryPath = path.join(workspace.workspaceRoot, module.path, `${module.name}.dictionary.ts`);
+          const [constantContent, dictionaryContent] = await Promise.all([
+            safeReadText(constantPath),
+            safeReadText(dictionaryPath),
+          ]);
+          if (constantContent && dictionaryContent) {
+            for (const fieldName of constantFieldNames(constantContent)) {
+              if (new RegExp(`\\b${fieldName}\\s*:`).test(dictionaryContent)) continue;
+              const action = repairAction(
+                "dictionary",
+                `akan repair dictionary --app ${sys.name} --module ${module.name}`,
+                "Add missing dictionary labels for source constant fields.",
+                false,
+              );
+              diagnostics.push({
+                severity: "warning",
+                code: "dictionary-label-missing",
+                path: `${module.path}/${module.name}.dictionary.ts`,
+                message: `Dictionary labels for ${sys.name}:${module.name}.${fieldName} were not found.`,
+                repairActions: [action],
+              });
+              repairActions.push(action);
+            }
+          }
         }
       }
     }
@@ -366,6 +534,7 @@ export class AkanContextAnalyzer {
       generatedFiles: context.generatedFiles,
       generatedFilesFreshness,
       validationCommands: context.validationCommands,
+      repairActions,
     };
   }
 

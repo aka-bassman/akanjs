@@ -8,6 +8,7 @@
     "lint": "akan lint",
     "typecheck": "akan typecheck",
     "test": "akan test",
+    "setup:agent": "akan agent install all",
     "build": "akan build"
   },
   "dependencies": {},

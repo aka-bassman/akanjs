@@ -28,13 +28,26 @@ export class ContextCommand extends command("context", [ContextScript], ({ publi
   mcpInstall: target({ desc: "Install the Akan MCP server config for Cursor" })
     .arg("target", String, { desc: "cursor", nullable: true })
     .option("force", Boolean, { desc: "overwrite an existing Akan MCP server entry", default: false })
+    .option("mode", String, {
+      desc: "MCP permission mode",
+      default: "readonly",
+      enum: ["readonly", "plan", "apply"],
+    })
     .with(Workspace)
-    .exec(async function (targetName, force, workspace) {
-      await this.contextScript.mcpInstall(workspace, targetName, { force });
+    .exec(async function (targetName, force, mode, workspace) {
+      await this.contextScript.mcpInstall(workspace, targetName, {
+        force,
+        mode: mode as "readonly" | "plan" | "apply",
+      });
     }),
-  mcp: target({ desc: "Start the read-only Akan MCP server over stdio", stdio: true })
+  mcp: target({ desc: "Start the Akan MCP server over stdio", stdio: true })
+    .option("mode", String, {
+      desc: "MCP permission mode",
+      default: "readonly",
+      enum: ["readonly", "plan", "apply"],
+    })
     .with(Workspace)
-    .exec(async function (workspace) {
-      await this.contextScript.mcp(workspace);
+    .exec(async function (mode, workspace) {
+      await this.contextScript.mcp(workspace, { mode: mode as "readonly" | "plan" | "apply" });
     }),
 })) {}

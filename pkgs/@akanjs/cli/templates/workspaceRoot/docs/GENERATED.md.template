@@ -36,15 +36,19 @@ sync or build can overwrite local changes.
 
 ## How To Change Generated Output
 
-1. Edit the source file that owns the behavior, such as `task.constant.ts`, `task.document.ts`, `task.service.ts`,
+1. Prefer `akan mcp --mode plan` to find an allowlisted workflow before editing files directly.
+2. If a workflow or repair tool exists, use `akan mcp --mode apply` for `apply_workflow`, `run_validation`, or
+   `repair_generated`.
+3. Edit the source file that owns the behavior, such as `task.constant.ts`, `task.document.ts`, `task.service.ts`,
    `task.signal.ts`, or `task.store.ts`.
-2. Run:
+4. Run:
 
 ```bash
 akan sync <%= appName %>
+# or: akan repair generated --app <%= appName %>
 ```
 
-3. Re-run the smallest relevant check, usually `akan test <%= appName %>`, `akan lint <%= appName %>`, or
-   `akan build <%= appName %>`.
+5. Re-run the smallest relevant check, usually `akan test <%= appName %>`, `akan lint <%= appName %>`,
+   `akan doctor --strict`, or `akan build <%= appName %>`.
 
 If a generated file looks wrong, fix the source convention or sync input rather than patching the generated file.

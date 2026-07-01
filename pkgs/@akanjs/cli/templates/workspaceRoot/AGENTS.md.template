@@ -62,16 +62,18 @@ Use the local module shape before adding a new abstraction.
 
 1. Read the nearby module and convention before creating files. If `*.abstract.md` exists, read it first.
 2. Put new files in the established Akan location instead of adding parallel architecture.
-3. When an Akan CLI command exists for the task, prefer the CLI before direct source edits.
-4. Prefer CLI generation commands for new apps, libraries, modules, scalars, pages, and generated references.
-5. Keep page and layout files server-oriented: route-level `usePage`, headers, static layout, and `akanjs/ui` `Tab` composition belong there.
-6. Put interactive loading, submit/import actions, local form state, and `router.push` in client `Util`, `Template`, or `Zone` components.
-7. Prefer `Tab` for static mode selection instead of extra `useState`; render one focused client component inside each `Tab.Panel`.
-8. Keep server-only logic out of client surfaces and client-only code out of server imports.
-9. Treat `AKAN_PUBLIC_*` env vars as public. Never put secrets in them.
-10. Add or update tests when behavior, contracts, or CLI output changes.
-11. Update `*.abstract.md` when business invariants, workflows, or public behavior change.
-12. Run the smallest relevant verification command after changes.
+3. Prefer Akan MCP workflows before direct source edits. Start with `akan mcp --mode plan` for `list_workflows`, `explain_workflow`, and `plan_workflow`.
+4. Use `akan mcp --mode apply` only for allowlisted `apply_workflow`, `run_validation`, and repair tools.
+5. Direct source edits are denied when an allowlisted Akan workflow or repair tool can perform the change.
+6. If no workflow exists, edit only the owning source files and never patch generated files directly.
+7. Keep page and layout files server-oriented: route-level `usePage`, headers, static layout, and `akanjs/ui` `Tab` composition belong there.
+8. Put interactive loading, submit/import actions, local form state, and `router.push` in client `Util`, `Template`, or `Zone` components.
+9. Prefer `Tab` for static mode selection instead of extra `useState`; render one focused client component inside each `Tab.Panel`.
+10. Keep server-only logic out of client surfaces and client-only code out of server imports.
+11. Treat `AKAN_PUBLIC_*` env vars as public. Never put secrets in them.
+12. Add or update tests when behavior, contracts, or CLI output changes.
+13. Update `*.abstract.md` when business invariants, workflows, or public behavior change.
+14. Run the smallest relevant verification command after changes.
 
 ## Common Commands
 
@@ -122,28 +124,39 @@ For the default generated app, start with:
 akan start <%= appName %>
 ```
 
-### The Essential Loop: Edit → Sync → Check
+### The Essential Loop: Workflow -> Sync -> Check
 
-Almost every Akan.js change follows this pattern. **Missing step 2 is the #1 cause of agent confusion.**
+Almost every Akan.js change follows this pattern. **Missing sync or repair is the #1 cause of agent confusion.**
 
-1. **Edit** — Create or modify source files in the correct location.
+1. **Plan** — Ask the Akan MCP server for the workflow first.
    ```
-   vi apps/<%= appName %>/lib/task/task.constant.ts  # e.g., add a priority field
+   akan mcp --mode plan
+   # use list_workflows, explain_workflow, and plan_workflow
    ```
 
-2. **Sync** — Regenerate barrel files so Akan discovers your change. This regenerates:
+2. **Apply or edit source** — Use allowlisted apply/repair tools when available. If no workflow exists, edit only
+   owning source files such as `task.constant.ts`, `task.dictionary.ts`, `Task.Template.tsx`, or `Task.Unit.tsx`.
+   Never edit generated files.
+   ```
+   akan mcp --mode apply
+   # use apply_workflow, run_validation, repair_generated, repair_imports, or repair_module_shape
+   ```
+
+3. **Sync or repair** — Regenerate barrel files so Akan discovers your change. This regenerates:
    `cnst.ts`, `db.ts`, `srv.ts`, `sig.ts`, `st.ts`, `dict.ts`, `useClient.ts`, `useServer.ts`,
    `ui/index.ts`, `webkit/index.ts`, `srvkit/index.ts`, `common/index.ts`, and all module `index.ts` files.
    ```
    akan sync <%= appName %>
+   # or: akan repair generated --app <%= appName %>
    ```
    **CRITICAL**: Sync after EVERY file add, delete, or rename. Without sync, other modules cannot
    `import * as cnst from "../cnst"` and find your new model.
 
-3. **Check** — Verify your change compiles and lints.
+4. **Check** — Verify your change compiles and lints.
    ```
    akan start <%= appName %>   # dev server with live feedback (preferred)
    akan lint <%= appName %>    # quick lint-only check
+   akan doctor --strict        # structured workspace diagnostics
    ```
 
    If `akan sync` gives errors, try:

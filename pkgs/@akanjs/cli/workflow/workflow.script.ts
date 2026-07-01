@@ -1,13 +1,27 @@
-import { script } from "@akanjs/devkit";
+import {
+  createWorkflowStepRegistry,
+  script,
+  type WorkflowFormat,
+  type WorkflowPlanInputs,
+  type Workspace,
+} from "@akanjs/devkit";
 import { Logger } from "akanjs/common";
-import { type WorkflowFormat, type WorkflowPlanInputs, WorkflowRunner } from "./workflow.runner";
+import { ModuleScript } from "../module/module.script";
+import { PrimitiveScript } from "../primitive/primitive.script";
+import { ScalarScript } from "../scalar/scalar.script";
+import { WorkflowRunner } from "./workflow.runner";
 
-export class WorkflowScript extends script("workflow", [WorkflowRunner]) {
+export class WorkflowScript extends script("workflow", [WorkflowRunner, ModuleScript, ScalarScript, PrimitiveScript]) {
   async workflow(
     action: string,
     workflow: string | null,
     inputs: WorkflowPlanInputs,
-    format: WorkflowFormat = "markdown",
+    {
+      format = "markdown",
+      out = null,
+      dryRun = false,
+      workspace,
+    }: { format?: WorkflowFormat; out?: string | null; dryRun?: boolean; workspace?: Workspace } = {},
   ) {
     if (action === "list") {
       Logger.rawLog(this.workflowRunner.list({ format }));
@@ -19,9 +33,37 @@ export class WorkflowScript extends script("workflow", [WorkflowRunner]) {
       return;
     }
     if (action === "plan") {
-      Logger.rawLog(this.workflowRunner.plan(workflow, inputs, { format }));
+      Logger.rawLog(await this.workflowRunner.plan(workflow, inputs, { format, out }));
       return;
     }
-    throw new Error(`Unknown workflow action: ${action}. Use list, explain, or plan.`);
+    if (action === "apply") {
+      if (!workspace) throw new Error("Workspace is required for workflow apply.");
+      Logger.rawLog(
+        await this.workflowRunner.apply(workflow, {
+          dryRun,
+          format,
+          registry: createWorkflowStepRegistry({
+            workspace,
+            createModule: (sys, module) => this.moduleScript.createModuleTemplate(sys, module),
+            createScalar: (sys, scalar) => this.scalarScript.createScalar(sys, scalar),
+            createUi: (input) => this.primitiveScript.createUi(workspace, input),
+            addField: (input) => this.primitiveScript.addField(workspace, input),
+            addEnumField: (input) => this.primitiveScript.addEnumField(workspace, input),
+          }),
+        }),
+      );
+      return;
+    }
+    if (action === "validate") {
+      if (!workspace) throw new Error("Workspace is required for workflow validate.");
+      Logger.rawLog(await this.workflowRunner.validate(workflow, { format, workspace }));
+      return;
+    }
+    if (action === "report") {
+      if (!workspace) throw new Error("Workspace is required for workflow report.");
+      Logger.rawLog(await this.workflowRunner.report(workflow, { format, workspace }));
+      return;
+    }
+    throw new Error(`Unknown workflow action: ${action}. Use list, explain, plan, apply, validate, or report.`);
   }
 }

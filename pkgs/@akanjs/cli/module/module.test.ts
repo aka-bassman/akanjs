@@ -82,10 +82,16 @@ describe("ModuleScript", () => {
     script.pageScript.createCrudPage = async (module, options) =>
       recorder.record("createCrudPage", module.name, options);
 
-    await script.createModuleTemplate(sys as never, "post", { page: true });
+    const report = await script.createModuleTemplate(sys as never, "post", { page: true });
 
     expect(recorder.names()).toEqual(["createModuleTemplate", "createCrudPage", "scan"]);
     expect(recorder.calls[1]?.args[1]).toMatchObject({ basePath: null, single: false });
+    expect(report).toMatchObject({
+      schemaVersion: 1,
+      command: "create-module",
+      status: "passed",
+      validationCommands: [{ command: "akan sync demo" }, { command: "akan lint demo" }],
+    });
   });
 
   test("creates service module and scans system", async () => {
@@ -102,9 +108,11 @@ describe("ModuleScript", () => {
       return {} as never;
     };
 
-    await script.createService(sys as never, "localBuild");
+    const report = await script.createService(sys as never, "localBuild");
 
     expect(recorder.names()).toEqual(["createService", "scan"]);
     expect(recorder.calls[0]?.args[0]).toBe("_localBuild");
+    expect(report.command).toBe("create-service");
+    expect(report.generatedFiles.map((file) => file.action)).toContain("sync");
   });
 });

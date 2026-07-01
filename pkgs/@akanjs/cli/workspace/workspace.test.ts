@@ -242,8 +242,16 @@ describe("WorkspaceRunner", () => {
     tempRoots.push(root);
 
     await runner.generateAgentRules(workspace);
-    expect(await Bun.file(`${root}/AGENTS.md`).text()).toContain("repo Agent Guide");
-    expect(await Bun.file(`${root}/.cursor/rules/akan.mdc`).text()).toContain("Akan.js Workspace Rules");
+    const agentsGuide = await Bun.file(`${root}/AGENTS.md`).text();
+    const cursorRules = await Bun.file(`${root}/.cursor/rules/akan.mdc`).text();
+    expect(agentsGuide).toContain("repo Agent Guide");
+    expect(agentsGuide).toContain("Prefer Akan MCP workflows before direct source edits");
+    expect(agentsGuide).toContain("akan mcp --mode plan");
+    expect(agentsGuide).toContain("akan repair generated");
+    expect(cursorRules).toContain("Akan.js Workspace Rules");
+    expect(cursorRules).toContain("Prefer Akan MCP workflows before direct source edits");
+    expect(cursorRules).toContain("Direct source edits are denied");
+    expect(cursorRules).toContain("akan repair generated");
 
     await Bun.write(`${root}/AGENTS.md`, "custom\n");
     await runner.generateAgentRules(workspace);

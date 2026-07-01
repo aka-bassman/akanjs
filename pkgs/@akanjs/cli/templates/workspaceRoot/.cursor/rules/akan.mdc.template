@@ -15,6 +15,11 @@ alwaysApply: true
 - Do not hand-edit generated Akan files such as `akan.app.json`, `client.ts`, `server.ts`, generated facet indexes,
   `lib/cnst.ts`, `lib/dict.ts`, `lib/db.ts`, `lib/srv.ts`, `lib/st.ts`, `lib/sig.ts`, `lib/useClient.ts`, or
   `lib/useServer.ts`.
+- Prefer Akan MCP workflows before direct source edits: use `akan mcp --mode plan` for workflow discovery and
+  planning, then `akan mcp --mode apply` only for allowlisted apply, validation, and repair tools.
+- Direct source edits are denied when an allowlisted Akan workflow or repair tool can perform the change.
+- If generated output is stale or broken, update the owning source file and run `akan repair generated` or
+  `akan sync <app-or-lib>` instead of patching generated files.
 - For new domain behavior, inspect sibling `constant`, `dictionary`, `signal`, `document`, `service`, `store`, and UI
   module files before changing shape.
 - Update `*.abstract.md` when business invariants, workflows, or public behavior change. Do not update it for
