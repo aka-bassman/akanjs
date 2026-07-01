@@ -143,9 +143,30 @@ describe("Executor filesystem helpers", () => {
       "Akan.js Workspace Rules",
     );
     expect(await readFile(path.join(root, "workspace/AGENTS.md"), "utf8")).toContain("sample Agent Guide");
+    expect(await readFile(path.join(root, "workspace/docs/AI-DEVELOPMENT.md"), "utf8")).toContain(
+      "AI Development Guide",
+    );
+    expect(await readFile(path.join(root, "workspace/docs/GENERATED.md"), "utf8")).toContain("Generated Akan Files");
     expect(await readFile(path.join(root, "workspace/biome.json"), "utf8")).toContain(
       "./node_modules/@akanjs/devkit/lint/no-import-client-functions.grit",
     );
+  });
+
+  test("applies app sample signal test helpers", async () => {
+    const root = await makeTempRoot();
+    const exec = new Executor("fixture", root);
+
+    await exec.applyTemplate({
+      basePath: "app",
+      template: "appSample",
+      dict: { appName: "demo" },
+      options: { libs: [] },
+    });
+
+    await expect(readFile(path.join(root, "app/lib/task/task.service.test.ts"), "utf8")).rejects.toThrow();
+    expect(await readFile(path.join(root, "app/lib/task/task.signal.spec.ts"), "utf8")).toContain("getCompletedTask");
+    expect(await readFile(path.join(root, "app/lib/task/task.signal.test.ts"), "utf8")).toContain("Task signal smoke");
+    expect(await readFile(path.join(root, "app/lib/task/task.document.ts"), "utf8")).toContain('action: "started"');
   });
 
   test("copies static files from CLI templates", async () => {

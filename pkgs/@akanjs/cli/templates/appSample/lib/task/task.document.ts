@@ -34,7 +34,7 @@ export class Task extends by(cnst.Task) {
   start() {
     if (this.status !== "todo") throw new Err("task.error.cannotStartFromNonTodo");
     this.status = "inProgress";
-    this.workHistory.push({ action: "completed", at: dayjs(), note: "" });
+    this.workHistory.push({ action: "started", at: dayjs(), note: "" });
     return this;
   }
 

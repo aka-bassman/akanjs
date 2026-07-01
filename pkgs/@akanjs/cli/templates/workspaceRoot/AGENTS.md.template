@@ -3,6 +3,9 @@
 This is an Akan.js workspace. Akan is convention-driven: keep business intent in the expected place and let
 the framework generate the repeated surfaces.
 
+For agent-neutral documentation that Claude Code, Codex, Devin, GitHub Copilot Coding Agent, and other tools can
+also read, see `docs/AI-DEVELOPMENT.md` and `docs/GENERATED.md`.
+
 ## Workspace Layout
 
 - `apps/<app>` contains application pages, app UI, app domain modules, env files, and `akan.config.ts`.
