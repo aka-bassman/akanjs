@@ -33,6 +33,65 @@ describe("PrimitiveScript", () => {
     expect(await module.readFile("post.dictionary.ts")).toContain('priority: t(["Priority", "Priority"])');
   });
 
+  test("normalizes integer and float field type aliases", async () => {
+    const { root, workspace, module } = await createTempModule("post");
+    tempRoots.push(root);
+    await new ModuleRunner().createModuleTemplate(module);
+    const script = CommandContainer.get(PrimitiveScript);
+
+    const integerReport = await script.addField(workspace, {
+      app: "demo",
+      module: "post",
+      field: "budget",
+      type: "integer",
+      defaultValue: "0",
+    });
+    const floatReport = await script.addField(workspace, {
+      app: "demo",
+      module: "post",
+      field: "rating",
+      type: "float",
+      defaultValue: "0.5",
+    });
+
+    expect(integerReport.status).toBe("passed");
+    expect(floatReport.status).toBe("passed");
+    const constant = await module.readFile("post.constant.ts");
+    expect(constant).toContain('import { Float, Int } from "akanjs/base";');
+    expect(constant).toContain('budget: field(Int, { default: "0" }),');
+    expect(constant).toContain('rating: field(Float, { default: "0.5" }),');
+  });
+
+  test("rejects ambiguous number field types without writing source files", async () => {
+    const { root, workspace, module } = await createTempModule("post");
+    tempRoots.push(root);
+    await new ModuleRunner().createModuleTemplate(module);
+    const script = CommandContainer.get(PrimitiveScript);
+
+    const lowerReport = await script.addField(workspace, {
+      app: "demo",
+      module: "post",
+      field: "budget",
+      type: "number",
+    });
+    const upperReport = await script.addField(workspace, {
+      app: "demo",
+      module: "post",
+      field: "cost",
+      type: "Number",
+    });
+
+    expect(lowerReport.status).toBe("failed");
+    expect(upperReport.status).toBe("failed");
+    expect(lowerReport.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "primitive-field-type-unsupported", input: "type" }),
+    );
+    const constant = await module.readFile("post.constant.ts");
+    expect(constant).not.toContain("field(Number)");
+    expect(constant).not.toContain("budget:");
+    expect(constant).not.toContain("cost:");
+  });
+
   test("adds an enum field and enum dictionary without syncing generated files", async () => {
     const { root, workspace, module } = await createTempModule("task");
     tempRoots.push(root);

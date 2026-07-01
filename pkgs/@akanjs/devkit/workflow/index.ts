@@ -8,6 +8,8 @@ export type WorkflowFormat = "markdown" | "json";
 export type WorkflowPlanInputs = Record<string, string | null>;
 export type PrimitiveFormat = "markdown" | "json";
 export type UiSurface = "view" | "unit" | "template";
+export type WorkflowValidationKind = "sync" | "lint" | "typecheck" | "doctor" | "custom";
+export type WorkflowFailureScope = "workspace-config" | "environment" | "source-change" | "unknown";
 
 export interface PrimitiveTargetInput {
   app: string | null;
@@ -50,6 +52,7 @@ export interface WorkflowPredictedChange {
 export interface WorkflowValidation {
   command: string;
   reason: string;
+  kind?: WorkflowValidationKind;
 }
 
 export interface WorkflowSpec {
@@ -70,6 +73,9 @@ export interface WorkflowDiagnostic {
   code: string;
   message: string;
   input?: string;
+  command?: string;
+  kind?: WorkflowValidationKind;
+  failureScope?: WorkflowFailureScope;
 }
 
 export interface WorkflowPlan {
@@ -98,6 +104,7 @@ export interface WorkflowApplyCommand {
   command: string;
   reason: string;
   stepId?: string;
+  kind?: WorkflowValidationKind;
 }
 
 export type WorkflowRunSource =
@@ -108,8 +115,10 @@ export type WorkflowRunSource =
 export interface WorkflowValidationCommandResult {
   command: string;
   reason: string;
+  kind?: WorkflowValidationKind;
   status: "passed" | "failed";
   exitCode: number;
+  failureScope?: WorkflowFailureScope;
   stdout?: string;
   stderr?: string;
 }
@@ -163,6 +172,8 @@ export interface WorkflowApplyReport {
   status: "passed" | "failed";
   changedFiles: PrimitiveChangedFile[];
   generatedFiles: PrimitiveGeneratedFile[];
+  appliedCommands: WorkflowApplyCommand[];
+  recommendedValidationCommands: WorkflowApplyCommand[];
   commands: WorkflowApplyCommand[];
   diagnostics: WorkflowDiagnostic[];
   nextActions: PrimitiveNextAction[];
@@ -293,6 +304,20 @@ export const createWorkflowPlan = (spec: WorkflowSpec, rawInputs: Record<string,
     inputs[name] = value;
   }
 
+  const fieldType = inputs.type;
+  if (
+    spec.name === "add-field" &&
+    typeof fieldType === "string" &&
+    (fieldType.toLowerCase() === "number" || fieldType.toLowerCase() === "numeric")
+  ) {
+    diagnostics.push({
+      severity: "error",
+      code: "primitive-field-type-unsupported",
+      input: "type",
+      message: `Field type "${fieldType}" is ambiguous in Akan. Use Int for integer fields or Float for decimal fields.`,
+    });
+  }
+
   return {
     schemaVersion: 1,
     workflow: spec.name,
@@ -395,22 +420,36 @@ export const createWorkflowApplyReport = ({
   mode,
   changedFiles = [],
   generatedFiles = [],
+  appliedCommands = [],
+  recommendedValidationCommands,
   commands = [],
   diagnostics = [],
   nextActions = [],
   plan,
-}: Omit<WorkflowApplyReport, "schemaVersion" | "status">): WorkflowApplyReport => ({
-  schemaVersion: 1,
-  workflow,
-  mode,
-  status: workflowStatus(diagnostics),
-  changedFiles: uniqueBy(changedFiles, (file) => `${file.action}:${file.path}:${file.reason}`),
-  generatedFiles: uniqueBy(generatedFiles, (file) => `${file.action}:${file.path}:${file.reason}`),
-  commands: uniqueBy(commands, (command) => command.command),
-  diagnostics,
-  nextActions: uniqueBy(nextActions, (action) => action.command),
-  plan,
-});
+}: Omit<
+  WorkflowApplyReport,
+  "schemaVersion" | "status" | "appliedCommands" | "recommendedValidationCommands" | "commands"
+> & {
+  appliedCommands?: WorkflowApplyCommand[];
+  recommendedValidationCommands?: WorkflowApplyCommand[];
+  commands?: WorkflowApplyCommand[];
+}): WorkflowApplyReport => {
+  const validationCommands = recommendedValidationCommands ?? commands;
+  return {
+    schemaVersion: 1,
+    workflow,
+    mode,
+    status: workflowStatus(diagnostics),
+    changedFiles: uniqueBy(changedFiles, (file) => `${file.action}:${file.path}:${file.reason}`),
+    generatedFiles: uniqueBy(generatedFiles, (file) => `${file.action}:${file.path}:${file.reason}`),
+    appliedCommands: uniqueBy(appliedCommands, (command) => command.command),
+    recommendedValidationCommands: uniqueBy(validationCommands, (command) => command.command),
+    commands: uniqueBy(validationCommands, (command) => command.command),
+    diagnostics,
+    nextActions: uniqueBy(nextActions, (action) => action.command),
+    plan,
+  };
+};
 
 export const resolveWorkflowCommand = (command: string, plan: WorkflowPlan) => {
   const target = typeof plan.inputs.app === "string" ? plan.inputs.app : "<app-or-lib>";
@@ -424,6 +463,7 @@ export const workflowCommandsForPlan = (plan: WorkflowPlan) =>
   plan.validation.map((validation) => ({
     command: resolveWorkflowCommand(validation.command, plan),
     reason: validation.reason,
+    kind: validation.kind,
   })) satisfies WorkflowApplyCommand[];
 
 export const workflowRunsDir = ".akan/workflows/runs";
@@ -444,7 +484,7 @@ export const workflowRunArtifactPath = (runId: string) => `${workflowRunsDir}/${
 export const writeWorkflowRunArtifact = async (workspace: Workspace, artifact: WorkflowRunArtifact) => {
   const runId = getRunId(artifact);
   const artifactPath = workflowRunArtifactPath(runId);
-  await workspace.writeFile(artifactPath, jsonText(artifact));
+  await workspace.writeFile(artifactPath, jsonText(artifact), { silent: true });
   return { runId, path: artifactPath };
 };
 
@@ -488,6 +528,9 @@ export const createWorkflowValidationRunReport = async ({
             severity: "error" as const,
             code: "workflow-validation-command-failed",
             message: `Validation command failed: ${result.command}`,
+            command: result.command,
+            kind: result.kind,
+            failureScope: result.failureScope,
           },
         ]
       : [],
@@ -698,9 +741,14 @@ export const renderWorkflowApplyReport = (report: WorkflowApplyReport) =>
       ? report.generatedFiles.map((file) => `- \`${file.action}\` ${file.path}: ${file.reason}`)
       : ["- none"]),
     "",
-    "## Commands",
-    ...(report.commands.length
-      ? report.commands.map((command) => `- \`${command.command}\`: ${command.reason}`)
+    "## Applied Commands",
+    ...(report.appliedCommands.length
+      ? report.appliedCommands.map((command) => `- \`${command.command}\`: ${command.reason}`)
+      : ["- none"]),
+    "",
+    "## Recommended Validation Commands",
+    ...(report.recommendedValidationCommands.length
+      ? report.recommendedValidationCommands.map((command) => `- \`${command.command}\`: ${command.reason}`)
       : ["- none"]),
     "",
     "## Diagnostics",
@@ -727,7 +775,10 @@ export const renderWorkflowValidationRunReport = (report: WorkflowValidationRunR
     "",
     "## Commands",
     ...(report.commands.length
-      ? report.commands.map((command) => `- [${command.status}] \`${command.command}\`: ${command.reason}`)
+      ? report.commands.map((command) => {
+          const scope = command.failureScope ? ` (${command.failureScope})` : "";
+          return `- [${command.status}] \`${command.command}\`${scope}: ${command.reason}`;
+        })
       : ["- none"]),
     "",
     "## Diagnostics",
@@ -818,7 +869,7 @@ export class WorkflowExecutor {
   async apply(plan: WorkflowPlan): Promise<WorkflowApplyReport> {
     const changedFiles: PrimitiveChangedFile[] = [];
     const generatedFiles: PrimitiveGeneratedFile[] = [];
-    const commands: WorkflowApplyCommand[] = [];
+    const recommendedValidationCommands: WorkflowApplyCommand[] = [];
     const diagnostics: WorkflowDiagnostic[] = [...plan.diagnostics];
     const nextActions: PrimitiveNextAction[] = [];
 
@@ -828,14 +879,14 @@ export class WorkflowExecutor {
         mode: "apply",
         changedFiles,
         generatedFiles,
-        commands,
+        recommendedValidationCommands,
         diagnostics,
         nextActions,
         plan,
       });
     }
 
-    commands.push(...workflowCommandsForPlan(plan));
+    recommendedValidationCommands.push(...workflowCommandsForPlan(plan));
     nextActions.push(...workflowCommandsForPlan(plan));
 
     for (const step of plan.steps) {
@@ -858,7 +909,7 @@ export class WorkflowExecutor {
       if (!result) continue;
       changedFiles.push(...(result.changedFiles ?? []));
       generatedFiles.push(...(result.generatedFiles ?? []));
-      commands.push(...(result.commands ?? []));
+      recommendedValidationCommands.push(...(result.commands ?? []));
       diagnostics.push(...(result.diagnostics ?? []));
       nextActions.push(...(result.nextActions ?? []));
       if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) break;
@@ -869,7 +920,7 @@ export class WorkflowExecutor {
       mode: "apply",
       changedFiles,
       generatedFiles,
-      commands,
+      recommendedValidationCommands,
       diagnostics,
       nextActions,
       plan,
@@ -1000,14 +1051,36 @@ export const lowerlize = (value: string) => `${value.slice(0, 1).toLowerCase()}$
 export const compactDiagnostics = (diagnostics: Array<WorkflowDiagnostic | false | null | undefined>) =>
   diagnostics.filter((diagnostic): diagnostic is WorkflowDiagnostic => !!diagnostic);
 
-export const fieldExpression = (typeName: string, defaultValue?: string | null) => {
+export const normalizeFieldType = (typeName: string) => {
   const normalizedTypes: Record<string, string> = {
     string: "String",
-    number: "Number",
     boolean: "Boolean",
     date: "Date",
+    int: "Int",
+    integer: "Int",
+    float: "Float",
+    double: "Float",
+    decimal: "Float",
   };
-  const typeExpression = normalizedTypes[typeName.toLowerCase()] ?? typeName;
+  return normalizedTypes[typeName.toLowerCase()] ?? typeName;
+};
+
+export const ensureBaseTypeImport = (content: string, typeName: string) => {
+  if (typeName !== "Int" && typeName !== "Float") return content;
+  if (new RegExp(`import \\{[^}]*\\b${typeName}\\b[^}]*\\} from "akanjs/base";`).test(content)) return content;
+  const baseImport = /import \{ ([^}]+) \} from "akanjs\/base";/.exec(content);
+  if (baseImport) {
+    const names = baseImport[1]
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean);
+    return content.replace(baseImport[0], `import { ${[...names, typeName].sort().join(", ")} } from "akanjs/base";`);
+  }
+  return `import { ${typeName} } from "akanjs/base";\n${content}`;
+};
+
+export const fieldExpression = (typeName: string, defaultValue?: string | null) => {
+  const typeExpression = normalizeFieldType(typeName);
   const defaultOption = defaultValue ? `, { default: ${JSON.stringify(defaultValue)} }` : "";
   return `field(${typeExpression}${defaultOption})`;
 };

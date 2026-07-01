@@ -503,7 +503,7 @@ export class Executor {
   async writeFile(
     filePath: string,
     content: string | object,
-    { overwrite = true }: { overwrite?: boolean } = {},
+    { overwrite = true, silent = false }: { overwrite?: boolean; silent?: boolean } = {},
   ): Promise<FileContent> {
     const writePath = this.getPath(filePath);
     const dir = path.dirname(writePath);
@@ -521,7 +521,7 @@ export class Executor {
       }
     } else {
       await FileSys.writeText(writePath, contentStr);
-      this.logger.rawLog(chalk.green(`File Create: ${filePath}`));
+      if (!silent) this.logger.rawLog(chalk.green(`File Create: ${filePath}`));
     }
     return { filePath: writePath, content: contentStr };
   }
@@ -1357,14 +1357,15 @@ export class AppExecutor extends SysExecutor {
   getCommandEnv(env: Record<string, string> = {}): Record<string, string> {
     const basePort = 8282;
     const portOffset = WorkspaceExecutor.getBaseDevEnv().portOffset;
-    const PORT = basePort ? (basePort + portOffset).toString() : undefined;
+    const PORT = (basePort + portOffset).toString();
     const AKAN_PUBLIC_SERVER_PORT = portOffset ? (8282 + portOffset).toString() : undefined;
     return {
       ...process.env,
       AKAN_PUBLIC_APP_NAME: this.name,
       AKAN_WORKSPACE_ROOT: this.workspace.workspaceRoot,
       NODE_NO_WARNINGS: "1",
-      ...(PORT ? { PORT, AKAN_PUBLIC_CLIENT_PORT: PORT } : {}),
+      PORT,
+      AKAN_PUBLIC_CLIENT_PORT: PORT,
       ...(AKAN_PUBLIC_SERVER_PORT ? { AKAN_PUBLIC_SERVER_PORT } : {}),
       ...env,
     };

@@ -10,7 +10,12 @@ export const addFieldWorkflowSpec: WorkflowSpec = {
     ...sysInputs,
     ...moduleInput,
     field: { type: "string", required: true, description: "Name of the field to add." },
-    type: { type: "string", required: true, description: "Field type or scalar name." },
+    type: {
+      type: "string",
+      required: true,
+      description:
+        "Field type or scalar name. Use Int for integer fields or Float for decimal fields; do not use Number.",
+    },
     values: { type: "string-list", description: "Comma-separated enum values when type is enum." },
     default: { type: "string", description: "Optional default value for the field." },
   },
@@ -76,6 +81,7 @@ export const addFieldWorkflowSpec: WorkflowSpec = {
     {
       command: "akan typecheck <app-name>",
       reason: "Validate cross-surface TypeScript contracts after field changes.",
+      kind: "typecheck",
     },
   ],
   completionCriteria: [

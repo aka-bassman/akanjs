@@ -66,7 +66,11 @@ export const addMutationWorkflowSpec: WorkflowSpec = {
   ],
   validation: [
     ...baseValidation,
-    { command: "akan typecheck <app-name>", reason: "Validate mutation contracts across service and signal." },
+    {
+      command: "akan typecheck <app-name>",
+      reason: "Validate mutation contracts across service and signal.",
+      kind: "typecheck",
+    },
   ],
   completionCriteria: ["Service and signal contracts align.", "Generated files are refreshed.", "Validation passes."],
 };

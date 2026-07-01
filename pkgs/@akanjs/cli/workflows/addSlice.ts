@@ -67,6 +67,7 @@ export const addSliceWorkflowSpec: WorkflowSpec = {
     {
       command: "akan build <app-name>",
       reason: "Validate page and list surfaces when a slice changes app behavior.",
+      kind: "custom",
     },
   ],
   completionCriteria: [

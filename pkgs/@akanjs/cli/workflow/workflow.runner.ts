@@ -20,12 +20,14 @@ import {
   type WorkflowApplyCommand,
   type WorkflowApplyReport,
   WorkflowExecutor,
+  type WorkflowFailureScope,
   type WorkflowFormat,
   type WorkflowPlan,
   type WorkflowPlanInputs,
   type WorkflowRunArtifact,
   type WorkflowStepRegistry,
   type WorkflowValidationCommandExecutor,
+  type WorkflowValidationKind,
   type Workspace,
   workflowCommandsForPlan,
   writeWorkflowRunArtifact,
@@ -81,9 +83,41 @@ const failedApplyReport = (workflow: string, diagnostics: WorkflowApplyReport["d
 
 const commandForShell = (command: string) => (command.startsWith("akan ") ? `bun run ${command}` : command);
 
+const inferValidationKind = (command: WorkflowApplyCommand): WorkflowValidationKind => {
+  if (command.kind) return command.kind;
+  if (/\bakan\s+sync\b/.test(command.command)) return "sync";
+  if (/\bakan\s+lint\b/.test(command.command)) return "lint";
+  if (/\bakan\s+typecheck\b/.test(command.command)) return "typecheck";
+  if (/\bakan\s+doctor\b/.test(command.command)) return "doctor";
+  return "custom";
+};
+
+const classifyValidationFailure = (
+  command: WorkflowApplyCommand,
+  error: { code?: number | null; stdout?: string; stderr?: string; message?: string },
+): WorkflowFailureScope => {
+  const output = `${error.stdout ?? ""}\n${error.stderr ?? ""}\n${error.message ?? ""}`.toLowerCase();
+  if (error.code === 127 || output.includes("command not found") || output.includes("bun: command not found")) {
+    return "environment";
+  }
+  if (
+    output.includes("biome.json") ||
+    output.includes("biome configuration") ||
+    output.includes("configuration file") ||
+    output.includes("invalid configuration") ||
+    output.includes("failed to load")
+  ) {
+    return "workspace-config";
+  }
+  const kind = inferValidationKind(command);
+  if (kind === "lint" || kind === "typecheck" || kind === "sync") return "source-change";
+  return "unknown";
+};
+
 const defaultValidationExecutor =
   (workspace: Workspace): WorkflowValidationCommandExecutor =>
   async (command) => {
+    const kind = inferValidationKind(command);
     try {
       const stdout = await workspace.spawn("bash", ["-lc", commandForShell(command.command)], {
         cwd: workspace.workspaceRoot,
@@ -91,6 +125,7 @@ const defaultValidationExecutor =
       return {
         command: command.command,
         reason: command.reason,
+        kind,
         status: "passed",
         exitCode: 0,
         stdout,
@@ -100,8 +135,10 @@ const defaultValidationExecutor =
       return {
         command: command.command,
         reason: command.reason,
+        kind,
         status: "failed",
         exitCode: commandError.code ?? 1,
+        failureScope: classifyValidationFailure(command, commandError),
         stdout: commandError.stdout,
         stderr: commandError.stderr ?? commandError.message,
       };

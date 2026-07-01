@@ -50,4 +50,25 @@ export class ContextCommand extends command("context", [ContextScript], ({ publi
     .exec(async function (mode, workspace) {
       await this.contextScript.mcp(workspace, { mode: mode as "readonly" | "plan" | "apply" });
     }),
+  mcpCall: target({ desc: "Call one Akan MCP tool for debugging without stdio JSON-RPC" })
+    .arg("tool", String, { desc: "MCP tool name" })
+    .option("mode", String, {
+      desc: "MCP permission mode",
+      default: "readonly",
+      enum: ["readonly", "plan", "apply"],
+    })
+    .option("args", String, { desc: "JSON object to pass as MCP tool arguments", nullable: true })
+    .option("format", String, {
+      desc: "output format",
+      default: "json",
+      enum: ["json"],
+    })
+    .with(Workspace)
+    .exec(async function (tool, mode, args, format, workspace) {
+      await this.contextScript.mcpCall(workspace, tool, {
+        mode: mode as "readonly" | "plan" | "apply",
+        args,
+        format: format as "json",
+      });
+    }),
 })) {}

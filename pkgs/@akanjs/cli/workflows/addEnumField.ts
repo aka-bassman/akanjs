@@ -67,7 +67,7 @@ export const addEnumFieldWorkflowSpec: WorkflowSpec = {
   ],
   validation: [
     ...baseValidation,
-    { command: "akan typecheck <app-name>", reason: "Validate enum usage across module surfaces." },
+    { command: "akan typecheck <app-name>", reason: "Validate enum usage across module surfaces.", kind: "typecheck" },
   ],
   completionCriteria: ["Enum values are represented.", "Labels and options exist.", "Sync, lint, and typecheck pass."],
 };

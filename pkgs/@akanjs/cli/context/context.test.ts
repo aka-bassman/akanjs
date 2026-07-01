@@ -3,7 +3,6 @@ import { AkanContextAnalyzer, CommandContainer, createAkanCursorMcpServer } from
 import { AgentRunner } from "../agent/agent.runner";
 import { ModuleRunner } from "../module/module.runner";
 import { cleanupCliTempWorkspace, createTempApp, createTempModule, writeText } from "../testHelpers";
-import { WorkflowRunner } from "../workflow/workflow.runner";
 import { ContextRunner } from "./context.runner";
 
 const tempRoots: string[] = [];
@@ -100,7 +99,7 @@ describe("ContextRunner", () => {
     expect(applyTools).toContain("repair_module_shape");
     expect(
       runner.listMcpTools("plan").find((tool) => tool.name === "plan_workflow")?.inputSchema.properties,
-    ).not.toHaveProperty("out");
+    ).toHaveProperty("out");
   });
 
   test("returns validation contract modes as cumulative MCP tool lists", async () => {
@@ -179,12 +178,7 @@ describe("ContextRunner", () => {
         out: planPath,
       },
       { mode: "plan" },
-    )) as { mode: string; workflow: string };
-    await new WorkflowRunner().plan(
-      "add-field",
-      { app: "demo", module: "task", field: "priority", type: "string" },
-      { format: "json", out: planPath },
-    );
+    )) as { mode: string; workflow: string; planPath: string };
     const dryRun = (await runner.callMcpTool(
       workspace,
       "apply_workflow",
@@ -192,15 +186,14 @@ describe("ContextRunner", () => {
       { mode: "apply" },
     )) as { mode: string; status: string };
 
-    expect(plan).toMatchObject({ mode: "plan", workflow: "add-field" });
+    expect(plan).toMatchObject({ mode: "plan", workflow: "add-field", planPath });
     expect(await Bun.file(planPath).exists()).toBe(true);
     expect(dryRun).toMatchObject({ mode: "dry-run", status: "passed" });
   });
 
-  test("does not write a plan artifact from MCP plan_workflow", async () => {
+  test("writes a default plan artifact from MCP plan_workflow", async () => {
     const { root, workspace } = await createTempApp("demo");
     tempRoots.push(root);
-    const planPath = `${root}/.akan/workflows/plans/task-priority.json`;
 
     const plan = (await new ContextRunner().callMcpTool(
       workspace,
@@ -208,13 +201,13 @@ describe("ContextRunner", () => {
       {
         workflow: "add-field",
         inputs: { app: "demo", module: "task", field: "priority", type: "string" },
-        out: planPath,
       },
       { mode: "plan" },
-    )) as { mode: string; workflow: string };
+    )) as { mode: string; workflow: string; planPath: string };
 
     expect(plan).toMatchObject({ mode: "plan", workflow: "add-field" });
-    expect(await Bun.file(planPath).exists()).toBe(false);
+    expect(plan.planPath).toBe(".akan/workflows/plans/add-field-demo-task-priority.json");
+    expect(await Bun.file(`${root}/${plan.planPath}`).exists()).toBe(true);
   });
 
   test("blocks apply tools outside apply MCP mode", async () => {

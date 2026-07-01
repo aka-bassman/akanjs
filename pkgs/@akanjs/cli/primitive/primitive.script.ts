@@ -4,6 +4,7 @@ import {
   AppExecutor,
   compactDiagnostics,
   createPrimitiveWriteReport,
+  ensureBaseTypeImport,
   ensureConstantTypeImport,
   ensureEnumImport,
   fieldExpression,
@@ -16,6 +17,7 @@ import {
   lowerlize,
   ModuleExecutor,
   nextActionsForTarget,
+  normalizeFieldType,
   type PrimitiveChangedFile,
   type PrimitiveGeneratedFile,
   type PrimitiveTargetInput,
@@ -85,6 +87,8 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
 
   async addFieldToSources(workspace: Workspace, input: AddFieldInput, { enumValues }: { enumValues: string[] | null }) {
     const sys = await this.resolveSys(workspace, input.app);
+    const ambiguousNumberTypes = new Set(["number", "numeric"]);
+    const normalizedType = input.type ? normalizeFieldType(input.type) : null;
     const diagnostics = compactDiagnostics([
       !sys && { severity: "error", code: "primitive-target-missing", message: "Target app or library was not found." },
       !input.module && {
@@ -107,6 +111,14 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
       },
       enumValues && enumValues.length === 0
         ? { severity: "error", code: "primitive-input-missing", message: "Enum values are required.", input: "values" }
+        : null,
+      input.type && ambiguousNumberTypes.has(input.type.toLowerCase())
+        ? {
+            severity: "error",
+            code: "primitive-field-type-unsupported",
+            message: `Field type "${input.type}" is ambiguous in Akan. Use Int for integer fields or Float for decimal fields.`,
+            input: "type",
+          }
         : null,
     ] as WorkflowDiagnostic[]);
     if (
@@ -185,6 +197,10 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
       } else {
         dictionaryContent = enumDictionary;
       }
+    }
+    if (!enumValues && normalizedType) {
+      input.type = normalizedType;
+      constantContent = ensureBaseTypeImport(constantContent, input.type);
     }
 
     const nextConstantContent = insertIntoObject(

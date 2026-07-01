@@ -17,6 +17,10 @@ export const moduleInput = {
 } satisfies Record<string, WorkflowInputSpec>;
 
 export const baseValidation = [
-  { command: "akan sync <app-or-lib>", reason: "Refresh generated Akan files from source conventions." },
-  { command: "akan lint <app-or-lib-or-pkg>", reason: "Validate formatting, imports, and static lint rules." },
+  { command: "akan sync <app-or-lib>", reason: "Refresh generated Akan files from source conventions.", kind: "sync" },
+  {
+    command: "akan lint <app-or-lib-or-pkg>",
+    reason: "Validate formatting, imports, and static lint rules.",
+    kind: "lint",
+  },
 ] satisfies readonly WorkflowValidation[];

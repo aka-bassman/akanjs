@@ -1,3 +1,4 @@
+import path from "node:path";
 import {
   AkanContextAnalyzer,
   type AkanContextFormat,
@@ -38,6 +39,34 @@ const booleanProperty = { type: "boolean" };
 const objectProperty = { type: "object", additionalProperties: true };
 
 const parseJsonOutput = (output: string) => JSON.parse(output) as unknown;
+
+const slugPart = (value: unknown) =>
+  typeof value === "string"
+    ? value
+        .trim()
+        .replace(/[^a-zA-Z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .toLowerCase()
+    : "";
+
+const defaultWorkflowPlanPath = (workflow: string, inputs: WorkflowPlanInputs) => {
+  const slug = [
+    slugPart(workflow),
+    slugPart(inputs.app),
+    slugPart(inputs.module),
+    slugPart(inputs.field),
+    slugPart(inputs.scalar),
+    slugPart(inputs.surface),
+    slugPart(inputs.mutation),
+    slugPart(inputs.slice),
+  ]
+    .filter(Boolean)
+    .join("-");
+  return `.akan/workflows/plans/${slug || "workflow-plan"}.json`;
+};
+
+const workspacePath = (workspace: Workspace, filePath: string) =>
+  path.isAbsolute(filePath) ? filePath : path.join(workspace.workspaceRoot, filePath);
 
 const stringArg = (args: Record<string, unknown>, key: string) => {
   const value = args[key];
@@ -94,7 +123,7 @@ const planMcpTools: McpToolDefinition[] = [
     name: "plan_workflow",
     inputSchema: {
       type: "object",
-      properties: { workflow: stringProperty, inputs: objectProperty },
+      properties: { workflow: stringProperty, inputs: objectProperty, out: stringProperty },
       required: ["workflow"],
     },
   },
@@ -240,6 +269,8 @@ export class ContextRunner extends runner("context") {
           "akan workflow report <run-id> --format json",
           "akan doctor --strict --format json",
         ],
+        validationFailureScopes: ["workspace-config", "environment", "source-change", "unknown"],
+        applyReportFields: ["appliedCommands", "recommendedValidationCommands", "commands"],
         repairCommands: [
           "akan repair generated --app <app-or-lib> --format json",
           "akan repair format --target <app-or-lib-or-pkg> --format json",
@@ -252,15 +283,21 @@ export class ContextRunner extends runner("context") {
     if (name === "list_workflows") return parseJsonOutput(new WorkflowRunner().list({ format: "json" }));
     if (name === "explain_workflow")
       return parseJsonOutput(new WorkflowRunner().explain(stringArg(args, "workflow"), { format: "json" }));
-    if (name === "plan_workflow")
-      return parseJsonOutput(
-        await new WorkflowRunner().plan(stringArg(args, "workflow"), workflowInputsArg(args), {
+    if (name === "plan_workflow") {
+      const workflow = stringArg(args, "workflow");
+      const inputs = workflowInputsArg(args);
+      const planPath = typeof args.out === "string" && args.out ? args.out : defaultWorkflowPlanPath(workflow, inputs);
+      const plan = parseJsonOutput(
+        await new WorkflowRunner().plan(workflow, inputs, {
           format: "json",
+          out: workspacePath(workspace, planPath),
         }),
       );
+      return { ...(plan as Record<string, unknown>), planPath };
+    }
     if (name === "apply_workflow")
       return parseJsonOutput(
-        await new WorkflowRunner().apply(stringArg(args, "planPath"), {
+        await new WorkflowRunner().apply(workspacePath(workspace, stringArg(args, "planPath")), {
           format: "json",
           dryRun: !!args.dryRun,
           registry: createCliWorkflowStepRegistry(workspace),
@@ -268,7 +305,10 @@ export class ContextRunner extends runner("context") {
       );
     if (name === "run_validation")
       return parseJsonOutput(
-        await new WorkflowRunner().validate(stringArg(args, "runIdOrPlan"), { format: "json", workspace }),
+        await new WorkflowRunner().validate(workspacePath(workspace, stringArg(args, "runIdOrPlan")), {
+          format: "json",
+          workspace,
+        }),
       );
     if (name === "repair_generated")
       return parseJsonOutput(
@@ -441,7 +481,7 @@ export class ContextRunner extends runner("context") {
       "create-ui":
         "`akan create-ui --app <app-or-lib> --module <module> --surface <view|unit|template> --format json` creates one UI surface and returns a primitive write report.",
       "add-field":
-        "`akan add-field --app <app-or-lib> --module <module> --field <field> --type <type> --format json` updates source constant/dictionary files and reports sync/lint next actions.",
+        "`akan add-field --app <app-or-lib> --module <module> --field <field> --type <String|Boolean|Date|Int|Float|scalar> --format json` updates source constant/dictionary files. Use Int or Float for numeric fields, not Number.",
       "add-enum-field":
         "`akan add-enum-field --app <app-or-lib> --module <module> --field <field> --values a,b --format json` adds an enum field to source constant/dictionary files without editing generated files.",
       sync: "`akan sync <app-or-lib>` refreshes generated Akan files from source conventions.",
@@ -478,6 +518,8 @@ export class ContextRunner extends runner("context") {
         "`akan repair module-shape --app <app-or-lib> --module <module> --format json` reports missing module source files and source-safe next actions.",
       agent: "`akan agent install <target>` writes editor-specific agent rules with overwrite protection.",
       mcp: "`akan mcp --mode readonly|plan|apply` starts the Akan MCP server over stdio with an explicit permission mode.",
+      "mcp-call":
+        '`akan mcp-call <tool> --mode plan --args \'{"workflow":"add-field","inputs":{"app":"demo"}}\'` calls one MCP tool through the same runner path for debugging.',
       "mcp-install":
         "`akan mcp-install cursor --mode readonly|plan|apply` installs the Akan MCP server config for Cursor.",
     };
