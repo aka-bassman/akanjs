@@ -1,6 +1,6 @@
 # AI Development Guide
 
-This workspace is an Akan.js project. Keep business intent in source files and let `akan scan` regenerate the
+This workspace is an Akan.js project. Keep business intent in source files and let `akan sync` regenerate the
 repeated surfaces.
 
 ## Domain Module Shape
@@ -21,20 +21,20 @@ Follow this order for domain changes:
 5. `store` owns reusable client workflow state and actions.
 6. UI files render forms, lists, details, and actions.
 
-## When To Run Scan
+## When To Run Sync
 
 Run this after adding, deleting, or renaming module, UI, webkit, srvkit, or common files:
 
 ```bash
-akan scan app <%= appName %>
+akan sync <%= appName %>
 ```
 
-Scan regenerates barrels such as `cnst.ts`, `db.ts`, `srv.ts`, `sig.ts`, `st.ts`, `useClient.ts`, `useServer.ts`,
-and module `index.ts` files. Without scan, imports can point at stale generated files.
+Sync regenerates barrels such as `cnst.ts`, `db.ts`, `srv.ts`, `sig.ts`, `st.ts`, `useClient.ts`, `useServer.ts`,
+and module `index.ts` files. Without sync, imports can point at stale generated files.
 
 ## Generated Files
 
-Do not hand-edit generated Akan files. Edit source files in the owning module and run scan or build instead.
+Do not hand-edit generated Akan files. Edit source files in the owning module and run sync or build instead.
 See `docs/GENERATED.md` for the generated file list.
 
 ## Server And Client Boundary

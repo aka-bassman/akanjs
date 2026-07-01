@@ -5,10 +5,7 @@ interface Dict {
   model: string;
   sysName: string;
 }
-export default function getContent(
-  scanInfo: AppInfo | LibInfo | null,
-  dict: Dict,
-) {
+export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dict) {
   return {
     filename: `${dict.Model}.Unit.tsx`,
     content: `

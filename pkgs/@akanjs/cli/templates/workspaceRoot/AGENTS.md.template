@@ -19,25 +19,26 @@ also read, see `docs/AI-DEVELOPMENT.md` and `docs/GENERATED.md`.
 
 ## Generated Files
 
-Do not hand-edit generated Akan files. Regenerate them through Akan scan, lint, start, build, or the matching
+Do not hand-edit generated Akan files. Regenerate them through Akan sync, lint, start, build, or the matching
 CLI command instead.
 
 Common generated files include:
 - `apps/*/client.ts`
 - `apps/*/server.ts`
-- `apps/*/lib/cnst.ts`
-- `apps/*/lib/dict.ts`
-- `apps/*/lib/db.ts`
-- `apps/*/lib/srv.ts`
-- `apps/*/lib/st.ts`
-- `apps/*/lib/sig.ts`
-- `apps/*/lib/useClient.ts`
-- `apps/*/lib/useServer.ts`
-- `apps/*/lib/*/index.ts`
-- `apps/*/ui/index.ts`
-- `apps/*/webkit/index.ts`
-- `apps/*/srvkit/index.ts`
-- `apps/*/common/index.ts`
+- `*/lib/cnst.ts`
+- `*/lib/db.ts`
+- `*/lib/dict.ts`
+- `*/lib/option.ts`
+- `*/lib/sig.ts`
+- `*/lib/srv.ts`
+- `*/lib/st.ts`
+- `*/lib/useClient.ts`
+- `*/lib/useServer.ts`
+- `*/lib/**/index.ts`
+- `*/ui/index.ts`
+- `*/webkit/index.ts`
+- `*/srvkit/index.ts`
+- `*/common/index.ts`
 
 ## Domain Module Responsibilities
 
@@ -61,15 +62,16 @@ Use the local module shape before adding a new abstraction.
 
 1. Read the nearby module and convention before creating files. If `*.abstract.md` exists, read it first.
 2. Put new files in the established Akan location instead of adding parallel architecture.
-3. Prefer CLI generation commands for new apps, libraries, modules, scalars, pages, and generated references.
-4. Keep page and layout files server-oriented: route-level `usePage`, headers, static layout, and `akanjs/ui` `Tab` composition belong there.
-5. Put interactive loading, submit/import actions, local form state, and `router.push` in client `Util`, `Template`, or `Zone` components.
-6. Prefer `Tab` for static mode selection instead of extra `useState`; render one focused client component inside each `Tab.Panel`.
-7. Keep server-only logic out of client surfaces and client-only code out of server imports.
-8. Treat `AKAN_PUBLIC_*` env vars as public. Never put secrets in them.
-9. Add or update tests when behavior, contracts, or CLI output changes.
-10. Update `*.abstract.md` when business invariants, workflows, or public behavior change.
-11. Run the smallest relevant verification command after changes.
+3. When an Akan CLI command exists for the task, prefer the CLI before direct source edits.
+4. Prefer CLI generation commands for new apps, libraries, modules, scalars, pages, and generated references.
+5. Keep page and layout files server-oriented: route-level `usePage`, headers, static layout, and `akanjs/ui` `Tab` composition belong there.
+6. Put interactive loading, submit/import actions, local form state, and `router.push` in client `Util`, `Template`, or `Zone` components.
+7. Prefer `Tab` for static mode selection instead of extra `useState`; render one focused client component inside each `Tab.Panel`.
+8. Keep server-only logic out of client surfaces and client-only code out of server imports.
+9. Treat `AKAN_PUBLIC_*` env vars as public. Never put secrets in them.
+10. Add or update tests when behavior, contracts, or CLI output changes.
+11. Update `*.abstract.md` when business invariants, workflows, or public behavior change.
+12. Run the smallest relevant verification command after changes.
 
 ## Common Commands
 
@@ -120,7 +122,7 @@ For the default generated app, start with:
 akan start <%= appName %>
 ```
 
-### The Essential Loop: Edit → Scan → Check
+### The Essential Loop: Edit → Sync → Check
 
 Almost every Akan.js change follows this pattern. **Missing step 2 is the #1 cause of agent confusion.**
 
@@ -129,13 +131,13 @@ Almost every Akan.js change follows this pattern. **Missing step 2 is the #1 cau
    vi apps/<%= appName %>/lib/task/task.constant.ts  # e.g., add a priority field
    ```
 
-2. **Scan** — Regenerate barrel files so Akan discovers your change. This regenerates:
+2. **Sync** — Regenerate barrel files so Akan discovers your change. This regenerates:
    `cnst.ts`, `db.ts`, `srv.ts`, `sig.ts`, `st.ts`, `dict.ts`, `useClient.ts`, `useServer.ts`,
    `ui/index.ts`, `webkit/index.ts`, `srvkit/index.ts`, `common/index.ts`, and all module `index.ts` files.
    ```
-   akan scan app <%= appName %>
+   akan sync <%= appName %>
    ```
-   **CRITICAL**: Scan after EVERY file add, delete, or rename. Without scan, other modules cannot
+   **CRITICAL**: Sync after EVERY file add, delete, or rename. Without sync, other modules cannot
    `import * as cnst from "../cnst"` and find your new model.
 
 3. **Check** — Verify your change compiles and lints.
@@ -144,53 +146,54 @@ Almost every Akan.js change follows this pattern. **Missing step 2 is the #1 cau
    akan lint <%= appName %>    # quick lint-only check
    ```
 
-   If `akan scan` gives errors, try:
-   - `akan build <%= appName %>` — full rebuild catches type errors scan may miss
-   - Re-run `akan create-model <name> --app <%= appName %>` if the scaffold is corrupted
+   If `akan sync` gives errors, try:
+   - `akan build <%= appName %>` — full rebuild catches type errors sync may miss
+   - Re-run `akan create-module <name> --app <%= appName %>` if the scaffold is corrupted
 
 ## Quick Decision Matrix — "Where do I put this code?"
 
 | You want to... | Create in... | Run after... |
 |----------------|-------------|--------------|
-| Define a new database-backed noun (e.g., User, Product) | `lib/<model>/` → constant, document, service, signal, store, dictionary, abstract | `akan scan app <name>` |
-| Add a pure workflow / integration (e.g., Payment, Email) | `lib/_<service>/` → service, signal, store, dictionary, abstract | `akan scan app <name>` |
-| Add a reusable value type (e.g., Address, WorkHistory) | `lib/__scalar/<type>/` → constant, dictionary, abstract | `akan scan app <name>` |
+| Define a new database-backed noun (e.g., User, Product) | `lib/<model>/` → constant, document, service, signal, store, dictionary, abstract | `akan sync <name>` |
+| Add a pure workflow / integration (e.g., Payment, Email) | `lib/_<service>/` → service, signal, store, dictionary, abstract | `akan sync <name>` |
+| Add a reusable value type (e.g., Address, WorkHistory) | `lib/__scalar/<type>/` → constant, dictionary, abstract | `akan sync <name>` |
 | Create a new URL-visitable page | `page/` → `_index.tsx`, `_layout.tsx`, `[param]/_index.tsx` | Rebuild (akan start auto-detects) |
-| Add a form or reusable UI component | `ui/` → PascalCase `.tsx` with `"use client"` if needed | `akan scan app <name>` |
-| Add a React hook or browser helper | `webkit/` → camelCase `.ts` with `"use client"` | `akan scan app <name>` |
-| Add a server-only guard, middleware, or adaptor | `srvkit/` → PascalCase `.ts` | `akan scan app <name>` |
-| Add a pure helper (no DOM, no server API) | `common/` → camelCase `.ts` | `akan scan app <name>` |
+| Add a form or reusable UI component | `ui/` → PascalCase `.tsx` with `"use client"` if needed | `akan sync <name>` |
+| Add a React hook or browser helper | `webkit/` → camelCase `.ts` with `"use client"` | `akan sync <name>` |
+| Add a server-only guard, middleware, or adaptor | `srvkit/` → PascalCase `.ts` | `akan sync <name>` |
+| Add a pure helper (no DOM, no server API) | `common/` → camelCase `.ts` | `akan sync <name>` |
 
 ## Anti-patterns: Never Do These
 
 | Don't | Why | Do Instead |
 |-------|-----|------------|
-| Edit `cnst.ts`, `db.ts`, `srv.ts`, `sig.ts`, `st.ts`, `dict.ts`, `useClient.ts`, `useServer.ts`, or any `index.ts` | These are **generated by `akan scan`**. Your changes will be overwritten. | Edit the source files in `lib/<model>/` directories and run `akan scan` |
-| Create a file without running scan | New files won't appear in barrel exports. Imports like `import * as cnst from "../cnst"` will fail. | Always run `akan scan app <name>` after creating, renaming, or deleting any module file |
+| Edit `cnst.ts`, `db.ts`, `srv.ts`, `sig.ts`, `st.ts`, `dict.ts`, `useClient.ts`, `useServer.ts`, or any `index.ts` | These are **generated by `akan sync`**. Your changes will be overwritten. | Edit the source files in `lib/<model>/` directories and run `akan sync <name>` |
+| Create a file without running sync | New files won't appear in barrel exports. Imports like `import * as cnst from "../cnst"` will fail. | Always run `akan sync <name>` after creating, renaming, or deleting any module file |
 | Use JS `#private` methods in service classes | Akan's build system rejects `#private`. Use TypeScript `private` keyword instead. | `private _methodName()` — never `#_methodName()` |
 | Use `console.log()` | Biome lint forbids `console.log`. Only `console.error`, `console.info`, `console.warn` are allowed. | Use one of the three allowed console methods |
 | Import server APIs (`fs`, `Bun`, `process.env`) in `ui/`, `webkit/`, or `common/` | Server-only imports in client code cause build failures. | Keep server dependencies in `lib/`, `srvkit/`, or `private/` only |
-| Skip running `akan scan` after deleting a file | Deleted files remain referenced in barrel exports, causing import errors everywhere. | Run `akan scan app <name>` after every file add, remove, or rename |
+| Skip running `akan sync` after deleting a file | Deleted files remain referenced in barrel exports, causing import errors everywhere. | Run `akan sync <name>` after every file add, remove, or rename |
 | Use "use client" or `useState`/`useEffect` in pages/*.tsx, *.Unit.tsx, and *.View.tsx files | Server code cannot use React hooks. Wrap in a separate `"use client"` component. | Move hook logic to `webkit/` or a `"use client"` UI component |
 | Use `<a>` tag for internal navigation between pages | Akan.js uses `<Link>` from `akanjs/ui` for client-side navigation — avoids full page reloads. | `import { Link } from "akanjs/ui"` and use `<Link href="/task">...</Link>` |
 
 ## Generated File Tracker (Quick Reference)
 
-These files are regenerated by `akan scan` and overwritten on every scan. **Do not hand-edit them.**
+These files are regenerated by `akan sync` and overwritten on every sync. **Do not hand-edit them.**
 
 | File | Generated From | Purpose |
 |------|---------------|---------|
-| `apps/*/lib/cnst.ts` | All `*/lib/*/**.constant.ts` | Barrel for all constants |
-| `apps/*/lib/dict.ts` | All `*/lib/*/**.dictionary.ts` | Barrel for all dictionaries |
-| `apps/*/lib/db.ts` | All `*/lib/<model>/*.document.ts` | Barrel for all document models |
-| `apps/*/lib/srv.ts` | All `*/lib/**/**.service.ts` | Barrel for all services |
-| `apps/*/lib/sig.ts` | All `*/lib/**/**.signal.ts` | Barrel for all signals |
-| `apps/*/lib/st.ts` | All `*/lib/**/**.store.ts` | Barrel for all stores |
-| `apps/*/lib/useClient.ts` | Client-safe module re-exports | Client-side import entry |
-| `apps/*/lib/useServer.ts` | Server-only module re-exports | Server-side import entry |
+| `*/lib/cnst.ts` | All `*/lib/*/**.constant.ts` | Barrel for all constants |
+| `*/lib/db.ts` | All `*/lib/<model>/*.document.ts` | Barrel for all document models |
+| `*/lib/dict.ts` | All `*/lib/*/**.dictionary.ts` | Barrel for all dictionaries |
+| `*/lib/option.ts` | Generated option helpers | Option helper entry |
+| `*/lib/sig.ts` | All `*/lib/**/**.signal.ts` | Barrel for all signals |
+| `*/lib/srv.ts` | All `*/lib/**/**.service.ts` | Barrel for all services |
+| `*/lib/st.ts` | All `*/lib/**/**.store.ts` | Barrel for all stores |
+| `*/lib/useClient.ts` | Client-safe module re-exports | Client-side import entry |
+| `*/lib/useServer.ts` | Server-only module re-exports | Server-side import entry |
 | `apps/*/client.ts` | App-wide client barrel | The `fetch` and `st` instances |
 | `apps/*/server.ts` | App-wide server barrel | Server-side service resolution |
-| `*/lib/*/index.ts` | Per-module barrel | Module-level re-exports |
+| `*/lib/**/index.ts` | Per-module barrel | Module-level re-exports |
 | `*/ui/index.ts` | All UI component files | UI barrel |
 | `*/webkit/index.ts` | All webkit files | Webkit barrel |
 | `*/srvkit/index.ts` | All srvkit files | Srvkit barrel |
@@ -209,7 +212,7 @@ rewrite the entire file.
 
 ### Recipe 1: Adding a New Field to a Model
 
-**Files to edit (in order):** `constant.ts` → `dictionary.ts` → `Template.tsx` → `Unit.tsx` → `akan scan`
+**Files to edit (in order):** `constant.ts` → `dictionary.ts` → `Template.tsx` → `Unit.tsx` → `akan sync`
 
 ```typescript
 // 1. apps/<app>/lib/<model>/<model>.constant.ts
@@ -252,7 +255,7 @@ const form = st.use.taskForm();
 })}>{task.priority}</span>
 
 // 5. Regenerate barrels
-// akan scan app <name>
+// akan sync <name>
 ```
 
 ---
@@ -494,7 +497,7 @@ For each business question, follow this chain:
 
 ## Auto-Generated API Reference
 
-akan scan automatically generates APIs across all layers. Only write custom logic — never hand-write what the framework generates.
+akan sync automatically generates APIs across all layers. Only write custom logic — never hand-write what the framework generates.
 
 ### Signal — Endpoint Auto-Generation
 
@@ -545,4 +548,4 @@ akan scan automatically generates APIs across all layers. Only write custom logi
 | `exists[Query](args)`, `count[Query](args)` | Existence check and count |
 | `insight[Query](args)`, `query[Query](args)` | Insight and raw query |
 
-**Rule**: Define `Filter` with `.query()` conditions in `document.ts`. akan scan auto-generates all 10 query helper methods per filter. Write `Document` chain methods only for state transitions with validation.
+**Rule**: Define `Filter` with `.query()` conditions in `document.ts`. akan sync auto-generates all 10 query helper methods per filter. Write `Document` chain methods only for state transitions with validation.

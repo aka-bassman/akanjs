@@ -24,6 +24,20 @@ describe("ContextRunner", () => {
     expect(output.indexOf("# Module Abstract")).toBeLessThan(output.indexOf("- Files:"));
   });
 
+  test("prints generated file and validation contracts in json context", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+
+    const output = await new ContextRunner().getContext(workspace, { format: "json" });
+    const context = JSON.parse(output) as Awaited<ReturnType<typeof AkanContextAnalyzer.analyze>>;
+
+    expect(context.generatedFiles).toContain("*/lib/option.ts");
+    expect(context.generatedFiles).toContain("*/ui/index.ts");
+    expect(context.validationCommands).toContain("akan sync <app-or-lib>");
+    expect(context.validationCommands).toContain("akan doctor --strict --format json");
+    expect(context.validationCommands.join("\n")).not.toContain("akan scan");
+  });
+
   test("reports missing abstract as warning by default and error in strict mode", async () => {
     const { root, workspace, app } = await createTempApp("demo");
     tempRoots.push(root);
@@ -34,10 +48,33 @@ describe("ContextRunner", () => {
 
     expect(loose.diagnostics[0]).toMatchObject({ code: "module-abstract-missing", severity: "warning" });
     expect(strict.diagnostics[0]).toMatchObject({ code: "module-abstract-missing", severity: "error" });
+    expect(strict.status).toBe("failed");
+    expect(strict.generatedFilesFreshness.refreshCommand).toBe("akan sync <app-or-lib>");
+    expect(strict.validationCommands).toContain("akan doctor --strict --format json");
   });
 
-  test("explains the MCP command", () => {
-    expect(new ContextRunner().explainCommand("mcp")).toContain("read-only Akan MCP server");
+  test("reports unknown app root entries as errors", async () => {
+    const { root, workspace, app } = await createTempApp("demo");
+    tempRoots.push(root);
+    await writeText(`${app.cwdPath}/base.ts`, "export const bad = true;\n");
+
+    const result = await AkanContextAnalyzer.doctor(workspace);
+
+    expect(result.status).toBe("failed");
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "app-root-unknown-entry", severity: "error", path: "apps/demo/base.ts" }),
+    );
+  });
+
+  test("explains core agent-facing commands", () => {
+    const runner = new ContextRunner();
+
+    expect(runner.explainCommand("mcp")).toContain("read-only Akan MCP server");
+    expect(runner.explainCommand("create-module")).toContain("scaffolds a database-backed domain module");
+    expect(runner.explainCommand("mcp-install")).toContain("installs the read-only Akan MCP server config");
+    expect(runner.explainCommand("typecheck")).toContain("runs an application typecheck");
+    expect(runner.explainCommand("sync")).toContain("refreshes generated Akan files");
+    expect(runner.explainCommand("workflow plan")).toContain("returns a read-only plan");
   });
 
   test("installs Cursor MCP config while preserving existing servers", async () => {

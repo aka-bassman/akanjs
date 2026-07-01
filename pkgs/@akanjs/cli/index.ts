@@ -12,6 +12,7 @@ import { ModuleCommand } from "./module/module.command";
 import { PackageCommand } from "./package/package.command";
 import { PageCommand } from "./page/page.command";
 import { ScalarCommand } from "./scalar/scalar.command";
+import { WorkflowCommand } from "./workflow/workflow.command";
 import { WorkspaceCommand } from "./workspace/workspace.command";
 
 void runCommands(
@@ -27,4 +28,5 @@ void runCommands(
   CloudCommand,
   GuidelineCommand,
   ScalarCommand,
+  WorkflowCommand,
 );

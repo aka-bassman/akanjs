@@ -14,17 +14,32 @@ type CursorMcpConfig = {
 const jsonText = (value: unknown) => JSON.stringify(value, null, 2);
 
 const renderDoctorText = (result: Awaited<ReturnType<typeof AkanContextAnalyzer.doctor>>) => {
-  if (result.diagnostics.length === 0) return "No Akan workspace diagnostics found.\n";
-  return `${result.diagnostics
-    .map((diagnostic) =>
-      [
-        `[${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`,
-        diagnostic.path ? `  ${diagnostic.path}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    )
-    .join("\n\n")}\n`;
+  const lines = [`Akan doctor status: ${result.status}`];
+  if (result.diagnostics.length === 0) {
+    lines.push("", "No Akan workspace diagnostics found.");
+  } else {
+    lines.push(
+      "",
+      ...result.diagnostics.map((diagnostic) =>
+        [
+          `[${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`,
+          diagnostic.path ? `  ${diagnostic.path}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      ),
+    );
+  }
+  lines.push(
+    "",
+    "Generated file freshness:",
+    result.generatedFilesFreshness.message,
+    `Refresh: ${result.generatedFilesFreshness.refreshCommand}`,
+    "",
+    "Validation commands:",
+    ...result.validationCommands.map((command) => `- ${command}`),
+  );
+  return `${lines.join("\n")}\n`;
 };
 
 const resourceList = [
@@ -230,7 +245,7 @@ export class ContextRunner extends runner("context") {
       return true;
     };
     const parse = async () => {
-      while (true) {
+      for (;;) {
         buffer = buffer.trimStart();
         if (/^Content-Length:/i.test(buffer)) {
           if (await parseContentLengthMessage()) continue;
@@ -250,10 +265,29 @@ export class ContextRunner extends runner("context") {
   explainCommand(command: string) {
     const explanations: Record<string, string> = {
       context: "`akan context` prints agent-readable workspace, app, module, and abstract metadata.",
-      doctor: "`akan doctor` reports workspace convention diagnostics. Use `--format json` for agents.",
+      "create-module": "`akan create-module <name> --app <app>` scaffolds a database-backed domain module.",
+      "create-scalar": "`akan create-scalar <name> --app <app>` scaffolds a reusable scalar value module.",
+      "create-service": "`akan create-service <name> --app <app>` scaffolds a non-database service module.",
+      "create-view": "`akan create-view --app <app> --module <module>` creates a module View component.",
+      "create-unit": "`akan create-unit --app <app> --module <module>` creates a module Unit component.",
+      "create-template": "`akan create-template --app <app> --module <module>` creates a module Template component.",
+      sync: "`akan sync <app-or-lib>` refreshes generated Akan files from source conventions.",
+      lint: "`akan lint <app-or-lib-or-pkg>` runs Biome linting after preparing generated files.",
+      typecheck: "`akan typecheck <app-name>` runs an application typecheck after preparing generated files.",
+      test: "`akan test <app-or-lib-or-pkg>` prepares the target and runs its tests.",
+      build: "`akan build <app-name>` creates a production build after preparing generated files.",
+      doctor:
+        "`akan doctor --strict --format json` reports agent-readable workspace convention diagnostics and validation hints.",
       "guideline show": "`akan guideline show <name>` prints an Akan codegen guideline instruction.",
+      workflow: "`akan workflow list` lists read-only Akan workflow specs that agents can plan from.",
+      "workflow list": "`akan workflow list` lists parseable read-only workflow specs.",
+      "workflow explain":
+        "`akan workflow explain <workflow>` explains inputs, optional surfaces, steps, and validation.",
+      "workflow plan":
+        "`akan workflow plan <workflow> ... --format json` returns a read-only plan without modifying files.",
       agent: "`akan agent install <target>` writes editor-specific agent rules with overwrite protection.",
       mcp: "`akan mcp` starts the read-only Akan MCP server over stdio.",
+      "mcp-install": "`akan mcp-install cursor` installs the read-only Akan MCP server config for Cursor.",
     };
     return (
       explanations[command] ??

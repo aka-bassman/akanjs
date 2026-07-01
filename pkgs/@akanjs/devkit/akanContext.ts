@@ -63,8 +63,19 @@ export interface AkanDiagnostic {
 
 export interface AkanDoctorResult {
   schemaVersion: 1;
+  repoName: string;
+  root: string;
   strict: boolean;
+  status: "passed" | "failed";
   diagnostics: AkanDiagnostic[];
+  generatedFiles: string[];
+  generatedFilesFreshness: {
+    status: "unknown";
+    message: string;
+    refreshCommand: string;
+    verifyingCommands: string[];
+  };
+  validationCommands: string[];
 }
 
 export interface AkanContextOptions {
@@ -74,16 +85,39 @@ export interface AkanContextOptions {
 }
 
 const generatedFiles = [
-  "cnst.ts",
-  "db.ts",
-  "dict.ts",
-  "option.ts",
-  "sig.ts",
-  "srv.ts",
-  "st.ts",
-  "useClient.ts",
-  "useServer.ts",
+  "apps/*/client.ts",
+  "apps/*/server.ts",
+  "*/lib/cnst.ts",
+  "*/lib/db.ts",
+  "*/lib/dict.ts",
+  "*/lib/option.ts",
+  "*/lib/sig.ts",
+  "*/lib/srv.ts",
+  "*/lib/st.ts",
+  "*/lib/useClient.ts",
+  "*/lib/useServer.ts",
+  "*/lib/**/index.ts",
+  "*/ui/index.ts",
+  "*/webkit/index.ts",
+  "*/srvkit/index.ts",
+  "*/common/index.ts",
 ];
+
+const validationCommands = [
+  "akan sync <app-or-lib>",
+  "akan lint <app-or-lib-or-pkg>",
+  "akan typecheck <app-name>",
+  "akan test <app-or-lib-or-pkg>",
+  "akan build <app-name>",
+  "akan doctor --strict --format json",
+];
+
+const generatedFilesFreshness = {
+  status: "unknown" as const,
+  message: "Run sync before validation so generated Akan files match the current source conventions.",
+  refreshCommand: "akan sync <app-or-lib>",
+  verifyingCommands: ["akan lint <app-or-lib-or-pkg>", "akan build <app-name>"],
+};
 
 const appRootAllowFiles = new Set([
   "akan.app.json",
@@ -283,7 +317,7 @@ export class AkanContextAnalyzer {
       libs,
       pkgs,
       generatedFiles,
-      validationCommands: ["akan lint <app-or-lib-or-pkg>", "akan build <app-name>", "akan start <app-name>"],
+      validationCommands,
     };
   }
 
@@ -300,7 +334,7 @@ export class AkanContextAnalyzer {
         const allowed = entry.isDirectory() ? appRootAllowDirs.has(entry.name) : appRootAllowFiles.has(entry.name);
         if (!allowed) {
           diagnostics.push({
-            severity: "warning",
+            severity: "error",
             code: "app-root-unknown-entry",
             path: `${app.path}/${entry.name}`,
             message: `Unexpected ${entry.isDirectory() ? "folder" : "file"} in app root: ${app.path}/${entry.name}`,
@@ -322,7 +356,17 @@ export class AkanContextAnalyzer {
       }
     }
 
-    return { schemaVersion: 1, strict, diagnostics };
+    return {
+      schemaVersion: 1,
+      repoName: context.repoName,
+      root: context.root,
+      strict,
+      status: diagnostics.some((diagnostic) => diagnostic.severity === "error") ? "failed" : "passed",
+      diagnostics,
+      generatedFiles: context.generatedFiles,
+      generatedFilesFreshness,
+      validationCommands: context.validationCommands,
+    };
   }
 
   static findModules(context: AkanWorkspaceContext, moduleName?: string | null) {
