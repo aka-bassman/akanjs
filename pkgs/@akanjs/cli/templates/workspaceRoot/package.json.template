@@ -2,6 +2,14 @@
   "name": "<%= repoName %>",
   "description": "<%= repoName %> workspace",
   "version": "0.0.1",
+  "scripts": {
+    "sync": "akan sync",
+    "dev": "akan start",
+    "lint": "akan lint",
+    "typecheck": "akan typecheck",
+    "test": "akan test",
+    "build": "akan build"
+  },
   "dependencies": {},
   "devDependencies": {},
   "patchedDependencies": {
