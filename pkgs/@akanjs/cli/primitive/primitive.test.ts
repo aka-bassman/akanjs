@@ -58,8 +58,48 @@ describe("PrimitiveScript", () => {
     expect(floatReport.status).toBe("passed");
     const constant = await module.readFile("post.constant.ts");
     expect(constant).toContain('import { Float, Int } from "akanjs/base";');
-    expect(constant).toContain('budget: field(Int, { default: "0" }),');
-    expect(constant).toContain('rating: field(Float, { default: "0.5" }),');
+    expect(constant).toContain("budget: field(Int, { default: 0 }),");
+    expect(constant).toContain("rating: field(Float, { default: 0.5 }),");
+  });
+
+  test("coerces boolean and string defaults and rejects invalid numeric defaults", async () => {
+    const { root, workspace, module } = await createTempModule("post");
+    tempRoots.push(root);
+    await new ModuleRunner().createModuleTemplate(module);
+    const script = CommandContainer.get(PrimitiveScript);
+
+    const booleanReport = await script.addField(workspace, {
+      app: "demo",
+      module: "post",
+      field: "published",
+      type: "Boolean",
+      defaultValue: "false",
+    });
+    const stringReport = await script.addField(workspace, {
+      app: "demo",
+      module: "post",
+      field: "title",
+      type: "String",
+      defaultValue: "Untitled",
+    });
+    const invalidReport = await script.addField(workspace, {
+      app: "demo",
+      module: "post",
+      field: "budget",
+      type: "Int",
+      defaultValue: "free",
+    });
+
+    expect(booleanReport.status).toBe("passed");
+    expect(stringReport.status).toBe("passed");
+    expect(invalidReport.status).toBe("failed");
+    expect(invalidReport.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "primitive-default-value-invalid", input: "default" }),
+    );
+    const constant = await module.readFile("post.constant.ts");
+    expect(constant).toContain("published: field(Boolean, { default: false }),");
+    expect(constant).toContain('title: field(String, { default: "Untitled" }),');
+    expect(constant).not.toContain("budget:");
   });
 
   test("rejects ambiguous number field types without writing source files", async () => {

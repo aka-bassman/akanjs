@@ -26,6 +26,7 @@ import { WorkflowRunner } from "../workflow/workflow.runner";
 
 type McpToolDefinition = {
   name: string;
+  description?: string;
   inputSchema: {
     type: "object";
     properties: Record<string, unknown>;
@@ -37,6 +38,7 @@ const emptySchema = { type: "object" as const, properties: {} };
 const stringProperty = { type: "string" };
 const booleanProperty = { type: "boolean" };
 const objectProperty = { type: "object", additionalProperties: true };
+const stringArrayProperty = { type: "array", items: stringProperty };
 
 const parseJsonOutput = (output: string) => JSON.parse(output) as unknown;
 
@@ -68,6 +70,19 @@ const defaultWorkflowPlanPath = (workflow: string, inputs: WorkflowPlanInputs) =
 const workspacePath = (workspace: Workspace, filePath: string) =>
   path.isAbsolute(filePath) ? filePath : path.join(workspace.workspaceRoot, filePath);
 
+const applyFirstPolicy = {
+  mode: "apply-first",
+  directSourceEdits: "fallback-only",
+  applyRequiredWhen: ["plan_workflow returns planPath", "plan_workflow returns next.tool=apply_workflow"],
+  validationRequiredAfterApply: ["validationTarget", "applyReportPath"],
+  fallbackAllowedWhen: [
+    "list_workflows and explain_workflow show no matching workflow",
+    "apply_workflow reports unsupported/no-op/failed diagnostics that require manual action",
+    "recommendations include manual-action follow-up after workflow apply and repairs",
+  ],
+  baselineDiagnosticsPolicy: "Do not fix unrelated baselineDiagnostics unless the user asks.",
+};
+
 const stringArg = (args: Record<string, unknown>, key: string) => {
   const value = args[key];
   if (typeof value !== "string" || !value) throw new Error(`MCP tool argument "${key}" is required.`);
@@ -96,7 +111,8 @@ const readonlyMcpTools: McpToolDefinition[] = [
   { name: "list_modules", inputSchema: emptySchema },
   {
     name: "get_module_context",
-    inputSchema: { type: "object", properties: { module: stringProperty }, required: ["module"] },
+    description: "Return module context. Pass app in monorepos to disambiguate duplicate module names.",
+    inputSchema: { type: "object", properties: { app: stringProperty, module: stringProperty }, required: ["module"] },
   },
   {
     name: "get_guideline",
@@ -108,9 +124,17 @@ const readonlyMcpTools: McpToolDefinition[] = [
   },
   {
     name: "doctor_workspace",
-    inputSchema: { type: "object", properties: { strict: booleanProperty } },
+    description: "Report workspace diagnostics, optionally split into baseline and workflow scopes.",
+    inputSchema: {
+      type: "object",
+      properties: { strict: booleanProperty, runIdOrPlan: stringProperty, changedFiles: stringArrayProperty },
+    },
   },
-  { name: "get_validation_contract", inputSchema: emptySchema },
+  {
+    name: "get_validation_contract",
+    description: "Return validation, artifact chain, and apply-first fallback policy.",
+    inputSchema: emptySchema,
+  },
 ];
 
 const planMcpTools: McpToolDefinition[] = [
@@ -121,6 +145,7 @@ const planMcpTools: McpToolDefinition[] = [
   },
   {
     name: "plan_workflow",
+    description: "Create a read-only workflow plan and return planPath plus next.tool=apply_workflow.",
     inputSchema: {
       type: "object",
       properties: { workflow: stringProperty, inputs: objectProperty, out: stringProperty },
@@ -132,6 +157,7 @@ const planMcpTools: McpToolDefinition[] = [
 const applyMcpTools: McpToolDefinition[] = [
   {
     name: "apply_workflow",
+    description: "Apply a stored workflow plan before direct edits and return validationTarget for run_validation.",
     inputSchema: {
       type: "object",
       properties: { planPath: stringProperty, dryRun: booleanProperty },
@@ -140,6 +166,7 @@ const applyMcpTools: McpToolDefinition[] = [
   },
   {
     name: "run_validation",
+    description: "Validate a plan, apply report, validationTarget, or run artifact.",
     inputSchema: {
       type: "object",
       properties: { runIdOrPlan: stringProperty },
@@ -148,14 +175,17 @@ const applyMcpTools: McpToolDefinition[] = [
   },
   {
     name: "repair_generated",
+    description: "Refresh generated Akan files before direct generated-file edits.",
     inputSchema: { type: "object", properties: { app: stringProperty }, required: ["app"] },
   },
   {
     name: "repair_imports",
+    description: "Run the import repair path before manual import edits.",
     inputSchema: { type: "object", properties: { target: stringProperty }, required: ["target"] },
   },
   {
     name: "repair_module_shape",
+    description: "Report module-shape repair actions before direct module file fixes.",
     inputSchema: {
       type: "object",
       properties: { app: stringProperty, module: stringProperty },
@@ -243,17 +273,46 @@ export class ContextRunner extends runner("context") {
       name === "get_module_context"
     ) {
       const context = await AkanContextAnalyzer.analyze(workspace, {
+        app: (args.app as string | undefined) ?? null,
         module: (args.module as string | undefined) ?? null,
         includeAbstractContent: name === "get_module_context",
       });
       if (name === "get_workspace_summary") return context;
       if (name === "list_apps") return context.apps;
       if (name === "list_modules") return AkanContextAnalyzer.findModules(context);
-      return AkanContextAnalyzer.findModules(context, args.module as string | undefined);
+      const modules = AkanContextAnalyzer.findModules(context, args.module as string | undefined, {
+        app: (args.app as string | undefined) ?? null,
+      });
+      if (name === "get_module_context" && !args.app && modules.length > 1) {
+        return {
+          diagnostics: [
+            {
+              severity: "error",
+              code: "module-context-ambiguous",
+              message: `Multiple modules match "${args.module}". Re-run get_module_context with an app argument.`,
+              input: "app",
+            },
+          ],
+          candidates: modules.map((module) => ({
+            app: module.sysName,
+            sysType: module.sysType,
+            module: module.name,
+            path: module.path,
+          })),
+        };
+      }
+      return modules;
     }
 
     if (name === "get_guideline") return await Prompter.getInstruction(stringArg(args, "name"));
-    if (name === "doctor_workspace") return await AkanContextAnalyzer.doctor(workspace, { strict: !!args.strict });
+    if (name === "doctor_workspace")
+      return await AkanContextAnalyzer.doctor(workspace, {
+        strict: !!args.strict,
+        runIdOrPlan: typeof args.runIdOrPlan === "string" ? workspacePath(workspace, args.runIdOrPlan) : null,
+        changedFiles: Array.isArray(args.changedFiles)
+          ? args.changedFiles.filter((file): file is string => typeof file === "string")
+          : [],
+      });
     if (name === "explain_command") return this.explainCommand(stringArg(args, "command"));
     if (name === "get_validation_contract")
       return {
@@ -270,7 +329,27 @@ export class ContextRunner extends runner("context") {
           "akan doctor --strict --format json",
         ],
         validationFailureScopes: ["workspace-config", "environment", "source-change", "unknown"],
-        applyReportFields: ["appliedCommands", "recommendedValidationCommands", "commands"],
+        artifactChainFields: ["planPath", "applyReportPath", "repairReportPath", "runId", "validationTarget", "next"],
+        diagnosticScopes: ["baseline", "workflow", "unknown"],
+        validationStatuses: {
+          sourceStatus: ["passed", "failed", "unknown"],
+          workspaceStatus: ["passed", "failed", "unknown"],
+          overallStatus: ["passed", "failed", "blocked-by-workspace-config", "blocked-by-environment"],
+          knownBlockers: "Repeated workspace-config/environment failures are summarized before command output.",
+        },
+        moduleContextInputs: {
+          module: "required",
+          app: "recommended in monorepos; required when module names are ambiguous",
+        },
+        generatedFreshnessStatuses: ["fresh", "stale", "missing", "unknown"],
+        directEditFallbackPolicy: applyFirstPolicy,
+        applyReportFields: [
+          "appliedCommands",
+          "recommendedValidationCommands",
+          "commands",
+          "recommendations",
+          "validationTarget",
+        ],
         repairCommands: [
           "akan repair generated --app <app-or-lib> --format json",
           "akan repair format --target <app-or-lib-or-pkg> --format json",
@@ -293,16 +372,35 @@ export class ContextRunner extends runner("context") {
           out: workspacePath(workspace, planPath),
         }),
       );
-      return { ...(plan as Record<string, unknown>), planPath };
+      return {
+        ...(plan as Record<string, unknown>),
+        planPath,
+        next: { tool: "apply_workflow", args: { planPath } },
+        policy: applyFirstPolicy,
+      };
     }
-    if (name === "apply_workflow")
-      return parseJsonOutput(
+    if (name === "apply_workflow") {
+      const report = parseJsonOutput(
         await new WorkflowRunner().apply(workspacePath(workspace, stringArg(args, "planPath")), {
           format: "json",
           dryRun: !!args.dryRun,
+          workspace,
           registry: createCliWorkflowStepRegistry(workspace),
         }),
-      );
+      ) as Record<string, unknown>;
+      const validationTarget =
+        typeof report.validationTarget === "string"
+          ? report.validationTarget
+          : typeof report.applyReportPath === "string"
+            ? report.applyReportPath
+            : stringArg(args, "planPath");
+      return {
+        ...report,
+        validationTarget,
+        next: { tool: "run_validation", args: { runIdOrPlan: validationTarget } },
+        policy: applyFirstPolicy,
+      };
+    }
     if (name === "run_validation")
       return parseJsonOutput(
         await new WorkflowRunner().validate(workspacePath(workspace, stringArg(args, "runIdOrPlan")), {
@@ -310,10 +408,12 @@ export class ContextRunner extends runner("context") {
           workspace,
         }),
       );
-    if (name === "repair_generated")
-      return parseJsonOutput(
+    if (name === "repair_generated") {
+      const report = parseJsonOutput(
         await new RepairRunner().repair("generated", { workspace, app: stringArg(args, "app"), format: "json" }),
-      );
+      ) as Record<string, unknown>;
+      return { ...report, next: { tool: "doctor_workspace", args: { strict: true } } };
+    }
     if (name === "repair_imports")
       return parseJsonOutput(
         await new RepairRunner().repair("imports", {

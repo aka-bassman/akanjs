@@ -2,6 +2,7 @@ import {
   type AddEnumFieldInput,
   type AddFieldInput,
   AppExecutor,
+  coerceFieldDefault,
   compactDiagnostics,
   createPrimitiveWriteReport,
   ensureBaseTypeImport,
@@ -200,6 +201,8 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
     }
     if (!enumValues && normalizedType) {
       input.type = normalizedType;
+      const defaultCoercion = coerceFieldDefault(input.type, input.defaultValue);
+      if (defaultCoercion.diagnostic) diagnostics.push(defaultCoercion.diagnostic);
       constantContent = ensureBaseTypeImport(constantContent, input.type);
     }
 
@@ -209,6 +212,31 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
       `${input.field}: ${fieldExpression(input.type, input.defaultValue)},`,
     );
     const nextDictionaryContent = insertDictionaryModelField(dictionaryContent, moduleClassName, input.field);
+    if (
+      nextConstantContent &&
+      (input.type === "Int" || input.type === "Float") &&
+      new RegExp(`\\b${input.field}\\s*:\\s*field\\(${input.type}, \\{ default: "`, "m").test(nextConstantContent)
+    ) {
+      diagnostics.push({
+        severity: "error",
+        code: "primitive-default-value-invalid",
+        input: "default",
+        failureScope: "source-change",
+        message: `Generated ${input.type} default for "${input.field}" would be a string literal; refusing to write source.`,
+      });
+    }
+    if (
+      nextConstantContent &&
+      (input.type === "Int" || input.type === "Float") &&
+      !new RegExp(`import \\{[^}]*\\b${input.type}\\b[^}]*\\} from "akanjs/base";`).test(nextConstantContent)
+    ) {
+      diagnostics.push({
+        severity: "error",
+        code: "primitive-base-type-import-missing",
+        failureScope: "source-change",
+        message: `Generated source for ${input.field} requires ${input.type} import from "akanjs/base".`,
+      });
+    }
     if (!nextConstantContent) {
       diagnostics.push({
         severity: "error",

@@ -4,7 +4,15 @@ import { capitalize } from "akanjs/common";
 import { AppExecutor, LibExecutor, type SysExecutor, type WorkspaceExecutor } from "./executors";
 import { FileSys } from "./fileSys";
 import type { PackageJson } from "./types";
-import type { RepairAction } from "./workflow";
+import {
+  type GeneratedSyncState,
+  type RepairAction,
+  type WorkflowApplyReport,
+  type WorkflowPlan,
+  type WorkflowRunArtifact,
+  workflowRunArtifactPath,
+  workflowSyncDir,
+} from "./workflow";
 
 export type AkanContextFormat = "json" | "markdown";
 export type AkanModuleKind = "domain" | "service" | "scalar";
@@ -61,6 +69,29 @@ export interface AkanDiagnostic {
   message: string;
   path?: string;
   repairActions?: RepairAction[];
+  scope?: "baseline" | "workflow" | "unknown";
+  context?: {
+    workflow?: string;
+    planPath?: string;
+    runId?: string;
+    target?: string;
+    paths?: string[];
+  };
+}
+
+export interface GeneratedFilesFreshness {
+  status: "fresh" | "stale" | "missing" | "unknown";
+  message: string;
+  refreshCommand: string;
+  verifyingCommands: string[];
+  targets?: {
+    target: string;
+    status: "fresh" | "stale" | "missing" | "unknown";
+    lastSyncedAt?: string;
+    runId?: string;
+    generatedFiles: string[];
+    reason: string;
+  }[];
 }
 
 export interface AkanDoctorResult {
@@ -71,14 +102,11 @@ export interface AkanDoctorResult {
   status: "passed" | "failed";
   diagnostics: AkanDiagnostic[];
   generatedFiles: string[];
-  generatedFilesFreshness: {
-    status: "unknown";
-    message: string;
-    refreshCommand: string;
-    verifyingCommands: string[];
-  };
+  generatedFilesFreshness: GeneratedFilesFreshness;
   validationCommands: string[];
   repairActions: RepairAction[];
+  baselineDiagnostics?: AkanDiagnostic[];
+  workflowDiagnostics?: AkanDiagnostic[];
 }
 
 export type JsonRpcRequest = {
@@ -136,6 +164,7 @@ export const renderDoctorText = (result: AkanDoctorResult) => {
   lines.push(
     "",
     "Generated file freshness:",
+    `Status: ${result.generatedFilesFreshness.status}`,
     result.generatedFilesFreshness.message,
     `Refresh: ${result.generatedFilesFreshness.refreshCommand}`,
     "",
@@ -182,7 +211,7 @@ const validationCommands = [
   "akan doctor --strict --format json",
 ];
 
-const generatedFilesFreshness = {
+const unknownGeneratedFilesFreshness: GeneratedFilesFreshness = {
   status: "unknown" as const,
   message: "Run sync before validation so generated Akan files match the current source conventions.",
   refreshCommand: "akan sync <app-or-lib>",
@@ -267,6 +296,135 @@ const safeReadJson = async <T>(filePath: string) => {
   } catch {
     return null;
   }
+};
+
+const isWorkflowPlan = (value: unknown): value is WorkflowPlan =>
+  typeof value === "object" &&
+  value !== null &&
+  "schemaVersion" in value &&
+  value.schemaVersion === 1 &&
+  "mode" in value &&
+  value.mode === "plan";
+
+const isWorkflowApplyReport = (value: unknown): value is WorkflowApplyReport =>
+  typeof value === "object" &&
+  value !== null &&
+  "schemaVersion" in value &&
+  value.schemaVersion === 1 &&
+  "mode" in value &&
+  (value.mode === "apply" || value.mode === "dry-run");
+
+const isWorkflowRunArtifact = (value: unknown): value is WorkflowRunArtifact =>
+  typeof value === "object" && value !== null && "schemaVersion" in value && value.schemaVersion === 1;
+
+const planInputString = (plan: WorkflowPlan, key: string) => {
+  const value = plan.inputs[key];
+  return typeof value === "string" ? value : "";
+};
+
+const expandWorkflowTarget = (target: string, plan: WorkflowPlan) => {
+  const app = planInputString(plan, "app");
+  const module = planInputString(plan, "module");
+  const moduleClass = module ? capitalize(module) : "<Module>";
+  return target
+    .replace(/^\*\//, app ? `apps/${app}/` : "")
+    .replaceAll("<module>", module || "<module>")
+    .replaceAll("<Module>", moduleClass);
+};
+
+const workflowPathsForPlan = (plan: WorkflowPlan) =>
+  plan.predictedChanges.map((change) => expandWorkflowTarget(change.target, plan));
+
+const workflowPathsForArtifact = (artifact: WorkflowRunArtifact) => {
+  if (isWorkflowPlan(artifact)) return workflowPathsForPlan(artifact);
+  if (isWorkflowApplyReport(artifact)) {
+    return [
+      ...artifact.changedFiles.map((file) => file.path),
+      ...artifact.generatedFiles.map((file) => file.path),
+      ...workflowPathsForPlan(artifact.plan),
+    ];
+  }
+  if ("mode" in artifact && artifact.mode === "validate" && artifact.plan) return workflowPathsForPlan(artifact.plan);
+  return [];
+};
+
+const loadWorkflowContextPaths = async (
+  workspace: WorkspaceExecutor,
+  runIdOrPlan: string | null,
+  changedFiles: string[],
+) => {
+  const paths = [...changedFiles];
+  if (!runIdOrPlan) return paths;
+  const inputPath = path.isAbsolute(runIdOrPlan) ? runIdOrPlan : path.join(workspace.workspaceRoot, runIdOrPlan);
+  const artifact =
+    (await safeReadJson<WorkflowRunArtifact | WorkflowPlan>(inputPath)) ??
+    (await safeReadJson<WorkflowRunArtifact>(path.join(workspace.workspaceRoot, workflowRunArtifactPath(runIdOrPlan))));
+  if (artifact && isWorkflowRunArtifact(artifact)) paths.push(...workflowPathsForArtifact(artifact));
+  return [...new Set(paths.filter(Boolean))];
+};
+
+const pathKey = (value: string) =>
+  value
+    .replaceAll("\\", "/")
+    .replaceAll("*", "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\/+/g, "/")
+    .replace(/^\/|\/$/g, "");
+
+const isWorkflowRelatedDiagnostic = (diagnostic: AkanDiagnostic, workflowPaths: string[]) => {
+  if (!diagnostic.path) return false;
+  const diagnosticPath = pathKey(diagnostic.path);
+  return workflowPaths.some((workflowPath) => {
+    const candidate = pathKey(workflowPath);
+    if (!candidate) return false;
+    return (
+      diagnosticPath.startsWith(candidate) || candidate.startsWith(diagnosticPath) || diagnosticPath.includes(candidate)
+    );
+  });
+};
+
+const readGeneratedSyncStates = async (workspace: WorkspaceExecutor) => {
+  const syncDir = path.join(workspace.workspaceRoot, workflowSyncDir);
+  const entries = await safeReadDir(syncDir);
+  const states = await Promise.all(
+    entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+      .map((entry) => safeReadJson<GeneratedSyncState>(path.join(syncDir, entry.name))),
+  );
+  return states.filter(
+    (state): state is GeneratedSyncState =>
+      !!state && state.schemaVersion === 1 && typeof state.target === "string" && typeof state.syncedAt === "string",
+  );
+};
+
+const generatedFreshnessFromStates = async (workspace: WorkspaceExecutor): Promise<GeneratedFilesFreshness> => {
+  const states = await readGeneratedSyncStates(workspace);
+  if (states.length === 0) return unknownGeneratedFilesFreshness;
+  const targets = states
+    .sort((a, b) => a.target.localeCompare(b.target))
+    .map((state) => ({
+      target: state.target,
+      status: state.status === "passed" ? ("fresh" as const) : ("stale" as const),
+      lastSyncedAt: state.syncedAt,
+      runId: state.runId,
+      generatedFiles: state.generatedFiles.map((file) => file.path),
+      reason:
+        state.status === "passed"
+          ? `Generated files were refreshed by ${state.command}.`
+          : `Last generated repair command failed: ${state.command}.`,
+    }));
+  const lastFresh = targets
+    .filter((target) => target.status === "fresh" && target.lastSyncedAt)
+    .sort((a, b) => (b.lastSyncedAt ?? "").localeCompare(a.lastSyncedAt ?? ""))[0];
+  return {
+    status: targets.some((target) => target.status === "fresh") ? "fresh" : "stale",
+    message: lastFresh
+      ? `Generated files were refreshed for ${lastFresh.target} at ${lastFresh.lastSyncedAt}.`
+      : "Generated sync state exists, but the last recorded repair did not pass.",
+    refreshCommand: "akan sync <app-or-lib>",
+    verifyingCommands: ["akan lint <app-or-lib-or-pkg>", "akan build <app-name>"],
+    targets,
+  };
 };
 
 const parseAbstractSummary = (
@@ -422,9 +580,14 @@ export class AkanContextAnalyzer {
 
   static async doctor(
     workspace: WorkspaceExecutor,
-    { strict = false }: { strict?: boolean } = {},
+    {
+      strict = false,
+      runIdOrPlan = null,
+      changedFiles = [],
+    }: { strict?: boolean; runIdOrPlan?: string | null; changedFiles?: string[] } = {},
   ): Promise<AkanDoctorResult> {
     const context = await AkanContextAnalyzer.analyze(workspace);
+    const workflowPaths = await loadWorkflowContextPaths(workspace, runIdOrPlan, changedFiles);
     const diagnostics: AkanDiagnostic[] = [];
     const repairActions: RepairAction[] = [
       repairAction("generated", "akan repair generated --app <app-or-lib>", "Refresh generated Akan files.", true),
@@ -524,22 +687,40 @@ export class AkanContextAnalyzer {
       }
     }
 
+    const scopedDiagnostics = diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      scope: workflowPaths.length
+        ? isWorkflowRelatedDiagnostic(diagnostic, workflowPaths)
+          ? ("workflow" as const)
+          : ("baseline" as const)
+        : diagnostic.scope,
+      context: workflowPaths.length ? { ...diagnostic.context, paths: workflowPaths } : diagnostic.context,
+    }));
+    const workflowDiagnostics = scopedDiagnostics.filter((diagnostic) => diagnostic.scope === "workflow");
+    const baselineDiagnostics = scopedDiagnostics.filter((diagnostic) => diagnostic.scope === "baseline");
     return {
       schemaVersion: 1,
       repoName: context.repoName,
       root: context.root,
       strict,
-      status: diagnostics.some((diagnostic) => diagnostic.severity === "error") ? "failed" : "passed",
-      diagnostics,
+      status: scopedDiagnostics.some((diagnostic) => diagnostic.severity === "error") ? "failed" : "passed",
+      diagnostics: scopedDiagnostics,
       generatedFiles: context.generatedFiles,
-      generatedFilesFreshness,
+      generatedFilesFreshness: await generatedFreshnessFromStates(workspace),
       validationCommands: context.validationCommands,
       repairActions,
+      ...(workflowPaths.length ? { baselineDiagnostics, workflowDiagnostics } : {}),
     };
   }
 
-  static findModules(context: AkanWorkspaceContext, moduleName?: string | null) {
-    const modules = [...context.apps, ...context.libs].flatMap((sys) => sys.modules);
+  static findModules(
+    context: AkanWorkspaceContext,
+    moduleName?: string | null,
+    { app = null }: { app?: string | null } = {},
+  ) {
+    const modules = [...context.apps, ...context.libs]
+      .filter((sys) => !app || sys.name === app)
+      .flatMap((sys) => sys.modules);
     return moduleName
       ? modules.filter((module) => module.name === moduleName || module.folderName === moduleName)
       : modules;

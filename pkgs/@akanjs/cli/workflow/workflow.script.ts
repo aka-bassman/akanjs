@@ -42,6 +42,7 @@ export class WorkflowScript extends script("workflow", [WorkflowRunner, ModuleSc
         await this.workflowRunner.apply(workflow, {
           dryRun,
           format,
+          workspace,
           registry: createWorkflowStepRegistry({
             workspace,
             createModule: (sys, module) => this.moduleScript.createModuleTemplate(sys, module),

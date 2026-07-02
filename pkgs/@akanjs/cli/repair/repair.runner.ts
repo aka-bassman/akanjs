@@ -1,6 +1,7 @@
 import {
   AkanContextAnalyzer,
   createRepairReport,
+  generatedFilePathsForTarget,
   type RepairAction,
   type RepairReport,
   renderRepairReport,
@@ -9,6 +10,8 @@ import {
   type WorkflowFormat,
   type WorkflowValidationCommandExecutor,
   type Workspace,
+  writeGeneratedSyncState,
+  writeWorkflowRunArtifact,
 } from "@akanjs/devkit";
 
 export type RepairKind = RepairAction["kind"];
@@ -77,7 +80,20 @@ export class RepairRunner extends runner("repair") {
   ) {
     const executor = execute ?? defaultExecutor(workspace);
     const report = await this.createRepairReport(kind, { workspace, app, module, target, execute: executor });
-    return renderRepairReport(report, format);
+    const { artifact, runId } = await writeWorkflowRunArtifact(workspace, report);
+    const reportWithArtifact = artifact as RepairReport;
+    if (kind === "generated" && reportWithArtifact.status === "passed" && reportWithArtifact.target) {
+      await writeGeneratedSyncState(workspace, {
+        schemaVersion: 1,
+        target: reportWithArtifact.target,
+        status: "passed",
+        syncedAt: reportWithArtifact.syncedAt ?? new Date().toISOString(),
+        command: `akan sync ${reportWithArtifact.target}`,
+        runId,
+        generatedFiles: reportWithArtifact.generatedFiles ?? [],
+      });
+    }
+    return renderRepairReport(reportWithArtifact, format);
   }
 
   async createRepairReport(
@@ -101,6 +117,9 @@ export class RepairRunner extends runner("repair") {
         return createRepairReport({ command: "repair generated", kind, diagnostics: [targetMissing("app")] });
       }
       const command = { command: `akan sync ${app}`, reason: "Refresh generated Akan files from source conventions." };
+      const result = await execute(command);
+      const [apps] = await workspace.getSyss();
+      const targetRoot = `${apps.includes(app) ? "apps" : "libs"}/${app}`;
       return createRepairReport({
         command: "repair generated",
         kind,
@@ -109,7 +128,9 @@ export class RepairRunner extends runner("repair") {
         nextActions: [
           { command: `akan doctor --strict --format json`, reason: "Re-run doctor after generated files refresh." },
         ],
-        commands: [await execute(command)],
+        commands: [result],
+        generatedFiles: generatedFilePathsForTarget(targetRoot),
+        ...(result.status === "passed" ? { syncedAt: new Date().toISOString() } : {}),
       });
     }
 

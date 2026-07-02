@@ -2,6 +2,38 @@ import { type Module, runner } from "@akanjs/devkit";
 import { capitalize } from "akanjs/common";
 import { pluralizeName } from "../pluralizeName";
 
+const moduleAbstractContent = (moduleName: string) => {
+  const title = capitalize(moduleName);
+  return `# ${title} Module Abstract
+
+## Purpose
+
+${title} owns persisted ${moduleName} records.
+
+## Domain Rules
+
+- No durable business invariants yet.
+
+## Data Meaning
+
+No additional data meaning has been documented yet.
+
+## Workflows
+
+No lifecycle workflow yet.
+
+## Agent Notes
+
+- Read this abstract before changing the module.
+- Update this file when business invariants, workflows, or public behavior change.
+- Do not update this file for formatting-only, import-only, or style-only changes.
+
+## Related Modules
+
+- None yet.
+`;
+};
+
 export class ModuleRunner extends runner("module") {
   async createService(module: Module) {
     const serviceName = module.name.replace(/^_+/, "");
@@ -59,6 +91,7 @@ export class ModuleRunner extends runner("module") {
       template: "module",
       dict: { model: module.name, models: names, sysName: module.sys.name },
     });
+    await module.writeFile(`${module.name}.abstract.md`, moduleAbstractContent(module.name));
 
     const [
       abstractContent,

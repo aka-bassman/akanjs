@@ -17,7 +17,11 @@ export const addFieldWorkflowSpec: WorkflowSpec = {
         "Field type or scalar name. Use Int for integer fields or Float for decimal fields; do not use Number.",
     },
     values: { type: "string-list", description: "Comma-separated enum values when type is enum." },
-    default: { type: "string", description: "Optional default value for the field." },
+    default: {
+      type: "string",
+      description:
+        "Optional default value. apply_workflow coerces by field type: Int/Float to numeric literals, Boolean to true/false, String/enum/scalar to string literals; invalid numeric or boolean defaults fail before source is written.",
+    },
   },
   optionalSurfaces: {
     dictionary: "include",
@@ -66,15 +70,36 @@ export const addFieldWorkflowSpec: WorkflowSpec = {
     },
   ],
   predictedChanges: [
-    { target: "*/lib/<module>/<module>.constant.ts", action: "modify", reason: "Field shape is added." },
-    { target: "*/lib/<module>/<module>.dictionary.ts", action: "modify", reason: "Field label is added." },
+    {
+      target: "*/lib/<module>/<module>.constant.ts",
+      action: "modify",
+      applyScope: "auto",
+      reason: "Field shape is added.",
+    },
+    {
+      target: "*/lib/<module>/<module>.dictionary.ts",
+      action: "modify",
+      applyScope: "auto",
+      reason: "Field label is added.",
+    },
     {
       target: "*/lib/<module>/<Module>.Template.tsx",
       action: "modify",
+      applyScope: "manual-review",
       reason: "Form surface may include the field.",
     },
-    { target: "*/lib/cnst.ts", action: "sync", reason: "Generated constants may change after sync." },
-    { target: "*/lib/dict.ts", action: "sync", reason: "Generated dictionary barrel may change after sync." },
+    {
+      target: "*/lib/cnst.ts",
+      action: "sync",
+      applyScope: "generated-sync",
+      reason: "Generated constants may change after sync.",
+    },
+    {
+      target: "*/lib/dict.ts",
+      action: "sync",
+      applyScope: "generated-sync",
+      reason: "Generated dictionary barrel may change after sync.",
+    },
   ],
   validation: [
     ...baseValidation,

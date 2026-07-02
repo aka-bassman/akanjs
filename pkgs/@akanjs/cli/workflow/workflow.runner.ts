@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  AkanContextAnalyzer,
   compactWorkflowInputs,
   createDryRunWorkflowApplyReport,
   createWorkflowApplyReport,
@@ -19,6 +20,7 @@ import {
   runner,
   type WorkflowApplyCommand,
   type WorkflowApplyReport,
+  type WorkflowDiagnostic,
   WorkflowExecutor,
   type WorkflowFailureScope,
   type WorkflowFormat,
@@ -32,6 +34,7 @@ import {
   workflowCommandsForPlan,
   writeWorkflowRunArtifact,
 } from "@akanjs/devkit";
+import { capitalize } from "akanjs/common";
 import { workflowSpecs } from "../workflows";
 
 const resolvePath = (filePath: string) => (path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath));
@@ -66,6 +69,7 @@ const failedPlan = (workflow: string, diagnostics: WorkflowApplyReport["diagnost
   predictedChanges: [],
   validation: [],
   diagnostics,
+  recommendations: [],
   requiresApproval: true,
 });
 
@@ -147,6 +151,46 @@ const defaultValidationExecutor =
 
 const readJsonFile = async (filePath: string) => JSON.parse(await readFile(resolvePath(filePath), "utf8"));
 
+const planInputString = (plan: WorkflowPlan, key: string) => {
+  const value = plan.inputs[key];
+  return typeof value === "string" ? value : "";
+};
+
+const workflowPathsForPlanLike = (plan: WorkflowPlan) => {
+  const app = planInputString(plan, "app");
+  const module = planInputString(plan, "module");
+  const moduleClass = module ? capitalize(module) : "<Module>";
+  return plan.predictedChanges.map((change) =>
+    change.target
+      .replace(/^\*\//, app ? `apps/${app}/` : "")
+      .replaceAll("<module>", module || "<module>")
+      .replaceAll("<Module>", moduleClass),
+  );
+};
+
+const workflowDiagnosticFromDoctor = (
+  diagnostic: {
+    severity: "warning" | "error";
+    code: string;
+    message: string;
+    scope?: "baseline" | "workflow" | "unknown";
+    context?: WorkflowDiagnostic["context"];
+  },
+  fallbackScope: "baseline" | "workflow",
+): WorkflowDiagnostic => ({
+  severity: diagnostic.severity,
+  code: diagnostic.code,
+  message: diagnostic.message,
+  scope: diagnostic.scope ?? fallbackScope,
+  failureScope:
+    (diagnostic.scope ?? fallbackScope) === "baseline"
+      ? "workspace-config"
+      : (diagnostic.scope ?? fallbackScope) === "workflow"
+        ? "source-change"
+        : "unknown",
+  context: diagnostic.context,
+});
+
 export class WorkflowRunner extends runner("workflow") {
   list({ format = "markdown" }: { format?: WorkflowFormat } = {}) {
     const workflows = listWorkflowSpecs(workflowSpecs);
@@ -186,8 +230,14 @@ export class WorkflowRunner extends runner("workflow") {
       dryRun = false,
       format = "markdown",
       registry,
-    }: { dryRun?: boolean; format?: WorkflowFormat; registry?: WorkflowStepRegistry } = {},
+      workspace,
+    }: { dryRun?: boolean; format?: WorkflowFormat; registry?: WorkflowStepRegistry; workspace?: Workspace } = {},
   ) {
+    const renderApplyReport = async (report: WorkflowApplyReport) => {
+      if (!workspace) return renderWorkflowApply(report, format);
+      const { artifact } = await writeWorkflowRunArtifact(workspace, report);
+      return renderWorkflowApply(artifact as WorkflowApplyReport, format);
+    };
     let plan: WorkflowPlan;
     try {
       const parsed = JSON.parse(await readFile(resolvePath(planPath), "utf8"));
@@ -199,7 +249,7 @@ export class WorkflowRunner extends runner("workflow") {
             message: `Workflow plan file is invalid: ${planPath}.`,
           },
         ]);
-        return renderWorkflowApply(report, format);
+        return await renderApplyReport(report);
       }
       plan = parsed;
     } catch (error) {
@@ -211,7 +261,7 @@ export class WorkflowRunner extends runner("workflow") {
             `Could not read workflow plan file: ${planPath}. ${error instanceof Error ? error.message : ""}`.trim(),
         },
       ]);
-      return renderWorkflowApply(report, format);
+      return await renderApplyReport(report);
     }
 
     const spec = getWorkflowSpec(workflowSpecs, plan.workflow);
@@ -227,9 +277,9 @@ export class WorkflowRunner extends runner("workflow") {
         ],
         plan,
       );
-      return renderWorkflowApply(report, format);
+      return await renderApplyReport(report);
     }
-    if (dryRun) return renderWorkflowApply(createDryRunWorkflowApplyReport(plan), format);
+    if (dryRun) return await renderApplyReport(createDryRunWorkflowApplyReport(plan));
     if (!registry) {
       const report = failedApplyReport(
         plan.workflow,
@@ -242,9 +292,9 @@ export class WorkflowRunner extends runner("workflow") {
         ],
         plan,
       );
-      return renderWorkflowApply(report, format);
+      return await renderApplyReport(report);
     }
-    return renderWorkflowApply(await new WorkflowExecutor(registry).apply(plan), format);
+    return await renderApplyReport(await new WorkflowExecutor(registry).apply(plan));
   }
 
   async validate(
@@ -256,6 +306,11 @@ export class WorkflowRunner extends runner("workflow") {
     }: { format?: WorkflowFormat; workspace: Workspace; execute?: WorkflowValidationCommandExecutor },
   ) {
     const loaded = await this.loadValidationTarget(runIdOrPlan, workspace);
+    const doctor = await AkanContextAnalyzer.doctor(workspace, {
+      strict: true,
+      runIdOrPlan,
+      changedFiles: loaded.changedFiles,
+    });
     const report = await createWorkflowValidationRunReport({
       workflow: loaded.plan?.workflow ?? loaded.workflow,
       source: loaded.source,
@@ -263,6 +318,12 @@ export class WorkflowRunner extends runner("workflow") {
       commands: loaded.commands,
       execute: execute ?? defaultValidationExecutor(workspace),
       diagnostics: loaded.diagnostics,
+      baselineDiagnostics: (doctor.baselineDiagnostics ?? []).map((diagnostic) =>
+        workflowDiagnosticFromDoctor(diagnostic, "baseline"),
+      ),
+      workflowDiagnostics: (doctor.workflowDiagnostics ?? []).map((diagnostic) =>
+        workflowDiagnosticFromDoctor(diagnostic, "workflow"),
+      ),
       repairActions: loaded.repairActions,
     });
     await writeWorkflowRunArtifact(workspace, report);
@@ -302,10 +363,13 @@ export class WorkflowRunner extends runner("workflow") {
       if (isWorkflowApplyReport(artifact)) {
         return {
           workflow: artifact.workflow,
-          source: { type: "apply-report" as const, path: sourcePath },
+          source: { type: "apply-report" as const, path: sourcePath, runId: artifact.runId },
           plan: artifact.plan,
-          commands: workflowCommandsForPlan(artifact.plan),
+          commands: artifact.recommendedValidationCommands.length
+            ? artifact.recommendedValidationCommands
+            : workflowCommandsForPlan(artifact.plan),
           diagnostics: artifact.diagnostics,
+          changedFiles: artifact.changedFiles.map((file) => file.path),
           repairActions: [],
         };
       }
@@ -316,6 +380,7 @@ export class WorkflowRunner extends runner("workflow") {
           plan: artifact.plan,
           commands: artifact.plan ? workflowCommandsForPlan(artifact.plan) : [],
           diagnostics: artifact.diagnostics,
+          changedFiles: [],
           repairActions: artifact.repairActions,
         };
       }
@@ -331,6 +396,7 @@ export class WorkflowRunner extends runner("workflow") {
             message: `Workflow validation source is not supported: ${runIdOrPlan}.`,
           },
         ],
+        changedFiles: [],
         repairActions: [],
       };
     };
@@ -344,6 +410,7 @@ export class WorkflowRunner extends runner("workflow") {
           plan: parsed,
           commands: workflowCommandsForPlan(parsed),
           diagnostics: parsed.diagnostics,
+          changedFiles: workflowPathsForPlanLike(parsed),
           repairActions: [],
         };
       }
@@ -370,6 +437,7 @@ export class WorkflowRunner extends runner("workflow") {
             }`.trim(),
           },
         ],
+        changedFiles: [],
         repairActions: [],
       };
     }

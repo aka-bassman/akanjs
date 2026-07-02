@@ -20,8 +20,12 @@ describe("ModuleRunner", () => {
     const files = await runner.createModuleTemplate(module);
 
     expect(files.abstract.filename).toBe("post.abstract.md");
-    expect(files.abstract.content).toContain("Module Abstract");
+    expect(files.abstract.content).toContain("Post Module Abstract");
+    expect(files.abstract.content).toContain("Post owns persisted post records.");
+    expect(files.abstract.content).toContain("No lifecycle workflow yet.");
+    expect(files.abstract.content).not.toContain("Describe the business concept");
     expect(files.constant.filename).toBe("post.constant.ts");
+    expect(files.constant.content).not.toContain("field: field(String).optional()");
     expect(files.dictionary.filename).toBe("post.dictionary.ts");
     expect(files.service.content).toContain("serve");
     expect(files.signal.content).toContain("signal");

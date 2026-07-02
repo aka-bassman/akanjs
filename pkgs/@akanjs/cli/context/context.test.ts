@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { AkanContextAnalyzer, CommandContainer, createAkanCursorMcpServer } from "@akanjs/devkit";
+import {
+  AkanContextAnalyzer,
+  AppExecutor,
+  CommandContainer,
+  createAkanCursorMcpServer,
+  ModuleExecutor,
+} from "@akanjs/devkit";
 import { AgentRunner } from "../agent/agent.runner";
 import { ModuleRunner } from "../module/module.runner";
-import { cleanupCliTempWorkspace, createTempApp, createTempModule, writeText } from "../testHelpers";
+import { cleanupCliTempWorkspace, createTempApp, createTempModule, writeJson, writeText } from "../testHelpers";
 import { ContextRunner } from "./context.runner";
 
 const tempRoots: string[] = [];
@@ -20,8 +26,8 @@ describe("ContextRunner", () => {
 
     const output = await new ContextRunner().getContext(workspace, { module: "post" });
 
-    expect(output).toContain("# Module Abstract");
-    expect(output.indexOf("# Module Abstract")).toBeLessThan(output.indexOf("- Files:"));
+    expect(output).toContain("# Post Module Abstract");
+    expect(output.indexOf("# Post Module Abstract")).toBeLessThan(output.indexOf("- Files:"));
   });
 
   test("prints generated file and validation contracts in json context", async () => {
@@ -100,6 +106,15 @@ describe("ContextRunner", () => {
     expect(
       runner.listMcpTools("plan").find((tool) => tool.name === "plan_workflow")?.inputSchema.properties,
     ).toHaveProperty("out");
+    expect(
+      runner.listMcpTools("readonly").find((tool) => tool.name === "get_module_context")?.inputSchema.properties,
+    ).toHaveProperty("app");
+    const doctorSchema = runner.listMcpTools("readonly").find((tool) => tool.name === "doctor_workspace")
+      ?.inputSchema.properties;
+    expect(doctorSchema?.changedFiles).toMatchObject({ type: "array" });
+    expect(runner.listMcpTools("plan").find((tool) => tool.name === "plan_workflow")?.description).toContain(
+      "next.tool=apply_workflow",
+    );
   });
 
   test("returns validation contract modes as cumulative MCP tool lists", async () => {
@@ -108,6 +123,19 @@ describe("ContextRunner", () => {
 
     const contract = (await new ContextRunner().callMcpTool(workspace, "get_validation_contract")) as {
       modes: Record<"readonly" | "plan" | "apply", string[]>;
+      directEditFallbackPolicy: {
+        mode: string;
+        directSourceEdits: string;
+        applyRequiredWhen: string[];
+        validationRequiredAfterApply: string[];
+        fallbackAllowedWhen: string[];
+      };
+      validationStatuses: {
+        overallStatus: string[];
+      };
+      moduleContextInputs: {
+        app: string;
+      };
     };
 
     expect(contract.modes.readonly).toContain("doctor_workspace");
@@ -118,6 +146,15 @@ describe("ContextRunner", () => {
     expect(contract.modes.apply).toContain("doctor_workspace");
     expect(contract.modes.apply).toContain("plan_workflow");
     expect(contract.modes.apply).toContain("apply_workflow");
+    expect(contract.directEditFallbackPolicy).toMatchObject({
+      mode: "apply-first",
+      directSourceEdits: "fallback-only",
+    });
+    expect(contract.directEditFallbackPolicy.applyRequiredWhen).toContain("plan_workflow returns planPath");
+    expect(contract.directEditFallbackPolicy.validationRequiredAfterApply).toContain("validationTarget");
+    expect(contract.directEditFallbackPolicy.fallbackAllowedWhen.join("\n")).toContain("no matching workflow");
+    expect(contract.validationStatuses.overallStatus).toContain("blocked-by-workspace-config");
+    expect(contract.moduleContextInputs.app).toContain("recommended");
   });
 
   test("installs Cursor MCP config while preserving existing servers", async () => {
@@ -178,17 +215,35 @@ describe("ContextRunner", () => {
         out: planPath,
       },
       { mode: "plan" },
-    )) as { mode: string; workflow: string; planPath: string };
+    )) as {
+      mode: string;
+      workflow: string;
+      planPath: string;
+      next: { tool: string; args: { planPath: string } };
+      policy: { mode: string; directSourceEdits: string };
+    };
     const dryRun = (await runner.callMcpTool(
       workspace,
       "apply_workflow",
       { planPath, dryRun: true },
       { mode: "apply" },
-    )) as { mode: string; status: string };
+    )) as {
+      mode: string;
+      status: string;
+      applyReportPath: string;
+      validationTarget: string;
+      next: { tool: string; args: { runIdOrPlan: string } };
+      policy: { mode: string; directSourceEdits: string };
+    };
 
     expect(plan).toMatchObject({ mode: "plan", workflow: "add-field", planPath });
+    expect(plan.next).toEqual({ tool: "apply_workflow", args: { planPath } });
+    expect(plan.policy).toMatchObject({ mode: "apply-first", directSourceEdits: "fallback-only" });
     expect(await Bun.file(planPath).exists()).toBe(true);
     expect(dryRun).toMatchObject({ mode: "dry-run", status: "passed" });
+    expect(dryRun.next).toEqual({ tool: "run_validation", args: { runIdOrPlan: dryRun.validationTarget } });
+    expect(dryRun.policy).toMatchObject({ mode: "apply-first", directSourceEdits: "fallback-only" });
+    expect(await Bun.file(`${root}/${dryRun.applyReportPath}`).exists()).toBe(true);
   });
 
   test("writes a default plan artifact from MCP plan_workflow", async () => {
@@ -203,11 +258,77 @@ describe("ContextRunner", () => {
         inputs: { app: "demo", module: "task", field: "priority", type: "string" },
       },
       { mode: "plan" },
-    )) as { mode: string; workflow: string; planPath: string };
+    )) as { mode: string; workflow: string; planPath: string; recommendations: { code: string }[] };
 
     expect(plan).toMatchObject({ mode: "plan", workflow: "add-field" });
     expect(plan.planPath).toBe(".akan/workflows/plans/add-field-demo-task-priority.json");
+    expect(plan.recommendations.map((recommendation) => recommendation.code)).toContain("workflow-apply-first");
+    expect(plan.recommendations.map((recommendation) => recommendation.code)).toContain(
+      "workflow-validate-apply-report",
+    );
+    expect(plan.recommendations.map((recommendation) => recommendation.code)).toContain("add-field-component");
     expect(await Bun.file(`${root}/${plan.planPath}`).exists()).toBe(true);
+  });
+
+  test("splits doctor diagnostics by workflow context paths", async () => {
+    const { root, workspace, app } = await createTempApp("demo");
+    tempRoots.push(root);
+    await writeText(`${app.cwdPath}/base.ts`, "export const bad = true;\n");
+    await writeText(`${app.cwdPath}/lib/task/task.constant.ts`, "export class Task {}\n");
+    const runner = new ContextRunner();
+    const plan = (await runner.callMcpTool(
+      workspace,
+      "plan_workflow",
+      {
+        workflow: "add-field",
+        inputs: { app: "demo", module: "task", field: "priority", type: "String" },
+      },
+      { mode: "plan" },
+    )) as { planPath: string };
+
+    const doctor = (await runner.callMcpTool(
+      workspace,
+      "doctor_workspace",
+      { strict: true, runIdOrPlan: plan.planPath },
+      { mode: "apply" },
+    )) as {
+      baselineDiagnostics: { code: string }[];
+      workflowDiagnostics: { code: string }[];
+    };
+
+    expect(doctor.baselineDiagnostics.map((diagnostic) => diagnostic.code)).toContain("app-root-unknown-entry");
+    expect(doctor.workflowDiagnostics.map((diagnostic) => diagnostic.code)).toContain("module-shape-invalid");
+  });
+
+  test("filters get_module_context by app and reports ambiguous module-only matches", async () => {
+    const { root, workspace, app } = await createTempApp("demo");
+    tempRoots.push(root);
+    await writeJson(`${root}/apps/ops/tsconfig.json`, { compilerOptions: { target: "ESNext", paths: {} } });
+    await writeJson(`${root}/apps/ops/package.json`, {
+      name: "ops",
+      version: "1.0.0",
+      description: "ops",
+      dependencies: {},
+      devDependencies: {},
+    });
+    await writeText(`${root}/apps/ops/akan.config.ts`, "export default {};\n");
+    await new ModuleRunner().createModuleTemplate(ModuleExecutor.from(app, "post"));
+    await new ModuleRunner().createModuleTemplate(ModuleExecutor.from(AppExecutor.from(workspace, "ops"), "post"));
+    const runner = new ContextRunner();
+
+    const ambiguous = (await runner.callMcpTool(workspace, "get_module_context", { module: "post" })) as {
+      diagnostics: { code: string }[];
+      candidates: { app: string; path: string }[];
+    };
+    const filtered = (await runner.callMcpTool(workspace, "get_module_context", { app: "ops", module: "post" })) as {
+      sysName: string;
+      path: string;
+    }[];
+
+    expect(ambiguous.diagnostics).toContainEqual(expect.objectContaining({ code: "module-context-ambiguous" }));
+    expect(ambiguous.candidates.map((candidate) => candidate.app).sort()).toEqual(["demo", "ops"]);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]).toMatchObject({ sysName: "ops", path: "apps/ops/lib/post" });
   });
 
   test("blocks apply tools outside apply MCP mode", async () => {
@@ -256,6 +377,9 @@ describe("AgentRunner", () => {
       const content = await Bun.file(`${root}/${filePath}`).text();
       expect(content).toContain("Before changing a domain");
       expect(content).toContain("Prefer Akan MCP workflows before direct source edits");
+      expect(content).toContain("planPath");
+      expect(content).toContain("apply_workflow({ planPath })");
+      expect(content).toContain("validationTarget");
       expect(content).toContain("Direct source edits are denied");
       expect(content).toContain("akan mcp --mode plan");
       expect(content).toContain("akan mcp --mode apply");

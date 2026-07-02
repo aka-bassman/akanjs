@@ -262,10 +262,16 @@ describe("WorkspaceRunner", () => {
     const cursorRules = await Bun.file(`${root}/.cursor/rules/akan.mdc`).text();
     expect(agentsGuide).toContain("repo Agent Guide");
     expect(agentsGuide).toContain("Prefer Akan MCP workflows before direct source edits");
+    expect(agentsGuide).toContain("apply_workflow({ planPath })");
+    expect(agentsGuide).toContain("validationTarget");
+    expect(agentsGuide).toContain("create-module` plan/apply first, then `add-field");
     expect(agentsGuide).toContain("akan mcp --mode plan");
     expect(agentsGuide).toContain("akan repair generated");
     expect(cursorRules).toContain("Akan.js Workspace Rules");
     expect(cursorRules).toContain("Prefer Akan MCP workflows before direct source edits");
+    expect(cursorRules).toContain("apply_workflow({ planPath })");
+    expect(cursorRules).toContain("validationTarget");
+    expect(cursorRules).toContain("create-module");
     expect(cursorRules).toContain("Direct source edits are denied");
     expect(cursorRules).toContain("akan repair generated");
 

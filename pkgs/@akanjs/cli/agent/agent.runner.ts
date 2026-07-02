@@ -45,8 +45,11 @@ If generated output is stale or broken, update the owning source file and run \`
 - Prefer Akan MCP workflows before direct source edits.
 - Direct source edits are denied when an allowlisted Akan workflow or repair tool can perform the change.
 - Use \`akan mcp --mode plan\` to inspect \`list_workflows\`, \`explain_workflow\`, and \`plan_workflow\`.
+- If \`plan_workflow\` returns \`planPath\` or \`next.tool=apply_workflow\`, call \`apply_workflow({ planPath })\` before editing source files directly.
 - Use \`akan mcp --mode apply\` only for allowlisted \`apply_workflow\`, \`run_validation\`, and repair tools.
-- If no workflow exists, keep edits scoped to owning source files and never patch generated files directly.
+- After \`apply_workflow\`, run \`run_validation\` with \`validationTarget\` when present; otherwise use \`applyReportPath\`.
+- If no workflow exists, or apply reports unsupported/no-op/failed diagnostics that require manual action, keep edits scoped to owning source files and never patch generated files directly.
+- For compound requests, split the request into workflows and apply each \`planPath\` in order, such as \`create-module\` followed by \`add-field\`.
 
 ## Validation
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { CommandContainer, type RepairReport } from "@akanjs/devkit";
+import { AkanContextAnalyzer, CommandContainer, type RepairReport } from "@akanjs/devkit";
 import { cleanupCliTempWorkspace, createTempModule, writeText } from "../testHelpers";
 import { RepairRunner } from "./repair.runner";
 
@@ -29,8 +29,13 @@ describe("RepairRunner", () => {
     const report = JSON.parse(output) as RepairReport;
 
     expect(report).toMatchObject({ command: "repair generated", kind: "generated", status: "passed" });
+    expect(report.runId?.startsWith("generated-")).toBe(true);
+    expect(report.repairReportPath).toBe(`.akan/workflows/runs/${report.runId}.json`);
     expect(report.commands.map((command) => command.command)).toContain("akan sync demo");
+    expect(report.generatedFiles?.map((file) => file.path)).toContain("apps/demo/lib/cnst.ts");
     expect(report.nextActions.map((action) => action.command)).toContain("akan doctor --strict --format json");
+    expect(await Bun.file(`${root}/${report.repairReportPath}`).exists()).toBe(true);
+    expect((await AkanContextAnalyzer.doctor(workspace)).generatedFilesFreshness.status).toBe("fresh");
   });
 
   test("runs format repair through lint path", async () => {
