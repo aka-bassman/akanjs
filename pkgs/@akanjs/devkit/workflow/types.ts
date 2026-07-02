@@ -1,8 +1,9 @@
 import type { Sys, Workspace } from "../commandDecorators";
+import type { FieldDefaultValue } from "./source";
 
-export type WorkflowInputType = "string" | "string-list" | "surface-mode";
+export type WorkflowInputType = "string" | "string-list" | "surface-mode" | "boolean";
 export type WorkflowSurfaceMode = "infer" | "include" | "skip";
-export type WorkflowInputValue = string | string[] | WorkflowSurfaceMode;
+export type WorkflowInputValue = string | string[] | boolean | WorkflowSurfaceMode;
 export type WorkflowFormat = "markdown" | "json";
 export type WorkflowPlanInputs = Record<string, string | null>;
 export type PrimitiveFormat = "markdown" | "json";
@@ -10,6 +11,12 @@ export type UiSurface = "view" | "unit" | "template";
 export type WorkflowValidationKind = "sync" | "lint" | "typecheck" | "doctor" | "custom";
 export type WorkflowFailureScope = "workspace-config" | "environment" | "source-change" | "unknown";
 export type WorkflowValidationStatus = "passed" | "failed" | "unknown";
+export interface WorkflowValidationSummary {
+  sourceChange: WorkflowValidationStatus;
+  generatedSync: WorkflowValidationStatus;
+  workspaceConfig: WorkflowValidationStatus;
+  environment: WorkflowValidationStatus;
+}
 export type WorkflowOverallStatus = "passed" | "failed" | "blocked-by-workspace-config" | "blocked-by-environment";
 
 export interface PrimitiveTargetInput {
@@ -20,13 +27,17 @@ export interface PrimitiveTargetInput {
 export interface AddFieldInput extends PrimitiveTargetInput {
   field: string | null;
   type: string | null;
-  defaultValue?: string | null;
+  defaultValue?: FieldDefaultValue;
+  surfaces?: string[] | null;
+  includeInLight?: boolean | null;
 }
 
 export interface AddEnumFieldInput extends PrimitiveTargetInput {
   field: string | null;
   values: string | null;
-  defaultValue?: string | null;
+  defaultValue?: FieldDefaultValue;
+  surfaces?: string[] | null;
+  includeInLight?: boolean | null;
 }
 
 export interface WorkflowInputSpec {
@@ -150,6 +161,7 @@ export interface WorkflowKnownBlocker {
   command?: string;
   kind?: WorkflowValidationKind;
   count: number;
+  known?: boolean;
 }
 
 export interface RepairAction {
@@ -163,6 +175,13 @@ export interface PrimitiveChangedFile {
   path: string;
   action: "create" | "modify" | "remove";
   reason: string;
+}
+
+export interface WorkflowPostApplyCheck {
+  code: string;
+  target: string;
+  status: "passed" | "failed";
+  message: string;
 }
 
 export interface PrimitiveGeneratedFile {
@@ -208,6 +227,7 @@ export interface WorkflowApplyReport {
   recommendedValidationCommands: WorkflowApplyCommand[];
   commands: WorkflowApplyCommand[];
   diagnostics: WorkflowDiagnostic[];
+  postApplyChecks?: WorkflowPostApplyCheck[];
   recommendations: WorkflowRecommendation[];
   nextActions: PrimitiveNextAction[];
   plan: WorkflowPlan;
@@ -222,6 +242,7 @@ export interface WorkflowValidationRunReport {
   status: "passed" | "failed";
   sourceStatus: WorkflowValidationStatus;
   workspaceStatus: WorkflowValidationStatus;
+  summary: WorkflowValidationSummary;
   overallStatus: WorkflowOverallStatus;
   knownBlockers: WorkflowKnownBlocker[];
   commands: WorkflowValidationCommandResult[];
@@ -266,6 +287,7 @@ export interface WorkflowStepResult {
   generatedFiles?: PrimitiveGeneratedFile[];
   commands?: WorkflowApplyCommand[];
   diagnostics?: WorkflowDiagnostic[];
+  postApplyChecks?: WorkflowPostApplyCheck[];
   recommendations?: WorkflowRecommendation[];
   nextActions?: PrimitiveNextAction[];
 }

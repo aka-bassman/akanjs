@@ -84,19 +84,72 @@ export const renderWorkflowPlan = (plan: WorkflowPlan) =>
     "",
   ].join("\n");
 
-export const renderWorkflowApplyReport = (report: WorkflowApplyReport) =>
-  [
+const renderRecommendation = (recommendation: WorkflowApplyReport["recommendations"][number]) => {
+  const target = recommendation.target ? ` ${recommendation.target}` : "";
+  const action = recommendation.action ? ` Action: ${recommendation.action}` : "";
+  return `- [${recommendation.kind}]${target} ${recommendation.message}${action}`;
+};
+
+const renderDiagnostic = (diagnostic: WorkflowApplyReport["diagnostics"][number]) =>
+  `- [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`;
+
+const applySourceStatus = (report: WorkflowApplyReport) =>
+  report.diagnostics.some(
+    (diagnostic) =>
+      diagnostic.severity === "error" &&
+      (diagnostic.failureScope === "source-change" ||
+        !diagnostic.failureScope ||
+        diagnostic.failureScope === "unknown"),
+  )
+    ? "failed"
+    : "passed";
+
+export const renderWorkflowApplyReport = (report: WorkflowApplyReport) => {
+  const manualReviewItems = [
+    ...report.diagnostics.filter((diagnostic) => diagnostic.severity === "warning").map(renderDiagnostic),
+    ...report.recommendations
+      .filter((recommendation) => recommendation.kind === "manual-action")
+      .map(renderRecommendation),
+  ];
+  const validationBlockers = report.diagnostics
+    .filter(
+      (diagnostic) =>
+        diagnostic.severity === "error" &&
+        (diagnostic.failureScope === "workspace-config" || diagnostic.failureScope === "environment"),
+    )
+    .map(renderDiagnostic);
+  const sourceBlockers = report.diagnostics
+    .filter(
+      (diagnostic) =>
+        diagnostic.severity === "error" &&
+        (diagnostic.failureScope === "source-change" ||
+          !diagnostic.failureScope ||
+          diagnostic.failureScope === "unknown"),
+    )
+    .map(renderDiagnostic);
+  return [
     `# Workflow Apply: ${report.workflow}`,
     "",
     `- Mode: ${report.mode}`,
     `- Status: ${report.status}`,
+    `- Source-change status: ${applySourceStatus(report)}`,
+    `- Workspace status: ${validationBlockers.length ? "blocked" : "not blocked during apply"}`,
+    ...(report.validationTarget ? [`- Validation target: ${report.validationTarget}`] : []),
     "",
-    "## Changed Files",
+    "## Apply Checks",
+    ...(report.postApplyChecks?.length
+      ? report.postApplyChecks.map((check) => `- [${check.status}] ${check.code} ${check.target}: ${check.message}`)
+      : ["- not run"]),
+    "",
+    "## Source Change Blockers",
+    ...(sourceBlockers.length ? sourceBlockers : ["- none"]),
+    "",
+    "## Automatically Modified",
     ...(report.changedFiles.length
       ? report.changedFiles.map((file) => `- \`${file.action}\` ${file.path}: ${file.reason}`)
       : ["- none"]),
     "",
-    "## Generated Files",
+    "## Generated Sync",
     ...(report.generatedFiles.length
       ? report.generatedFiles.map((file) => `- \`${file.action}\` ${file.path}: ${file.reason}`)
       : ["- none"]),
@@ -111,15 +164,21 @@ export const renderWorkflowApplyReport = (report: WorkflowApplyReport) =>
       ? report.recommendedValidationCommands.map((command) => `- \`${command.command}\`: ${command.reason}`)
       : ["- none"]),
     "",
+    "## User Review Required",
+    ...(manualReviewItems.length ? manualReviewItems : ["- none"]),
+    "",
+    "## Validation Blockers",
+    ...(validationBlockers.length
+      ? validationBlockers
+      : report.recommendedValidationCommands.length
+        ? ["- none detected during apply; run validation with the validation target for command-level blockers."]
+        : ["- none"]),
+    "",
     "## Diagnostics",
-    ...(report.diagnostics.length
-      ? report.diagnostics.map((diagnostic) => `- [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`)
-      : ["- none"]),
+    ...(report.diagnostics.length ? report.diagnostics.map(renderDiagnostic) : ["- none"]),
     "",
     "## Recommendations",
-    ...(report.recommendations.length
-      ? report.recommendations.map((recommendation) => `- [${recommendation.kind}] ${recommendation.message}`)
-      : ["- none"]),
+    ...(report.recommendations.length ? report.recommendations.slice(0, 3).map(renderRecommendation) : ["- none"]),
     "",
     "## Next Actions",
     ...(report.nextActions.length
@@ -127,6 +186,7 @@ export const renderWorkflowApplyReport = (report: WorkflowApplyReport) =>
       : ["- none"]),
     "",
   ].join("\n");
+};
 
 export const renderWorkflowApply = (report: WorkflowApplyReport, format: WorkflowFormat = "markdown") =>
   format === "json" ? jsonText(report) : renderWorkflowApplyReport(report);
@@ -141,12 +201,33 @@ export const renderWorkflowValidationRunReport = (report: WorkflowValidationRunR
     `- Workspace status: ${report.workspaceStatus}`,
     `- Overall status: ${report.overallStatus}`,
     "",
+    "## Status Summary",
+    `- Source-change: ${report.summary.sourceChange}`,
+    `- Generated sync: ${report.summary.generatedSync}`,
+    `- Workspace config: ${report.summary.workspaceConfig}`,
+    `- Environment: ${report.summary.environment}`,
+    "",
+    "## Source Change Diagnostics",
+    ...(report.workflowDiagnostics?.length
+      ? report.workflowDiagnostics.map(
+          (diagnostic) => `- [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`,
+        )
+      : ["- none"]),
+    "",
+    "## Existing Workspace Blockers",
+    ...(report.baselineDiagnostics?.length
+      ? report.baselineDiagnostics.map(
+          (diagnostic) => `- [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`,
+        )
+      : ["- none"]),
+    "",
     "## Known Blockers",
     ...(report.knownBlockers.length
       ? report.knownBlockers.map((blocker) => {
           const command = blocker.command ? ` \`${blocker.command}\`` : "";
           const count = blocker.count > 1 ? ` (${blocker.count}x)` : "";
-          return `- [${blocker.failureScope}]${command}${count}: ${blocker.message}`;
+          const known = blocker.known ? " known" : "";
+          return `- [${blocker.failureScope}${known}]${command}${count}: ${blocker.message}`;
         })
       : ["- none"]),
     "",

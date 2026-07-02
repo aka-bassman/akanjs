@@ -28,6 +28,7 @@ export const createWorkflowApplyReport = ({
   recommendedValidationCommands,
   commands = [],
   diagnostics = [],
+  postApplyChecks = [],
   recommendations = [],
   nextActions = [],
   plan,
@@ -41,14 +42,21 @@ export const createWorkflowApplyReport = ({
   | "appliedCommands"
   | "recommendedValidationCommands"
   | "commands"
+  | "postApplyChecks"
   | "recommendations"
 > & {
   appliedCommands?: WorkflowApplyCommand[];
   recommendedValidationCommands?: WorkflowApplyCommand[];
   commands?: WorkflowApplyCommand[];
+  postApplyChecks?: WorkflowApplyReport["postApplyChecks"];
   recommendations?: WorkflowApplyReport["recommendations"];
 }): WorkflowApplyReport => {
   const validationCommands = recommendedValidationCommands ?? commands;
+  const orderedNextActions = uniqueBy(nextActions, (action) => action.command).sort((left, right) => {
+    const leftRepair = left.command.startsWith("akan workflow explain") ? 0 : 1;
+    const rightRepair = right.command.startsWith("akan workflow explain") ? 0 : 1;
+    return leftRepair - rightRepair;
+  });
   return {
     schemaVersion: 1,
     workflow,
@@ -60,8 +68,9 @@ export const createWorkflowApplyReport = ({
     recommendedValidationCommands: uniqueBy(validationCommands, (command) => command.command),
     commands: uniqueBy(validationCommands, (command) => command.command),
     diagnostics,
+    postApplyChecks,
     recommendations: uniqueBy(recommendations, (recommendation) => `${recommendation.kind}:${recommendation.code}`),
-    nextActions: uniqueBy(nextActions, (action) => action.command),
+    nextActions: orderedNextActions.slice(0, 3),
     plan,
   };
 };
@@ -186,6 +195,15 @@ const statusForScope = (
   return hasScopeFailure(scopes, expectedScope, diagnostics) ? "failed" : "passed";
 };
 
+const statusForValidationKind = (
+  commands: readonly WorkflowValidationCommandResult[],
+  kind: WorkflowValidationCommandResult["kind"],
+): WorkflowValidationStatus => {
+  const matching = commands.filter((command) => command.kind === kind);
+  if (matching.length === 0) return "unknown";
+  return matching.some((command) => command.status === "failed") ? "failed" : "passed";
+};
+
 const createKnownBlockers = (
   commands: readonly WorkflowValidationCommandResult[],
   diagnostics: readonly WorkflowDiagnostic[],
@@ -251,7 +269,17 @@ const createValidationStatuses = (
         : workflowStatus(diagnostics) === "failed" || commandStatus(commands) === "failed"
           ? "failed"
           : "passed";
-  return { sourceStatus, workspaceStatus, overallStatus };
+  return {
+    sourceStatus,
+    workspaceStatus,
+    overallStatus,
+    summary: {
+      sourceChange: sourceStatus,
+      generatedSync: statusForValidationKind(commands, "sync"),
+      workspaceConfig: statusForScope(commands, diagnostics, scopes, "workspace-config"),
+      environment: statusForScope(commands, diagnostics, scopes, "environment"),
+    },
+  };
 };
 
 export const createWorkflowValidationRunReport = async ({

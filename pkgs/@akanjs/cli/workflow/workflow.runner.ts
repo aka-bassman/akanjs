@@ -24,12 +24,14 @@ import {
   WorkflowExecutor,
   type WorkflowFailureScope,
   type WorkflowFormat,
+  type WorkflowKnownBlocker,
   type WorkflowPlan,
   type WorkflowPlanInputs,
   type WorkflowRunArtifact,
   type WorkflowStepRegistry,
   type WorkflowValidationCommandExecutor,
   type WorkflowValidationKind,
+  type WorkflowValidationRunReport,
   type Workspace,
   workflowCommandsForPlan,
   writeWorkflowRunArtifact,
@@ -191,6 +193,71 @@ const workflowDiagnosticFromDoctor = (
   context: diagnostic.context,
 });
 
+interface BaselineBlockerCache {
+  schemaVersion: 1;
+  workflow: string;
+  blockers: {
+    fingerprint: string;
+    code: string;
+    message: string;
+    failureScope: WorkflowFailureScope;
+    command?: string;
+    kind?: WorkflowValidationKind;
+    lastSeenAt: string;
+  }[];
+}
+
+const baselineBlockerCachePath = (workflow: string) => `.akan/workflows/baseline/${workflow}.json`;
+
+const blockerFingerprint = (blocker: WorkflowKnownBlocker) =>
+  [blocker.failureScope, blocker.code, blocker.command ?? "", blocker.kind ?? "", blocker.message].join("|");
+
+const applyBaselineBlockerCache = async (workspace: Workspace, report: WorkflowValidationRunReport) => {
+  const cacheableBlockers = report.knownBlockers.filter(
+    (blocker) => blocker.failureScope === "workspace-config" || blocker.failureScope === "environment",
+  );
+  if (cacheableBlockers.length === 0) return report;
+
+  const cachePath = baselineBlockerCachePath(report.workflow);
+  const cached = ((await workspace.exists(cachePath))
+    ? ((await workspace.readJson(cachePath)) as BaselineBlockerCache)
+    : null) ?? { schemaVersion: 1, workflow: report.workflow, blockers: [] };
+  const knownFingerprints = new Set(cached.blockers.map((blocker) => blocker.fingerprint));
+  const now = new Date().toISOString();
+  const blockers = new Map(cached.blockers.map((blocker) => [blocker.fingerprint, blocker]));
+
+  for (const blocker of cacheableBlockers) {
+    const fingerprint = blockerFingerprint(blocker);
+    blockers.set(fingerprint, {
+      fingerprint,
+      code: blocker.code,
+      message: blocker.message,
+      failureScope: blocker.failureScope,
+      command: blocker.command,
+      kind: blocker.kind,
+      lastSeenAt: now,
+    });
+  }
+
+  await workspace.writeFile(
+    cachePath,
+    jsonText({ schemaVersion: 1, workflow: report.workflow, blockers: [...blockers.values()] }),
+    { silent: true },
+  );
+
+  return {
+    ...report,
+    knownBlockers: report.knownBlockers.map((blocker) => {
+      if (!knownFingerprints.has(blockerFingerprint(blocker))) return blocker;
+      return {
+        ...blocker,
+        known: true,
+        message: `Known baseline blocker, unrelated to this source change: ${blocker.message}`,
+      };
+    }),
+  };
+};
+
 export class WorkflowRunner extends runner("workflow") {
   list({ format = "markdown" }: { format?: WorkflowFormat } = {}) {
     const workflows = listWorkflowSpecs(workflowSpecs);
@@ -294,7 +361,7 @@ export class WorkflowRunner extends runner("workflow") {
       );
       return await renderApplyReport(report);
     }
-    return await renderApplyReport(await new WorkflowExecutor(registry).apply(plan));
+    return await renderApplyReport(await new WorkflowExecutor(registry, workspace).apply(plan));
   }
 
   async validate(
@@ -311,21 +378,24 @@ export class WorkflowRunner extends runner("workflow") {
       runIdOrPlan,
       changedFiles: loaded.changedFiles,
     });
-    const report = await createWorkflowValidationRunReport({
-      workflow: loaded.plan?.workflow ?? loaded.workflow,
-      source: loaded.source,
-      plan: loaded.plan,
-      commands: loaded.commands,
-      execute: execute ?? defaultValidationExecutor(workspace),
-      diagnostics: loaded.diagnostics,
-      baselineDiagnostics: (doctor.baselineDiagnostics ?? []).map((diagnostic) =>
-        workflowDiagnosticFromDoctor(diagnostic, "baseline"),
-      ),
-      workflowDiagnostics: (doctor.workflowDiagnostics ?? []).map((diagnostic) =>
-        workflowDiagnosticFromDoctor(diagnostic, "workflow"),
-      ),
-      repairActions: loaded.repairActions,
-    });
+    const report = await applyBaselineBlockerCache(
+      workspace,
+      await createWorkflowValidationRunReport({
+        workflow: loaded.plan?.workflow ?? loaded.workflow,
+        source: loaded.source,
+        plan: loaded.plan,
+        commands: loaded.commands,
+        execute: execute ?? defaultValidationExecutor(workspace),
+        diagnostics: loaded.diagnostics,
+        baselineDiagnostics: (doctor.baselineDiagnostics ?? []).map((diagnostic) =>
+          workflowDiagnosticFromDoctor(diagnostic, "baseline"),
+        ),
+        workflowDiagnostics: (doctor.workflowDiagnostics ?? []).map((diagnostic) =>
+          workflowDiagnosticFromDoctor(diagnostic, "workflow"),
+        ),
+        repairActions: loaded.repairActions,
+      }),
+    );
     await writeWorkflowRunArtifact(workspace, report);
     return renderWorkflowValidation(report, format);
   }

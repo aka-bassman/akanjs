@@ -9,7 +9,7 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dic
   return `
 import { via } from "akanjs/constant";
 
-export class ${dict.Model}Input extends via((_field) => ({
+export class ${dict.Model}Input extends via((field) => ({
 })) {}
 
 export class ${dict.Model}Object extends via(${dict.Model}Input, (field) => ({})) {}

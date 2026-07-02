@@ -626,14 +626,14 @@ export class Executor {
       overwrite?: boolean;
     },
     dict: { [key: string]: string } = {},
-    options: { [key: string]: any } = {},
+    options: { [key: string]: unknown } = {},
   ): Promise<FileContent | null> {
     if (targetPath.endsWith(".ts") || targetPath.endsWith(".tsx")) {
       const getContent = (await import(templatePath)) as {
         default: (
           scanInfo: AppInfo | LibInfo | null,
           dict: { [key: string]: string },
-          options?: { [key: string]: any },
+          options?: { [key: string]: unknown },
         ) => Promise<string | null | { filename: string; content: string }>;
       };
       const result = await getContent.default(scanInfo ?? null, dict, options);
@@ -686,7 +686,7 @@ export class Executor {
     template: string;
     scanInfo?: AppInfo | LibInfo | null;
     dict?: { [key: string]: string };
-    options?: { [key: string]: any };
+    options?: { [key: string]: unknown };
     overwrite?: boolean;
   }): Promise<FileContent[]> {
     const templateRoot = await this.#resolveTemplateRoot();
@@ -752,7 +752,7 @@ export class Executor {
     basePath: string;
     template: string;
     dict?: { [key: string]: string };
-    options?: { [key: string]: any };
+    options?: { [key: string]: unknown };
     overwrite?: boolean;
   }): Promise<FileContent[]> {
     const dict = {
@@ -827,10 +827,10 @@ export class Executor {
     filePath: string,
     { fix = false, dryRun = false }: { fix?: boolean; dryRun?: boolean } = {},
   ): Promise<{
-    results: any[]; // ESLint.LintResult[];
+    results: unknown[]; // ESLint.LintResult[];
     message: string;
-    errors: any[]; // ESLintLinter.LintMessage[];
-    warnings: any[]; // ESLintLinter.LintMessage[];
+    errors: unknown[]; // ESLintLinter.LintMessage[];
+    warnings: unknown[]; // ESLintLinter.LintMessage[];
   }> {
     const path = this.getPath(filePath);
     const linter = this.getLinter();
@@ -1225,40 +1225,44 @@ export class SysExecutor extends Executor {
   async getViewComponents() {
     const viewComponents = (await this.readdir("lib"))
       .filter((name) => !name.startsWith("_") && !name.startsWith("__") && !name.endsWith(".ts"))
-      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${name}.View.tsx`).exists());
+      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${capitalize(name)}.View.tsx`).exists());
     return viewComponents;
   }
 
   async getUnitComponents() {
     const unitComponents = (await this.readdir("lib"))
       .filter((name) => !name.startsWith("_") && !name.startsWith("__") && !name.endsWith(".ts"))
-      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${name}.Unit.tsx`).exists());
+      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${capitalize(name)}.Unit.tsx`).exists());
     return unitComponents;
   }
   async getTemplateComponents() {
     const templateComponents = (await this.readdir("lib"))
       .filter((name) => !name.startsWith("_") && !name.startsWith("__") && !name.endsWith(".ts"))
-      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${name}.Template.tsx`).exists());
+      .filter((name) => Bun.file(`${this.cwdPath}/lib/${name}/${capitalize(name)}.Template.tsx`).exists());
     return templateComponents;
   }
 
   async getViewsSourceCode() {
     const viewComponents = await this.getViewComponents();
     return Promise.all(
-      viewComponents.map((viewComponent) => this.getLocalFile(`lib/${viewComponent}/${viewComponent}.View.tsx`)),
+      viewComponents.map((viewComponent) =>
+        this.getLocalFile(`lib/${viewComponent}/${capitalize(viewComponent)}.View.tsx`),
+      ),
     );
   }
   async getUnitsSourceCode() {
     const unitComponents = await this.getUnitComponents();
     return Promise.all(
-      unitComponents.map((unitComponent) => this.getLocalFile(`lib/${unitComponent}/${unitComponent}.Unit.tsx`)),
+      unitComponents.map((unitComponent) =>
+        this.getLocalFile(`lib/${unitComponent}/${capitalize(unitComponent)}.Unit.tsx`),
+      ),
     );
   }
   async getTemplatesSourceCode() {
     const templateComponents = await this.getTemplateComponents();
     return Promise.all(
       templateComponents.map((templateComponent) =>
-        this.getLocalFile(`lib/${templateComponent}/${templateComponent}.Template.tsx`),
+        this.getLocalFile(`lib/${templateComponent}/${capitalize(templateComponent)}.Template.tsx`),
       ),
     );
   }

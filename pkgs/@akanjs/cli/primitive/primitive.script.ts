@@ -2,6 +2,7 @@ import {
   type AddEnumFieldInput,
   type AddFieldInput,
   AppExecutor,
+  addFieldUiPolicyForType,
   coerceFieldDefault,
   compactDiagnostics,
   createPrimitiveWriteReport,
@@ -14,9 +15,12 @@ import {
   insertDictionaryModelField,
   insertEnumClass,
   insertIntoObject,
+  insertLightProjectionField,
+  insertTemplateField,
   LibExecutor,
   lowerlize,
   ModuleExecutor,
+  moduleSourcePaths,
   nextActionsForTarget,
   normalizeFieldType,
   type PrimitiveChangedFile,
@@ -28,6 +32,7 @@ import {
   sourceFile,
   type UiSurface,
   validationCommandsForTarget,
+  viaBuilderParameterName,
   type WorkflowDiagnostic,
   type Workspace,
 } from "@akanjs/devkit";
@@ -141,8 +146,10 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
 
     const moduleClassName = capitalize(input.module);
     const inputClassName = `${moduleClassName}Input`;
-    const constantPath = `lib/${input.module}/${input.module}.constant.ts`;
-    const dictionaryPath = `lib/${input.module}/${input.module}.dictionary.ts`;
+    const paths = moduleSourcePaths(input.module);
+    const constantPath = paths.constant;
+    const dictionaryPath = paths.dictionary;
+    const templatePath = paths.template;
     const changedFiles: PrimitiveChangedFile[] = [];
     const generatedFiles: PrimitiveGeneratedFile[] = generatedFilesForSync(sys);
     const [hasConstant, hasDictionary] = await Promise.all([sys.exists(constantPath), sys.exists(dictionaryPath)]);
@@ -173,6 +180,7 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
 
     let constantContent = await sys.readFile(constantPath);
     let dictionaryContent = await sys.readFile(dictionaryPath);
+    const fieldBuilderName = viaBuilderParameterName(constantContent, inputClassName) ?? "field";
     if (new RegExp(`\\b${input.field}\\s*:`).test(constantContent)) {
       diagnostics.push({
         severity: "error",
@@ -205,17 +213,27 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
       if (defaultCoercion.diagnostic) diagnostics.push(defaultCoercion.diagnostic);
       constantContent = ensureBaseTypeImport(constantContent, input.type);
     }
+    if (enumValues) {
+      const defaultCoercion = coerceFieldDefault("enum", input.defaultValue, { enumValues });
+      if (defaultCoercion.diagnostic) diagnostics.push(defaultCoercion.diagnostic);
+    }
 
     const nextConstantContent = insertIntoObject(
       constantContent,
       inputClassName,
-      `${input.field}: ${fieldExpression(input.type, input.defaultValue)},`,
+      `${input.field}: ${fieldExpression(input.type, input.defaultValue, { enumValues, builderName: fieldBuilderName })},`,
     );
+    const nextConstantContentWithLight =
+      nextConstantContent && input.includeInLight
+        ? insertLightProjectionField(nextConstantContent, moduleClassName, input.field)
+        : nextConstantContent;
     const nextDictionaryContent = insertDictionaryModelField(dictionaryContent, moduleClassName, input.field);
     if (
-      nextConstantContent &&
+      nextConstantContentWithLight &&
       (input.type === "Int" || input.type === "Float") &&
-      new RegExp(`\\b${input.field}\\s*:\\s*field\\(${input.type}, \\{ default: "`, "m").test(nextConstantContent)
+      new RegExp(`\\b${input.field}\\s*:\\s*field\\(${input.type}, \\{ default: "`, "m").test(
+        nextConstantContentWithLight,
+      )
     ) {
       diagnostics.push({
         severity: "error",
@@ -226,9 +244,9 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
       });
     }
     if (
-      nextConstantContent &&
+      nextConstantContentWithLight &&
       (input.type === "Int" || input.type === "Float") &&
-      !new RegExp(`import \\{[^}]*\\b${input.type}\\b[^}]*\\} from "akanjs/base";`).test(nextConstantContent)
+      !new RegExp(`import \\{[^}]*\\b${input.type}\\b[^}]*\\} from "akanjs/base";`).test(nextConstantContentWithLight)
     ) {
       diagnostics.push({
         severity: "error",
@@ -244,6 +262,14 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
         message: `Could not find ${inputClassName} object shape in ${constantPath}.`,
       });
     }
+    if (nextConstantContent && input.includeInLight && !nextConstantContentWithLight) {
+      diagnostics.push({
+        severity: "warning",
+        code: "primitive-light-projection-shape-unsupported",
+        failureScope: "source-change",
+        message: `Could not find a safe Light${moduleClassName} projection insertion point in ${constantPath}.`,
+      });
+    }
     if (!nextDictionaryContent) {
       diagnostics.push({
         severity: "error",
@@ -252,17 +278,59 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
       });
     }
 
+    let nextTemplateContent: string | null | undefined;
+    if (input.surfaces?.includes("template")) {
+      const policy = addFieldUiPolicyForType(enumValues ? "enum" : input.type);
+      const hasTemplate = await sys.exists(templatePath);
+      if (!hasTemplate) {
+        diagnostics.push({
+          severity: "warning",
+          code: "primitive-template-missing",
+          failureScope: "source-change",
+          message: `Template source file was not found: ${templatePath}. Auto-edit skipped; add the field to the Template form manually if this module renders one.`,
+        });
+      } else if (!policy.autoTemplateSupported || policy.component === "Field.ToggleSelect") {
+        diagnostics.push({
+          severity: "warning",
+          code: "primitive-template-component-manual",
+          failureScope: "source-change",
+          message: `Template auto insertion for ${policy.component} is not supported because option binding must be confirmed. Candidate position: inside Layout.Template near existing Field components in ${templatePath}.`,
+        });
+      } else {
+        const templateContent = await sys.readFile(templatePath);
+        nextTemplateContent = insertTemplateField({
+          content: templateContent,
+          moduleName: input.module,
+          moduleClassName,
+          fieldName: input.field,
+          component: policy.component,
+        });
+        if (!nextTemplateContent) {
+          diagnostics.push({
+            severity: "warning",
+            code: "primitive-template-shape-unsupported",
+            failureScope: "source-change",
+            message: `Could not find a safe Template insertion point in ${templatePath}. Expected generated ${input.module}Form hook and Layout.Template closing tag; candidate position is the existing field list before </Layout.Template>.`,
+          });
+        }
+      }
+    }
+
     if (
       !diagnostics.some((diagnostic) => diagnostic.severity === "error") &&
-      nextConstantContent &&
+      nextConstantContentWithLight &&
       nextDictionaryContent
     ) {
-      await sys.writeFile(constantPath, nextConstantContent);
+      await sys.writeFile(constantPath, nextConstantContentWithLight);
       await sys.writeFile(dictionaryPath, nextDictionaryContent);
       changedFiles.push(
         sourceFile(sys, constantPath, "modify", "Field source shape was updated."),
         sourceFile(sys, dictionaryPath, "modify", "Field dictionary labels were updated."),
       );
+      if (nextTemplateContent !== undefined && nextTemplateContent !== null) {
+        await sys.writeFile(templatePath, nextTemplateContent);
+        changedFiles.push(sourceFile(sys, templatePath, "modify", "Template field surface was updated."));
+      }
     }
 
     return createPrimitiveWriteReport({

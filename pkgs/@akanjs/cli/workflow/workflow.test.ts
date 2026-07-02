@@ -7,6 +7,7 @@ import {
   type WorkflowApplyReport,
   type WorkflowPlan,
   type WorkflowValidationRunReport,
+  workflowStepKey,
 } from "@akanjs/devkit";
 import { ModuleRunner } from "../module/module.runner";
 import { ModuleScript } from "../module/module.script";
@@ -86,10 +87,16 @@ describe("WorkflowRunner", () => {
     );
     expect(plan.recommendations.map((recommendation) => recommendation.code)).toContain("add-field-component");
     expect(plan.recommendations).toContainEqual(
+      expect.objectContaining({
+        code: "add-field-component",
+        message: expect.stringContaining("Field.ToggleSelect"),
+      }),
+    );
+    expect(plan.recommendations).toContainEqual(
       expect.objectContaining({ code: "add-field-ui-manual-review", kind: "manual-action" }),
     );
     expect(plan.predictedChanges).toContainEqual(
-      expect.objectContaining({ target: "*/lib/<module>/<module>.constant.ts", applyScope: "auto" }),
+      expect.objectContaining({ target: "apps/demo/lib/task/task.constant.ts", applyScope: "auto" }),
     );
     expect(plan.validation).toContainEqual(
       expect.objectContaining({ command: "akan sync <app-or-lib>", kind: "sync" }),
@@ -118,6 +125,64 @@ describe("WorkflowRunner", () => {
 
     expect(plan.diagnostics).toContainEqual(
       expect.objectContaining({ code: "primitive-field-type-unsupported", input: "type" }),
+    );
+  });
+
+  test("plans default literal normalization before apply", async () => {
+    const output = await new WorkflowRunner().plan(
+      "add-field",
+      {
+        app: "demo",
+        module: "task",
+        field: "budget",
+        type: "Float",
+        values: null,
+        default: "0",
+        scalar: null,
+        surface: null,
+        mutation: null,
+        slice: null,
+      },
+      { format: "json" },
+    );
+    const plan = JSON.parse(output) as WorkflowPlan;
+
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "workflow-default-value-normalized",
+        message: expect.stringContaining("Float literal 0"),
+      }),
+    );
+    expect(plan.recommendations).toContainEqual(
+      expect.objectContaining({
+        code: "add-field-default-normalized",
+        message: expect.stringContaining("Float literal 0"),
+      }),
+    );
+  });
+
+  test("plans invalid enum default before apply", async () => {
+    const output = await new WorkflowRunner().plan(
+      "add-field",
+      {
+        app: "demo",
+        module: "task",
+        field: "priority",
+        type: "enum",
+        values: "low,high",
+        default: "medium",
+        scalar: null,
+        surface: null,
+        mutation: null,
+        slice: null,
+      },
+      { format: "json" },
+    );
+    const plan = JSON.parse(output) as WorkflowPlan;
+
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({ severity: "error", code: "workflow-default-value-invalid", input: "default" }),
     );
   });
 
@@ -196,11 +261,42 @@ describe("WorkflowRunner", () => {
     const report = JSON.parse(output) as WorkflowApplyReport;
 
     expect(report).toMatchObject({ workflow: "add-field", mode: "dry-run", status: "passed" });
-    expect(report.changedFiles.map((file) => file.path)).toContain("*/lib/<module>/<module>.constant.ts");
+    expect(report.changedFiles.map((file) => file.path)).toContain("apps/demo/lib/task/task.constant.ts");
     expect(report.commands.map((command) => command.command)).toContain("akan sync demo");
     expect(report.recommendedValidationCommands.map((command) => command.command)).toContain("akan sync demo");
     expect(report.appliedCommands).toEqual([]);
     expect(await module.readFile("task.constant.ts")).not.toContain("priority");
+  });
+
+  test("renders apply reports with user-facing outcome sections", async () => {
+    const { root, module } = await createTempModule("task");
+    tempRoots.push(root);
+    await new ModuleRunner().createModuleTemplate(module);
+    const planPath = path.join(root, ".akan/workflows/plans/task-priority.json");
+    const runner = new WorkflowRunner();
+    await runner.plan(
+      "add-field",
+      {
+        app: "demo",
+        module: "task",
+        field: "priority",
+        type: "String",
+        values: null,
+        default: null,
+        scalar: null,
+        surface: null,
+        mutation: null,
+        slice: null,
+      },
+      { format: "json", out: planPath },
+    );
+
+    const output = await runner.apply(planPath, { dryRun: true });
+
+    expect(output).toContain("## Automatically Modified");
+    expect(output).toContain("## Generated Sync");
+    expect(output).toContain("## User Review Required");
+    expect(output).toContain("## Validation Blockers");
   });
 
   test("applies add-field workflow through primitive step runners", async () => {
@@ -228,6 +324,7 @@ describe("WorkflowRunner", () => {
 
     const output = await runner.apply(planPath, {
       format: "json",
+      workspace,
       registry: createWorkflowStepRegistry({
         workspace,
         createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
@@ -256,8 +353,70 @@ describe("WorkflowRunner", () => {
     expect(report.recommendations).toContainEqual(
       expect.objectContaining({ code: "add-field-ui-surface-review", kind: "manual-action" }),
     );
+    expect(report.recommendations).toContainEqual(
+      expect.objectContaining({
+        code: "add-field-ui-surface-review",
+        action: expect.stringContaining("Candidate positions"),
+      }),
+    );
     expect(await module.readFile("task.constant.ts")).toContain("priority: field(String),");
-    expect(await module.readFile("task.dictionary.ts")).toContain('priority: t(["Priority", "Priority"])');
+    expect(await module.readFile("task.dictionary.ts")).toContain(
+      'priority: t(["Priority", "우선순위"]).desc(["Enter priority.", "우선순위 값을 입력합니다."])',
+    );
+  });
+
+  test("fails workflow apply when changedFiles path casing is inaccurate", async () => {
+    const { root, workspace, module } = await createTempModule("task");
+    tempRoots.push(root);
+    await new ModuleRunner().createModuleTemplate(module);
+    const planPath = path.join(root, ".akan/workflows/plans/task-priority.json");
+    const runner = new WorkflowRunner();
+    await runner.plan(
+      "add-field",
+      {
+        app: "demo",
+        module: "task",
+        field: "priority",
+        type: "String",
+        values: null,
+        default: null,
+        scalar: null,
+        surface: null,
+        mutation: null,
+        slice: null,
+      },
+      { format: "json", out: planPath },
+    );
+
+    const output = await runner.apply(planPath, {
+      format: "json",
+      workspace,
+      registry: {
+        inspectModule: async () => undefined,
+        [workflowStepKey("add-field", "update-constant")]: async () => ({
+          changedFiles: [
+            {
+              path: "apps/demo/lib/task/Task.constant.ts",
+              action: "modify",
+              reason: "Reported path intentionally uses wrong casing.",
+            },
+          ],
+        }),
+        [workflowStepKey("add-field", "update-dictionary")]: async () => undefined,
+        [workflowStepKey("add-field", "update-ui-surfaces")]: async () => undefined,
+        syncTarget: async () => undefined,
+        lintTarget: async () => undefined,
+      },
+    });
+    const report = JSON.parse(output) as WorkflowApplyReport;
+
+    expect(report.status).toBe("failed");
+    expect(report.postApplyChecks).toContainEqual(
+      expect.objectContaining({ code: "workflow-path-casing-mismatch", status: "failed" }),
+    );
+    expect(report.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "workflow-path-casing-mismatch", failureScope: "source-change" }),
+    );
   });
 
   test("applies Int default values as numeric literals through workflow apply", async () => {
@@ -275,6 +434,8 @@ describe("WorkflowRunner", () => {
         type: "Int",
         values: null,
         default: "0",
+        surfaces: "template",
+        includeInLight: "true",
         scalar: null,
         surface: null,
         mutation: null,
@@ -285,6 +446,7 @@ describe("WorkflowRunner", () => {
 
     const output = await runner.apply(planPath, {
       format: "json",
+      workspace,
       registry: createWorkflowStepRegistry({
         workspace,
         createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
@@ -297,7 +459,11 @@ describe("WorkflowRunner", () => {
     const report = JSON.parse(output) as WorkflowApplyReport;
 
     expect(report.status).toBe("passed");
+    expect(report.changedFiles.map((file) => file.path)).toContain("apps/demo/lib/task/Task.Template.tsx");
+    expect(report.postApplyChecks?.map((check) => check.status)).toContain("passed");
     expect(await module.readFile("task.constant.ts")).toContain("budget: field(Int, { default: 0 }),");
+    expect(await module.readFile("task.constant.ts")).toContain('"budget"');
+    expect(await module.readFile("Task.Template.tsx")).toContain("<Field.Number");
   });
 
   test("persists apply reports as validation targets when workspace is provided", async () => {
@@ -335,6 +501,9 @@ describe("WorkflowRunner", () => {
     expect(report.applyReportPath).toBe(`.akan/workflows/runs/${report.runId}.json`);
     expect(await Bun.file(path.join(root, report.applyReportPath ?? "")).exists()).toBe(true);
     expect(report.recommendations.map((recommendation) => recommendation.code)).toContain("add-field-import");
+    expect(report.recommendations).toContainEqual(
+      expect.objectContaining({ code: "add-field-component", message: expect.stringContaining("Field.Number") }),
+    );
   });
 
   test("fails add-field workflow apply for ambiguous number type", async () => {
@@ -362,6 +531,7 @@ describe("WorkflowRunner", () => {
 
     const output = await runner.apply(planPath, {
       format: "json",
+      workspace,
       registry: createWorkflowStepRegistry({
         workspace,
         createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
@@ -464,6 +634,12 @@ describe("WorkflowRunner", () => {
       status: "passed",
       sourceStatus: "passed",
       workspaceStatus: "passed",
+      summary: {
+        sourceChange: "passed",
+        generatedSync: "passed",
+        workspaceConfig: "passed",
+        environment: "passed",
+      },
       overallStatus: "passed",
     });
     expect(report.commands).toContainEqual(expect.objectContaining({ command: "akan sync demo", kind: "sync" }));
@@ -512,6 +688,12 @@ describe("WorkflowRunner", () => {
       status: "failed",
       sourceStatus: "passed",
       workspaceStatus: "failed",
+      summary: {
+        sourceChange: "passed",
+        generatedSync: "passed",
+        workspaceConfig: "failed",
+        environment: "passed",
+      },
       overallStatus: "blocked-by-workspace-config",
     });
     expect(report.knownBlockers).toContainEqual(
@@ -526,6 +708,30 @@ describe("WorkflowRunner", () => {
         command: "akan lint demo",
         kind: "lint",
         failureScope: "workspace-config",
+      }),
+    );
+
+    const secondOutput = await runner.validate(planPath, {
+      format: "json",
+      workspace,
+      execute: async (command) => ({
+        command: command.command,
+        reason: command.reason,
+        kind: command.kind,
+        status: command.kind === "lint" ? "failed" : "passed",
+        exitCode: command.kind === "lint" ? 1 : 0,
+        failureScope: command.kind === "lint" ? "workspace-config" : undefined,
+        stderr: command.kind === "lint" ? "Biome configuration file is invalid" : undefined,
+      }),
+    });
+    const secondReport = JSON.parse(secondOutput) as WorkflowValidationRunReport;
+
+    expect(secondReport.knownBlockers).toContainEqual(
+      expect.objectContaining({
+        command: "akan lint demo",
+        failureScope: "workspace-config",
+        known: true,
+        message: expect.stringContaining("Known baseline blocker"),
       }),
     );
   });

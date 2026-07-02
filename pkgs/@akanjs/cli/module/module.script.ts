@@ -7,6 +7,7 @@ import {
   getRelatedCnsts,
   type Module,
   ModuleExecutor,
+  moduleSourcePaths,
   type PrimitiveWriteReport,
   type Sys,
   script,
@@ -147,8 +148,9 @@ export class ModuleScript extends script("module", [ModuleRunner, PageScript]) {
   }
   async createTemplate(mod: Module): Promise<PrimitiveWriteReport> {
     const { component: template } = await this.moduleRunner.createComponentTemplate(mod, "template");
+    const paths = moduleSourcePaths(mod.name);
     const templateExampleFiles = (await mod.sys.getTemplatesSourceCode()).filter(
-      (f) => !f.filePath.includes(`${mod.name}.Template.tsx`),
+      (f) => !f.filePath.includes(paths.template),
     );
     const Name = capitalize(mod.name);
     const relatedCnsts = getRelatedCnsts(`${mod.sys.cwdPath}/lib/${mod.name}/${mod.name}.constant.ts`);
@@ -179,10 +181,9 @@ export class ModuleScript extends script("module", [ModuleRunner, PageScript]) {
 
   async createUnit(mod: Module): Promise<PrimitiveWriteReport> {
     const { component: unit } = await this.moduleRunner.createComponentTemplate(mod, "unit");
+    const paths = moduleSourcePaths(mod.name);
     const Name = capitalize(mod.name);
-    const unitExampleFiles = (await mod.sys.getUnitsSourceCode()).filter(
-      (f) => !f.filePath.includes(`${mod.name}.Unit.tsx`),
-    );
+    const unitExampleFiles = (await mod.sys.getUnitsSourceCode()).filter((f) => !f.filePath.includes(paths.unit));
     const relatedCnsts = getRelatedCnsts(`${mod.sys.cwdPath}/lib/${mod.name}/${mod.name}.constant.ts`);
     const constant = await FileSys.readText(`${mod.sys.cwdPath}/lib/${mod.name}/${mod.name}.constant.ts`);
     const session = new AiSession("createUnit", { workspace: mod.sys.workspace, cacheKey: mod.name });
@@ -211,9 +212,8 @@ export class ModuleScript extends script("module", [ModuleRunner, PageScript]) {
 
   async createView(mod: Module): Promise<PrimitiveWriteReport> {
     const { component: view } = await this.moduleRunner.createComponentTemplate(mod, "view");
-    const viewExampleFiles = (await mod.sys.getViewsSourceCode()).filter(
-      (f) => !f.filePath.includes(`${mod.name}.View.tsx`),
-    );
+    const paths = moduleSourcePaths(mod.name);
+    const viewExampleFiles = (await mod.sys.getViewsSourceCode()).filter((f) => !f.filePath.includes(paths.view));
     const Name = capitalize(mod.name);
     const relatedCnsts = getRelatedCnsts(`${mod.sys.cwdPath}/lib/${mod.name}/${mod.name}.constant.ts`);
     const constant = await FileSys.readText(`${mod.sys.cwdPath}/lib/${mod.name}/${mod.name}.constant.ts`);

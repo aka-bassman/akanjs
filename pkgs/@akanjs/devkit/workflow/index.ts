@@ -5,4 +5,5 @@ export * from "./primitive";
 export * from "./render";
 export * from "./source";
 export * from "./types";
+export * from "./uiPolicy";
 export * from "./utils";

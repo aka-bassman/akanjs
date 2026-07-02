@@ -20,7 +20,16 @@ export const addFieldWorkflowSpec: WorkflowSpec = {
     default: {
       type: "string",
       description:
-        "Optional default value. apply_workflow coerces by field type: Int/Float to numeric literals, Boolean to true/false, String/enum/scalar to string literals; invalid numeric or boolean defaults fail before source is written.",
+        "Optional default value. plan/apply coerce by field type: Int/Float to numeric literals, Boolean to true/false, Date to new Date(...), String/scalar to string literals, and enum only when the value is in values.",
+    },
+    surfaces: {
+      type: "string-list",
+      description:
+        "Optional UI surfaces to update, comma-separated. Use template to auto-update simple generated Template forms; View/Unit stay planned as manual review.",
+    },
+    includeInLight: {
+      type: "boolean",
+      description: "Whether to add the field to the Light<Model> projection used by list/card displays.",
     },
   },
   optionalSurfaces: {

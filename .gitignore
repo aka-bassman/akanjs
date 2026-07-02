@@ -156,7 +156,6 @@ libs/*/lib/*/index.tsx
 infra/master/jenkins/credentials.sh
 **/.jenkins.conf
 **/regcred.yaml
-**/mongo-connections.json
 **/redis-connections.json
 infra/master/createRecords.ts
 **/abi

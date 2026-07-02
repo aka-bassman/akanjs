@@ -1,5 +1,5 @@
 import { capitalize } from "akanjs/common";
-import { normalizeFieldType } from "./source";
+import { coerceFieldDefault, moduleSourcePaths } from "./source";
 import type {
   WorkflowDiagnostic,
   WorkflowInputSpec,
@@ -10,6 +10,7 @@ import type {
   WorkflowSpec,
   WorkflowSurfaceMode,
 } from "./types";
+import { addFieldUiPolicyForType } from "./uiPolicy";
 
 const surfaceModes = new Set<WorkflowSurfaceMode>(["infer", "include", "skip"]);
 
@@ -31,6 +32,14 @@ const normalizeInputValue = (name: string, spec: WorkflowInputSpec, value: unkno
     const values = parseStringList(value);
     return values && values.length > 0 ? values : null;
   }
+  if (spec.type === "boolean") {
+    if (typeof value === "boolean") return value;
+    if (typeof value !== "string") return null;
+    const lowered = value.trim().toLowerCase();
+    if (lowered === "true") return true;
+    if (lowered === "false") return false;
+    return null;
+  }
   if (typeof value === "string" && surfaceModes.has(value as WorkflowSurfaceMode)) return value as WorkflowSurfaceMode;
   throw new Error(`Unsupported workflow input value for ${name}`);
 };
@@ -44,13 +53,47 @@ export const getWorkflowSpec = (specs: readonly WorkflowSpec[], name: string) =>
 export const compactWorkflowInputs = (inputs: WorkflowPlanInputs) =>
   Object.fromEntries(Object.entries(inputs).filter(([, value]) => value !== null && value !== ""));
 
-const addFieldComponentForType = (typeName: string) => {
-  const normalizedType = normalizeFieldType(typeName);
-  if (normalizedType === "Boolean") return "Field.ToggleSelect";
-  if (normalizedType === "Date") return "Field.Date";
-  if (normalizedType === "Int" || normalizedType === "Float") return "manual numeric input review";
-  if (typeName.toLowerCase() === "enum") return "Field.ToggleSelect";
-  return "Field.Text";
+const addFieldTargetRoot = (app: string | null) => (app ? `apps/${app}` : "*");
+
+const addFieldPaths = (inputs: Record<string, WorkflowInputValue>) => {
+  const app = typeof inputs.app === "string" ? inputs.app : null;
+  const module = typeof inputs.module === "string" ? inputs.module : "<module>";
+  const paths = moduleSourcePaths(module);
+  const root = addFieldTargetRoot(app);
+  return {
+    constant: `${root}/${paths.constant}`,
+    dictionary: `${root}/${paths.dictionary}`,
+    template: `${root}/${paths.template}`,
+    unit: `${root}/${paths.unit}`,
+    view: `${root}/${paths.view}`,
+  };
+};
+
+const selectedAddFieldSurfaces = (inputs: Record<string, WorkflowInputValue>) =>
+  Array.isArray(inputs.surfaces) ? new Set(inputs.surfaces) : null;
+
+const addFieldDefaultCoercion = (inputs: Record<string, WorkflowInputValue>) => {
+  const typeName = typeof inputs.type === "string" ? inputs.type : null;
+  const defaultValue = typeof inputs.default === "string" ? inputs.default : null;
+  if (!typeName || defaultValue === null) return null;
+  if (typeName.toLowerCase() === "number" || typeName.toLowerCase() === "numeric") return null;
+  const enumValues = Array.isArray(inputs.values) ? inputs.values : null;
+  return coerceFieldDefault(typeName.toLowerCase() === "enum" ? "enum" : typeName, defaultValue, { enumValues });
+};
+
+const createAddFieldDefaultRecommendations = (inputs: Record<string, WorkflowInputValue>): WorkflowRecommendation[] => {
+  const field = typeof inputs.field === "string" ? inputs.field : "<field>";
+  const coercion = addFieldDefaultCoercion(inputs);
+  if (!coercion?.normalized || !coercion.expression) return [];
+  return [
+    {
+      code: "add-field-default-normalized",
+      kind: "manual-action",
+      confidence: "high",
+      message: `Default for ${field} will be normalized to ${coercion.normalizedType} literal ${coercion.expression}.`,
+      action: "Review the normalized default in the apply report if this value should stay unset.",
+    },
+  ];
 };
 
 const createAddFieldRecommendations = (inputs: Record<string, WorkflowInputValue>): WorkflowRecommendation[] => {
@@ -60,17 +103,19 @@ const createAddFieldRecommendations = (inputs: Record<string, WorkflowInputValue
   const typeName = typeof inputs.type === "string" ? inputs.type : null;
   if (!typeName) return [];
 
-  const normalizedType = typeName.toLowerCase() === "enum" ? "enum" : normalizeFieldType(typeName);
-  const constantPath = `*/lib/${module}/${module}.constant.ts`;
-  const dictionaryPath = `*/lib/${module}/${module}.dictionary.ts`;
-  const templatePath = `*/lib/${module}/${capitalize(module)}.Template.tsx`;
+  const policy = addFieldUiPolicyForType(typeName);
+  const normalizedType = policy.normalizedType;
+  const paths = addFieldPaths(inputs);
+  const surfaces = selectedAddFieldSurfaces(inputs);
+  const templateRequested = surfaces?.has("template") ?? false;
+  const includeInLight = inputs.includeInLight === true;
   return [
     ...(normalizedType === "Int" || normalizedType === "Float"
       ? [
           {
             code: "add-field-import",
             kind: "import" as const,
-            target: constantPath,
+            target: paths.constant,
             confidence: "high" as const,
             message: `Import ${normalizedType} from "akanjs/base" before writing field(${normalizedType}).`,
           },
@@ -79,43 +124,145 @@ const createAddFieldRecommendations = (inputs: Record<string, WorkflowInputValue
     {
       code: "add-field-placement-constant",
       kind: "placement",
-      target: constantPath,
+      target: paths.constant,
       confidence: "high",
       message: `Insert ${field}: field(${normalizedType}) in ${capitalize(module)}Input.`,
     },
     {
       code: "add-field-placement-dictionary",
       kind: "placement",
-      target: dictionaryPath,
+      target: paths.dictionary,
       confidence: "high",
       message: `Add dictionary labels for ${module}.${field}.`,
     },
     {
       code: "add-field-component",
       kind: "ui-component",
-      target: templatePath,
-      confidence: normalizedType === "Int" || normalizedType === "Float" ? "low" : "high",
-      action:
-        normalizedType === "Int" || normalizedType === "Float"
-          ? "Do not auto-edit UI. Check local Template/Unit/View patterns for Field.Text parsing, formatting, validation rules, and dictionary labels before adding a numeric input."
-          : undefined,
-      message:
-        normalizedType === "Int" || normalizedType === "Float"
-          ? `Numeric UI for ${field} (${normalizedType}) requires manual review; a safe numeric input component pattern is not yet detected.`
-          : `Recommended UI component for ${field} (${normalizedType}): ${addFieldComponentForType(typeName)}.`,
+      target: paths.template,
+      confidence: policy.confidence,
+      action: templateRequested
+        ? `apply_workflow will try to add ${policy.component} to Template when the existing Template has a safe generated field-list pattern.`
+        : `Recommended component is ${policy.component}. Pass surfaces=["template"] when this field should be rendered in the Template form.`,
+      message: `Recommended UI component for ${field} (${normalizedType}): ${policy.component}.`,
     },
+    ...(!surfaces
+      ? [
+          {
+            code: "add-field-template-surface-choice",
+            kind: "manual-action" as const,
+            target: paths.template,
+            action: `Choose whether to expose ${field} in Template by passing surfaces=["template"].`,
+            confidence: "medium" as const,
+            message: `Template exposure for ${module}.${field} is not selected yet.`,
+          },
+        ]
+      : []),
+    ...(!includeInLight
+      ? [
+          {
+            code: "add-field-light-projection-choice",
+            kind: "manual-action" as const,
+            target: paths.constant,
+            action: `Pass includeInLight=true when ${field} should appear in Light${capitalize(module)} list/card projections.`,
+            confidence: "medium" as const,
+            message: `Light projection exposure for ${module}.${field} is not selected yet.`,
+          },
+        ]
+      : []),
+    ...(includeInLight
+      ? [
+          {
+            code: "add-field-light-projection",
+            kind: "placement" as const,
+            target: paths.constant,
+            confidence: "high" as const,
+            message: `Add ${field} to Light${capitalize(module)} projection fields.`,
+          },
+        ]
+      : []),
+    ...(surfaces && !templateRequested
+      ? [
+          {
+            code: "add-field-ui-surface-skip",
+            kind: "manual-action" as const,
+            target: paths.template,
+            confidence: "medium" as const,
+            message: `Template is not included in surfaces, so ${module}.${field} will not be auto-rendered there.`,
+          },
+        ]
+      : []),
     {
       code: "add-field-ui-manual-review",
       kind: "manual-action",
-      target: templatePath,
-      action: `Review ${app}:${module} Template/Unit/View/Store surfaces and add ${field} only where the existing pattern is clear. For numeric fields, confirm parser/formatter behavior and validation before using Field.Text.`,
+      target: paths.template,
+      action: `Review ${app}:${module} UI after apply. Template auto-edit requires a generated ${module}Form hook and Layout.Template field list; Unit/View are not auto-edited because list/card placement depends on local layout. Candidate positions: Layout.Template before the closing tag, Light${capitalize(
+        module,
+      )} projection array for list data, and Unit/View card sections for display.`,
       confidence: "medium",
-      message:
-        normalizedType === "Int" || normalizedType === "Float"
-          ? "UI surface edits stay manual because a safe numeric input component pattern is not yet detected."
-          : "UI surface edits are planned as manual-review unless a safe existing field-list pattern is detected.",
+      message: "UI manual review includes the reason auto-edit may be skipped and candidate insertion positions.",
+    },
+    ...createAddFieldDefaultRecommendations(inputs),
+  ];
+};
+
+const createWorkflowPlanPredictedChanges = (
+  spec: WorkflowSpec,
+  inputs: Record<string, WorkflowInputValue>,
+): WorkflowPlan["predictedChanges"] => {
+  if (spec.name !== "add-field") return spec.predictedChanges;
+  const paths = addFieldPaths(inputs);
+  const surfaces = selectedAddFieldSurfaces(inputs);
+  const includeInLight = inputs.includeInLight === true;
+  return [
+    {
+      target: paths.constant,
+      action: "modify",
+      applyScope: "auto",
+      reason: includeInLight ? "Field shape and Light projection are added." : "Field shape is added.",
+    },
+    {
+      target: paths.dictionary,
+      action: "modify",
+      applyScope: "auto",
+      reason: "Field label is added.",
+    },
+    ...(!surfaces || surfaces.has("template")
+      ? [
+          {
+            target: paths.template,
+            action: "modify" as const,
+            applyScope: surfaces?.has("template") ? ("auto" as const) : ("manual-review" as const),
+            reason: surfaces?.has("template")
+              ? "Template form is selected for safe-pattern auto insertion."
+              : "Form surface may include the field.",
+          },
+        ]
+      : []),
+    {
+      target: `${addFieldTargetRoot(typeof inputs.app === "string" ? inputs.app : null)}/lib/cnst.ts`,
+      action: "sync",
+      applyScope: "generated-sync",
+      reason: "Generated constants may change after sync.",
+    },
+    {
+      target: `${addFieldTargetRoot(typeof inputs.app === "string" ? inputs.app : null)}/lib/dict.ts`,
+      action: "sync",
+      applyScope: "generated-sync",
+      reason: "Generated dictionary barrel may change after sync.",
     },
   ];
+};
+
+const createWorkflowPlanOptionalSurfaces = (
+  spec: WorkflowSpec,
+  inputs: Record<string, WorkflowInputValue>,
+): Record<string, WorkflowSurfaceMode> => {
+  const optionalSurfaces = spec.optionalSurfaces ?? {};
+  const surfaces = selectedAddFieldSurfaces(inputs);
+  if (spec.name !== "add-field" || !surfaces) return optionalSurfaces;
+  return Object.fromEntries(
+    Object.entries(optionalSurfaces).map(([surface, mode]) => [surface, surfaces.has(surface) ? "include" : mode]),
+  );
 };
 
 const createWorkflowPlanRecommendations = (
@@ -193,15 +340,33 @@ export const createWorkflowPlan = (spec: WorkflowSpec, rawInputs: Record<string,
       message: `Field type "${fieldType}" is ambiguous in Akan. Use Int for integer fields or Float for decimal fields.`,
     });
   }
+  if (spec.name === "add-field") {
+    const defaultCoercion = addFieldDefaultCoercion(inputs);
+    if (defaultCoercion?.diagnostic) {
+      diagnostics.push({
+        ...defaultCoercion.diagnostic,
+        code: "workflow-default-value-invalid",
+        message: `Plan input default is not valid for ${defaultCoercion.normalizedType}: ${defaultCoercion.diagnostic.message}`,
+      });
+    } else if (defaultCoercion?.normalized && defaultCoercion.expression) {
+      diagnostics.push({
+        severity: "warning",
+        code: "workflow-default-value-normalized",
+        input: "default",
+        failureScope: "source-change",
+        message: `Plan input default will be written as ${defaultCoercion.normalizedType} literal ${defaultCoercion.expression}.`,
+      });
+    }
+  }
 
   return {
     schemaVersion: 1,
     workflow: spec.name,
     mode: "plan",
     inputs,
-    optionalSurfaces: spec.optionalSurfaces ?? {},
+    optionalSurfaces: createWorkflowPlanOptionalSurfaces(spec, inputs),
     steps: spec.steps,
-    predictedChanges: spec.predictedChanges,
+    predictedChanges: createWorkflowPlanPredictedChanges(spec, inputs),
     validation: spec.validation,
     diagnostics,
     recommendations: createWorkflowPlanRecommendations(spec, inputs),

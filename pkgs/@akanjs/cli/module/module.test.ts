@@ -21,14 +21,21 @@ describe("ModuleRunner", () => {
 
     expect(files.abstract.filename).toBe("post.abstract.md");
     expect(files.abstract.content).toContain("Post Module Abstract");
-    expect(files.abstract.content).toContain("Post owns persisted post records.");
+    expect(files.abstract.content).toContain("Post represents post records managed by the app.");
+    expect(files.abstract.content).toContain("Post (Post) is the primary business concept");
     expect(files.abstract.content).toContain("No lifecycle workflow yet.");
     expect(files.abstract.content).not.toContain("Describe the business concept");
     expect(files.constant.filename).toBe("post.constant.ts");
     expect(files.constant.content).not.toContain("field: field(String).optional()");
     expect(files.dictionary.filename).toBe("post.dictionary.ts");
+    expect(files.dictionary.content).not.toContain('field: t(["Field", "필드"])');
+    expect(files.dictionary.content).toContain('t(["Post", "Post"]).desc(["Enter post.", "Post 값을 입력합니다."])');
+    expect(files.dictionary.content).not.toContain("Post description");
     expect(files.service.content).toContain("serve");
     expect(files.signal.content).toContain("signal");
+    expect(files.unit.filename).toBe("Post.Unit.tsx");
+    expect(files.view.filename).toBe("Post.View.tsx");
+    expect(files.template.filename).toBe("Post.Template.tsx");
     expect(await Bun.file(`${module.cwdPath}/post.constant.ts`).exists()).toBe(true);
     expect(await Bun.file(`${module.cwdPath}/post.abstract.md`).exists()).toBe(true);
     expect(await Bun.file(`${module.cwdPath}/Post.View.tsx`).exists()).toBe(true);
@@ -63,7 +70,7 @@ describe("ModuleRunner", () => {
 
     const { component } = await runner.createComponentTemplate(module, "view");
 
-    expect(component.filename).toBe("comment.View.tsx");
+    expect(component.filename).toBe("Comment.View.tsx");
     expect(component.content).toContain("export const General");
     expect(await Bun.file(`${module.sys.cwdPath}/lib/comment/Comment.View.tsx`).exists()).toBe(true);
   });
