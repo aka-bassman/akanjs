@@ -1,3 +1,4 @@
+import ts from "typescript";
 import type { Sys } from "../commandDecorators";
 import { generatedFilePathsForTarget } from "./artifacts";
 import { createPrimitiveWriteReport } from "./primitive";
@@ -19,7 +20,10 @@ export const sourceFile = (sys: Sys, path: string, action: PrimitiveChangedFile[
 });
 
 export const moduleComponentName = (moduleName: string) =>
-  `${moduleName.slice(0, 1).toUpperCase()}${moduleName.slice(1)}`;
+  moduleName
+    .replace(/[-_]+/g, " ")
+    .replace(/(?:^|\s+)([a-zA-Z0-9])/g, (_, char: string) => char.toUpperCase())
+    .replace(/\s+/g, "");
 
 export const moduleSourcePaths = (moduleName: string) => {
   const componentName = moduleComponentName(moduleName);
@@ -158,14 +162,17 @@ export const normalizeFieldType = (typeName: string) => {
 
 export const ensureBaseTypeImport = (content: string, typeName: string) => {
   if (typeName !== "Int" && typeName !== "Float") return content;
-  if (new RegExp(`import \\{[^}]*\\b${typeName}\\b[^}]*\\} from "akanjs/base";`).test(content)) return content;
-  const baseImport = /import \{ ([^}]+) \} from "akanjs\/base";/.exec(content);
+  const source = sourceFileFor("constant.ts", content);
+  const baseImport = findNamedImport(source, "akanjs/base");
   if (baseImport) {
-    const names = baseImport[1]
-      .split(",")
-      .map((name) => name.trim())
-      .filter(Boolean);
-    return content.replace(baseImport[0], `import { ${[...names, typeName].sort().join(", ")} } from "akanjs/base";`);
+    if (baseImport.names.includes(typeName)) return content;
+    const nextNames = [...baseImport.names, typeName].sort();
+    return spliceText(
+      content,
+      baseImport.namedBindingsStart,
+      baseImport.namedBindingsEnd,
+      `{ ${nextNames.join(", ")} }`,
+    );
   }
   return `import { ${typeName} } from "akanjs/base";\n${content}`;
 };
@@ -302,39 +309,446 @@ export const fieldExpression = (
   return `${options.builderName ?? "field"}(${typeExpression}${defaultOption})`;
 };
 
+export const fieldOrderingPriority = [
+  "id",
+  "name",
+  "title",
+  "status",
+  "category",
+  "description",
+  "content",
+  "startAt",
+  "dueAt",
+  "endAt",
+  "createdAt",
+  "updatedAt",
+] as const;
+
+type FieldOrderingName = string;
+
+interface LocatedField {
+  name: FieldOrderingName;
+  start: number;
+  fullStart: number;
+  end: number;
+}
+
+interface ObjectInsertionLocator {
+  objectStart: number;
+  objectEnd: number;
+  fields: LocatedField[];
+}
+
+interface ArrayInsertionLocator {
+  projectionStart: number;
+  projectionEnd: number;
+  fields: string[];
+}
+
+interface NamedImportLocator {
+  names: string[];
+  namedBindingsStart: number;
+  namedBindingsEnd: number;
+}
+
+export interface AkanConstantFieldStructure {
+  name: string;
+  expressionBuilder: string | null;
+}
+
+export interface AkanConstantStructure {
+  parseValid: boolean;
+  inputObjectFound: boolean;
+  builderName: string | null;
+  fields: AkanConstantFieldStructure[];
+  lightProjectionFields: string[];
+  baseImports: string[];
+}
+
+export interface AkanDictionaryStructure {
+  parseValid: boolean;
+  modelObjectFound: boolean;
+  chainOrderValid: boolean;
+  chainMethods: string[];
+  fields: string[];
+}
+
+const sourceFileFor = (fileName: string, content: string, scriptKind = ts.ScriptKind.TS) =>
+  ts.createSourceFile(fileName, content, ts.ScriptTarget.Latest, true, scriptKind);
+
+const hasParseDiagnostics = (source: ts.SourceFile) =>
+  ((source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics ?? []).length > 0;
+
+const spliceText = (content: string, start: number, end: number, replacement: string) =>
+  `${content.slice(0, start)}${replacement}${content.slice(end)}`;
+
+const lineStartAt = (content: string, position: number) => content.lastIndexOf("\n", Math.max(0, position - 1)) + 1;
+
+const lineEndAt = (content: string, position: number) => {
+  const end = content.indexOf("\n", position);
+  return end < 0 ? content.length : end + 1;
+};
+
+const lineIndentAt = (content: string, position: number) =>
+  /^[ \t]*/.exec(content.slice(lineStartAt(content, position)))?.[0] ?? "";
+
+const nodeName = (node: ts.PropertyName | ts.BindingName | undefined) => {
+  if (!node) return null;
+  if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNumericLiteral(node)) return node.text;
+  return null;
+};
+
+const propertyName = (node: ts.ObjectLiteralElementLike) =>
+  ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node) || ts.isMethodDeclaration(node)
+    ? nodeName(node.name)
+    : null;
+
+const expressionName = (expression: ts.Expression): string | null => {
+  if (ts.isIdentifier(expression)) return expression.text;
+  if (ts.isPropertyAccessExpression(expression)) return expression.name.text;
+  if (ts.isCallExpression(expression)) return expressionName(expression.expression);
+  if (ts.isAsExpression(expression)) return expressionName(expression.expression);
+  return null;
+};
+
+const firstObjectReturnedByArrow = (node: ts.Node): ts.ObjectLiteralExpression | null => {
+  if (!ts.isArrowFunction(node) && !ts.isFunctionExpression(node)) return null;
+  if (ts.isObjectLiteralExpression(node.body)) return node.body;
+  if (ts.isParenthesizedExpression(node.body) && ts.isObjectLiteralExpression(node.body.expression)) {
+    return node.body.expression;
+  }
+  if (!ts.isBlock(node.body)) return null;
+  for (const statement of node.body.statements) {
+    if (ts.isReturnStatement(statement) && statement.expression && ts.isObjectLiteralExpression(statement.expression)) {
+      return statement.expression;
+    }
+  }
+  return null;
+};
+
+const isViaCall = (expression: ts.Expression) =>
+  ts.isCallExpression(expression) && expressionName(expression.expression) === "via";
+
+const heritageCall = (node: ts.ClassDeclaration) => {
+  const heritage = node.heritageClauses?.flatMap((clause) => [...clause.types]) ?? [];
+  const expression = heritage.find((clause) => isViaCall(clause.expression))?.expression;
+  return expression && ts.isCallExpression(expression) ? expression : null;
+};
+
+const callExpressionName = (node: ts.CallExpression) =>
+  ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text : expressionName(node.expression);
+
+const locatedObject = (source: ts.SourceFile, objectLiteral: ts.ObjectLiteralExpression): ObjectInsertionLocator => ({
+  objectStart: objectLiteral.getStart(source),
+  objectEnd: objectLiteral.getEnd(),
+  fields: objectLiteral.properties
+    .map((property): LocatedField | null => {
+      const name = propertyName(property);
+      if (!name) return null;
+      return {
+        name,
+        start: property.getStart(source),
+        fullStart: property.getFullStart(),
+        end: property.getEnd(),
+      };
+    })
+    .filter((field): field is LocatedField => field !== null),
+});
+
+const findConstantInputObject = (source: ts.SourceFile, className: string): ObjectInsertionLocator | null => {
+  let locator: ObjectInsertionLocator | null = null;
+  const visit = (node: ts.Node) => {
+    if (locator) return;
+    if (!ts.isClassDeclaration(node) || node.name?.text !== className) {
+      ts.forEachChild(node, visit);
+      return;
+    }
+    const viaCall = heritageCall(node);
+    const callback = viaCall?.arguments.find((arg) => ts.isArrowFunction(arg) || ts.isFunctionExpression(arg));
+    const objectLiteral = callback ? firstObjectReturnedByArrow(callback) : null;
+    if (objectLiteral) locator = locatedObject(source, objectLiteral);
+  };
+  ts.forEachChild(source, visit);
+  return locator;
+};
+
+interface DictionaryModelLocator extends ObjectInsertionLocator {
+  chainMethods: string[];
+}
+
+const chainMethodsForCall = (node: ts.Expression): string[] => {
+  if (ts.isAsExpression(node) || ts.isParenthesizedExpression(node)) return chainMethodsForCall(node.expression);
+  if (!ts.isCallExpression(node)) return [];
+  if (ts.isPropertyAccessExpression(node.expression)) {
+    return [...chainMethodsForCall(node.expression.expression), node.expression.name.text];
+  }
+  const name = expressionName(node.expression);
+  return name ? [name] : [];
+};
+
+const outermostFluentCall = (node: ts.CallExpression) => {
+  let current: ts.CallExpression = node;
+  while (
+    ts.isPropertyAccessExpression(current.parent) &&
+    current.parent.expression === current &&
+    ts.isCallExpression(current.parent.parent) &&
+    current.parent.parent.expression === current.parent
+  ) {
+    current = current.parent.parent;
+  }
+  return current;
+};
+
+const protectedDictionaryChainOrder = ["model", "slice", "enum", "error", "translate"] as const;
+
+const dictionaryChainOrderValid = (chainMethods: readonly string[]) => {
+  const protectedOrder = new Map(protectedDictionaryChainOrder.map((method, index) => [method, index]));
+  let lastOrder = -1;
+  for (const method of chainMethods) {
+    const order = protectedOrder.get(method as (typeof protectedDictionaryChainOrder)[number]);
+    if (order === undefined) continue;
+    if (order < lastOrder) return false;
+    lastOrder = order;
+  }
+  return true;
+};
+
+const findDictionaryModelObject = (source: ts.SourceFile, moduleClassName: string): DictionaryModelLocator | null => {
+  let locator: DictionaryModelLocator | null = null;
+  const visit = (node: ts.Node) => {
+    if (locator) return;
+    if (!ts.isCallExpression(node) || callExpressionName(node) !== "model") {
+      ts.forEachChild(node, visit);
+      return;
+    }
+    const typeArgument = node.typeArguments?.[0];
+    if (!typeArgument || typeArgument.getText(source) !== moduleClassName) {
+      ts.forEachChild(node, visit);
+      return;
+    }
+    const callback = node.arguments.find((arg) => ts.isArrowFunction(arg) || ts.isFunctionExpression(arg));
+    const objectLiteral = callback ? firstObjectReturnedByArrow(callback) : null;
+    if (objectLiteral) {
+      locator = {
+        ...locatedObject(source, objectLiteral),
+        chainMethods: chainMethodsForCall(outermostFluentCall(node)),
+      };
+    }
+  };
+  ts.forEachChild(source, visit);
+  return locator;
+};
+
+const findLightProjectionArray = (source: ts.SourceFile, moduleClassName: string): ArrayInsertionLocator | null => {
+  let locator: ArrayInsertionLocator | null = null;
+  const visit = (node: ts.Node) => {
+    if (locator) return;
+    if (!ts.isClassDeclaration(node) || node.name?.text !== `Light${moduleClassName}`) {
+      ts.forEachChild(node, visit);
+      return;
+    }
+    const viaCall = heritageCall(node);
+    const projectionArg = viaCall?.arguments.find((arg) => {
+      const expression = ts.isAsExpression(arg) ? arg.expression : arg;
+      return ts.isArrayLiteralExpression(expression);
+    });
+    const arrayLiteral = projectionArg
+      ? ts.isAsExpression(projectionArg)
+        ? projectionArg.expression
+        : projectionArg
+      : null;
+    if (!projectionArg || !arrayLiteral || !ts.isArrayLiteralExpression(arrayLiteral)) return;
+    locator = {
+      projectionStart: projectionArg.getStart(source),
+      projectionEnd: projectionArg.getEnd(),
+      fields: arrayLiteral.elements
+        .map((element) => (ts.isStringLiteralLike(element) ? element.text : null))
+        .filter((field): field is string => field !== null),
+    };
+  };
+  ts.forEachChild(source, visit);
+  return locator;
+};
+
+const findNamedImport = (source: ts.SourceFile, moduleSpecifier: string): NamedImportLocator | null => {
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    if (statement.moduleSpecifier.text !== moduleSpecifier) continue;
+    const namedBindings = statement.importClause?.namedBindings;
+    if (!namedBindings || !ts.isNamedImports(namedBindings)) continue;
+    return {
+      names: namedBindings.elements.map((element) => element.name.text),
+      namedBindingsStart: namedBindings.getStart(source),
+      namedBindingsEnd: namedBindings.getEnd(),
+    };
+  }
+  return null;
+};
+
+const fieldExpressionBuilder = (property: ts.ObjectLiteralElementLike) => {
+  if (!ts.isPropertyAssignment(property)) return null;
+  const initializer = ts.isAsExpression(property.initializer) ? property.initializer.expression : property.initializer;
+  if (!ts.isCallExpression(initializer)) return null;
+  return expressionName(initializer.expression);
+};
+
+const priorityOf = (fieldName: string) => {
+  const priority = (fieldOrderingPriority as readonly string[]).indexOf(fieldName);
+  return priority < 0 ? null : priority;
+};
+
+export const insertionIndexForFieldOrder = (fieldNames: readonly string[], newFieldName: string) => {
+  const newPriority = priorityOf(newFieldName);
+  if (newPriority !== null) {
+    const greaterPriorityIndex = fieldNames.findIndex((name) => {
+      const existingPriority = priorityOf(name);
+      return existingPriority !== null && existingPriority > newPriority;
+    });
+    if (greaterPriorityIndex >= 0) return greaterPriorityIndex;
+
+    const lastPriorityIndex = fieldNames.reduce((lastIndex, name, index) => {
+      const existingPriority = priorityOf(name);
+      return existingPriority !== null ? index : lastIndex;
+    }, -1);
+    return lastPriorityIndex + 1;
+  }
+
+  const lastNonPriorityIndex = fieldNames.reduce(
+    (lastIndex, name, index) => (priorityOf(name) === null ? index : lastIndex),
+    -1,
+  );
+  return lastNonPriorityIndex >= 0 ? lastNonPriorityIndex + 1 : fieldNames.length;
+};
+
+const insertOrderedFieldLine = (
+  content: string,
+  locator: ObjectInsertionLocator,
+  fieldName: string,
+  line: string,
+  options: { fieldIndent: string; closingIndent: string },
+) => {
+  if (locator.fields.some((field) => field.name === fieldName)) return content;
+  const insertIndex = insertionIndexForFieldOrder(
+    locator.fields.map((field) => field.name),
+    fieldName,
+  );
+  const formattedLine = line.trim();
+  if (locator.fields.length === 0) {
+    return spliceText(
+      content,
+      locator.objectStart,
+      locator.objectEnd,
+      `{\n${options.fieldIndent}${formattedLine}\n${options.closingIndent}}`,
+    );
+  }
+
+  const beforeField = locator.fields[insertIndex];
+  if (beforeField) {
+    const leadingComments = ts.getLeadingCommentRanges(content, beforeField.fullStart) ?? [];
+    const insertAt = lineStartAt(content, leadingComments[0]?.pos ?? beforeField.start);
+    const indent = lineIndentAt(content, beforeField.start) || options.fieldIndent;
+    return spliceText(content, insertAt, insertAt, `${indent}${formattedLine}\n`);
+  }
+
+  const afterField = locator.fields[locator.fields.length - 1];
+  const insertAt = lineEndAt(content, afterField.end);
+  const indent = lineIndentAt(content, afterField.start) || options.fieldIndent;
+  return spliceText(content, insertAt, insertAt, `${indent}${formattedLine}\n`);
+};
+
 export const viaBuilderParameterName = (content: string, className: string) => {
-  const classIndex = content.indexOf(`export class ${className} extends via`);
-  if (classIndex < 0) return null;
-  const signature = content.slice(classIndex, content.indexOf("=>", classIndex));
-  return /via\(\(\s*([A-Za-z_$][\w$]*)\s*\)/.exec(signature)?.[1] ?? null;
+  const source = sourceFileFor("constant.ts", content);
+  let builderName: string | null = null;
+  const visit = (node: ts.Node) => {
+    if (builderName !== null) return;
+    if (!ts.isClassDeclaration(node) || node.name?.text !== className) {
+      ts.forEachChild(node, visit);
+      return;
+    }
+    const viaCall = heritageCall(node);
+    const callback = viaCall?.arguments.find((arg) => ts.isArrowFunction(arg) || ts.isFunctionExpression(arg));
+    if (callback && (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback))) {
+      builderName = nodeName(callback.parameters[0]?.name);
+    }
+  };
+  ts.forEachChild(source, visit);
+  return builderName;
+};
+
+export const inspectConstantStructure = (
+  content: string,
+  className: string,
+  moduleClassName: string,
+): AkanConstantStructure => {
+  const source = sourceFileFor("constant.ts", content);
+  const inputObject = findConstantInputObject(source, className);
+  const lightProjection = findLightProjectionArray(source, moduleClassName);
+  const baseImport = findNamedImport(source, "akanjs/base");
+  const fields: AkanConstantFieldStructure[] = [];
+  if (inputObject) {
+    const visit = (node: ts.Node) => {
+      if (!ts.isClassDeclaration(node) || node.name?.text !== className) {
+        ts.forEachChild(node, visit);
+        return;
+      }
+      const viaCall = heritageCall(node);
+      const callback = viaCall?.arguments.find((arg) => ts.isArrowFunction(arg) || ts.isFunctionExpression(arg));
+      const objectLiteral = callback ? firstObjectReturnedByArrow(callback) : null;
+      if (!objectLiteral) return;
+      fields.push(
+        ...objectLiteral.properties
+          .map((property): AkanConstantFieldStructure | null => {
+            const name = propertyName(property);
+            if (!name) return null;
+            return { name, expressionBuilder: fieldExpressionBuilder(property) };
+          })
+          .filter((field): field is AkanConstantFieldStructure => field !== null),
+      );
+    };
+    ts.forEachChild(source, visit);
+  }
+  return {
+    parseValid: !hasParseDiagnostics(source),
+    inputObjectFound: inputObject !== null,
+    builderName: viaBuilderParameterName(content, className),
+    fields,
+    lightProjectionFields: lightProjection?.fields ?? [],
+    baseImports: baseImport?.names ?? [],
+  };
+};
+
+export const inspectDictionaryStructure = (content: string, moduleClassName: string): AkanDictionaryStructure => {
+  const source = sourceFileFor("dictionary.ts", content);
+  const modelObject = findDictionaryModelObject(source, moduleClassName);
+  return {
+    parseValid: !hasParseDiagnostics(source),
+    modelObjectFound: modelObject !== null,
+    chainOrderValid: modelObject ? dictionaryChainOrderValid(modelObject.chainMethods) : false,
+    chainMethods: modelObject?.chainMethods ?? [],
+    fields: modelObject?.fields.map((field) => field.name) ?? [],
+  };
 };
 
 export const insertIntoObject = (content: string, className: string, line: string) => {
-  const classIndex = content.indexOf(`export class ${className} extends via`);
-  if (classIndex < 0) return null;
-  const objectEndIndex = content.indexOf("}))", classIndex);
-  if (objectEndIndex < 0) return null;
-  const prefix = content.slice(0, objectEndIndex);
-  const suffix = content.slice(objectEndIndex);
-  const insertion = prefix.endsWith("\n") ? `  ${line}\n` : `\n  ${line}\n`;
-  return `${prefix}${insertion}${suffix}`;
+  const fieldName = /^([A-Za-z_$][\w$]*)\s*:/.exec(line.trim())?.[1];
+  if (!fieldName) return null;
+  const source = sourceFileFor("constant.ts", content);
+  const locator = findConstantInputObject(source, className);
+  if (!locator) return null;
+  return insertOrderedFieldLine(content, locator, fieldName, line, { fieldIndent: "  ", closingIndent: "" });
 };
 
 export const insertLightProjectionField = (content: string, moduleClassName: string, fieldName: string) => {
-  const classIndex = content.indexOf(`export class Light${moduleClassName} extends via`);
-  if (classIndex < 0) return null;
-  const arrayMatch = /\[([\s\S]*?)\]\s+as const/.exec(content.slice(classIndex));
-  if (!arrayMatch || arrayMatch.index === undefined) return null;
-  const arrayStart = classIndex + arrayMatch.index;
-  const arrayEnd = arrayStart + arrayMatch[0].length;
-  const fields = [...arrayMatch[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]).filter(Boolean);
-  if (fields.includes(fieldName)) return content;
-  const nextFields = [...fields, fieldName];
+  const source = sourceFileFor("constant.ts", content);
+  const locator = findLightProjectionArray(source, moduleClassName);
+  if (!locator) return null;
+  if (locator.fields.includes(fieldName)) return content;
+  const nextFields = [...locator.fields, fieldName];
   const nextArray =
     nextFields.length === 0
       ? "[] as const"
       : `[\n${nextFields.map((field) => `  ${JSON.stringify(field)},`).join("\n")}\n] as const`;
-  return `${content.slice(0, arrayStart)}${nextArray}${content.slice(arrayEnd)}`;
+  return spliceText(content, locator.projectionStart, locator.projectionEnd, nextArray);
 };
 
 export const insertTemplateField = ({
@@ -386,37 +800,6 @@ export const insertEnumClass = (content: string, enumClassName: string, enumName
   return `${content.slice(0, firstClassIndex)}${enumClass}${content.slice(firstClassIndex)}`;
 };
 
-const findMatchingBrace = (content: string, openIndex: number) => {
-  let depth = 0;
-  let quote: '"' | "'" | "`" | null = null;
-  let escaped = false;
-  for (let index = openIndex; index < content.length; index++) {
-    const char = content[index];
-    if (quote) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (char === "\\") {
-        escaped = true;
-        continue;
-      }
-      if (char === quote) quote = null;
-      continue;
-    }
-    if (char === '"' || char === "'" || char === "`") {
-      quote = char;
-      continue;
-    }
-    if (char === "{") depth += 1;
-    if (char === "}") {
-      depth -= 1;
-      if (depth === 0) return index;
-    }
-  }
-  return -1;
-};
-
 const dictionaryModelFieldLine = (fieldName: string) => {
   const label = bilingualLabelForField(fieldName);
   const desc = bilingualDescriptionForField(fieldName);
@@ -426,20 +809,25 @@ const dictionaryModelFieldLine = (fieldName: string) => {
 };
 
 export const insertDictionaryModelField = (content: string, moduleClassName: string, fieldName: string) => {
-  if (new RegExp(`\\b${fieldName}\\s*:`).test(content)) return content;
-  const modelIndex = content.indexOf(`.model<${moduleClassName}>((t) => (`);
-  if (modelIndex < 0) return null;
-  const objectStartIndex = content.indexOf("{", modelIndex);
-  if (objectStartIndex < 0) return null;
-  const objectEndIndex = findMatchingBrace(content, objectStartIndex);
-  if (objectEndIndex < 0) return null;
-  const fieldLine = dictionaryModelFieldLine(fieldName);
-  const body = content.slice(objectStartIndex + 1, objectEndIndex);
-  if (body.trim().length === 0) {
-    return `${content.slice(0, objectStartIndex + 1)}\n    ${fieldLine}\n  ${content.slice(objectEndIndex)}`;
-  }
-  const insertion = body.endsWith("\n") ? `    ${fieldLine}\n` : `\n    ${fieldLine}\n`;
-  return `${content.slice(0, objectEndIndex)}${insertion}${content.slice(objectEndIndex)}`;
+  const source = sourceFileFor("dictionary.ts", content);
+  const locator = findDictionaryModelObject(source, moduleClassName);
+  if (!locator) return null;
+  return insertOrderedFieldLine(content, locator, fieldName, dictionaryModelFieldLine(fieldName), {
+    fieldIndent: "    ",
+    closingIndent: "  ",
+  });
+};
+
+export const hasConstantInputField = (content: string, className: string, fieldName: string) => {
+  const source = sourceFileFor("constant.ts", content);
+  if (hasParseDiagnostics(source)) return false;
+  return findConstantInputObject(source, className)?.fields.some((field) => field.name === fieldName) ?? false;
+};
+
+export const hasDictionaryModelField = (content: string, moduleClassName: string, fieldName: string) => {
+  const source = sourceFileFor("dictionary.ts", content);
+  if (hasParseDiagnostics(source)) return false;
+  return findDictionaryModelObject(source, moduleClassName)?.fields.some((field) => field.name === fieldName) ?? false;
 };
 
 export const ensureConstantTypeImport = (content: string, constantPath: string, typeName: string) => {

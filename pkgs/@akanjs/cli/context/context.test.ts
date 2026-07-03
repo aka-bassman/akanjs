@@ -97,6 +97,7 @@ describe("ContextRunner", () => {
     const planTools = runner.listMcpTools("plan").map((tool) => tool.name);
     const applyTools = runner.listMcpTools("apply").map((tool) => tool.name);
 
+    expect(readonlyTools).toContain("inspect_akan_context");
     expect(readonlyTools).toContain("doctor_workspace");
     expect(readonlyTools).not.toContain("plan_workflow");
     expect(planTools).toContain("plan_workflow");
@@ -112,9 +113,108 @@ describe("ContextRunner", () => {
     const doctorSchema = runner.listMcpTools("readonly").find((tool) => tool.name === "doctor_workspace")
       ?.inputSchema.properties;
     expect(doctorSchema?.changedFiles).toMatchObject({ type: "array" });
+    expect(doctorSchema?.includeBaselineDetails).toMatchObject({ type: "boolean" });
+    const validationSchema = runner.listMcpTools("apply").find((tool) => tool.name === "run_validation")
+      ?.inputSchema.properties;
+    expect(validationSchema?.includeBaselineDetails).toMatchObject({ type: "boolean" });
+    const inspectTool = runner.listMcpTools("readonly").find((tool) => tool.name === "inspect_akan_context");
+    const inspectRequestSchema = inspectTool?.inputSchema.properties.request as {
+      properties: { type: { enum: string[] } };
+      required: string[];
+      oneOf: { properties: { type: { const: string } }; required: string[] }[];
+    };
+    expect(inspectTool?.description).toContain("fieldInsertionContext");
+    expect(inspectTool?.inputSchema.required).toEqual(["question", "draft", "review", "request"]);
+    expect(inspectRequestSchema.required).toContain("type");
+    expect(
+      inspectRequestSchema.oneOf.find((branch) => branch.properties.type.const === "moduleContext")?.required,
+    ).toEqual(["type", "app", "module"]);
+    expect(
+      inspectRequestSchema.oneOf.find((branch) => branch.properties.type.const === "fieldInsertionContext")?.required,
+    ).toEqual(["type", "app", "module", "field", "fieldType"]);
+    expect(inspectRequestSchema.oneOf.find((branch) => branch.properties.type.const === "escape")?.required).toEqual([
+      "type",
+      "reason",
+    ]);
+    expect(inspectRequestSchema.properties.type.enum).toEqual([
+      "workspaceOverview",
+      "moduleContext",
+      "fieldInsertionContext",
+      "workflowDiagnostics",
+      "escape",
+    ]);
+    expect(
+      runner
+        .listMcpTools("apply")
+        .filter((tool) => !tool.description || tool.description.length === 0)
+        .map((tool) => tool.name),
+    ).toEqual([]);
     expect(runner.listMcpTools("plan").find((tool) => tool.name === "plan_workflow")?.description).toContain(
       "next.tool=apply_workflow",
     );
+  });
+
+  test("returns source-body-free inspect_akan_context field insertion index evidence and escape", async () => {
+    const { root, workspace, module } = await createTempModule("post");
+    tempRoots.push(root);
+    await new ModuleRunner().createModuleTemplate(module);
+    const runner = new ContextRunner();
+
+    const fieldContext = (await runner.callMcpTool(workspace, "inspect_akan_context", {
+      question: "Can I add a title field to demo:post?",
+      draft: { reason: "Need add-field context before planning.", type: "fieldInsertionContext" },
+      review: "Module target and field inputs are known, source body is not needed for P1.",
+      request: { type: "fieldInsertionContext", app: "demo", module: "post", field: "title", fieldType: "String" },
+    })) as {
+      schemaVersion: number;
+      type: string;
+      evidence: { kind: string; summary: string; path?: string }[];
+      next: { action: string; tool?: string; args?: { workflow?: string; inputs?: { field?: string; type?: string } } };
+      data: {
+        files: { path: string; present: boolean }[];
+        moduleIndex: {
+          constant?: { inputClassName: string; builderName: string | null; fields: unknown[] };
+          dictionary?: { modelClassName: string; translatorName: string | null; fields: unknown[] };
+          fieldPresence: { name: string; requested: boolean; constant: boolean; dictionary: boolean }[];
+        };
+      };
+    };
+    const escape = (await runner.callMcpTool(workspace, "inspect_akan_context", {
+      question: "Do I need to read source body?",
+      draft: { reason: "The current index cannot answer detailed source shape.", type: "escape" },
+      review: "Escaping is appropriate when source body evidence is required.",
+      request: { type: "escape", reason: "Need source body for exact AST placement.", nextStep: "Read constant file." },
+    })) as { type: string; evidence: { summary: string }[]; next: { action: string; args?: { nextStep?: string } } };
+
+    expect(fieldContext).toMatchObject({ schemaVersion: 1, type: "fieldInsertionContext" });
+    expect(fieldContext.evidence.map((item) => item.kind)).toContain("field-insertion");
+    expect(fieldContext.next).toMatchObject({
+      action: "plan_workflow",
+      tool: "plan_workflow",
+      args: { workflow: "add-field", inputs: { field: "title", type: "String" } },
+    });
+    expect(fieldContext.data.files.map((file) => file.path)).toContain("apps/demo/lib/post/post.constant.ts");
+    expect(fieldContext.data.files.map((file) => file.path)).toContain("apps/demo/lib/post/post.dictionary.ts");
+    expect(fieldContext.data.moduleIndex.constant).toMatchObject({
+      inputClassName: "PostInput",
+      builderName: "field",
+      fields: [],
+    });
+    expect(fieldContext.data.moduleIndex.dictionary).toMatchObject({
+      modelClassName: "Post",
+      translatorName: "t",
+      fields: [],
+    });
+    expect(fieldContext.data.moduleIndex.fieldPresence).toContainEqual(
+      expect.objectContaining({ name: "title", requested: true, constant: false, dictionary: false }),
+    );
+    expect(JSON.stringify(fieldContext)).not.toContain("export class");
+    expect(JSON.stringify(fieldContext)).not.toContain("modelDictionary");
+    expect(escape).toMatchObject({
+      type: "escape",
+      evidence: [{ summary: "Need source body for exact AST placement." }],
+      next: { action: "escape", args: { nextStep: "Read constant file." } },
+    });
   });
 
   test("returns validation contract modes as cumulative MCP tool lists", async () => {
@@ -127,11 +227,13 @@ describe("ContextRunner", () => {
         mode: string;
         directSourceEdits: string;
         applyRequiredWhen: string[];
+        approvalMeaning: string;
         validationRequiredAfterApply: string[];
         fallbackAllowedWhen: string[];
       };
       validationStatuses: {
         overallStatus: string[];
+        baselineSummary: string;
       };
       moduleContextInputs: {
         app: string;
@@ -151,10 +253,13 @@ describe("ContextRunner", () => {
       directSourceEdits: "fallback-only",
     });
     expect(contract.directEditFallbackPolicy.applyRequiredWhen).toContain("plan_workflow returns planPath");
+    expect(contract.directEditFallbackPolicy.approvalMeaning).toContain("not a separate MCP permission gate");
     expect(contract.directEditFallbackPolicy.validationRequiredAfterApply).toContain("validationTarget");
     expect(contract.directEditFallbackPolicy.fallbackAllowedWhen.join("\n")).toContain("no matching workflow");
     expect(contract.validationStatuses.overallStatus).toContain("blocked-by-workspace-config");
-    expect(contract.moduleContextInputs.app).toContain("recommended");
+    expect(contract.validationStatuses.overallStatus).toContain("passed-with-baseline-blockers");
+    expect(contract.validationStatuses.baselineSummary).toContain("includeBaselineDetails=true");
+    expect(contract.moduleContextInputs.app).toBe("required");
   });
 
   test("installs Cursor MCP config while preserving existing servers", async () => {
@@ -219,6 +324,7 @@ describe("ContextRunner", () => {
       mode: string;
       workflow: string;
       planPath: string;
+      approval: { required: boolean; canApplyWith: { planPath: string } };
       next: { tool: string; args: { planPath: string } };
       policy: { mode: string; directSourceEdits: string };
     };
@@ -237,6 +343,7 @@ describe("ContextRunner", () => {
     };
 
     expect(plan).toMatchObject({ mode: "plan", workflow: "add-field", planPath });
+    expect(plan.approval).toMatchObject({ required: true, canApplyWith: { planPath } });
     expect(plan.next).toEqual({ tool: "apply_workflow", args: { planPath } });
     expect(plan.policy).toMatchObject({ mode: "apply-first", directSourceEdits: "fallback-only" });
     expect(await Bun.file(planPath).exists()).toBe(true);
@@ -286,17 +393,31 @@ describe("ContextRunner", () => {
       { mode: "plan" },
     )) as { planPath: string };
 
-    const doctor = (await runner.callMcpTool(
+    const doctorSummary = (await runner.callMcpTool(
       workspace,
       "doctor_workspace",
       { strict: true, runIdOrPlan: plan.planPath },
       { mode: "apply" },
     )) as {
+      baselineSummary: { totalErrors: number; detailsIncluded: boolean };
+      baselineDiagnostics: { code: string }[];
+      workflowDiagnostics: { code: string }[];
+    };
+    const doctor = (await runner.callMcpTool(
+      workspace,
+      "doctor_workspace",
+      { strict: true, runIdOrPlan: plan.planPath, includeBaselineDetails: true },
+      { mode: "apply" },
+    )) as {
+      baselineSummary: { detailsIncluded: boolean };
       baselineDiagnostics: { code: string }[];
       workflowDiagnostics: { code: string }[];
     };
 
+    expect(doctorSummary.baselineSummary).toMatchObject({ totalErrors: expect.any(Number), detailsIncluded: false });
+    expect(doctorSummary.baselineDiagnostics).toEqual([]);
     expect(doctor.baselineDiagnostics.map((diagnostic) => diagnostic.code)).toContain("app-root-unknown-entry");
+    expect(doctor.baselineSummary.detailsIncluded).toBe(true);
     expect(doctor.workflowDiagnostics.map((diagnostic) => diagnostic.code)).toContain("module-shape-invalid");
   });
 

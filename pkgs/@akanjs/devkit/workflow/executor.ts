@@ -1,9 +1,17 @@
-import { capitalize } from "akanjs/common";
 import ts from "typescript";
+import type { AkanModuleContext } from "../akanContext";
 import type { Sys, Workspace } from "../commandDecorators";
 import { AppExecutor, LibExecutor } from "../executors";
 import { createWorkflowApplyReport, workflowCommandsForPlan } from "./artifacts";
-import { moduleSourcePaths } from "./source";
+import { buildAkanModuleContextIndex } from "./moduleIndex";
+import {
+  insertionIndexForFieldOrder,
+  inspectConstantStructure,
+  inspectDictionaryStructure,
+  moduleComponentName,
+  moduleSourcePaths,
+  normalizeFieldType,
+} from "./source";
 import type {
   PrimitiveChangedFile,
   PrimitiveGeneratedFile,
@@ -47,6 +55,14 @@ const postApplyDiagnostic = (code: string, message: string, target: string): Wor
   context: { target },
 });
 
+const postApplyWarning = (code: string, message: string, target: string): WorkflowDiagnostic => ({
+  severity: "warning",
+  code,
+  message,
+  failureScope: "source-change",
+  context: { target },
+});
+
 const sourceKindForPath = (filePath: string) => {
   if (filePath.endsWith(".tsx")) return ts.ScriptKind.TSX;
   if (filePath.endsWith(".ts")) return ts.ScriptKind.TS;
@@ -81,7 +97,8 @@ const checkTypeScriptSyntax = async (workspace: Workspace, filePath: string) => 
   if (!scriptKind) return null;
   const content = await workspace.readFile(filePath);
   const source = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true, scriptKind);
-  const diagnostic = source.parseDiagnostics[0];
+  const diagnostic = ((source as ts.SourceFile & { parseDiagnostics?: readonly ts.DiagnosticWithLocation[] })
+    .parseDiagnostics ?? [])[0];
   if (!diagnostic) return null;
   const position = diagnostic.file?.getLineAndCharacterOfPosition(diagnostic.start ?? 0);
   const location = position ? `:${position.line + 1}:${position.character + 1}` : "";
@@ -136,6 +153,188 @@ const checkRecommendationPath = async (
   };
 };
 
+const sourceChangeError = (diagnostics: readonly WorkflowDiagnostic[]) =>
+  diagnostics.some(
+    (diagnostic) =>
+      diagnostic.severity === "error" &&
+      (diagnostic.failureScope === "source-change" ||
+        !diagnostic.failureScope ||
+        diagnostic.failureScope === "unknown"),
+  );
+
+const fieldCount = (fields: readonly string[], fieldName: string) =>
+  fields.filter((field) => field === fieldName).length;
+
+const fieldOrderValid = (fields: readonly string[], fieldName: string) => {
+  const actualIndex = fields.indexOf(fieldName);
+  if (actualIndex < 0 || fields.lastIndexOf(fieldName) !== actualIndex) return false;
+  const fieldsWithoutRequested = fields.filter((_, index) => index !== actualIndex);
+  return insertionIndexForFieldOrder(fieldsWithoutRequested, fieldName) === actualIndex;
+};
+
+const workflowModuleContext = async (workspace: Workspace, plan: WorkflowPlan): Promise<AkanModuleContext | null> => {
+  const app = workflowStringInput(plan.inputs.app);
+  const moduleName = workflowStringInput(plan.inputs.module);
+  if (!app || !moduleName) return null;
+  const [apps, libs] = await workspace.getSyss();
+  const sysType = apps.includes(app) ? "app" : libs.includes(app) ? "lib" : null;
+  if (!sysType) return null;
+  const modulePath = `${sysType}s/${app}/lib/${moduleName}`;
+  const files = await workspace.readdir(modulePath);
+  const abstractPath = `${modulePath}/${moduleName}.abstract.md`;
+  return {
+    kind: "domain",
+    name: moduleName,
+    folderName: moduleName,
+    sysName: app,
+    sysType,
+    path: modulePath,
+    abstract: {
+      path: abstractPath,
+      exists: files.includes(`${moduleName}.abstract.md`),
+      headings: [],
+    },
+    files,
+  };
+};
+
+const structureCheck = (
+  code: string,
+  target: string,
+  status: WorkflowPostApplyCheck["status"],
+  message: string,
+): WorkflowPostApplyCheck => ({
+  code,
+  target,
+  status,
+  message,
+});
+
+const checkAddFieldStructure = async (workspace: Workspace, plan: WorkflowPlan): Promise<WorkflowStepResult> => {
+  if (plan.workflow !== "add-field" && plan.workflow !== "add-enum-field") return {};
+  const app = workflowStringInput(plan.inputs.app);
+  const moduleName = workflowStringInput(plan.inputs.module);
+  const fieldName = workflowStringInput(plan.inputs.field);
+  const typeName = workflowStringInput(plan.inputs.type);
+  if (!app || !moduleName || !fieldName || !typeName) return {};
+
+  const moduleContext = await workflowModuleContext(workspace, plan);
+  if (!moduleContext) return {};
+
+  const paths = moduleSourcePaths(moduleName);
+  const constantPath = `${moduleContext.path}/${paths.constant.replace(`lib/${moduleName}/`, "")}`;
+  const dictionaryPath = `${moduleContext.path}/${paths.dictionary.replace(`lib/${moduleName}/`, "")}`;
+  const moduleClassName = moduleComponentName(moduleName);
+  const inputClassName = `${moduleClassName}Input`;
+  const index = await buildAkanModuleContextIndex(workspace, moduleContext, { field: fieldName });
+  const diagnostics: WorkflowDiagnostic[] = [];
+  const postApplyChecks: WorkflowPostApplyCheck[] = [];
+
+  const constantContent = await workspace.readFile(constantPath);
+  const constantStructure = inspectConstantStructure(constantContent, inputClassName, moduleClassName);
+  const constantNames = constantStructure.fields.map((field) => field.name);
+  const requestedConstantFields = constantStructure.fields.filter((field) => field.name === fieldName);
+  const normalizedType = typeName.toLowerCase() === "enum" ? typeName : normalizeFieldType(typeName);
+  const constantFailures = [
+    !constantStructure.parseValid ? "constant file does not parse" : null,
+    !constantStructure.inputObjectFound ? `${inputClassName} via builder object was not found` : null,
+    requestedConstantFields.length !== 1
+      ? `field "${fieldName}" appears ${requestedConstantFields.length} time(s) in ${inputClassName}`
+      : null,
+    constantStructure.builderName &&
+    requestedConstantFields[0]?.expressionBuilder &&
+    requestedConstantFields[0].expressionBuilder !== constantStructure.builderName
+      ? `field "${fieldName}" uses builder "${requestedConstantFields[0].expressionBuilder}" instead of "${constantStructure.builderName}"`
+      : null,
+    !constantStructure.builderName ? `${inputClassName} via builder parameter was not found` : null,
+    (normalizedType === "Int" || normalizedType === "Float") && !constantStructure.baseImports.includes(normalizedType)
+      ? `missing ${normalizedType} import from "akanjs/base"`
+      : null,
+    workflowBooleanInput(plan.inputs.includeInLight) === true &&
+    fieldCount(constantStructure.lightProjectionFields, fieldName) !== 1
+      ? `field "${fieldName}" is not present exactly once in Light${moduleClassName}`
+      : null,
+    ...index.diagnostics
+      .filter((diagnostic) => diagnostic.severity === "error" && diagnostic.context?.paths?.includes(constantPath))
+      .map((diagnostic) => diagnostic.message),
+  ].filter((failure): failure is string => failure !== null);
+  const constantValid = constantFailures.length === 0;
+  postApplyChecks.push(
+    structureCheck(
+      constantValid ? "workflow-post-apply-constant-shape-valid" : "workflow-post-apply-structure-invalid",
+      constantPath,
+      constantValid ? "passed" : "failed",
+      constantValid
+        ? `${inputClassName} keeps via structure, builder usage, imports, and requested field presence.`
+        : constantFailures.join(" "),
+    ),
+  );
+  if (!constantValid) {
+    diagnostics.push(
+      postApplyDiagnostic("workflow-post-apply-structure-invalid", constantFailures.join(" "), constantPath),
+    );
+  }
+
+  const dictionaryContent = await workspace.readFile(dictionaryPath);
+  const dictionaryStructure = inspectDictionaryStructure(dictionaryContent, moduleClassName);
+  const dictionaryFailures = [
+    !dictionaryStructure.parseValid ? "dictionary file does not parse" : null,
+    !dictionaryStructure.modelObjectFound ? `.model<${moduleClassName}> object was not found` : null,
+    dictionaryStructure.modelObjectFound && !dictionaryStructure.chainOrderValid
+      ? `.model(), .slice(), .enum(), .error(), and .translate() chain order is broken: ${dictionaryStructure.chainMethods.join(
+          " -> ",
+        )}`
+      : null,
+    fieldCount(dictionaryStructure.fields, fieldName) !== 1
+      ? `field "${fieldName}" appears ${fieldCount(dictionaryStructure.fields, fieldName)} time(s) in .model<${moduleClassName}>`
+      : null,
+    ...index.diagnostics
+      .filter((diagnostic) => diagnostic.severity === "error" && diagnostic.context?.paths?.includes(dictionaryPath))
+      .map((diagnostic) => diagnostic.message),
+  ].filter((failure): failure is string => failure !== null);
+  const dictionaryValid = dictionaryFailures.length === 0;
+  postApplyChecks.push(
+    structureCheck(
+      dictionaryValid ? "workflow-post-apply-dictionary-shape-valid" : "workflow-post-apply-structure-invalid",
+      dictionaryPath,
+      dictionaryValid ? "passed" : "failed",
+      dictionaryValid
+        ? `.model<${moduleClassName}> keeps the requested field inside the model object and preserves dictionary chain order.`
+        : dictionaryFailures.join(" "),
+    ),
+  );
+  if (!dictionaryValid) {
+    diagnostics.push(
+      postApplyDiagnostic("workflow-post-apply-structure-invalid", dictionaryFailures.join(" "), dictionaryPath),
+    );
+  }
+
+  const constantOrderValid = fieldOrderValid(constantNames, fieldName);
+  const dictionaryOrderValid = fieldOrderValid(dictionaryStructure.fields, fieldName);
+  const orderValid = constantOrderValid && dictionaryOrderValid;
+  postApplyChecks.push(
+    structureCheck(
+      "workflow-post-apply-field-order-valid",
+      `${constantPath}, ${dictionaryPath}`,
+      orderValid ? "passed" : "failed",
+      orderValid
+        ? `Field "${fieldName}" follows the shared priority ordering policy.`
+        : `Field "${fieldName}" is present but does not match the shared priority ordering policy.`,
+    ),
+  );
+  if (!orderValid) {
+    diagnostics.push(
+      postApplyWarning(
+        "workflow-post-apply-field-order-mismatch",
+        `Field "${fieldName}" is present but does not match the shared priority ordering policy.`,
+        `${constantPath}, ${dictionaryPath}`,
+      ),
+    );
+  }
+
+  return { diagnostics, postApplyChecks };
+};
+
 const resolveWorkflowSys = async (workspace: Workspace, target: string | null): Promise<Sys | null> => {
   if (!target) return null;
   const [apps, libs] = await workspace.getSyss();
@@ -173,7 +372,7 @@ const addFieldUiSurfaceInspection = (plan: WorkflowPlan): WorkflowStepResult => 
   const policy = addFieldUiPolicyForType(typeName ?? "String");
   const surfaces = workflowStringArrayInput(plan.inputs.surfaces);
   const templateRequested = surfaces?.includes("template") ?? false;
-  const moduleClassName = capitalize(module);
+  const moduleClassName = moduleComponentName(module);
   const target = `${app ? `apps/${app}` : "*"}/${moduleSourcePaths(module).template}`;
   return {
     recommendations: [
@@ -182,10 +381,10 @@ const addFieldUiSurfaceInspection = (plan: WorkflowPlan): WorkflowStepResult => 
         kind: "manual-action",
         target,
         action: templateRequested
-          ? `Template was requested for ${field}. If no Template file changed, auto-edit was skipped because the file was missing, the generated ${module}Form/Layout.Template pattern was not found, or ${policy.component} needs option binding. Candidate position: inside Layout.Template near the existing Field components.`
-          : `Template was not selected, so UI files are intentionally left unchanged. Candidate positions if you expose it later: Layout.Template field list for editing, Light${moduleClassName} projection for list/card data, and Unit/View card sections for display.`,
+          ? `Template was requested for ${field}. If no Template file changed, users will not see the field in the form yet because the file was missing, the generated ${module}Form/Layout.Template pattern was not found, or ${policy.component} needs option binding. Add it inside Layout.Template near existing Field components.`
+          : `Template was not selected, so users will not see ${field} in the form from this apply. If list/card display is needed, include ${field} in Light${moduleClassName} projection data and place it in the local Unit/View card layout.`,
         confidence: "medium",
-        message: `Review UI surfaces for ${module}.${field}; recommended component is ${policy.component}, with manual reasons and candidate positions in action.`,
+        message: `Review user-visible UI for ${module}.${field}; recommended component is ${policy.component}.`,
       },
     ],
     nextActions: [
@@ -359,6 +558,11 @@ export class WorkflowExecutor {
     if (this.workspace && !diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
       for (const file of changedFiles) {
         const result = await checkChangedFile(this.workspace, file);
+        postApplyChecks.push(...(result.postApplyChecks ?? []));
+        diagnostics.push(...(result.diagnostics ?? []));
+      }
+      if (!sourceChangeError(diagnostics)) {
+        const result = await checkAddFieldStructure(this.workspace, plan);
         postApplyChecks.push(...(result.postApplyChecks ?? []));
         diagnostics.push(...(result.diagnostics ?? []));
       }

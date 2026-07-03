@@ -5,6 +5,7 @@ import {
   compactWorkflowInputs,
   createDryRunWorkflowApplyReport,
   createWorkflowApplyReport,
+  createWorkflowBaselineSummary,
   createWorkflowPlan,
   createWorkflowValidationRunReport,
   getWorkflowSpec,
@@ -34,6 +35,7 @@ import {
   type WorkflowValidationRunReport,
   type Workspace,
   workflowCommandsForPlan,
+  workflowPlanApproval,
   writeWorkflowRunArtifact,
 } from "@akanjs/devkit";
 import { capitalize } from "akanjs/common";
@@ -73,6 +75,7 @@ const failedPlan = (workflow: string, diagnostics: WorkflowApplyReport["diagnost
   diagnostics,
   recommendations: [],
   requiresApproval: true,
+  approval: workflowPlanApproval,
 });
 
 const failedApplyReport = (workflow: string, diagnostics: WorkflowApplyReport["diagnostics"], plan?: WorkflowPlan) =>
@@ -245,16 +248,33 @@ const applyBaselineBlockerCache = async (workspace: Workspace, report: WorkflowV
     { silent: true },
   );
 
+  const knownBlockers = report.knownBlockers.map((blocker) => {
+    if (!knownFingerprints.has(blockerFingerprint(blocker))) return blocker;
+    return {
+      ...blocker,
+      known: true,
+      message: `Known baseline blocker, unrelated to this source change: ${blocker.message}`,
+    };
+  });
   return {
     ...report,
-    knownBlockers: report.knownBlockers.map((blocker) => {
-      if (!knownFingerprints.has(blockerFingerprint(blocker))) return blocker;
-      return {
-        ...blocker,
-        known: true,
-        message: `Known baseline blocker, unrelated to this source change: ${blocker.message}`,
-      };
+    knownBlockers,
+    baselineSummary: {
+      ...report.baselineSummary,
+      knownBlockerCount: knownBlockers.filter((blocker) => blocker.known).length,
+    },
+  };
+};
+
+const withBaselineDetailsPolicy = (report: WorkflowValidationRunReport, includeBaselineDetails: boolean) => {
+  const baselineDiagnostics = report.baselineDiagnostics ?? [];
+  return {
+    ...report,
+    baselineSummary: createWorkflowBaselineSummary(baselineDiagnostics, {
+      detailsIncluded: includeBaselineDetails,
+      knownBlockerCount: report.knownBlockers.filter((blocker) => blocker.known).length,
     }),
+    baselineDiagnostics: includeBaselineDetails ? baselineDiagnostics : [],
   };
 };
 
@@ -370,7 +390,13 @@ export class WorkflowRunner extends runner("workflow") {
       format = "markdown",
       workspace,
       execute,
-    }: { format?: WorkflowFormat; workspace: Workspace; execute?: WorkflowValidationCommandExecutor },
+      includeBaselineDetails = false,
+    }: {
+      format?: WorkflowFormat;
+      workspace: Workspace;
+      execute?: WorkflowValidationCommandExecutor;
+      includeBaselineDetails?: boolean;
+    },
   ) {
     const loaded = await this.loadValidationTarget(runIdOrPlan, workspace);
     const doctor = await AkanContextAnalyzer.doctor(workspace, {
@@ -378,23 +404,26 @@ export class WorkflowRunner extends runner("workflow") {
       runIdOrPlan,
       changedFiles: loaded.changedFiles,
     });
-    const report = await applyBaselineBlockerCache(
-      workspace,
-      await createWorkflowValidationRunReport({
-        workflow: loaded.plan?.workflow ?? loaded.workflow,
-        source: loaded.source,
-        plan: loaded.plan,
-        commands: loaded.commands,
-        execute: execute ?? defaultValidationExecutor(workspace),
-        diagnostics: loaded.diagnostics,
-        baselineDiagnostics: (doctor.baselineDiagnostics ?? []).map((diagnostic) =>
-          workflowDiagnosticFromDoctor(diagnostic, "baseline"),
-        ),
-        workflowDiagnostics: (doctor.workflowDiagnostics ?? []).map((diagnostic) =>
-          workflowDiagnosticFromDoctor(diagnostic, "workflow"),
-        ),
-        repairActions: loaded.repairActions,
-      }),
+    const report = withBaselineDetailsPolicy(
+      await applyBaselineBlockerCache(
+        workspace,
+        await createWorkflowValidationRunReport({
+          workflow: loaded.plan?.workflow ?? loaded.workflow,
+          source: loaded.source,
+          plan: loaded.plan,
+          commands: loaded.commands,
+          execute: execute ?? defaultValidationExecutor(workspace),
+          diagnostics: loaded.diagnostics,
+          baselineDiagnostics: (doctor.baselineDiagnostics ?? []).map((diagnostic) =>
+            workflowDiagnosticFromDoctor(diagnostic, "baseline"),
+          ),
+          workflowDiagnostics: (doctor.workflowDiagnostics ?? []).map((diagnostic) =>
+            workflowDiagnosticFromDoctor(diagnostic, "workflow"),
+          ),
+          repairActions: loaded.repairActions,
+        }),
+      ),
+      includeBaselineDetails,
     );
     await writeWorkflowRunArtifact(workspace, report);
     return renderWorkflowValidation(report, format);

@@ -1,4 +1,5 @@
 import { capitalize } from "akanjs/common";
+import { workflowPlanApproval } from "./artifacts";
 import { coerceFieldDefault, moduleSourcePaths } from "./source";
 import type {
   WorkflowDiagnostic,
@@ -91,9 +92,57 @@ const createAddFieldDefaultRecommendations = (inputs: Record<string, WorkflowInp
       kind: "manual-action",
       confidence: "high",
       message: `Default for ${field} will be normalized to ${coercion.normalizedType} literal ${coercion.expression}.`,
-      action: "Review the normalized default in the apply report if this value should stay unset.",
+      action:
+        "Review the normalized default in the apply report. To leave the field without a default, omit the default input.",
     },
   ];
+};
+
+const moneyLikeFieldPattern = /(budget|price|amount|cost|rate|fee|salary|balance)/i;
+const wholeNumberFieldPattern = /(count|quantity|total|number|index|rank|order|age)/i;
+
+const createAddFieldInputRecommendations = (inputs: Record<string, WorkflowInputValue>): WorkflowRecommendation[] => {
+  const field = typeof inputs.field === "string" ? inputs.field : "<field>";
+  const typeName = typeof inputs.type === "string" ? inputs.type : null;
+  const recommendations: WorkflowRecommendation[] = [];
+  if (!typeName) return recommendations;
+  if (typeName.toLowerCase() === "number" || typeName.toLowerCase() === "numeric") {
+    const recommendedType = moneyLikeFieldPattern.test(field)
+      ? "Float"
+      : wholeNumberFieldPattern.test(field)
+        ? "Int"
+        : null;
+    recommendations.push({
+      code: "add-field-type-choice",
+      kind: "input-guidance",
+      confidence: recommendedType ? "high" : "medium",
+      message: recommendedType
+        ? `Use ${recommendedType} for ${field}; Float is recommended for money-like decimal values and Int for whole-number values.`
+        : `Choose Int for whole-number ${field} values or Float for decimal ${field} values.`,
+      action: recommendedType
+        ? `Re-run plan_workflow with type="${recommendedType}".`
+        : 'Re-run plan_workflow with type="Int" or type="Float".',
+    });
+  }
+  if (typeName.toLowerCase() === "enum" && !Array.isArray(inputs.values)) {
+    recommendations.push({
+      code: "add-field-enum-values",
+      kind: "input-guidance",
+      confidence: "high",
+      message: `Enum field ${field} needs values before apply can choose valid dictionary and default behavior.`,
+      action: 'Pass values as an array or comma-separated string, for example values=["draft","done"].',
+    });
+  }
+  if (inputs.default === undefined) {
+    recommendations.push({
+      code: "add-field-default-optional",
+      kind: "input-guidance",
+      confidence: "medium",
+      message: `No default will be written for ${field} because default is omitted.`,
+      action: "Keep default omitted when the field should have no default value.",
+    });
+  }
+  return recommendations;
 };
 
 const createAddFieldRecommendations = (inputs: Record<string, WorkflowInputValue>): WorkflowRecommendation[] => {
@@ -163,9 +212,11 @@ const createAddFieldRecommendations = (inputs: Record<string, WorkflowInputValue
             code: "add-field-light-projection-choice",
             kind: "manual-action" as const,
             target: paths.constant,
-            action: `Pass includeInLight=true when ${field} should appear in Light${capitalize(module)} list/card projections.`,
+            action: `Pass includeInLight=true when users should see ${field} in list/card data. Without it, the field can exist on ${capitalize(
+              module,
+            )}Input but stay absent from Light${capitalize(module)} projections.`,
             confidence: "medium" as const,
-            message: `Light projection exposure for ${module}.${field} is not selected yet.`,
+            message: `${module}.${field} is not selected for list/card projection data.`,
           },
         ]
       : []),
@@ -187,7 +238,8 @@ const createAddFieldRecommendations = (inputs: Record<string, WorkflowInputValue
             kind: "manual-action" as const,
             target: paths.template,
             confidence: "medium" as const,
-            message: `Template is not included in surfaces, so ${module}.${field} will not be auto-rendered there.`,
+            message: `Template form auto-edit is skipped for ${module}.${field} because surfaces does not include "template".`,
+            action: `Pass surfaces=["template"] when users should enter ${field} in the Template form.`,
           },
         ]
       : []),
@@ -195,13 +247,14 @@ const createAddFieldRecommendations = (inputs: Record<string, WorkflowInputValue
       code: "add-field-ui-manual-review",
       kind: "manual-action",
       target: paths.template,
-      action: `Review ${app}:${module} UI after apply. Template auto-edit requires a generated ${module}Form hook and Layout.Template field list; Unit/View are not auto-edited because list/card placement depends on local layout. Candidate positions: Layout.Template before the closing tag, Light${capitalize(
+      action: `After apply, verify what users can see: Template form auto-edit only runs when a generated ${module}Form hook and Layout.Template field list are present. Unit/View cards are not auto-edited, so ${field} may be stored on ${capitalize(
         module,
-      )} projection array for list data, and Unit/View card sections for display.`,
+      )} but not shown in list/card UI until you place it in the local card layout.`,
       confidence: "medium",
-      message: "UI manual review includes the reason auto-edit may be skipped and candidate insertion positions.",
+      message: `${app}:${module}.${field} may need UI review for user-visible Template, Unit, and View behavior.`,
     },
     ...createAddFieldDefaultRecommendations(inputs),
+    ...createAddFieldInputRecommendations(inputs),
   ];
 };
 
@@ -371,5 +424,6 @@ export const createWorkflowPlan = (spec: WorkflowSpec, rawInputs: Record<string,
     diagnostics,
     recommendations: createWorkflowPlanRecommendations(spec, inputs),
     requiresApproval: true,
+    approval: workflowPlanApproval,
   };
 };

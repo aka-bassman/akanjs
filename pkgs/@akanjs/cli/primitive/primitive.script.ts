@@ -11,6 +11,8 @@ import {
   ensureEnumImport,
   fieldExpression,
   generatedFilesForSync,
+  hasConstantInputField,
+  hasDictionaryModelField,
   insertDictionaryEnum,
   insertDictionaryModelField,
   insertEnumClass,
@@ -20,6 +22,7 @@ import {
   LibExecutor,
   lowerlize,
   ModuleExecutor,
+  moduleComponentName,
   moduleSourcePaths,
   nextActionsForTarget,
   normalizeFieldType,
@@ -144,7 +147,7 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
       });
     }
 
-    const moduleClassName = capitalize(input.module);
+    const moduleClassName = moduleComponentName(input.module);
     const inputClassName = `${moduleClassName}Input`;
     const paths = moduleSourcePaths(input.module);
     const constantPath = paths.constant;
@@ -181,7 +184,7 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
     let constantContent = await sys.readFile(constantPath);
     let dictionaryContent = await sys.readFile(dictionaryPath);
     const fieldBuilderName = viaBuilderParameterName(constantContent, inputClassName) ?? "field";
-    if (new RegExp(`\\b${input.field}\\s*:`).test(constantContent)) {
+    if (hasConstantInputField(constantContent, inputClassName, input.field)) {
       diagnostics.push({
         severity: "error",
         code: "primitive-field-exists",
@@ -275,6 +278,25 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
         severity: "error",
         code: "primitive-dictionary-shape-unsupported",
         message: `Could not find ${moduleClassName} dictionary model shape in ${dictionaryPath}.`,
+      });
+    }
+    if (
+      nextConstantContentWithLight &&
+      !hasConstantInputField(nextConstantContentWithLight, inputClassName, input.field)
+    ) {
+      diagnostics.push({
+        severity: "error",
+        code: "primitive-post-edit-constant-verify-failed",
+        failureScope: "source-change",
+        message: `Edited ${constantPath} did not contain "${input.field}" in ${inputClassName}.`,
+      });
+    }
+    if (nextDictionaryContent && !hasDictionaryModelField(nextDictionaryContent, moduleClassName, input.field)) {
+      diagnostics.push({
+        severity: "error",
+        code: "primitive-post-edit-dictionary-verify-failed",
+        failureScope: "source-change",
+        message: `Edited ${dictionaryPath} did not contain "${input.field}" in .model<${moduleClassName}>.`,
       });
     }
 

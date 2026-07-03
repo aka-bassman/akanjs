@@ -1,198 +1,71 @@
-import path from "node:path";
 import {
   AkanContextAnalyzer,
   type AkanContextFormat,
   type AkanMcpMode,
-  CommandContainer,
+  applyFirstPolicy,
   type CursorMcpConfig,
   createAkanCursorMcpServer,
-  createWorkflowStepRegistry,
+  createAkanValidationContract,
+  createWorkflowBaselineSummary,
   cursorMcpConfigPath,
+  defaultWorkflowPlanPath,
+  inspectAkanContext,
   type JsonRpcRequest,
   jsonText,
+  listAkanMcpTools,
   type McpFraming,
   Prompter,
+  parseJsonOutput,
   renderDoctorText,
   resourceList,
   runner,
-  type WorkflowPlanInputs,
+  stringArg,
+  type WorkflowDiagnostic,
   type Workspace,
+  workflowInputsArg,
+  workspacePath,
 } from "@akanjs/devkit";
-import { ModuleScript } from "../module/module.script";
-import { PrimitiveScript } from "../primitive/primitive.script";
 import { RepairRunner } from "../repair/repair.runner";
-import { ScalarScript } from "../scalar/scalar.script";
 import { WorkflowRunner } from "../workflow/workflow.runner";
+import { createCliWorkflowStepRegistry } from "./context.workflowRegistry";
 
-type McpToolDefinition = {
-  name: string;
-  description?: string;
-  inputSchema: {
-    type: "object";
-    properties: Record<string, unknown>;
-    required?: string[];
+const workflowDiagnosticFromContext = (diagnostic: {
+  severity: "warning" | "error";
+  code: string;
+  message: string;
+  scope?: "baseline" | "workflow" | "unknown";
+  context?: WorkflowDiagnostic["context"];
+}): WorkflowDiagnostic => ({
+  severity: diagnostic.severity,
+  code: diagnostic.code,
+  message: diagnostic.message,
+  scope: diagnostic.scope,
+  context: diagnostic.context,
+});
+
+const compactDoctorWorkspaceResult = (
+  result: Awaited<ReturnType<typeof AkanContextAnalyzer.doctor>>,
+  includeBaselineDetails: boolean,
+) => {
+  const baselineDiagnostics = result.baselineDiagnostics ?? [];
+  if (baselineDiagnostics.length === 0) {
+    return {
+      ...result,
+      baselineSummary: createWorkflowBaselineSummary([], { detailsIncluded: includeBaselineDetails }),
+    };
+  }
+  const baselineSummary = createWorkflowBaselineSummary(baselineDiagnostics.map(workflowDiagnosticFromContext), {
+    detailsIncluded: includeBaselineDetails,
+  });
+  return {
+    ...result,
+    baselineSummary,
+    diagnostics: includeBaselineDetails
+      ? result.diagnostics
+      : result.diagnostics.filter((diagnostic) => diagnostic.scope !== "baseline"),
+    baselineDiagnostics: includeBaselineDetails ? baselineDiagnostics : [],
   };
 };
-
-const emptySchema = { type: "object" as const, properties: {} };
-const stringProperty = { type: "string" };
-const booleanProperty = { type: "boolean" };
-const objectProperty = { type: "object", additionalProperties: true };
-const stringArrayProperty = { type: "array", items: stringProperty };
-
-const parseJsonOutput = (output: string) => JSON.parse(output) as unknown;
-
-const slugPart = (value: unknown) =>
-  typeof value === "string"
-    ? value
-        .trim()
-        .replace(/[^a-zA-Z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .toLowerCase()
-    : "";
-
-const defaultWorkflowPlanPath = (workflow: string, inputs: WorkflowPlanInputs) => {
-  const slug = [
-    slugPart(workflow),
-    slugPart(inputs.app),
-    slugPart(inputs.module),
-    slugPart(inputs.field),
-    slugPart(inputs.scalar),
-    slugPart(inputs.surface),
-    slugPart(inputs.mutation),
-    slugPart(inputs.slice),
-  ]
-    .filter(Boolean)
-    .join("-");
-  return `.akan/workflows/plans/${slug || "workflow-plan"}.json`;
-};
-
-const workspacePath = (workspace: Workspace, filePath: string) =>
-  path.isAbsolute(filePath) ? filePath : path.join(workspace.workspaceRoot, filePath);
-
-const applyFirstPolicy = {
-  mode: "apply-first",
-  directSourceEdits: "fallback-only",
-  applyRequiredWhen: ["plan_workflow returns planPath", "plan_workflow returns next.tool=apply_workflow"],
-  validationRequiredAfterApply: ["validationTarget", "applyReportPath"],
-  fallbackAllowedWhen: [
-    "list_workflows and explain_workflow show no matching workflow",
-    "apply_workflow reports unsupported/no-op/failed diagnostics that require manual action",
-    "recommendations include manual-action follow-up after workflow apply and repairs",
-  ],
-  baselineDiagnosticsPolicy: "Do not fix unrelated baselineDiagnostics unless the user asks.",
-};
-
-const stringArg = (args: Record<string, unknown>, key: string) => {
-  const value = args[key];
-  if (typeof value !== "string" || !value) throw new Error(`MCP tool argument "${key}" is required.`);
-  return value;
-};
-
-const workflowInputsArg = (args: Record<string, unknown>) => {
-  const value = args.inputs;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return value as WorkflowPlanInputs;
-};
-
-const createCliWorkflowStepRegistry = (workspace: Workspace) =>
-  createWorkflowStepRegistry({
-    workspace,
-    createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
-    createScalar: (sys, scalar) => CommandContainer.get(ScalarScript).createScalar(sys, scalar),
-    createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
-    addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
-    addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
-  });
-
-const readonlyMcpTools: McpToolDefinition[] = [
-  { name: "get_workspace_summary", inputSchema: emptySchema },
-  { name: "list_apps", inputSchema: emptySchema },
-  { name: "list_modules", inputSchema: emptySchema },
-  {
-    name: "get_module_context",
-    description: "Return module context. Pass app in monorepos to disambiguate duplicate module names.",
-    inputSchema: { type: "object", properties: { app: stringProperty, module: stringProperty }, required: ["module"] },
-  },
-  {
-    name: "get_guideline",
-    inputSchema: { type: "object", properties: { name: stringProperty }, required: ["name"] },
-  },
-  {
-    name: "explain_command",
-    inputSchema: { type: "object", properties: { command: stringProperty }, required: ["command"] },
-  },
-  {
-    name: "doctor_workspace",
-    description: "Report workspace diagnostics, optionally split into baseline and workflow scopes.",
-    inputSchema: {
-      type: "object",
-      properties: { strict: booleanProperty, runIdOrPlan: stringProperty, changedFiles: stringArrayProperty },
-    },
-  },
-  {
-    name: "get_validation_contract",
-    description: "Return validation, artifact chain, and apply-first fallback policy.",
-    inputSchema: emptySchema,
-  },
-];
-
-const planMcpTools: McpToolDefinition[] = [
-  { name: "list_workflows", inputSchema: emptySchema },
-  {
-    name: "explain_workflow",
-    inputSchema: { type: "object", properties: { workflow: stringProperty }, required: ["workflow"] },
-  },
-  {
-    name: "plan_workflow",
-    description: "Create a read-only workflow plan and return planPath plus next.tool=apply_workflow.",
-    inputSchema: {
-      type: "object",
-      properties: { workflow: stringProperty, inputs: objectProperty, out: stringProperty },
-      required: ["workflow"],
-    },
-  },
-];
-
-const applyMcpTools: McpToolDefinition[] = [
-  {
-    name: "apply_workflow",
-    description: "Apply a stored workflow plan before direct edits and return validationTarget for run_validation.",
-    inputSchema: {
-      type: "object",
-      properties: { planPath: stringProperty, dryRun: booleanProperty },
-      required: ["planPath"],
-    },
-  },
-  {
-    name: "run_validation",
-    description: "Validate a plan, apply report, validationTarget, or run artifact.",
-    inputSchema: {
-      type: "object",
-      properties: { runIdOrPlan: stringProperty },
-      required: ["runIdOrPlan"],
-    },
-  },
-  {
-    name: "repair_generated",
-    description: "Refresh generated Akan files before direct generated-file edits.",
-    inputSchema: { type: "object", properties: { app: stringProperty }, required: ["app"] },
-  },
-  {
-    name: "repair_imports",
-    description: "Run the import repair path before manual import edits.",
-    inputSchema: { type: "object", properties: { target: stringProperty }, required: ["target"] },
-  },
-  {
-    name: "repair_module_shape",
-    description: "Report module-shape repair actions before direct module file fixes.",
-    inputSchema: {
-      type: "object",
-      properties: { app: stringProperty, module: stringProperty },
-      required: ["app", "module"],
-    },
-  },
-];
 
 export class ContextRunner extends runner("context") {
   async getContext(
@@ -250,9 +123,7 @@ export class ContextRunner extends runner("context") {
   }
 
   listMcpTools(mode: AkanMcpMode = "readonly") {
-    if (mode === "readonly") return readonlyMcpTools;
-    if (mode === "plan") return [...readonlyMcpTools, ...planMcpTools];
-    return [...readonlyMcpTools, ...planMcpTools, ...applyMcpTools];
+    return listAkanMcpTools(mode);
   }
 
   async callMcpTool(
@@ -265,6 +136,8 @@ export class ContextRunner extends runner("context") {
     if (!availableTools.some((tool) => tool.name === name)) {
       throw new Error(`MCP tool "${name}" is not available in ${mode} mode.`);
     }
+
+    if (name === "inspect_akan_context") return await inspectAkanContext(workspace, args);
 
     if (
       name === "get_workspace_summary" ||
@@ -306,58 +179,18 @@ export class ContextRunner extends runner("context") {
 
     if (name === "get_guideline") return await Prompter.getInstruction(stringArg(args, "name"));
     if (name === "doctor_workspace")
-      return await AkanContextAnalyzer.doctor(workspace, {
-        strict: !!args.strict,
-        runIdOrPlan: typeof args.runIdOrPlan === "string" ? workspacePath(workspace, args.runIdOrPlan) : null,
-        changedFiles: Array.isArray(args.changedFiles)
-          ? args.changedFiles.filter((file): file is string => typeof file === "string")
-          : [],
-      });
+      return compactDoctorWorkspaceResult(
+        await AkanContextAnalyzer.doctor(workspace, {
+          strict: !!args.strict,
+          runIdOrPlan: typeof args.runIdOrPlan === "string" ? workspacePath(workspace, args.runIdOrPlan) : null,
+          changedFiles: Array.isArray(args.changedFiles)
+            ? args.changedFiles.filter((file): file is string => typeof file === "string")
+            : [],
+        }),
+        !!args.includeBaselineDetails,
+      );
     if (name === "explain_command") return this.explainCommand(stringArg(args, "command"));
-    if (name === "get_validation_contract")
-      return {
-        schemaVersion: 1,
-        reports: ["WorkflowPlan", "WorkflowApplyReport", "WorkflowValidationRunReport", "RepairReport"],
-        modes: {
-          readonly: this.listMcpTools("readonly").map((tool) => tool.name),
-          plan: this.listMcpTools("plan").map((tool) => tool.name),
-          apply: this.listMcpTools("apply").map((tool) => tool.name),
-        },
-        validationCommands: [
-          "akan workflow validate <run-id-or-plan> --format json",
-          "akan workflow report <run-id> --format json",
-          "akan doctor --strict --format json",
-        ],
-        validationFailureScopes: ["workspace-config", "environment", "source-change", "unknown"],
-        artifactChainFields: ["planPath", "applyReportPath", "repairReportPath", "runId", "validationTarget", "next"],
-        diagnosticScopes: ["baseline", "workflow", "unknown"],
-        validationStatuses: {
-          sourceStatus: ["passed", "failed", "unknown"],
-          workspaceStatus: ["passed", "failed", "unknown"],
-          overallStatus: ["passed", "failed", "blocked-by-workspace-config", "blocked-by-environment"],
-          knownBlockers: "Repeated workspace-config/environment failures are summarized before command output.",
-        },
-        moduleContextInputs: {
-          module: "required",
-          app: "recommended in monorepos; required when module names are ambiguous",
-        },
-        generatedFreshnessStatuses: ["fresh", "stale", "missing", "unknown"],
-        directEditFallbackPolicy: applyFirstPolicy,
-        applyReportFields: [
-          "appliedCommands",
-          "recommendedValidationCommands",
-          "commands",
-          "recommendations",
-          "validationTarget",
-        ],
-        repairCommands: [
-          "akan repair generated --app <app-or-lib> --format json",
-          "akan repair format --target <app-or-lib-or-pkg> --format json",
-          "akan repair imports --target <app-or-lib-or-pkg> --format json",
-          "akan repair dictionary --app <app-or-lib> --module <module> --format json",
-          "akan repair module-shape --app <app-or-lib> --module <module> --format json",
-        ],
-      };
+    if (name === "get_validation_contract") return createAkanValidationContract((mode) => this.listMcpTools(mode));
 
     if (name === "list_workflows") return parseJsonOutput(new WorkflowRunner().list({ format: "json" }));
     if (name === "explain_workflow")
@@ -375,6 +208,10 @@ export class ContextRunner extends runner("context") {
       return {
         ...(plan as Record<string, unknown>),
         planPath,
+        approval:
+          typeof plan === "object" && plan && "approval" in plan
+            ? { ...(plan.approval as Record<string, unknown>), canApplyWith: { planPath } }
+            : undefined,
         next: { tool: "apply_workflow", args: { planPath } },
         policy: applyFirstPolicy,
       };
@@ -406,6 +243,7 @@ export class ContextRunner extends runner("context") {
         await new WorkflowRunner().validate(workspacePath(workspace, stringArg(args, "runIdOrPlan")), {
           format: "json",
           workspace,
+          includeBaselineDetails: !!args.includeBaselineDetails,
         }),
       );
     if (name === "repair_generated") {

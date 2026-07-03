@@ -51,6 +51,7 @@ export const renderWorkflowPlan = (plan: WorkflowPlan) =>
     "",
     `- Mode: ${plan.mode}`,
     `- Requires approval: ${plan.requiresApproval}`,
+    `- Approval: ${plan.approval?.meaning ?? "Review this read-only plan before applying workflow mutations."}`,
     "",
     "## Inputs",
     ...Object.entries(plan.inputs).map(
@@ -93,6 +94,9 @@ const renderRecommendation = (recommendation: WorkflowApplyReport["recommendatio
 const renderDiagnostic = (diagnostic: WorkflowApplyReport["diagnostics"][number]) =>
   `- [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`;
 
+const renderNextAction = (action: WorkflowApplyReport["nextActions"][number]) =>
+  `- \`${action.command}\`: ${action.reason}`;
+
 const applySourceStatus = (report: WorkflowApplyReport) =>
   report.diagnostics.some(
     (diagnostic) =>
@@ -105,6 +109,10 @@ const applySourceStatus = (report: WorkflowApplyReport) =>
     : "passed";
 
 export const renderWorkflowApplyReport = (report: WorkflowApplyReport) => {
+  const applySummary = {
+    sourceFilesChanged: report.summary?.sourceFilesChanged ?? report.changedFiles,
+    generatedFilesSynced: report.summary?.generatedFilesSynced ?? report.generatedFiles,
+  };
   const manualReviewItems = [
     ...report.diagnostics.filter((diagnostic) => diagnostic.severity === "warning").map(renderDiagnostic),
     ...report.recommendations
@@ -134,6 +142,8 @@ export const renderWorkflowApplyReport = (report: WorkflowApplyReport) => {
     `- Status: ${report.status}`,
     `- Source-change status: ${applySourceStatus(report)}`,
     `- Workspace status: ${validationBlockers.length ? "blocked" : "not blocked during apply"}`,
+    `- Source files changed: ${applySummary.sourceFilesChanged.length}`,
+    `- Generated files queued for sync: ${applySummary.generatedFilesSynced.length}`,
     ...(report.validationTarget ? [`- Validation target: ${report.validationTarget}`] : []),
     "",
     "## Apply Checks",
@@ -145,13 +155,13 @@ export const renderWorkflowApplyReport = (report: WorkflowApplyReport) => {
     ...(sourceBlockers.length ? sourceBlockers : ["- none"]),
     "",
     "## Automatically Modified",
-    ...(report.changedFiles.length
-      ? report.changedFiles.map((file) => `- \`${file.action}\` ${file.path}: ${file.reason}`)
+    ...(applySummary.sourceFilesChanged.length
+      ? applySummary.sourceFilesChanged.map((file) => `- \`${file.action}\` ${file.path}: ${file.reason}`)
       : ["- none"]),
     "",
     "## Generated Sync",
-    ...(report.generatedFiles.length
-      ? report.generatedFiles.map((file) => `- \`${file.action}\` ${file.path}: ${file.reason}`)
+    ...(applySummary.generatedFilesSynced.length
+      ? applySummary.generatedFilesSynced.map((file) => `- \`${file.action}\` ${file.path}: ${file.reason}`)
       : ["- none"]),
     "",
     "## Applied Commands",
@@ -181,9 +191,7 @@ export const renderWorkflowApplyReport = (report: WorkflowApplyReport) => {
     ...(report.recommendations.length ? report.recommendations.slice(0, 3).map(renderRecommendation) : ["- none"]),
     "",
     "## Next Actions",
-    ...(report.nextActions.length
-      ? report.nextActions.map((action) => `- \`${action.command}\`: ${action.reason}`)
-      : ["- none"]),
+    ...(report.nextActions.length ? report.nextActions.slice(0, 3).map(renderNextAction) : ["- none"]),
     "",
   ].join("\n");
 };
@@ -191,19 +199,32 @@ export const renderWorkflowApplyReport = (report: WorkflowApplyReport) => {
 export const renderWorkflowApply = (report: WorkflowApplyReport, format: WorkflowFormat = "markdown") =>
   format === "json" ? jsonText(report) : renderWorkflowApplyReport(report);
 
-export const renderWorkflowValidationRunReport = (report: WorkflowValidationRunReport) =>
-  [
+export const renderWorkflowValidationRunReport = (report: WorkflowValidationRunReport) => {
+  const baselineSummary = report.baselineSummary ?? {
+    status: report.baselineDiagnostics?.some((diagnostic) => diagnostic.severity === "error") ? "failed" : "unknown",
+    total: report.baselineDiagnostics?.length ?? 0,
+    totalErrors: report.baselineDiagnostics?.filter((diagnostic) => diagnostic.severity === "error").length ?? 0,
+    totalWarnings: report.baselineDiagnostics?.filter((diagnostic) => diagnostic.severity === "warning").length ?? 0,
+    detailsIncluded: true,
+    knownBlockerCount: report.knownBlockers.filter((blocker) => blocker.known).length,
+    byCode: [],
+  };
+  return [
     `# Workflow Validation: ${report.workflow}`,
     "",
     `- Run: ${report.runId}`,
     `- Status: ${report.status}`,
     `- Source status: ${report.sourceStatus}`,
     `- Workspace status: ${report.workspaceStatus}`,
+    `- Validation commands status: ${report.validationCommandsStatus ?? "unknown"}`,
+    `- Baseline status: ${report.baselineStatus ?? baselineSummary.status}`,
     `- Overall status: ${report.overallStatus}`,
     "",
     "## Status Summary",
     `- Source-change: ${report.summary.sourceChange}`,
     `- Generated sync: ${report.summary.generatedSync}`,
+    `- Validation commands: ${report.summary.validationCommands ?? "unknown"}`,
+    `- Baseline: ${report.summary.baseline ?? baselineSummary.status}`,
     `- Workspace config: ${report.summary.workspaceConfig}`,
     `- Environment: ${report.summary.environment}`,
     "",
@@ -215,11 +236,28 @@ export const renderWorkflowValidationRunReport = (report: WorkflowValidationRunR
       : ["- none"]),
     "",
     "## Existing Workspace Blockers",
+    `- Status: ${baselineSummary.status}`,
+    `- Errors: ${baselineSummary.totalErrors}`,
+    `- Warnings: ${baselineSummary.totalWarnings}`,
+    ...(baselineSummary.byCode.length
+      ? baselineSummary.byCode.map(
+          (item) => `- [${item.severity}] ${item.code} (${item.count}x): ${item.sampleMessage}`,
+        )
+      : ["- none"]),
+    ...(baselineSummary.detailsIncluded
+      ? []
+      : [
+          "- Baseline details are summarized by default. Re-run validation with includeBaselineDetails=true for full baselineDiagnostics.",
+        ]),
+    "",
+    "## Existing Workspace Blocker Details",
     ...(report.baselineDiagnostics?.length
       ? report.baselineDiagnostics.map(
           (diagnostic) => `- [${diagnostic.severity}] ${diagnostic.code}: ${diagnostic.message}`,
         )
-      : ["- none"]),
+      : baselineSummary.detailsIncluded
+        ? ["- none"]
+        : ["- omitted"]),
     "",
     "## Known Blockers",
     ...(report.knownBlockers.length
@@ -255,6 +293,7 @@ export const renderWorkflowValidationRunReport = (report: WorkflowValidationRunR
       : ["- none"]),
     "",
   ].join("\n");
+};
 
 export const renderWorkflowValidation = (report: WorkflowValidationRunReport, format: WorkflowFormat = "markdown") =>
   format === "json" ? jsonText(report) : renderWorkflowValidationRunReport(report);

@@ -38,6 +38,76 @@ describe("PrimitiveScript", () => {
     expect(dictionary.indexOf("priority: t(")).toBeLessThan(dictionary.indexOf(".insight<PostInsight>"));
   });
 
+  test("orders priority fields and preserves existing comments", async () => {
+    const { root, workspace, module } = await createTempModule("article");
+    tempRoots.push(root);
+    await new ModuleRunner().createModuleTemplate(module);
+    await module.writeFile(
+      "article.constant.ts",
+      `import { via } from "akanjs/constant";
+
+export class ArticleInput extends via((_field) => ({
+  custom: _field(String),
+  // Existing description comment
+  description: _field(String),
+})) {}
+
+export class ArticleObject extends via(ArticleInput, (_field) => ({})) {}
+
+export class LightArticle extends via(ArticleObject, [] as const, (resolve) => ({})) {}
+
+export class Article extends via(ArticleObject, LightArticle, (resolve) => ({})) {}
+
+export class ArticleInsight extends via(Article, (_field) => ({
+  title: _field(String),
+})) {}
+`,
+    );
+    await module.writeFile(
+      "article.dictionary.ts",
+      `import { modelDictionary } from "akanjs/dictionary";
+
+import type { Article, ArticleInsight } from "./article.constant";
+import type { ArticleEndpoint, ArticleSlice } from "./article.signal";
+
+export const dictionary = modelDictionary(["en", "ko"])
+  .of((t) => t(["Article", "Article"]).desc(["Manage article.", "Article을 관리합니다."]))
+  .model<Article>((t) => ({
+    custom: t(["Custom", "Custom"]),
+    // Existing description comment
+    description: t(["Description", "설명"]),
+  }))
+  .insight<ArticleInsight>((t) => ({}))
+  .slice<ArticleSlice>((fn) => ({
+    title: fn(["Slice Title", "Slice Title"]),
+  }))
+  .endpoint<ArticleEndpoint>((fn) => ({}))
+  .error({})
+  .translate({});
+`,
+    );
+    const script = CommandContainer.get(PrimitiveScript);
+
+    const report = await script.addField(workspace, {
+      app: "demo",
+      module: "article",
+      field: "title",
+      type: "String",
+    });
+
+    expect(report.status).toBe("passed");
+    const constant = await module.readFile("article.constant.ts");
+    const dictionary = await module.readFile("article.dictionary.ts");
+    expect(constant).toContain("title: _field(String),");
+    expect(constant.indexOf("custom: _field")).toBeLessThan(constant.indexOf("title: _field"));
+    expect(constant.indexOf("title: _field")).toBeLessThan(constant.indexOf("// Existing description comment"));
+    expect(constant.indexOf("// Existing description comment")).toBeLessThan(constant.indexOf("description: _field"));
+    expect(constant.match(/\btitle:/g)).toHaveLength(2);
+    expect(dictionary.indexOf("title: t(")).toBeGreaterThan(dictionary.indexOf(".model<Article>"));
+    expect(dictionary.indexOf("title: t(")).toBeLessThan(dictionary.indexOf(".slice<ArticleSlice>"));
+    expect(dictionary.match(/\btitle:/g)).toHaveLength(2);
+  });
+
   test("adds selected template surface and light projection for safe field patterns", async () => {
     const { root, workspace, module } = await createTempModule("project");
     tempRoots.push(root);
@@ -61,6 +131,10 @@ describe("PrimitiveScript", () => {
     const template = await module.readFile("Project.Template.tsx");
     expect(constant).toContain("budget: field(Float, { default: 0 }),");
     expect(constant).toContain('"budget"');
+    expect(constant).toContain(`export class LightProject extends via(ProjectObject, [
+  "budget",
+] as const, (resolve) => ({})) {}`);
+    expect(constant).not.toContain("as const as const");
     expect(dictionary).toContain('budget: t(["Budget", "예산"]).desc(["Enter budget.", "예산 값을 입력합니다."])');
     expect(template).toContain("<Field.Number");
     expect(template).toContain('label={l("project.budget")}');
@@ -174,6 +248,28 @@ describe("PrimitiveScript", () => {
     expect(constant).not.toContain("field(Number)");
     expect(constant).not.toContain("budget:");
     expect(constant).not.toContain("cost:");
+  });
+
+  test("fails before writing when post-edit parse verification fails", async () => {
+    const { root, workspace, module } = await createTempModule("post");
+    tempRoots.push(root);
+    await new ModuleRunner().createModuleTemplate(module);
+    const originalConstant = await module.readFile("post.constant.ts");
+    const script = CommandContainer.get(PrimitiveScript);
+
+    const report = await script.addField(workspace, {
+      app: "demo",
+      module: "post",
+      field: "broken",
+      type: "String)",
+    });
+
+    expect(report.status).toBe("failed");
+    expect(report.changedFiles).toEqual([]);
+    expect(report.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "primitive-post-edit-constant-verify-failed" }),
+    );
+    expect(await module.readFile("post.constant.ts")).toBe(originalConstant);
   });
 
   test("adds an enum field and enum dictionary without syncing generated files", async () => {

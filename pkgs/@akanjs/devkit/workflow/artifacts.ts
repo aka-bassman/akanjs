@@ -7,9 +7,12 @@ import type {
   RepairReport,
   WorkflowApplyCommand,
   WorkflowApplyReport,
+  WorkflowBaselineSummary,
   WorkflowDiagnostic,
   WorkflowFailureScope,
   WorkflowKnownBlocker,
+  WorkflowNextActionCode,
+  WorkflowOverallStatus,
   WorkflowPlan,
   WorkflowRunArtifact,
   WorkflowRunSource,
@@ -18,6 +21,43 @@ import type {
   WorkflowValidationStatus,
 } from "./types";
 import { commandStatus, jsonText, uniqueBy, workflowStatus } from "./utils";
+
+const sourceChangeBlocked = (diagnostics: readonly WorkflowDiagnostic[]) =>
+  diagnostics.some(
+    (diagnostic) =>
+      diagnostic.severity === "error" &&
+      (diagnostic.failureScope === "source-change" ||
+        !diagnostic.failureScope ||
+        diagnostic.failureScope === "unknown"),
+  );
+
+export const workflowPlanApproval = {
+  required: true,
+  meaning: "Review this read-only plan before apply_workflow mutates files.",
+  applyTool: "apply_workflow",
+} as const;
+
+const inferNextActionCode = (
+  action: { action?: WorkflowNextActionCode; command: string },
+  diagnostics: readonly WorkflowDiagnostic[],
+): WorkflowNextActionCode => {
+  if (action.action) return action.action;
+  if (sourceChangeBlocked(diagnostics) && action.command.startsWith("akan workflow explain")) return "blocked";
+  if (action.command.startsWith("akan workflow repair")) return "repair";
+  if (action.command.startsWith("akan workflow explain")) return "manual-review";
+  if (action.command.startsWith("akan ")) return "validate";
+  return "answer";
+};
+
+const nextActionPriority = (
+  action: { action?: WorkflowNextActionCode },
+  diagnostics: readonly WorkflowDiagnostic[],
+) => {
+  const priority = sourceChangeBlocked(diagnostics)
+    ? { blocked: 0, repair: 1, "manual-review": 2, validate: 3, answer: 4 }
+    : { "manual-review": 0, validate: 1, repair: 2, blocked: 3, answer: 4 };
+  return priority[action.action ?? "answer"];
+};
 
 export const createWorkflowApplyReport = ({
   workflow,
@@ -39,6 +79,7 @@ export const createWorkflowApplyReport = ({
   | "applyReportPath"
   | "validationTarget"
   | "status"
+  | "summary"
   | "appliedCommands"
   | "recommendedValidationCommands"
   | "commands"
@@ -52,18 +93,33 @@ export const createWorkflowApplyReport = ({
   recommendations?: WorkflowApplyReport["recommendations"];
 }): WorkflowApplyReport => {
   const validationCommands = recommendedValidationCommands ?? commands;
-  const orderedNextActions = uniqueBy(nextActions, (action) => action.command).sort((left, right) => {
-    const leftRepair = left.command.startsWith("akan workflow explain") ? 0 : 1;
-    const rightRepair = right.command.startsWith("akan workflow explain") ? 0 : 1;
-    return leftRepair - rightRepair;
-  });
+  const nextActionsWithIntent = nextActions.map((action) => ({
+    ...action,
+    action: inferNextActionCode(action, diagnostics),
+  }));
+  if (sourceChangeBlocked(diagnostics) && !nextActionsWithIntent.some((action) => action.action === "blocked")) {
+    nextActionsWithIntent.unshift({
+      command: `akan workflow explain ${workflow}`,
+      reason: "Review source-change blockers before running validation.",
+      action: "blocked",
+    });
+  }
+  const orderedNextActions = uniqueBy(nextActionsWithIntent, (action) => action.command).sort(
+    (left, right) => nextActionPriority(left, diagnostics) - nextActionPriority(right, diagnostics),
+  );
+  const sourceFilesChanged = uniqueBy(changedFiles, (file) => `${file.action}:${file.path}:${file.reason}`);
+  const generatedFilesSynced = uniqueBy(generatedFiles, (file) => `${file.action}:${file.path}:${file.reason}`);
   return {
     schemaVersion: 1,
     workflow,
     mode,
     status: workflowStatus(diagnostics),
-    changedFiles: uniqueBy(changedFiles, (file) => `${file.action}:${file.path}:${file.reason}`),
-    generatedFiles: uniqueBy(generatedFiles, (file) => `${file.action}:${file.path}:${file.reason}`),
+    summary: {
+      sourceFilesChanged,
+      generatedFilesSynced,
+    },
+    changedFiles: sourceFilesChanged,
+    generatedFiles: generatedFilesSynced,
     appliedCommands: uniqueBy(appliedCommands, (command) => command.command),
     recommendedValidationCommands: uniqueBy(validationCommands, (command) => command.command),
     commands: uniqueBy(validationCommands, (command) => command.command),
@@ -204,6 +260,58 @@ const statusForValidationKind = (
   return matching.some((command) => command.status === "failed") ? "failed" : "passed";
 };
 
+const statusForCommands = (commands: readonly WorkflowValidationCommandResult[]): WorkflowValidationStatus => {
+  if (commands.length === 0) return "unknown";
+  return commandStatus(commands) === "failed" ? "failed" : "passed";
+};
+
+const statusForDiagnostics = (diagnostics: readonly WorkflowDiagnostic[]): WorkflowValidationStatus => {
+  if (diagnostics.length === 0) return "unknown";
+  return workflowStatus(diagnostics) === "failed" ? "failed" : "passed";
+};
+
+const workflowDiagnosticContextPaths = (diagnostics: readonly WorkflowDiagnostic[]) =>
+  uniqueBy(
+    diagnostics.flatMap((diagnostic) => diagnostic.context?.paths ?? []),
+    (filePath) => filePath,
+  );
+
+export const createWorkflowBaselineSummary = (
+  diagnostics: readonly WorkflowDiagnostic[],
+  { detailsIncluded = true, knownBlockerCount = 0 }: { detailsIncluded?: boolean; knownBlockerCount?: number } = {},
+): WorkflowBaselineSummary => {
+  const grouped = new Map<string, WorkflowBaselineSummary["byCode"][number]>();
+  let totalErrors = 0;
+  let totalWarnings = 0;
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.severity === "error") totalErrors += 1;
+    else totalWarnings += 1;
+    const existing = grouped.get(diagnostic.code);
+    if (existing) {
+      existing.count += 1;
+      if (existing.severity !== diagnostic.severity) existing.severity = "mixed";
+    } else {
+      grouped.set(diagnostic.code, {
+        code: diagnostic.code,
+        severity: diagnostic.severity,
+        count: 1,
+        sampleMessage: diagnostic.message,
+      });
+    }
+  }
+  const contextPaths = workflowDiagnosticContextPaths(diagnostics);
+  return {
+    status: totalErrors > 0 ? "failed" : diagnostics.length > 0 ? "passed" : "unknown",
+    total: diagnostics.length,
+    totalErrors,
+    totalWarnings,
+    detailsIncluded,
+    knownBlockerCount,
+    byCode: [...grouped.values()],
+    ...(contextPaths.length ? { contextPaths } : {}),
+  };
+};
+
 const createKnownBlockers = (
   commands: readonly WorkflowValidationCommandResult[],
   diagnostics: readonly WorkflowDiagnostic[],
@@ -250,10 +358,37 @@ const createKnownBlockers = (
 
 const createValidationStatuses = (
   commands: readonly WorkflowValidationCommandResult[],
-  diagnostics: readonly WorkflowDiagnostic[],
-) => {
+  reportDiagnostics: readonly WorkflowDiagnostic[],
+  baselineDiagnostics: readonly WorkflowDiagnostic[],
+  workflowDiagnostics: readonly WorkflowDiagnostic[],
+): {
+  sourceStatus: WorkflowValidationStatus;
+  workspaceStatus: WorkflowValidationStatus;
+  validationCommandsStatus: WorkflowValidationStatus;
+  baselineStatus: WorkflowValidationStatus;
+  overallStatus: WorkflowOverallStatus;
+  summary: {
+    sourceChange: WorkflowValidationStatus;
+    generatedSync: WorkflowValidationStatus;
+    validationCommands: WorkflowValidationStatus;
+    baseline: WorkflowValidationStatus;
+    workspaceConfig: WorkflowValidationStatus;
+    environment: WorkflowValidationStatus;
+  };
+} => {
+  const diagnostics = [...reportDiagnostics, ...baselineDiagnostics, ...workflowDiagnostics];
   const scopes = [...failedCommandScopes(commands), ...errorDiagnosticScopes(diagnostics)];
-  const sourceStatus = statusForScope(commands, diagnostics, scopes, "source-change");
+  const sourceDiagnostics = [...reportDiagnostics, ...workflowDiagnostics].filter(
+    (diagnostic) =>
+      diagnostic.failureScope === "source-change" ||
+      diagnostic.scope === "workflow" ||
+      (!diagnostic.failureScope && diagnostic.scope !== "baseline"),
+  );
+  const sourceScopes = [...failedCommandScopes(commands), ...errorDiagnosticScopes(sourceDiagnostics)];
+  const sourceStatus = statusForScope(commands, sourceDiagnostics, sourceScopes, "source-change");
+  const validationCommandsStatus = statusForCommands(commands);
+  const baselineStatus = statusForDiagnostics(baselineDiagnostics);
+  const nonBaselineDiagnostics = [...reportDiagnostics, ...workflowDiagnostics];
   const workspaceStatus =
     hasScopeFailure(scopes, "workspace-config", diagnostics) || hasScopeFailure(scopes, "environment", diagnostics)
       ? "failed"
@@ -262,20 +397,28 @@ const createValidationStatuses = (
         : "unknown";
   const overallStatus = hasScopeFailure(scopes, "source-change", diagnostics)
     ? "failed"
-    : hasScopeFailure(scopes, "workspace-config", diagnostics)
-      ? "blocked-by-workspace-config"
-      : hasScopeFailure(scopes, "environment", diagnostics)
-        ? "blocked-by-environment"
-        : workflowStatus(diagnostics) === "failed" || commandStatus(commands) === "failed"
-          ? "failed"
-          : "passed";
+    : validationCommandsStatus === "passed" &&
+        baselineStatus === "failed" &&
+        workflowStatus(nonBaselineDiagnostics) !== "failed"
+      ? "passed-with-baseline-blockers"
+      : hasScopeFailure(scopes, "workspace-config", diagnostics)
+        ? "blocked-by-workspace-config"
+        : hasScopeFailure(scopes, "environment", diagnostics)
+          ? "blocked-by-environment"
+          : workflowStatus(diagnostics) === "failed" || commandStatus(commands) === "failed"
+            ? "failed"
+            : "passed";
   return {
     sourceStatus,
     workspaceStatus,
+    validationCommandsStatus,
+    baselineStatus,
     overallStatus,
     summary: {
       sourceChange: sourceStatus,
       generatedSync: statusForValidationKind(commands, "sync"),
+      validationCommands: validationCommandsStatus,
+      baseline: baselineStatus,
       workspaceConfig: statusForScope(commands, diagnostics, scopes, "workspace-config"),
       environment: statusForScope(commands, diagnostics, scopes, "environment"),
     },
@@ -325,7 +468,8 @@ export const createWorkflowValidationRunReport = async ({
   );
   const reportDiagnostics = [...diagnostics, ...commandDiagnostics];
   const scopedDiagnostics = [...reportDiagnostics, ...baselineDiagnostics, ...workflowDiagnostics];
-  const statuses = createValidationStatuses(results, scopedDiagnostics);
+  const knownBlockers = createKnownBlockers(results, scopedDiagnostics);
+  const statuses = createValidationStatuses(results, reportDiagnostics, baselineDiagnostics, workflowDiagnostics);
   return {
     schemaVersion: 1,
     runId,
@@ -334,9 +478,12 @@ export const createWorkflowValidationRunReport = async ({
     source,
     status: statuses.overallStatus === "passed" ? "passed" : "failed",
     ...statuses,
-    knownBlockers: createKnownBlockers(results, scopedDiagnostics),
+    knownBlockers,
     commands: results,
     diagnostics: reportDiagnostics,
+    baselineSummary: createWorkflowBaselineSummary(baselineDiagnostics, {
+      knownBlockerCount: knownBlockers.filter((blocker) => blocker.failureScope === "workspace-config").length,
+    }),
     baselineDiagnostics,
     workflowDiagnostics,
     repairActions: uniqueBy(repairActions, (action) => action.command),

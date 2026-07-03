@@ -14,10 +14,17 @@ export type WorkflowValidationStatus = "passed" | "failed" | "unknown";
 export interface WorkflowValidationSummary {
   sourceChange: WorkflowValidationStatus;
   generatedSync: WorkflowValidationStatus;
+  validationCommands: WorkflowValidationStatus;
+  baseline: WorkflowValidationStatus;
   workspaceConfig: WorkflowValidationStatus;
   environment: WorkflowValidationStatus;
 }
-export type WorkflowOverallStatus = "passed" | "failed" | "blocked-by-workspace-config" | "blocked-by-environment";
+export type WorkflowOverallStatus =
+  | "passed"
+  | "failed"
+  | "passed-with-baseline-blockers"
+  | "blocked-by-workspace-config"
+  | "blocked-by-environment";
 
 export interface PrimitiveTargetInput {
   app: string | null;
@@ -102,10 +109,144 @@ export interface WorkflowDiagnostic {
 export interface WorkflowRecommendation {
   code: string;
   message: string;
-  kind: "auto-apply" | "validation" | "manual-action" | "import" | "placement" | "ui-component";
+  kind: "auto-apply" | "validation" | "manual-action" | "input-guidance" | "import" | "placement" | "ui-component";
   target?: string;
   action?: string;
   confidence?: "high" | "medium" | "low";
+}
+
+export interface WorkflowPlanApproval {
+  required: true;
+  meaning: string;
+  applyTool: "apply_workflow";
+  canApplyWith?: Record<string, string>;
+}
+
+export interface AkanSourceSpan {
+  file: string;
+  startLine: number;
+  endLine: number;
+  startOffset: number;
+  endOffset: number;
+}
+
+export type AkanIndexedFileKind =
+  | "abstract"
+  | "constant"
+  | "dictionary"
+  | "service"
+  | "signal"
+  | "store"
+  | "template"
+  | "unit"
+  | "util"
+  | "view"
+  | "zone"
+  | "other";
+
+export interface AkanIndexedFile {
+  kind: AkanIndexedFileKind;
+  path: string;
+  expectedPath: string;
+  filename: string;
+  expectedFilename: string;
+  present: boolean;
+  casing: "match" | "mismatch" | "missing";
+}
+
+export type AkanFieldOutlineKind = "constant" | "dictionary" | "lightProjection";
+
+export interface AkanFieldOutline {
+  name: string;
+  kind: AkanFieldOutlineKind;
+  order: number;
+  typeSummary?: string;
+  sourceSpan: AkanSourceSpan;
+}
+
+export interface AkanProjectionOutline {
+  className: string;
+  fields: AkanFieldOutline[];
+  sourceSpan?: AkanSourceSpan;
+}
+
+export interface AkanConstantIndex {
+  path: string;
+  inputClassName: string;
+  builderName: string | null;
+  fields: AkanFieldOutline[];
+  lightProjection?: AkanProjectionOutline;
+  sourceSpan?: AkanSourceSpan;
+}
+
+export interface AkanDictionaryIndex {
+  path: string;
+  modelClassName: string;
+  translatorName: string | null;
+  fields: AkanFieldOutline[];
+  sourceSpan?: AkanSourceSpan;
+}
+
+export interface AkanFieldPresence {
+  name: string;
+  requested: boolean;
+  constant: boolean;
+  dictionary: boolean;
+  lightProjection: boolean;
+}
+
+export interface AkanModuleContextIndex {
+  schemaVersion: 1;
+  app: string;
+  module: string;
+  moduleClassName: string;
+  files: AkanIndexedFile[];
+  fieldPresence: AkanFieldPresence[];
+  constant?: AkanConstantIndex;
+  dictionary?: AkanDictionaryIndex;
+  diagnostics: WorkflowDiagnostic[];
+}
+
+export type InspectAkanContextRequest =
+  | { type: "workspaceOverview" }
+  | { type: "moduleContext"; app: string; module: string }
+  | { type: "fieldInsertionContext"; app: string; module: string; field: string; fieldType: string }
+  | { type: "workflowDiagnostics"; runIdOrPlan: string }
+  | { type: "escape"; reason: string; nextStep?: string };
+
+export interface InspectAkanContextProps {
+  question: string;
+  draft: {
+    reason: string;
+    type: InspectAkanContextRequest["type"];
+  };
+  review: string;
+  request: InspectAkanContextRequest;
+}
+
+export interface AkanContextEvidence {
+  kind: "workspace" | "module" | "field-insertion" | "workflow" | "escape";
+  summary: string;
+  path?: string;
+  target?: string;
+  sourceSpan?: AkanSourceSpan;
+}
+
+export interface AkanContextNext {
+  action: "answer" | "inspect" | "plan_workflow" | "validate" | "escape" | "clarify";
+  reason: string;
+  tool?: string;
+  args?: Record<string, unknown>;
+}
+
+export interface InspectAkanContextResult {
+  schemaVersion: 1;
+  type: InspectAkanContextRequest["type"];
+  question: string;
+  diagnostics: WorkflowDiagnostic[];
+  evidence: AkanContextEvidence[];
+  next: AkanContextNext;
+  data?: Record<string, unknown>;
 }
 
 export interface WorkflowPlan {
@@ -120,6 +261,7 @@ export interface WorkflowPlan {
   diagnostics: WorkflowDiagnostic[];
   recommendations: WorkflowRecommendation[];
   requiresApproval: true;
+  approval?: WorkflowPlanApproval;
 }
 
 export interface WorkflowReport {
@@ -164,6 +306,24 @@ export interface WorkflowKnownBlocker {
   known?: boolean;
 }
 
+export interface WorkflowBaselineSummaryCode {
+  code: string;
+  severity: "warning" | "error" | "mixed";
+  count: number;
+  sampleMessage: string;
+}
+
+export interface WorkflowBaselineSummary {
+  status: WorkflowValidationStatus;
+  total: number;
+  totalErrors: number;
+  totalWarnings: number;
+  detailsIncluded: boolean;
+  knownBlockerCount: number;
+  byCode: WorkflowBaselineSummaryCode[];
+  contextPaths?: string[];
+}
+
 export interface RepairAction {
   command: string;
   reason: string;
@@ -184,6 +344,8 @@ export interface WorkflowPostApplyCheck {
   message: string;
 }
 
+export type WorkflowNextActionCode = "answer" | "validate" | "manual-review" | "repair" | "blocked";
+
 export interface PrimitiveGeneratedFile {
   path: string;
   action: "sync";
@@ -198,6 +360,7 @@ export interface PrimitiveValidationCommand {
 export interface PrimitiveNextAction {
   command: string;
   reason: string;
+  action?: WorkflowNextActionCode;
 }
 
 export interface PrimitiveWriteReport {
@@ -221,6 +384,10 @@ export interface WorkflowApplyReport {
   workflow: string;
   mode: "dry-run" | "apply";
   status: "passed" | "failed";
+  summary: {
+    sourceFilesChanged: PrimitiveChangedFile[];
+    generatedFilesSynced: PrimitiveGeneratedFile[];
+  };
   changedFiles: PrimitiveChangedFile[];
   generatedFiles: PrimitiveGeneratedFile[];
   appliedCommands: WorkflowApplyCommand[];
@@ -242,11 +409,14 @@ export interface WorkflowValidationRunReport {
   status: "passed" | "failed";
   sourceStatus: WorkflowValidationStatus;
   workspaceStatus: WorkflowValidationStatus;
+  validationCommandsStatus: WorkflowValidationStatus;
+  baselineStatus: WorkflowValidationStatus;
   summary: WorkflowValidationSummary;
   overallStatus: WorkflowOverallStatus;
   knownBlockers: WorkflowKnownBlocker[];
   commands: WorkflowValidationCommandResult[];
   diagnostics: WorkflowDiagnostic[];
+  baselineSummary: WorkflowBaselineSummary;
   baselineDiagnostics?: WorkflowDiagnostic[];
   workflowDiagnostics?: WorkflowDiagnostic[];
   repairActions: RepairAction[];
