@@ -12,6 +12,7 @@ import { ModuleCommand } from "./module/module.command";
 import { PackageCommand } from "./package/package.command";
 import { PageCommand } from "./page/page.command";
 import { PrimitiveCommand } from "./primitive/primitive.command";
+import { QualityCommand } from "./quality/quality.command";
 import { RepairCommand } from "./repair/repair.command";
 import { ScalarCommand } from "./scalar/scalar.command";
 import { WorkflowCommand } from "./workflow/workflow.command";
@@ -31,6 +32,7 @@ void runCommands(
   GuidelineCommand,
   ScalarCommand,
   PrimitiveCommand,
+  QualityCommand,
   RepairCommand,
   WorkflowCommand,
 );
