@@ -1,5 +1,15 @@
 # @akanjs/cli
 
+## 2.3.9
+
+### Patch Changes
+
+- f518afd: Improve dictionary type inference and lint coverage for generated workspaces.
+- 6bc2209: auto-select app when the workspace has only one app
+- Updated dependencies [f518afd]
+- Updated dependencies [f518afd]
+  - akanjs@2.3.9
+
 ## 2.3.6
 
 ### Patch Changes

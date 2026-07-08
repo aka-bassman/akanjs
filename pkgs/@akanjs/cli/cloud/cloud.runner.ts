@@ -365,7 +365,10 @@ export class CloudRunner extends runner("cloud") {
   async downloadEnv(cloudApi: CloudApi, workspace: Workspace, workspaceId: string) {
     await workspace.mkdir("local");
     const localPath = (await cloudApi.downloadEnv(workspaceId)) as string;
-    await workspace.spawn("tar", ["-xf", localPath], { cwd: workspace.workspaceRoot });
+    // Pass a path relative to workspaceRoot so tar never sees a Windows drive letter
+    // (e.g. "C:\...") which GNU tar would interpret as a remote "host:file" spec.
+    const relativePath = path.relative(workspace.workspaceRoot, localPath).split(path.sep).join("/");
+    await workspace.spawn("tar", ["-xf", relativePath], { cwd: workspace.workspaceRoot });
     await workspace.remove(localPath);
   }
   async uploadEnv(cloudApi: CloudApi, workspaceId: string, filePath: string) {
