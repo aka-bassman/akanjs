@@ -36,6 +36,16 @@ export class WorkspaceRunner extends runner("workspace") {
       overwrite,
     });
 
+    // CLAUDE.md only imports AGENTS.md so Claude Code shares the same source of truth.
+    created.push(
+      ...(await workspace.applyTemplate({
+        basePath: ".",
+        template: "workspaceRoot/CLAUDE.md.template",
+        dict,
+        overwrite,
+      })),
+    );
+
     if (!cursorRules) return created;
 
     return [

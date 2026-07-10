@@ -260,6 +260,8 @@ describe("WorkspaceRunner", () => {
     await runner.generateAgentRules(workspace);
     const agentsGuide = await Bun.file(`${root}/AGENTS.md`).text();
     const cursorRules = await Bun.file(`${root}/.cursor/rules/akan.mdc`).text();
+    const claudeGuide = await Bun.file(`${root}/CLAUDE.md`).text();
+    expect(claudeGuide).toContain("@AGENTS.md");
     expect(agentsGuide).toContain("repo Agent Guide");
     expect(agentsGuide).toContain("Prefer Akan MCP workflows before direct source edits");
     expect(agentsGuide).toContain("apply_workflow({ planPath })");

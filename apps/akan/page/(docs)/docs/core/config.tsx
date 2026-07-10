@@ -23,6 +23,7 @@ export default function Page() {
             { name: "env/", desc: l.trans({ en: "Env values", ko: "환경별 값" }) },
             { name: "images", desc: l.trans({ en: "Image rules", ko: "이미지 규칙" }) },
             { name: "publicEnv", desc: l.trans({ en: "Browser env", ko: "브라우저 환경변수" }) },
+            { name: "secrets", desc: l.trans({ en: "Secret files", ko: "시크릿 파일" }) },
             { name: "advanced", desc: l.trans({ en: "Build options", ko: "빌드 옵션" }) },
           ].map(({ name, desc }) => (
             <div key={name} className="rounded-xl border border-base-300 bg-base-100 px-4 py-0">
@@ -414,6 +415,48 @@ export default config;`}
           {l.trans({
             en: "publicEnv does not store values. It only says which environment variable names are safe to expose to browser builds.",
             ko: "publicEnv는 값을 저장하는 곳이 아닙니다. 어떤 환경변수 이름을 브라우저 빌드에 노출해도 되는지 정하는 목록입니다.",
+          })}
+        </Docs.Alert>
+      </Scroll.Slide>
+      <div className="divider" />
+
+      <Scroll.Slide id="secret-files" title={l.trans({ en: "Secret Files", ko: "시크릿 파일" })}>
+        <Docs.Title>{l.trans({ en: "Secret Files", ko: "시크릿 파일" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Some private values cannot live inside env.server.*.ts, such as service-account JSON, TLS certificates, or private key files. The secrets field lists glob patterns for these files so Akan ships them together with the env/ folder.",
+              ko: "service-account JSON, TLS 인증서, private key 파일처럼 env.server.*.ts 안에 담을 수 없는 비공개 값이 있습니다. secrets 필드는 이런 파일의 glob 패턴을 나열해 Akan이 env/ 폴더와 함께 전송하도록 합니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "akan upload-env archives every matched file, and akan download-env restores them. Patterns are resolved relative to the app directory, and Akan syncs them into a managed block in the root .gitignore, so one declaration both deploys and git-ignores the files.",
+              ko: "akan upload-env는 매칭된 모든 파일을 아카이브하고, akan download-env는 이를 복원합니다. 패턴은 앱 디렉터리 기준으로 resolve되며, Akan이 root .gitignore의 managed block에 동기화하므로 한 번의 선언으로 배포와 git-ignore가 함께 처리됩니다.",
+            })}
+          </div>
+        </Docs.Description>
+        <div className="space-y-1">
+          <Code.Snippet
+            className="w-full"
+            title="secrets"
+            code={`const config: AppConfig = {
+  secrets: ["secrets/**/*", "certs/*.pem"],
+};`}
+          />
+          <Code.Snippet
+            className="w-full"
+            title=".gitignore (auto-synced on upload-env)"
+            code={`# akan:secrets (managed by akan.config.ts — do not edit)
+apps/api/certs/*.pem
+apps/api/secrets/**/*
+# akan:secrets:end`}
+          />
+        </div>
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: "publicEnv exposes variable names to the browser; secrets does the opposite. Only glob patterns live in config — the matched files stay local and git-ignored, so never commit their contents.",
+            ko: "publicEnv는 변수 이름을 브라우저에 노출하지만, secrets는 그 반대입니다. config에는 glob 패턴만 존재하며, 매칭된 파일은 로컬에 남고 git-ignore되므로 내용을 절대 commit하지 마세요.",
           })}
         </Docs.Alert>
       </Scroll.Slide>

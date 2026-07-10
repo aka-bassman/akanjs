@@ -50,7 +50,9 @@ export class WorkspaceCommand extends command("workspace", [WorkspaceScript], ({
         },
       );
     }),
-  generateAgentRules: target({ desc: "Generate AGENTS.md and optional Cursor rules for Akan coding agents" })
+  generateAgentRules: target({
+    desc: "Generate AGENTS.md, CLAUDE.md, and optional Cursor rules for Akan coding agents",
+  })
     .option("overwrite", Boolean, { desc: "Overwrite existing agent rule files", default: false })
     .option("cursorRules", Boolean, { desc: "Generate .cursor/rules/akan.mdc", default: true })
     .with(Workspace)
