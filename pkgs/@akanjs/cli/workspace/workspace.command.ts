@@ -1,4 +1,4 @@
-import { command, Exec, Workspace } from "@akanjs/devkit";
+import { command, Exec, GlobalConfig, Workspace } from "@akanjs/devkit";
 
 import { WorkspaceScript } from "./workspace.script";
 
@@ -79,8 +79,9 @@ export class WorkspaceCommand extends command("workspace", [WorkspaceScript], ({
     }),
   init: target({ desc: "Initialize the workspace", runsOnWorkspaceRoot: false })
     .arg("devProjectId", String, { desc: "the ID of the workspace" })
+    .option("host", String, { desc: "host of the cloud to target", default: GlobalConfig.akanCloudHost })
     .with(Workspace)
-    .exec(async function (devProjectId, workspace) {
-      await this.workspaceScript.init(devProjectId, workspace);
+    .exec(async function (devProjectId, host, workspace) {
+      await this.workspaceScript.init(devProjectId, workspace, { host });
     }),
 })) {}
