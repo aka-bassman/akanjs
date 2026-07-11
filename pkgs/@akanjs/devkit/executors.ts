@@ -437,8 +437,8 @@ export class Executor {
   getPath(filePath: string) {
     if (path.isAbsolute(filePath)) return filePath;
     if (filePath.startsWith(".")) return path.join(this.cwdPath, filePath);
-    const baseParts = this.cwdPath.split("/").filter(Boolean);
-    const targetParts = filePath.split("/").filter(Boolean);
+    const baseParts = this.cwdPath.split(/[\\/]/).filter(Boolean);
+    const targetParts = filePath.split(/[\\/]/).filter(Boolean);
 
     let overlapLength = 0;
     for (let i = 1; i <= Math.min(baseParts.length, targetParts.length); i++) {
@@ -450,11 +450,7 @@ export class Executor {
         }
       if (isOverlap) overlapLength = i;
     }
-    const result =
-      overlapLength > 0
-        ? `/${[...baseParts, ...targetParts.slice(overlapLength)].join("/")}`
-        : `${this.cwdPath}/${filePath}`;
-    return result.replace(/\/+/g, "/");
+    return path.join(this.cwdPath, ...targetParts.slice(overlapLength));
   }
   async mkdir(dirPath: string) {
     const writePath = this.getPath(dirPath);

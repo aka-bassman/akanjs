@@ -1,5 +1,13 @@
 # @akanjs/devkit
 
+## 2.3.10
+
+### Patch Changes
+
+- b92003a: fix: cross-platform path handling using path.resolve/path.join/path.sep
+- Updated dependencies [b92003a]
+  - akanjs@2.3.10
+
 ## 2.3.9
 
 ### Patch Changes

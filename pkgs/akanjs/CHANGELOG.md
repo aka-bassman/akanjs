@@ -1,5 +1,11 @@
 # akanjs
 
+## 2.3.10
+
+### Patch Changes
+
+- b92003a: fix: cross-platform path handling using path.resolve/path.join/path.sep
+
 ## 2.3.9
 
 ### Patch Changes
