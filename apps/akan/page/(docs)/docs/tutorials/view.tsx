@@ -406,8 +406,8 @@ export const General = ({ className, icecreamOrder }: GeneralProps) => {
             <ol className="list-decimal space-y-2 pl-5 text-base-content/70 text-sm">
               <li>
                 {l.trans({
-                  en: "Navigate to http://localhost:4201/icecreamOrder",
-                  ko: "http://localhost:4201/icecreamOrder로 이동",
+                  en: "Navigate to http://localhost:8282/icecreamOrder",
+                  ko: "http://localhost:8282/icecreamOrder로 이동",
                 })}
               </li>
               <li>
