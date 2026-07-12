@@ -11,7 +11,7 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dic
     content: `
 "use client";
 import { Load } from "akanjs/ui";
-import { cnst, ${dict.Model} } from "@${scanInfo?.type ?? "apps"}/${dict.sysName}/client";
+import { type cnst, ${dict.Model} } from "@${scanInfo?.type ?? "apps"}/${dict.sysName}/client";
 import type { ClientInit, ClientView, SliceMeta } from "akanjs/fetch";
 
 interface CardProps {

@@ -539,4 +539,38 @@ describe("AgentRunner", () => {
     // Re-installing does not duplicate the managed block.
     expect(refreshed.split("<!-- akan:agent:start -->").length - 1).toBe(1);
   });
+
+  test("guides removal of scaffolded samples while they exist", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    const runner = new AgentRunner();
+
+    await writeText(`${root}/apps/demo/lib/task/task.constant.ts`, "// sample\n");
+    await writeText(`${root}/apps/demo/lib/_noti/noti.service.ts`, "// sample\n");
+    await writeText(`${root}/apps/demo/lib/__scalar/workHistory/workHistory.dictionary.ts`, "// sample\n");
+    await writeText(`${root}/apps/demo/page/task/_index.tsx`, "// sample\n");
+    await writeText(`${root}/apps/demo/page/_index.tsx`, "// Akan.js template landing page\n");
+
+    await runner.install(workspace, ["agents-md"]);
+    const agents = await Bun.file(`${root}/AGENTS.md`).text();
+    expect(agents).toContain("Start Clean (Remove Scaffolded Samples)");
+    expect(agents).toContain("apps/demo/lib/task");
+    expect(agents).toContain("apps/demo/lib/_noti");
+    expect(agents).toContain("apps/demo/lib/__scalar/workHistory");
+    expect(agents).toContain("apps/demo/page/task");
+    expect(agents).toContain("default Akan landing page");
+  });
+
+  test("omits the sample cleanup section when no samples remain", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    const runner = new AgentRunner();
+
+    // A workspace with no scaffolded samples and a custom index page.
+    await writeText(`${root}/apps/demo/page/_index.tsx`, "export default function Page() {\n  return null;\n}\n");
+
+    await runner.install(workspace, ["agents-md"]);
+    const agents = await Bun.file(`${root}/AGENTS.md`).text();
+    expect(agents).not.toContain("Start Clean (Remove Scaffolded Samples)");
+  });
 });

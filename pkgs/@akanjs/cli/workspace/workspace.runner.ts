@@ -5,6 +5,7 @@ import { getLatestPackageVersion, getNpmRegistryUrl } from "../npmRegistry";
 const defaultWorkspacePeerDependencies = new Set([
   "@react-spring/web",
   "@use-gesture/react",
+  "chance",
   "croner",
   "daisyui",
   "react",

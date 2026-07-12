@@ -87,7 +87,8 @@ When adding a new database-backed domain module (e.g., product, user):
 
 ```bash
 # 1. Scaffold the module with Akan CLI (creates constant, service, signal, store, document files)
-akan create-module <module-name> --app <%= appName %>
+# The target app/lib is a POSITIONAL argument, not a --app flag.
+akan create-module <module-name> <%= appName %>
 
 # 2. Start dev server with HMR and type checking at http://localhost:8282
 akan start <%= appName %>
@@ -114,11 +115,31 @@ akan build <%= appName %>
 ### Other Frequently Used Commands
 
 ```bash
-akan create-scalar <scalar-name> --app <%= appName %>    # Add a scalar module (lib/__scalar/<scalar-name>/)
-akan create-service <service-name> --app <%= appName %>       # Add a service module (lib/_<service-name>/)
+akan create-scalar <scalar-name> <%= appName %>          # Add a scalar module (lib/__scalar/<scalar-name>/)
+akan create-service <service-name> <%= appName %>        # Add a service module (lib/_<service-name>/)
 akan test <%= appName %>                             # Run the test code (lib/*/*.signal.test.ts or others)
 akan lint <%= appName %>                             # Lint only (no typecheck)
 ```
+
+**CLI argument conventions.** Two argument styles, and mixing them up is a common mistake:
+
+- Scaffolding and whole-app commands take the target app/lib as a **positional** argument, not a flag:
+
+  ```bash
+  akan create-module photo <%= appName %>
+  akan create-scalar money <%= appName %>
+  akan create-service billing <%= appName %>
+  akan sync <%= appName %>
+  ```
+
+- Only the source-limited field commands use `--app`/`--module` flags:
+
+  ```bash
+  akan add-field --app <%= appName %> --module photo --field width --type Int
+  akan add-enum-field --app <%= appName %> --module photo --field status --values draft,active
+  ```
+
+Passing `--app` to `create-module` is not recognized, and the target app will not resolve.
 
 For the default generated app, start with:
 
@@ -129,6 +150,11 @@ akan start <%= appName %>
 ### The Essential Loop: Workflow -> Sync -> Check
 
 Almost every Akan.js change follows this pattern. **Missing sync or repair is the #1 cause of agent confusion.**
+
+> **If the Akan MCP tools are not connected in your agent, skip straight to the CLI-only fallback below.**
+> `akan mcp --mode plan/apply` starts a stdio MCP server that only works when your agent is wired to it as an
+> MCP client. When those `list_workflows` / `plan_workflow` / `apply_workflow` tools are not available, the CLI
+> commands are a fully supported, first-class path — you are not losing any capability by using them.
 
 1. **Plan** — Ask the Akan MCP server for the workflow first.
    ```
@@ -171,11 +197,30 @@ Almost every Akan.js change follows this pattern. **Missing sync or repair is th
 
    If `akan sync` gives errors, try:
    - `akan build <%= appName %>` — full rebuild catches type errors sync may miss
-   - Re-run `akan create-module <name> --app <%= appName %>` if the scaffold is corrupted
+   - Re-run `akan create-module <name> <%= appName %>` if the scaffold is corrupted
 
 For compound natural-language requests, split the request into workflows and apply each artifact in order. For example,
 "create a project module and add a budget field" should run `create-module` plan/apply first, then `add-field`
 plan/apply, then validation/doctor on the returned `validationTarget`.
+
+### CLI-Only Fallback (MCP Not Connected)
+
+When the Akan MCP tools are not loaded, run the CLI commands directly. Each MCP tool maps 1:1 to a CLI command,
+and the CLI emits the same structured report via `--format json`:
+
+| MCP tool | CLI-only equivalent |
+|----------|---------------------|
+| `list_workflows` | `akan workflow list` |
+| `explain_workflow <name>` | `akan workflow explain <name>` |
+| `plan_workflow <name> ...` | `akan workflow plan <name> ... --format json --out <planPath>` |
+| `apply_workflow { planPath }` | `akan workflow apply <planPath> --format json` (add `--dry-run` to preview) |
+| `run_validation { validationTarget }` | `akan doctor --strict --format json` (or `akan typecheck <%= appName %>`) |
+| `repair_generated` / `repair_imports` / `repair_module_shape` | `akan repair generated\|imports\|module-shape --app <%= appName %> --format json` |
+
+The scaffolding primitives (`akan create-module`, `akan create-scalar`, `akan create-service`, `akan add-field`,
+`akan add-enum-field`) are the same primitives the workflows call, so `create-module <name> <%= appName %>` followed
+by `akan sync <%= appName %>` is equivalent to running the `create-module` workflow. Direct source edits remain the
+final fallback when no CLI command covers the change.
 
 ## Quick Decision Matrix — "Where do I put this code?"
 
@@ -289,7 +334,9 @@ const form = st.use.taskForm();
 
 ### Recipe 2: Injecting a Dependency into a Service
 
-Two patterns: injecting an **adapter** (external client) or injecting another **module's service**.
+Three patterns: injecting an **external adapter** (`use<>()`), another **module's service** (`service<>()`),
+or a **predefined framework adapter** (`plug()`). A field named `<refName>Service` resolves to the service
+registered under `<refName>` — the `Service`/`Signal` suffix is required and stripped to derive the lookup key.
 
 **A. Adapter injection via `use<>()` (for external clients / global singletons)**
 
@@ -331,6 +378,32 @@ export class TaskService extends serve(db.task, ({ service }) => ({
   }
 }
 ```
+
+**C. Predefined framework adapter injection via `plug()` (storage, cache, queue, schedule, …)**
+
+Akan ships predefined adapter roles from `akanjs/service`: `StorageAdaptorRole`, `CacheAdaptorRole`,
+`QueueAdaptorRole`, `ScheduleAdaptorRole`, `DatabaseAdaptorRole`, `WebsocketAdaptorRole`,
+`LoggingAdaptorRole`, `CompressAdaptorRole`. `plug()` injects the concrete adapter bound to that role (the
+default `StorageAdaptor` binding is `BlobStorage`). `plug()` also accepts a concrete adapter class directly.
+
+```typescript
+// In <model>.service.ts — inject the framework storage adapter by role
+import { plug, serve, StorageAdaptorRole } from "akanjs/service";
+
+export class TaskService extends serve(db.task, ({ plug }) => ({
+  storage: plug(StorageAdaptorRole),
+})) {
+  async attach(taskId: string, path: string, localPath: string) {
+    // BlobStorage returns a URL under blobStorage.urlPrefix (default "/api/localFile/getBlob").
+    return await this.storage.uploadDataFromLocal({ path, localPath });
+  }
+}
+```
+
+For a custom adapter class (not a predefined role), pass the class itself, e.g. `ipfsApi: plug(IpfsApi)`
+(see `libs/shared/lib/file/file.service.ts`). Injecting a file/image field is usually simpler than calling
+storage directly: declare `image: field(File).optional()` (or `images: field([File])`) on the model and let the
+store's generated `upload<Field>On<Model>(fileList)` action handle the upload.
 
 ---
 

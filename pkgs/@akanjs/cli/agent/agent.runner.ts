@@ -11,11 +11,61 @@ const targetPaths: Record<AgentTarget, string> = {
 const AGENT_BLOCK_START = "<!-- akan:agent:start -->";
 const AGENT_BLOCK_END = "<!-- akan:agent:end -->";
 
+// Reference samples scaffolded by `akan create-workspace`. They demonstrate the conventions but are not
+// part of the product, so agents should remove them before building real features.
+const SAMPLE_ARTIFACTS = [
+  { probe: "lib/task/task.constant.ts", target: "lib/task", label: "sample database module" },
+  { probe: "lib/_noti/noti.service.ts", target: "lib/_noti", label: "sample service module" },
+  {
+    probe: "lib/__scalar/workHistory/workHistory.dictionary.ts",
+    target: "lib/__scalar/workHistory",
+    label: "sample scalar module",
+  },
+  { probe: "page/task/_index.tsx", target: "page/task", label: "sample task pages" },
+] as const;
+const DEFAULT_INDEX_MARKER = "Akan.js template";
+
+// Detect which scaffolded samples still exist so the guidance disappears once they are removed.
+const renderSampleCleanup = async (workspace: Workspace, appNames: string[]) => {
+  const items: string[] = [];
+  for (const appName of appNames) {
+    for (const artifact of SAMPLE_ARTIFACTS) {
+      if (await workspace.exists(`apps/${appName}/${artifact.probe}`)) {
+        items.push(
+          `- \`apps/${appName}/${artifact.target}\` — ${artifact.label}; delete it once you no longer need the reference.`,
+        );
+      }
+    }
+    const indexPath = `apps/${appName}/page/_index.tsx`;
+    if (await workspace.exists(indexPath)) {
+      const content = await workspace.readFile(indexPath).catch(() => "");
+      if (content.includes(DEFAULT_INDEX_MARKER)) {
+        items.push(`- \`${indexPath}\` — default Akan landing page; replace it with your own home page.`);
+      }
+    }
+  }
+  if (items.length === 0) return "";
+  return `## Start Clean (Remove Scaffolded Samples)
+
+This workspace was scaffolded with reference samples so the Akan conventions are visible in real code. They are
+not part of your product. Before building real features, remove the samples below and run \`akan sync <app>\`:
+
+${items.join("\n")}
+
+Keep a sample only while you are still learning its pattern; delete it once your own modules cover the same ground.
+
+`;
+};
+
 // The generated, workspace-derived section. It is the only part of AGENTS.md that
 // `akan agent install` rewrites; everything outside the markers is preserved.
 const renderManagedBlock = async (workspace: Workspace) => {
   const context = await AkanContextAnalyzer.analyze(workspace);
   const frameworkGuide = await Prompter.getInstruction("framework");
+  const sampleCleanup = await renderSampleCleanup(
+    workspace,
+    context.apps.map((app) => app.name),
+  );
   return `## Workspace
 
 - Repo: ${context.repoName}
@@ -23,7 +73,7 @@ const renderManagedBlock = async (workspace: Workspace) => {
 - Libraries: ${context.libs.map((lib) => lib.name).join(", ") || "none"}
 - Packages: ${context.pkgs.map((pkg) => pkg.name).join(", ") || "none"}
 
-## Akan Module Abstracts
+${sampleCleanup}## Akan Module Abstracts
 
 - Before changing a domain, service, or scalar module, read its \`*.abstract.md\` file first.
 - Update the abstract when business invariants, workflows, or public behavior change.
@@ -45,6 +95,7 @@ If generated output is stale or broken, update the owning source file and run \`
 - After \`apply_workflow\`, run \`run_validation\` with \`validationTarget\` when present; otherwise use \`applyReportPath\`.
 - If no workflow exists, or apply reports unsupported/no-op/failed diagnostics that require manual action, keep edits scoped to owning source files and never patch generated files directly.
 - For compound requests, split the request into workflows and apply each \`planPath\` in order, such as \`create-module\` followed by \`add-field\`.
+- **CLI-only fallback (MCP not connected):** \`akan mcp\` starts a stdio MCP server, so the \`list_workflows\`/\`plan_workflow\`/\`apply_workflow\` tools exist only when your agent is wired to it as an MCP client. When they are unavailable, the CLI is a first-class equivalent: \`akan workflow list\` / \`explain <name>\` / \`plan <name> ... --format json --out <planPath>\` / \`apply <planPath> --format json\`, \`akan doctor --strict --format json\` for validation, and \`akan repair generated|imports|module-shape --app <app> --format json\` for repairs. Scaffolding primitives (\`create-module\`/\`create-scalar\`/\`create-service\` take the target app/lib as a POSITIONAL arg; \`add-field\`/\`add-enum-field\` use \`--app\`/\`--module\` flags) call the same code the workflows do.
 
 ## Validation
 
