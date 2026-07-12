@@ -121,3 +121,4 @@ libs/*/server.ts
 libs/*/index.ts
 **/.akan
 **/bun.lock
+**/tsconfig.tsbuildinfo

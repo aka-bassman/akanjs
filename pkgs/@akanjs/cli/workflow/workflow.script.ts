@@ -50,6 +50,8 @@ export class WorkflowScript extends script("workflow", [WorkflowRunner, ModuleSc
             createUi: (input) => this.primitiveScript.createUi(workspace, input),
             addField: (input) => this.primitiveScript.addField(workspace, input),
             addEnumField: (input) => this.primitiveScript.addEnumField(workspace, input),
+            addMutation: (input) => this.primitiveScript.addMutation(workspace, input),
+            addSlice: (input) => this.primitiveScript.addSlice(workspace, input),
           }),
         }),
       );

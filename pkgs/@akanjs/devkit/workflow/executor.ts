@@ -403,6 +403,8 @@ export const createWorkflowStepRegistry = ({
   createUi,
   addField,
   addEnumField,
+  addMutation,
+  addSlice,
 }: WorkflowPrimitiveOperations): WorkflowStepRegistry => {
   const inspect = async () => undefined;
   const commandOnly = async () => undefined;
@@ -483,6 +485,24 @@ export const createWorkflowStepRegistry = ({
       ),
     [workflowStepKey("add-enum-field", "update-dictionary")]: inspect,
     [workflowStepKey("add-enum-field", "update-option")]: inspect,
+    [workflowStepKey("add-mutation", "update-service")]: async (_step, plan) =>
+      primitiveReportToWorkflowStepResult(
+        await addMutation({
+          app: workflowStringInput(plan.inputs.app),
+          module: workflowStringInput(plan.inputs.module),
+          mutation: workflowStringInput(plan.inputs.mutation),
+        }),
+      ),
+    [workflowStepKey("add-mutation", "update-signal")]: inspect,
+    [workflowStepKey("add-slice", "update-service-query")]: async (_step, plan) =>
+      primitiveReportToWorkflowStepResult(
+        await addSlice({
+          app: workflowStringInput(plan.inputs.app),
+          module: workflowStringInput(plan.inputs.module),
+          slice: workflowStringInput(plan.inputs.slice),
+        }),
+      ),
+    [workflowStepKey("add-slice", "update-signal-slice")]: inspect,
   };
 };
 

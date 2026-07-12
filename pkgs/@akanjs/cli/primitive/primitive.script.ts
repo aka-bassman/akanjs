@@ -1,6 +1,8 @@
 import {
   type AddEnumFieldInput,
   type AddFieldInput,
+  type AddMutationInput,
+  type AddSliceInput,
   AppExecutor,
   addFieldUiPolicyForType,
   coerceFieldDefault,
@@ -9,15 +11,21 @@ import {
   ensureBaseTypeImport,
   ensureConstantTypeImport,
   ensureEnumImport,
+  type FactoryParamPlan,
   fieldExpression,
   generatedFilesForSync,
+  hasClassMethod,
   hasConstantInputField,
   hasDictionaryModelField,
+  hasSignalFactoryEntry,
+  hasSourceParseErrors,
+  insertClassMethod,
   insertDictionaryEnum,
   insertDictionaryModelField,
   insertEnumClass,
   insertIntoObject,
   insertLightProjectionField,
+  insertSignalFactoryEntry,
   insertTemplateField,
   LibExecutor,
   lowerlize,
@@ -126,6 +134,15 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
             severity: "error",
             code: "primitive-field-type-unsupported",
             message: `Field type "${input.type}" is ambiguous in Akan. Use Int for integer fields or Float for decimal fields.`,
+            input: "type",
+          }
+        : null,
+      input.type && input.type.toLowerCase() === "upload"
+        ? {
+            severity: "error",
+            code: "primitive-field-type-upload-misuse",
+            message:
+              "Upload is not a model field type. Declare an image/file field as a relation to the File model (e.g. field(File)); Upload is only valid in a { fileUpload: true } signal body. Note the File model is provided by the shared file library.",
             input: "type",
           }
         : null,
@@ -357,6 +374,243 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
 
     return createPrimitiveWriteReport({
       command: enumValues ? "add-enum-field" : "add-field",
+      changedFiles,
+      generatedFiles,
+      validationCommands: validationCommandsForTarget(sys.name),
+      diagnostics,
+      nextActions: nextActionsForTarget(sys.name),
+    });
+  }
+
+  async addMutation(workspace: Workspace, input: AddMutationInput) {
+    const moduleClassName = input.module ? moduleComponentName(input.module) : "";
+    const serviceRef = lowerlize(moduleClassName);
+    const name = input.mutation;
+    return await this.#writeServiceSignalEntry(workspace, {
+      command: "add-mutation",
+      app: input.app,
+      module: input.module,
+      entryKind: "mutation",
+      entryName: name,
+      requiredInput: "mutation",
+      serviceMethod: name
+        ? {
+            name,
+            block: [
+              `  async ${name}() {`,
+              `    // TODO(service): implement ${moduleClassName}Service.${name}`,
+              `    return true;`,
+              `  }`,
+            ].join("\n"),
+          }
+        : null,
+      signal: name
+        ? {
+            className: `${moduleClassName}Endpoint`,
+            entryLine: [
+              `${name}: mutation(Boolean)`,
+              `    .exec(async function () {`,
+              `      return await this.${serviceRef}Service.${name}();`,
+              `    }),`,
+            ].join("\n"),
+            param: { mode: "destructure", name: "mutation" },
+          }
+        : null,
+    });
+  }
+
+  async addSlice(workspace: Workspace, input: AddSliceInput) {
+    const moduleClassName = input.module ? moduleComponentName(input.module) : "";
+    const serviceRef = lowerlize(moduleClassName);
+    const name = input.slice;
+    const queryName = name ? `query${capitalize(name)}` : null;
+    return await this.#writeServiceSignalEntry(workspace, {
+      command: "add-slice",
+      app: input.app,
+      module: input.module,
+      entryKind: "slice",
+      entryName: name,
+      requiredInput: "slice",
+      serviceMethod:
+        name && queryName
+          ? {
+              name: queryName,
+              block: [
+                `  ${queryName}() {`,
+                `    // TODO(service): return a QueryOf for the ${name} slice`,
+                `    return {};`,
+                `  }`,
+              ].join("\n"),
+            }
+          : null,
+      signal:
+        name && queryName
+          ? {
+              className: `${moduleClassName}Slice`,
+              entryLine: [
+                `${name}: init()`,
+                `    .exec(function () {`,
+                `      return this.${serviceRef}Service.${queryName}();`,
+                `    }),`,
+              ].join("\n"),
+              param: { mode: "positional", name: "init" },
+            }
+          : null,
+    });
+  }
+
+  async #writeServiceSignalEntry(
+    workspace: Workspace,
+    spec: {
+      command: string;
+      app: string | null;
+      module: string | null;
+      entryKind: "mutation" | "slice";
+      entryName: string | null;
+      requiredInput: string;
+      serviceMethod: { name: string; block: string } | null;
+      signal: { className: string; entryLine: string; param: FactoryParamPlan } | null;
+    },
+  ) {
+    const sys = await this.resolveSys(workspace, spec.app);
+    const diagnostics = compactDiagnostics([
+      !sys && { severity: "error", code: "primitive-target-missing", message: "Target app or library was not found." },
+      !spec.module && {
+        severity: "error",
+        code: "primitive-input-missing",
+        message: "Module is required.",
+        input: "module",
+      },
+      !spec.entryName && {
+        severity: "error",
+        code: "primitive-input-missing",
+        message: `${capitalize(spec.requiredInput)} name is required.`,
+        input: spec.requiredInput,
+      },
+    ] as WorkflowDiagnostic[]);
+    if (!sys || !spec.module || !spec.entryName || !spec.serviceMethod || !spec.signal) {
+      return createPrimitiveWriteReport({
+        command: spec.command,
+        changedFiles: [],
+        generatedFiles: [],
+        validationCommands: [],
+        diagnostics,
+        nextActions: [],
+      });
+    }
+
+    const paths = moduleSourcePaths(spec.module);
+    const servicePath = paths.service;
+    const signalPath = paths.signal;
+    const changedFiles: PrimitiveChangedFile[] = [];
+    const generatedFiles: PrimitiveGeneratedFile[] = generatedFilesForSync(sys);
+    const [hasServiceFile, hasSignalFile] = await Promise.all([sys.exists(servicePath), sys.exists(signalPath)]);
+    if (!hasServiceFile) {
+      diagnostics.push({
+        severity: "error",
+        code: "primitive-source-missing",
+        message: `Service source file was not found: ${servicePath}.`,
+      });
+    }
+    if (!hasSignalFile) {
+      diagnostics.push({
+        severity: "error",
+        code: "primitive-source-missing",
+        message: `Signal source file was not found: ${signalPath}.`,
+      });
+    }
+    if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
+      return createPrimitiveWriteReport({
+        command: spec.command,
+        changedFiles,
+        generatedFiles,
+        validationCommands: validationCommandsForTarget(sys.name),
+        diagnostics,
+        nextActions: nextActionsForTarget(sys.name),
+      });
+    }
+
+    const serviceClassName = `${moduleComponentName(spec.module)}Service`;
+    const serviceContent = await sys.readFile(servicePath);
+    const signalContent = await sys.readFile(signalPath);
+    const serviceMethodExists = hasClassMethod(serviceContent, serviceClassName, spec.serviceMethod.name);
+    if (serviceMethodExists) {
+      diagnostics.push({
+        severity: "error",
+        code: "primitive-service-method-exists",
+        input: spec.requiredInput,
+        message: `Method "${spec.serviceMethod.name}" already exists in ${serviceClassName}.`,
+      });
+    }
+    if (hasSignalFactoryEntry(signalContent, spec.signal.className, spec.entryName)) {
+      diagnostics.push({
+        severity: "error",
+        code: "primitive-signal-entry-exists",
+        input: spec.requiredInput,
+        message: `Entry "${spec.entryName}" already exists in ${spec.signal.className}.`,
+      });
+    }
+
+    const nextServiceContent = serviceMethodExists
+      ? serviceContent
+      : insertClassMethod(serviceContent, serviceClassName, spec.serviceMethod.block);
+    const nextSignalContent = insertSignalFactoryEntry(
+      signalContent,
+      spec.signal.className,
+      spec.entryName,
+      spec.signal.entryLine,
+      spec.signal.param,
+    );
+    if (!nextServiceContent) {
+      diagnostics.push({
+        severity: "error",
+        code: "primitive-service-shape-unsupported",
+        message: `Could not find ${serviceClassName} class body in ${servicePath}.`,
+      });
+    }
+    if (!nextSignalContent) {
+      diagnostics.push({
+        severity: "error",
+        code: "primitive-signal-shape-unsupported",
+        message: `Could not find a safe insertion point in ${spec.signal.className} within ${signalPath}. Ensure the class exists and its factory returns an object literal.`,
+      });
+    }
+    if (nextServiceContent && hasSourceParseErrors(nextServiceContent, "service.ts")) {
+      diagnostics.push({
+        severity: "error",
+        code: "primitive-post-edit-service-parse-failed",
+        failureScope: "source-change",
+        message: `Edited ${servicePath} did not parse cleanly; refusing to write source.`,
+      });
+    }
+    if (nextSignalContent && hasSourceParseErrors(nextSignalContent, "signal.ts")) {
+      diagnostics.push({
+        severity: "error",
+        code: "primitive-post-edit-signal-parse-failed",
+        failureScope: "source-change",
+        message: `Edited ${signalPath} did not parse cleanly; refusing to write source.`,
+      });
+    }
+    if (nextSignalContent && !hasSignalFactoryEntry(nextSignalContent, spec.signal.className, spec.entryName)) {
+      diagnostics.push({
+        severity: "error",
+        code: "primitive-post-edit-signal-verify-failed",
+        failureScope: "source-change",
+        message: `Edited ${signalPath} did not contain entry "${spec.entryName}" in ${spec.signal.className}.`,
+      });
+    }
+
+    if (!diagnostics.some((diagnostic) => diagnostic.severity === "error") && nextServiceContent && nextSignalContent) {
+      await sys.writeFile(servicePath, nextServiceContent);
+      await sys.writeFile(signalPath, nextSignalContent);
+      changedFiles.push(
+        sourceFile(sys, servicePath, "modify", `Service ${spec.entryKind} was added.`),
+        sourceFile(sys, signalPath, "modify", `Signal ${spec.entryKind} was added.`),
+      );
+    }
+
+    return createPrimitiveWriteReport({
+      command: spec.command,
       changedFiles,
       generatedFiles,
       validationCommands: validationCommandsForTarget(sys.name),

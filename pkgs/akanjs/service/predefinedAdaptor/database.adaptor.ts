@@ -731,7 +731,6 @@ class QueryCompiler {
       throw new Error("Operator nodes must be attached to a document path");
     }
     const parts = Object.entries(query).flatMap(([path, value]) => {
-      if (path.startsWith("$")) throw new Error(`Mongo-style query operator is not supported: ${path}`);
       if (value === undefined) throw new Error(`Undefined query value is not allowed: ${path}`);
       return [this.compileField(path, value)];
     });
@@ -801,8 +800,6 @@ class QueryCompiler {
     if (value && typeof value === "object" && !Array.isArray(value)) {
       const operators = value as Record<string, unknown>;
       const keys = Object.keys(operators);
-      const legacyKey = keys.find((key) => key.startsWith("$"));
-      if (legacyKey) throw new Error(`Mongo-style query operator is not supported on ${path}: ${legacyKey}`);
       if (keys.some((key) => QUERY_OPERATOR_KEYS.has(key))) {
         const parts = keys.flatMap((key) => {
           if (!QUERY_OPERATOR_KEYS.has(key)) return [];
@@ -851,7 +848,6 @@ class UpdateCompiler {
     const jsonOps: { op: DocumentUpdateOperator; path: string; value: unknown }[] = [];
     for (const [path, raw] of Object.entries(update)) {
       if (raw === undefined) continue;
-      if (path.startsWith("$")) throw new Error(`Mongo-style update operator is not supported: ${path}`);
       const node: DocumentUpdateNode = isDocumentUpdateNode(raw) ? raw : { kind: "update", op: "set", value: raw };
       this.#assertPath(path);
       if (node.op === "setOnInsert") {
@@ -1224,7 +1220,6 @@ export class SqlDocumentStore {
       path.split(".").reduce<unknown>((obj, key) => (obj as DocumentRecord | undefined)?.[key], doc);
     for (const [path, raw] of Object.entries(update)) {
       if (raw === undefined) continue;
-      if (path.startsWith("$")) throw new Error(`Mongo-style update operator is not supported: ${path}`);
       const node: DocumentUpdateNode = isDocumentUpdateNode(raw) ? raw : { kind: "update", op: "set", value: raw };
       const current = getPath(path);
       switch (node.op) {

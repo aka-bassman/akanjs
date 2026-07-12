@@ -88,14 +88,50 @@ rule changes, update it here and mirror it into the matching `.cursor/rules/*.md
 - Use `Endpoint` for query and mutation contracts exposed to callers.
 - Connect external APIs or infrastructure through adapters, usually under `srvkit/`, and inject them into services instead of importing vendor clients directly into domain logic.
 
+### Signal Body Types
+
+- `.body(...)` / `.param(...)` args accept `ConstantFieldTypeInput` only: scalars, model refs, or `enumOf(...)`.
+- Numbers must use `Int` or `Float` — `Number` is rejected (`pkgs/akanjs/signal/endpointInfo.ts`).
+- `Upload` is valid only inside a mutation flagged for file upload: `mutation([cnst.File], { fileUpload: true }).body("files", [Upload])` (see `libs/shared/lib/file/file.signal.ts`). It is not a model field type.
+
+### Reserved Endpoint Names
+
+- Auto-generated CRUD endpoints (e.g. `create<Model>`, `update<Model>`, `remove<Model>`) already exist for every model. Do not declare an `Endpoint`/`Slice` with a name that collides with them.
+- The service layer surfaces such a collision as a typecheck error, but the signal layer can pass sync/typecheck/build and fail only at runtime — so treat name collisions as errors regardless of whether the build is green.
+
+### Slices, Queries, and Hydration
+
+- A slice's `exec` returns a `QueryOf` (an opaque query descriptor, `pkgs/akanjs/constant/types.ts`); you **cannot** chain `.sort()`/`.limit()` on it.
+- Apply ordering/paging via the store `init` fetch option instead: `initX(..., { sort, page, limit })` (`pkgs/akanjs/fetch/fetchType/sliceFetch.type.ts`).
+- Generated list accessors like `listBy(...)` return `Promise<Doc[]>`. For a chainable builder (`.sort().skip().limit().select()`) use the model facade's `findMany`/`findOne` (`FindManyChain`, `pkgs/akanjs/document/into.ts`).
+- **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`); client fetch results are raw `GetStateObject` plain data (functions stripped, `pkgs/akanjs/base/types.ts`).
+
+### Service / Signal Injection
+
+- Injected dependencies resolve by field-name convention: a field named `<refName>Service` resolves to the service registered under `<refName>`, and `<refName>Signal` likewise (`pkgs/akanjs/service/injectInfo.ts`).
+- The `Service`/`Signal` suffix is required — the injector strips it to derive the registry lookup key. Name the field after the target refName plus the suffix, not arbitrarily.
+
 ## Scalar Modeling (`**/*.constant.ts`)
 
 - Define Akan models in `.constant.ts` files with `via` from `akanjs/constant`.
-- Import custom scalar helpers such as `ID`, `Int`, `Float`, `JSON`, `Upload`, `Any`, `enumOf`, or `dayjs` from `akanjs/base` when the model needs them.
 - Use `Int` for whole-number counts and quantities; use `Float` only for values that need decimals.
-- Use `ID` for document references and prefer explicit structured fields over `JSON` unless the content is genuinely flexible.
+- Use `ID` for document references and prefer explicit structured fields over `Any` unless the content is genuinely flexible.
 - For date defaults, prefer a function such as `default: () => dayjs()` so the value is created at runtime.
 - Follow the established model layering pattern: `Input`, `Object`, `Light<Model>`, full `<Model>`, and `<Model>Insight` when the domain needs those views.
+
+### Scalar & Field Type Reference
+
+- **Import from `akanjs/base`** (real classes/helpers, not globals): `Int`, `Float`, `ID`, `Any`, `Upload`, `enumOf`, and the `dayjs` factory. There is **no `JSON` scalar** — use `Any` for open/flexible payloads.
+- **Use the JS globals directly (no import needed)**: `String`, `Boolean`, `Date`. They are monkey-patched to behave like scalars, so `field(String)` typechecks.
+- **`Number` is not a valid field/body type.** `NumberConstructor` is intentionally not augmented, so `field(Number)` / `.body("x", Number)` fails to typecheck. Use `Int` or `Float` instead.
+- Runtime resolution of every scalar (globals included) goes through `PrimitiveRegistry` by `refName` (`pkgs/akanjs/base/primitiveRegistry.ts`).
+
+### Image & File Fields
+
+- **Do not declare `Upload` as a model field.** `Upload` is a signal-body-only primitive (see Service And Signal Conventions). Models reference the `File` model instead.
+- Declare an image/file field as a relation to `File`: `image: field(File).optional()` for one, `images: field([File])` for many (see `libs/shared/lib/user/user.constant.ts`, `libs/shared/lib/banner/banner.constant.ts`).
+- The store then auto-generates an `upload<Field>On<Model>(fileList)` action that calls the framework upload mutation and polls file status until it leaves `"uploading"` (`pkgs/akanjs/store/action.ts`).
+- Storage is wired through the `StorageAdaptor` DI role (default `BlobStorage`, `pkgs/akanjs/service/predefinedAdaptor/storage.adaptor.ts`); the reference implementation is the `file` lib (`libs/shared/lib/file/*`). Do not hand-roll data-URL fallbacks.
 
 ## Akan Page Routing (`apps/**/page/**`)
 

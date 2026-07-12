@@ -59,8 +59,18 @@ export const addMutationWorkflowSpec: WorkflowSpec = {
     },
   ],
   predictedChanges: [
-    { target: "*/lib/<module>/<module>.service.ts", action: "modify", reason: "Service mutation may be added." },
-    { target: "*/lib/<module>/<module>.signal.ts", action: "modify", reason: "Signal mutation may be added." },
+    {
+      target: "*/lib/<module>/<module>.service.ts",
+      action: "modify",
+      applyScope: "auto",
+      reason: "Service mutation method stub is added.",
+    },
+    {
+      target: "*/lib/<module>/<module>.signal.ts",
+      action: "modify",
+      applyScope: "auto",
+      reason: "Signal endpoint mutation is added.",
+    },
     { target: "*/lib/srv.ts", action: "sync", reason: "Generated service barrel may change after sync." },
     { target: "*/lib/sig.ts", action: "sync", reason: "Generated signal barrel may change after sync." },
   ],

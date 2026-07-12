@@ -549,8 +549,8 @@ function getConventionDescription(suffix: (typeof CONVENTION_SUFFIXES)[number], 
 
 function getLibRootFile(file: string) {
   const segments = file.split("/");
-  if (segments[0] === "libs" && segments.length === 4 && segments[2] === "lib") return segments[3];
-  if (segments[0] === "apps" && segments.length === 5 && segments[2] === "lib") return segments[4];
+  if ((segments[0] === "libs" || segments[0] === "apps") && segments.length === 4 && segments[2] === "lib")
+    return segments[3];
   return null;
 }
 

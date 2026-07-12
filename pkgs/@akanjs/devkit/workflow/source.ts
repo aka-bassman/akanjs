@@ -862,3 +862,134 @@ export const parseValues = (value: string | null) =>
     ?.split(",")
     .map((item) => item.trim())
     .filter(Boolean) ?? [];
+
+// ---- Service / signal insertion (add-mutation, add-slice) ----
+
+export const hasSourceParseErrors = (content: string, fileName = "source.ts") =>
+  hasParseDiagnostics(sourceFileFor(fileName, content));
+
+const findClassDeclaration = (source: ts.SourceFile, className: string): ts.ClassDeclaration | null => {
+  let found: ts.ClassDeclaration | null = null;
+  const visit = (node: ts.Node) => {
+    if (found) return;
+    if (ts.isClassDeclaration(node) && node.name?.text === className) {
+      found = node;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(source, visit);
+  return found;
+};
+
+const firstHeritageCall = (node: ts.ClassDeclaration): ts.CallExpression | null => {
+  const expression = (node.heritageClauses?.flatMap((clause) => [...clause.types]) ?? [])[0]?.expression;
+  return expression && ts.isCallExpression(expression) ? expression : null;
+};
+
+const factoryArrowOf = (call: ts.CallExpression): ts.ArrowFunction | ts.FunctionExpression | null => {
+  const arg = call.arguments.find((argument) => ts.isArrowFunction(argument) || ts.isFunctionExpression(argument));
+  return arg && (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) ? arg : null;
+};
+
+export const hasClassMethod = (content: string, className: string, methodName: string) => {
+  const node = findClassDeclaration(sourceFileFor("service.ts", content), className);
+  return Boolean(
+    node?.members.some((member) => ts.isMethodDeclaration(member) && nodeName(member.name) === methodName),
+  );
+};
+
+export const insertClassMethod = (content: string, className: string, methodBlock: string): string | null => {
+  const source = sourceFileFor("service.ts", content);
+  const node = findClassDeclaration(source, className);
+  if (!node) return null;
+  const closeBrace = node.getEnd() - 1;
+  if (content[closeBrace] !== "}") return null;
+  const lead = content.slice(0, closeBrace).endsWith("\n") ? "" : "\n";
+  return spliceText(content, closeBrace, closeBrace, `${lead}${methodBlock}\n`);
+};
+
+export interface FactoryParamPlan {
+  mode: "destructure" | "positional";
+  name: string;
+}
+
+const arrowParamInnerRegion = (
+  content: string,
+  source: ts.SourceFile,
+  arrow: ts.ArrowFunction | ts.FunctionExpression,
+) => {
+  if (arrow.parameters.length > 0) {
+    return {
+      start: arrow.parameters[0].getStart(source),
+      end: arrow.parameters[arrow.parameters.length - 1].getEnd(),
+    };
+  }
+  const open = content.indexOf("(", arrow.getStart(source));
+  if (open < 0) return null;
+  const close = content.indexOf(")", open);
+  if (close < 0) return null;
+  return { start: open + 1, end: close };
+};
+
+const factoryParamEdit = (
+  content: string,
+  source: ts.SourceFile,
+  arrow: ts.ArrowFunction | ts.FunctionExpression,
+  plan: FactoryParamPlan,
+): { start: number; end: number; text: string } | "unchanged" | null => {
+  if (arrow.parameters.length > 1) return null;
+  const region = arrowParamInnerRegion(content, source, arrow);
+  if (!region) return null;
+  if (arrow.parameters.length === 0) {
+    return { ...region, text: plan.mode === "destructure" ? `{ ${plan.name} }` : plan.name };
+  }
+  const param = arrow.parameters[0];
+  if (plan.mode === "positional") return nodeName(param.name) === plan.name ? "unchanged" : null;
+  if (!ts.isObjectBindingPattern(param.name)) return null;
+  const names = param.name.elements.map((element) => (ts.isIdentifier(element.name) ? element.name.text : null));
+  if (names.some((name) => name === null)) return null;
+  if (names.includes(plan.name)) return "unchanged";
+  return {
+    start: param.getStart(source),
+    end: param.getEnd(),
+    text: `{ ${[...(names as string[]), plan.name].join(", ")} }`,
+  };
+};
+
+const factoryObjectOf = (source: ts.SourceFile, className: string) => {
+  const node = findClassDeclaration(source, className);
+  const call = node ? firstHeritageCall(node) : null;
+  const arrow = call ? factoryArrowOf(call) : null;
+  const object = arrow ? firstObjectReturnedByArrow(arrow) : null;
+  return arrow && object ? { arrow, object } : null;
+};
+
+export const hasSignalFactoryEntry = (content: string, className: string, entryName: string) => {
+  const located = factoryObjectOf(sourceFileFor("signal.ts", content), className);
+  return Boolean(located?.object.properties.some((property) => propertyName(property) === entryName));
+};
+
+export const insertSignalFactoryEntry = (
+  content: string,
+  className: string,
+  entryName: string,
+  entryLine: string,
+  param: FactoryParamPlan,
+): string | null => {
+  const source = sourceFileFor("signal.ts", content);
+  const located = factoryObjectOf(source, className);
+  if (!located) return null;
+  const locator = locatedObject(source, located.object);
+  if (locator.fields.some((field) => field.name === entryName)) return content;
+  // Compute the param edit first (its offsets precede the object), but apply it last so the
+  // object splice (at a higher offset) does not invalidate the param region positions.
+  const paramEdit = factoryParamEdit(content, source, located.arrow, param);
+  if (paramEdit === null) return null;
+  const withEntry = insertOrderedFieldLine(content, locator, entryName, entryLine, {
+    fieldIndent: "  ",
+    closingIndent: "",
+  });
+  if (withEntry === content) return null;
+  return paramEdit === "unchanged" ? withEntry : spliceText(withEntry, paramEdit.start, paramEdit.end, paramEdit.text);
+};

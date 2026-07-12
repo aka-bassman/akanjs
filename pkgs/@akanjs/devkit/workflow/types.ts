@@ -47,6 +47,14 @@ export interface AddEnumFieldInput extends PrimitiveTargetInput {
   includeInLight?: boolean | null;
 }
 
+export interface AddMutationInput extends PrimitiveTargetInput {
+  mutation: string | null;
+}
+
+export interface AddSliceInput extends PrimitiveTargetInput {
+  slice: string | null;
+}
+
 export interface WorkflowInputSpec {
   type: WorkflowInputType;
   required?: boolean;
@@ -472,4 +480,6 @@ export interface WorkflowPrimitiveOperations {
   createUi: (input: PrimitiveTargetInput & { surface: UiSurface }) => Promise<PrimitiveWriteReport>;
   addField: (input: AddFieldInput) => Promise<PrimitiveWriteReport>;
   addEnumField: (input: AddEnumFieldInput) => Promise<PrimitiveWriteReport>;
+  addMutation: (input: AddMutationInput) => Promise<PrimitiveWriteReport>;
+  addSlice: (input: AddSliceInput) => Promise<PrimitiveWriteReport>;
 }

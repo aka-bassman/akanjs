@@ -249,8 +249,8 @@ await this.Post.updateOne({ id }, ({ pull }) => ({ tags: pull("featured") }));`}
             <ul className="list-disc space-y-2 pl-5">
               <li>
                 {l.trans({
-                  en: "`updateOne`, `updateMany`, `deleteMany`, and `bulkWrite` write directly in the database and do not fire save/update/remove hooks, mirroring how MongoDB query middleware bypasses document middleware.",
-                  ko: "`updateOne`, `updateMany`, `deleteMany`, `bulkWrite`는 데이터베이스에 직접 쓰며 save/update/remove hook을 발화하지 않습니다. MongoDB에서 query middleware가 document middleware를 우회하는 것과 같습니다.",
+                  en: "`updateOne`, `updateMany`, `deleteMany`, and `bulkWrite` write directly in the database and do not fire save/update/remove hooks.",
+                  ko: "`updateOne`, `updateMany`, `deleteMany`, `bulkWrite`는 데이터베이스에 직접 쓰며 save/update/remove hook을 발화하지 않습니다.",
                 })}
               </li>
               <li>

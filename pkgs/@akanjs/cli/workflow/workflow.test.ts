@@ -344,6 +344,8 @@ describe("WorkflowRunner", () => {
         createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
         addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
         addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
+        addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
+        addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
       }),
     });
     const report = JSON.parse(output) as WorkflowApplyReport;
@@ -418,6 +420,8 @@ describe("WorkflowRunner", () => {
       createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
       addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
       addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
+      addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
+      addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
     });
     registry[workflowStepKey("add-field", "update-ui-surfaces")] = async () => {
       await module.writeFile(
@@ -494,6 +498,8 @@ export const taskDictionary = modelDictionary("task")
       createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
       addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
       addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
+      addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
+      addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
     });
     registry[workflowStepKey("add-field", "update-constant")] = async () => {
       await module.writeFile(
@@ -637,6 +643,8 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
         createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
         addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
         addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
+        addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
+        addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
       }),
     });
     const report = JSON.parse(output) as WorkflowApplyReport;
@@ -722,6 +730,8 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
         createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
         addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
         addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
+        addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
+        addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
       }),
     });
     const report = JSON.parse(output) as WorkflowApplyReport;
@@ -762,16 +772,11 @@ export const taskDictionary = modelDictionary("task").model<Task>((t) => ({
       { format: "json", out: planPath },
     );
 
+    // An empty registry has no runner for any step, so the executor must report the first
+    // step as unsupported rather than crashing.
     const output = await runner.apply(planPath, {
       format: "json",
-      registry: createWorkflowStepRegistry({
-        workspace,
-        createModule: (sys, module) => CommandContainer.get(ModuleScript).createModuleTemplate(sys, module),
-        createScalar: (sys, scalar) => CommandContainer.get(ScalarScript).createScalar(sys, scalar),
-        createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
-        addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
-        addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
-      }),
+      registry: {},
     });
     const report = JSON.parse(output) as WorkflowApplyReport;
 

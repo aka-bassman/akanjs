@@ -156,3 +156,4 @@ infra/master/jenkins/credentials.sh
 **/regcred.yaml
 **/.akan
 **/bun.lock
+**/tsconfig.tsbuildinfo

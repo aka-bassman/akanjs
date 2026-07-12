@@ -269,13 +269,10 @@ describe("WorkspaceRunner", () => {
     expect(agentsGuide).toContain("create-module` plan/apply first, then `add-field");
     expect(agentsGuide).toContain("akan mcp --mode plan");
     expect(agentsGuide).toContain("akan repair generated");
-    expect(cursorRules).toContain("Akan.js Workspace Rules");
-    expect(cursorRules).toContain("Prefer Akan MCP workflows before direct source edits");
-    expect(cursorRules).toContain("apply_workflow({ planPath })");
-    expect(cursorRules).toContain("validationTarget");
-    expect(cursorRules).toContain("create-module");
-    expect(cursorRules).toContain("Direct source edits are denied");
-    expect(cursorRules).toContain("akan repair generated");
+    // The Cursor rule is a thin reference to AGENTS.md, not a duplicate of its content.
+    expect(cursorRules).toContain("alwaysApply: true");
+    expect(cursorRules).toContain("single source of truth");
+    expect(cursorRules).toContain("@AGENTS.md");
 
     await Bun.write(`${root}/AGENTS.md`, "custom\n");
     await runner.generateAgentRules(workspace);

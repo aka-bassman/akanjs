@@ -57,9 +57,24 @@ export const addSliceWorkflowSpec: WorkflowSpec = {
     },
   ],
   predictedChanges: [
-    { target: "*/lib/<module>/<module>.service.ts", action: "modify", reason: "Query helper may be added." },
-    { target: "*/lib/<module>/<module>.signal.ts", action: "modify", reason: "Signal slice may be added." },
-    { target: "*/lib/<module>/<Module>.Zone.tsx", action: "modify", reason: "Zone may connect slice state." },
+    {
+      target: "*/lib/<module>/<module>.service.ts",
+      action: "modify",
+      applyScope: "auto",
+      reason: "Query helper method stub is added.",
+    },
+    {
+      target: "*/lib/<module>/<module>.signal.ts",
+      action: "modify",
+      applyScope: "auto",
+      reason: "Signal slice entry is added.",
+    },
+    {
+      target: "*/lib/<module>/<Module>.Zone.tsx",
+      action: "modify",
+      applyScope: "manual-review",
+      reason: "Zone may connect slice state.",
+    },
     { target: "*/lib/sig.ts", action: "sync", reason: "Generated signal barrel may change after sync." },
   ],
   validation: [

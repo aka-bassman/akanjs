@@ -11,4 +11,6 @@ export const createCliWorkflowStepRegistry = (workspace: Workspace) =>
     createUi: (input) => CommandContainer.get(PrimitiveScript).createUi(workspace, input),
     addField: (input) => CommandContainer.get(PrimitiveScript).addField(workspace, input),
     addEnumField: (input) => CommandContainer.get(PrimitiveScript).addEnumField(workspace, input),
+    addMutation: (input) => CommandContainer.get(PrimitiveScript).addMutation(workspace, input),
+    addSlice: (input) => CommandContainer.get(PrimitiveScript).addSlice(workspace, input),
   });

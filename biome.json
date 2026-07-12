@@ -148,6 +148,10 @@
       "plugins": ["./pkgs/@akanjs/devkit/lint/no-js-private-class-method.grit"]
     },
     {
+      "includes": ["**/*.signal.ts"],
+      "plugins": ["./pkgs/@akanjs/devkit/lint/no-redeclare-predefined-endpoint.grit"]
+    },
+    {
       "includes": [
         "**/*.constant.ts",
         "**/*.dictionary.ts",

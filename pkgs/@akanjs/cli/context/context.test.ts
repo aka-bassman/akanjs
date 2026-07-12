@@ -486,26 +486,57 @@ describe("ContextRunner", () => {
 });
 
 describe("AgentRunner", () => {
-  test("installs agent rules with workflow policy and overwrite protection", async () => {
+  test("installs a single AGENTS.md source with thin Claude and Cursor references", async () => {
     const { root, workspace } = await createTempApp("demo");
     tempRoots.push(root);
     const runner = new AgentRunner();
 
     const written = await runner.install(workspace, ["cursor", "agents-md", "claude"]);
-
     expect(written).toEqual([".cursor/rules/akan.mdc", "AGENTS.md", "CLAUDE.md"]);
-    for (const filePath of written) {
-      const content = await Bun.file(`${root}/${filePath}`).text();
-      expect(content).toContain("Before changing a domain");
-      expect(content).toContain("Prefer Akan MCP workflows before direct source edits");
-      expect(content).toContain("planPath");
-      expect(content).toContain("apply_workflow({ planPath })");
-      expect(content).toContain("validationTarget");
-      expect(content).toContain("Direct source edits are denied");
-      expect(content).toContain("akan mcp --mode plan");
-      expect(content).toContain("akan mcp --mode apply");
-      expect(content).toContain("akan repair generated");
-    }
+
+    // AGENTS.md is the single source of truth and carries the full workflow policy in a managed block.
+    const agents = await Bun.file(`${root}/AGENTS.md`).text();
+    expect(agents).toContain("Before changing a domain");
+    expect(agents).toContain("Prefer Akan MCP workflows before direct source edits");
+    expect(agents).toContain("apply_workflow({ planPath })");
+    expect(agents).toContain("validationTarget");
+    expect(agents).toContain("Direct source edits are denied");
+    expect(agents).toContain("akan mcp --mode plan");
+    expect(agents).toContain("akan mcp --mode apply");
+    expect(agents).toContain("akan repair generated");
+    expect(agents).toContain("<!-- akan:agent:start -->");
+    expect(agents).toContain("<!-- akan:agent:end -->");
+
+    // CLAUDE.md and the Cursor rule are thin pointers to AGENTS.md, not duplicates of its content.
+    const claude = await Bun.file(`${root}/CLAUDE.md`).text();
+    expect(claude).toContain("@AGENTS.md");
+    expect(claude).not.toContain("Prefer Akan MCP workflows before direct source edits");
+    const cursor = await Bun.file(`${root}/.cursor/rules/akan.mdc`).text();
+    expect(cursor).toContain("@AGENTS.md");
+    expect(cursor).not.toContain("Prefer Akan MCP workflows before direct source edits");
+
+    // The Claude/Cursor pointers need --force to overwrite once they exist.
     await expect(runner.install(workspace, ["cursor"])).rejects.toThrow("already exists");
+  });
+
+  test("preserves hand-written AGENTS.md content and refreshes only the managed block", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    const runner = new AgentRunner();
+
+    await runner.install(workspace, ["agents-md"]);
+    const first = await Bun.file(`${root}/AGENTS.md`).text();
+
+    // Hand-written content placed outside the markers must survive a re-install without --force.
+    await Bun.write(`${root}/AGENTS.md`, `${first}\n## Team Notes\n\nUse feature branches.\n`);
+    const written = await runner.install(workspace, ["agents-md"]);
+    expect(written).toEqual(["AGENTS.md"]);
+
+    const refreshed = await Bun.file(`${root}/AGENTS.md`).text();
+    expect(refreshed).toContain("## Team Notes");
+    expect(refreshed).toContain("Use feature branches.");
+    expect(refreshed).toContain("Prefer Akan MCP workflows before direct source edits");
+    // Re-installing does not duplicate the managed block.
+    expect(refreshed.split("<!-- akan:agent:start -->").length - 1).toBe(1);
   });
 });
