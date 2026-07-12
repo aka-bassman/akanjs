@@ -4,7 +4,7 @@ import type { DocumentModel, QueryOf } from "akanjs/constant";
 import type { FilterCls, FilterQueryOf, FilterSortOf, SchemaOf } from ".";
 import type { CacheDatabase, QueryMethodPart } from "./database";
 import type { DataLoader } from "./dataLoader";
-import type { DocumentQuery, DocumentUpdate, DocumentUpdateOptions } from "./documentQuery";
+import type { DocumentQuery, DocumentUpdateInput, DocumentUpdateOptions } from "./documentQuery";
 import { type LoaderBuilder, type ModelCls, makeLoaderBuilder } from "./loaderInfo";
 import type { DocumentProjection } from "./types";
 
@@ -50,7 +50,7 @@ export interface UpdateResult {
 export interface BulkWriteOperation<Raw, _RawDoc = DocumentModel<Raw>, _RawQuery = DocumentQuery<_RawDoc>> {
   updateOne: {
     filter: _RawQuery;
-    update: DocumentUpdate;
+    update: DocumentUpdateInput<_RawDoc>;
     upsert?: boolean;
   };
 }
@@ -79,8 +79,12 @@ export type Mdl<
   findById(id: string | undefined, projection?: _Projection): Promise<Doc | null>;
   countDocuments(query: _RawQuery): Promise<number>;
   exists(query: _RawQuery): Promise<string | null>;
-  updateOne(query: _RawQuery, update: DocumentUpdate, options?: DocumentUpdateOptions): Promise<UpdateResult>;
-  updateMany(query: _RawQuery, update: DocumentUpdate): Promise<UpdateResult>;
+  updateOne(
+    query: _RawQuery,
+    update: DocumentUpdateInput<_RawDoc>,
+    options?: DocumentUpdateOptions,
+  ): Promise<UpdateResult>;
+  updateMany(query: _RawQuery, update: DocumentUpdateInput<_RawDoc>): Promise<UpdateResult>;
   deleteMany(query: _RawQuery): Promise<UpdateResult>;
   bulkWrite(operations: BulkWriteOperation<Raw, _RawDoc, _RawQuery>[]): Promise<UpdateResult>;
 };

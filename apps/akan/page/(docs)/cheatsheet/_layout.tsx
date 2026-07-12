@@ -45,6 +45,7 @@ export default function Layout({ children }: LayoutProps) {
         },
         { name: l.trans({ en: "Lazy Loading", ko: "지연 로딩" }), href: "/cheatsheet/performance/lazy" },
         { name: l.trans({ en: "Querying", ko: "쿼리" }), href: "/cheatsheet/performance/query" },
+        { name: l.trans({ en: "Mutating", ko: "변경" }), href: "/cheatsheet/performance/mutation" },
         { name: l.trans({ en: "Queueing", ko: "큐" }), href: "/cheatsheet/performance/queue" },
         { name: l.trans({ en: "Realtime", ko: "실시간" }), href: "/cheatsheet/performance/realtime" },
       ],
