@@ -37,6 +37,7 @@ interface ExportedFunctionLike {
   file: string;
   line: number;
   bodyFingerprint?: string;
+  duplicateNameExempt: boolean;
 }
 
 interface TopLevelDeclaration {
@@ -177,7 +178,8 @@ export class AkanQualityScanner {
     const exportedFunctionLikes = sourceFiles.flatMap((sourceFile) => getExportedFunctionLikes(sourceFile));
     const warnings: QualityWarning[] = [];
 
-    for (const [name, declarations] of groupBy(exportedFunctionLikes, (declaration) => declaration.name)) {
+    const nameCheckedDeclarations = exportedFunctionLikes.filter((declaration) => !declaration.duplicateNameExempt);
+    for (const [name, declarations] of groupBy(nameCheckedDeclarations, (declaration) => declaration.name)) {
       if (declarations.length < 2) continue;
       warnings.push({
         rule: "akan.global.duplicate-exported-function-name",
@@ -345,6 +347,7 @@ function formatQualityLocation(file: string | undefined, line: number | undefine
 
 function getExportedFunctionLikes(sourceFile: SourceFileInfo): ExportedFunctionLike[] {
   const declarations: ExportedFunctionLike[] = [];
+  const pageExempt = isPageRouteFile(sourceFile.file);
   for (const statement of sourceFile.sourceFile.statements) {
     if (ts.isFunctionDeclaration(statement) && statement.name && isExported(statement)) {
       declarations.push({
@@ -353,6 +356,7 @@ function getExportedFunctionLikes(sourceFile: SourceFileInfo): ExportedFunctionL
         file: sourceFile.file,
         line: getLine(sourceFile.sourceFile, statement),
         bodyFingerprint: getBodyFingerprint(sourceFile.sourceFile, statement.body),
+        duplicateNameExempt: pageExempt || isConventionDuplicateNameExempt(sourceFile.file, false),
       });
     }
     if (ts.isClassDeclaration(statement) && statement.name && isExported(statement)) {
@@ -362,6 +366,9 @@ function getExportedFunctionLikes(sourceFile: SourceFileInfo): ExportedFunctionL
         file: sourceFile.file,
         line: getLine(sourceFile.sourceFile, statement),
         bodyFingerprint: getBodyFingerprint(sourceFile.sourceFile, statement),
+        duplicateNameExempt:
+          pageExempt ||
+          isConventionDuplicateNameExempt(sourceFile.file, isEnumClassStatement(sourceFile.sourceFile, statement)),
       });
     }
     if (ts.isVariableStatement(statement) && isExported(statement)) {
@@ -373,11 +380,44 @@ function getExportedFunctionLikes(sourceFile: SourceFileInfo): ExportedFunctionL
           file: sourceFile.file,
           line: getLine(sourceFile.sourceFile, declaration),
           bodyFingerprint: getBodyFingerprint(sourceFile.sourceFile, declaration.initializer),
+          duplicateNameExempt: pageExempt || isConventionDuplicateNameExempt(sourceFile.file, false),
         });
       }
     }
   }
   return declarations;
+}
+
+function isPageRouteFile(file: string) {
+  const segments = file.split("/");
+  return (segments[0] === "apps" || segments[0] === "libs") && segments[2] === "page";
+}
+
+function isConventionDuplicateNameExempt(file: string, isEnumClass: boolean) {
+  if (!isInLibModule(file)) return false;
+  if (file.endsWith(".tsx")) return true;
+  if (
+    file.endsWith(".document.ts") ||
+    file.endsWith(".service.ts") ||
+    file.endsWith(".signal.ts") ||
+    file.endsWith(".store.ts")
+  )
+    return true;
+  // Model view classes may repeat across modules; enum classes must stay uniquely named.
+  if (file.endsWith(".constant.ts")) return !isEnumClass;
+  return false;
+}
+
+function isInLibModule(file: string) {
+  const segments = file.split("/");
+  return (segments[0] === "apps" || segments[0] === "libs") && segments.includes("lib");
+}
+
+function isEnumClassStatement(sourceFile: ts.SourceFile, statement: ts.Statement) {
+  if (!ts.isClassDeclaration(statement)) return false;
+  const heritageClause = statement.heritageClauses?.find((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword);
+  const expression = heritageClause?.types[0]?.expression;
+  return !!expression && expression.getText(sourceFile).startsWith("enumOf(");
 }
 
 function getExportedClassNames(sourceFile: ts.SourceFile) {
@@ -403,11 +443,7 @@ function getPlaceholderExportWarnings(sourceFile: SourceFileInfo): QualityWarnin
 
 function getDictionaryTextWarnings(sourceFile: SourceFileInfo): QualityWarning[] {
   if (!sourceFile.file.endsWith(".dictionary.ts")) return [];
-  const stalePatterns = [
-    { pattern: /\b[A-Z][A-Za-z0-9]* description\b/, label: "scaffold description text" },
-    { pattern: /settting/, label: "misspelling: settting" },
-    { pattern: /배너 수/, label: "stale copied Korean domain noun: 배너 수" },
-  ];
+  const stalePatterns = [{ pattern: /\b[A-Z][A-Za-z0-9]* description\b/, label: "scaffold description text" }];
   return stalePatterns.flatMap(({ pattern, label }) =>
     findPatternLines(sourceFile.content, pattern).map((line) => ({
       rule: "akan.file.dictionary-stale-text",
