@@ -1398,6 +1398,12 @@ export class AppExecutor extends SysExecutor {
       ...routeEnv,
       ...(devPort ? { PORT: devPort, AKAN_PUBLIC_CLIENT_PORT: devPort, AKAN_PUBLIC_SERVER_PORT: devPort } : {}),
     });
+    // `start` spawns subprocesses that carry `env`, but `build` runs its phases in this same process and
+    // reads `process.env` directly. Publish the resolved env here so SSR/CSR bundling (fed by getPublicEnv,
+    // which filters to AKAN_PUBLIC_*) sees AKAN_PUBLIC_APP_NAME — otherwise SSR throws
+    // "environment variable AKAN_PUBLIC_APP_NAME is required". Only AKAN_PUBLIC_* is baked into bundles, so
+    // this does not leak non-public env.
+    if (type === "build") Object.assign(process.env, env);
     return { env };
   }
   #publicEnv: Record<string, string> | null = null;

@@ -41,7 +41,6 @@ export const createScalarWorkflowSpec: WorkflowSpec = {
   ],
   predictedChanges: [
     { target: "*/lib/__scalar/<scalar>/*", action: "create", reason: "New scalar source files are scaffolded." },
-    { target: "*/lib/option.ts", action: "sync", reason: "Generated option barrel may include scalar options." },
   ],
   validation: baseValidation,
   completionCriteria: ["Scalar files exist under __scalar.", "Generated files are refreshed.", "Lint passes."],

@@ -119,6 +119,10 @@ export type JsonRpcRequest = {
 export type McpFraming = "content-length" | "newline";
 export type AkanMcpMode = "readonly" | "plan" | "apply";
 
+// Coding-agent tools that can host the Akan MCP server. Cursor and Claude Code both read a JSON
+// `mcpServers` map; Codex reads a TOML `[mcp_servers.<name>]` table.
+export type AkanMcpInstallTarget = "cursor" | "claude" | "codex";
+
 export type CursorMcpConfig = {
   mcpServers?: Record<string, unknown>;
 };
@@ -133,16 +137,78 @@ export const resourceList = [
 ];
 
 export const cursorMcpConfigPath = ".cursor/mcp.json";
+// Claude Code reads project-scoped MCP servers from `.mcp.json` at the workspace root.
+export const claudeMcpConfigPath = ".mcp.json";
+// Codex reads project-scoped config (trusted projects) from `.codex/config.toml`.
+export const codexMcpConfigPath = ".codex/config.toml";
 
+export const akanMcpInstallTargets: AkanMcpInstallTarget[] = ["cursor", "claude", "codex"];
+
+export const akanMcpInstallConfigPaths: Record<AkanMcpInstallTarget, string> = {
+  cursor: cursorMcpConfigPath,
+  claude: claudeMcpConfigPath,
+  codex: codexMcpConfigPath,
+};
+
+// `akan mcp` resolves the workspace from process.cwd(), so every launcher must run it from the
+// workspace root. Cursor expands its own ${workspaceFolder} variable. Claude Code does not guarantee
+// the server's cwd but sets CLAUDE_PROJECT_DIR in its environment, so we cd into that at runtime.
+// Codex inherits its own launch cwd (it also discovers .codex/config.toml from cwd), so it runs the
+// command directly and must be started from the workspace root.
 const cursorWorkspaceFolder = "$" + "{workspaceFolder}";
+const claudeProjectDir = "$CLAUDE_PROJECT_DIR";
+
+const akanMcpCommand = (mode: AkanMcpMode, { cd }: { cd?: string } = {}) =>
+  cd ? `cd "${cd}" && akan mcp --mode ${mode}` : `akan mcp --mode ${mode}`;
 
 export const createAkanCursorMcpServer = (mode: AkanMcpMode = "readonly") => ({
   type: "stdio",
   command: "bash",
-  args: ["-lc", `cd "${cursorWorkspaceFolder}" && akan mcp --mode ${mode}`],
+  args: ["-lc", akanMcpCommand(mode, { cd: cursorWorkspaceFolder })],
 });
 
+export const createAkanClaudeMcpServer = (mode: AkanMcpMode = "readonly") => ({
+  type: "stdio",
+  command: "bash",
+  args: ["-lc", akanMcpCommand(mode, { cd: claudeProjectDir })],
+});
+
+// JSON-config targets (Cursor, Claude Code) share the same `mcpServers` entry shape.
+export const createAkanMcpServer = (target: "cursor" | "claude", mode: AkanMcpMode = "readonly") =>
+  target === "cursor" ? createAkanCursorMcpServer(mode) : createAkanClaudeMcpServer(mode);
+
 export const akanCursorMcpServer = createAkanCursorMcpServer();
+
+// Codex config is TOML and we have no TOML serializer, so we build the `[mcp_servers.akan]` table as text.
+export const codexMcpServerTableHeader = "[mcp_servers.akan]";
+export const createAkanCodexMcpServerBlock = (mode: AkanMcpMode = "readonly") =>
+  `${codexMcpServerTableHeader}\ncommand = "bash"\nargs = ["-lc", "${akanMcpCommand(mode)}"]\n`;
+
+// A TOML table runs from its header until the next top-level `[header]` or EOF. We upsert only the
+// akan table and preserve everything else in the file, mirroring the JSON merge behavior.
+const codexAkanTablePattern = /^\[mcp_servers\.akan\][^\n]*\n(?:(?!\[)[^\n]*(?:\n|$))*/m;
+
+export const upsertCodexMcpServerBlock = (
+  existing: string,
+  block: string,
+  { force = false }: { force?: boolean } = {},
+) => {
+  const nextBlock = block.endsWith("\n") ? block : `${block}\n`;
+  const match = existing.match(codexAkanTablePattern);
+  if (!match) {
+    if (!existing.trim()) return nextBlock;
+    return `${existing.replace(/\s*$/, "")}\n\n${nextBlock}`;
+  }
+  if (match[0].trim() === nextBlock.trim()) return existing;
+  if (!force)
+    throw new Error(`${codexMcpConfigPath} already has an "akan" MCP server. Re-run with --force to overwrite it.`);
+  const start = match.index ?? 0;
+  const before = existing.slice(0, start);
+  const after = existing.slice(start + match[0].length);
+  // The matched table absorbed its trailing blank line, so re-insert one before any following table.
+  const separator = after && !after.startsWith("\n") ? "\n" : "";
+  return `${before}${nextBlock}${separator}${after}`;
+};
 
 export const renderDoctorText = (result: AkanDoctorResult) => {
   const lines = [`Akan doctor status: ${result.status}`];
@@ -189,7 +255,6 @@ const generatedFiles = [
   "*/lib/cnst.ts",
   "*/lib/db.ts",
   "*/lib/dict.ts",
-  "*/lib/option.ts",
   "*/lib/sig.ts",
   "*/lib/srv.ts",
   "*/lib/st.ts",

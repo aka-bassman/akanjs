@@ -25,8 +25,8 @@ export class ContextCommand extends command("context", [ContextScript], ({ publi
     .exec(async function (format, strict, workspace) {
       await this.contextScript.doctor(workspace, { format: format as "text" | "json", strict });
     }),
-  mcpInstall: target({ desc: "Install the Akan MCP server config for Cursor" })
-    .arg("target", String, { desc: "cursor", nullable: true })
+  mcpInstall: target({ desc: "Install the Akan MCP server config for Cursor, Claude Code, and Codex" })
+    .arg("target", String, { desc: "cursor, claude, codex, or all", nullable: true })
     .option("force", Boolean, { desc: "overwrite an existing Akan MCP server entry", default: false })
     .option("mode", String, {
       desc: "MCP permission mode",

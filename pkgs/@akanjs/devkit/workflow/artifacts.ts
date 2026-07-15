@@ -196,7 +196,6 @@ export const generatedFilePathsForTarget = (targetRoot: string, reason = "Genera
   [
     { path: `${targetRoot}/lib/cnst.ts`, action: "sync", reason },
     { path: `${targetRoot}/lib/dict.ts`, action: "sync", reason },
-    { path: `${targetRoot}/lib/option.ts`, action: "sync", reason },
     { path: `${targetRoot}/lib/index.ts`, action: "sync", reason },
   ] satisfies PrimitiveGeneratedFile[];
 

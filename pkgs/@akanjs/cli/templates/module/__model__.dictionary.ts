@@ -24,7 +24,9 @@ export const dictionary = modelDictionary(["en", "ko"])
   .of((t) =>
     t(["${modelLabelEn}", "${modelLabelKo}"]).desc(["${modelDescEn}", "${modelDescKo}"])
   )
-  .model<${dict.Model}>((t) => ({}))
+  .model<${dict.Model}>((t) => ({
+    name: t(["Name", "이름"]),
+  }))
   .insight<${dict.Model}Insight>((t) => ({}))
   .slice<${dict.Model}Slice>((fn) => ({
     inPublic: fn(["${dict.Model} In Public", "${dict.Model} 공개"]).arg((t) => ({})),

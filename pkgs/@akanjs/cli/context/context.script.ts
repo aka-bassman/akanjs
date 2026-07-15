@@ -1,6 +1,25 @@
-import { type AkanMcpMode, jsonText, script, type Workspace } from "@akanjs/devkit";
+import {
+  type AkanMcpInstallTarget,
+  type AkanMcpMode,
+  akanMcpInstallTargets,
+  jsonText,
+  script,
+  type Workspace,
+} from "@akanjs/devkit";
 import { Logger } from "akanjs/common";
 import { ContextRunner } from "./context.runner";
+
+const resolveMcpInstallTargets = (target: string | null): AkanMcpInstallTarget[] => {
+  if (!target || target === "all") return [...akanMcpInstallTargets];
+  if ((akanMcpInstallTargets as string[]).includes(target)) return [target as AkanMcpInstallTarget];
+  throw new Error(`Unknown MCP install target: ${target}. Use cursor, claude, codex, or all.`);
+};
+
+const mcpTargetLabels: Record<AkanMcpInstallTarget, string> = {
+  cursor: "Cursor",
+  claude: "Claude Code",
+  codex: "Codex",
+};
 
 export class ContextScript extends script("context", [ContextRunner]) {
   async context(
@@ -19,9 +38,13 @@ export class ContextScript extends script("context", [ContextRunner]) {
     target: string | null,
     { force = false, mode = "readonly" }: { force?: boolean; mode?: AkanMcpMode } = {},
   ) {
-    if (target && target !== "cursor") throw new Error(`Unknown MCP install target: ${target}. Use cursor.`);
-    const written = await this.contextRunner.installMcp(workspace, "cursor", { force, mode });
-    Logger.rawLog(`Akan MCP server installed for Cursor:\n- ${written}`);
+    const targets = resolveMcpInstallTargets(target);
+    const written: string[] = [];
+    for (const t of targets) {
+      const configPath = await this.contextRunner.installMcp(workspace, t, { force, mode });
+      written.push(`${mcpTargetLabels[t]}: ${configPath}`);
+    }
+    Logger.rawLog(`Akan MCP server installed (${mode} mode):\n${written.map((line) => `- ${line}`).join("\n")}`);
   }
 
   async mcp(workspace: Workspace, { mode = "readonly" }: { mode?: AkanMcpMode } = {}) {

@@ -824,7 +824,16 @@ class QueryCompiler {
   private assertPath(path: string) {
     const root = path.split(".")[0];
     if (BASE_COLUMNS.has(root)) return;
-    if (!this.fields[root]) throw new Error(`Unknown document field path: ${path}`);
+    if (!this.fields[root]) {
+      // A numeric root path means an array was passed where a query descriptor was expected —
+      // almost always a slice `exec` that returned an executed list (listBy...) instead of a query.
+      if (/^\d+$/.test(root))
+        throw new Error(
+          `Query received an array instead of a query object (field path "${path}"). ` +
+            `A query must be a descriptor object; a slice exec must return queryBy...(...), not an executed list.`,
+        );
+      throw new Error(`Unknown document field path: ${path}`);
+    }
   }
 
   private isQueryNode(value: unknown): value is DocumentQueryNode {

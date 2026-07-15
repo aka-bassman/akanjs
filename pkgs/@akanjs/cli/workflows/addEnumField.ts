@@ -63,7 +63,6 @@ export const addEnumFieldWorkflowSpec: WorkflowSpec = {
     { target: "*/lib/<module>/<module>.constant.ts", action: "modify", reason: "Enum field shape is added." },
     { target: "*/lib/<module>/<module>.dictionary.ts", action: "modify", reason: "Enum labels are added." },
     { target: "*/lib/<module>/<module>.option.ts", action: "modify", reason: "Enum options may be added." },
-    { target: "*/lib/option.ts", action: "sync", reason: "Generated option barrel may change after sync." },
   ],
   validation: [
     ...baseValidation,

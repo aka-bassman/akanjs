@@ -1,13 +1,16 @@
 import {
   AkanContextAnalyzer,
   type AkanContextFormat,
+  type AkanMcpInstallTarget,
   type AkanMcpMode,
+  akanMcpInstallConfigPaths,
   applyFirstPolicy,
   type CursorMcpConfig,
-  createAkanCursorMcpServer,
+  codexMcpConfigPath,
+  createAkanCodexMcpServerBlock,
+  createAkanMcpServer,
   createAkanValidationContract,
   createWorkflowBaselineSummary,
-  cursorMcpConfigPath,
   defaultWorkflowPlanPath,
   inspectAkanContext,
   type JsonRpcRequest,
@@ -20,6 +23,7 @@ import {
   resourceList,
   runner,
   stringArg,
+  upsertCodexMcpServerBlock,
   type WorkflowDiagnostic,
   type Workspace,
   workflowInputsArg,
@@ -98,18 +102,29 @@ export class ContextRunner extends runner("context") {
 
   async installMcp(
     workspace: Workspace,
-    target: "cursor",
+    target: AkanMcpInstallTarget,
     { force = false, mode = "readonly" }: { force?: boolean; mode?: AkanMcpMode } = {},
   ) {
-    if (target !== "cursor") throw new Error(`Unknown MCP install target: ${target}. Use cursor.`);
-    const existing = (await workspace.exists(cursorMcpConfigPath))
-      ? ((await workspace.readJson(cursorMcpConfigPath)) as CursorMcpConfig)
+    if (target === "codex") return await this.#installCodexMcp(workspace, { force, mode });
+    return await this.#installJsonMcp(workspace, target, { force, mode });
+  }
+
+  // Cursor (.cursor/mcp.json) and Claude Code (.mcp.json) share a JSON `mcpServers` map, so the merge
+  // logic is identical: keep every existing server and upsert only the "akan" entry.
+  async #installJsonMcp(
+    workspace: Workspace,
+    target: "cursor" | "claude",
+    { force, mode }: { force: boolean; mode: AkanMcpMode },
+  ) {
+    const configPath = akanMcpInstallConfigPaths[target];
+    const existing = (await workspace.exists(configPath))
+      ? ((await workspace.readJson(configPath)) as CursorMcpConfig)
       : {};
     const mcpServers = existing.mcpServers ?? {};
     const currentAkanServer = mcpServers.akan;
-    const nextAkanServer = createAkanCursorMcpServer(mode);
+    const nextAkanServer = createAkanMcpServer(target, mode);
     if (currentAkanServer && !force && JSON.stringify(currentAkanServer) !== JSON.stringify(nextAkanServer)) {
-      throw new Error(`${cursorMcpConfigPath} already has an "akan" MCP server. Re-run with --force to overwrite it.`);
+      throw new Error(`${configPath} already has an "akan" MCP server. Re-run with --force to overwrite it.`);
     }
     const nextConfig: CursorMcpConfig = {
       ...existing,
@@ -118,8 +133,16 @@ export class ContextRunner extends runner("context") {
         akan: nextAkanServer,
       },
     };
-    await workspace.writeFile(cursorMcpConfigPath, `${JSON.stringify(nextConfig, null, 2)}\n`);
-    return cursorMcpConfigPath;
+    await workspace.writeFile(configPath, `${JSON.stringify(nextConfig, null, 2)}\n`);
+    return configPath;
+  }
+
+  // Codex (.codex/config.toml) is TOML; we upsert only the [mcp_servers.akan] table as text.
+  async #installCodexMcp(workspace: Workspace, { force, mode }: { force: boolean; mode: AkanMcpMode }) {
+    const existing = (await workspace.exists(codexMcpConfigPath)) ? await workspace.readFile(codexMcpConfigPath) : "";
+    const merged = upsertCodexMcpServerBlock(existing, createAkanCodexMcpServerBlock(mode), { force });
+    await workspace.writeFile(codexMcpConfigPath, merged);
+    return codexMcpConfigPath;
   }
 
   listMcpTools(mode: AkanMcpMode = "readonly") {
@@ -459,7 +482,7 @@ export class ContextRunner extends runner("context") {
       "mcp-call":
         '`akan mcp-call <tool> --mode plan --args \'{"workflow":"add-field","inputs":{"app":"demo"}}\'` calls one MCP tool through the same runner path for debugging.',
       "mcp-install":
-        "`akan mcp-install cursor --mode readonly|plan|apply` installs the Akan MCP server config for Cursor.",
+        "`akan mcp-install [cursor|claude|codex|all] --mode readonly|plan|apply` installs the Akan MCP server config for Cursor (.cursor/mcp.json), Claude Code (.mcp.json), and Codex (.codex/config.toml). Defaults to all targets.",
     };
     return (
       explanations[command] ??

@@ -132,6 +132,7 @@ export const dictionary = modelDictionary(["en", "ko"])
     expect(constant).toContain("budget: field(Float, { default: 0 }),");
     expect(constant).toContain('"budget"');
     expect(constant).toContain(`export class LightProject extends via(ProjectObject, [
+  "name",
   "budget",
 ] as const, (resolve) => ({})) {}`);
     expect(constant).not.toContain("as const as const");

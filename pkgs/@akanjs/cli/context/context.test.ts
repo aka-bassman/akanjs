@@ -3,6 +3,8 @@ import {
   AkanContextAnalyzer,
   AppExecutor,
   CommandContainer,
+  createAkanClaudeMcpServer,
+  createAkanCodexMcpServerBlock,
   createAkanCursorMcpServer,
   ModuleExecutor,
 } from "@akanjs/devkit";
@@ -37,7 +39,7 @@ describe("ContextRunner", () => {
     const output = await new ContextRunner().getContext(workspace, { format: "json" });
     const context = JSON.parse(output) as Awaited<ReturnType<typeof AkanContextAnalyzer.analyze>>;
 
-    expect(context.generatedFiles).toContain("*/lib/option.ts");
+    expect(context.generatedFiles).not.toContain("*/lib/option.ts");
     expect(context.generatedFiles).toContain("*/ui/index.ts");
     expect(context.validationCommands).toContain("akan sync <app-or-lib>");
     expect(context.validationCommands).toContain("akan doctor --strict --format json");
@@ -198,13 +200,18 @@ describe("ContextRunner", () => {
     expect(fieldContext.data.moduleIndex.constant).toMatchObject({
       inputClassName: "PostInput",
       builderName: "field",
-      fields: [],
     });
     expect(fieldContext.data.moduleIndex.dictionary).toMatchObject({
       modelClassName: "Post",
       translatorName: "t",
-      fields: [],
     });
+    // The scaffold ships a starter `name` field wired through constant + dictionary so the module is green.
+    expect(fieldContext.data.moduleIndex.constant?.fields).toContainEqual(
+      expect.objectContaining({ name: "name", kind: "constant" }),
+    );
+    expect(fieldContext.data.moduleIndex.dictionary?.fields).toContainEqual(
+      expect.objectContaining({ name: "name", kind: "dictionary" }),
+    );
     expect(fieldContext.data.moduleIndex.fieldPresence).toContainEqual(
       expect.objectContaining({ name: "title", requested: true, constant: false, dictionary: false }),
     );
@@ -303,6 +310,77 @@ describe("ContextRunner", () => {
 
     await expect(runner.installMcp(workspace, "cursor")).rejects.toThrow('already has an "akan" MCP server');
     await expect(runner.installMcp(workspace, "cursor", { force: true })).resolves.toBe(".cursor/mcp.json");
+  });
+
+  test("installs Claude Code MCP config while preserving existing servers", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    await writeText(
+      `${root}/.mcp.json`,
+      `${JSON.stringify({ mcpServers: { existing: { type: "stdio", command: "node", args: ["server.js"] } } }, null, 2)}\n`,
+    );
+
+    const written = await new ContextRunner().installMcp(workspace, "claude", { mode: "apply" });
+    const config = (await workspace.readJson(".mcp.json")) as {
+      mcpServers: Record<string, { type: string; command: string; args: string[] }>;
+    };
+
+    expect(written).toBe(".mcp.json");
+    expect(config.mcpServers.existing).toEqual({ type: "stdio", command: "node", args: ["server.js"] });
+    expect(config.mcpServers.akan).toEqual(createAkanClaudeMcpServer("apply"));
+    // Claude does not guarantee the server cwd, so it must anchor on CLAUDE_PROJECT_DIR, not Cursor's ${workspaceFolder}.
+    const claudeCommand = JSON.stringify(config.mcpServers.akan);
+    expect(claudeCommand).toContain("CLAUDE_PROJECT_DIR");
+    expect(claudeCommand).not.toContain("workspaceFolder");
+  });
+
+  test("requires force before overwriting an existing Claude Code MCP server entry", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    await writeText(
+      `${root}/.mcp.json`,
+      `${JSON.stringify({ mcpServers: { akan: { type: "stdio", command: "other" } } }, null, 2)}\n`,
+    );
+    const runner = new ContextRunner();
+
+    await expect(runner.installMcp(workspace, "claude")).rejects.toThrow('already has an "akan" MCP server');
+    await expect(runner.installMcp(workspace, "claude", { force: true })).resolves.toBe(".mcp.json");
+  });
+
+  test("installs Codex MCP config as TOML while preserving other tables", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    await writeText(`${root}/.codex/config.toml`, 'model = "gpt-5-codex"\n\n[mcp_servers.other]\ncommand = "node"\n');
+
+    const written = await new ContextRunner().installMcp(workspace, "codex", { mode: "plan" });
+    const config = await workspace.readFile(".codex/config.toml");
+
+    expect(written).toBe(".codex/config.toml");
+    expect(config).toContain('model = "gpt-5-codex"');
+    expect(config).toContain("[mcp_servers.other]");
+    expect(config).toContain(createAkanCodexMcpServerBlock("plan").trim());
+    expect(config).toContain("akan mcp --mode plan");
+  });
+
+  test("creates the Codex config from scratch when absent", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+
+    await new ContextRunner().installMcp(workspace, "codex");
+    const config = await workspace.readFile(".codex/config.toml");
+
+    expect(config.trimStart()).toStartWith("[mcp_servers.akan]");
+    expect(config).toContain(createAkanCodexMcpServerBlock("readonly").trim());
+  });
+
+  test("requires force before overwriting an existing Codex MCP server table", async () => {
+    const { root, workspace } = await createTempApp("demo");
+    tempRoots.push(root);
+    await writeText(`${root}/.codex/config.toml`, '[mcp_servers.akan]\ncommand = "other"\n');
+    const runner = new ContextRunner();
+
+    await expect(runner.installMcp(workspace, "codex")).rejects.toThrow('already has an "akan" MCP server');
+    await expect(runner.installMcp(workspace, "codex", { force: true })).resolves.toBe(".codex/config.toml");
   });
 
   test("runs workflow read tools through MCP plan mode", async () => {

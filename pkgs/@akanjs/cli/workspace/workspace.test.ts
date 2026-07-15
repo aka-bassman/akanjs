@@ -205,7 +205,7 @@ describe("WorkspaceRunner", () => {
       expect(workspacePackageJson.scripts).toMatchObject({
         "setup:agent": "akan agent install all --force",
         "agent:doctor": "akan doctor --strict --format json",
-        "agent:mcp:plan": "akan mcp-install cursor --mode plan --force",
+        "agent:mcp:plan": "akan mcp-install all --mode plan --force",
         "agent:sample:service": "akan create-service billing demo --format json",
         "agent:sample:module": "akan create-module project demo --page=true --format json",
         "agent:sample:field":

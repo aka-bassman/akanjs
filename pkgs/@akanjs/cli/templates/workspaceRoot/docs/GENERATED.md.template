@@ -17,7 +17,6 @@ sync or build can overwrite local changes.
 | `apps/*/lib/cnst.ts` | Re-exports constants and model shapes from module `*.constant.ts` files. |
 | `apps/*/lib/db.ts` | Re-exports database models from module `*.document.ts` files. |
 | `apps/*/lib/dict.ts` | Re-exports dictionaries from module `*.dictionary.ts` files. |
-| `apps/*/lib/option.ts` | Re-exports generated option helpers. |
 | `apps/*/lib/srv.ts` | Re-exports services from module `*.service.ts` files. |
 | `apps/*/lib/sig.ts` | Re-exports endpoints, slices, and internals from module `*.signal.ts` files. |
 | `apps/*/lib/st.ts` | Re-exports stores from module `*.store.ts` files. |
