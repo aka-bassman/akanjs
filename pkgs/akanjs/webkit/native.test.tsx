@@ -38,6 +38,7 @@ const pushState = {
   registered: 0,
   autoInit: 0,
   actionListeners: [] as Array<(event: { notification?: { data?: Record<string, unknown> } }) => void>,
+  registrationListeners: [] as Array<(event: { value?: string }) => void>,
 };
 const assigned: string[] = [];
 const deepLinks: string[] = [];
@@ -172,9 +173,16 @@ const installCapacitorBridge = () => {
           checkPermissions: async () => ({ receive: pushState.receive }),
           register: async () => {
             pushState.registered += 1;
+            pushState.registrationListeners.forEach((listener) => {
+              listener({ value: "native-token" });
+            });
           },
-          addListener: async (_eventName: string, listener: (event: { notification?: { data?: Record<string, unknown> } }) => void) => {
-            pushState.actionListeners.push(listener);
+          addListener: async (
+            eventName: string,
+            listener: (event: { value?: string; notification?: { data?: Record<string, unknown> } }) => void,
+          ) => {
+            if (eventName === "registration") pushState.registrationListeners.push(listener);
+            else if (eventName === "pushNotificationActionPerformed") pushState.actionListeners.push(listener);
             return { remove: () => undefined };
           },
         },
@@ -270,6 +278,7 @@ afterEach(() => {
   pushState.registered = 0;
   pushState.autoInit = 0;
   pushState.actionListeners = [];
+  pushState.registrationListeners = [];
   assigned.length = 0;
   deepLinks.length = 0;
   globalThis.__AKAN_PUSH_CLICK_BRIDGE__ = undefined;

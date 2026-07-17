@@ -262,6 +262,43 @@ function validateRouteSourceExports(
   }
 }
 
+/**
+ * Statically enforces that a `_overrides.tsx` route file is a logic-free activation manifest: a plain module
+ * (no `"use client"` — the framework generates the client wrapper) that only imports components and binds them
+ * to slots through a single `export default override({ Modal: BrandModal })`. It must not declare components
+ * inline or run logic — that keeps the override contract a thin binding layer rather than a second place to
+ * author UI. Slot names and value types are validated at compile time by `override`.
+ */
+function validateOverridesSourceExports(source: string, filePath: string) {
+  const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const fail = (message: string): never => {
+    throw new Error(`[route-convention] ${message}: ${filePath}`);
+  };
+  let defaultOverride: ts.ExportAssignment | null = null;
+  for (const statement of sourceFile.statements) {
+    // A "use client" directive is unnecessary (the framework wraps the manifest) but harmless if present.
+    if (ts.isExpressionStatement(statement) && ts.isStringLiteral(statement.expression)) continue;
+    // The manifest imports the app components it binds; imports and type-only decls carry no runtime logic.
+    if (ts.isImportDeclaration(statement)) continue;
+    if (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement)) continue;
+    if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
+      defaultOverride = statement;
+      continue;
+    }
+    fail(`_overrides.tsx may only contain imports and a single "export default override({ ... })"`);
+  }
+  if (!defaultOverride) fail(`_overrides.tsx must "export default override({ ... })"`);
+  const expression = defaultOverride.expression;
+  if (
+    !ts.isCallExpression(expression) ||
+    !ts.isIdentifier(expression.expression) ||
+    expression.expression.text !== "override"
+  )
+    fail(
+      `_overrides.tsx default export must be a call to "override", e.g. "export default override({ Modal: BrandModal })"`,
+    );
+}
+
 export class Executor {
   static verbose = false;
   static setVerbose(verbose: boolean) {
@@ -1466,7 +1503,9 @@ export class AppExecutor extends SysExecutor {
         throw new Error(`[route-convention] __root_layout is reserved for Akan.js generated root layout: ${absPath}`);
       }
       const isRootLayout = parsed.kind === "layout" && parsed.moduleSegments.at(-1) === "_layout";
-      validateRouteSourceExports(await Bun.file(absPath).text(), absPath, parsed.kind, { rootLayout: isRootLayout });
+      const routeSource = await Bun.file(absPath).text();
+      if (parsed.kind === "overrides") validateOverridesSourceExports(routeSource, absPath);
+      else validateRouteSourceExports(routeSource, absPath, parsed.kind, { rootLayout: isRootLayout });
       pageKeys.push(key);
     }
     pageKeys.sort();
