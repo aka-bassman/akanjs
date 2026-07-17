@@ -51,6 +51,9 @@ const WORKSPACE_BARREL_FACETS = ["ui", "webkit", "common", "client", "server"] a
 const SSR_RUNTIME_PACKAGES = ["react", "react-dom", "react-server-dom-webpack"] as const;
 const NATIVE_RUNTIME_PACKAGES = ["sharp"] as const;
 const DEFAULT_BACKEND_RUNTIME_PACKAGES = ["croner"] as const;
+// Native-only client packages that are not bundled into the base bootstrap; installed
+// on demand when a mobile target is built or started (e.g. firebase for push tokens).
+const MOBILE_RUNTIME_PACKAGES = ["firebase"] as const;
 const DATABASE_MODE_RUNTIME_PACKAGES = {
   single: [],
   multiple: ["@libsql/client", "bullmq", "ioredis", "protobufjs"],
@@ -60,6 +63,7 @@ const AKAN_RUNTIME_PACKAGES = new Set<string>([
   ...SSR_RUNTIME_PACKAGES,
   ...NATIVE_RUNTIME_PACKAGES,
   ...DEFAULT_BACKEND_RUNTIME_PACKAGES,
+  ...MOBILE_RUNTIME_PACKAGES,
   ...Object.values(DATABASE_MODE_RUNTIME_PACKAGES).flat(),
 ]);
 const DEFAULT_AKAN_IMAGE_CONFIG: AkanImageConfig = {
@@ -360,11 +364,20 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
     return [...DATABASE_MODE_RUNTIME_PACKAGES[databaseMode]];
   }
   getMissingDatabaseModeDependencySpecs(databaseMode: DatabaseMode = this.defaultDatabaseMode) {
+    return this.#getMissingDependencySpecs(this.getDatabaseModeRuntimePackages(databaseMode));
+  }
+  getMobileRuntimePackages() {
+    return [...MOBILE_RUNTIME_PACKAGES];
+  }
+  getMissingMobileDependencySpecs() {
+    return this.#getMissingDependencySpecs(this.getMobileRuntimePackages());
+  }
+  #getMissingDependencySpecs(libs: readonly string[]) {
     const rootDependencies = {
       ...this.rootPackageJson.dependencies,
       ...this.rootPackageJson.devDependencies,
     };
-    return this.getDatabaseModeRuntimePackages(databaseMode)
+    return libs
       .filter((lib) => !rootDependencies[lib])
       .map((lib) => {
         const version = this.#resolveProductionDependencyVersion(lib);

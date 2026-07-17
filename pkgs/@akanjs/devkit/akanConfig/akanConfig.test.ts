@@ -264,6 +264,8 @@ describe("AkanAppConfig", () => {
       `postgres@${runtimeDependencies.postgres}`,
       `protobufjs@${runtimeDependencies.protobufjs}`,
     ]);
+    expect(config.getMobileRuntimePackages()).toEqual(["firebase"]);
+    expect(config.getMissingMobileDependencySpecs()).toEqual([`firebase@${runtimeDependencies.firebase}`]);
   });
 
   test("normalizes multiple mobile targets and validates base paths", () => {

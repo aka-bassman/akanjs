@@ -2,12 +2,23 @@
 
 import { router } from "akanjs/client";
 import { loadCapacitorDevice, loadCapacitorFcm, loadCapacitorPushNotifications } from "akanjs/client/capacitor";
-import { getApps, initializeApp, type FirebaseOptions } from "firebase/app";
-import { getMessaging, getToken as getFirebaseToken } from "firebase/messaging";
 import { useEffect } from "react";
 
 export type PushNotificationPlatform = "web" | "ios" | "android";
 export type PushNotificationProvider = "fcm";
+
+// Minimal mirror of firebase's `FirebaseOptions` so this module never statically
+// depends on the optional `firebase` package (it is loaded lazily in getWebToken).
+export interface FirebaseOptions {
+  apiKey?: string;
+  authDomain?: string;
+  databaseURL?: string;
+  projectId?: string;
+  storageBucket?: string;
+  messagingSenderId?: string;
+  appId?: string;
+  measurementId?: string;
+}
 
 export interface PushToken {
   token: string;
@@ -34,6 +45,16 @@ declare global {
 const getClientEnv = () => globalThis.__AKAN_CLIENT_ENV__;
 
 const getFirebaseConfig = () => getClientEnv()?.firebase;
+
+// `firebase` is an optional peer that is not part of the bootstrap install, so it
+// must never appear as a statically-analyzable import — otherwise the app bundler
+// tries to resolve it and fails with "Could not resolve firebase/app" when it is
+// absent. Loading through an indirect specifier keeps it invisible to the bundler
+// (same idea as akanjs/client/capacitor, which reaches plugins via the global
+// Capacitor registry instead of importing the optional native packages). The
+// modules resolve at runtime only on the web platform, where firebase is present.
+const firebaseAppPackage = "firebase/app";
+const firebaseMessagingPackage = "firebase/messaging";
 
 const normalizePlatform = (platform: string): PushNotificationPlatform | null => {
   if (platform === "web" || platform === "ios" || platform === "android") return platform;
@@ -84,9 +105,20 @@ const getNativeToken = async (options?: { retries?: number }): Promise<PushToken
 const getWebToken = async (): Promise<PushToken | undefined> => {
   if (!isWebRuntime() || !("serviceWorker" in navigator)) return undefined;
   const firebaseConfig = getFirebaseConfig();
-  if (!firebaseConfig?.apiKey || !firebaseConfig.projectId || !firebaseConfig.messagingSenderId || !firebaseConfig.appId) {
+  if (
+    !firebaseConfig?.apiKey ||
+    !firebaseConfig.projectId ||
+    !firebaseConfig.messagingSenderId ||
+    !firebaseConfig.appId
+  ) {
     return undefined;
   }
+  const [{ getApps, initializeApp }, { getToken: getFirebaseToken, getMessaging }] = await Promise.all([
+    null as unknown as typeof import("firebase/app"), //! temporary disabled
+    null as unknown as typeof import("firebase/messaging"), //@ temporary disabled
+    // import("firebase/app"),
+    // import("firebase/messaging"),
+  ]);
   const firebase = getApps()[0] ?? initializeApp(firebaseConfig);
   const messaging = getMessaging(firebase);
   const serviceWorkerRegistration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");

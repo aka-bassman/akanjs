@@ -10,17 +10,11 @@ import { useInterval, usePushNotification } from "akanjs/webkit";
 import { type ReactNode, useEffect, useState } from "react";
 import { AiFillCheckCircle, AiFillGithub } from "react-icons/ai";
 
-declare global {
-  interface Window {
-    [key: string]: any;
-  }
-}
-
-interface VerifyPhoneProps {
+interface SetPasswordWithPhoneProps {
   disabled?: boolean;
   hash?: string;
 }
-export const SetPasswordWithPhone = ({ disabled, hash = "verify" }: VerifyPhoneProps) => {
+export const SetPasswordWithPhone = ({ disabled, hash = "verify" }: SetPasswordWithPhoneProps) => {
   const { l } = usePage();
   const self = st.use.self();
   const phoneCode = st.use.phoneCode();
@@ -86,7 +80,7 @@ export const SetPasswordWithPhone = ({ disabled, hash = "verify" }: VerifyPhoneP
   );
 };
 
-interface SigninPasswordProps {
+interface SignInPasswordProps {
   siteKey?: string;
   redirect: string;
   replace?: boolean;
@@ -99,11 +93,11 @@ export const SignInPassword = ({
   replace = false,
   forgotPasswordHref = "/forgotpassword",
   signupHref = "/signup/general",
-}: SigninPasswordProps) => {
-  const { l, lang } = usePage();
+}: SignInPasswordProps) => {
+  const { l } = usePage();
   const accountId = st.use.accountId();
   const password = st.use.password();
-  const turnstileToken = st.use.turnstileToken();
+  const _turnstileToken = st.use.turnstileToken();
   const isSubmitable = isEmail(accountId) && password.length >= 7;
   const [isReady, setIsReady] = useState(true);
   useEffect(() => {
@@ -414,7 +408,7 @@ export const ForgotPassword = () => {
 interface SignoutProps {
   className?: string;
   href?: string;
-  children: any;
+  children: ReactNode;
 }
 export const Signout = ({ className, href, children }: SignoutProps) => {
   return (
