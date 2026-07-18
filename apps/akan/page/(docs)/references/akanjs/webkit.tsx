@@ -65,54 +65,6 @@ const onMove = useThrottle((x: number, y: number) => {
 const { fulfilled, value } = useFetchFn(() => fetch.user(userId), [userId]);`,
     },
     {
-      name: "useCamera",
-      desc: l.trans({
-        en: "Capacitor camera/photos hook. It checks permissions, opens app settings on denial, and exposes `getPhoto`, `pickImage`, and permission state for upload UIs.",
-        ko: "Capacitor camera/photos hook입니다. permission을 확인하고 거부 시 app settings를 열며 upload UI를 위한 `getPhoto`, `pickImage`, permission state를 제공합니다.",
-      }),
-      code: `import { useCamera } from "akanjs/webkit";
-
-const { getPhoto, pickImage, permissions } = useCamera();
-const photo = await getPhoto("photos");`,
-    },
-    {
-      name: "useContact",
-      desc: l.trans({
-        en: "Capacitor contacts hook for mobile signup/social flows. It requests contact permission and returns phone/name contact data when native contacts are available.",
-        ko: "mobile signup/social flow를 위한 Capacitor contacts hook입니다. contact permission을 요청하고 native contact를 사용할 수 있으면 phone/name contact data를 반환합니다.",
-      }),
-      code: `import { useContact } from "akanjs/webkit";
-
-const { getContacts } = useContact();
-const contacts = await getContacts();`,
-    },
-    {
-      name: "useGeoLocation",
-      desc: l.trans({
-        en: "Capacitor geolocation hook. It requests location permissions, redirects to app settings when denied, and returns current coordinates for map or location flows.",
-        ko: "Capacitor geolocation hook입니다. location permission을 요청하고 거부되면 app settings로 이동시키며 map/location flow를 위한 현재 coordinate를 반환합니다.",
-      }),
-      code: `import { useGeoLocation } from "akanjs/webkit";
-
-const { getPosition } = useGeoLocation();
-const position = await getPosition();`,
-    },
-    {
-      name: "usePushNotification",
-      desc: l.trans({
-        en: "Unified push notification client hook for web and native apps. It requests permission, registers the runtime, returns a PushToken, and bridges notification clicks through `data.url` when supported.",
-        ko: "web/native 앱을 위한 통합 push notification client hook입니다. permission 요청, runtime 등록, PushToken 반환을 처리하고 지원되는 경우 notification click을 `data.url` deep link로 연결합니다.",
-      }),
-      code: `import { usePushNotification } from "akanjs/webkit";
-
-const push = usePushNotification();
-const pushToken = await push.register();
-
-if (pushToken) {
-  await appApi.registerPushToken(pushToken);
-}`,
-    },
-    {
       name: "useLocation / useHistory",
       desc: l.trans({
         en: "CSR router hooks for translating hrefs into route state and tracking navigation history. They power cached page transitions, scroll restoration, and back/forward detection.",
@@ -145,8 +97,8 @@ const form: LoginForm = {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "`akanjs/webkit` contains browser-only React helpers and native-capability hooks. Import it for lazy browser components, debounce/throttle/interval hooks, promise state, CSR navigation state, and Capacitor camera/contact/location/push flows.",
-              ko: "`akanjs/webkit`은 browser-only React helper와 native-capability hook을 제공합니다. lazy browser component, debounce/throttle/interval hook, promise state, CSR navigation state, Capacitor camera/contact/location/push flow에 사용합니다.",
+              en: "`akanjs/webkit` contains browser-only React helpers: lazy browser components, debounce/throttle/interval hooks, promise state, and CSR navigation state. Native Capacitor hooks (camera, contact, location, push) are not part of the framework core — they live in `@libs/util/webkit` and activate via the matching Akan plugins.",
+              ko: "`akanjs/webkit`은 browser-only React helper를 제공합니다: lazy browser component, debounce/throttle/interval hook, promise state, CSR navigation state. 네이티브 Capacitor hook(camera, contact, location, push)은 프레임워크 코어가 아니라 `@libs/util/webkit`에 있으며 대응하는 Akan plugin으로 활성화됩니다.",
             })}
           </div>
         </Docs.Description>

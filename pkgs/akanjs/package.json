@@ -1,6 +1,6 @@
 {
   "name": "akanjs",
-  "version": "2.3.12",
+  "version": "2.3.13-rc.0",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -139,7 +139,6 @@
     "bullmq": "^5.76.10",
     "capacitor-plugin-safe-area": "^5.0.0",
     "chance": "^1.1.13",
-    "cordova-plugin-purchase": "^13.16.0",
     "croner": "^10.0.1",
     "daisyui": "5.5.23",
     "firebase": "^12.13.0",
@@ -222,9 +221,6 @@
       "optional": true
     },
     "chance": {
-      "optional": true
-    },
-    "cordova-plugin-purchase": {
       "optional": true
     },
     "croner": {

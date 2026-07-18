@@ -14,15 +14,21 @@ const sourceFilePattern = /\.(ts|tsx)$/;
 const excludedFilePattern = /(^index\.tsx?$|\.d\.ts$|\.(test|spec)\.(ts|tsx)$|\.css$|\.scss$|\.sass$)/;
 // `ui` exports PascalCase names only; `common`/`srvkit`/`webkit` export camelCase names only. Names with
 // dots, underscores, or hyphens (e.g. `foo.helper`, `Globe_Dynamic`, `kebab-case`) match neither and are skipped.
+// `plugin` additionally exports `<camelCase>.plugin` files (the plugin-facet file convention, e.g.
+// `pushNotification.plugin.ts`) alongside plain camelCase helpers.
 const pascalCasePattern = /^[A-Z][A-Za-z0-9]*$/;
 const camelCasePattern = /^[a-z][A-Za-z0-9]*$/;
-const nameCasePatternForFacet = (facet: string) => (facet === "ui" ? pascalCasePattern : camelCasePattern);
+const pluginNamePattern = /^[a-z][A-Za-z0-9]*\.plugin$/;
+const matchesFacetNameConvention = (facet: string, name: string) => {
+  if (facet === "ui") return pascalCasePattern.test(name);
+  if (facet === "plugin") return camelCasePattern.test(name) || pluginNamePattern.test(name);
+  return camelCasePattern.test(name);
+};
 
 export default async function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dict = {}, options: Options = {}) {
   const { exec, facet } = options;
   if (!exec || !facet || !(await exec.exists(facet))) return null;
 
-  const nameCasePattern = nameCasePatternForFacet(facet);
   const { files, dirs } = await exec.getFilesAndDirs(facet);
   const exportNames = [
     ...files
@@ -30,7 +36,7 @@ export default async function getContent(scanInfo: AppInfo | LibInfo | null, dic
       .map((filename) => filename.replace(sourceFilePattern, "")),
     ...dirs.filter((dirname) => !dirname.startsWith(".")),
   ]
-    .filter((name) => nameCasePattern.test(name))
+    .filter((name) => matchesFacetNameConvention(facet, name))
     .sort();
 
   if (exportNames.length === 0) return null;

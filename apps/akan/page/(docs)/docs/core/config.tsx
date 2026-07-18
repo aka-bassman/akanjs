@@ -382,8 +382,8 @@ export default config;`}
             {
               title: "target.permissions",
               desc: l.trans({
-                en: "Native permission hints used by devkit. Supported values are camera, contacts, location, and push. Declare push before using usePushNotification on native apps.",
-                ko: "devkit이 사용하는 네이티브 권한 힌트입니다. 지원 값은 camera, contacts, location, push입니다. 네이티브에서 usePushNotification을 쓰려면 push를 선언하세요.",
+                en: "Native permission hints used by devkit. Supported values are camera, contacts, location, and push, each activated by its Akan plugin from @libs/util. Declare push before using usePushNotification (from @libs/util/webkit) on native apps.",
+                ko: "devkit이 사용하는 네이티브 권한 힌트입니다. 지원 값은 camera, contacts, location, push이며 각각 @libs/util의 Akan plugin으로 활성화됩니다. 네이티브에서 usePushNotification(@libs/util/webkit)을 쓰려면 push를 선언하세요.",
               }),
             },
             {

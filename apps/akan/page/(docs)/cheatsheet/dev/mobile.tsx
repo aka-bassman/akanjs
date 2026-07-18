@@ -812,7 +812,7 @@ akan release-ios myapp --target default --env main`}
           <Code.Snippet
             title="Client registration"
             code={`import { fetch } from "@apps/myapp/client";
-import { usePushNotification } from "akanjs/webkit";
+import { usePushNotification } from "@libs/util/webkit";
 
 export function EnablePushButton() {
   const push = usePushNotification();
@@ -930,7 +930,7 @@ export class UserDeviceToken extends via((field) => ({
           <Code.Snippet
             title="apps/myapp/ui/PushTokenRegister.tsx"
             code={`import { fetch } from "@apps/myapp/client";
-import { usePushNotification } from "akanjs/webkit";
+import { usePushNotification } from "@libs/util/webkit";
 
 const push = usePushNotification();
 const pushToken = await push.register();
