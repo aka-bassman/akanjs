@@ -30,7 +30,7 @@ export class ContextCommand extends command("context", [ContextScript], ({ publi
     .option("force", Boolean, { desc: "overwrite an existing Akan MCP server entry", default: false })
     .option("mode", String, {
       desc: "MCP permission mode",
-      default: "readonly",
+      default: "apply",
       enum: ["readonly", "plan", "apply"],
     })
     .with(Workspace)

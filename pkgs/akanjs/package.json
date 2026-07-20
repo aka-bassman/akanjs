@@ -1,6 +1,6 @@
 {
   "name": "akanjs",
-  "version": "2.3.12",
+  "version": "2.3.13-rc.3",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {

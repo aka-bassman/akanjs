@@ -36,7 +36,7 @@ export class ContextScript extends script("context", [ContextRunner]) {
   async mcpInstall(
     workspace: Workspace,
     target: string | null,
-    { force = false, mode = "readonly" }: { force?: boolean; mode?: AkanMcpMode } = {},
+    { force = false, mode = "apply" }: { force?: boolean; mode?: AkanMcpMode } = {},
   ) {
     const targets = resolveMcpInstallTargets(target);
     const written: string[] = [];
@@ -47,7 +47,7 @@ export class ContextScript extends script("context", [ContextRunner]) {
     Logger.rawLog(`Akan MCP server installed (${mode} mode):\n${written.map((line) => `- ${line}`).join("\n")}`);
   }
 
-  async mcp(workspace: Workspace, { mode = "readonly" }: { mode?: AkanMcpMode } = {}) {
+  async mcp(workspace: Workspace, { mode = "apply" }: { mode?: AkanMcpMode } = {}) {
     await this.contextRunner.runMcp(workspace, { mode });
   }
 
