@@ -2,6 +2,7 @@ import path from "node:path";
 import {
   type App,
   AppExecutor,
+  AutoImportSync,
   type ChangeBatch,
   type ClientEntryDiscovery,
   CsrArtifactBuilder,
@@ -47,6 +48,7 @@ class IncrementalBuilder {
   #discovery: ClientEntryDiscovery;
   #changePlanner: DevChangePlanner;
   #generatedIndexSync: DevGeneratedIndexSync;
+  #autoImportSync: AutoImportSync;
   #generation = 0;
   #workQueue: Promise<void> = Promise.resolve();
   #cssRebuildQueue: Promise<void> = Promise.resolve();
@@ -62,6 +64,7 @@ class IncrementalBuilder {
     this.#discovery = options.discovery;
     this.#changePlanner = new DevChangePlanner({ workspaceRoot: options.app.workspace.workspaceRoot });
     this.#generatedIndexSync = new DevGeneratedIndexSync({ workspaceRoot: options.app.workspace.workspaceRoot });
+    this.#autoImportSync = new AutoImportSync({ workspaceRoot: options.app.workspace.workspaceRoot });
   }
 
   async handleBuildRoute(msg: BuilderReq): Promise<BuilderRes> {
@@ -269,6 +272,13 @@ class IncrementalBuilder {
     const rawKinds = new Set(batch.kinds);
     if (rawKinds.size === 0) return;
     const generation = ++this.#generation;
+    //* Insert framework imports that are used but omitted (e.g. `Int` in *.constant.ts, `fetch` in
+    //* *.store.ts) before regenerating barrels. Edits land on files already in this batch, so they
+    //* rebuild in this same generation; the write is idempotent so it does not re-trigger the watcher.
+    const autoImport = await this.#autoImportSync.syncForBatch(batch.files);
+    for (const error of autoImport.errors) this.#logger.error(error);
+    if (autoImport.changedFiles.length > 0)
+      this.#logger.verbose(`[auto-import] inserted imports into ${autoImport.changedFiles.length} file(s)`);
     const indexSync = await this.#generatedIndexSync.syncForBatch(batch.files);
     const { files, kinds, expandedBatch, event, hasSyncErrors } = prepareDevWatchBatch({
       generation,

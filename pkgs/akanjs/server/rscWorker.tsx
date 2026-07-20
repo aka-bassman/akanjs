@@ -2,6 +2,7 @@ import type {
   AkanNotFoundError,
   AkanRedirectError,
   LayoutFallbackRoute,
+  PageState,
   PathRoute,
   RedirectStatus,
   ResolvedHead,
@@ -9,6 +10,7 @@ import type {
 import { type AkanI18nConfig, DEFAULT_AKAN_I18N, getBasePathFromPathname, Logger } from "akanjs/common";
 import {
   getRequestDynamicUsage,
+  getRequestFrameState,
   getRequestPolicy,
   getRequestTheme,
   requestStorage,
@@ -527,6 +529,7 @@ export class RscRenderer {
               patchStartSegment: undefined,
               patchHeadSafe: undefined,
               patchHeadSnapshot: undefined,
+              ssrBlocking: cached.ssrBlocking,
             },
             send: (message) => this.#send(message),
             isCancelled: () => this.#cancelledRenderRequests.has(requestId),
@@ -555,9 +558,11 @@ export class RscRenderer {
         else element = await this.#renderNotFound(urlObj);
         const traceCacheKey =
           effectivePatchDecision.status === "patch" ? (patchCacheEntry?.key ?? cacheEntry?.key) : cacheEntry?.key;
+        const ssrBlocking = getRequestFrameState<PageState>()?.ssr === "block";
         const trace: RscTraceMetadata = {
           ...createTraceBase(effectivePatchDecision, traceCacheKey),
           cache: cacheEntry ? "miss" : "bypass",
+          ssrBlocking,
         };
         this.#logger.verbose(`render[${requestId}] starting Flight stream`);
         const result = await this.#renderFlightElement(element, msg.clientManifest ?? this.#clientManifest, {
@@ -599,6 +604,7 @@ export class RscRenderer {
                   routeId,
                   tags: cacheState.tags,
                   theme: getRequestTheme(),
+                  ssrBlocking,
                   cacheState,
                   patch: createCachedRscPatchMetadata({
                     targetRouterState,
@@ -618,6 +624,7 @@ export class RscRenderer {
                   routeId,
                   tags: cacheState.tags,
                   theme: getRequestTheme(),
+                  ssrBlocking,
                   cacheState,
                 },
                 storeTtl,

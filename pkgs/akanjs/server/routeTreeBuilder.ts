@@ -34,6 +34,7 @@ export const defaultPageState: PageState = {
   bottomInset: 0,
   gesture: true,
   cache: false,
+  ssr: "stream",
   topSafeAreaColor: "transparent",
   bottomSafeAreaColor: "transparent",
 };
