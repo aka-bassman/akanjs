@@ -8,9 +8,12 @@ import { IncrementalBuilderHost } from "../incrementalBuilder";
 
 const backendMsgTypeSet = new Set<BuilderMessage["type"]>(["build-route"]);
 const BACKEND_RESTART_DEBOUNCE_MS = 120;
-const BACKEND_GRACEFUL_TIMEOUT_MS = 3000;
+// Must exceed the gateway's child-wait budget (AkanApp child shutdown, ~5s in dev) so the gateway
+// is never SIGKILLed while its replicas are still shutting down — that's what strands orphans.
+const BACKEND_GRACEFUL_TIMEOUT_MS = 8_000;
 const BACKEND_RECOVERY_BASE_DELAY_MS = 1_000;
 const BACKEND_RECOVERY_MAX_DELAY_MS = 30_000;
+const BACKEND_RECOVERY_MAX_ATTEMPTS = 5;
 const BACKEND_STDERR_TAIL_LIMIT = 40;
 const BUILDER_READY_TIMEOUT_MS = 150000;
 const BUILDER_START_MAX_ATTEMPTS = 3;
@@ -38,6 +41,17 @@ export const shouldRestartBackendByDevPlan = (
 
 export const shouldRestartBuilderByDevPlan = (message: Extract<BuilderMessage, { type: "invalidate" }>): boolean =>
   message.devPlan?.actions.includes("restart-builder") ?? false;
+
+/**
+ * A backend that keeps dying isn't going to heal by retrying the same code; after this many
+ * consecutive attempts the host idles and the next server-side edit triggers a fresh restart.
+ */
+export const shouldAbandonBackendRecovery = (attempts: number, maxAttempts = BACKEND_RECOVERY_MAX_ATTEMPTS): boolean =>
+  attempts >= maxAttempts;
+
+/** The gateway reports backend failures with `generation: -1`; the host assigns its own counter then. */
+export const normalizeBackendReportedGeneration = (generation: number): number | undefined =>
+  generation >= 0 ? generation : undefined;
 
 export const shouldRestartDevHostByDevPlan = (message: Extract<BuilderMessage, { type: "invalidate" }>): boolean =>
   message.devPlan?.actions.includes("restart-dev-host") ?? message.kinds.includes("config");
@@ -339,6 +353,18 @@ export class AkanAppHost {
           this.#replayBuilderState();
           return;
         }
+        if (msg.type === "build-status") {
+          // The gateway reports replica boot failures (crash loops, port conflicts) this way so
+          // they reach the build-status log and the HMR overlay like any other build failure.
+          const status = this.#recordBackendBuildStatus({
+            generation: normalizeBackendReportedGeneration(msg.data.generation),
+            ok: msg.data.ok,
+            files: msg.data.files,
+            message: msg.data.message,
+          });
+          this.#sendOrQueueBuildStatus(status);
+          return;
+        }
         if (backendMsgTypeSet.has(msg.type)) this.#sendToBuilder(msg);
       },
       serialization: "advanced",
@@ -504,6 +530,17 @@ export class AkanAppHost {
   }
   #scheduleBackendRecovery(reason: string) {
     if (this.#backendRecoveryTimer || this.#backend) return;
+    if (shouldAbandonBackendRecovery(this.#backendRecoveryAttempts)) {
+      const message = `Backend exited ${this.#backendRecoveryAttempts} times in a row (${reason}); waiting for a server-side edit to retry.`;
+      this.#setBackendLifecycleState("stopped", `gave up after ${this.#backendRecoveryAttempts} recovery attempts`);
+      this.logger.error(`[backend-recovery] ${message}`);
+      if (this.#backendStderrTail.length > 0) {
+        this.logger.error(`[backend-recovery] recent backend stderr:\n${this.#backendStderrTail.join("\n")}`);
+      }
+      const abandonedStatus = this.#recordBackendBuildStatus({ ok: false, files: [], message });
+      this.#sendOrQueueBuildStatus(abandonedStatus);
+      return;
+    }
     this.#setBackendLifecycleState("recovering", reason);
     const attempt = this.#backendRecoveryAttempts;
     const delay = Math.min(BACKEND_RECOVERY_BASE_DELAY_MS * 2 ** attempt, BACKEND_RECOVERY_MAX_DELAY_MS);
@@ -550,16 +587,23 @@ export class AkanAppHost {
     this.#sendToBackend(message);
   }
   async #handleInvalidate(message: Extract<BuilderMessage, { type: "invalidate" }>) {
+    this.#logDevPlan(message);
+    // Config changes subsume builder restarts: the dev-host restart recycles builder and backend
+    // AND re-runs the prepare step, so check it first when a batch carries both actions.
+    if (shouldRestartDevHostByDevPlan(message)) {
+      try {
+        await this.#restartDevHost(message);
+      } catch (err) {
+        this.#recordDevHostRestartFailure(message, err, "Config");
+      }
+      return;
+    }
     if (shouldRestartBuilderByDevPlan(message)) {
       try {
         await this.#restartDevChildren(message);
       } catch (err) {
-        this.#recordDevHostRestartFailure(message, err);
+        this.#recordDevHostRestartFailure(message, err, "Runtime metadata");
       }
-      return;
-    }
-    if (shouldRestartDevHostByDevPlan(message)) {
-      this.#recordDevHostRestartRequired(message);
       return;
     }
     if (await this.#shouldRestartBackend(message)) {
@@ -573,6 +617,27 @@ export class AkanAppHost {
     this.logger.warn(
       `[dev-host] recycling builder/backend for runtime metadata generation=${generation ?? "(unknown)"} files=${message.files.length}`,
     );
+    await this.#recycleDevChildren(message);
+  }
+  /**
+   * Controlled dev-host restart for config changes (akan.config.ts, tsconfig, package.json):
+   * re-runs the prepare step so env and codegen reflect the new config, then recycles the builder
+   * and backend. The config module is re-imported with a cache-busting query; modules it imports
+   * keep their cached instances, so a change inside an imported plugin file still needs a manual
+   * `akan start` restart.
+   */
+  async #restartDevHost(message: Extract<BuilderMessage, { type: "invalidate" }>): Promise<void> {
+    const generation = message.devPlan?.generation ?? message.generation;
+    this.logger.warn(
+      `[dev-host] config change detected; restarting dev host generation=${generation ?? "(unknown)"} files=${message.files.length}`,
+    );
+    await this.#recycleDevChildren(message, { refreshConfig: true });
+  }
+  async #recycleDevChildren(
+    message: Extract<BuilderMessage, { type: "invalidate" }>,
+    { refreshConfig = false }: { refreshConfig?: boolean } = {},
+  ): Promise<void> {
+    const generation = message.devPlan?.generation ?? message.generation;
     if (this.#restartTimer) {
       clearTimeout(this.#restartTimer);
       this.#restartTimer = null;
@@ -587,6 +652,13 @@ export class AkanAppHost {
     this.#pendingBuildStatusReplay = [];
     await this.#stopBackend();
     this.#stopBuilder();
+    if (refreshConfig) {
+      await this.app.getConfig({ refresh: true });
+      // Merge instead of replace: start() enriched this.env with values prepare doesn't produce
+      // (e.g. REDIS_HOST from the tunnel), and the spawned children must keep seeing them.
+      const { env } = await this.app.prepareCommand("start");
+      Object.assign(this.env, env);
+    }
     await this.#backendGraph.refresh();
     await this.#startBuilder();
     this.#startBackend({ generation, files: message.files });
@@ -608,34 +680,20 @@ export class AkanAppHost {
       `[last-good] css generation=${message.data.generation ?? "(unknown)"} assets=${Object.keys(message.data.cssAssets).length}`,
     );
   }
-  #recordDevHostRestartRequired(message: Extract<BuilderMessage, { type: "invalidate" }>): void {
-    const generation = message.devPlan?.generation ?? message.generation;
-    const detail = `generation=${generation ?? "(unknown)"} files=${message.files.length}`;
-    this.logger.warn(
-      `[dev-host] config change requires a manual restart until controlled dev-host restart is implemented (${detail})`,
-    );
-    if (typeof generation === "number") {
-      const status: DevBuildStatus = {
-        generation,
-        phase: "scan",
-        ok: false,
-        files: message.files,
-        message: "Config change requires restarting `akan start` to apply.",
-      };
-      this.#recordBuildStatus(status);
-      this.#sendOrQueueBuildStatus(status);
-    }
-  }
-  #recordDevHostRestartFailure(message: Extract<BuilderMessage, { type: "invalidate" }>, err: unknown): void {
+  #recordDevHostRestartFailure(
+    message: Extract<BuilderMessage, { type: "invalidate" }>,
+    err: unknown,
+    kind: "Config" | "Runtime metadata",
+  ): void {
     const generation = message.devPlan?.generation ?? message.generation ?? this.#nextBackendBuildStatusGeneration();
     const detail = err instanceof Error ? err.message : String(err);
-    this.logger.warn(`[dev-host] runtime metadata restart failed generation=${generation}: ${detail}`);
+    this.logger.warn(`[dev-host] ${kind.toLowerCase()} restart failed generation=${generation}: ${detail}`);
     const status: DevBuildStatus = {
       generation,
       phase: "scan",
       ok: false,
       files: message.files,
-      message: `Runtime metadata change requires restarting \`akan start\` to apply: ${detail}`,
+      message: `${kind} change requires restarting \`akan start\` to apply: ${detail}`,
     };
     this.#recordBuildStatus(status);
     this.#sendOrQueueBuildStatus(status);
@@ -666,13 +724,18 @@ export class AkanAppHost {
       this.#sendToBackend({ type: "build-status", data: status });
     }
   }
+  /** One log line per planned generation, regardless of which action branch handles it. */
+  #logDevPlan(message: Extract<BuilderMessage, { type: "invalidate" }>): void {
+    if (!message.devPlan) return;
+    const { generation, roles, actions, reasonByFile } = message.devPlan;
+    this.logger.verbose(
+      `[dev-plan] generation=${generation} roles=${roles.join(",") || "(none)"} actions=${actions.join(",") || "(none)"} reasons=${Object.keys(reasonByFile).length}`,
+    );
+  }
+
   async #shouldRestartBackend(message: Extract<BuilderMessage, { type: "invalidate" }>): Promise<boolean> {
     if (message.kinds.length === 1 && message.kinds[0] === "css") return false;
     if (message.devPlan) {
-      const { generation, roles, actions, reasonByFile } = message.devPlan;
-      this.logger.verbose(
-        `[dev-plan] generation=${generation} roles=${roles.join(",") || "(none)"} actions=${actions.join(",") || "(none)"} reasons=${Object.keys(reasonByFile).length}`,
-      );
       const shouldRestart = shouldRestartBackendByDevPlan(message) ?? false;
       if (shouldRestart && message.kinds.includes("code")) await this.#backendGraph.refresh();
       return shouldRestart;

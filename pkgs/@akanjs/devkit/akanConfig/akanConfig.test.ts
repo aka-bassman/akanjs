@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PackageJson } from "../types";
-import { AkanAppConfig } from "./akanConfig";
+import { AkanAppConfig, AkanLibConfig } from "./akanConfig";
+import type { DeepPartial, LibConfigResult } from "./types";
 
 const akanPackageJson = JSON.parse(
   fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../akanjs/package.json"), "utf8"),
@@ -341,5 +343,28 @@ describe("AkanLibConfig", () => {
       externalLibs: ["firebase-admin"],
     };
     expect(new AkanLibConfig(lib, config).externalLibs).toEqual(["firebase-admin"]);
+  });
+});
+
+describe("AkanAppConfig.importConfigModule", () => {
+  test("busting the import cache re-evaluates an edited config module", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "akan-config-bust-"));
+    try {
+      const configPath = path.join(root, "akan.config.ts");
+      fs.writeFileSync(configPath, "export default { basePaths: ['first'] };\n");
+      const first = await AkanAppConfig.importConfigModule<{ basePaths: string[] }>(root);
+      expect(first.basePaths).toEqual(["first"]);
+
+      fs.writeFileSync(configPath, "export default { basePaths: ['second'] };\n");
+      const stale = await AkanAppConfig.importConfigModule<{ basePaths: string[] }>(root);
+      expect(stale.basePaths).toEqual(["first"]);
+
+      const busted = await AkanAppConfig.importConfigModule<{ basePaths: string[] }>(root, {
+        bustImportCache: true,
+      });
+      expect(busted.basePaths).toEqual(["second"]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

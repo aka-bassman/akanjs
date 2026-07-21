@@ -116,6 +116,9 @@ export interface RouteRender {
   render: LayoutRender | PageRender;
   isAsync?: boolean;
   Loading?: LayoutLoadingRender | PageLoadingRender;
+  /** Loads the module and populates `Loading` without running `render`/`resolveHead`.
+   * Used by the patch (suffix) compose path, which never calls `resolveHead`. */
+  resolveLoading?: () => void | Promise<void>;
   NotFound?: LayoutNotFoundRender;
   Error?: LayoutErrorRender;
   resolveNotFound?: () => PromiseOrObject<LayoutNotFoundRender | undefined>;

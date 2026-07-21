@@ -308,15 +308,22 @@ class IncrementalBuilder {
     }
     if (indexSync.changedFiles.length > 0) this.#sendBuildStatus("barrel", { generation, ok: true, files });
 
-    if (kinds.includes("code") && (await this.batchMayChangePageKeys(appDir, expandedBatch))) {
+    // Server-only generations (e.g. a .service.ts or srvkit edit) must not rebuild or refresh the
+    // client: a fresh pages buildId would broadcast rsc-refresh to browsers for no visible change.
+    const rebuildClient = devPlan.actions.includes("rebuild-client");
+    if (kinds.includes("code") && !rebuildClient) {
+      this.#logger.verbose(`client rebuild skipped; devPlan actions=${devPlan.actions.join(",") || "(none)"}`);
+    }
+
+    if (kinds.includes("code") && rebuildClient && (await this.batchMayChangePageKeys(appDir, expandedBatch))) {
       const started = Date.now();
       await this.#app.getPageKeys({ refresh: true });
       this.#logger.verbose(`pageKeys updated, app pageKeys are refreshed (${Date.now() - started}ms)`);
-    } else if (kinds.includes("code") && this.batchTouchesPagesTree(appDir, expandedBatch)) {
+    } else if (kinds.includes("code") && rebuildClient && this.batchTouchesPagesTree(appDir, expandedBatch)) {
       this.#logger.verbose("pageKeys refresh skipped; changed page source cannot add/remove a route key");
     }
 
-    if (kinds.includes("code") && this.#shouldRebuildCsr()) {
+    if (kinds.includes("code") && rebuildClient && this.#shouldRebuildCsr()) {
       try {
         const started = Date.now();
         await new CsrArtifactBuilder(this.#app).build();
@@ -327,13 +334,13 @@ class IncrementalBuilder {
         this.#logger.error(`csr-rebundle failed: ${message}`);
         this.#sendBuildStatus("csr", { generation, ok: false, files, message });
       }
-    } else if (kinds.includes("code")) {
+    } else if (kinds.includes("code") && rebuildClient) {
       this.#logger.verbose(`csr-rebundle skipped; set AKAN_DEV_CSR_REBUILD=1 to enable per-save CSR rebuilds`);
     }
 
     process.send?.(event);
 
-    if (kinds.includes("code")) {
+    if (kinds.includes("code") && rebuildClient) {
       try {
         const started = Date.now();
         const next = await new PagesBundleBuilder(this.#app).build();
@@ -349,7 +356,9 @@ class IncrementalBuilder {
         this.#sendBuildStatus("pages", { generation, ok: false, files, message });
       }
     }
-    if (kinds.includes("code") || kinds.includes("css")) {
+    // Server-only code edits cannot introduce class names the CSS scanner would pick up; only a
+    // client rebuild or a direct stylesheet edit can change the compiled CSS.
+    if (kinds.includes("css") || (kinds.includes("code") && rebuildClient)) {
       this.scheduleCssRebuild(artifactDir, { refresh: true, generation, changedFiles: files });
       this.#logger.verbose(`css-rebuild scheduled generation=${generation}`);
     }
@@ -367,6 +376,12 @@ class IncrementalBuilder {
         default:
           return;
       }
+    });
+    // The IPC channel closes when the dev host dies (including SIGKILL); exit instead of running
+    // as an orphaned watcher that keeps rebuilding for nobody.
+    process.on("disconnect", () => {
+      this.#logger.warn("host IPC channel closed; exiting builder");
+      process.exit(0);
     });
     if (this.#watch) await this.installWatcher();
     process.send?.({ type: "builder-ready" });

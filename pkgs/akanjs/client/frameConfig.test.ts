@@ -153,9 +153,7 @@ describe("frameConfig", () => {
   });
 
   test("rejects unsupported pageConfig.ssr values", () => {
-    expect(() => validatePageConfig("bad.tsx", { ssr: "wait" as never })).toThrow(
-      'unsupported pageConfig.ssr "wait"',
-    );
+    expect(() => validatePageConfig("bad.tsx", { ssr: "wait" as never })).toThrow('unsupported pageConfig.ssr "wait"');
     expect(() => validatePageConfig("ok.tsx", { ssr: "block" })).not.toThrow();
   });
 });

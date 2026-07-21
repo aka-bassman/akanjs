@@ -6,6 +6,8 @@ import {
   createBackendBuildStatus,
   isLegacyBackendFallbackFile,
   mergeBackendRestartReasons,
+  normalizeBackendReportedGeneration,
+  shouldAbandonBackendRecovery,
   shouldMarkBuildPhaseRecovered,
   shouldQueueBuildStatusReplay,
   shouldReplaceLastGoodMessage,
@@ -207,5 +209,30 @@ describe("legacy backend graph fallback", () => {
   test("does not restart backend for client-only path roles", () => {
     expect(isLegacyBackendFallbackFile(`${root}/libs/shared/ui/Foo.tsx`, root)).toBe(false);
     expect(isLegacyBackendFallbackFile(`${root}/apps/akan/page/_index.tsx`, root)).toBe(false);
+  });
+});
+
+describe("backend recovery abandonment", () => {
+  test("keeps retrying below the attempt ceiling and abandons at it", () => {
+    expect(shouldAbandonBackendRecovery(0)).toBe(false);
+    expect(shouldAbandonBackendRecovery(4)).toBe(false);
+    expect(shouldAbandonBackendRecovery(5)).toBe(true);
+    expect(shouldAbandonBackendRecovery(9)).toBe(true);
+  });
+
+  test("honors a custom attempt ceiling", () => {
+    expect(shouldAbandonBackendRecovery(2, 3)).toBe(false);
+    expect(shouldAbandonBackendRecovery(3, 3)).toBe(true);
+  });
+});
+
+describe("normalizeBackendReportedGeneration", () => {
+  test("drops the gateway's unknown-generation sentinel", () => {
+    expect(normalizeBackendReportedGeneration(-1)).toBeUndefined();
+  });
+
+  test("keeps real generations including zero", () => {
+    expect(normalizeBackendReportedGeneration(0)).toBe(0);
+    expect(normalizeBackendReportedGeneration(7)).toBe(7);
   });
 });

@@ -216,6 +216,12 @@ export class RscRenderer {
     }
     this.#send = process.send.bind(process) as (message: unknown) => void;
     process.on("message", (msg: InMsg) => this.#handleMessage(msg));
+    // The IPC channel closes when the parent replica dies (including SIGKILL); exit instead of
+    // lingering as an orphaned renderer.
+    process.on("disconnect", () => {
+      this.#logger.warn("parent IPC channel closed; exiting rsc worker");
+      process.exit(0);
+    });
     this.#logger.verbose(`constructed (pid=${process.pid})`);
   }
 
@@ -1254,6 +1260,7 @@ export class RscRenderer {
       pathRoute,
       params: match.params,
       searchParams,
+      navKey: url.pathname + url.search,
     });
     return (
       <html
@@ -1294,11 +1301,15 @@ export class RscRenderer {
       basePath: this.#getBasePath(url),
     });
     setRequestFrameState(pathRoute.pageState);
+    // The suffix path skips `resolveHead`, so populate `Loading` explicitly
+    // before composing or the client-navigation fallback would be empty.
+    await RouteElementComposer.resolveSuffixLoadings(pathRoute, patchStartIndex);
     return RouteElementComposer.composeSuffix({
       pathRoute,
       params: match.params,
       searchParams,
       patchStartIndex,
+      navKey: url.pathname + url.search,
     });
   }
 

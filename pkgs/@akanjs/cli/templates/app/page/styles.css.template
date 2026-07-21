@@ -28,6 +28,18 @@
   --color-error-content: #fafafa;
   --color-open: #27ae60;
   --color-open-content: #fafafa;
+
+  /* Shape & feel — customize these too, not just colors, to make the theme yours.
+     These are daisyUI v5 theme variables; the values below are the neutral defaults.
+     See `akan guideline show cssRule` and https://daisyui.com/docs/themes/ for the full set. */
+  --radius-selector: 1rem; /* checkbox, toggle, badge corner rounding */
+  --radius-field: 0.5rem; /* button, input, select, tab corner rounding */
+  --radius-box: 1rem; /* card, modal, alert corner rounding */
+  --size-selector: 0.25rem; /* base scale (density) for selector controls */
+  --size-field: 0.25rem; /* base scale (density) for field controls */
+  --border: 1px; /* component border width */
+  --depth: 0; /* 1 = subtle 3D depth on components */
+  --noise: 0; /* 1 = grain texture on surfaces */
 }
 
 @plugin "daisyui/theme" {
@@ -51,4 +63,14 @@
   --color-error: #f02020;
   --color-error-content: #ffffff;
   --color-open: #10fc00;
+
+  /* Keep shape & feel consistent with the light theme (usually the same values across modes). */
+  --radius-selector: 1rem;
+  --radius-field: 0.5rem;
+  --radius-box: 1rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
 }

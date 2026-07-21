@@ -339,9 +339,26 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
       command,
     };
   }
-  static async from(app: App) {
+  static #importGeneration = 0;
+  /**
+   * Bun caches dynamic imports by path, so a plain re-import after the user edits the config file
+   * returns the stale module. `bustImportCache` appends a fresh query string to force re-evaluation
+   * of the config module itself; modules it imports keep their cached instances.
+   */
+  static async importConfigModule<T = unknown>(
+    cwdPath: string,
+    { bustImportCache = false }: { bustImportCache?: boolean } = {},
+  ): Promise<T> {
+    const configPath = `${cwdPath}/akan.config.ts`;
+    const importPath = bustImportCache
+      ? `${configPath}?akanConfigGeneration=${++AkanAppConfig.#importGeneration}`
+      : configPath;
+    return (await import(importPath).then((mod: { default: T }) => mod.default)) as T;
+  }
+
+  static async from(app: App, { bustImportCache = false }: { bustImportCache?: boolean } = {}) {
     const [configImp, baseDevEnv, libs, rootPackageJson] = await Promise.all([
-      import(`${app.cwdPath}/akan.config.ts`).then((mod) => mod.default),
+      AkanAppConfig.importConfigModule(app.cwdPath, { bustImportCache }),
       WorkspaceExecutor.getBaseDevEnv(path.join(app.workspace.workspaceRoot, ".env")),
       app.workspace.getLibs(),
       app.workspace.getPackageJson(),

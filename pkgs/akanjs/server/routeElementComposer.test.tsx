@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { RouteRender } from "akanjs/client";
+import type { PathRoute, RouteRender } from "akanjs/client";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
 import { RouteElementComposer } from "./routeElementComposer";
 
@@ -108,5 +109,92 @@ describe("RouteElementComposer streaming", () => {
     expect(allReadySettled).toBe(true);
 
     expect(await drain(stream)).toContain("PAGE_CONTENT");
+  });
+});
+
+const pending = new Promise<void>(() => {});
+
+describe("RouteElementComposer navigation keying", () => {
+  test("keys the leaf page Suspense by navKey when it has a Loading", () => {
+    const el = RouteElementComposer.composeRenders({
+      renders: [suspendingPageRender(pending)],
+      params: {},
+      searchParams: {},
+      navKey: "/loadingtest/bbb",
+    }) as ReactElement;
+
+    expect(isValidElement(el)).toBe(true);
+    expect(el.key).toBe("akan-loading:/loadingtest/bbb");
+  });
+
+  test("different navKeys produce different keys so the boundary remounts on navigation", () => {
+    const aaa = RouteElementComposer.composeRenders({
+      renders: [suspendingPageRender(pending)],
+      params: {},
+      searchParams: {},
+      navKey: "/loadingtest/aaa",
+    }) as ReactElement;
+    const bbb = RouteElementComposer.composeRenders({
+      renders: [suspendingPageRender(pending)],
+      params: {},
+      searchParams: {},
+      navKey: "/loadingtest/bbb",
+    }) as ReactElement;
+
+    expect(aaa.key).not.toBe(bbb.key);
+  });
+
+  test("does not key a page without a Loading (keeps keep-old-UI transition behavior)", () => {
+    const el = RouteElementComposer.composeRenders({
+      renders: [{ render: (() => <div>x</div>) as RouteRender["render"] }],
+      params: {},
+      searchParams: {},
+      navKey: "/loadingtest/bbb",
+    }) as ReactElement;
+
+    expect(el.key).toBeNull();
+  });
+
+  test("does not key when navKey is absent", () => {
+    const el = RouteElementComposer.composeRenders({
+      renders: [suspendingPageRender(pending)],
+      params: {},
+      searchParams: {},
+    }) as ReactElement;
+
+    expect(el.key).toBeNull();
+  });
+});
+
+describe("RouteElementComposer.resolveSuffixLoadings", () => {
+  test("populates Loading on the patched stack so the suffix fallback is not empty", async () => {
+    const pageRender: RouteRender = {
+      render: (async () => <div>content</div>) as RouteRender["render"],
+      resolveLoading: () => {
+        pageRender.Loading = () => <div id="suffix-loading">SUFFIX_LOADING</div>;
+      },
+    };
+    const pathRoute = {
+      renderRootLayouts: [],
+      renderLayouts: [],
+      renderPage: pageRender,
+    } as unknown as PathRoute;
+
+    // The suffix path never runs resolveHead, so Loading starts unset.
+    expect(pageRender.Loading).toBeUndefined();
+    await RouteElementComposer.resolveSuffixLoadings(pathRoute, 0);
+    expect(pageRender.Loading).toBeDefined();
+
+    const el = RouteElementComposer.composeSuffix({
+      pathRoute,
+      params: {},
+      searchParams: {},
+      patchStartIndex: 0,
+      navKey: "/loadingtest/bbb",
+    }) as ReactElement;
+
+    expect(el.key).toBe("akan-loading:/loadingtest/bbb");
+    const fallback = (el.props as { fallback?: ReactNode }).fallback;
+    expect(isValidElement(fallback)).toBe(true);
   });
 });
