@@ -36,7 +36,13 @@ interface IncrementalBuilderOptions {
   cssCompiler: CssCompiler;
   optimizedFonts: Awaited<ReturnType<FontOptimizer["optimize"]>>;
   discovery: ClientEntryDiscovery;
+  initialGeneration?: number;
 }
+
+type IncrementalBuilderBootDeps = Pick<
+  IncrementalBuilderOptions,
+  "artifact" | "cssCompiler" | "optimizedFonts" | "discovery"
+>;
 
 class IncrementalBuilder {
   #logger = new Logger("IncrementalBuilder");
@@ -62,9 +68,14 @@ class IncrementalBuilder {
     this.#cssCompiler = options.cssCompiler;
     this.#optimizedFonts = options.optimizedFonts;
     this.#discovery = options.discovery;
+    this.#generation = options.initialGeneration ?? 0;
     this.#changePlanner = new DevChangePlanner({ workspaceRoot: options.app.workspace.workspaceRoot });
     this.#generatedIndexSync = new DevGeneratedIndexSync({ workspaceRoot: options.app.workspace.workspaceRoot });
     this.#autoImportSync = new AutoImportSync({ workspaceRoot: options.app.workspace.workspaceRoot });
+  }
+
+  get #artifactDir() {
+    return `${this.#app.cwdPath}/.akan/artifact`;
   }
 
   async handleBuildRoute(msg: BuilderReq): Promise<BuilderRes> {
@@ -255,7 +266,7 @@ class IncrementalBuilder {
     });
   }
   async installWatcher() {
-    const [appDir, artifactDir] = [`${this.#app.cwdPath}/page`, `${this.#app.cwdPath}/.akan/artifact`];
+    const [appDir, artifactDir] = [`${this.#app.cwdPath}/page`, this.#artifactDir];
     const roots = await new WatchRootResolver(this.#app).resolve();
     const watcher = new HmrWatcher({
       roots,
@@ -365,27 +376,32 @@ class IncrementalBuilder {
   }
 
   async boot(): Promise<void> {
-    process.on("message", async (msg: BuilderMessage) => {
-      if (!msg || typeof msg !== "object") return;
-      switch (msg.type) {
-        case "build-route": {
-          const res = await this.handleBuildRoute(msg);
-          process.send?.(res);
-          return;
-        }
-        default:
-          return;
-      }
-    });
-    // The IPC channel closes when the dev host dies (including SIGKILL); exit instead of running
-    // as an orphaned watcher that keeps rebuilding for nobody.
-    process.on("disconnect", () => {
-      this.#logger.warn("host IPC channel closed; exiting builder");
-      process.exit(0);
-    });
     if (this.#watch) await this.installWatcher();
     process.send?.({ type: "builder-ready" });
     this.#logger.verbose(`ready (watch=${this.#watch})`);
+  }
+
+  /**
+   * After a degraded boot recovers, the backend is still serving the last-good bundle; push a
+   * fresh pages/css state so connected browsers pick up the fixed code without another edit.
+   */
+  async announceRecoveredState(changedFiles: string[]): Promise<void> {
+    const generation = ++this.#generation;
+    await this.#enqueueWork("boot-recovered", async () => {
+      try {
+        const next = await new PagesBundleBuilder(this.#app).build();
+        process.send?.({
+          type: "pages-updated",
+          data: { bundlePath: next.bundlePath, buildId: next.buildId, generation, changedFiles },
+        });
+        this.#sendBuildStatus("pages", { generation, ok: true, files: changedFiles, message: "Boot build recovered" });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.#logger.error(`recovered pages rebundle failed: ${message}`);
+        this.#sendBuildStatus("pages", { generation, ok: false, files: changedFiles, message });
+      }
+      this.scheduleCssRebuild(this.#artifactDir, { refresh: true, generation, changedFiles });
+    });
   }
 
   #shouldRebuildCsr() {
@@ -393,20 +409,109 @@ class IncrementalBuilder {
     return true;
   }
 
-  static async create() {
+  static async #buildBootDeps(app: App): Promise<IncrementalBuilderBootDeps> {
+    const { artifact, cssCompiler, optimizedFonts } = await new SsrBaseArtifactBuilder(app).build();
+    await new CsrArtifactBuilder(app).build();
+    const discovery = await GraphClientEntryDiscovery.create(app);
+    return { artifact, cssCompiler, optimizedFonts, discovery };
+  }
+
+  /**
+   * A compile error in the boot build must not kill the builder: the builder is the dev server's
+   * file watcher, so exiting here leaves nothing to notice the fix. Report the failure, emit
+   * builder-ready so the host keeps the backend serving the last-good artifact, then retry the
+   * boot build on every file change until it succeeds.
+   */
+  static #recoverBoot(
+    app: App,
+    bootError: unknown,
+    logger: Logger,
+  ): Promise<{ builder: IncrementalBuilder; changedFiles: string[] }> {
+    const firstMessage = bootError instanceof Error ? bootError.message : String(bootError);
+    logger.error(`boot build failed; entering degraded watch mode until the error is fixed: ${firstMessage}`);
+    let generation = 0;
+    const sendFailure = (files: string[], message: string) => {
+      process.send?.({
+        type: "build-status",
+        data: { generation, phase: "pages", ok: false, files, message: `Boot build failed: ${message}` },
+      });
+    };
+    sendFailure([], firstMessage);
+    process.send?.({ type: "builder-ready" });
+    return new Promise((resolve, reject) => {
+      void (async () => {
+        const roots = await new WatchRootResolver(app).resolve();
+        const watcher = new HmrWatcher({
+          roots,
+          logger,
+          onBatch: async (batch) => {
+            generation += 1;
+            const files = [...batch.files].sort();
+            try {
+              // A broken akan.config.ts caches its import failure; re-import it before rebuilding.
+              if (new Set(batch.kinds).has("config")) await app.getConfig({ refresh: true });
+              const deps = await IncrementalBuilder.#buildBootDeps(app);
+              const builder = new IncrementalBuilder({ app, watch: true, initialGeneration: generation, ...deps });
+              watcher.stop();
+              logger.info(`boot build recovered generation=${generation}`);
+              resolve({ builder, changedFiles: files });
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              logger.error(`boot build retry failed: ${message}`);
+              sendFailure(files, message);
+            }
+          },
+        });
+        watcher.start();
+        logger.warn(`[degraded] watching ${roots.length} roots for a fix`);
+      })().catch(reject);
+    });
+  }
+
+  static async main(): Promise<void> {
+    const logger = new Logger("IncrementalBuilder");
     const { appName, repoName, workspaceRoot } = WorkspaceExecutor.getBaseDevEnv();
     if (!workspaceRoot || !appName) throw new Error("AKAN_WORKSPACE_ROOT or AKAN_PUBLIC_APP_NAME is not set");
     const workspace = WorkspaceExecutor.fromRoot({ workspaceRoot, repoName });
     const app = AppExecutor.from(workspace, appName);
     const watch = process.env.AKAN_WATCH !== "0";
-    const { artifact, cssCompiler, optimizedFonts } = await new SsrBaseArtifactBuilder(app).build();
-    await new CsrArtifactBuilder(app).build();
-    const discovery = await GraphClientEntryDiscovery.create(app);
-    return new IncrementalBuilder({ app, cssCompiler, artifact, watch, optimizedFonts, discovery });
+    let builder: IncrementalBuilder | null = null;
+    // Registered before the boot build so build-route requests get an error response (instead of
+    // hanging the backend) while the builder is still booting or recovering from a failed build.
+    process.on("message", (msg: BuilderMessage) => {
+      if (!msg || typeof msg !== "object" || msg.type !== "build-route") return;
+      if (!builder) {
+        process.send?.({
+          type: "build-route-res",
+          id: msg.id,
+          ok: false,
+          error: "builder is recovering from a failed boot build; retry after the build error is fixed",
+        });
+        return;
+      }
+      void builder.handleBuildRoute(msg).then((res) => process.send?.(res));
+    });
+    // The IPC channel closes when the dev host dies (including SIGKILL); exit instead of running
+    // as an orphaned watcher that keeps rebuilding for nobody.
+    process.on("disconnect", () => {
+      logger.warn("host IPC channel closed; exiting builder");
+      process.exit(0);
+    });
+    let recoveredFiles: string[] | null = null;
+    try {
+      builder = new IncrementalBuilder({ app, watch, ...(await IncrementalBuilder.#buildBootDeps(app)) });
+    } catch (err) {
+      if (!watch) throw err;
+      const recovered = await IncrementalBuilder.#recoverBoot(app, err, logger);
+      builder = recovered.builder;
+      recoveredFiles = recovered.changedFiles;
+    }
+    await builder.boot();
+    if (recoveredFiles) await builder.announceRecoveredState(recoveredFiles);
   }
 }
 
-void (await IncrementalBuilder.create()).boot().catch((err) => {
+void IncrementalBuilder.main().catch((err) => {
   console.error(err);
   process.exit(1);
 });

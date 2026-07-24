@@ -29,7 +29,7 @@ export class ContextScript extends script("context", [ContextRunner]) {
     Logger.rawLog(await this.contextRunner.getContext(workspace, options));
   }
 
-  async doctor(workspace: Workspace, options: { format?: "text" | "json"; strict?: boolean } = {}) {
+  async doctor(workspace: Workspace, options: { format?: "text" | "json"; strict?: boolean; ios?: boolean } = {}) {
     Logger.rawLog(await this.contextRunner.doctor(workspace, options));
   }
 
