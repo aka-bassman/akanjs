@@ -5,6 +5,7 @@ import type { App } from "../commandDecorators";
 
 const builderMsgTypeSet = new Set<BuilderMessage["type"]>([
   "build-route-res",
+  "build-csr-res",
   "builder-ready",
   "invalidate",
   "css-updated",

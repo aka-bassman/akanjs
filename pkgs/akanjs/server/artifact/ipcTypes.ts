@@ -61,6 +61,18 @@ export type BuilderRes =
   | { type: "build-route-res"; id: number; ok: true; data: BuildRouteResultPayload }
   | { type: "build-route-res"; id: number; ok: false; error: string };
 
+/**
+ * Dev CSR artifacts are only reachable through the opt-in `/__csr` and `?csr=true` routes (mobile
+ * local dev points a device WebView at the latter), so the builder skips them until a request
+ * actually needs one. The first such request arms the builder through this pair and waits for the
+ * build, after which every save keeps CSR in sync.
+ */
+export type BuilderCsrReq = { type: "build-csr"; id: number; reason: string };
+
+export type BuilderCsrRes =
+  | { type: "build-csr-res"; id: number; ok: true }
+  | { type: "build-csr-res"; id: number; ok: false; error: string };
+
 // --- builder → backend (unsolicited events) -----------------------------
 
 export interface PagesBundlePayload {
@@ -84,4 +96,4 @@ export type BuilderEvent =
   | { type: "pages-updated"; data: PagesBundlePayload }
   | { type: "build-status"; data: DevBuildStatus };
 
-export type BuilderMessage = BuilderReq | BuilderRes | BuilderEvent;
+export type BuilderMessage = BuilderReq | BuilderRes | BuilderCsrReq | BuilderCsrRes | BuilderEvent;

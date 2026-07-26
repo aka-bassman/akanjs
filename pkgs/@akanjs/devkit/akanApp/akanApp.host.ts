@@ -6,7 +6,7 @@ import { createTunnel } from "../createTunnel";
 import { WorkspaceExecutor } from "../executors";
 import { IncrementalBuilderHost } from "../incrementalBuilder";
 
-const backendMsgTypeSet = new Set<BuilderMessage["type"]>(["build-route"]);
+const backendMsgTypeSet = new Set<BuilderMessage["type"]>(["build-route", "build-csr"]);
 const BACKEND_RESTART_DEBOUNCE_MS = 120;
 // Must exceed the gateway's child-wait budget (AkanApp child shutdown, ~5s in dev) so the gateway
 // is never SIGKILLed while its replicas are still shutting down — that's what strands orphans.
@@ -955,13 +955,30 @@ export class AkanAppHost {
     });
   }
   #sendToBuilder(message: BuilderMessage): void {
+    // The builder skips dev CSR artifacts until a `?csr=true` request needs one. Remember that this
+    // session armed it and pass the flag through `env`, which is re-read on every builder spawn, so a
+    // builder restart re-arms itself instead of silently breaking an in-progress mobile dev session.
+    if (message.type === "build-csr" && this.env.AKAN_DEV_CSR_REBUILD !== "1") {
+      Object.assign(this.env, { AKAN_DEV_CSR_REBUILD: "1" });
+      this.logger.verbose(`[csr] armed dev CSR rebuilds (${message.reason})`);
+    }
     if (this.#builder?.send(message)) return;
+    const status = this.#builder?.status ?? "stopped";
     if (message.type === "build-route") {
       this.#sendToBackend({
         type: "build-route-res",
         id: message.id,
         ok: false,
-        error: `builder is ${this.#builder?.status ?? "stopped"}; reload after the builder is ready`,
+        error: `builder is ${status}; reload after the builder is ready`,
+      });
+      return;
+    }
+    if (message.type === "build-csr") {
+      this.#sendToBackend({
+        type: "build-csr-res",
+        id: message.id,
+        ok: false,
+        error: `builder is ${status}; reload after the builder is ready`,
       });
       return;
     }

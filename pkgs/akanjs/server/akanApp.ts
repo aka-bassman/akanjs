@@ -4,7 +4,7 @@ import { Logger } from "akanjs/common";
 import type { AkanChildRole, AkanChildStatus, AkanIpcMessage, AkanMetricsReport, AkanUpstream } from "akanjs/service";
 import { isTraceEnabled } from "akanjs/signal";
 import { makeAkanChildProxyHeaders } from "./akanAppHeaders";
-import type { BuilderMessage, BuilderReq, BuilderRes } from "./artifact";
+import type { BuilderCsrReq, BuilderCsrRes, BuilderMessage, BuilderReq, BuilderRes } from "./artifact";
 import { isPortInUseError } from "./lifecycle/portInUse";
 import { RotatingLogWriter } from "./logging/rotatingLogWriter";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
@@ -941,7 +941,8 @@ export class AkanApp {
         if (child && proc) void this.#scheduleChildRestart(child, proc, "child-error");
         return;
       case "build-route":
-        this.#forwardBuildRoute(idx, message);
+      case "build-csr":
+        this.#forwardBuilderReq(idx, message);
         return;
     }
   }
@@ -957,7 +958,8 @@ export class AkanApp {
         this.#fanoutToFederation(message);
         return;
       case "build-route-res":
-        this.#forwardBuildRouteResponse(message);
+      case "build-csr-res":
+        this.#forwardBuilderRes(message);
         return;
     }
   }
@@ -1140,22 +1142,22 @@ export class AkanApp {
     }
   }
 
-  #forwardBuildRoute(childIdx: number, message: BuilderReq) {
+  #forwardBuilderReq(childIdx: number, message: BuilderReq | BuilderCsrReq) {
     const gatewayReqId = this.#nextBuilderReqId++;
     this.#builderReqMap.set(gatewayReqId, { childIdx, childLocalId: message.id });
-    process.send?.({ ...message, id: gatewayReqId } satisfies BuilderReq);
+    process.send?.({ ...message, id: gatewayReqId } satisfies BuilderReq | BuilderCsrReq);
   }
 
-  #forwardBuildRouteResponse(message: BuilderRes) {
+  #forwardBuilderRes(message: BuilderRes | BuilderCsrRes) {
     const request = this.#builderReqMap.get(message.id);
     if (!request) {
-      this.logger.warn(`No child found for build-route response id=${message.id}`);
+      this.logger.warn(`No child found for ${message.type} id=${message.id}`);
       return;
     }
     this.#builderReqMap.delete(message.id);
     const child = this.#children.get(request.childIdx);
     if (!child || child.proc.killed) return;
-    this.#sendToChild(child, { ...message, id: request.childLocalId } satisfies BuilderRes);
+    this.#sendToChild(child, { ...message, id: request.childLocalId } satisfies BuilderRes | BuilderCsrRes);
   }
 
   #fanoutToFederation(message: AkanIpcMessage | BuilderMessage, exceptIdx?: number) {
@@ -1201,7 +1203,7 @@ export class AkanApp {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     try {
-      while (true) {
+      for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         const text = decoder.decode(value, { stream: true });
@@ -1217,7 +1219,7 @@ export class AkanApp {
 
   #writeChildOutput(idx: number, role: AkanChildRole, type: "stdout" | "stderr", bufferKey: string, text: string) {
     let buffered = `${this.#childOutputBuffers.get(bufferKey) ?? ""}${text}`;
-    while (true) {
+    for (;;) {
       const newlineIdx = buffered.indexOf("\n");
       if (newlineIdx === -1) break;
       const line = buffered.slice(0, newlineIdx + 1);

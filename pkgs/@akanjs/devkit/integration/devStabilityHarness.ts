@@ -252,7 +252,13 @@ export const dictionary = serviceDictionary(["en", "ko"])
     await rm(this.appDir, { recursive: true, force: true });
   }
 
-  async startHost(timeoutMs = DEFAULT_TIMEOUT_MS): Promise<DevStabilityHost> {
+  async startHost({
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    env = {},
+  }: {
+    timeoutMs?: number;
+    env?: Record<string, string>;
+  } = {}): Promise<DevStabilityHost> {
     const logs: string[] = [];
     const proc = Bun.spawn(["bash", "-lc", `bun run akan start ${JSON.stringify(this.appName)}`], {
       cwd: this.workspaceRoot,
@@ -264,6 +270,7 @@ export const dictionary = serviceDictionary(["en", "ko"])
         AKAN_PUBLIC_LOG_LEVEL: "verbose",
         NODE_NO_WARNINGS: "1",
         PORT_OFFSET: String(this.portOffset),
+        ...env,
       },
       stdout: "pipe",
       stderr: "pipe",
@@ -274,7 +281,7 @@ export const dictionary = serviceDictionary(["en", "ko"])
       const decoder = new TextDecoder();
       const reader = stream.getReader();
       try {
-        while (true) {
+        for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
           logs.push(decoder.decode(value, { stream: true }));
@@ -292,9 +299,14 @@ export const dictionary = serviceDictionary(["en", "ko"])
       waitForLog: (pattern, waitMs) => waitForLog(logs, pattern, waitMs),
       waitForLogSince: (mark, pattern, waitMs) => waitForLogSince(logs, mark, pattern, waitMs),
       stop: async () => {
-        proc.kill("SIGTERM");
+        // The host runs under `bash -lc`, so killing `proc` only kills the shell: the dev host, its
+        // builder and its backend outlive it as orphans that keep watching a deleted fixture app and
+        // interfere with later tests. Collect the descendants first, then signal all of them.
+        const pids = await DevStabilityHarness.descendantPids(proc.pid);
+        DevStabilityHarness.#signalPids(pids, "SIGTERM");
         await Promise.race([proc.exited.catch(() => undefined), wait(3_000)]);
-        if (!proc.killed) proc.kill("SIGKILL");
+        DevStabilityHarness.#signalPids(await DevStabilityHarness.descendantPids(proc.pid), "SIGKILL");
+        DevStabilityHarness.#signalPids(pids, "SIGKILL");
       },
     };
     this.#host = host;
@@ -440,6 +452,75 @@ export const dictionary = serviceDictionary(["en", "ko"])
       a.localeCompare(b),
     );
     return 8282 + Math.max(apps.indexOf(this.appName), 0) + this.portOffset;
+  }
+
+  /**
+   * Resident set size of the whole `akan start` process tree, which is what a dev sandbox actually
+   * costs: supervisor, builder, gateway, replica and rsc worker. `excludeBuilder` drops the bundler
+   * process, whose growth across saves is `Bun.build` native arena retention rather than a leak the
+   * other processes could be blamed for.
+   */
+  static async processTreeRssBytes(
+    rootPid: number,
+    { excludeBuilder = false }: { excludeBuilder?: boolean } = {},
+  ): Promise<number> {
+    const rows = await DevStabilityHarness.#psRows();
+    const pids = DevStabilityHarness.#collectDescendants(rows, rootPid);
+    return (
+      rows
+        .filter((row) => pids.has(row.pid))
+        // `bun run akan …` is the npm-script shell wrapper, not a dev process.
+        .filter((row) => !row.cmd.startsWith("bash -lc") && !row.cmd.includes("cli/build.ts"))
+        .filter((row) => !excludeBuilder || !row.cmd.includes("incrementalBuilder"))
+        .reduce((total, row) => total + row.rssKb * 1024, 0)
+    );
+  }
+
+  /** Pids of `rootPid` and everything under it, deepest first, so callers can signal children before parents. */
+  static async descendantPids(rootPid: number | undefined): Promise<number[]> {
+    if (!rootPid) return [];
+    const pids = DevStabilityHarness.#collectDescendants(await DevStabilityHarness.#psRows(), rootPid);
+    return [...pids].reverse();
+  }
+
+  static async #psRows(): Promise<Array<{ pid: number; ppid: number; rssKb: number; cmd: string }>> {
+    const output = await Bun.$`ps -eo pid,ppid,rss,command`.text().catch(() => "");
+    return output
+      .split("\n")
+      .slice(1)
+      .flatMap((line) => {
+        const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+        return match
+          ? [{ pid: Number(match[1]), ppid: Number(match[2]), rssKb: Number(match[3]), cmd: match[4] ?? "" }]
+          : [];
+      });
+  }
+
+  static #collectDescendants(rows: Array<{ pid: number; ppid: number }>, rootPid: number): Set<number> {
+    // Iterate to a fixpoint rather than a fixed depth: the tree is `bash -lc` -> `bun run` -> the `&&`
+    // shell -> dev host -> gateway -> replica -> rsc worker, and a pass only guarantees one new
+    // generation when `ps` happens to list parents before children. A capped walk silently leaves the
+    // deepest processes unsignalled, which is how orphaned dev hosts survived `stop()`.
+    const pids = new Set([rootPid]);
+    for (let added = 1; added > 0; ) {
+      added = 0;
+      for (const row of rows)
+        if (pids.has(row.ppid) && !pids.has(row.pid)) {
+          pids.add(row.pid);
+          added++;
+        }
+    }
+    return pids;
+  }
+
+  static #signalPids(pids: number[], signal: NodeJS.Signals): void {
+    for (const pid of pids) {
+      try {
+        process.kill(pid, signal);
+      } catch {
+        // Already exited, or reaped between the `ps` snapshot and here.
+      }
+    }
   }
 }
 

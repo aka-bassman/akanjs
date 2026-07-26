@@ -1,5 +1,7 @@
 import { Logger } from "akanjs/common";
 import type {
+  BuilderCsrReq,
+  BuilderCsrRes,
   BuilderEvent,
   BuilderMessage,
   BuilderReq,
@@ -45,7 +47,7 @@ export class BuilderRpc {
   readonly #pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   readonly #offMessage: () => void;
   readonly #proc = process;
-  readonly #send: (msg: BuilderReq) => void;
+  readonly #send: (msg: BuilderReq | BuilderCsrReq) => void;
   #nextId = 1;
   #disposed = false;
 
@@ -55,13 +57,13 @@ export class BuilderRpc {
     this.#send = this.#proc.send.bind(this.#proc);
     this.#offMessage = this.#listen((msg) => {
       // Responses: look up the pending promise by id and settle.
-      if (msg.type === "build-route-res") {
-        const res = msg as BuilderRes;
+      if (msg.type === "build-route-res" || msg.type === "build-csr-res") {
+        const res = msg as BuilderRes | BuilderCsrRes;
         const waiter = this.#pending.get(res.id);
         if (!waiter) return;
         this.#pending.delete(res.id);
-        if (res.ok) waiter.resolve(res.data);
-        else waiter.reject(new Error(`[builder] ${res.type} failed: ${res.error}`));
+        if (!res.ok) waiter.reject(new Error(`[builder] ${res.type} failed: ${res.error}`));
+        else waiter.resolve(res.type === "build-route-res" ? res.data : undefined);
         return;
       }
       // Broadcast events: dispatch to subscriber hooks.
@@ -106,6 +108,20 @@ export class BuilderRpc {
       clientDeps: payload.clientDeps,
       clientDepsByEntry: payload.clientDepsByEntry,
     };
+  }
+
+  /**
+   * Ask the builder to build the dev CSR artifact and keep it in sync from now on. The builder skips
+   * CSR by default (a full minified browser-target build of every page, ~350 MB per save), so the
+   * first `/__csr` or `?csr=true` request has nothing to serve until this resolves.
+   */
+  async buildCsr(reason: string): Promise<void> {
+    if (this.#disposed) throw new Error("[builder] rpc is disposed");
+    const id = this.#nextId++;
+    await new Promise<void>((resolve, reject) => {
+      this.#pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+      this.#send({ type: "build-csr", id, reason });
+    });
   }
 
   dispose(): void {

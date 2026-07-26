@@ -4,6 +4,7 @@ import { DevStabilityHarness } from "./devStabilityHarness";
 
 const integrationEnabled = process.env.AKAN_DEV_STABILITY_INTEGRATION === "1";
 const INTEGRATION_TIMEOUT_MS = 120_000;
+const MB = 1024 * 1024;
 const harnesses: DevStabilityHarness[] = [];
 
 const integrationTest = (name: string, fn: () => Promise<void>): void => {
@@ -402,5 +403,102 @@ export class FixtureService extends serve("fixture" as const, { serverMode: "bat
     ];
 
     expect(manualSmoke).toHaveLength(2);
+  });
+});
+
+/**
+ * Resource budgets for `akan start`. A dev sandbox holds this process tree for a whole session, so
+ * every regression here multiplies by the number of tenants. Budgets are deliberately loose (they
+ * carry headroom over the measured values) — they exist to catch a *reintroduced* eager import or an
+ * unbounded per-save ratchet, not to pin exact numbers. Raising one should be a visible diff.
+ *
+ * Deliberately two tests, not one per property: each boots a full dev server, and four boots after
+ * the eleven tests above pushed cold boot from 3s to 21-55s through sheer machine contention, which
+ * silently exhausted the waits and looked like product failures. Both tests therefore assert several
+ * related properties against a single boot, with explicit generous waits. Run the block on its own
+ * (`-t "dev resource budgets"`) when timing matters.
+ */
+describe("dev resource budgets", () => {
+  const BOOT_MS = 150_000;
+  const WAIT_MS = 90_000;
+  const budgetTest = (name: string, fn: () => Promise<void>): void => {
+    if (integrationEnabled) test(name, fn, 300_000);
+    else test.skip(name, fn);
+  };
+
+  budgetTest("builds the dev CSR artifact only once a request needs it, then keeps it in sync", async () => {
+    const harness = await createHarness();
+    const host = await harness.startHost({ timeoutMs: BOOT_MS });
+    const port = await harness.resolvePort();
+
+    // A full minified browser-target build of every page, only reachable via `/__csr` and `?csr=true`.
+    expect(host.logs.join("")).not.toMatch(/\[csr-build\] output ->/);
+
+    // Mobile local dev points a device WebView at this URL, so it must serve HTML, not a 404. Wait
+    // for the app to actually serve first: `backend ready` fires before the gateway routes to the
+    // replica, and a too-early request 503s without reaching the router that arms CSR.
+    await harness.waitForHttpText("initial-client-marker", WAIT_MS);
+    const armMark = host.markLog();
+    const res = await fetch(`http://127.0.0.1:${port}/?csr=true`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("<html");
+    expect(host.logs.join("").slice(armMark)).toMatch(/csr-build ok on demand/);
+
+    // Armed: from here on every save rebuilds CSR, which is what keeps a live mobile session working.
+    //
+    // The settle wait is not padding. Bun's recursive `fs.watch` on macOS silently drops a file event
+    // that lands in the same FSEvents coalescing window as a burst of writes elsewhere in the tree, and
+    // the CSR build above emits exactly such a burst into `.akan/artifact/csr`. Saving immediately after
+    // the request returns therefore loses the event 100% of the time — a Bun bug this test must not
+    // depend on. See `local/optimize-resource/06-watcher-dropped-event.md` for the 30-line repro.
+    await Bun.sleep(500);
+    const resyncMark = host.markLog();
+    await harness.replaceText("ui/ClientMarker.tsx", "initial-client-marker", "csr-armed-marker");
+    await host.waitForLogSince(resyncMark, /csr-rebundle ok/, WAIT_MS);
+  });
+
+  budgetTest("bounds the rsc worker and the tree across repeated saves", async () => {
+    const harness = await createHarness();
+    const host = await harness.startHost({
+      // Recycle on the second reload so this needs a couple of saves rather than the ten a
+      // default-threshold run would take, and take the burst-coalescing floor out of the equation.
+      timeoutMs: BOOT_MS,
+      env: { AKAN_RSC_WORKER_MAX_RELOADS: "1", AKAN_RSC_WORKER_MIN_RECYCLE_INTERVAL_MS: "1" },
+    });
+    await harness.waitForHttpText("initial-client-marker", WAIT_MS);
+
+    const idleTotal = await DevStabilityHarness.processTreeRssBytes(host.proc.pid);
+    const idleWithoutBuilder = await DevStabilityHarness.processTreeRssBytes(host.proc.pid, { excludeBuilder: true });
+    // Measured ~670MB for this fixture; the headroom covers machine variance, not a reintroduced
+    // eager import (the cheapest of those is ~30MB, and the devkit barrel cycle was 236MB).
+    expect(idleTotal).toBeLessThan(1_000 * MB);
+
+    const start = host.markLog();
+    for (let i = 1; i <= 3; i++) {
+      const mark = host.markLog();
+      await harness.replaceText("ui/ClientMarker.tsx", /marker(-\d+)?/, `marker-${i}`);
+      await host.waitForLogSince(mark, /pages-rebundle ok/, WAIT_MS);
+      // CSR was never requested in this fixture, so no save may pay for a CSR rebuild.
+      const afterSave = host.logs.join("").slice(mark);
+      expect(afterSave).toMatch(/csr-rebundle skipped/);
+      expect(afterSave).not.toMatch(/csr-rebundle ok/);
+      // The debounced CSS rebuild is still writing after `pages-rebundle ok`, and Bun drops a watcher
+      // event that lands in the same window as a write burst (`06-watcher-dropped-event.md`). Saving
+      // again before this save's last artifact write lands loses the next edit outright, which showed
+      // up as this test hanging for the full 90s wait on iteration 2.
+      await host.waitForLogSince(mark, /css-rebuild checked/, WAIT_MS);
+    }
+
+    // Each in-place reload re-imports the pages bundle under a fresh `?v=`, and Bun's ESM registry
+    // never evicts — so without a recycle the worker grows for the life of the process.
+    await host.waitForLogSince(start, /rolling recycle worker reason=pages-reload-accumulation/, WAIT_MS);
+
+    // The dev host, gateway, replica and rsc worker must all stay flat across saves. The builder is
+    // still expected to grow — `Bun.build` retains native arenas that no GC reclaims, which the
+    // bounded-builder work addresses — so it is excluded here rather than silently tolerated.
+    const afterWithoutBuilder = await DevStabilityHarness.processTreeRssBytes(host.proc.pid, {
+      excludeBuilder: true,
+    });
+    expect(afterWithoutBuilder - idleWithoutBuilder).toBeLessThan(120 * MB);
   });
 });

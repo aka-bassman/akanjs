@@ -6,9 +6,14 @@ import { createHighlighter } from "shiki";
 import { Shiki_Client } from "./Shiki_Client";
 
 const highlighter = createHighlighter({
-  themes: ["github-dark"],
+  themes: ["github-light", "github-dark"],
   langs: ["typescript", "bash"],
 });
+
+const defaultThemes = {
+  light: "github-light",
+  dark: "github-dark",
+} as const satisfies Record<"light" | "dark", BundledTheme>;
 
 const transformerLineNumbers: ShikiTransformer = {
   line(node, line) {
@@ -81,18 +86,12 @@ interface RawProps {
   showLineNumbers?: boolean;
 }
 
-export const Raw = ({
-  className,
-  language = "typescript",
-  theme = "github-dark",
-  code,
-  showLineNumbers = true,
-}: RawProps) => {
+export const Raw = ({ className, language = "typescript", theme, code, showLineNumbers = true }: RawProps) => {
   const { cleanedCode, focusLines } = parseCollapseAnnotations(code);
   const htmlPromise = highlighter.then((highlighter) =>
     highlighter.codeToHtml(cleanedCode, {
       lang: language,
-      theme,
+      ...(theme ? { theme } : { themes: defaultThemes }),
       transformers: [
         transformerNotationDiff({
           matchAlgorithm: "v3",

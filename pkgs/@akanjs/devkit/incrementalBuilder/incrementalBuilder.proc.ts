@@ -1,7 +1,9 @@
 import path from "node:path";
+// Subpath imports only: the `@akanjs/devkit` root barrel re-exports all 41 modules, which would drag
+// @trapezedev/project, the @langchain stack, ssh2, ink and the cloud stack into the builder process.
+import type { App } from "@akanjs/devkit/commandDecorators";
+import { AppExecutor, WorkspaceExecutor } from "@akanjs/devkit/executors";
 import {
-  type App,
-  AppExecutor,
   AutoImportSync,
   type ChangeBatch,
   type ClientEntryDiscovery,
@@ -16,11 +18,12 @@ import {
   RouteClientBuilder,
   SsrBaseArtifactBuilder,
   WatchRootResolver,
-  WorkspaceExecutor,
-} from "@akanjs/devkit";
+} from "@akanjs/devkit/frontendBuild";
 import { Logger } from "akanjs/common";
 import type {
   BaseBuildArtifact,
+  BuilderCsrReq,
+  BuilderCsrRes,
   BuilderMessage,
   BuilderReq,
   BuilderRes,
@@ -56,6 +59,7 @@ class IncrementalBuilder {
   #generatedIndexSync: DevGeneratedIndexSync;
   #autoImportSync: AutoImportSync;
   #generation = 0;
+  #csrActive = IncrementalBuilder.#csrArmedByEnv();
   #workQueue: Promise<void> = Promise.resolve();
   #cssRebuildQueue: Promise<void> = Promise.resolve();
   #cssRebuildTimer: ReturnType<typeof setTimeout> | null = null;
@@ -346,7 +350,9 @@ class IncrementalBuilder {
         this.#sendBuildStatus("csr", { generation, ok: false, files, message });
       }
     } else if (kinds.includes("code") && rebuildClient) {
-      this.#logger.verbose(`csr-rebundle skipped; set AKAN_DEV_CSR_REBUILD=1 to enable per-save CSR rebuilds`);
+      this.#logger.verbose(
+        `csr-rebundle skipped; request /__csr or ?csr=true (or set AKAN_DEV_CSR_REBUILD=1) to enable per-save CSR rebuilds`,
+      );
     }
 
     process.send?.(event);
@@ -404,14 +410,40 @@ class IncrementalBuilder {
     });
   }
 
+  /**
+   * Build the dev CSR artifact because a request asked for it, and keep it in sync from now on. The
+   * dev server only serves CSR through the opt-in `/__csr` and `?csr=true` routes — mobile local dev
+   * points a device WebView at the latter — so nothing needs the artifact until one of them is hit.
+   */
+  async handleBuildCsr(msg: BuilderCsrReq): Promise<BuilderCsrRes> {
+    return this.#enqueueWork("build-csr", async (): Promise<BuilderCsrRes> => {
+      const started = Date.now();
+      try {
+        await new CsrArtifactBuilder(this.#app).build();
+        this.#csrActive = true;
+        this.#logger.info(`csr-build ok on demand (${Date.now() - started}ms); rebuilding CSR on every save now`);
+        return { type: "build-csr-res", id: msg.id, ok: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.#logger.error(`csr-build failed: ${message}`);
+        return { type: "build-csr-res", id: msg.id, ok: false, error: message };
+      }
+    });
+  }
+
   #shouldRebuildCsr() {
-    // CSR is served by `akn start`, so rebuild dev CSR artifacts until incremental CSR HMR is implemented.
-    return true;
+    return this.#csrActive;
+  }
+
+  static #csrArmedByEnv() {
+    return process.env.AKAN_DEV_CSR_REBUILD === "1";
   }
 
   static async #buildBootDeps(app: App): Promise<IncrementalBuilderBootDeps> {
     const { artifact, cssCompiler, optimizedFonts } = await new SsrBaseArtifactBuilder(app).build();
-    await new CsrArtifactBuilder(app).build();
+    //* A full minified browser-target build of every page costs ~350MB of bundler arena the process
+    //* never returns, so skip it until a `/__csr` or `?csr=true` request arms it via `build-csr`.
+    if (IncrementalBuilder.#csrArmedByEnv()) await new CsrArtifactBuilder(app).build();
     const discovery = await GraphClientEntryDiscovery.create(app);
     return { artifact, cssCompiler, optimizedFonts, discovery };
   }
@@ -476,20 +508,26 @@ class IncrementalBuilder {
     const app = AppExecutor.from(workspace, appName);
     const watch = process.env.AKAN_WATCH !== "0";
     let builder: IncrementalBuilder | null = null;
-    // Registered before the boot build so build-route requests get an error response (instead of
-    // hanging the backend) while the builder is still booting or recovering from a failed build.
+    // Registered before the boot build so backend requests get an error response (instead of hanging
+    // the backend) while the builder is still booting or recovering from a failed build.
+    const bootingError = "builder is recovering from a failed boot build; retry after the build error is fixed";
     process.on("message", (msg: BuilderMessage) => {
-      if (!msg || typeof msg !== "object" || msg.type !== "build-route") return;
-      if (!builder) {
-        process.send?.({
-          type: "build-route-res",
-          id: msg.id,
-          ok: false,
-          error: "builder is recovering from a failed boot build; retry after the build error is fixed",
-        });
+      if (!msg || typeof msg !== "object") return;
+      if (msg.type === "build-route") {
+        if (!builder) {
+          process.send?.({ type: "build-route-res", id: msg.id, ok: false, error: bootingError });
+          return;
+        }
+        void builder.handleBuildRoute(msg).then((res) => process.send?.(res));
         return;
       }
-      void builder.handleBuildRoute(msg).then((res) => process.send?.(res));
+      if (msg.type === "build-csr") {
+        if (!builder) {
+          process.send?.({ type: "build-csr-res", id: msg.id, ok: false, error: bootingError });
+          return;
+        }
+        void builder.handleBuildCsr(msg).then((res) => process.send?.(res));
+      }
     });
     // The IPC channel closes when the dev host dies (including SIGKILL); exit instead of running
     // as an orphaned watcher that keeps rebuilding for nobody.

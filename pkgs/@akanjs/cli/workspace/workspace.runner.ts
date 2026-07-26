@@ -1,5 +1,8 @@
 import path from "node:path";
-import { type Exec, FileSys, type PackageJson, runner, type Workspace, WorkspaceExecutor } from "@akanjs/devkit";
+import { type Exec, runner, type Workspace } from "@akanjs/devkit/commandDecorators";
+import { WorkspaceExecutor } from "@akanjs/devkit/executors";
+import { FileSys } from "@akanjs/devkit/fileSys";
+import type { PackageJson } from "@akanjs/devkit/types";
 import { getLatestPackageVersion, getNpmRegistryUrl } from "../npmRegistry";
 
 const defaultWorkspacePeerDependencies = new Set([

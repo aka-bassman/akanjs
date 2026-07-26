@@ -1,4 +1,6 @@
-import { AkanContextAnalyzer, Prompter, runner, type Workspace } from "@akanjs/devkit";
+import { AkanContextAnalyzer } from "@akanjs/devkit/akanContext";
+import { runner, type Workspace } from "@akanjs/devkit/commandDecorators";
+import { Prompter } from "@akanjs/devkit/prompter";
 
 type AgentTarget = "cursor" | "agents-md" | "claude";
 

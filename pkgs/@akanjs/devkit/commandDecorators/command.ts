@@ -3,9 +3,13 @@ import { confirm, input, select } from "@inquirer/prompts";
 import { Logger } from "akanjs/common";
 import chalk from "chalk";
 import { type Command, program } from "commander";
-
-import { FileSys, getDirname, type PackageJson } from "..";
 import { AppExecutor, Executor, LibExecutor, ModuleExecutor, PkgExecutor, WorkspaceExecutor } from "../executors";
+// Import the owning modules directly, never the root barrel: `..` re-exports all 41 devkit modules,
+// so a barrel import here drags ink, @trapezedev/project, ssh2, @langchain/* and the cloud stack into
+// every process that registers a command (measured: 236MB vs 3MB).
+import { FileSys } from "../fileSys";
+import { getDirname } from "../getDirname";
+import type { PackageJson } from "../types";
 import {
   type ArgMeta,
   type CommandContext,
@@ -16,7 +20,7 @@ import {
 } from "./argMeta";
 import { CommandContainer } from "./dependencyBuilder";
 import { formatCommandHelp, formatHelp } from "./helpFormatter";
-import { type CommandCls, getTargetMetas } from "./targetMeta";
+import { type CommandCls, getTargetCommandNames, getTargetMetas } from "./targetMeta";
 
 const camelToKebabCase = (str: string) => str.replace(/([A-Z])/g, "-$1").toLowerCase();
 const loggedCliErrorObjects = new WeakSet<object>();
@@ -295,19 +299,7 @@ It may cause unexpected behavior. Run \`akan update\` to update latest akanjs.`,
   for (const command of commands) {
     const targetMetas = getTargetMetas(command);
     for (const targetMeta of targetMetas) {
-      const kebabKey = camelToKebabCase(targetMeta.key);
-      const commandNames =
-        targetMeta.targetOption.short === true
-          ? [
-              kebabKey,
-              typeof targetMeta.targetOption.short === "string"
-                ? targetMeta.targetOption.short
-                : kebabKey
-                    .split("-")
-                    .map((s) => s.slice(0, 1))
-                    .join(""),
-            ]
-          : [kebabKey];
+      const commandNames = getTargetCommandNames(targetMeta);
       for (const commandName of commandNames) {
         let programCommand = program.command(commandName, {
           hidden: targetMeta.targetOption.devOnly,
