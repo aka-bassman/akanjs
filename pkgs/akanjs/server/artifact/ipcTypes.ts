@@ -122,7 +122,9 @@ export interface BuilderMetrics {
 }
 
 export type BuilderEvent =
-  | { type: "builder-ready"; buildId: string }
+  // `buildId` is optional because no builder has ever sent one and nothing reads it: readiness is the
+  // whole signal, and the artifact's build id travels with `pages-updated`.
+  | { type: "builder-ready"; buildId?: string }
   | { type: "backend-ready"; pid: number }
   | {
       type: "invalidate";

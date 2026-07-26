@@ -4,7 +4,13 @@ import type { App } from "@akanjs/devkit/commandDecorators";
 // eager import is paid on every save. Measured on a 177-route app: `executors` 24ms, `frontendBuild`
 // ~110ms, app config 5ms.
 import { AppExecutor, WorkspaceExecutor } from "@akanjs/devkit/executors";
-import { CsrArtifactBuilder, CssCompiler, FontOptimizer, PagesBundleBuilder } from "@akanjs/devkit/frontendBuild";
+import {
+  CsrArtifactBuilder,
+  CssCompiler,
+  FontOptimizer,
+  PagesBundleBuilder,
+  SsrBaseArtifactBuilder,
+} from "@akanjs/devkit/frontendBuild";
 import { Logger } from "akanjs/common";
 import type { BuilderMessage, BuildPhase } from "akanjs/server";
 import type { BuildBatchRequest, BuildBatchResult, OptimizedFonts, PagesBatchCssAssets } from "./buildBatchProtocol";
@@ -34,6 +40,8 @@ class BuildBatch {
   }
 
   async run(): Promise<BuildBatchResult> {
+    // `base` arrives alone, from a builder that cannot serve anything until it finishes.
+    if (this.#request.needs.includes("base")) await this.#buildBase();
     // Ordered the way the watcher used to run them: csr before pages so a csr failure cannot delay the
     // pages bundle the browser is waiting on, and css last because it depends on the rebuilt client.
     if (this.#request.needs.includes("csr")) await this.#buildCsr();
@@ -48,6 +56,12 @@ class BuildBatch {
    * never had, and it would move every artifact write into the window right before the watcher reports
    * the generation complete — which is where a save issued immediately afterwards gets dropped by Bun's
    * recursive `fs.watch` (`local/optimize-resource/06-watcher-dropped-event.md`).
+   *
+   * A bare `process.send` is safe here, unlike in the watcher, for one reason: this process ends by
+   * returning from `main`, and a natural exit flushes a pending ipc write (measured: 1MB delivered
+   * 20/20). It is `process.exit` that discards one — so adding an explicit exit to this file, at the end
+   * of `main` or anywhere after an emit, would silently start dropping `css-updated` payloads. Route
+   * sends through `BuilderChannel` if that ever becomes necessary.
    */
   #emit(message: BuilderMessage): void {
     process.send?.(message);
@@ -64,6 +78,25 @@ class BuildBatch {
         message,
       },
     });
+  }
+
+  /**
+   * The boot build. Streams nothing: a builder is not serving yet, so there is no phase board to update
+   * and no browser to reload — the watcher learns the outcome from the batch result, and a failure there
+   * is what puts it into degraded watch mode.
+   */
+  async #buildBase(): Promise<void> {
+    const started = Date.now();
+    try {
+      const { artifact, optimizedFonts } = await new SsrBaseArtifactBuilder(this.#app).build();
+      this.#result.artifact = artifact;
+      this.#result.optimizedFonts = optimizedFonts;
+      this.#logger.verbose(`base-artifact ok buildId=${artifact.pagesBundleBuildId} (${Date.now() - started}ms)`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.#logger.error(`base-artifact failed: ${message}`);
+      this.#result.errors.base = message;
+    }
   }
 
   async #buildCsr(): Promise<void> {

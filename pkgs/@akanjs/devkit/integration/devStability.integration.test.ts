@@ -566,9 +566,21 @@ describe("dev resource budgets", () => {
     const idleBuilder = await DevStabilityHarness.builderProcess(host.proc.pid);
     // Nothing should be building at idle, so the disposable worker must not be resident.
     expect(await DevStabilityHarness.buildWorkerProcess(host.proc.pid)).toBeNull();
-    // Measured ~670MB for this fixture; the headroom covers machine variance, not a reintroduced
-    // eager import (the cheapest of those is ~30MB, and the devkit barrel cycle was 236MB).
-    expect(idleTotal).toBeLessThan(1_000 * MB);
+    // Printed so a run that came close to its budget says so, instead of being indistinguishable from a
+    // comfortable one — the same reason the recycle and idle-suspend guards report their numbers.
+    console.info(
+      `[budget-guard] idle tree ${Math.round(idleTotal / MB)}MB (builder ${Math.round((idleBuilder?.rssBytes ?? 0) / MB)}MB, rest ${Math.round(idleWithoutBuilder / MB)}MB)`,
+    );
+    // Split in two because the two halves have very different variance. The builder legitimately swings
+    // from a ~130MB fresh floor to ~520MB once it has built a route (`Bun.build` arenas the RSS-ceiling
+    // recycle is what bounds), so a tight total would flake. Measured 929-959MB total / ~414MB without
+    // the builder; the old 1000MB total came from a phase-1 topology where the fixture measured ~670MB
+    // and is only ~4% above what the current topology legitimately uses.
+    expect(idleTotal).toBeLessThan(1_200 * MB);
+    // This is the half that catches what the budget exists for: an eager import lands in the dev host or
+    // the backend, not in the builder's arenas. The cheapest reintroduction is ~30MB and the devkit
+    // barrel cycle was 236MB, so this bound still fails on the latter.
+    expect(idleWithoutBuilder).toBeLessThan(600 * MB);
 
     const start = host.markLog();
     for (let i = 1; i <= 3; i++) {

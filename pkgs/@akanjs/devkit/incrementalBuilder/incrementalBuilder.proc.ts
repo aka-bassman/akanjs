@@ -12,7 +12,6 @@ import {
   GraphClientEntryDiscovery,
   HmrWatcher,
   RouteClientBuilder,
-  SsrBaseArtifactBuilder,
   WatchRootResolver,
 } from "@akanjs/devkit/frontendBuild";
 import { Logger } from "akanjs/common";
@@ -27,7 +26,7 @@ import type {
 } from "akanjs/server";
 import type { BuildBatchNeed, BuildBatchRequest, BuildBatchResult, OptimizedFonts } from "./buildBatchProtocol";
 import { BuildBatchRunner } from "./buildBatchRunner";
-import { BuilderReply } from "./builderReply";
+import { BuilderChannel } from "./builderChannel";
 import { prepareDevWatchBatch } from "./devWatchBatch";
 
 interface IncrementalBuilderOptions {
@@ -89,7 +88,7 @@ class IncrementalBuilder {
    */
   async handleBuildRoute(msg: BuilderReq): Promise<void> {
     await this.#enqueueWork(`build-route:${msg.routeId}`, async () =>
-      BuilderReply.send(await this.#handleBuildRoute(msg)),
+      BuilderChannel.send(await this.#handleBuildRoute(msg)),
     );
   }
 
@@ -132,7 +131,7 @@ class IncrementalBuilder {
     { generation, ok, files, message }: { generation?: number; ok: boolean; files?: string[]; message?: string },
   ): void {
     if (typeof generation !== "number") return;
-    process.send?.({
+    BuilderChannel.emit({
       type: "build-status",
       data: {
         generation,
@@ -170,7 +169,7 @@ class IncrementalBuilder {
    */
   #reportMetrics(): void {
     if (!this.#idle || this.#shuttingDown) return;
-    process.send?.({
+    BuilderChannel.emit({
       type: "builder-metrics",
       data: { rssBytes: process.memoryUsage.rss(), generation: this.#generation, workCount: this.#workCount },
     });
@@ -195,7 +194,14 @@ class IncrementalBuilder {
     }
     await this.#workQueue.catch(() => undefined);
     await this.#cssRebuildQueue.catch(() => undefined);
-    this.#logger.info(`drained in ${Date.now() - started}ms; exiting for recycle`);
+    // Drained queues do not mean the host has the results. The events those work items produced are the
+    // largest messages this process sends, and `process.exit` discards an ipc write that has not
+    // flushed — a `css-updated` relayed milliseconds before this line would be dropped with no error
+    // anywhere, leaving the backend serving the previous bundle. See `BuilderChannel`.
+    const flushed = await BuilderChannel.drain();
+    this.#logger.info(
+      `drained in ${Date.now() - started}ms${flushed ? ` after flushing ${flushed} ipc write(s)` : ""}; exiting for recycle`,
+    );
     process.exit(0);
   }
 
@@ -311,7 +317,7 @@ class IncrementalBuilder {
 
     if (hasSyncErrors) {
       this.#sendBuildStatus("barrel", { generation, ok: false, files, message: indexSync.errors.join("\n") });
-      process.send?.(event);
+      BuilderChannel.emit(event);
       return;
     }
     if (indexSync.changedFiles.length > 0) this.#sendBuildStatus("barrel", { generation, ok: true, files });
@@ -347,7 +353,7 @@ class IncrementalBuilder {
       needs.push("css");
     }
 
-    process.send?.(event);
+    BuilderChannel.emit(event);
 
     if (needs.length > 0) await this.#runBatch({ generation, needs, changedFiles: files });
     // A css-only batch keeps its debounce: those arrive in bursts while a stylesheet is edited, and
@@ -374,15 +380,18 @@ class IncrementalBuilder {
   }): Promise<BuildBatchResult> {
     const started = Date.now();
     const result = await this.#batchRunner.run(await this.#batchRequest({ generation, needs, changedFiles }), (msg) =>
-      process.send?.(msg),
+      BuilderChannel.emit(msg),
     );
     if (result.optimizedFonts) this.#optimizedFonts = result.optimizedFonts;
     if (result.cssAssets) this.#artifact = { ...this.#artifact, cssAssets: result.cssAssets };
     // A worker that died before reporting streamed no build-status of its own, so report one per need
     // it was given: the generation must go red rather than look like it silently succeeded.
     if (result.crashed) {
+      // `base` is excluded because it is not a `BuildPhase`: a boot build has no phase board to fail, and
+      // it never travels through here — `#buildBootDeps` runs it and throws into the degraded-boot path.
       for (const need of needs)
-        this.#sendBuildStatus(need, { generation, ok: false, files: changedFiles, message: result.errors[need] });
+        if (need !== "base")
+          this.#sendBuildStatus(need, { generation, ok: false, files: changedFiles, message: result.errors[need] });
     }
     if (needs.includes("css")) this.#logger.verbose(`css-rebuild checked (${Date.now() - started}ms)`);
     return result;
@@ -413,7 +422,7 @@ class IncrementalBuilder {
 
   async boot(): Promise<void> {
     if (this.#watch) await this.installWatcher();
-    process.send?.({ type: "builder-ready" });
+    BuilderChannel.emit({ type: "builder-ready" });
     this.#logger.verbose(`ready (watch=${this.#watch})`);
   }
 
@@ -441,7 +450,9 @@ class IncrementalBuilder {
   async announceBootState(): Promise<void> {
     const generation = ++this.#generation;
     const reason = "builder-recycle" as const;
-    process.send?.({
+    // Awaited rather than emitted: this runs during a recycle, so the host may ask this builder to shut
+    // down at any moment, and "announced boot state" must mean the announcement left the process.
+    await BuilderChannel.send({
       type: "pages-updated",
       data: {
         bundlePath: this.#artifact.pagesBundlePath,
@@ -460,7 +471,7 @@ class IncrementalBuilder {
         ]),
       ),
     );
-    process.send?.({
+    await BuilderChannel.send({
       type: "css-updated",
       data: { cssAssets, cssBase64ByUrl, generation, changedFiles: [], reason },
     });
@@ -483,12 +494,12 @@ class IncrementalBuilder {
       const error = result.errors.csr;
       if (error) {
         this.#logger.error(`csr-build failed: ${error}`);
-        await BuilderReply.send({ type: "build-csr-res", id: msg.id, ok: false, error });
+        await BuilderChannel.send({ type: "build-csr-res", id: msg.id, ok: false, error });
         return;
       }
       this.#csrActive = true;
       this.#logger.info(`csr-build ok on demand (${Date.now() - started}ms); rebuilding CSR on every save now`);
-      await BuilderReply.send({ type: "build-csr-res", id: msg.id, ok: true });
+      await BuilderChannel.send({ type: "build-csr-res", id: msg.id, ok: true });
     });
   }
 
@@ -500,10 +511,40 @@ class IncrementalBuilder {
     return process.env.AKAN_DEV_CSR_REBUILD === "1";
   }
 
-  static async #buildBootDeps(app: App): Promise<IncrementalBuilderBootDeps> {
-    const { artifact, optimizedFonts } = await new SsrBaseArtifactBuilder(app).build();
+  /**
+   * Build the boot artifact in a process that exits afterwards, and keep only the serializable result.
+   *
+   * This runs in a worker for the same reason every other build does, and it was the largest single
+   * holdout: measured on `apps/akan`, `SsrBaseArtifactBuilder.build()` retains **+1143 MB** that
+   * `Bun.gc(true)` cannot touch, which is 65 % of the builder's post-boot RSS. Nothing was lost by
+   * moving it — the builder only ever kept `artifact` and `optimizedFonts`, both plain data, and the
+   * artifact is written to `base-artifact.json` regardless.
+   *
+   * `GraphClientEntryDiscovery.create` stays here because route builds need it live, and it costs
+   * nothing to keep: measured at **0 ms and 0 MB**, because it builds its graph lazily on first use.
+   */
+  static async #buildBootDeps(app: App, runner: BuildBatchRunner): Promise<IncrementalBuilderBootDeps> {
+    const result = await runner.run({
+      appName: app.name,
+      workspaceRoot: app.workspace.workspaceRoot,
+      repoName: app.workspace.repoName,
+      generation: 0,
+      needs: ["base"],
+      changedFiles: [],
+      // Discovered by the worker: at boot the watcher has no validated keys to seed, and the boot build
+      // globs them itself anyway.
+      pageKeys: null,
+      optimizedFonts: null,
+      cssAssets: null,
+      artifactDir: path.resolve(`${app.cwdPath}/.akan/artifact`),
+    });
+    // A failed boot build has to throw, not degrade quietly: `main` catches this to enter the degraded
+    // watch mode that keeps the dev server alive until the error is fixed.
+    if (result.errors.base) throw new Error(result.errors.base);
+    if (!result.artifact || !result.optimizedFonts)
+      throw new Error("boot build reported success without an artifact; the build worker likely died");
     const discovery = await GraphClientEntryDiscovery.create(app);
-    return { artifact, optimizedFonts, discovery };
+    return { artifact: result.artifact, optimizedFonts: result.optimizedFonts, discovery };
   }
 
   /**
@@ -535,18 +576,19 @@ class IncrementalBuilder {
     app: App,
     bootError: unknown,
     logger: Logger,
+    runner: BuildBatchRunner,
   ): Promise<{ builder: IncrementalBuilder; changedFiles: string[] }> {
     const firstMessage = bootError instanceof Error ? bootError.message : String(bootError);
     logger.error(`boot build failed; entering degraded watch mode until the error is fixed: ${firstMessage}`);
     let generation = 0;
     const sendFailure = (files: string[], message: string) => {
-      process.send?.({
+      BuilderChannel.emit({
         type: "build-status",
         data: { generation, phase: "pages", ok: false, files, message: `Boot build failed: ${message}` },
       });
     };
     sendFailure([], firstMessage);
-    process.send?.({ type: "builder-ready" });
+    BuilderChannel.emit({ type: "builder-ready" });
     return new Promise((resolve, reject) => {
       void (async () => {
         const roots = await new WatchRootResolver(app).resolve();
@@ -559,7 +601,7 @@ class IncrementalBuilder {
             try {
               // A broken akan.config.ts caches its import failure; re-import it before rebuilding.
               if (new Set(batch.kinds).has("config")) await app.getConfig({ refresh: true });
-              const deps = await IncrementalBuilder.#buildBootDeps(app);
+              const deps = await IncrementalBuilder.#buildBootDeps(app, runner);
               const builder = new IncrementalBuilder({ app, watch: true, initialGeneration: generation, ...deps });
               watcher.stop();
               logger.info(`boot build recovered generation=${generation}`);
@@ -602,7 +644,7 @@ class IncrementalBuilder {
       if (msg.type === "build-route") {
         const error = builder?.shuttingDown ? recyclingError : bootingError;
         if (!builder || builder.shuttingDown) {
-          process.send?.({ type: "build-route-res", id: msg.id, ok: false, error });
+          BuilderChannel.emit({ type: "build-route-res", id: msg.id, ok: false, error });
           return;
         }
         void builder.handleBuildRoute(msg);
@@ -611,24 +653,28 @@ class IncrementalBuilder {
       if (msg.type === "build-csr") {
         const error = builder?.shuttingDown ? recyclingError : bootingError;
         if (!builder || builder.shuttingDown) {
-          process.send?.({ type: "build-csr-res", id: msg.id, ok: false, error });
+          BuilderChannel.emit({ type: "build-csr-res", id: msg.id, ok: false, error });
           return;
         }
         void builder.handleBuildCsr(msg);
       }
     });
     // The IPC channel closes when the dev host dies (including SIGKILL); exit instead of running
-    // as an orphaned watcher that keeps rebuilding for nobody.
+    // as an orphaned watcher that keeps rebuilding for nobody. Nothing is drained here on purpose —
+    // there is no longer anyone on the other end to flush to.
     process.on("disconnect", () => {
       logger.warn("host IPC channel closed; exiting builder");
       process.exit(0);
     });
     let recoveredFiles: string[] | null = null;
+    // Owned by `main` rather than the instance: the boot build has to run before an instance exists, and
+    // a degraded boot re-runs it once per file change until it succeeds.
+    const bootRunner = new BuildBatchRunner({ workspaceRoot, cwd: app.cwdPath });
     try {
-      builder = new IncrementalBuilder({ app, watch, ...(await IncrementalBuilder.#buildBootDeps(app)) });
+      builder = new IncrementalBuilder({ app, watch, ...(await IncrementalBuilder.#buildBootDeps(app, bootRunner)) });
     } catch (err) {
       if (!watch) throw err;
-      const recovered = await IncrementalBuilder.#recoverBoot(app, err, logger);
+      const recovered = await IncrementalBuilder.#recoverBoot(app, err, logger, bootRunner);
       builder = recovered.builder;
       recoveredFiles = recovered.changedFiles;
     }

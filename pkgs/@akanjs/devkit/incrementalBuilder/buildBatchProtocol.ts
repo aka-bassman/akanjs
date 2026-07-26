@@ -1,9 +1,15 @@
 import type { FontOptimizer } from "@akanjs/devkit/frontendBuild";
-import type { CssPayload, PagesBundlePayload } from "akanjs/server";
+import type { BaseBuildArtifact, CssPayload, PagesBundlePayload } from "akanjs/server";
 
 export type OptimizedFonts = Awaited<ReturnType<FontOptimizer["optimize"]>>;
 
-export type BuildBatchNeed = "pages" | "css" | "csr";
+/**
+ * `base` is the boot build (`SsrBaseArtifactBuilder`) and is never batched with the others: it is what a
+ * builder runs before it can serve anything, where the rest are per-save work. It earns its place here
+ * for the same reason as the others — measured on `apps/akan`, it retains **+1143 MB** of bundler arena
+ * that only a process exit returns, which was 65 % of the builder's whole idle footprint.
+ */
+export type BuildBatchNeed = "base" | "pages" | "css" | "csr";
 
 /**
  * One generation of build work, handed to a process that exits when it is done.
@@ -44,6 +50,11 @@ export interface BuildBatchResult {
   generation: number;
   cssAssets?: PagesBatchCssAssets;
   optimizedFonts?: OptimizedFonts;
+  /**
+   * Present only for a `base` batch. The same object the worker wrote to `base-artifact.json`, returned
+   * here so the watcher does not have to read its own boot build back off disk.
+   */
+  artifact?: BaseBuildArtifact;
   errors: Partial<Record<BuildBatchNeed, string>>;
   /** The worker died before reporting, so it streamed no `build-status` of its own for these needs. */
   crashed?: boolean;
