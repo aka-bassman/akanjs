@@ -149,7 +149,6 @@ describe("dev stability integration harness", () => {
       return;
     }
     const mark = host.markLog();
-    const hmrMark = hmr?.mark() ?? 0;
 
     await harness.replaceText("common/marker.ts", "initial-shared-marker", "updated-shared-marker");
 
@@ -159,13 +158,13 @@ describe("dev stability integration harness", () => {
     );
     const generation = plan[1];
     await host.waitForLogSince(mark, new RegExp(`\\[backend-reload\\].*generation=${generation}`));
-    if (hmr)
-      await hmr.waitForMessageSince(
-        hmrMark,
-        (msg) =>
-          typeof msg === "object" && msg !== null && "generation" in msg && String(msg.generation) === generation,
-      );
-    else await host.waitForLogSince(mark, new RegExp(`\\[SSR\\] pages-updated.*generation=${generation}`));
+    // Asserted backend-side, not through the probe. A shared edit restarts the backend, which closes
+    // the socket the probe opened, and the probe is a raw WebSocket that never reconnects. A real
+    // browser does: on reconnect it gets a `hello` and reloads when the buildId moved
+    // (`akanjs/server/hmr/clientScript.ts`). Requiring a probe message here only held while the client
+    // rebuild happened to finish before the restart killed the connection — a race this test lost the
+    // moment builds moved into a worker process and took ~240ms longer to start.
+    await host.waitForLogSince(mark, new RegExp(`\\[SSR\\] pages-updated.*generation=${generation}`));
     await harness.waitForHttpText("updated-shared-marker");
     hmr?.close();
   });
@@ -469,6 +468,9 @@ describe("dev resource budgets", () => {
 
     const idleTotal = await DevStabilityHarness.processTreeRssBytes(host.proc.pid);
     const idleWithoutBuilder = await DevStabilityHarness.processTreeRssBytes(host.proc.pid, { excludeBuilder: true });
+    const idleBuilder = await DevStabilityHarness.builderProcess(host.proc.pid);
+    // Nothing should be building at idle, so the disposable worker must not be resident.
+    expect(await DevStabilityHarness.buildWorkerProcess(host.proc.pid)).toBeNull();
     // Measured ~670MB for this fixture; the headroom covers machine variance, not a reintroduced
     // eager import (the cheapest of those is ~30MB, and the devkit barrel cycle was 236MB).
     expect(idleTotal).toBeLessThan(1_000 * MB);
@@ -482,23 +484,104 @@ describe("dev resource budgets", () => {
       const afterSave = host.logs.join("").slice(mark);
       expect(afterSave).toMatch(/csr-rebundle skipped/);
       expect(afterSave).not.toMatch(/csr-rebundle ok/);
-      // The debounced CSS rebuild is still writing after `pages-rebundle ok`, and Bun drops a watcher
-      // event that lands in the same window as a write burst (`06-watcher-dropped-event.md`). Saving
-      // again before this save's last artifact write lands loses the next edit outright, which showed
-      // up as this test hanging for the full 90s wait on iteration 2.
+      // Bun drops a watcher event that lands in the same window as a write burst
+      // (`06-watcher-dropped-event.md`), so saving again before this generation has fully settled loses
+      // the next edit outright — this test hanging for the full 90s wait on iteration 2. Waiting for
+      // the builder alone is not enough: the backend is still applying the reload after that, and it
+      // writes too. Wait for the backend to finish, then leave the drop window (measured under 200ms).
       await host.waitForLogSince(mark, /css-rebuild checked/, WAIT_MS);
+      await host.waitForLogSince(mark, /\[hmr\] backend apply/, WAIT_MS);
+      await Bun.sleep(300);
     }
 
     // Each in-place reload re-imports the pages bundle under a fresh `?v=`, and Bun's ESM registry
     // never evicts — so without a recycle the worker grows for the life of the process.
     await host.waitForLogSince(start, /rolling recycle worker reason=pages-reload-accumulation/, WAIT_MS);
 
-    // The dev host, gateway, replica and rsc worker must all stay flat across saves. The builder is
-    // still expected to grow — `Bun.build` retains native arenas that no GC reclaims, which the
-    // bounded-builder work addresses — so it is excluded here rather than silently tolerated.
+    // The dev host, gateway, replica and rsc worker must all stay flat across saves.
     const afterWithoutBuilder = await DevStabilityHarness.processTreeRssBytes(host.proc.pid, {
       excludeBuilder: true,
     });
     expect(afterWithoutBuilder - idleWithoutBuilder).toBeLessThan(120 * MB);
+
+    // And so must the builder. It used to be excluded from this budget because `Bun.build` retains
+    // native arenas no GC reclaims, which made it grow ~120MB per save on this fixture; every build
+    // that scales per save now runs in a process that exits, so its memory goes back to the OS.
+    const afterBuilder = await DevStabilityHarness.builderProcess(host.proc.pid);
+    expect(afterBuilder?.pid).toBe(idleBuilder?.pid);
+    expect((afterBuilder?.rssBytes ?? 0) - (idleBuilder?.rssBytes ?? 0)).toBeLessThan(30 * MB);
+    // The worker is transient: three generations built, and none of them is still around.
+    expect(await DevStabilityHarness.buildWorkerProcess(host.proc.pid)).toBeNull();
+  });
+
+  budgetTest("recycles the builder at an unmeetable ceiling and keeps developing through it", async () => {
+    const harness = await createHarness();
+    // Deliberately *below* this fixture's post-boot builder. Moving every per-save build into a
+    // disposable worker means the builder no longer grows into a ceiling, so a ceiling it is already
+    // over is the only way left to drive the recycle path end to end — and it is also the case the
+    // escape hatch exists for: an app whose boot floor simply does not fit under the limit.
+    const host = await harness.startHost({ timeoutMs: BOOT_MS, env: { AKAN_BUILDER_MAX_RSS_MB: "200" } });
+    const start = host.markLog();
+    await harness.waitForHttpText("initial-client-marker", WAIT_MS);
+
+    // One save is enough: the builder reports its rss as soon as the batch drains, and the host arms
+    // the recycle from that report. The old pid comes from the log rather than from `ps`, so this does
+    // not race the swap it is about to observe.
+    const firstSave = host.markLog();
+    await harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, "marker-1");
+    await host.waitForLogSince(firstSave, /pages-rebundle ok/, WAIT_MS);
+
+    // The host decides, the builder drains rather than being killed, and the replacement comes up.
+    const recycleLog = await host.waitForLogSince(
+      start,
+      /recycling builder pid=(\d+) \((rss=\d+MiB>=200MiB after \d+ build\(s\))\)/,
+      WAIT_MS,
+    );
+    await host.waitForLogSince(start, /exiting for recycle/, WAIT_MS);
+    await host.waitForLogSince(start, /builder spawned pid=\d+ .*restart=1/, WAIT_MS);
+    await host.waitForLogSince(start, /builder ready after restart/, WAIT_MS);
+    // The backend read `base-artifact.json` once at boot, so the replacement has to re-announce what
+    // it booted with or the backend keeps serving the artifact of the builder that just exited.
+    await host.waitForLogSince(start, /announced boot state after recycle/, WAIT_MS);
+
+    const recycled = await DevStabilityHarness.builderProcess(host.proc.pid);
+    expect(recycled).not.toBeNull();
+    expect(String(recycled?.pid)).not.toBe(recycleLog[1]);
+
+    // And the dev server is still a dev server: the replacement watches, rebuilds and serves.
+    //
+    // Waiting for readiness above is load-bearing, not padding. The watcher is installed at the end of
+    // the boot build, so a save during the recycle is seen by neither builder — this test lost one
+    // exactly that way. The settle wait on top is for Bun's dropped-event bug: the recycle boot writes
+    // a burst of artifacts, and a save inside that window is never reported at all
+    // (`06-watcher-dropped-event.md`).
+    await Bun.sleep(500);
+    const attempts: string[] = [];
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      const mark = host.markLog();
+      await harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-after-recycle-${attempt}`);
+      const seen = await host
+        .waitForLogSince(mark, /pages-rebundle ok/, 15_000)
+        .then(() => true)
+        .catch(() => false);
+      attempts.push(`${attempt}=${seen ? "rebuilt" : "silent"}`);
+      if (seen) break;
+      await Bun.sleep(750);
+    }
+    console.info(
+      `[recycle-guard] ${recycleLog[2]}; builder ${recycleLog[1]} -> ${recycled?.pid} at ${Math.round((recycled?.rssBytes ?? 0) / MB)}MiB; post-recycle saves: ${attempts.join(" ")}`,
+    );
+    expect(attempts.join(" ")).toMatch(/rebuilt/);
+    await harness.waitForHttpText("marker-after-recycle", WAIT_MS);
+
+    // A replacement that is still over the ceiling proves the ceiling cannot be met, and the host has
+    // to stop rather than recycle forever. Two reports inside the minimum interval is the threshold.
+    for (let i = 1; i <= 3; i++) {
+      await Bun.sleep(500);
+      const mark = host.markLog();
+      await harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-settled-${i}`);
+      await host.waitForLogSince(mark, /pages-rebundle ok/, WAIT_MS).catch(() => undefined);
+    }
+    await host.waitForLogSince(start, /ceiling cannot be met for this app/, WAIT_MS);
   });
 });

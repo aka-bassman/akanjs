@@ -1,6 +1,13 @@
 import path from "node:path";
 import { Logger } from "akanjs/common";
-import type { BuilderMessage, BuildPhase, DevBuildStatus, DevChangePlan, DevChangeRole } from "akanjs/server";
+import type {
+  BuilderMessage,
+  BuilderMetrics,
+  BuildPhase,
+  DevBuildStatus,
+  DevChangePlan,
+  DevChangeRole,
+} from "akanjs/server";
 import type { App } from "../commandDecorators";
 import { createTunnel } from "../createTunnel";
 import { WorkspaceExecutor } from "../executors";
@@ -17,6 +24,11 @@ const BACKEND_RECOVERY_MAX_ATTEMPTS = 5;
 const BACKEND_STDERR_TAIL_LIMIT = 40;
 const BUILDER_READY_TIMEOUT_MS = 150000;
 const BUILDER_START_MAX_ATTEMPTS = 3;
+// Save-on-keystroke arrives as a burst of batches. Recycling mid-burst would drop the watcher events
+// still on their way to the builder, so an over-ceiling builder is replaced only once it goes quiet.
+const BUILDER_RSS_RECYCLE_QUIET_MS = 750;
+const BUILDER_MIN_RSS_RECYCLE_INTERVAL_MS = 30_000;
+const BUILDER_INEFFECTIVE_RSS_RECYCLE_LIMIT = 2;
 // The builder is the file watcher: while it is down no edit can trigger a retry, so unlike the
 // backend the recovery loop never gives up — it only backs off.
 const BUILDER_RECOVERY_BASE_DELAY_MS = 2_000;
@@ -175,6 +187,68 @@ export const hasBuildFailureForGeneration = (
     if (!status.ok && status.generation === generation) return true;
   }
   return false;
+};
+
+export type BuilderRssRecycleDecision = "unbounded" | "below-ceiling" | "build-failed" | "too-soon" | "recycle";
+
+/**
+ * Whether an over-ceiling builder should be replaced now.
+ *
+ * `Bun.build` never returns its native arenas, so the builder's RSS only comes back when the process
+ * exits. Recycling it is therefore the only bound available — but it costs a boot build, so the two
+ * cases where a recycle cannot help are excluded: a generation whose build already failed (the
+ * replacement would hit the same compile error), and a recycle so soon after the last one that the
+ * ceiling is evidently unreachable for this app.
+ */
+export const decideBuilderRssRecycle = ({
+  rssBytes,
+  ceilingBytes,
+  buildFailed,
+  msSinceLastRecycle,
+  minIntervalMs = BUILDER_MIN_RSS_RECYCLE_INTERVAL_MS,
+}: {
+  rssBytes: number;
+  ceilingBytes: number | null;
+  buildFailed: boolean;
+  msSinceLastRecycle: number | null;
+  minIntervalMs?: number;
+}): BuilderRssRecycleDecision => {
+  if (!ceilingBytes) return "unbounded";
+  if (rssBytes < ceilingBytes) return "below-ceiling";
+  if (buildFailed) return "build-failed";
+  if (msSinceLastRecycle !== null && msSinceLastRecycle < minIntervalMs) return "too-soon";
+  return "recycle";
+};
+
+/**
+ * A builder whose fresh boot already exceeds the ceiling reports `too-soon` after every recycle and
+ * would be replaced forever without ever getting under it. After this many recycles bought no relief
+ * the host stops enforcing the ceiling and says so, rather than looping.
+ */
+export const shouldAbandonBuilderRssCeiling = (
+  ineffectiveRecycles: number,
+  limit = BUILDER_INEFFECTIVE_RSS_RECYCLE_LIMIT,
+): boolean => ineffectiveRecycles >= limit;
+
+/**
+ * Whether a recycled builder's re-announced boot artifact actually differs from what the backend
+ * already has. Both payload identities are content hashes — `pages-[hash].js` and
+ * `<name>-[hash].css` — so an unchanged recycle produces identical ones and needs no reload. Only a
+ * save that raced the recycle moves them, and that is the case worth pushing.
+ */
+export const shouldRelayRecycledFrontendState = (
+  current:
+    | Extract<BuilderMessage, { type: "pages-updated" }>
+    | Extract<BuilderMessage, { type: "css-updated" }>
+    | undefined,
+  next: Extract<BuilderMessage, { type: "pages-updated" }> | Extract<BuilderMessage, { type: "css-updated" }>,
+): boolean => {
+  if (!current || current.type !== next.type) return true;
+  if (current.type === "pages-updated" && next.type === "pages-updated")
+    return current.data.bundlePath !== next.data.bundlePath;
+  if (current.type === "css-updated" && next.type === "css-updated")
+    return JSON.stringify(current.data.cssAssets) !== JSON.stringify(next.data.cssAssets);
+  return true;
 };
 
 const mergeDevPlans = (current?: DevChangePlan, next?: DevChangePlan): DevChangePlan | undefined => {
@@ -344,6 +418,11 @@ export class AkanAppHost {
   #backendBuildStatusGeneration = 0;
   #backendStderrTail: string[] = [];
   #lastGoodFrontend: LastGoodFrontendState = {};
+  #rssRecycleTimer: ReturnType<typeof setTimeout> | null = null;
+  #rssRecycleReason: string | null = null;
+  #lastRssRecycleAtMono: number | null = null;
+  #rssCeilingIneffective = 0;
+  #rssCeilingAbandoned = false;
   #buildStatusByPhase = new Map<BuildPhase, DevBuildStatus>();
   #pendingBuildStatusReplay: DevBuildStatus[] = [];
   #builderMessageQueue: Promise<void> = Promise.resolve();
@@ -642,16 +721,105 @@ export class AkanAppHost {
       this.#reviveBackendAfterGreenBuild(message.data);
       return;
     }
-    if (message.type === "pages-updated") this.#recordLastGood(message);
-    if (message.type === "css-updated") this.#recordLastGood(message);
+    if (message.type === "builder-metrics") {
+      this.#handleBuilderMetrics(message.data);
+      return;
+    }
+    if (message.type === "pages-updated" || message.type === "css-updated") {
+      const recycled = message.data.reason === "builder-recycle";
+      if (recycled && !this.#shouldRelayRecycledState(message)) return;
+      this.#recordLastGood(message, { supersede: recycled });
+    }
     if (message.type === "invalidate") {
       await this.#handleInvalidate(message);
       return;
     }
     this.#sendToBackend(message);
   }
+  /**
+   * A recycled builder re-announces the artifact it booted with, because the backend read
+   * `base-artifact.json` once and never re-reads it. Dropping the announcement when the hashes match
+   * is what keeps the common case — a recycle with no concurrent edit — invisible to browsers.
+   */
+  #shouldRelayRecycledState(
+    message: Extract<BuilderMessage, { type: "pages-updated" }> | Extract<BuilderMessage, { type: "css-updated" }>,
+  ): boolean {
+    const current = message.type === "pages-updated" ? this.#lastGoodFrontend.pages : this.#lastGoodFrontend.css;
+    if (shouldRelayRecycledFrontendState(current, message)) {
+      this.logger.verbose(`[builder-recycle] ${message.type} moved during the recycle; pushing it to the backend`);
+      return true;
+    }
+    this.logger.verbose(`[builder-recycle] ${message.type} unchanged after the recycle; backend left as is`);
+    return false;
+  }
+  #handleBuilderMetrics(metrics: BuilderMetrics): void {
+    if (this.#rssCeilingAbandoned) return;
+    const ceilingBytes = IncrementalBuilderHost.maxRssBytes();
+    const asMib = (bytes: number) => Math.round(bytes / 1024 / 1024);
+    const decision = decideBuilderRssRecycle({
+      rssBytes: metrics.rssBytes,
+      ceilingBytes,
+      buildFailed: hasBuildFailureForGeneration(this.#buildStatusByPhase, metrics.generation),
+      msSinceLastRecycle: this.#lastRssRecycleAtMono === null ? null : performance.now() - this.#lastRssRecycleAtMono,
+    });
+    if (decision === "below-ceiling") {
+      this.#rssCeilingIneffective = 0;
+      return;
+    }
+    if (decision === "unbounded") return;
+    if (decision === "build-failed") {
+      this.logger.verbose(
+        `[builder-recycle] deferred: generation=${metrics.generation} has a failing build, so a replacement would hit the same error`,
+      );
+      return;
+    }
+    if (decision === "too-soon") {
+      this.#rssCeilingIneffective += 1;
+      if (!shouldAbandonBuilderRssCeiling(this.#rssCeilingIneffective)) return;
+      this.#rssCeilingAbandoned = true;
+      this.logger.error(
+        `[builder-recycle] the builder is still at ${asMib(metrics.rssBytes)}MiB right after being recycled, so the ${asMib(ceilingBytes ?? 0)}MiB ceiling cannot be met for this app; no longer enforcing it this session. Raise AKAN_BUILDER_MAX_RSS_MB, or set it to 0 to leave the builder unbounded.`,
+      );
+      return;
+    }
+    this.#armRssRecycle(
+      `rss=${asMib(metrics.rssBytes)}MiB>=${asMib(ceilingBytes ?? 0)}MiB after ${metrics.workCount} build(s)`,
+    );
+  }
+  /** Waits for the builder to go quiet, so a recycle never lands in the middle of a burst of saves. */
+  #armRssRecycle(reason: string): void {
+    if (this.#rssRecycleReason !== reason)
+      this.logger.verbose(`[builder-recycle] armed (${reason}); replacing the builder once it stays quiet`);
+    this.#rssRecycleReason = reason;
+    if (this.#rssRecycleTimer) clearTimeout(this.#rssRecycleTimer);
+    this.#rssRecycleTimer = setTimeout(() => {
+      this.#rssRecycleTimer = null;
+      const pendingReason = this.#rssRecycleReason;
+      this.#rssRecycleReason = null;
+      if (pendingReason) this.#recycleBuilderForRss(pendingReason);
+    }, BUILDER_RSS_RECYCLE_QUIET_MS);
+  }
+  #cancelRssRecycle(): void {
+    this.#rssRecycleReason = null;
+    if (!this.#rssRecycleTimer) return;
+    clearTimeout(this.#rssRecycleTimer);
+    this.#rssRecycleTimer = null;
+  }
+  #recycleBuilderForRss(reason: string): void {
+    // A config or runtime-metadata change already replaces the builder along with the backend, and a
+    // pending backend restart is disruption enough on its own; either way, dropping the recycle here
+    // costs nothing — the next build re-reports an over-ceiling rss and arms it again.
+    if (this.#pendingRecycle || this.#restartTimer) {
+      this.logger.verbose(`[builder-recycle] skipped (${reason}); a dev restart is already pending`);
+      return;
+    }
+    if (!this.#builder?.recycle(reason)) return;
+    this.#lastRssRecycleAtMono = performance.now();
+  }
   async #handleInvalidate(message: Extract<BuilderMessage, { type: "invalidate" }>) {
     this.#logDevPlan(message);
+    // More batches are on the way, so push the recycle out until the dev server settles.
+    if (this.#rssRecycleReason) this.#armRssRecycle(this.#rssRecycleReason);
     // Config changes subsume builder restarts: the dev-host restart recycles builder and backend
     // AND re-runs the prepare step, so check it first when a batch carries both actions.
     const wantsDevHostRestart = shouldRestartDevHostByDevPlan(message);
@@ -811,18 +979,25 @@ export class AkanAppHost {
     await this.#startBuilder();
     this.#startBackend({ generation, files: message.files });
   }
+  /**
+   * `supersede` bypasses the generation check for a builder that just replaced another one. Its
+   * generation counter restarts at 0, so its announcement looks stale to `shouldReplaceLastGoodMessage`
+   * — and leaving the old payload cached would make the next backend restart replay an artifact the
+   * builder that produced it no longer serves.
+   */
   #recordLastGood(
     message: Extract<BuilderMessage, { type: "pages-updated" }> | Extract<BuilderMessage, { type: "css-updated" }>,
+    { supersede = false }: { supersede?: boolean } = {},
   ): void {
     if (message.type === "pages-updated") {
-      if (!shouldReplaceLastGoodMessage(this.#lastGoodFrontend.pages, message)) return;
+      if (!supersede && !shouldReplaceLastGoodMessage(this.#lastGoodFrontend.pages, message)) return;
       this.#lastGoodFrontend.pages = message;
       this.logger.verbose(
         `[last-good] pages generation=${message.data.generation ?? "(unknown)"} buildId=${message.data.buildId}`,
       );
       return;
     }
-    if (!shouldReplaceLastGoodMessage(this.#lastGoodFrontend.css, message)) return;
+    if (!supersede && !shouldReplaceLastGoodMessage(this.#lastGoodFrontend.css, message)) return;
     this.#lastGoodFrontend.css = message;
     this.logger.verbose(
       `[last-good] css generation=${message.data.generation ?? "(unknown)"} assets=${Object.keys(message.data.cssAssets).length}`,
@@ -985,6 +1160,7 @@ export class AkanAppHost {
     this.logger.warn("akanAppHost builder is not running");
   }
   #stopBuilder(): void {
+    this.#cancelRssRecycle();
     if (!this.#builder) return;
     this.#builder.stop();
     this.#builder = null;

@@ -9,11 +9,21 @@ export interface BuildRouteResultPayload {
   generation?: number;
 }
 
+/**
+ * Marks a frontend payload that re-announces a freshly booted artifact rather than reporting an edit.
+ * A recycled builder rebuilds every artifact from scratch, but a running backend read
+ * `base-artifact.json` once at boot and never re-reads it, so the new state has to be pushed. The
+ * host drops such a payload when the hashed output did not actually move, which keeps a clean
+ * recycle invisible to connected browsers.
+ */
+export type BuilderStateReason = "builder-recycle";
+
 export interface CssPayload {
   cssAssets: Record<string, { cssUrl: string; cssRelPath: string }>;
   cssBase64ByUrl: Record<string, string>;
   generation?: number;
   changedFiles?: string[];
+  reason?: BuilderStateReason;
 }
 
 export type DevChangeRole = "server" | "client" | "shared" | "barrel" | "config" | "css";
@@ -73,6 +83,16 @@ export type BuilderCsrRes =
   | { type: "build-csr-res"; id: number; ok: true }
   | { type: "build-csr-res"; id: number; ok: false; error: string };
 
+// --- dev host → builder (control) ---------------------------------------
+
+/**
+ * Asks the builder to finish its queued work and exit, which is the only way bundler memory is
+ * returned to the OS (see `BuilderMetrics`). The host's existing restart path brings up a
+ * replacement, so a graceful drain — rather than a kill — keeps a rebuild in flight from being
+ * truncated.
+ */
+export type BuilderControl = { type: "builder-shutdown"; reason: string };
+
 // --- builder → backend (unsolicited events) -----------------------------
 
 export interface PagesBundlePayload {
@@ -80,6 +100,21 @@ export interface PagesBundlePayload {
   buildId: number;
   generation?: number;
   changedFiles?: string[];
+  reason?: BuilderStateReason;
+}
+
+/**
+ * `Bun.build` retains native bundler arenas the process never returns — `Bun.gc(true)` reclaims
+ * nothing and the JS heap stays flat while RSS climbs — so the builder's memory only comes back when
+ * it exits. It reports its own RSS here whenever its queues drain, and the dev host recycles it past
+ * a ceiling to turn unbounded growth into a bounded sawtooth.
+ */
+export interface BuilderMetrics {
+  rssBytes: number;
+  /** The builder's newest generation; 0 until it has processed a watch batch since spawning. */
+  generation: number;
+  /** Work items completed since this builder spawned, so a host can require real work before recycling. */
+  workCount: number;
 }
 
 export type BuilderEvent =
@@ -94,6 +129,7 @@ export type BuilderEvent =
     }
   | { type: "css-updated"; data: CssPayload }
   | { type: "pages-updated"; data: PagesBundlePayload }
-  | { type: "build-status"; data: DevBuildStatus };
+  | { type: "build-status"; data: DevBuildStatus }
+  | { type: "builder-metrics"; data: BuilderMetrics };
 
-export type BuilderMessage = BuilderReq | BuilderRes | BuilderCsrReq | BuilderCsrRes | BuilderEvent;
+export type BuilderMessage = BuilderReq | BuilderRes | BuilderCsrReq | BuilderCsrRes | BuilderControl | BuilderEvent;

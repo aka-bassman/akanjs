@@ -105,3 +105,19 @@ AKAN_RSC_WORKER_RECYCLE_GRACE_MS=5000
 ```
 
 Validate that recycle happens only when `rscPendingRenderCount` is `0`, and that the new `rscWorkerPid` becomes ready before traffic continues.
+
+## Dev Builder Recycle
+
+The dev builder has the same problem for a different reason: `Bun.build` retains native bundler arenas
+that no GC reclaims, so the process only returns that memory by exiting. `AkanAppHost` therefore
+recycles it — gracefully, after its queues drain and once it has stayed quiet — past a ceiling:
+
+```sh
+AKAN_BUILDER_MAX_RSS_MB=1200   # 0 leaves the builder unbounded; default is 1200 in dev
+AKAN_BUILDER_MAX_RSS=1200mb    # same ceiling with a unit suffix
+```
+
+Both resolve through `MemoryLimit.resolveMaxRssBytes`, so `AKAN_MEMORY_LIMIT` or a cgroup limit also
+applies (the builder takes 35% of it, the RSC worker 55%). Look for `recycling builder pid=…` followed
+by `exiting for recycle` and `announced boot state after recycle`; the last line is what re-points a
+running backend at the replacement's artifact.

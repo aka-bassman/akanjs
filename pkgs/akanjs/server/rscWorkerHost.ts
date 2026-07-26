@@ -6,6 +6,7 @@ import type { AkanTheme } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
 import type { ClientManifest } from "./artifact";
 import type { RouteCacheInvalidation, RouteCacheRenderState } from "./cachePolicy";
+import { MemoryLimit } from "./memoryLimit";
 import type { RscTraceMetadata, SsrLateRedirect } from "./ssrTypes";
 import type { BaseBuildArtifact, CssAsset } from "./types";
 
@@ -844,7 +845,7 @@ export class RscWorker {
       this.restartWhenIdle(`rss>${Math.round(maxRssBytes / 1024 / 1024)}MiB`);
       return;
     }
-    const maxRenderCount = RscWorker.#parsePositiveIntEnv("AKAN_RSC_WORKER_MAX_RENDER_COUNT");
+    const maxRenderCount = MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MAX_RENDER_COUNT");
     if (maxRenderCount && (metrics.rscRenderCount ?? 0) >= maxRenderCount) {
       this.restartWhenIdle(`renderCount>${maxRenderCount}`);
       return;
@@ -855,47 +856,12 @@ export class RscWorker {
     }
   }
 
-  static #parsePositiveIntEnv(name: string): number | null {
-    const parsed = Number.parseInt(process.env[name] ?? "", 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-  }
-
   static #isProductionRuntime(): boolean {
     return process.env.NODE_ENV === "production";
   }
 
-  static #parseBytesEnv(name: string): number | null {
-    const value = process.env[name];
-    if (!value) return null;
-    const match = /^(\d+)(b|kb|kib|mb|mib|gb|gib)?$/i.exec(value.trim());
-    if (!match) return null;
-    const amount = Number.parseInt(match[1] ?? "", 10);
-    const unit = (match[2] ?? "b").toLowerCase();
-    if (!Number.isFinite(amount) || amount <= 0) return null;
-    if (unit === "gb" || unit === "gib") return amount * 1024 * 1024 * 1024;
-    if (unit === "mb" || unit === "mib") return amount * 1024 * 1024;
-    if (unit === "kb" || unit === "kib") return amount * 1024;
-    return amount;
-  }
-
-  static #readCgroupMemoryLimitBytes(): number | null {
-    for (const filePath of ["/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"]) {
-      try {
-        if (!fs.existsSync(filePath)) continue;
-        const raw = fs.readFileSync(filePath, "utf8").trim();
-        if (!raw || raw === "max") continue;
-        const parsed = Number.parseInt(raw, 10);
-        // Ignore host-level sentinel values that are effectively unlimited.
-        if (Number.isFinite(parsed) && parsed > 0 && parsed < 1024 ** 5) return parsed;
-      } catch {
-        // cgroup files are best-effort; explicit env thresholds still work.
-      }
-    }
-    return null;
-  }
-
   static #getRscRecycleGraceMs(): number {
-    return RscWorker.#parsePositiveIntEnv("AKAN_RSC_WORKER_RECYCLE_GRACE_MS") ?? 5_000;
+    return MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_RECYCLE_GRACE_MS") ?? 5_000;
   }
 
   /**
@@ -904,30 +870,27 @@ export class RscWorker {
    */
   static #getRscMaxReloads(): number | null {
     if (process.env.AKAN_RSC_WORKER_MAX_RELOADS !== undefined)
-      return RscWorker.#parsePositiveIntEnv("AKAN_RSC_WORKER_MAX_RELOADS");
+      return MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MAX_RELOADS");
     return RscWorker.#isProductionRuntime() ? null : RscWorker.#devMaxReloads;
   }
 
   static #getRscMinRecycleIntervalMs(): number {
-    return RscWorker.#parsePositiveIntEnv("AKAN_RSC_WORKER_MIN_RECYCLE_INTERVAL_MS") ?? 1_000;
+    return MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MIN_RECYCLE_INTERVAL_MS") ?? 1_000;
   }
 
   static #getRscMaxRssBytes(): number | null {
-    const explicitMb = RscWorker.#parsePositiveIntEnv("AKAN_RSC_WORKER_MAX_RSS_MB");
-    if (explicitMb) return explicitMb * 1024 * 1024;
-
-    const explicitBytes = RscWorker.#parseBytesEnv("AKAN_RSC_WORKER_MAX_RSS");
-    if (explicitBytes) return explicitBytes;
-
-    const memoryLimitBytes = RscWorker.#parseBytesEnv("AKAN_MEMORY_LIMIT") ?? RscWorker.#readCgroupMemoryLimitBytes();
-    if (memoryLimitBytes) return Math.floor(memoryLimitBytes * 0.55);
-    // Dev has no memory limit to derive from, but bounding the worker is the point of this ceiling: a
-    // dev sandbox should recycle rather than grow until the host starts swapping. Well above the
-    // ~142MB post-boot baseline so ordinary route warm-up never trips it.
-    return RscWorker.#isProductionRuntime() ? null : RscWorker.#devMaxRssBytes;
+    return MemoryLimit.resolveMaxRssBytes({
+      megabytesEnv: "AKAN_RSC_WORKER_MAX_RSS_MB",
+      bytesEnv: "AKAN_RSC_WORKER_MAX_RSS",
+      limitFraction: 0.55,
+      // Dev has no memory limit to derive from, but bounding the worker is the point of this ceiling: a
+      // dev sandbox should recycle rather than grow until the host starts swapping. Well above the
+      // ~142MB post-boot baseline so ordinary route warm-up never trips it.
+      fallbackBytes: RscWorker.#isProductionRuntime() ? null : RscWorker.#devMaxRssBytes,
+    });
   }
 
   static #getRscMaxRouteModules(): number | null {
-    return RscWorker.#parsePositiveIntEnv("AKAN_RSC_WORKER_MAX_ROUTE_MODULES");
+    return MemoryLimit.parsePositiveIntEnv("AKAN_RSC_WORKER_MAX_ROUTE_MODULES");
   }
 }

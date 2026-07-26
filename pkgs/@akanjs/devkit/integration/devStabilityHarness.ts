@@ -460,6 +460,12 @@ export const dictionary = serviceDictionary(["en", "ko"])
    * process, whose growth across saves is `Bun.build` native arena retention rather than a leak the
    * other processes could be blamed for.
    */
+  // Matched precisely, not by directory: the disposable build worker lives at
+  // `incrementalBuilder/buildBatch.proc.ts`, so a substring match on `incrementalBuilder` would count
+  // the worker as the watcher and make every builder measurement depend on spawn timing.
+  static readonly #builderCmd = "incrementalBuilder.proc";
+  static readonly #buildWorkerCmd = "buildBatch.proc";
+
   static async processTreeRssBytes(
     rootPid: number,
     { excludeBuilder = false }: { excludeBuilder?: boolean } = {},
@@ -471,9 +477,29 @@ export const dictionary = serviceDictionary(["en", "ko"])
         .filter((row) => pids.has(row.pid))
         // `bun run akan …` is the npm-script shell wrapper, not a dev process.
         .filter((row) => !row.cmd.startsWith("bash -lc") && !row.cmd.includes("cli/build.ts"))
-        .filter((row) => !excludeBuilder || !row.cmd.includes("incrementalBuilder"))
+        .filter((row) => !excludeBuilder || !row.cmd.includes(DevStabilityHarness.#builderCmd))
         .reduce((total, row) => total + row.rssKb * 1024, 0)
     );
+  }
+
+  /**
+   * The long-lived builder process on its own: its RSS is what bundler-arena retention used to move,
+   * and its pid is what changes when the host recycles it, so a bounded-builder assertion needs both.
+   */
+  static async builderProcess(rootPid: number): Promise<{ pid: number; rssBytes: number } | null> {
+    return DevStabilityHarness.#findProcess(rootPid, DevStabilityHarness.#builderCmd);
+  }
+
+  /** The disposable per-generation build worker, which should only exist while a build is running. */
+  static async buildWorkerProcess(rootPid: number): Promise<{ pid: number; rssBytes: number } | null> {
+    return DevStabilityHarness.#findProcess(rootPid, DevStabilityHarness.#buildWorkerCmd);
+  }
+
+  static async #findProcess(rootPid: number, cmdIncludes: string) {
+    const rows = await DevStabilityHarness.#psRows();
+    const pids = DevStabilityHarness.#collectDescendants(rows, rootPid);
+    const found = rows.find((row) => pids.has(row.pid) && row.cmd.includes(cmdIncludes));
+    return found ? { pid: found.pid, rssBytes: found.rssKb * 1024 } : null;
   }
 
   /** Pids of `rootPid` and everything under it, deepest first, so callers can signal children before parents. */

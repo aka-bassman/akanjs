@@ -3,8 +3,8 @@
 import { getEnv } from "akanjs/base";
 import {
   clsx,
-  debugFrame,
   Device,
+  debugFrame,
   getPathInfo,
   type PathRoute,
   type ReactFont,
@@ -16,7 +16,7 @@ import {
 import { st } from "akanjs/store";
 import { animated } from "akanjs/ui";
 import { useFetch } from "akanjs/webkit";
-import { createElement, memo, type ComponentProps, type ReactNode, type RefObject, useEffect, useRef } from "react";
+import { type ComponentProps, createElement, memo, type ReactNode, type RefObject, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { FontFace } from "../FontFace";
@@ -369,12 +369,14 @@ const CSRFrameSlotTargets = ({ slot }: { slot: FrameSlotTarget }) => {
                 (pageType === "prev" && (slot === "bottomInset" || slot === "keyboardInset")),
               "pointer-events-none absolute opacity-0": pageType === "pending",
             })}
-            style={{
-              ...getFrameCssVars(pathRoute.pageState),
-              ...(style ?? {}),
-              zIndex: pageType === "pending" ? -1 : zIndex,
-              ...(pageType === "pending" ? { opacity: 0 } : {}),
-            } as ComponentProps<typeof animated.div>["style"]}
+            style={
+              {
+                ...getFrameCssVars(pathRoute.pageState),
+                ...(style ?? {}),
+                zIndex: pageType === "pending" ? -1 : zIndex,
+                ...(pageType === "pending" ? { opacity: 0 } : {}),
+              } as ComponentProps<typeof animated.div>["style"]
+            }
           />
         );
       })}
@@ -447,14 +449,7 @@ const CSRPageContainer = ({ pathRoute, prefix, layoutStyle }: CSRPageContainerPr
   if (!pageType) return null;
   const pageContainers = document.getElementById("pageContainers");
   if (!pageContainers) return null;
-  const {
-    location,
-    page,
-    pageContentRef,
-    pageClassName,
-    pageBind,
-    zIndex,
-  } =
+  const { location, page, pageContentRef, pageClassName, pageBind, zIndex } =
     pageType === "current"
       ? {
           location: currentLocation,
@@ -473,23 +468,23 @@ const CSRPageContainer = ({ pathRoute, prefix, layoutStyle }: CSRPageContainerPr
             pageBind: () => ({}),
             zIndex: history.current.idxMap.get(prevLocation?.pathname ?? "") ?? 0,
           }
-          : pageType === "pending"
-            ? {
-                location: pendingLocation,
-                page: null,
-                pageContentRef: null,
-                pageClassName: "",
-                pageBind: () => ({}),
-                zIndex: history.current.idx + 1,
-              }
-        : {
-            location: history.current.cachedLocationMap.get(pathRoute.path),
-            page: null,
-            pageContentRef: null,
-            pageClassName: "",
-            pageBind: () => ({}),
-            zIndex: 0,
-          };
+        : pageType === "pending"
+          ? {
+              location: pendingLocation,
+              page: null,
+              pageContentRef: null,
+              pageClassName: "",
+              pageBind: () => ({}),
+              zIndex: history.current.idx + 1,
+            }
+          : {
+              location: history.current.cachedLocationMap.get(pathRoute.path),
+              page: null,
+              pageContentRef: null,
+              pageClassName: "",
+              pageBind: () => ({}),
+              zIndex: 0,
+            };
   if (!location) return null;
   return (
     <>
@@ -514,7 +509,8 @@ const CSRPageContainer = ({ pathRoute, prefix, layoutStyle }: CSRPageContainerPr
             bind={pageBind}
             className={clsx("akan-page-content relative isolate w-full overflow-x-hidden bg-base-100 shadow-inner", {
               "relative isolate overflow-x-hidden bg-base-100 shadow-inner": pageType === "current",
-              "pointer-events-none isolate h-screen w-screen overflow-hidden": pageType === "prev" || pageType === "pending",
+              "pointer-events-none isolate h-screen w-screen overflow-hidden":
+                pageType === "prev" || pageType === "pending",
               [pageClassName]: pathRoute.pageState.gesture,
             })}
             style={page?.contentStyle}

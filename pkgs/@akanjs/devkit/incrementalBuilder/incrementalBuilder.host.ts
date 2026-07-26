@@ -1,6 +1,7 @@
 import path from "node:path";
 import { Logger } from "akanjs/common";
 import type { BuilderMessage } from "akanjs/server";
+import { MemoryLimit } from "akanjs/server/memoryLimit";
 import type { App } from "../commandDecorators";
 
 const builderMsgTypeSet = new Set<BuilderMessage["type"]>([
@@ -11,6 +12,7 @@ const builderMsgTypeSet = new Set<BuilderMessage["type"]>([
   "css-updated",
   "pages-updated",
   "build-status",
+  "builder-metrics",
 ]);
 interface IncrementalBuilderHostOptions {
   app: App;
@@ -30,6 +32,16 @@ interface IncrementalBuilderStartOptions {
 export class IncrementalBuilderHost {
   static readonly #restartBaseDelayMs = 1_000;
   static readonly #restartMaxDelayMs = 30_000;
+  /**
+   * A builder that has stopped answering has to be replaced anyway; killing it after this long turns
+   * a wedged drain into an ordinary restart instead of leaving the recycle stuck forever.
+   */
+  static readonly #recycleDrainTimeoutMs = 30_000;
+  /**
+   * Dev has no memory limit to derive a fraction from, so this is what bounds the builder there. Well
+   * above a fresh boot (~300-600MB depending on app size) with room for one full rebuild on top.
+   */
+  static readonly #devMaxRssBytes = 1_200 * 1024 * 1024;
   logger = new Logger("IncrementalBuilderHost");
   entry: string;
   env: Record<string, string>;
@@ -40,6 +52,9 @@ export class IncrementalBuilderHost {
   #status: IncrementalBuilderStatus = "stopped";
   #restartAttempts = 0;
   #restartTimer: ReturnType<typeof setTimeout> | null = null;
+  #recycleTimer: ReturnType<typeof setTimeout> | null = null;
+  #recycleRequested: boolean = false;
+  #spawnAfterRecycle: boolean = false;
   #manualStop = false;
   #startOptions: IncrementalBuilderStartOptions = {};
   constructor({ app, entry, env, onMessage }: IncrementalBuilderHostOptions) {
@@ -61,10 +76,14 @@ export class IncrementalBuilderHost {
   #spawn(isRestart: boolean) {
     this.#status = isRestart ? "restarting" : "starting";
     this.ready = false;
+    // A recycled builder rebuilds every artifact, and the running backend still holds the previous
+    // one; the flag is what tells the replacement to re-announce what it booted with.
+    const afterRecycle = this.#spawnAfterRecycle;
+    this.#spawnAfterRecycle = false;
     let proc!: Bun.Subprocess<"ignore", "inherit", "inherit">;
     proc = Bun.spawn(["bun", this.entry], {
       cwd: this.app.cwdPath,
-      env: { ...this.env, AKAN_WATCH: "1" },
+      env: { ...this.env, AKAN_WATCH: "1", ...(afterRecycle ? { AKAN_BUILDER_RECYCLED: "1" } : {}) },
       stdio: ["ignore", "inherit", "inherit"],
       ipc: (msg: BuilderMessage) => {
         if (this.#proc !== proc) return;
@@ -83,11 +102,21 @@ export class IncrementalBuilderHost {
         if (this.#proc !== proc) return;
         this.#proc = null;
         const wasReady = this.ready;
+        const wasRecycle = this.#recycleRequested;
+        this.#clearRecycle();
         this.ready = false;
         if (this.#manualStop || this.#status === "stopped") return;
         if (!wasReady) {
           this.#status = "stopped";
           this.#startOptions.onExit?.();
+          return;
+        }
+        // A recycle is a planned exit, so it neither counts as a failed attempt nor waits out the
+        // crash backoff — the dev server is without a watcher until the replacement is up.
+        if (wasRecycle) {
+          this.logger.verbose("builder exited for a recycle; spawning its replacement now");
+          this.#spawnAfterRecycle = true;
+          this.#spawn(true);
           return;
         }
         this.#scheduleRestart();
@@ -112,6 +141,47 @@ export class IncrementalBuilderHost {
       this.#spawn(true);
     }, delay);
   }
+  /**
+   * Ask the builder to drain its queues and exit so the OS reclaims the bundler arenas `Bun.build`
+   * never gives back; `onExit` then spawns the replacement. Graceful rather than `kill()` so a rebuild
+   * in flight is never truncated, with a watchdog for a builder that stops answering.
+   */
+  recycle(reason: string): boolean {
+    if (!this.#proc || this.#status !== "ready" || this.#recycleRequested) return false;
+    const proc = this.#proc;
+    if (!this.send({ type: "builder-shutdown", reason })) return false;
+    this.#recycleRequested = true;
+    this.logger.info(`recycling builder pid=${proc.pid} (${reason})`);
+    this.#recycleTimer = setTimeout(() => {
+      this.#recycleTimer = null;
+      if (this.#proc !== proc) return;
+      this.logger.warn(
+        `builder pid=${proc.pid} did not exit within ${IncrementalBuilderHost.#recycleDrainTimeoutMs}ms of the recycle request; killing it`,
+      );
+      proc.kill();
+    }, IncrementalBuilderHost.#recycleDrainTimeoutMs);
+    return true;
+  }
+  #clearRecycle() {
+    this.#recycleRequested = false;
+    if (!this.#recycleTimer) return;
+    clearTimeout(this.#recycleTimer);
+    this.#recycleTimer = null;
+  }
+  /**
+   * RSS at which the builder is recycled: an explicit override, else a share of the container's limit
+   * (the builder is one of several dev processes), else the dev default. Set
+   * `AKAN_BUILDER_MAX_RSS_MB=0` to leave it unbounded.
+   */
+  static maxRssBytes(): number | null {
+    if (process.env.AKAN_BUILDER_MAX_RSS_MB === "0") return null;
+    return MemoryLimit.resolveMaxRssBytes({
+      megabytesEnv: "AKAN_BUILDER_MAX_RSS_MB",
+      bytesEnv: "AKAN_BUILDER_MAX_RSS",
+      limitFraction: 0.35,
+      fallbackBytes: IncrementalBuilderHost.#devMaxRssBytes,
+    });
+  }
   send(message: BuilderMessage): boolean {
     if (!this.#proc || this.#status !== "ready") {
       this.logger.warn(`incrementalBuilderHost is ${this.#status}; cannot send ${message.type}`);
@@ -129,6 +199,7 @@ export class IncrementalBuilderHost {
   }
   stop() {
     this.#manualStop = true;
+    this.#clearRecycle();
     if (this.#restartTimer) {
       clearTimeout(this.#restartTimer);
       this.#restartTimer = null;

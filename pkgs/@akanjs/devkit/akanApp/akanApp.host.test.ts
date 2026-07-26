@@ -4,14 +4,17 @@ import {
   backendRestartReasonFromMessage,
   buildStatusReplaySequence,
   createBackendBuildStatus,
+  decideBuilderRssRecycle,
   hasBuildFailureForGeneration,
   isLegacyBackendFallbackFile,
   mergeBackendRestartReasons,
   mergeInvalidateMessages,
   normalizeBackendReportedGeneration,
   shouldAbandonBackendRecovery,
+  shouldAbandonBuilderRssCeiling,
   shouldMarkBuildPhaseRecovered,
   shouldQueueBuildStatusReplay,
+  shouldRelayRecycledFrontendState,
   shouldReplaceLastGoodMessage,
   shouldRestartBackendByDevPlan,
   shouldRestartBuilderByDevPlan,
@@ -138,6 +141,87 @@ describe("last-good frontend helpers", () => {
 
   test("rejects stale successful pages payloads", () => {
     expect(shouldReplaceLastGoodMessage(pagesUpdated(11, 2), pagesUpdated(10, 1))).toBe(false);
+  });
+});
+
+describe("builder rss recycle", () => {
+  const ceiling = 1_200 * 1024 * 1024;
+  const decide = (over: Partial<Parameters<typeof decideBuilderRssRecycle>[0]>) =>
+    decideBuilderRssRecycle({
+      rssBytes: ceiling + 1,
+      ceilingBytes: ceiling,
+      buildFailed: false,
+      msSinceLastRecycle: null,
+      ...over,
+    });
+
+  test("recycles an idle builder that crossed the ceiling", () => {
+    expect(decide({})).toBe("recycle");
+  });
+
+  test("leaves a builder under the ceiling alone", () => {
+    expect(decide({ rssBytes: ceiling - 1 })).toBe("below-ceiling");
+  });
+
+  test("does nothing when no ceiling is configured", () => {
+    expect(decide({ ceilingBytes: null })).toBe("unbounded");
+  });
+
+  // Rebooting on a generation whose build failed strands the dev server: the replacement hits the
+  // same compile error and exits before builder-ready.
+  test("defers while the current generation has a failing build", () => {
+    expect(decide({ buildFailed: true })).toBe("build-failed");
+  });
+
+  test("refuses a second recycle inside the minimum interval", () => {
+    expect(decide({ msSinceLastRecycle: 5_000 })).toBe("too-soon");
+    expect(decide({ msSinceLastRecycle: 31_000 })).toBe("recycle");
+    expect(decide({ msSinceLastRecycle: 5_000, minIntervalMs: 1_000 })).toBe("recycle");
+  });
+
+  // An app whose fresh boot is already over the ceiling would otherwise be recycled forever.
+  test("abandons the ceiling once recycling stops buying relief", () => {
+    expect(shouldAbandonBuilderRssCeiling(1)).toBe(false);
+    expect(shouldAbandonBuilderRssCeiling(2)).toBe(true);
+    expect(shouldAbandonBuilderRssCeiling(1, 1)).toBe(true);
+  });
+});
+
+describe("recycled builder state announcements", () => {
+  const pages = (bundlePath: string): Extract<BuilderMessage, { type: "pages-updated" }> => ({
+    type: "pages-updated",
+    data: { bundlePath, buildId: 7, generation: 3, changedFiles: [], reason: "builder-recycle" },
+  });
+  const css = (cssUrl: string): Extract<BuilderMessage, { type: "css-updated" }> => ({
+    type: "css-updated",
+    data: {
+      cssAssets: { "": { cssUrl, cssRelPath: cssUrl.slice(1) } },
+      cssBase64ByUrl: { [cssUrl]: "" },
+      generation: 3,
+      changedFiles: [],
+      reason: "builder-recycle",
+    },
+  });
+
+  // Both identities are content hashes, so a recycle with no concurrent edit reproduces them exactly
+  // and must not reload the backend — that would refresh every browser on a memory recycle.
+  test("suppresses an unchanged pages announcement and relays a moved one", () => {
+    expect(shouldRelayRecycledFrontendState(pages("/a/pages-abc.js"), pages("/a/pages-abc.js"))).toBe(false);
+    expect(shouldRelayRecycledFrontendState(pages("/a/pages-abc.js"), pages("/a/pages-def.js"))).toBe(true);
+  });
+
+  test("suppresses an unchanged css announcement and relays a moved one", () => {
+    expect(shouldRelayRecycledFrontendState(css("/_akan/styles/root-abc.css"), css("/_akan/styles/root-abc.css"))).toBe(
+      false,
+    );
+    expect(shouldRelayRecycledFrontendState(css("/_akan/styles/root-abc.css"), css("/_akan/styles/root-def.css"))).toBe(
+      true,
+    );
+  });
+
+  test("relays when the backend has no state of that kind yet", () => {
+    expect(shouldRelayRecycledFrontendState(undefined, pages("/a/pages-abc.js"))).toBe(true);
+    expect(shouldRelayRecycledFrontendState(css("/_akan/styles/root-abc.css"), pages("/a/pages-abc.js"))).toBe(true);
   });
 });
 

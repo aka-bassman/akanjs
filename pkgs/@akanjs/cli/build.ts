@@ -15,6 +15,7 @@ const build = async () => {
       entrypoints: [
         `${CLI_DIR}/index.ts`,
         `${DEVKIT_DIR}/incrementalBuilder/incrementalBuilder.proc.ts`,
+        `${DEVKIT_DIR}/incrementalBuilder/buildBatch.proc.ts`,
         `${DEVKIT_DIR}/typecheck/typecheck.proc.ts`,
       ],
       // Required, not cosmetic: with `splitting: false` Bun inlines every dynamically imported module
