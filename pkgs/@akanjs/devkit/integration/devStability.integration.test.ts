@@ -1,9 +1,12 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { DevGeneratedIndexSync } from "../frontendBuild";
-import { DevStabilityHarness } from "./devStabilityHarness";
+import { DevStabilityHarness, type DevStabilityHmrProbe } from "./devStabilityHarness";
 
 const integrationEnabled = process.env.AKAN_DEV_STABILITY_INTEGRATION === "1";
-const INTEGRATION_TIMEOUT_MS = 120_000;
+// Every test here boots a real dev server, and contention pushes a cold boot from ~3s to 21-55s
+// (`05-phase1-results.md`). At 120s a loaded machine ran out of budget mid-restart and reported it as a
+// product failure, which is the exact ambiguity this file exists to remove.
+const INTEGRATION_TIMEOUT_MS = 180_000;
 const MB = 1024 * 1024;
 const harnesses: DevStabilityHarness[] = [];
 
@@ -34,6 +37,30 @@ const isBuildStatus =
     msg.type === "build-status" &&
     "status" in msg &&
     msg.status === status;
+
+/**
+ * Assert an HMR message arrives — unless the socket dropped while waiting.
+ *
+ * The hub does not replay (`akanjs/server/hmr/wsHub.ts`): anything published while the probe was
+ * reconnecting is simply gone, so a miss across a reconnect says nothing about the product. A real browser
+ * covers the same gap by reloading when the `hello` buildId moved, not by expecting the message. Under
+ * parallel load the socket flaps repeatedly, and this is what that looks like from the probe:
+ * `socket=closed reconnects=5 since-mark=[build-status,hello,hello,rsc-refresh,…]`.
+ */
+const expectHmrMessage = async (
+  probe: DevStabilityHmrProbe,
+  mark: number,
+  predicate: (message: unknown) => boolean,
+  what: string,
+): Promise<void> => {
+  const reconnectsBefore = probe.reconnects;
+  const seen = await probe
+    .waitForMessageSince(mark, predicate, 20_000)
+    .then(() => true)
+    .catch(() => false);
+  if (seen || probe.reconnects !== reconnectsBefore) return;
+  throw new Error(`${what} never reached the HMR socket, and the connection held the whole time`);
+};
 
 const waitForFileIncludes = async (filePath: string, text: string, timeoutMs = 5_000): Promise<string | null> => {
   const started = Date.now();
@@ -90,8 +117,37 @@ const waitForProcessesGone = async (pids: number[], timeoutMs = 15_000): Promise
   return false;
 };
 
+/**
+ * `cleanup()` waits up to 3s for a SIGTERM'd dev host to exit and shells out to `ps` twice, and on a
+ * loaded machine that overruns Bun's default 5s hook budget. A hook timeout fails the test that had
+ * already passed, which reads exactly like a product failure — two of the five failures in a 3-way
+ * parallel run were this and nothing else.
+ */
+const HOOK_TIMEOUT_MS = 60_000;
+
+beforeAll(async () => {
+  if (!integrationEnabled) return;
+  // A run killed mid-test (a `-t` filter interrupted, an editor stopping the runner) leaves its fixture
+  // in `apps/` and its dev host running. Both interfere with every later run: the process holds ports
+  // and rebuilds a deleted app, and the directory shifts the app index every port prediction derives
+  // from. Only fixtures whose owning test pid is gone are swept, so this is safe with a suite running
+  // alongside.
+  const swept = await DevStabilityHarness.sweepAbandonedFixtures(DevStabilityHarness.defaultWorkspaceRoot);
+  if (swept.length) console.info(`[harness] swept ${swept.length} abandoned fixture(s): ${swept.join(", ")}`);
+}, HOOK_TIMEOUT_MS);
+
 afterEach(async () => {
   await Promise.all(harnesses.splice(0).map((harness) => harness.cleanup()));
+}, HOOK_TIMEOUT_MS);
+
+afterAll(() => {
+  if (!integrationEnabled) return;
+  const { edits, retried } = DevStabilityHarness.editStats();
+  // Reported on purpose, every run. A retry means a real save produced no rebuild whatsoever — Bun's
+  // dropped `fs.watch` event (`local/optimize-resource/06-watcher-dropped-event.md`), which users hit too
+  // through format-on-save and save-all. A non-zero number here means this suite is passing *around* a
+  // product bug rather than because it is absent, and it is the signal for fixing that bug properly.
+  console.info(`[harness] ${edits} observed edit(s), ${retried} needed a retry after a dropped watch event`);
 });
 
 describe("dev stability integration harness", () => {
@@ -99,10 +155,14 @@ describe("dev stability integration harness", () => {
     const harness = await createHarness();
     const host = await harness.startHost();
     const hmr = await harness.tryConnectHmrProbe();
-    const mark = host.markLog();
     const hmrMark = hmr?.mark() ?? 0;
 
-    await harness.replaceText("srvkit/backendMarker.ts", "initial-backend-marker", "updated-backend-marker");
+    const { mark } = await harness.editUntilSeen(host, (attempt) =>
+      harness.writeFile(
+        "srvkit/backendMarker.ts",
+        `export const backendMarker = "updated-backend-marker-${attempt}";\n`,
+      ),
+    );
 
     await host.waitForLogSince(mark, /\[backend-reload\]|Shutting down gracefully|stopping backend/);
     await host.waitForLogSince(mark, /backend ready pid=(\d+)|AkanApp gateway is running on port/);
@@ -122,15 +182,21 @@ describe("dev stability integration harness", () => {
       hmr?.close();
       return;
     }
-    const mark = host.markLog();
     const hmrMark = hmr?.mark() ?? 0;
 
-    await harness.replaceText("ui/ClientMarker.tsx", "initial-client-marker", "updated-client-marker");
+    const { mark } = await harness.editUntilSeen(
+      host,
+      (attempt) =>
+        harness.replaceText(
+          "ui/ClientMarker.tsx",
+          /(initial|updated)-client-marker(-\d+)?/,
+          `updated-client-marker-${attempt}`,
+        ),
+      { evidence: /\[dev-plan\].*roles=.*client.*actions=.*rebuild-client/ },
+    );
 
-    await host.waitForLogSince(mark, /\[dev-plan\].*roles=.*client.*actions=.*rebuild-client/);
     if (hmr) {
-      const message = await hmr.waitForMessageSince(hmrMark, isRefreshMessage);
-      expect(message).toBeTruthy();
+      await expectHmrMessage(hmr, hmrMark, isRefreshMessage, "a client refresh");
     } else {
       await host.waitForLogSince(mark, /\[hmr\].*(client-refresh|rsc-refresh|reload)|\[SSR\] pages-updated/);
     }
@@ -148,22 +214,20 @@ describe("dev stability integration harness", () => {
       hmr?.close();
       return;
     }
-    const mark = host.markLog();
-
-    await harness.replaceText("common/marker.ts", "initial-shared-marker", "updated-shared-marker");
-
-    const plan = await host.waitForLogSince(
-      mark,
-      /\[dev-plan\] generation=(\d+).*roles=.*shared.*actions=.*rebuild-client.*restart-backend/,
+    const { mark, evidence } = await harness.editUntilSeen(
+      host,
+      (attempt) => harness.replaceText("common/marker.ts", /"[^"]*"/, `"updated-shared-marker-${attempt}"`),
+      { evidence: /\[dev-plan\] generation=(\d+).*roles=.*shared.*actions=.*rebuild-client.*restart-backend/ },
     );
-    const generation = plan[1];
+    const generation = evidence[1];
     await host.waitForLogSince(mark, new RegExp(`\\[backend-reload\\].*generation=${generation}`));
-    // Asserted backend-side, not through the probe. A shared edit restarts the backend, which closes
-    // the socket the probe opened, and the probe is a raw WebSocket that never reconnects. A real
-    // browser does: on reconnect it gets a `hello` and reloads when the buildId moved
-    // (`akanjs/server/hmr/clientScript.ts`). Requiring a probe message here only held while the client
-    // rebuild happened to finish before the restart killed the connection — a race this test lost the
-    // moment builds moved into a worker process and took ~240ms longer to start.
+    // Asserted backend-side, not through the probe. A shared edit restarts the backend, which closes the
+    // socket the probe opened; the probe reconnects, but a reconnect does not replay what was published
+    // while it was down, and a real browser handles that by reloading when the `hello` buildId moved
+    // (`akanjs/server/hmr/clientScript.ts`) rather than by expecting the message. Requiring a probe
+    // message here only held while the client rebuild happened to finish before the restart killed the
+    // connection — a race this test lost the moment builds moved into a worker process and took ~240ms
+    // longer to start.
     await host.waitForLogSince(mark, new RegExp(`\\[SSR\\] pages-updated.*generation=${generation}`));
     await harness.waitForHttpText("updated-shared-marker");
     hmr?.close();
@@ -179,23 +243,27 @@ describe("dev stability integration harness", () => {
       hmr?.close();
       return;
     }
-    const mark = host.markLog();
-
-    await harness.writeFile(
-      "lib/_fixture/fixture.dictionary.ts",
-      `import { serviceDictionary } from "akanjs/dictionary";
+    const { mark } = await harness.editUntilSeen(
+      host,
+      (attempt) =>
+        harness.writeFile(
+          "lib/_fixture/fixture.dictionary.ts",
+          `import { serviceDictionary } from "akanjs/dictionary";
 
 import type { FixtureEndpoint } from "./fixture.signal";
 
 export const dictionary = serviceDictionary(["en", "ko"])
   .endpoint<FixtureEndpoint>(() => ({}))
   .translate({
-    hello: ["Updated Dictionary", "업데이트 사전"],
+    hello: ["Updated Dictionary ${attempt}", "업데이트 사전 ${attempt}"],
   });
 `,
+        ),
+      // As with the config edit: each attempt recycles the builder and the backend, so patience is cheaper
+      // than a retry.
+      { evidence: /\[dev-plan\].*actions=.*restart-builder/, attempts: 2, evidenceTimeoutMs: 30_000 },
     );
 
-    await host.waitForLogSince(mark, /\[dev-plan\].*actions=.*restart-builder/);
     await host.waitForLogSince(mark, /\[dev-host\] recycling builder\/backend for runtime metadata/);
     await host.waitForLogSince(mark, /backend ready pid=(\d+)|AkanApp gateway is running on port/);
     await harness.waitForHttpText("initial-shared-marker");
@@ -211,18 +279,23 @@ export const dictionary = serviceDictionary(["en", "ko"])
       expect(host.proc.killed).toBe(false);
       return;
     }
-    const mark = host.markLog();
+    const { mark } = await harness.editUntilSeen(
+      host,
+      (attempt) =>
+        harness.writeFile(
+          "akan.config.ts",
+          `import type { AppConfig } from "akanjs";
 
-    await harness.writeFile(
-      "akan.config.ts",
-      `import type { AppConfig } from "akanjs";
-
+// edit ${attempt}
 const config: AppConfig = { externalLibs: [] };
 export default config;
 `,
+        ),
+      // Re-applying this edit is expensive — every attempt restarts the whole dev host — so wait longer
+      // before concluding the event was dropped rather than merely slow.
+      { evidence: /\[dev-plan\].*actions=.*restart-dev-host/, attempts: 2, evidenceTimeoutMs: 30_000 },
     );
 
-    await host.waitForLogSince(mark, /\[dev-plan\].*actions=.*restart-dev-host/);
     await host.waitForLogSince(mark, /\[dev-host\] config change detected; restarting dev host/);
     await host.waitForLogSince(mark, /backend ready pid=(\d+)|AkanApp gateway is running on port/);
     await harness.waitForHttpText("initial-shared-marker");
@@ -239,35 +312,40 @@ export default config;
       hmr?.close();
       return;
     }
-    const failureMark = host.markLog();
     const failureHmrMark = hmr?.mark() ?? 0;
 
-    await harness.writeFile(
-      "ui/ClientMarker.tsx",
-      `export function ClientMarker() {
+    const { mark: failureMark } = await harness.editUntilSeen(host, (attempt) =>
+      harness.writeFile(
+        "ui/ClientMarker.tsx",
+        `export function ClientMarker() {
+  // broken ${attempt}
   return <p>broken</p>
 `,
+      ),
     );
 
     await host.waitForLogSince(
       failureMark,
       /\[build-status\].*phase=pages.*ok=false|\[build-status\].*phase=csr.*ok=false/,
     );
-    if (hmr) await hmr.waitForMessageSince(failureHmrMark, isBuildStatus("error"));
+    if (hmr) await expectHmrMessage(hmr, failureHmrMark, isBuildStatus("error"), "the build failure");
     await harness.waitForHttpText("initial-client-marker");
-    const recoveryMark = host.markLog();
     const recoveryHmrMark = hmr?.mark() ?? 0;
 
-    await harness.writeFile(
-      "ui/ClientMarker.tsx",
-      `export function ClientMarker() {
-  return <p data-testid="client-marker">recovered-client-marker</p>;
+    // The edit that used to be dropped: it lands right after the failed build's write burst, and in a
+    // 3-way parallel run all three shards timed out here on 60s of completely empty log output.
+    const { mark: recoveryMark } = await harness.editUntilSeen(host, (attempt) =>
+      harness.writeFile(
+        "ui/ClientMarker.tsx",
+        `export function ClientMarker() {
+  return <p data-testid="client-marker">recovered-client-marker-${attempt}</p>;
 }
 `,
+      ),
     );
 
     await host.waitForLogSince(recoveryMark, /\[build-status\].*ok=true/);
-    if (hmr) await hmr.waitForMessageSince(recoveryHmrMark, isBuildStatus("ok"));
+    if (hmr) await expectHmrMessage(hmr, recoveryHmrMark, isBuildStatus("ok"), "the build recovery");
     await harness.waitForHttpText("recovered-client-marker");
     hmr?.close();
   });
@@ -314,18 +392,18 @@ export default config;
   integrationTest("backend boot failure stops the crash loop, surfaces build-status, and recovers on fix", async () => {
     const harness = await createHarness();
     const host = await harness.startHost();
-    const failureMark = host.markLog();
-
     // The service file is part of the generated server graph (`akan start` regenerates server.ts
     // from lib/), so a module-level throw here breaks every replica boot.
-    await harness.writeFile(
-      "lib/_fixture/fixture.service.ts",
-      `import { serve } from "akanjs/service";
+    const { mark: failureMark } = await harness.editUntilSeen(host, (attempt) =>
+      harness.writeFile(
+        "lib/_fixture/fixture.service.ts",
+        `import { serve } from "akanjs/service";
 
 export class FixtureService extends serve("fixture" as const, { serverMode: "batch" }, () => ({})) {}
 
-throw new Error("intentional-backend-boot-crash");
+throw new Error("intentional-backend-boot-crash-${attempt}");
 `,
+      ),
     );
 
     // The gateway abandons the replica after three failed boots instead of retrying forever...
@@ -334,13 +412,15 @@ throw new Error("intentional-backend-boot-crash");
     await host.waitForLogSince(failureMark, /\[build-status\].*phase=backend.*ok=false/);
     expect(host.proc.killed).toBe(false);
 
-    const recoveryMark = host.markLog();
-    await harness.writeFile(
-      "lib/_fixture/fixture.service.ts",
-      `import { serve } from "akanjs/service";
+    const { mark: recoveryMark } = await harness.editUntilSeen(host, (attempt) =>
+      harness.writeFile(
+        "lib/_fixture/fixture.service.ts",
+        `import { serve } from "akanjs/service";
 
+// recovery ${attempt}
 export class FixtureService extends serve("fixture" as const, { serverMode: "batch" }, () => ({})) {}
 `,
+      ),
     );
 
     await host.waitForLogSince(recoveryMark, /backend ready pid=(\d+)|AkanApp gateway is running on port/);
@@ -416,6 +496,13 @@ export class FixtureService extends serve("fixture" as const, { serverMode: "bat
  * silently exhausted the waits and looked like product failures. Both tests therefore assert several
  * related properties against a single boot, with explicit generous waits. Run the block on its own
  * (`-t "dev resource budgets"`) when timing matters.
+ *
+ * **This block is not parallel-safe, and cannot be made so.** It asserts *absolute* resident memory, so
+ * several dev servers competing for the machine changes what the number means rather than adding noise
+ * around it — a 3-way parallel run reported 178MB against the 120MB budget. That is a property of the
+ * measurement, not flakiness: run this block on an otherwise idle machine and parallelise the behavioural
+ * block above. Loosening a budget to survive a parallel run would throw away the regression signal the
+ * budget exists for.
  */
 describe("dev resource budgets", () => {
   const BOOT_MS = 150_000;
@@ -445,14 +532,16 @@ describe("dev resource budgets", () => {
 
     // Armed: from here on every save rebuilds CSR, which is what keeps a live mobile session working.
     //
-    // The settle wait is not padding. Bun's recursive `fs.watch` on macOS silently drops a file event
-    // that lands in the same FSEvents coalescing window as a burst of writes elsewhere in the tree, and
-    // the CSR build above emits exactly such a burst into `.akan/artifact/csr`. Saving immediately after
-    // the request returns therefore loses the event 100% of the time — a Bun bug this test must not
-    // depend on. See `local/optimize-resource/06-watcher-dropped-event.md` for the 30-line repro.
-    await Bun.sleep(500);
-    const resyncMark = host.markLog();
-    await harness.replaceText("ui/ClientMarker.tsx", "initial-client-marker", "csr-armed-marker");
+    // `editUntilSeen` rather than a bare save, because the CSR build above emits a whole minified tree
+    // into `.akan/artifact/csr` and a save landing in that window is dropped by Bun 100% of the time
+    // (`local/optimize-resource/06-watcher-dropped-event.md`).
+    const { mark: resyncMark } = await harness.editUntilSeen(host, (attempt) =>
+      harness.replaceText(
+        "ui/ClientMarker.tsx",
+        /(initial|csr-armed)-[\w-]*marker(-\d+)?/,
+        `csr-armed-marker-${attempt}`,
+      ),
+    );
     await host.waitForLogSince(resyncMark, /csr-rebundle ok/, WAIT_MS);
   });
 
@@ -477,21 +566,20 @@ describe("dev resource budgets", () => {
 
     const start = host.markLog();
     for (let i = 1; i <= 3; i++) {
-      const mark = host.markLog();
-      await harness.replaceText("ui/ClientMarker.tsx", /marker(-\d+)?/, `marker-${i}`);
+      const { mark } = await harness.editUntilSeen(host, (attempt) =>
+        harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-${i}-${attempt}`),
+      );
       await host.waitForLogSince(mark, /pages-rebundle ok/, WAIT_MS);
       // CSR was never requested in this fixture, so no save may pay for a CSR rebuild.
       const afterSave = host.logs.join("").slice(mark);
       expect(afterSave).toMatch(/csr-rebundle skipped/);
       expect(afterSave).not.toMatch(/csr-rebundle ok/);
-      // Bun drops a watcher event that lands in the same window as a write burst
-      // (`06-watcher-dropped-event.md`), so saving again before this generation has fully settled loses
-      // the next edit outright — this test hanging for the full 90s wait on iteration 2. Waiting for
-      // the builder alone is not enough: the backend is still applying the reload after that, and it
-      // writes too. Wait for the backend to finish, then leave the drop window (measured under 200ms).
+      // Waiting for the builder alone is not enough before the next iteration: the backend is still
+      // applying the reload after that, and it writes into the watched tree too. `editUntilSeen` handles
+      // the drop window itself, but these two waits are still what makes each iteration a whole
+      // generation, which is what the RSS deltas below are measured across.
       await host.waitForLogSince(mark, /css-rebuild checked/, WAIT_MS);
       await host.waitForLogSince(mark, /\[hmr\] backend apply/, WAIT_MS);
-      await Bun.sleep(300);
     }
 
     // Each in-place reload re-imports the pages bundle under a fresh `?v=`, and Bun's ESM registry
@@ -527,8 +615,9 @@ describe("dev resource budgets", () => {
     // One save is enough: the builder reports its rss as soon as the batch drains, and the host arms
     // the recycle from that report. The old pid comes from the log rather than from `ps`, so this does
     // not race the swap it is about to observe.
-    const firstSave = host.markLog();
-    await harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, "marker-1");
+    const { mark: firstSave } = await harness.editUntilSeen(host, (attempt) =>
+      harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-1-${attempt}`),
+    );
     await host.waitForLogSince(firstSave, /pages-rebundle ok/, WAIT_MS);
 
     // The host decides, the builder drains rather than being killed, and the replacement comes up.
@@ -552,36 +641,88 @@ describe("dev resource budgets", () => {
     //
     // Waiting for readiness above is load-bearing, not padding. The watcher is installed at the end of
     // the boot build, so a save during the recycle is seen by neither builder — this test lost one
-    // exactly that way. The settle wait on top is for Bun's dropped-event bug: the recycle boot writes
-    // a burst of artifacts, and a save inside that window is never reported at all
-    // (`06-watcher-dropped-event.md`).
-    await Bun.sleep(500);
-    const attempts: string[] = [];
-    for (let attempt = 1; attempt <= 4; attempt++) {
-      const mark = host.markLog();
-      await harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-after-recycle-${attempt}`);
-      const seen = await host
-        .waitForLogSince(mark, /pages-rebundle ok/, 15_000)
-        .then(() => true)
-        .catch(() => false);
-      attempts.push(`${attempt}=${seen ? "rebuilt" : "silent"}`);
-      if (seen) break;
-      await Bun.sleep(750);
-    }
-    console.info(
-      `[recycle-guard] ${recycleLog[2]}; builder ${recycleLog[1]} -> ${recycled?.pid} at ${Math.round((recycled?.rssBytes ?? 0) / MB)}MiB; post-recycle saves: ${attempts.join(" ")}`,
+    // exactly that way.
+    const postRecycle = await harness.editUntilSeen(host, (attempt) =>
+      harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-after-recycle-${attempt}`),
     );
-    expect(attempts.join(" ")).toMatch(/rebuilt/);
+    await host.waitForLogSince(postRecycle.mark, /pages-rebundle ok/, WAIT_MS);
+    console.info(
+      `[recycle-guard] ${recycleLog[2]}; builder ${recycleLog[1]} -> ${recycled?.pid} at ${Math.round((recycled?.rssBytes ?? 0) / MB)}MiB; post-recycle save took ${postRecycle.attempts} attempt(s)`,
+    );
     await harness.waitForHttpText("marker-after-recycle", WAIT_MS);
 
     // A replacement that is still over the ceiling proves the ceiling cannot be met, and the host has
     // to stop rather than recycle forever. Two reports inside the minimum interval is the threshold.
     for (let i = 1; i <= 3; i++) {
-      await Bun.sleep(500);
-      const mark = host.markLog();
-      await harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-settled-${i}`);
+      const { mark } = await harness.editUntilSeen(host, (attempt) =>
+        harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-settled-${i}-${attempt}`),
+      );
       await host.waitForLogSince(mark, /pages-rebundle ok/, WAIT_MS).catch(() => undefined);
     }
     await host.waitForLogSince(start, /ceiling cannot be met for this app/, WAIT_MS);
+  });
+
+  budgetTest("suspends the builder when the dev server goes idle and wakes it on the next edit", async () => {
+    const harness = await createHarness();
+    // 3s stands in for the 5min default: the machinery is the same, and the guard needs the dev server
+    // to actually reach idle inside a test.
+    const host = await harness.startHost({ timeoutMs: BOOT_MS, env: { AKAN_DEV_IDLE_SUSPEND_MS: "3000" } });
+    const start = host.markLog();
+    await harness.waitForHttpText("initial-client-marker", WAIT_MS);
+
+    // Nothing periodic may keep the dev server "busy": if the builder reported metrics on a timer, or
+    // the backend wrote a watched file, this would never fire.
+    await host.waitForLogSince(start, /\[idle-suspend\] no build activity for \d+s; released the builder/, WAIT_MS);
+    const suspendedBuilder = await DevStabilityHarness.builderProcess(host.proc.pid);
+    expect(suspendedBuilder).toBeNull();
+    // Only build capacity suspends — the backend keeps serving the preview URL.
+    await harness.waitForHttpText("initial-client-marker", WAIT_MS);
+
+    // The edit that has to wake it. A suspended host has just installed a fresh watcher over a tree the
+    // suspend itself churned, so this is squarely inside Bun's drop window — it is what failed here in a
+    // 3-way parallel run, on 60s of empty log output.
+    const { mark } = await harness.editUntilSeen(
+      host,
+      (attempt) => harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-after-wake-${attempt}`),
+      { evidence: /\[idle-suspend\] waking/ },
+    );
+    const awake = await host.waitForLogSince(mark, /\[idle-suspend\] awake in (\d+)ms/, WAIT_MS);
+    // The woken builder rebuilds from disk, so the edit that woke it is in the artifact it announces.
+    await host.waitForLogSince(mark, /announced boot state after recycle/, WAIT_MS);
+    const wokenBuilder = await DevStabilityHarness.builderProcess(host.proc.pid);
+    expect(wokenBuilder).not.toBeNull();
+    expect(wokenBuilder?.pid).not.toBe(suspendedBuilder?.pid);
+    await harness.waitForHttpText("marker-after-wake", WAIT_MS);
+    console.info(`[idle-suspend-guard] woke in ${awake[1]}ms; builder back at pid=${wokenBuilder?.pid}`);
+
+    // And it is a normal dev server again afterwards.
+    const postWake = await harness.editUntilSeen(host, (attempt) =>
+      harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-postwake-${attempt}`),
+    );
+    await host.waitForLogSince(postWake.mark, /pages-rebundle ok/, WAIT_MS);
+    console.info(`[idle-suspend-guard] post-wake save took ${postWake.attempts} attempt(s)`);
+    await harness.waitForHttpText("marker-postwake", WAIT_MS);
+  });
+
+  budgetTest("holds a request that needs a build until the wake finishes, instead of failing it", async () => {
+    const harness = await createHarness();
+    const host = await harness.startHost({ timeoutMs: BOOT_MS, env: { AKAN_DEV_IDLE_SUSPEND_MS: "3000" } });
+    const start = host.markLog();
+    await harness.waitForHttpText("initial-client-marker", WAIT_MS);
+    await host.waitForLogSince(start, /\[idle-suspend\] .*released the builder/, WAIT_MS);
+    expect(await DevStabilityHarness.builderProcess(host.proc.pid)).toBeNull();
+
+    // A browser asking for something the backend cannot serve on its own is the other wake trigger, and
+    // the request must not be answered with "builder is stopped" the way a dead builder's would be.
+    const mark = host.markLog();
+    const port = await harness.resolvePort();
+    const status = await fetch(`http://127.0.0.1:${port}/__csr`)
+      .then((res) => res.status)
+      .catch(() => 0);
+
+    await host.waitForLogSince(mark, /\[idle-suspend\] waking \(build-csr arrived while suspended\)/, WAIT_MS);
+    await host.waitForLogSince(mark, /\[idle-suspend\] replaying 1 request\(s\) held during the wake/, WAIT_MS);
+    expect(status).toBe(200);
+    expect(await DevStabilityHarness.builderProcess(host.proc.pid)).not.toBeNull();
   });
 });

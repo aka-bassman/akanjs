@@ -53,6 +53,7 @@ class IncrementalBuilder {
   #changePlanner: DevChangePlanner;
   #generatedIndexSync: DevGeneratedIndexSync;
   #autoImportSync: AutoImportSync;
+  #watcher: HmrWatcher | null = null;
   #generation = 0;
   #csrActive = IncrementalBuilder.#csrArmedByEnv();
   #workQueue: Promise<void> = Promise.resolve();
@@ -260,7 +261,8 @@ class IncrementalBuilder {
         await this.#enqueueWork("hmr-batch", async () => this.#handleWatchBatch(appDir, artifactDir, batch));
       },
     });
-    watcher.start();
+    await watcher.start();
+    this.#watcher = watcher;
     this.#logger.verbose(`watching ${roots.length} roots`);
   }
 
@@ -276,6 +278,10 @@ class IncrementalBuilder {
     if (autoImport.changedFiles.length > 0)
       this.#logger.verbose(`[auto-import] inserted imports into ${autoImport.changedFiles.length} file(s)`);
     const indexSync = await this.#generatedIndexSync.syncForBatch(batch.files);
+    //* Both passes above write source files, and this generation's build consumes what they wrote. Hand
+    //* them to the watcher so its verification scan does not read them back as a user edit and spend a
+    //* second generation rebuilding identical content.
+    await this.#watcher?.absorb([...autoImport.changedFiles, ...indexSync.changedFiles]);
     const { files, kinds, expandedBatch, event, hasSyncErrors } = prepareDevWatchBatch({
       generation,
       batch,
@@ -558,7 +564,7 @@ class IncrementalBuilder {
             }
           },
         });
-        watcher.start();
+        await watcher.start();
         logger.warn(`[degraded] watching ${roots.length} roots for a fix`);
       })().catch(reject);
     });
@@ -621,7 +627,7 @@ class IncrementalBuilder {
     }
     await builder.boot();
     if (recoveredFiles) await builder.announceRecoveredState(recoveredFiles);
-    else if (process.env.AKAN_BUILDER_RECYCLED === "1") await builder.announceBootState();
+    else if (process.env.AKAN_BUILDER_ANNOUNCE_BOOT === "1") await builder.announceBootState();
     await builder.rearmCsrFromEnv();
   }
 }

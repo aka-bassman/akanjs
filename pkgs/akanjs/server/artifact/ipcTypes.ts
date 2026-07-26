@@ -104,10 +104,14 @@ export interface PagesBundlePayload {
 }
 
 /**
- * `Bun.build` retains native bundler arenas the process never returns — `Bun.gc(true)` reclaims
- * nothing and the JS heap stays flat while RSS climbs — so the builder's memory only comes back when
- * it exits. It reports its own RSS here whenever its queues drain, and the dev host recycles it past
- * a ceiling to turn unbounded growth into a bounded sawtooth.
+ * `Bun.build` retains native bundler arenas that `Bun.gc(true)` never reclaims — the JS heap stays flat
+ * while RSS climbs. **How much comes back without exiting is platform-specific**: measured on Bun
+ * 1.3.14, macOS returns none of it (0% after 60s idle) while Linux purges 46-59% after ~10-15s idle.
+ * The dev host recycles past a ceiling to bound the macOS case.
+ *
+ * Because this is only reported when the builder's queues drain, `rssBytes` is a *peak* sample. On
+ * Linux it goes stale within seconds, so the host re-reads the builder's RSS from the OS before acting
+ * on it. See `local/optimize-resource/09-linux-retention-measurement.md`.
  */
 export interface BuilderMetrics {
   rssBytes: number;

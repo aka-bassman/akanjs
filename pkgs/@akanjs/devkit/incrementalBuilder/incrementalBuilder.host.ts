@@ -27,6 +27,11 @@ interface IncrementalBuilderStartOptions {
   onExit?: () => void;
   onReady?: () => void;
   onRestartReady?: () => void;
+  /**
+   * Ask the builder to re-announce the artifact it boots with. Needed whenever a *previous* builder's
+   * artifact may still be live in a running backend — after an rss recycle, and after an idle wake.
+   */
+  announceBootState?: boolean;
 }
 
 export class IncrementalBuilderHost {
@@ -66,24 +71,33 @@ export class IncrementalBuilderHost {
   get status() {
     return this.#status;
   }
+  /**
+   * The running builder's pid, so the host can read its RSS from the OS between builds. The builder
+   * only reports its own metrics at work-completion points, which is the *peak*; on a platform that
+   * returns bundler arenas to the OS while idle, that sample goes stale within seconds.
+   */
+  get pid(): number | null {
+    return this.#proc?.pid ?? null;
+  }
   start(options: IncrementalBuilderStartOptions = {}) {
     if (this.#proc) this.stop();
     this.#manualStop = false;
     this.#startOptions = options;
+    this.#spawnAfterRecycle = options.announceBootState ?? false;
     this.#spawn(false);
     return this;
   }
   #spawn(isRestart: boolean) {
     this.#status = isRestart ? "restarting" : "starting";
     this.ready = false;
-    // A recycled builder rebuilds every artifact, and the running backend still holds the previous
-    // one; the flag is what tells the replacement to re-announce what it booted with.
+    // A fresh builder rebuilds every artifact while the running backend still holds the previous one;
+    // the flag is what tells it to re-announce what it booted with.
     const afterRecycle = this.#spawnAfterRecycle;
     this.#spawnAfterRecycle = false;
     let proc!: Bun.Subprocess<"ignore", "inherit", "inherit">;
     proc = Bun.spawn(["bun", this.entry], {
       cwd: this.app.cwdPath,
-      env: { ...this.env, AKAN_WATCH: "1", ...(afterRecycle ? { AKAN_BUILDER_RECYCLED: "1" } : {}) },
+      env: { ...this.env, AKAN_WATCH: "1", ...(afterRecycle ? { AKAN_BUILDER_ANNOUNCE_BOOT: "1" } : {}) },
       stdio: ["ignore", "inherit", "inherit"],
       ipc: (msg: BuilderMessage) => {
         if (this.#proc !== proc) return;

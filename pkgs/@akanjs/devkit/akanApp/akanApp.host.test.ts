@@ -1,19 +1,31 @@
-import { describe, expect, test } from "bun:test";
-import type { BuilderMessage, DevBuildStatus, DevChangeAction } from "akanjs/server";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { Logger } from "akanjs/common";
+import type { BuilderMessage, BuildPhase, DevBuildStatus, DevChangeAction } from "akanjs/server";
+import type { App } from "../commandDecorators";
 import {
+  AkanAppHost,
+  BackendImportGraph,
   backendRestartReasonFromMessage,
   buildStatusReplaySequence,
   createBackendBuildStatus,
   decideBuilderRssRecycle,
+  decideBuilderRssSettle,
+  decideIdleSuspend,
+  hasAnyBuildFailure,
   hasBuildFailureForGeneration,
   isLegacyBackendFallbackFile,
   mergeBackendRestartReasons,
   mergeInvalidateMessages,
   normalizeBackendReportedGeneration,
+  resolveIdleSuspendMs,
   shouldAbandonBackendRecovery,
   shouldAbandonBuilderRssCeiling,
   shouldMarkBuildPhaseRecovered,
   shouldQueueBuildStatusReplay,
+  shouldRefreshConfigOnIdleWake,
   shouldRelayRecycledFrontendState,
   shouldReplaceLastGoodMessage,
   shouldRestartBackendByDevPlan,
@@ -185,6 +197,111 @@ describe("builder rss recycle", () => {
     expect(shouldAbandonBuilderRssCeiling(2)).toBe(true);
     expect(shouldAbandonBuilderRssCeiling(1, 1)).toBe(true);
   });
+
+  // Measured on Linux: the builder peaked at 522MiB and settled at 214MiB with no help, so a 400MiB
+  // ceiling recycled a process that was already back under it. The armed sample is always the peak.
+  describe("settle check before committing", () => {
+    test("waits when the builder is only modestly over the ceiling", () => {
+      expect(decideBuilderRssSettle({ rssBytes: 522, ceilingBytes: 400 })).toBe("wait-and-recheck");
+      expect(decideBuilderRssSettle({ rssBytes: 401, ceilingBytes: 400 })).toBe("wait-and-recheck");
+    });
+
+    // No purge is going to rescue a builder this far over, so waiting only delays the inevitable.
+    test("recycles immediately once far enough past the ceiling", () => {
+      expect(decideBuilderRssSettle({ rssBytes: 600, ceilingBytes: 400 })).toBe("recycle-now");
+      expect(decideBuilderRssSettle({ rssBytes: 900, ceilingBytes: 400 })).toBe("recycle-now");
+      expect(decideBuilderRssSettle({ rssBytes: 500, ceilingBytes: 400, hardMultiple: 1.2 })).toBe("recycle-now");
+    });
+  });
+
+  describe("readProcessRssBytes", () => {
+    test("reads this process's own rss", async () => {
+      const rssBytes = await AkanAppHost.readProcessRssBytes(process.pid);
+      if (rssBytes === null) throw new Error("expected to read this process's own rss");
+      // Loose bounds on purpose: the point is that it read a real number from the OS, not which number.
+      expect(rssBytes).toBeGreaterThan(1024 * 1024);
+      expect(rssBytes).toBeLessThan(64 * 1024 * 1024 * 1024);
+    });
+
+    // Null rather than 0, because callers must treat an unreadable pid as "no new information" — a 0
+    // would read as "settled below the ceiling" and cancel a recycle that should happen.
+    test("returns null for a pid that does not exist", async () => {
+      expect(await AkanAppHost.readProcessRssBytes(2_147_483_646)).toBeNull();
+    });
+  });
+});
+
+describe("dev idle suspend", () => {
+  const decide = (over: Partial<Parameters<typeof decideIdleSuspend>[0]> = {}) =>
+    decideIdleSuspend({
+      enabled: true,
+      suspended: false,
+      builderReady: true,
+      backendReady: true,
+      buildFailed: false,
+      restartPending: false,
+      msSinceWake: null,
+      ...over,
+    });
+
+  test("suspends an idle dev server whose builder and backend are both up", () => {
+    expect(decide()).toBe("suspend");
+  });
+
+  test("keeps build capacity while anything is still in motion", () => {
+    expect(decide({ enabled: false })).toBe("disabled");
+    expect(decide({ suspended: true })).toBe("already-suspended");
+    expect(decide({ builderReady: false })).toBe("builder-not-ready");
+    expect(decide({ backendReady: false })).toBe("backend-not-ready");
+    expect(decide({ restartPending: true })).toBe("restart-pending");
+  });
+
+  // A wake would boot straight back into the same compile error, and the developer is mid-fix anyway.
+  test("never suspends on a red build", () => {
+    expect(decide({ buildFailed: true })).toBe("build-failed");
+  });
+
+  test("enforces a minimum uptime after a wake so it cannot flap", () => {
+    expect(decide({ msSinceWake: 5_000 })).toBe("too-soon");
+    expect(decide({ msSinceWake: 31_000 })).toBe("suspend");
+    expect(decide({ msSinceWake: 5_000, minUptimeMs: 1_000 })).toBe("suspend");
+  });
+
+  test("defaults to on and treats any non-positive value as off", () => {
+    expect(resolveIdleSuspendMs(undefined)).toBe(300_000);
+    expect(resolveIdleSuspendMs("")).toBe(300_000);
+    expect(resolveIdleSuspendMs("0")).toBeNull();
+    expect(resolveIdleSuspendMs("-1")).toBeNull();
+    expect(resolveIdleSuspendMs("not-a-number")).toBeNull();
+    expect(resolveIdleSuspendMs("1500")).toBe(1_500);
+  });
+
+  test("blocks a suspend on a failure in any phase, not just the newest generation", () => {
+    const status = (phase: BuildPhase, ok: boolean): DevBuildStatus => ({ generation: 1, phase, ok, files: [] });
+    expect(hasAnyBuildFailure(new Map())).toBe(false);
+    expect(hasAnyBuildFailure(new Map([["scan", status("scan", true)]]))).toBe(false);
+    expect(
+      hasAnyBuildFailure(
+        new Map([
+          ["scan", status("scan", true)],
+          ["pages", status("pages", false)],
+        ]),
+      ),
+    ).toBe(true);
+  });
+
+  test("routes a config change made while suspended through the dev host restart", () => {
+    expect(shouldRefreshConfigOnIdleWake(null)).toBe(false);
+    expect(shouldRefreshConfigOnIdleWake({ files: ["/repo/apps/demo/ui/A.tsx"], kinds: new Set(["code"]) })).toBe(
+      false,
+    );
+    expect(
+      shouldRefreshConfigOnIdleWake({
+        files: ["/repo/apps/demo/akan.config.ts"],
+        kinds: new Set(["config", "code"]),
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("recycled builder state announcements", () => {
@@ -280,6 +397,86 @@ describe("build status helpers", () => {
     expect(shouldQueueBuildStatusReplay(true, 1)).toBe(true);
     expect(shouldQueueBuildStatusReplay(true, 0)).toBe(false);
     expect(buildStatusReplaySequence([failed, recovered], latestByPhase).slice(0, 2)).toEqual([failed, recovered]);
+  });
+});
+
+describe("BackendImportGraph", () => {
+  const tempRoots: string[] = [];
+
+  const makeGraph = async (files: Record<string, string>) => {
+    // Realpath, not the mkdtemp path: `Bun.resolveSync` returns real paths, and on macOS `/var/folders`
+    // is a symlink, so an unresolved root makes every resolved import look like it escapes the workspace.
+    const workspaceRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "akan-devkit-graph-")));
+    tempRoots.push(workspaceRoot);
+    const cwdPath = path.join(workspaceRoot, "apps/demo");
+    for (const [rel, source] of Object.entries(files)) {
+      const filePath = path.join(cwdPath, rel);
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await writeFile(filePath, source);
+    }
+    const app = { cwdPath, workspace: { workspaceRoot } } as unknown as App;
+    return { graph: new BackendImportGraph(app, new Logger("test")), cwdPath };
+  };
+
+  afterEach(async () => {
+    await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  });
+
+  test("walks the backend entrypoints' import graph", async () => {
+    const { graph, cwdPath } = await makeGraph({
+      "main.ts": 'import "./server";\n',
+      "server.ts": 'import { handler } from "./lib/handler";\nexport default handler;\n',
+      "lib/handler.ts": "export const handler = () => null;\n",
+      "lib/unreachable.ts": "export const nope = 1;\n",
+    });
+
+    expect(await graph.refresh()).toBe(true);
+    expect(graph.has(path.join(cwdPath, "lib/handler.ts"))).toBe(true);
+    expect(graph.has(path.join(cwdPath, "lib/unreachable.ts"))).toBe(false);
+  });
+
+  test("picks up an import added to an already-scanned file", async () => {
+    const { graph, cwdPath } = await makeGraph({
+      "main.ts": 'import "./server";\n',
+      "server.ts": "export default 1;\n",
+      "lib/added.ts": "export const added = 1;\n",
+    });
+    await graph.refresh();
+    expect(graph.has(path.join(cwdPath, "lib/added.ts"))).toBe(false);
+
+    // The scan cache is keyed on (mtimeMs, size), so the rewrite must invalidate it.
+    await writeFile(path.join(cwdPath, "server.ts"), 'import "./lib/added";\nexport default 1;\n');
+
+    await graph.refresh();
+    expect(graph.has(path.join(cwdPath, "lib/added.ts"))).toBe(true);
+  });
+
+  test("drops a file that left the graph", async () => {
+    const { graph, cwdPath } = await makeGraph({
+      "main.ts": 'import "./server";\n',
+      "server.ts": 'import "./lib/leaving";\nexport default 1;\n',
+      "lib/leaving.ts": "export const leaving = 1;\n",
+    });
+    await graph.refresh();
+    expect(graph.has(path.join(cwdPath, "lib/leaving.ts"))).toBe(true);
+
+    await writeFile(path.join(cwdPath, "server.ts"), "export default 1;\n");
+    await graph.refresh();
+    expect(graph.has(path.join(cwdPath, "lib/leaving.ts"))).toBe(false);
+  });
+
+  test("keeps the previous graph when a refresh finds no entrypoints", async () => {
+    const { graph, cwdPath } = await makeGraph({
+      "main.ts": 'import "./lib/kept";\n',
+      "lib/kept.ts": "export const kept = 1;\n",
+    });
+    await graph.refresh();
+    expect(graph.ready).toBe(true);
+
+    await rm(path.join(cwdPath, "main.ts"));
+    await graph.refresh();
+    // An empty scan is not a failure, so the graph legitimately empties out.
+    expect(graph.has(path.join(cwdPath, "lib/kept.ts"))).toBe(false);
   });
 });
 

@@ -68,7 +68,7 @@ describe("IncrementalBuilderHost", () => {
 
     host.start({ onRestartReady });
     spawns[0]?.options.ipc?.({ type: "builder-ready" });
-    expect(spawns[0]?.options.env?.AKAN_BUILDER_RECYCLED).toBeUndefined();
+    expect(spawns[0]?.options.env?.AKAN_BUILDER_ANNOUNCE_BOOT).toBeUndefined();
 
     const reason = "rss=1300MiB>=1200MiB after 3 build(s)";
     expect(host.recycle(reason)).toBe(true);
@@ -80,7 +80,7 @@ describe("IncrementalBuilderHost", () => {
     // A planned exit skips the crash backoff — the dev server has no file watcher until it is back.
     spawns[0]?.options.onExit?.();
     expect(spawns).toHaveLength(2);
-    expect(spawns[1]?.options.env?.AKAN_BUILDER_RECYCLED).toBe("1");
+    expect(spawns[1]?.options.env?.AKAN_BUILDER_ANNOUNCE_BOOT).toBe("1");
     spawns[1]?.options.ipc?.({ type: "builder-ready" });
     expect(onRestartReady).toHaveBeenCalledTimes(1);
     expect(host.status).toBe("ready");
@@ -90,7 +90,7 @@ describe("IncrementalBuilderHost", () => {
     expect(spawns).toHaveLength(2);
     await wait(1_050);
     expect(spawns).toHaveLength(3);
-    expect(spawns[2]?.options.env?.AKAN_BUILDER_RECYCLED).toBeUndefined();
+    expect(spawns[2]?.options.env?.AKAN_BUILDER_ANNOUNCE_BOOT).toBeUndefined();
 
     host.stop();
   });
