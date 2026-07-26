@@ -98,7 +98,7 @@ export class SignalResolver {
   static resolveSchedule(internalCls: InternalCls, internal: Internal, serverMode: "federation" | "batch" | "all") {
     const internalMeta = internalCls[INTERNAL_META] as { [key: string]: InternalInfo };
     Object.entries(internalMeta).forEach(([key, internalInfo]) => {
-      const skip = SignalResolver.#getScheduleSkipReason(internalInfo, serverMode);
+      const skip = SignalResolver.getScheduleSkipReason(internalInfo, serverMode);
       if (skip) {
         SignalResolver.#warnMissingProcessWorker(key, internalInfo, skip);
         return;
@@ -154,7 +154,7 @@ export class SignalResolver {
     });
   }
   /** Why an internal is not scheduled on this server, or null when it is. `placement` marks a deliberate role split. */
-  static #getScheduleSkipReason(
+  static getScheduleSkipReason(
     internalInfo: InternalInfo,
     serverMode: "federation" | "batch" | "all",
   ): { reason: string; placement: boolean } | null {
