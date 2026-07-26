@@ -148,6 +148,12 @@ afterAll(() => {
   // through format-on-save and save-all. A non-zero number here means this suite is passing *around* a
   // product bug rather than because it is absent, and it is the signal for fixing that bug properly.
   console.info(`[harness] ${edits} observed edit(s), ${retried} needed a retry after a dropped watch event`);
+  // Every wait is individually bounded but their budgets sum past the per-test timeout, so a loaded round
+  // can kill a test without any single wait failing — and Bun then reports only "this test timed out". These
+  // are the numbers that say how close a green run came, and which step to look at when one dies.
+  const slowest = DevStabilityHarness.waitStats();
+  if (slowest.length)
+    console.info(`[harness] slowest waits: ${slowest.map((wait) => `${wait.ms}ms ${wait.label}`).join(" | ")}`);
 });
 
 describe("dev stability integration harness", () => {

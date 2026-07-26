@@ -96,10 +96,9 @@ export class BuilderRpc {
   ): Promise<BuildRouteClientResult> {
     if (this.#disposed) throw new Error("[builder] rpc is disposed");
     const id = this.#nextId++;
-    const payload = await new Promise<BuildRouteResultPayload>((resolve, reject) => {
-      this.#pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-      this.#send({ type: "build-route", id, routeId, seeds, knownEntries: [...knownEntries], generation });
-    });
+    const payload = await this.#request<BuildRouteResultPayload>(id, `build-route ${routeId}`, () =>
+      this.#send({ type: "build-route", id, routeId, seeds, knownEntries: [...knownEntries], generation }),
+    );
     return {
       manifestDelta: payload.manifestDelta,
       ssrManifestDelta: { moduleLoading: null, moduleMap: payload.ssrManifestDelta },
@@ -118,9 +117,54 @@ export class BuilderRpc {
   async buildCsr(reason: string): Promise<void> {
     if (this.#disposed) throw new Error("[builder] rpc is disposed");
     const id = this.#nextId++;
-    await new Promise<void>((resolve, reject) => {
-      this.#pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-      this.#send({ type: "build-csr", id, reason });
+    await this.#request<void>(id, `build-csr (${reason})`, () => this.#send({ type: "build-csr", id, reason }));
+  }
+
+  /**
+   * How long to wait for the builder before failing a request. `AKAN_BUILDER_RPC_TIMEOUT_MS` overrides.
+   *
+   * Generous, because a cold CSR build of every page legitimately takes tens of seconds; the point is not
+   * to be tight but to be finite.
+   */
+  static #timeoutMs(): number {
+    const configured = Number(process.env.AKAN_BUILDER_RPC_TIMEOUT_MS);
+    if (Number.isFinite(configured) && configured > 0) return configured;
+    return 120_000;
+  }
+
+  /**
+   * One builder request, which fails rather than waiting forever.
+   *
+   * Nothing answers a request whose builder exits after receiving it: the dev host replies `ok:false` only
+   * when the *send* fails, and it does not track in-flight ids. The builder exits routinely — it is recycled
+   * every few builds once its RSS passes the ceiling — so a page request that happens to be mid route-build
+   * left this promise pending forever, and the browser tab span with no error, no log and nothing to retry.
+   * Observed from the other side as a `fetch` that sat for 225s against a 60s budget.
+   */
+  async #request<T>(id: number, label: string, send: () => void): Promise<T> {
+    const timeoutMs = BuilderRpc.#timeoutMs();
+    return await new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.#pending.delete(id);
+        reject(
+          new Error(
+            `[builder] ${label} got no answer in ${timeoutMs}ms; the builder was likely recycled or restarted mid-request — reload to retry`,
+          ),
+        );
+      }, timeoutMs);
+      // `unref` so a pending request cannot by itself keep the process alive during shutdown.
+      timer.unref?.();
+      this.#pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value as T);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
+      send();
     });
   }
 

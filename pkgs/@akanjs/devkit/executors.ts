@@ -1256,7 +1256,18 @@ export class AppExecutor extends SysExecutor {
   getEnv() {
     return WorkspaceExecutor.getBaseDevEnv().env;
   }
+  /**
+   * This app's dev port, derived from its position in the sorted `apps/` listing so several apps can run
+   * at once without colliding.
+   *
+   * `AKAN_DEV_PORT` pins it instead, because the derived value *moves*: the index shifts whenever any other
+   * app directory appears or disappears, and a dev host recomputes this on every restart. So a session that
+   * adds an app relands its dev server on a different port, and anything that reserved a port relative to
+   * the old one is left pointing at nothing.
+   */
   async getDevPort() {
+    const pinned = Number(process.env.AKAN_DEV_PORT);
+    if (Number.isInteger(pinned) && pinned > 0 && pinned <= 65_535) return pinned;
     const basePort = 8282;
     const appNames = (await this.workspace.getApps()).sort((a, b) => a.localeCompare(b));
     const appIndex = Math.max(appNames.indexOf(this.name), 0);

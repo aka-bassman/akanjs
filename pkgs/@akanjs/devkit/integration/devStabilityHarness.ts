@@ -333,7 +333,7 @@ export const dictionary = serviceDictionary(["en", "ko"])
     env?: Record<string, string>;
   } = {}): Promise<DevStabilityHost> {
     const logs: string[] = [];
-    const { offset } = await this.#allocatePort();
+    const { port, offset } = await this.#allocatePort();
     const proc = Bun.spawn(["bash", "-lc", `bun run akan start ${JSON.stringify(this.appName)}`], {
       cwd: this.workspaceRoot,
       env: {
@@ -344,6 +344,13 @@ export const dictionary = serviceDictionary(["en", "ko"])
         AKAN_PUBLIC_LOG_LEVEL: "verbose",
         NODE_NO_WARNINGS: "1",
         PORT_OFFSET: String(offset),
+        // Pinned, not predicted. `getDevPort()` derives the port from this fixture's index in the `apps/`
+        // listing, and a parallel run adds and removes fixtures constantly — so the index moved between the
+        // allocation here and the host reading it, and again on every restart. Tests that merely *wait* on a
+        // port recovered by adopting the logged one, but a test that has to reserve a port before boot (the
+        // occupied-ws-port test blocks `port + 10_000`) had no way to be right, and spent 60s waiting for a
+        // fallback that could not happen because the gateway had gone to a different port entirely.
+        AKAN_DEV_PORT: String(port),
         ...env,
       },
       stdout: "pipe",
@@ -370,9 +377,12 @@ export const dictionary = serviceDictionary(["en", "ko"])
       proc,
       logs,
       markLog: () => markLog(logs),
-      waitForLog: (pattern, waitMs) => waitForLog(logs, pattern, waitMs),
-      waitForLogSince: (mark, pattern, waitMs) => waitForLogSince(logs, mark, pattern, waitMs),
+      waitForLog: (pattern, waitMs) =>
+        DevStabilityHarness.#timed(`waitForLog ${pattern}`, () => waitForLog(logs, pattern, waitMs)),
+      waitForLogSince: (mark, pattern, waitMs) =>
+        DevStabilityHarness.#timed(`waitForLogSince ${pattern}`, () => waitForLogSince(logs, mark, pattern, waitMs)),
       stop: async () => {
+        await DevStabilityHarness.#dumpLogs(this.appName, logs);
         // The host runs under `bash -lc`, so killing `proc` only kills the shell: the dev host, its
         // builder and its backend outlive it as orphans that keep watching a deleted fixture app and
         // interfere with later tests. Collect the descendants first, then signal all of them.
@@ -406,7 +416,9 @@ export const dictionary = serviceDictionary(["en", "ko"])
       },
     };
     this.#host = host;
-    await host.waitForLog(/backend ready pid=(\d+)|AkanApp gateway is running on port/, timeoutMs);
+    await DevStabilityHarness.#timed("startHost:boot", () =>
+      host.waitForLog(/backend ready pid=(\d+)|AkanApp gateway is running on port/, timeoutMs),
+    );
     await this.#adoptBoundPort(host);
     return host;
   }
@@ -414,6 +426,20 @@ export const dictionary = serviceDictionary(["en", "ko"])
   async stopHost(): Promise<void> {
     await this.#host?.stop();
     this.#host = null;
+  }
+
+  /**
+   * Write a host's whole log to `AKAN_DEV_STABILITY_LOG_DIR` when it is set.
+   *
+   * A failing wait prints only a tail, and a *passing* run prints nothing — so a stall that stays inside
+   * the timeout budget is invisible, which is exactly the state a slow-but-green suite hides. Off unless
+   * the variable is set, since the suite otherwise produces megabytes per round.
+   */
+  static async #dumpLogs(appName: string, logs: string[]): Promise<void> {
+    const dir = process.env.AKAN_DEV_STABILITY_LOG_DIR;
+    if (!dir) return;
+    await mkdir(dir, { recursive: true }).catch(() => undefined);
+    await Bun.write(path.join(dir, `${appName}.log`), logs.join("")).catch(() => undefined);
   }
 
   async writeFile(relativePath: string, contents: string): Promise<void> {
@@ -492,6 +518,31 @@ export const dictionary = serviceDictionary(["en", "ko"])
     return { edits: DevStabilityHarness.#observedEdits, retried: DevStabilityHarness.#retriedEdits };
   }
 
+  static readonly #waitDurations: { label: string; ms: number }[] = [];
+
+  /**
+   * Time one wait so a run that dies of *cumulative* slowness can say where the time went.
+   *
+   * Each wait here is individually bounded, but their budgets sum past the per-test timeout — `startHost`
+   * (60s) plus one `waitForLogSince` (60s) plus one `waitForHttpText` (60s) already reaches 180s. So a
+   * loaded round can kill a test without any single wait failing, and Bun reports only "this test timed out",
+   * naming neither the step nor how close the others came. That produced failures that looked like they
+   * rotated between tests at random, when what rotates is which long test happened to be slowest.
+   */
+  static async #timed<T>(label: string, work: () => Promise<T>): Promise<T> {
+    const at = performance.now();
+    try {
+      return await work();
+    } finally {
+      DevStabilityHarness.#waitDurations.push({ label, ms: Math.round(performance.now() - at) });
+    }
+  }
+
+  /** The slowest waits observed, worst first, for an end-of-run report. */
+  static waitStats(limit = 5): { label: string; ms: number }[] {
+    return [...DevStabilityHarness.#waitDurations].sort((a, b) => b.ms - a.ms).slice(0, limit);
+  }
+
   async replaceText(relativePath: string, search: string | RegExp, replacement: string): Promise<void> {
     const file = Bun.file(path.join(this.appDir, relativePath));
     const contents = await file.text();
@@ -519,13 +570,22 @@ export const dictionary = serviceDictionary(["en", "ko"])
   }
 
   async tryWaitForHttpText(text: string | RegExp, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<string | null> {
+    return DevStabilityHarness.#timed(`waitForHttpText ${String(text)}`, () => this.#pollHttpText(text, timeoutMs));
+  }
+
+  async #pollHttpText(text: string | RegExp, timeoutMs: number): Promise<string | null> {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
       // Re-resolved every poll rather than once up front. A dev-host restart re-runs `getDevPort()` and can
       // bind a different port, and quietly polling a port nobody listens on for the rest of the budget is
       // indistinguishable from a page that never updated — it cost 60s and a misleading failure.
       const port = await this.resolvePort();
-      const body = await fetch(`http://127.0.0.1:${port}/`)
+      // Bounded per request, because the deadline above is only checked *between* iterations. A dev server
+      // mid-recovery accepts the connection and then never answers, so an unbounded `fetch` parks here for
+      // as long as the peer likes: measured 225561ms against this method's own 60000ms budget, which then
+      // ate the whole 180s test timeout and reported "this test timed out" with no other information.
+      const budget = Math.max(250, Math.min(5_000, timeoutMs - (Date.now() - started)));
+      const body = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(budget) })
         .then((res) => res.text())
         .catch(() => null);
       this.#lastHttpProbe = { port, body };
