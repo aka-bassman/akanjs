@@ -95,6 +95,91 @@ describe("IncrementalBuilderHost", () => {
     host.stop();
   });
 
+  test("fails the requests a departing builder never answered", async () => {
+    const spawns = mockSpawns();
+    const messages: unknown[] = [];
+    const host = new IncrementalBuilderHost({
+      app: { cwdPath: "/tmp/app" } as never,
+      entry: "/tmp/builder.ts",
+      env: {},
+      onMessage: (message) => messages.push(message),
+    });
+
+    host.start();
+    spawns[0]?.options.ipc?.({ type: "builder-ready" });
+    expect(host.send({ type: "build-route", id: 1, routeId: "a", seeds: [], knownEntries: [] })).toBe(true);
+    expect(host.send({ type: "build-csr", id: 2, reason: "device webview" })).toBe(true);
+    // Answered before the exit, so this one must not be failed again afterwards.
+    expect(host.send({ type: "build-route", id: 3, routeId: "c", seeds: [], knownEntries: [] })).toBe(true);
+    spawns[0]?.options.ipc?.({ type: "build-route-res", id: 3, ok: true, data: { routeId: "c" } });
+    messages.length = 0;
+
+    host.recycle("rss=1300MiB>=1200MiB after 3 build(s)");
+    spawns[0]?.options.onExit?.();
+
+    // Nothing else answers these: the builder only refuses requests that arrive after it starts shutting
+    // down, and a kill or a truncated write sends nothing at all.
+    expect(messages).toEqual([
+      {
+        type: "build-route-res",
+        id: 1,
+        ok: false,
+        error: "builder exited to release bundler memory before answering; reload to retry",
+      },
+      {
+        type: "build-csr-res",
+        id: 2,
+        ok: false,
+        error: "builder exited to release bundler memory before answering; reload to retry",
+      },
+    ]);
+
+    // The replacement owes nothing, so its own exit stays quiet.
+    spawns[1]?.options.ipc?.({ type: "builder-ready" });
+    messages.length = 0;
+    spawns[1]?.options.onExit?.();
+    expect(messages).toEqual([]);
+    await wait(1_050);
+
+    host.stop();
+  });
+
+  test("names a crash rather than a recycle, and answers on stop too", async () => {
+    const spawns = mockSpawns();
+    const messages: unknown[] = [];
+    const host = new IncrementalBuilderHost({
+      app: { cwdPath: "/tmp/app" } as never,
+      entry: "/tmp/builder.ts",
+      env: {},
+      onMessage: (message) => messages.push(message),
+    });
+
+    host.start();
+    spawns[0]?.options.ipc?.({ type: "builder-ready" });
+    host.send({ type: "build-route", id: 1, routeId: "a", seeds: [], knownEntries: [] });
+    messages.length = 0;
+    spawns[0]?.options.onExit?.();
+    expect(messages).toEqual([
+      {
+        type: "build-route-res",
+        id: 1,
+        ok: false,
+        error: "builder exited unexpectedly before answering; reload once it is back",
+      },
+    ]);
+
+    // `stop()` clears the process before its exit callback runs, so the callback bails on its identity
+    // check and cannot be the only place this happens.
+    await wait(1_050);
+    spawns[1]?.options.ipc?.({ type: "builder-ready" });
+    messages.length = 0;
+    expect(host.send({ type: "build-route", id: 2, routeId: "b", seeds: [], knownEntries: [] })).toBe(true);
+    host.stop();
+    expect(messages).toEqual([
+      { type: "build-route-res", id: 2, ok: false, error: "builder was stopped before answering" },
+    ]);
+  });
+
   test("only recycles a builder that is ready", () => {
     const spawns = mockSpawns();
     const host = new IncrementalBuilderHost({

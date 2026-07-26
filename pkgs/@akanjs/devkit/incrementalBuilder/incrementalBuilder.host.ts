@@ -61,6 +61,17 @@ export class IncrementalBuilderHost {
   #recycleRequested: boolean = false;
   #spawnAfterRecycle: boolean = false;
   #manualStop = false;
+  /**
+   * Requests handed to the running builder that it has not answered yet, keyed by the backend's
+   * correlation id.
+   *
+   * Nothing else answers a request whose builder exits while holding it: the builder only refuses
+   * requests that arrive *after* it starts shutting down, a kill or crash sends nothing at all, and even
+   * a clean drain races its own `process.exit`. The builder exits routinely — it is recycled whenever its
+   * RSS passes the ceiling — so a page request that happened to be mid route-build left the backend's
+   * promise pending and the browser tab spinning with no error and nothing to retry.
+   */
+  readonly #inFlight = new Map<number, "build-route" | "build-csr">();
   #startOptions: IncrementalBuilderStartOptions = {};
   constructor({ app, entry, env, onMessage }: IncrementalBuilderHostOptions) {
     this.app = app;
@@ -102,6 +113,7 @@ export class IncrementalBuilderHost {
       ipc: (msg: BuilderMessage) => {
         if (this.#proc !== proc) return;
         if (!msg || typeof msg !== "object") return;
+        if (msg.type === "build-route-res" || msg.type === "build-csr-res") this.#inFlight.delete(msg.id);
         if (builderMsgTypeSet.has(msg.type)) this.#onMessage(msg);
         if (msg.type === "builder-ready" && !this.ready) {
           this.ready = true;
@@ -119,6 +131,11 @@ export class IncrementalBuilderHost {
         const wasRecycle = this.#recycleRequested;
         this.#clearRecycle();
         this.ready = false;
+        this.#failInFlight(
+          wasRecycle
+            ? "builder exited to release bundler memory before answering; reload to retry"
+            : "builder exited unexpectedly before answering; reload once it is back",
+        );
         if (this.#manualStop || this.#status === "stopped") return;
         if (!wasReady) {
           this.#status = "stopped";
@@ -203,6 +220,7 @@ export class IncrementalBuilderHost {
     }
     try {
       this.#proc.send(message);
+      if (message.type === "build-route" || message.type === "build-csr") this.#inFlight.set(message.id, message.type);
       return true;
     } catch (error) {
       this.logger.warn(
@@ -211,9 +229,24 @@ export class IncrementalBuilderHost {
       return false;
     }
   }
+  /**
+   * Answer every request the departing builder still owed, as if it had failed them itself. `onExit`
+   * cannot do this alone: `stop()` clears `#proc` first, so the exit callback bails on its identity check.
+   */
+  #failInFlight(reason: string): void {
+    if (!this.#inFlight.size) return;
+    const lost = [...this.#inFlight];
+    this.#inFlight.clear();
+    this.logger.warn(`failing ${lost.length} unanswered builder request(s): ${reason}`);
+    for (const [id, type] of lost) {
+      if (type === "build-route") this.#onMessage({ type: "build-route-res", id, ok: false, error: reason });
+      else this.#onMessage({ type: "build-csr-res", id, ok: false, error: reason });
+    }
+  }
   stop() {
     this.#manualStop = true;
     this.#clearRecycle();
+    this.#failInFlight("builder was stopped before answering");
     if (this.#restartTimer) {
       clearTimeout(this.#restartTimer);
       this.#restartTimer = null;

@@ -19,7 +19,6 @@ import { Logger } from "akanjs/common";
 import type {
   BaseBuildArtifact,
   BuilderCsrReq,
-  BuilderCsrRes,
   BuilderMessage,
   BuilderReq,
   BuilderRes,
@@ -28,6 +27,7 @@ import type {
 } from "akanjs/server";
 import type { BuildBatchNeed, BuildBatchRequest, BuildBatchResult, OptimizedFonts } from "./buildBatchProtocol";
 import { BuildBatchRunner } from "./buildBatchRunner";
+import { BuilderReply } from "./builderReply";
 import { prepareDevWatchBatch } from "./devWatchBatch";
 
 interface IncrementalBuilderOptions {
@@ -83,8 +83,14 @@ class IncrementalBuilder {
     return `${this.#app.cwdPath}/.akan/artifact`;
   }
 
-  async handleBuildRoute(msg: BuilderReq): Promise<BuilderRes> {
-    return this.#enqueueWork(`build-route:${msg.routeId}`, async () => this.#handleBuildRoute(msg));
+  /**
+   * Build a route and answer it. The reply is part of the work item on purpose: `shutdown` drains the
+   * work queue before exiting, so folding the flush in here is what makes "drained" mean "answered".
+   */
+  async handleBuildRoute(msg: BuilderReq): Promise<void> {
+    await this.#enqueueWork(`build-route:${msg.routeId}`, async () =>
+      BuilderReply.send(await this.#handleBuildRoute(msg)),
+    );
   }
 
   async #handleBuildRoute(msg: BuilderReq): Promise<BuilderRes> {
@@ -466,8 +472,8 @@ class IncrementalBuilder {
    * dev server only serves CSR through the opt-in `/__csr` and `?csr=true` routes — mobile local dev
    * points a device WebView at the latter — so nothing needs the artifact until one of them is hit.
    */
-  async handleBuildCsr(msg: BuilderCsrReq): Promise<BuilderCsrRes> {
-    return this.#enqueueWork("build-csr", async (): Promise<BuilderCsrRes> => {
+  async handleBuildCsr(msg: BuilderCsrReq): Promise<void> {
+    await this.#enqueueWork("build-csr", async (): Promise<void> => {
       const started = Date.now();
       // Messages are not relayed: an on-demand CSR build is a request/response, and the phase board
       // never carried a csr status for it before. The error travels in the response below.
@@ -477,11 +483,12 @@ class IncrementalBuilder {
       const error = result.errors.csr;
       if (error) {
         this.#logger.error(`csr-build failed: ${error}`);
-        return { type: "build-csr-res", id: msg.id, ok: false, error };
+        await BuilderReply.send({ type: "build-csr-res", id: msg.id, ok: false, error });
+        return;
       }
       this.#csrActive = true;
       this.#logger.info(`csr-build ok on demand (${Date.now() - started}ms); rebuilding CSR on every save now`);
-      return { type: "build-csr-res", id: msg.id, ok: true };
+      await BuilderReply.send({ type: "build-csr-res", id: msg.id, ok: true });
     });
   }
 
@@ -598,7 +605,7 @@ class IncrementalBuilder {
           process.send?.({ type: "build-route-res", id: msg.id, ok: false, error });
           return;
         }
-        void builder.handleBuildRoute(msg).then((res) => process.send?.(res));
+        void builder.handleBuildRoute(msg);
         return;
       }
       if (msg.type === "build-csr") {
@@ -607,7 +614,7 @@ class IncrementalBuilder {
           process.send?.({ type: "build-csr-res", id: msg.id, ok: false, error });
           return;
         }
-        void builder.handleBuildCsr(msg).then((res) => process.send?.(res));
+        void builder.handleBuildCsr(msg);
       }
     });
     // The IPC channel closes when the dev host dies (including SIGKILL); exit instead of running
