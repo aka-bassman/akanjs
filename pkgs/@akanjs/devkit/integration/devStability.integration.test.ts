@@ -680,6 +680,50 @@ describe("dev resource budgets", () => {
     await host.waitForLogSince(start, /ceiling cannot be met for this app/, WAIT_MS);
   });
 
+  // The guard the memory work did not have. Every budget above asserts RSS; none of them asserts that a
+  // page still renders while the machinery those budgets require is mid-swap — and that gap is where two
+  // shipped defects lived (`local/optimize-resource/19-shutdown-and-restart-races.md`).
+  budgetTest("serves a page requested while the builder is being replaced", async () => {
+    const harness = await createHarness();
+    // Same unmeetable ceiling as the guard above, for the same reason: a builder that no longer grows
+    // into a ceiling has to start under one for the recycle path to run end to end.
+    const host = await harness.startHost({ timeoutMs: BOOT_MS, env: { AKAN_BUILDER_MAX_RSS_MB: "200" } });
+    const port = await harness.resolvePort();
+    await harness.waitForHttpText("initial-client-marker", WAIT_MS);
+
+    const start = host.markLog();
+    // One save does both halves of the setup: it drops the route's client entries, so the next request
+    // has to ask the builder again rather than being served from cache, and it makes the builder report
+    // an rss over the ceiling, which is what arms the recycle.
+    const { mark } = await harness.editUntilSeen(host, (attempt) =>
+      harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-through-recycle-${attempt}`),
+    );
+    await host.waitForLogSince(mark, /pages-rebundle ok/, WAIT_MS);
+
+    // Wait until the replacement exists but is still doing its boot build. From here it cannot answer
+    // anything for seconds — which is exactly the window a developer's reload lands in, and the point of
+    // anchoring on the spawn rather than on the exit: the gap after it is wide and known, not a race.
+    await host.waitForLogSince(start, /exiting for recycle/, WAIT_MS);
+    await host.waitForLogSince(start, /builder spawned pid=\d+ .*restart=1/, WAIT_MS);
+
+    const holdMark = host.markLog();
+    const startedAtMono = performance.now();
+    const res = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(WAIT_MS) });
+    const html = await res.text();
+    const heldMs = Math.round(performance.now() - startedAtMono);
+
+    // What the developer sees, asserted first because it is the whole point: with the hold removed this
+    // same request is answered **500** by the dev error page, and nothing retries on its own — the tab
+    // stays broken until it is reloaded by hand. Measured both ways before this guard was committed.
+    expect(res.status).toBe(200);
+    expect(html).toContain("marker-through-recycle");
+    expect(html).not.toContain("reload after the builder is ready");
+    // And this is what stops the test passing having tested nothing: a request that arrives after the
+    // replacement is already ready never reaches the path under test, and everything above holds anyway.
+    expect(host.logs.join("").slice(holdMark)).toMatch(/holding build-route until the builder is ready/);
+    console.info(`[restart-guard] page held ${heldMs}ms across the recycle, then rendered`);
+  });
+
   budgetTest("suspends the builder when the dev server goes idle and wakes it on the next edit", async () => {
     const harness = await createHarness();
     // 3s stands in for the 5min default: the machinery is the same, and the guard needs the dev server
@@ -739,7 +783,10 @@ describe("dev resource budgets", () => {
       .catch(() => 0);
 
     await host.waitForLogSince(mark, /\[idle-suspend\] waking \(build-csr arrived while suspended\)/, WAIT_MS);
-    await host.waitForLogSince(mark, /\[idle-suspend\] replaying 1 request\(s\) held during the wake/, WAIT_MS);
+    // `[builder]`, not `[idle-suspend]`: the same queue now also holds requests across a builder restart,
+    // so the replay says what it did rather than which of the two reasons put the request there. The wake
+    // line above is what distinguishes them, and it is asserted first for that reason.
+    await host.waitForLogSince(mark, /\[builder\] replaying 1 request\(s\) held while the builder was away/, WAIT_MS);
     expect(status).toBe(200);
     expect(await DevStabilityHarness.builderProcess(host.proc.pid)).not.toBeNull();
   });
