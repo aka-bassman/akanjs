@@ -21,7 +21,7 @@ interface IncrementalBuilderHostOptions {
   onMessage: (message: BuilderMessage) => void;
 }
 
-type IncrementalBuilderStatus = "starting" | "ready" | "restarting" | "stopped";
+export type IncrementalBuilderStatus = "starting" | "ready" | "restarting" | "stopped";
 
 interface IncrementalBuilderStartOptions {
   onExit?: () => void;

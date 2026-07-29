@@ -23,6 +23,7 @@ import {
   resolveIdleSuspendMs,
   shouldAbandonBackendRecovery,
   shouldAbandonBuilderRssCeiling,
+  shouldHoldForReturningBuilder,
   shouldMarkBuildPhaseRecovered,
   shouldQueueBuildStatusReplay,
   shouldRefreshConfigOnIdleWake,
@@ -153,6 +154,22 @@ describe("last-good frontend helpers", () => {
 
   test("rejects stale successful pages payloads", () => {
     expect(shouldReplaceLastGoodMessage(pagesUpdated(11, 2), pagesUpdated(10, 1))).toBe(false);
+  });
+});
+
+describe("holding requests for a returning builder", () => {
+  test("holds while the builder is on its way back", () => {
+    expect(shouldHoldForReturningBuilder({ status: "restarting", heldCount: 0 })).toBe(true);
+    expect(shouldHoldForReturningBuilder({ status: "starting", heldCount: 3 })).toBe(true);
+  });
+
+  test("fails immediately when nothing is bringing the builder back", () => {
+    expect(shouldHoldForReturningBuilder({ status: "stopped", heldCount: 0 })).toBe(false);
+  });
+
+  test("stops holding once the queue is full", () => {
+    expect(shouldHoldForReturningBuilder({ status: "restarting", heldCount: 3, limit: 4 })).toBe(true);
+    expect(shouldHoldForReturningBuilder({ status: "restarting", heldCount: 4, limit: 4 })).toBe(false);
   });
 });
 

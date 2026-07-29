@@ -17,7 +17,7 @@ import { WorkspaceExecutor } from "../executors";
 // tailwind stack, which is exactly what a suspended dev host must not be holding.
 import { HmrWatcher } from "../frontendBuild/hmrWatcher";
 import { WatchRootResolver } from "../frontendBuild/watchRootResolver";
-import { IncrementalBuilderHost } from "../incrementalBuilder";
+import { IncrementalBuilderHost, type IncrementalBuilderStatus } from "../incrementalBuilder";
 import { BuilderRequestRouter } from "../incrementalBuilder/builderRequestRouter";
 
 const backendMsgTypeSet = new Set<BuilderMessage["type"]>(["build-route", "build-csr"]);
@@ -332,6 +332,23 @@ export const shouldRefreshConfigOnIdleWake = (batch: ChangeBatch | null): boolea
   !!batch && batch.kinds.has("config");
 
 /**
+ * Whether a request that arrived while the builder was away should wait for the one coming back.
+ *
+ * A recycle or a crash-restart is a gap, not a failure — the request that lands in it is the page a
+ * developer is waiting on. A stopped builder is a different thing: nothing is bringing it back, so
+ * waiting would only delay the error.
+ */
+export const shouldHoldForReturningBuilder = ({
+  status,
+  heldCount,
+  limit = HELD_BUILDER_REQUEST_LIMIT,
+}: {
+  status: IncrementalBuilderStatus;
+  heldCount: number;
+  limit?: number;
+}): boolean => (status === "starting" || status === "restarting") && heldCount < limit;
+
+/**
  * A builder whose fresh boot already exceeds the ceiling reports `too-soon` after every recycle and
  * would be replaced forever without ever getting under it. After this many recycles bought no relief
  * the host stops enforcing the ceiling and says so, rather than looping.
@@ -608,6 +625,8 @@ export class AkanAppHost {
       clearTimeout(this.#builderRecoveryTimer);
       this.#builderRecoveryTimer = null;
     }
+    // Before the backend goes away, while it can still receive the answer.
+    this.#failPendingBuilderMessages("dev server is shutting down");
     await this.#stopBackend();
     this.#stopBuilder();
     return this;
@@ -1200,14 +1219,11 @@ export class AkanAppHost {
     for (const message of pending) this.#sendToBuilder(message);
   }
 
-  /** Whether the request could be held for the returning builder, or has to be failed after all. */
-  #holdUntilBuilderReady(message: BuilderMessage): boolean {
-    if (this.#pendingBuilderMessages.length >= HELD_BUILDER_REQUEST_LIMIT) return false;
+  #holdUntilBuilderReady(message: BuilderMessage): void {
     this.#pendingBuilderMessages.push(message);
     this.logger.verbose(
       `[builder] holding ${message.type} until the builder is ready (${this.#pendingBuilderMessages.length} waiting)`,
     );
-    return true;
   }
 
   /**
@@ -1524,6 +1540,8 @@ export class AkanAppHost {
         this.app.verbose(`[cli] builder failed before ready; retrying (${attempt + 1}/${BUILDER_START_MAX_ATTEMPTS})`);
       }
     }
+    // Out of attempts: no builder is coming, so anything held for one is waiting on nothing.
+    this.#failPendingBuilderMessages("builder failed to start");
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
   #waitForBuilderReady(
@@ -1588,7 +1606,10 @@ export class AkanAppHost {
     // produced a dead tab telling the reader to reload, with nothing retrying on its own — while the
     // suspend path a few lines up has always held requests for exactly this reason. `BuilderRpc`'s own
     // timeout still bounds the wait, so holding cannot hang a request forever.
-    if ((status === "starting" || status === "restarting") && this.#holdUntilBuilderReady(message)) return;
+    if (shouldHoldForReturningBuilder({ status, heldCount: this.#pendingBuilderMessages.length })) {
+      this.#holdUntilBuilderReady(message);
+      return;
+    }
     if (message.type === "build-route") {
       this.#sendToBackend({
         type: "build-route-res",
