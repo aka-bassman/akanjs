@@ -36,6 +36,44 @@ export class CssCompiler {
 
   #cssText: string | null = null;
   #cssTextByBasePath: Record<string, string> | null = null;
+  /**
+   * Import resolution memoised for the life of one compiler, which is one rebuild.
+   *
+   * The discovery BFS resolves the same specifier from every directory that imports it, and each miss
+   * costs up to 13 sequential `exists()` calls — the bare path, six extensions, six `index.*`. Nothing
+   * here outlives the rebuild, so there is no invalidation to get wrong.
+   */
+  #fileExistsCache = new Map<string, Promise<boolean>>();
+  #resolvedFileCache = new Map<string, Promise<string | null>>();
+  #resolvedSpecifierCache = new Map<string, Promise<string | null>>();
+
+  #fileExists(absPath: string): Promise<boolean> {
+    let cached = this.#fileExistsCache.get(absPath);
+    if (!cached) {
+      cached = Bun.file(absPath).exists();
+      this.#fileExistsCache.set(absPath, cached);
+    }
+    return cached;
+  }
+
+  #resolveSourceFileCandidate(absPathNoExt: string): Promise<string | null> {
+    let cached = this.#resolvedFileCache.get(absPathNoExt);
+    if (cached) return cached;
+    cached = (async () => {
+      if (await this.#fileExists(absPathNoExt)) return isSourceFile(absPathNoExt) ? absPathNoExt : null;
+      for (const ext of SOURCE_EXTS) {
+        const filePath = `${absPathNoExt}${ext}`;
+        if (await this.#fileExists(filePath)) return filePath;
+      }
+      for (const ext of SOURCE_EXTS) {
+        const filePath = path.join(absPathNoExt, `index${ext}`);
+        if (await this.#fileExists(filePath)) return filePath;
+      }
+      return null;
+    })();
+    this.#resolvedFileCache.set(absPathNoExt, cached);
+    return cached;
+  }
   async getCss({ refresh }: { refresh?: boolean } = {}) {
     if (this.#cssText !== null && !refresh) return this.#cssText;
     const { cssPaths, sourcePaths } = await this.discoverCssAndSources({ refresh });
@@ -206,14 +244,31 @@ export class CssCompiler {
     const mod = await import(p);
     return { path: p, base: path.dirname(p), module: mod.default ?? mod };
   }
-  async #resolveSourceImport(
+  #resolveSourceImport(
+    id: string,
+    fromBase: string,
+    resolvePackage: Awaited<ReturnType<typeof createTsconfigPackageResolver>>,
+  ): Promise<string | null> {
+    // Keyed by importer directory even for bare specifiers: the tsconfig resolver is
+    // directory-independent, but the `Bun.resolveSync` / `require.resolve` fallbacks below are not.
+    // The expensive part — the `exists()` probes — is deduplicated by absolute path instead, which is
+    // shared across every importer.
+    const cacheKey = `${fromBase}\0${id}`;
+    let cached = this.#resolvedSpecifierCache.get(cacheKey);
+    if (cached) return cached;
+    cached = this.#resolveSourceImportUncached(id, fromBase, resolvePackage);
+    this.#resolvedSpecifierCache.set(cacheKey, cached);
+    return cached;
+  }
+
+  async #resolveSourceImportUncached(
     id: string,
     fromBase: string,
     resolvePackage: Awaited<ReturnType<typeof createTsconfigPackageResolver>>,
   ): Promise<string | null> {
     if (id.startsWith(".") || id.startsWith("/")) {
       const abs = id.startsWith("/") ? id : path.resolve(fromBase, id);
-      return resolveSourceFileCandidate(abs);
+      return this.#resolveSourceFileCandidate(abs);
     }
 
     const pkg = await resolvePackage(id);
@@ -247,19 +302,6 @@ export class CssCompiler {
     this.#logger.verbose(`css candidate cache reused=${cache.reused} rescanned=${cache.rescanned}`);
     return [...candidates];
   }
-}
-
-async function resolveSourceFileCandidate(absPathNoExt: string): Promise<string | null> {
-  if (await Bun.file(absPathNoExt).exists()) return isSourceFile(absPathNoExt) ? absPathNoExt : null;
-  for (const ext of SOURCE_EXTS) {
-    const filePath = `${absPathNoExt}${ext}`;
-    if (await Bun.file(filePath).exists()) return filePath;
-  }
-  for (const ext of SOURCE_EXTS) {
-    const filePath = path.join(absPathNoExt, `index${ext}`);
-    if (await Bun.file(filePath).exists()) return filePath;
-  }
-  return null;
 }
 
 function resolveSourceWithBun(id: string, fromBase: string): string | null {
