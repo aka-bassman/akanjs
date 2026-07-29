@@ -968,11 +968,19 @@ export const dictionary = serviceDictionary(["en", "ko"])
   static readonly #psTimeoutMs = 5_000;
 
   static async #psRows(): Promise<Array<{ pid: number; ppid: number; rssKb: number; cmd: string }> | null> {
-    const proc = Bun.spawn(["ps", "-eo", "pid,ppid,rss,command"], {
-      stdout: "pipe",
-      stderr: "ignore",
-      stdin: "ignore",
-    });
+    let proc: Bun.Subprocess<"ignore", "pipe", "ignore">;
+    try {
+      proc = Bun.spawn(["ps", "-eo", "pid,ppid,rss,command"], {
+        stdout: "pipe",
+        stderr: "ignore",
+        stdin: "ignore",
+      });
+    } catch (error) {
+      // No `ps` at all — a slim container image such as `oven/bun` ships without procps. Same answer as
+      // a timeout, and for the same reason: this is "could not look", not "nothing is running".
+      console.warn(`[harness] could not run ps: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
     const output = await Promise.race([
       new Response(proc.stdout).text().catch(() => ""),
       wait(DevStabilityHarness.#psTimeoutMs).then(() => null),

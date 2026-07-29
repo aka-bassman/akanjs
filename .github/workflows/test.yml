@@ -25,25 +25,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The OS per package is measured, not assumed — all three suites were run on macOS arm64 and
-        # in a 2-vCPU `oven/bun:1.3.14` container before this matrix was written.
-        include:
-          - package: pkgs/akanjs # 630 pass on both
-            os: ubuntu-latest
-          - package: pkgs/@akanjs/cli # 157 pass on both
-            os: ubuntu-latest
-          # devkit is 303 pass on macOS and 5 fail on Linux, none of them a product regression:
-          #   - the harness fixture sweep shells out to `ps`, absent from the bun image;
-          #   - `IncrementalBuilderHost.maxRssBytes` asserts the 1200MiB dev default, but any cgroup
-          #     limit makes `MemoryLimit` derive 35 % of it instead (2.45 GiB under `--memory=7g`);
-          #   - `SourceMtimeIndex` misses a created directory on overlayfs, which does not bump the
-          #     parent directory's mtime;
-          #   - `BuilderChannel`'s deliberate loss *controls* pass a 1 MB ipc message through on
-          #     Linux, because the truncation they document is macOS-specific.
-          # Three of those are environment assumptions in the tests. Until they are fixed, run the
-          # suite where its assumptions hold rather than baselining failures.
-          - package: pkgs/@akanjs/devkit
-            os: macos-latest
+        # Every suite runs on Linux, which is what the fleet runs. devkit used to be pinned to macOS
+        # because five of its tests failed in a 2-vCPU `oven/bun:1.3.14` container; four were
+        # assumptions about the runner rather than product behaviour and are now fixed or skipped
+        # where they do not apply, and the fifth was a real defect in `SourceMtimeIndex`.
+        package:
+          - pkgs/akanjs
+          - pkgs/@akanjs/cli
+          - pkgs/@akanjs/devkit
+        os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2

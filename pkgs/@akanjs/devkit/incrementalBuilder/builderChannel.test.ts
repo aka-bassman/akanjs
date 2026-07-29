@@ -76,13 +76,22 @@ describe("BuilderChannel", () => {
     expect(await sendThenExit(200_000, { mode: "drain", payload: "css" })).toMatchObject([{ type: "css-updated" }]);
   });
 
-  test("without the flush wait the same messages are lost, which is why this class exists", async () => {
-    // Controls, not requirements: if a future bun flushes ipc writes on exit, these fail and say so.
-    expect(await sendThenExit(1_000_000, { mode: "bare", payload: "manifest" })).toEqual([]);
-    // 20KB of css, far below the 64KB the manifest shape survives — one long string dies much earlier,
-    // so no size threshold would have been safe to special-case.
-    expect(await sendThenExit(20_000, { mode: "bare", payload: "css" })).toEqual([]);
-  });
+  /**
+   * darwin only, measured: on Linux a 1MB message sent immediately before `process.exit` **arrives in
+   * full**, so the loss this control demonstrates does not reproduce there and the assertion would fail
+   * for the right reason on the wrong platform. `BuilderChannel` itself stays correct and costs nothing
+   * on Linux — the bug it prevents is one macOS developers hit and a Linux fleet does not.
+   */
+  test.skipIf(process.platform !== "darwin")(
+    "without the flush wait the same messages are lost, which is why this class exists",
+    async () => {
+      // Controls, not requirements: if a future bun flushes ipc writes on exit, these fail and say so.
+      expect(await sendThenExit(1_000_000, { mode: "bare", payload: "manifest" })).toEqual([]);
+      // 20KB of css, far below the 64KB the manifest shape survives — one long string dies much earlier,
+      // so no size threshold would have been safe to special-case.
+      expect(await sendThenExit(20_000, { mode: "bare", payload: "css" })).toEqual([]);
+    },
+  );
 
   test("drain resolves only once every tracked send has flushed", async () => {
     const send = process.send;

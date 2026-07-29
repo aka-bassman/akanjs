@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { MemoryLimit } from "akanjs/server/memoryLimit";
 import { IncrementalBuilderHost } from "./incrementalBuilder.host";
 
 const originalSpawn = Bun.spawn;
@@ -215,11 +216,31 @@ describe("IncrementalBuilderHost.maxRssBytes", () => {
     }
   };
 
-  test("defaults to a dev ceiling well above a fresh boot", () => {
+  /**
+   * Only where nothing else supplies a limit, which is not true in a container: a cgroup `memory.max`
+   * makes `resolveMaxRssBytes` derive from that instead. Measured under `docker --memory=7g`, this
+   * returned 2.45GiB rather than the fallback — the assertion was about the runner, not the code.
+   */
+  test.skipIf(MemoryLimit.readCgroupBytes() !== null)("defaults to a dev ceiling well above a fresh boot", () => {
     withEnv(
       { AKAN_BUILDER_MAX_RSS_MB: undefined, AKAN_BUILDER_MAX_RSS: undefined, AKAN_MEMORY_LIMIT: undefined },
       () => {
         expect(IncrementalBuilderHost.maxRssBytes()).toBe(1_200 * 1024 * 1024);
+      },
+    );
+  });
+
+  test("derives the ceiling from the sandbox's own limit, wherever it runs", () => {
+    // The property the fallback test cannot assert in a container, stated so it holds on every runner:
+    // the builder gets 35% of whatever the sandbox is allowed.
+    withEnv(
+      {
+        AKAN_BUILDER_MAX_RSS_MB: undefined,
+        AKAN_BUILDER_MAX_RSS: undefined,
+        AKAN_MEMORY_LIMIT: String(4 * 1024 * 1024 * 1024),
+      },
+      () => {
+        expect(IncrementalBuilderHost.maxRssBytes()).toBe(Math.floor(4 * 1024 * 1024 * 1024 * 0.35));
       },
     );
   });
