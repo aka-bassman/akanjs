@@ -4,6 +4,7 @@ import { compile } from "tailwindcss";
 import type { App } from "../commandDecorators";
 import { BarrelAnalyzer } from "../transforms/barrelAnalyzer";
 import { createTsconfigPackageResolver, rewriteBarrelImports } from "../transforms/barrelImportsPlugin";
+import { CssCandidateCache } from "./cssCandidateCache";
 import { CssImportResolver } from "./cssImportResolver";
 
 const SOURCE_EXTS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"] as const;
@@ -23,6 +24,14 @@ export class CssCompiler {
   #cssImportResolver: CssImportResolver | null = null;
   constructor(app: App) {
     this.#app = app;
+  }
+
+  /**
+   * Beside the sources rather than in `dist`, because the cache is keyed on source mtimes: a build and
+   * the dev server describe the same files, so they should share it rather than each pay the first scan.
+   */
+  get #candidateCachePath() {
+    return path.join(this.#app.cwdPath, ".akan/cache/cssCandidates.json");
   }
 
   #cssText: string | null = null;
@@ -217,7 +226,6 @@ export class CssCompiler {
     return null;
   }
   async #scanCandidates(sourcePaths: string[], dirs: string[]): Promise<string[]> {
-    const CANDIDATE_RE = /-?[\w@][\w:/.-]*(?:\[[^\]]+\][\w:/.-]*)*/g;
     const candidates = new Set<string>();
     const glob = new Bun.Glob("**/*.{tsx,ts,jsx,js,html}");
     const files = new Set<string>(sourcePaths);
@@ -229,12 +237,14 @@ export class CssCompiler {
         }
       }),
     );
+    const cache = await new CssCandidateCache(this.#candidateCachePath).load();
     await Promise.all(
       [...files].map(async (file) => {
-        const content = await Bun.file(file).text();
-        for (const m of content.matchAll(CANDIDATE_RE)) candidates.add(m[0]);
+        for (const candidate of await cache.candidatesFor(file)) candidates.add(candidate);
       }),
     );
+    await cache.save(files);
+    this.#logger.verbose(`css candidate cache reused=${cache.reused} rescanned=${cache.rescanned}`);
     return [...candidates];
   }
 }
