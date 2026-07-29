@@ -1,0 +1,59 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Public, non-secret workspace identity. `WorkspaceExecutor.getBaseDevEnv` reads these from
+  # `process.env` and throws without them, which fails 8 cli tests that build temp workspaces.
+  # Locally they come from the gitignored root `.env`; a runner has no such file.
+  AKAN_PUBLIC_REPO_NAME: akanjs
+  AKAN_PUBLIC_SERVE_DOMAIN: akanjs.com
+  AKAN_PUBLIC_ENV: local
+
+jobs:
+  unit:
+    name: unit ${{ matrix.package }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # The OS per package is measured, not assumed — all three suites were run on macOS arm64 and
+        # in a 2-vCPU `oven/bun:1.3.14` container before this matrix was written.
+        include:
+          - package: pkgs/akanjs # 630 pass on both
+            os: ubuntu-latest
+          - package: pkgs/@akanjs/cli # 157 pass on both
+            os: ubuntu-latest
+          # devkit is 303 pass on macOS and 5 fail on Linux, none of them a product regression:
+          #   - the harness fixture sweep shells out to `ps`, absent from the bun image;
+          #   - `IncrementalBuilderHost.maxRssBytes` asserts the 1200MiB dev default, but any cgroup
+          #     limit makes `MemoryLimit` derive 35 % of it instead (2.45 GiB under `--memory=7g`);
+          #   - `SourceMtimeIndex` misses a created directory on overlayfs, which does not bump the
+          #     parent directory's mtime;
+          #   - `BuilderChannel`'s deliberate loss *controls* pass a 1 MB ipc message through on
+          #     Linux, because the truncation they document is macOS-specific.
+          # Three of those are environment assumptions in the tests. Until they are fixed, run the
+          # suite where its assumptions hold rather than baselining failures.
+          - package: pkgs/@akanjs/devkit
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Pinned: the dev-server work is calibrated against 1.3.14 behaviours
+          # (ipc flush-on-exit, recursive `fs.watch` event coalescing).
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      # `--isolate` is required. Without it every test file shares one global object and dozens
+      # fail from cross-file state pollution; `bunfig.toml`'s `[test] isolate` is not honoured as
+      # of Bun 1.3. Running `bun test` from the repo root additionally breaks subprocess stdio.
+      - run: bun test --isolate
+        working-directory: ${{ matrix.package }}

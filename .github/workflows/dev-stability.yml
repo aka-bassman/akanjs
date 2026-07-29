@@ -1,0 +1,40 @@
+name: dev-stability
+
+# The `devStability` integration block boots real `akan start` dev servers and asserts the
+# resource budgets, the builder recycle, idle suspend and HMR behaviour that
+# `local/optimize-resource/*` measured. Each test costs a full boot, so it runs nightly and
+# on demand rather than per PR.
+on:
+  schedule:
+    - cron: "0 17 * * *" # 02:00 KST
+  workflow_dispatch:
+
+jobs:
+  integration:
+    # macOS on purpose: every budget in this suite was calibrated on macOS arm64, where Bun's
+    # bundler arenas are never returned to the OS. Linux returns 46-59 % of them after ~10-15 s
+    # of idle (`09-linux-retention-measurement.md`), so the same thresholds do not mean the same
+    # thing there.
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      AKAN_DEV_STABILITY_INTEGRATION: "1"
+      AKAN_DEV_STABILITY_LOG_DIR: ${{ github.workspace }}/.dev-stability-logs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      # Absolute path on purpose: `bun test <relative-path>` is a substring filter, so a relative
+      # path also matches the copy of this file under `dist/`, which `bun run akan` regenerates.
+      - name: dev stability integration
+        working-directory: pkgs/@akanjs/devkit
+        run: bun test --isolate "${{ github.workspace }}/pkgs/@akanjs/devkit/integration/devStability.integration.test.ts"
+      - name: upload dev host logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-stability-logs
+          path: ${{ github.workspace }}/.dev-stability-logs
+          if-no-files-found: ignore
