@@ -31,6 +31,12 @@ const BACKEND_RECOVERY_MAX_ATTEMPTS = 5;
 const BACKEND_STDERR_TAIL_LIMIT = 40;
 const BUILDER_READY_TIMEOUT_MS = 150000;
 const BUILDER_START_MAX_ATTEMPTS = 3;
+/**
+ * How many requests may wait for a builder that is coming back. Generous — a page load asks for
+ * several routes — but finite, so a builder that never returns cannot grow this without bound. Past
+ * it, requests are failed as they were before, which is the behaviour this limit falls back to.
+ */
+const HELD_BUILDER_REQUEST_LIMIT = 64;
 // Save-on-keystroke arrives as a burst of batches. Recycling mid-burst would drop the watcher events
 // still on their way to the builder, so an over-ceiling builder is replaced only once it goes quiet.
 const BUILDER_RSS_RECYCLE_QUIET_MS = 750;
@@ -1190,8 +1196,34 @@ export class AkanAppHost {
   #flushPendingBuilderMessages(): void {
     const pending = this.#pendingBuilderMessages.splice(0);
     if (pending.length === 0) return;
-    this.logger.verbose(`[idle-suspend] replaying ${pending.length} request(s) held during the wake`);
+    this.logger.verbose(`[builder] replaying ${pending.length} request(s) held while the builder was away`);
     for (const message of pending) this.#sendToBuilder(message);
+  }
+
+  /** Whether the request could be held for the returning builder, or has to be failed after all. */
+  #holdUntilBuilderReady(message: BuilderMessage): boolean {
+    if (this.#pendingBuilderMessages.length >= HELD_BUILDER_REQUEST_LIMIT) return false;
+    this.#pendingBuilderMessages.push(message);
+    this.logger.verbose(
+      `[builder] holding ${message.type} until the builder is ready (${this.#pendingBuilderMessages.length} waiting)`,
+    );
+    return true;
+  }
+
+  /**
+   * Answer everything still waiting on a builder that is not coming back. Held requests are otherwise
+   * invisible to the backend, which would sit on them until its own timeout with no reason given.
+   */
+  #failPendingBuilderMessages(reason: string): void {
+    const held = this.#pendingBuilderMessages.splice(0);
+    if (held.length === 0) return;
+    this.logger.warn(`failing ${held.length} held builder request(s): ${reason}`);
+    for (const message of held) {
+      if (message.type === "build-route")
+        this.#sendToBackend({ type: "build-route-res", id: message.id, ok: false, error: reason });
+      else if (message.type === "build-csr")
+        this.#sendToBackend({ type: "build-csr-res", id: message.id, ok: false, error: reason });
+    }
   }
   #recycleBuilderForRss(reason: string): void {
     // A config or runtime-metadata change already replaces the builder along with the backend, and a
@@ -1517,10 +1549,12 @@ export class AkanAppHost {
         },
         onReady: () => {
           settle(resolve);
+          this.#flushPendingBuilderMessages();
         },
         onRestartReady: () => {
           this.logger.verbose("[builder-recovery] builder ready after restart; replaying latest state");
           this.#replayBuilderState();
+          this.#flushPendingBuilderMessages();
         },
       });
     });
@@ -1549,6 +1583,12 @@ export class AkanAppHost {
       this.#builderRequests.withdraw(outgoing.id);
     } else if (this.#builder?.send(message)) return;
     const status = this.#builder?.status ?? "stopped";
+    // A recycle or a crash-restart is a gap, not a failure: the builder is on its way back, and the
+    // request that landed in that window is the page a developer is waiting on. Failing it here is what
+    // produced a dead tab telling the reader to reload, with nothing retrying on its own — while the
+    // suspend path a few lines up has always held requests for exactly this reason. `BuilderRpc`'s own
+    // timeout still bounds the wait, so holding cannot hang a request forever.
+    if ((status === "starting" || status === "restarting") && this.#holdUntilBuilderReady(message)) return;
     if (message.type === "build-route") {
       this.#sendToBackend({
         type: "build-route-res",
