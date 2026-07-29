@@ -220,9 +220,12 @@
     "tailwind-scrollbar": "^4.0.2",
     "tailwindcss": "^4.3.0",
     "ua-parser-js": "^2.0.9",
+    "zod": "3.25.76",
     "zustand": "^5.0.13"
   },
   "patchedDependencies": {
-    "react-dom@19.2.7": "patches/react-dom@19.2.7.patch"
+    "react-dom@19.2.7": "patches/react-dom@19.2.7.patch",
+    "zod@3.25.76": "patches/zod@3.25.76.patch",
+    "zod@4.4.3": "patches/zod@4.4.3.patch"
   }
 }
