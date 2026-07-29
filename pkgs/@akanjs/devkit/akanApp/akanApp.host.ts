@@ -18,6 +18,7 @@ import { WorkspaceExecutor } from "../executors";
 import { HmrWatcher } from "../frontendBuild/hmrWatcher";
 import { WatchRootResolver } from "../frontendBuild/watchRootResolver";
 import { IncrementalBuilderHost } from "../incrementalBuilder";
+import { BuilderRequestRouter } from "../incrementalBuilder/builderRequestRouter";
 
 const backendMsgTypeSet = new Set<BuilderMessage["type"]>(["build-route", "build-csr"]);
 const BACKEND_RESTART_DEBOUNCE_MS = 120;
@@ -564,6 +565,7 @@ export class AkanAppHost {
   #suspendedChanges: ChangeBatch | null = null;
   /** Requests that arrived while suspended, answered by the builder that the wake brings up. */
   #pendingBuilderMessages: BuilderMessage[] = [];
+  readonly #builderRequests = new BuilderRequestRouter();
   constructor(
     private readonly app: App,
     { env, withInk = false }: { env: Record<string, string>; withInk?: boolean },
@@ -614,6 +616,9 @@ export class AkanAppHost {
     return await createTunnel(type, { app: this.app, environment });
   }
   #startBackend(startStatus: { generation?: number; files: string[] } | null = null) {
+    // Before the spawn: from here on, a builder answer for the departing backend must not be delivered to
+    // this one, which numbers its requests from 1 all over again.
+    this.#builderRequests.startGeneration();
     this.#backendStartStatus = startStatus;
     this.#backendGaveUp = false;
     this.#setBackendLifecycleState("starting");
@@ -873,6 +878,15 @@ export class AkanAppHost {
     }
     if (message.type === "invalidate") {
       await this.#handleInvalidate(message);
+      return;
+    }
+    if (message.type === "build-route-res" || message.type === "build-csr-res") {
+      const answer = this.#builderRequests.settle(message);
+      if (!answer) {
+        this.logger.verbose(`[builder] dropped a ${message.type} no live backend is waiting for (id=${message.id})`);
+        return;
+      }
+      this.#sendToBackend(answer);
       return;
     }
     this.#sendToBackend(message);
@@ -1527,7 +1541,13 @@ export class AkanAppHost {
       Object.assign(this.env, { AKAN_DEV_CSR_REBUILD: "1" });
       this.logger.verbose(`[csr] armed dev CSR rebuilds (${message.reason})`);
     }
-    if (this.#builder?.send(message)) return;
+    // Renumbered on the way out so a builder answer can be matched back to the backend generation that
+    // asked; the failure replies below still use `message.id`, which is that backend's own.
+    if (message.type === "build-route" || message.type === "build-csr") {
+      const outgoing = this.#builderRequests.issue(message);
+      if (this.#builder?.send(outgoing)) return;
+      this.#builderRequests.withdraw(outgoing.id);
+    } else if (this.#builder?.send(message)) return;
     const status = this.#builder?.status ?? "stopped";
     if (message.type === "build-route") {
       this.#sendToBackend({
