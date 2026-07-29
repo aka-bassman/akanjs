@@ -1,19 +1,19 @@
 import path from "node:path";
-// Subpath imports only: the `@akanjs/devkit` root barrel re-exports all 41 modules, which would drag
-// @trapezedev/project, the @langchain stack, ssh2, ink and the cloud stack into the builder process.
+// Module paths, never a barrel. The `@akanjs/devkit` root re-exports all 41 modules, which would drag
+// @trapezedev/project, the @langchain stack, ssh2, ink and the cloud stack in; and `frontendBuild`'s own
+// barrel reaches `cssCompiler`/`ssrBaseArtifactBuilder`, which pull tailwindcss + @tailwindcss/node
+// (~40MB) into a process that then holds them for the whole dev session. Phase 2 moved css compilation
+// into the batch worker, so this process has no use for them — `entryModuleGraph.test.ts` keeps it that way.
 import type { App } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, WorkspaceExecutor } from "@akanjs/devkit/executors";
-import {
-  AutoImportSync,
-  type ChangeBatch,
-  type ClientEntryDiscovery,
-  DevChangePlanner,
-  DevGeneratedIndexSync,
-  GraphClientEntryDiscovery,
-  HmrWatcher,
-  RouteClientBuilder,
-  WatchRootResolver,
-} from "@akanjs/devkit/frontendBuild";
+import { AutoImportSync } from "@akanjs/devkit/frontendBuild/autoImportSync";
+import type { ClientEntryDiscovery } from "@akanjs/devkit/frontendBuild/clientBuildTypes";
+import { GraphClientEntryDiscovery } from "@akanjs/devkit/frontendBuild/clientEntryDiscovery";
+import { DevChangePlanner } from "@akanjs/devkit/frontendBuild/devChangePlanner";
+import { DevGeneratedIndexSync } from "@akanjs/devkit/frontendBuild/devGeneratedIndexSync";
+import { HmrWatcher } from "@akanjs/devkit/frontendBuild/hmrWatcher";
+import { RouteClientBuilder } from "@akanjs/devkit/frontendBuild/routeClientBuilder";
+import { WatchRootResolver } from "@akanjs/devkit/frontendBuild/watchRootResolver";
 import { Logger } from "akanjs/common";
 import type {
   BaseBuildArtifact,
@@ -23,6 +23,7 @@ import type {
   BuilderRes,
   BuildPhase,
   BuildRouteResultPayload,
+  ChangeBatch,
 } from "akanjs/server";
 import type { BuildBatchNeed, BuildBatchRequest, BuildBatchResult, OptimizedFonts } from "./buildBatchProtocol";
 import { BuildBatchRunner } from "./buildBatchRunner";

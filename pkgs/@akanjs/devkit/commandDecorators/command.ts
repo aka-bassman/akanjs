@@ -1,5 +1,5 @@
 import path from "node:path";
-import { confirm, input, select } from "@inquirer/prompts";
+import type { confirm as inquirerConfirm, input as inquirerInput, select as inquirerSelect } from "@inquirer/prompts";
 import { Logger } from "akanjs/common";
 import chalk from "chalk";
 import { type Command, program } from "commander";
@@ -88,6 +88,21 @@ const normalizeEnumChoices = (enumChoices: EnumChoices) =>
       ? { value: choice.value, name: choice.label }
       : { value: choice, name: choice.toString() },
   );
+
+/**
+ * The interactive prompt stack, loaded on the first prompt instead of at import.
+ *
+ * `runCommands` lives in this module, so a static import put `@inquirer/prompts` (~24MB) in the CLI
+ * entry's chunk closure — and `akan start` holds that process for the whole dev session while never
+ * asking a question, because every argument it needs is already on the command line.
+ *
+ * The wrappers are typed from the real prompts so no call site changes, and `import type` leaves no
+ * runtime edge for the bundler to follow (`entryModuleGraph.test.ts` asserts that).
+ */
+const prompts = async () => await import("@inquirer/prompts");
+const select = ((config, context) => prompts().then((m) => m.select(config, context))) as typeof inquirerSelect;
+const confirm = ((config, context) => prompts().then((m) => m.confirm(config, context))) as typeof inquirerConfirm;
+const input = ((config, context) => prompts().then((m) => m.input(config, context))) as typeof inquirerInput;
 
 const resolveEnumChoices = async (argMeta: ArgMeta, context: CommandContext) => {
   const enumChoices = argMeta.argsOption.enum;
