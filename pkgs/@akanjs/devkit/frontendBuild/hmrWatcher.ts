@@ -264,10 +264,16 @@ export class HmrWatcher {
    * Terminates rather than looping: a scan that finds nothing schedules nothing, and the build writes its
    * artifacts under `.akan/` — which the classifier ignores — while codegen writes are content-guarded,
    * so a rebuild does not move a tracked mtime.
+   *
+   * The one case that does schedule another is a directory the index could not date reliably (Linux stamps
+   * directory mtimes on a 1ms clock, see `SourceMtimeIndex`). That still terminates: the next scan is
+   * `verifyDelayMs` later, by which point the timestamp has settled unless something is writing to that
+   * directory right now — in which case looking again is the right answer anyway.
    */
   async #verify(): Promise<void> {
     if (this.#stopped || this.#flushing) return;
     await this.#mergeDetectedChanges();
     if (this.#pending.size > 0) await this.#drain();
+    else if (this.#index.hasUnsettledDirs) this.#scheduleVerify();
   }
 }

@@ -17,6 +17,12 @@ const UNREADABLE = Number.NaN;
 export interface SourceMtimeIndexOptions {
   roots: string[];
   classifier?: HmrChangeClassifier;
+  /**
+   * How close to "now" a directory's mtime may be before this scan's reading of it is treated as
+   * possibly stale. Raise it for a filesystem whose timestamps are coarser than the 1ms Linux stamps
+   * directories with — some network mounts stamp whole seconds.
+   */
+  dirSettleMs?: number;
 }
 
 /**
@@ -32,20 +38,41 @@ export interface SourceMtimeIndexOptions {
  * Re-stating the tracked set costs ~15ms against ~1300 source files here, where a fresh walk costs
  * ~70ms — the walk has to visit ~40k entries (`ios/`, `android/`, `public/`) to find those 1300. So
  * changes are found by re-stating known files plus re-reading only the directories whose own mtime
- * moved, which is what adding or removing an entry bumps.
+ * moved, which is what adding or removing an entry bumps — with one exception for the window in which
+ * that mtime cannot be trusted, see `#defaultDirSettleMs`.
  */
 export class SourceMtimeIndex {
+  /**
+   * How close to "now" a directory's mtime may be before this scan's reading of it is treated as
+   * possibly stale, and the directory re-read next time regardless of what its mtime says.
+   *
+   * Linux stamps directory times from a coarse clock. Measured on Bun 1.3.14 under Docker, 400
+   * back-to-back `mkdir`s left the parent's mtime unmoved **319 times on overlayfs and 324 times on
+   * ext4**, smallest observable step 1ms; macOS APFS (0.042ms) and a virtiofs bind mount (0.29ms) missed
+   * none. So a directory mutated in the same millisecond as the value this index recorded — but after the
+   * walk that recorded it — leaves no trace at all, and because its files were never tracked, later edits
+   * to them go unreported too. That is permanent for the life of the process, which is what makes it worth
+   * a second look rather than a note.
+   *
+   * 20ms covers a 1ms tick with room for a `HZ=100` kernel's 10ms, and costs one extra `readdir` per
+   * directory touched in the last 20ms — during a save, a handful.
+   */
+  static readonly #defaultDirSettleMs = 20;
+  readonly #dirSettleMs: number;
   readonly #roots: string[];
   readonly #classifier: HmrChangeClassifier;
   readonly #files = new Map<string, TrackedFile>();
   readonly #dirs = new Map<string, number>();
   readonly #unreadable = new Map<string, string>();
+  /** Directories whose recorded mtime was too fresh to trust, re-read on the next scan. */
+  readonly #unsettled = new Set<string>();
   #primed = false;
   #queue: Promise<unknown> = Promise.resolve();
 
-  constructor({ roots, classifier }: SourceMtimeIndexOptions) {
+  constructor({ roots, classifier, dirSettleMs }: SourceMtimeIndexOptions) {
     this.#roots = SourceMtimeIndex.#pruneNestedRoots(roots);
     this.#classifier = classifier ?? new HmrChangeClassifier();
+    this.#dirSettleMs = dirSettleMs ?? SourceMtimeIndex.#defaultDirSettleMs;
   }
 
   get primed(): boolean {
@@ -67,12 +94,22 @@ export class SourceMtimeIndex {
     return [...this.#unreadable].map(([file, code]) => ({ path: file, code }));
   }
 
+  /**
+   * Whether the last scan left a directory whose mtime was too fresh to trust. The caller should scan
+   * again once the timestamp has settled, since nothing else will look at that directory until something
+   * moves its mtime — and on a coarse clock the change that should have moved it already happened.
+   */
+  get hasUnsettledDirs(): boolean {
+    return this.#unsettled.size > 0;
+  }
+
   /** Record the current state as the baseline. Reports nothing; call before the first `collectChanges`. */
   async prime(): Promise<void> {
     await this.#serialize(async () => {
       this.#files.clear();
       this.#dirs.clear();
       this.#unreadable.clear();
+      this.#unsettled.clear();
       await Promise.all(this.#roots.map((root) => this.#walk(root, null)));
       this.#primed = true;
     });
@@ -168,7 +205,7 @@ export class SourceMtimeIndex {
    * content changes, so this finds creations and deletions the file pass cannot see.
    */
   async #collectDirChanges(changed: Set<string>): Promise<void> {
-    const moved: string[] = [];
+    const moved = new Set<string>();
     const gone: string[] = [];
     await Promise.all(
       [...this.#dirs.entries()].map(async ([dir, mtimeMs]) => {
@@ -183,9 +220,13 @@ export class SourceMtimeIndex {
         }
         // `UNREADABLE` is NaN, so a directory retained from a failed read always mismatches and is
         // rewalked here — that retry is what lets a transient failure recover on its own.
-        if (stats.mtimeMs !== mtimeMs) moved.push(dir);
+        if (stats.mtimeMs !== mtimeMs) moved.add(dir);
       }),
     );
+    // An unsettled directory is re-read whether or not its mtime moved: on a coarse clock a mutation
+    // that landed in the same tick as the recorded value leaves it identical, so the mtime is exactly
+    // the signal that cannot be trusted here.
+    for (const dir of this.#unsettled) if (this.#dirs.has(dir)) moved.add(dir);
     for (const dir of gone) this.#forget(dir);
     // Sequential: a moved directory can reveal a new subtree, and walking those in order keeps the
     // number of concurrent `readdir` calls proportional to the change rather than to the tree.
@@ -216,6 +257,8 @@ export class SourceMtimeIndex {
     const known = this.#dirs.has(dir);
     this.#dirs.set(dir, dirStats.mtimeMs);
     this.#unreadable.delete(dir);
+    if (this.#isUnsettled(dirStats.mtimeMs)) this.#unsettled.add(dir);
+    else this.#unsettled.delete(dir);
     const descend: string[] = [];
     const present = new Set<string>();
     let blind = false;
@@ -255,7 +298,11 @@ export class SourceMtimeIndex {
         changed?.add(abs);
       }
     }
-    if (blind) this.#dirs.set(dir, UNREADABLE);
+    // `UNREADABLE` already forces a re-walk every scan, so the freshness retry would only duplicate it.
+    if (blind) {
+      this.#dirs.set(dir, UNREADABLE);
+      this.#unsettled.delete(dir);
+    }
     // Known subdirectories carry their own mtime check, so only unseen ones need walking. Concurrent
     // because `prime` reaches every directory through here.
     await Promise.all(descend.filter((sub) => !this.#dirs.has(sub)).map((sub) => this.#walk(sub, changed)));
@@ -269,6 +316,7 @@ export class SourceMtimeIndex {
   #markUnreadable(dir: string, err: NodeJS.ErrnoException): void {
     this.#dirs.set(dir, UNREADABLE);
     this.#unreadable.set(dir, err.code ?? "EUNKNOWN");
+    this.#unsettled.delete(dir);
   }
 
   /** Drop a directory and everything the index holds beneath it. */
@@ -276,9 +324,22 @@ export class SourceMtimeIndex {
     const prefix = `${dir}${path.sep}`;
     this.#dirs.delete(dir);
     this.#unreadable.delete(dir);
+    this.#unsettled.delete(dir);
     for (const known of [...this.#dirs.keys()]) if (known.startsWith(prefix)) this.#dirs.delete(known);
     // Otherwise a gap under a deleted directory is reported forever, since nothing revisits it to clear.
     for (const known of [...this.#unreadable.keys()]) if (known.startsWith(prefix)) this.#unreadable.delete(known);
+    // Left behind, this would re-walk a path that no longer exists on every scan.
+    for (const known of [...this.#unsettled]) if (known.startsWith(prefix)) this.#unsettled.delete(known);
+  }
+
+  /**
+   * Whether a directory's mtime is recent enough that another mutation could share its timestamp tick.
+   *
+   * Symmetric so a filesystem clock running *ahead* of this process — a network mount, a container with a
+   * skewed host — does not read as permanently fresh and re-walk the whole tree on every scan.
+   */
+  #isUnsettled(mtimeMs: number): boolean {
+    return Math.abs(Date.now() - mtimeMs) < this.#dirSettleMs;
   }
 
   /** `null` stats with the errno kept, so callers can tell "not there" from "could not look". */

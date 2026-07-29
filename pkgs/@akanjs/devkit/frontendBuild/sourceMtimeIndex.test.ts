@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { SourceMtimeIndex } from "./sourceMtimeIndex";
@@ -98,6 +98,51 @@ describe("SourceMtimeIndex", () => {
     const created = await seed(root, "lib/user/user.constant.ts");
     expect(await index.collectChanges()).toEqual([created]);
     expect(await index.collectChanges()).toEqual([]);
+  });
+
+  /**
+   * Linux stamps directory mtimes from a coarse clock, so a mutation landing in the same tick as the
+   * value the index recorded leaves that value byte-identical: measured under Docker, 319 of 400
+   * back-to-back `mkdir`s never moved the parent's mtime on overlayfs and 324 of 400 on ext4, while APFS
+   * missed none. `utimes` reproduces that here rather than leaving it to the host's clock resolution —
+   * otherwise this passes on macOS for the wrong reason and is flaky on the Linux fleet.
+   *
+   * `dirSettleMs` is pinned wide so the assertion is about the mechanism, not about how many milliseconds
+   * the lines above happened to take.
+   */
+  test("finds a created directory even when the clock never moves the parent's mtime", async () => {
+    const root = await makeRoot();
+    await seed(root, "lib/a.ts");
+    const dir = path.join(root, "lib");
+    // Pinned before priming too: `utimes` keeps whole milliseconds but drops APFS's sub-millisecond part,
+    // so stamping both sides is what makes "the mtime did not move" exact rather than 0.5ms apart.
+    const frozen = new Date();
+    await utimes(dir, frozen, frozen);
+    const index = new SourceMtimeIndex({ roots: [root], dirSettleMs: 60_000 });
+    await index.prime();
+
+    const created = await seed(root, "lib/user/user.constant.ts");
+    await utimes(dir, frozen, frozen);
+    expect((await stat(dir)).mtimeMs).toBe(frozen.getTime());
+
+    expect(index.hasUnsettledDirs).toBe(true);
+    expect(await index.collectChanges()).toEqual([created]);
+  });
+
+  test("stops re-reading a directory once its mtime is old enough to trust", async () => {
+    const root = await makeRoot();
+    await seed(root, "lib/a.ts");
+    const index = new SourceMtimeIndex({ roots: [root], dirSettleMs: 60_000 });
+    await index.prime();
+    expect(index.hasUnsettledDirs).toBe(true);
+
+    // The retry compensates for a timestamp that is too fresh to trust; it must not become a standing
+    // full walk once the tree settles.
+    const settled = new Date(Date.now() - 120_000);
+    for (const dir of [root, path.join(root, "lib")]) await utimes(dir, settled, settled);
+
+    expect(await index.collectChanges()).toEqual([]);
+    expect(index.hasUnsettledDirs).toBe(false);
   });
 
   test("reports a deleted file and a deleted directory's files", async () => {
@@ -256,7 +301,11 @@ describe("SourceMtimeIndex", () => {
       // goes unreported.
       expect(await index.collectChanges()).toEqual([]);
       expect(index.trackedFileCount).toBe(1);
-      expect(index.coverageGaps.map((gap) => gap.code)).toEqual(["EACCES"]);
+      // The locked directory joins the list too whenever this scan happened to re-read it — which depends
+      // on how fresh its mtime still was (see `dirSettleMs`) — so assert what the gap is about rather than
+      // how many entries happen to describe it.
+      expect(index.coverageGaps.map((gap) => gap.path)).toContain(abs);
+      expect(index.coverageGaps.every((gap) => gap.code === "EACCES")).toBe(true);
 
       await chmod(locked, 0o755);
       await rewrite(abs, "1234");
