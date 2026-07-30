@@ -41,7 +41,7 @@ const HELD_BUILDER_REQUEST_LIMIT = 64;
 // still on their way to the builder, so an over-ceiling builder is replaced only once it goes quiet.
 const BUILDER_RSS_RECYCLE_QUIET_MS = 750;
 const BUILDER_MIN_RSS_RECYCLE_INTERVAL_MS = 30_000;
-const BUILDER_INEFFECTIVE_RSS_RECYCLE_LIMIT = 2;
+const BUILDER_TIGHT_RSS_REPORT_LIMIT = 2;
 // Linux hands the bundler arenas back on its own after ~10-15s idle — measured at 46-59% of the
 // builder's peak (`local/optimize-resource/09-linux-retention-measurement.md`) — while macOS returns
 // none of it. The builder only reports RSS at work-completion points, so the sample a recycle is armed
@@ -49,6 +49,8 @@ const BUILDER_INEFFECTIVE_RSS_RECYCLE_LIMIT = 2;
 // paying a cold boot build for memory the OS was about to return anyway. On macOS the re-read returns
 // the same value, so this only ever costs the delay.
 const BUILDER_RSS_SETTLE_MS = 20_000;
+/** Reading one process's rss is a millisecond of work; anything near this is a `ps` that is stuck. */
+const PS_RSS_TIMEOUT_MS = 2_000;
 // Far enough above the ceiling that no purge would rescue it; recycle without waiting.
 const BUILDER_RSS_HARD_MULTIPLE = 1.5;
 // A sandbox between user turns pays for a watcher that is watching nothing change. Suspending build
@@ -337,7 +339,12 @@ export const shouldRefreshConfigOnIdleWake = (batch: ChangeBatch | null): boolea
  * A recycle or a crash-restart is a gap, not a failure — the request that lands in it is the page a
  * developer is waiting on. A stopped builder is a different thing: nothing is bringing it back, so
  * waiting would only delay the error.
+ *
+ * `recycling` is in here for the same reason as `restarting`, and was the hole this decision shipped
+ * with: a draining builder is still alive, so the request reached it and came back refused while the
+ * host still thought there was nothing to wait for.
  */
+const RETURNING_BUILDER_STATUSES = new Set<IncrementalBuilderStatus>(["starting", "recycling", "restarting"]);
 export const shouldHoldForReturningBuilder = ({
   status,
   heldCount,
@@ -346,17 +353,32 @@ export const shouldHoldForReturningBuilder = ({
   status: IncrementalBuilderStatus;
   heldCount: number;
   limit?: number;
-}): boolean => (status === "starting" || status === "restarting") && heldCount < limit;
+}): boolean => RETURNING_BUILDER_STATUSES.has(status) && heldCount < limit;
 
 /**
- * A builder whose fresh boot already exceeds the ceiling reports `too-soon` after every recycle and
- * would be replaced forever without ever getting under it. After this many recycles bought no relief
- * the host stops enforcing the ceiling and says so, rather than looping.
+ * Whether a builder that is over the ceiling again this soon after being replaced is worth saying so
+ * about, once. Not a reason to stop enforcing the ceiling: the minimum interval already bounds what
+ * this costs at one recycle per interval, and dropping the bound is how a container gets OOM-killed.
+ *
+ * This used to disable the ceiling for the session, on a count that a single page load reaches — two
+ * route builds, two reports, both inside the interval. That is normal work on any app whose builds sit
+ * above the ceiling, which is the same app the ceiling was derived for.
  */
-export const shouldAbandonBuilderRssCeiling = (
-  ineffectiveRecycles: number,
-  limit = BUILDER_INEFFECTIVE_RSS_RECYCLE_LIMIT,
-): boolean => ineffectiveRecycles >= limit;
+export const shouldWarnBuilderRssCeilingTight = (
+  reportsSinceRecycle: number,
+  limit = BUILDER_TIGHT_RSS_REPORT_LIMIT,
+): boolean => reportsSinceRecycle >= limit;
+
+/**
+ * Whether recycling can ever bring this builder under the ceiling.
+ *
+ * Measured on a replacement the moment it is ready, before it has built anything on demand: that is
+ * the floor every future replacement lands on, so a floor already over the ceiling is the one case
+ * where the recycle loop is pure cost. It is also the case the escape hatch was always described as
+ * being for — the previous rule inferred it from report timing and caught ordinary work instead.
+ */
+export const isRssCeilingUnreachable = (freshRssBytes: number | null, ceilingBytes: number | null): boolean =>
+  freshRssBytes !== null && ceilingBytes !== null && freshRssBytes >= ceilingBytes;
 
 /**
  * Whether a recycled builder's re-announced boot artifact actually differs from what the backend
@@ -416,6 +438,18 @@ export const buildStatusReplaySequence = (
   latestByPhase: ReadonlyMap<BuildPhase, DevBuildStatus>,
 ): DevBuildStatus[] => [...pendingReplay, ...latestByPhase.values()];
 
+/** `(mtimeMs, size)` per file — what a save moves, and what a rebuild of identical content does not. */
+export type SourceFingerprints = ReadonlyMap<string, string>;
+
+/**
+ * Which of the files in `before` are no longer stamped the way they were.
+ *
+ * Only files present in `before` are compared. The question this answers is which *running* code went
+ * stale while nothing was watching, and a file that did not exist then is not running anywhere.
+ */
+export const filesChangedSince = (before: SourceFingerprints, after: SourceFingerprints): string[] =>
+  [...before].filter(([file, stamp]) => after.get(file) !== stamp).map(([file]) => file);
+
 export class BackendImportGraph {
   readonly #app: App;
   readonly #logger: Logger;
@@ -451,6 +485,27 @@ export class BackendImportGraph {
 
   has(file: string) {
     return this.#files.has(path.resolve(file));
+  }
+
+  /**
+   * Stamp every file the backend runs, so a caller can ask later what moved.
+   *
+   * Taken when the builder goes away and compared when its replacement is up, because nothing watches
+   * the tree in between: the departing builder's watcher left with it, and the replacement's index
+   * primes from the disk it finds, so an edit that lands in the gap is *baseline* to it and is never
+   * reported at all. The client half of such an edit is rescued by the replacement's boot build; the
+   * backend half is a server left running code that no longer exists, with nothing on screen to say so.
+   *
+   * One `stat` per graph file, against a gap that costs a whole boot build anyway.
+   */
+  async fingerprint(): Promise<SourceFingerprints> {
+    const stamps = await Promise.all(
+      [...this.#files].map(async (file) => {
+        const stats = await stat(file).catch(() => null);
+        return [file, stats ? `${Math.round(stats.mtimeMs)}:${stats.size}` : "(gone)"] as const;
+      }),
+    );
+    return new Map(stamps);
   }
 
   async refresh(): Promise<boolean> {
@@ -571,7 +626,8 @@ export class AkanAppHost {
   #rssRecycleTimer: ReturnType<typeof setTimeout> | null = null;
   #rssRecycleReason: string | null = null;
   #lastRssRecycleAtMono: number | null = null;
-  #rssCeilingIneffective = 0;
+  #rssCeilingTightReports = 0;
+  #rssCeilingTightWarned = false;
   /** Invalidates an in-flight settle check when anything else moves the builder underneath it. */
   #rssSettleToken = 0;
   #rssRecycleOver: { rssBytes: number; ceilingBytes: number } | null = null;
@@ -586,6 +642,8 @@ export class AkanAppHost {
   #wokeAtMono: number | null = null;
   #idleWatcher: HmrWatcher | null = null;
   #suspendedChanges: ChangeBatch | null = null;
+  /** What the backend's files looked like when the builder went away; see `#openBuilderGap`. */
+  #builderGapFingerprints: SourceFingerprints | null = null;
   /** Requests that arrived while suspended, answered by the builder that the wake brings up. */
   #pendingBuilderMessages: BuilderMessage[] = [];
   readonly #builderRequests = new BuilderRequestRouter();
@@ -943,7 +1001,7 @@ export class AkanAppHost {
       msSinceLastRecycle: this.#lastRssRecycleAtMono === null ? null : performance.now() - this.#lastRssRecycleAtMono,
     });
     if (decision === "below-ceiling") {
-      this.#rssCeilingIneffective = 0;
+      this.#rssCeilingTightReports = 0;
       return;
     }
     if (decision === "unbounded") return;
@@ -954,17 +1012,41 @@ export class AkanAppHost {
       return;
     }
     if (decision === "too-soon") {
-      this.#rssCeilingIneffective += 1;
-      if (!shouldAbandonBuilderRssCeiling(this.#rssCeilingIneffective)) return;
-      this.#rssCeilingAbandoned = true;
-      this.logger.error(
-        `[builder-recycle] the builder is still at ${asMib(metrics.rssBytes)}MiB right after being recycled, so the ${asMib(ceilingBytes ?? 0)}MiB ceiling cannot be met for this app; no longer enforcing it this session. Raise AKAN_BUILDER_MAX_RSS_MB, or set it to 0 to leave the builder unbounded.`,
+      this.#rssCeilingTightReports += 1;
+      if (this.#rssCeilingTightWarned || !shouldWarnBuilderRssCeilingTight(this.#rssCeilingTightReports)) return;
+      this.#rssCeilingTightWarned = true;
+      // Said once, and only as information: the builder is still being replaced, at most once per
+      // interval, because that bound is the only thing standing between the bundler's arenas and the
+      // sandbox's memory limit.
+      this.logger.warn(
+        `[builder-recycle] the builder is back at ${asMib(metrics.rssBytes)}MiB within ${Math.round(BUILDER_MIN_RSS_RECYCLE_INTERVAL_MS / 1000)}s of a recycle, so the ${asMib(ceilingBytes ?? 0)}MiB ceiling costs about one boot build per interval while you keep building. Raise AKAN_BUILDER_MAX_RSS_MB if that trade is wrong for this app, or set it to 0 to leave the builder unbounded.`,
       );
       return;
     }
     this.#armRssRecycle(
       `rss=${asMib(metrics.rssBytes)}MiB>=${asMib(ceilingBytes ?? 0)}MiB after ${metrics.workCount} build(s)`,
       { rssBytes: metrics.rssBytes, ceilingBytes: ceilingBytes ?? 0 },
+    );
+  }
+  /**
+   * Ask the replacement, the moment it is ready, whether this ceiling is reachable at all.
+   *
+   * Read from the OS rather than from a metrics report, because the report the host would otherwise
+   * judge on only arrives after the builder has built something — by which point what is being measured
+   * is the work, not the floor. A floor over the ceiling means every replacement lands over it, so the
+   * recycle loop can only ever cost boot builds.
+   */
+  async #checkRecycledBuilderFloor(): Promise<void> {
+    if (this.#rssCeilingAbandoned || this.#lastRssRecycleAtMono === null) return;
+    const ceilingBytes = IncrementalBuilderHost.maxRssBytes();
+    const pid = this.#builder?.pid;
+    if (!ceilingBytes || !pid) return;
+    const freshRssBytes = await AkanAppHost.readProcessRssBytes(pid);
+    if (!isRssCeilingUnreachable(freshRssBytes, ceilingBytes)) return;
+    this.#rssCeilingAbandoned = true;
+    const asMib = (bytes: number) => Math.round(bytes / 1024 / 1024);
+    this.logger.error(
+      `[builder-recycle] a freshly recycled builder is already at ${asMib(freshRssBytes ?? 0)}MiB with nothing built on demand, so the ${asMib(ceilingBytes)}MiB ceiling cannot be met for this app; no longer enforcing it this session. Raise AKAN_BUILDER_MAX_RSS_MB, or set it to 0 to leave the builder unbounded.`,
     );
   }
   /** Waits for the builder to go quiet, so a recycle never lands in the middle of a burst of saves. */
@@ -1043,12 +1125,32 @@ export class AkanAppHost {
       .catch(() => null);
     const vmRssKb = status === null ? null : /VmRSS:\s+(\d+) kB/.exec(status)?.[1];
     if (vmRssKb) return Number(vmRssKb) * 1024;
-    const psOutput = await Bun.$`ps -o rss= -p ${pid}`
-      .quiet()
-      .text()
-      .catch(() => "");
-    const rssKb = Number(psOutput.trim());
-    return Number.isFinite(rssKb) && rssKb > 0 ? rssKb * 1024 : null;
+    return await AkanAppHost.#readRssViaPs(pid);
+  }
+  /**
+   * `ps`, bounded. An absent `ps` is already handled — it answers `null`, which callers read as "no new
+   * information" — but a `ps` that never answers was not: the only caller awaits it after a 20s settle,
+   * so the recycle it was about to commit simply never happened, silently. The harness has hit exactly
+   * this hang while shelling out to `ps` under load.
+   */
+  static async #readRssViaPs(pid: number, timeoutMs = PS_RSS_TIMEOUT_MS): Promise<number | null> {
+    let proc: Bun.Subprocess<"ignore", "pipe", "ignore">;
+    try {
+      proc = Bun.spawn(["ps", "-o", "rss=", "-p", String(pid)], { stdio: ["ignore", "pipe", "ignore"] });
+    } catch {
+      return null;
+    }
+    const killer = setTimeout(() => proc.kill("SIGKILL"), timeoutMs);
+    try {
+      const output = await new Response(proc.stdout).text();
+      await proc.exited;
+      const rssKb = Number(output.trim());
+      return Number.isFinite(rssKb) && rssKb > 0 ? rssKb * 1024 : null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(killer);
+    }
   }
   #cancelRssRecycle(): void {
     this.#rssRecycleReason = null;
@@ -1108,6 +1210,7 @@ export class AkanAppHost {
     }
     this.#suspended = true;
     this.#stopBuilder();
+    await this.#openBuilderGap("idle suspend");
     this.logger.info(
       `[idle-suspend] no build activity for ${Math.round(idleMs / 1000)}s; released the builder — the next edit or route request brings it back`,
     );
@@ -1207,10 +1310,57 @@ export class AkanAppHost {
     // Refresh before deciding: a file created while suspended is not in the graph yet.
     if (files.length > 0) await this.#backendGraph.refresh();
     await this.#startBuilder({ announceBootState: true });
-    const backendFiles = files.filter((file) => this.#isBackendFile(file));
+    // Merged rather than restarted for separately: the batch is what the watcher managed to report, the
+    // stamps are what actually moved, and they overlap on the ordinary case of one save during a suspend.
+    const missed = await this.#takeBuilderGapChanges();
+    const backendFiles = [...new Set([...files.filter((file) => this.#isBackendFile(file)), ...missed])];
     if (backendFiles.length === 0) return;
     this.logger.verbose(`[idle-suspend] ${backendFiles.length} backend file(s) changed while suspended`);
     this.#scheduleBackendRestart({ files: backendFiles, roles: [] });
+  }
+  /**
+   * Remember what the backend is running, because from here until a builder is back nothing is watching.
+   *
+   * The suspend path installs its own watcher and the restart path has none at all, but neither is a
+   * complete answer: Bun's recursive `fs.watch` reports roughly one path per window
+   * (`local/optimize-resource/06-watcher-dropped-event.md`), and a replacement builder primes its index
+   * from the disk it finds, so anything saved in between looks original to it. A stat taken now and
+   * compared when the builder is back does not depend on an event arriving.
+   *
+   * Scoped to the import graph — the files the backend actually runs. A backend-shaped file outside it
+   * changes nothing about the running server, so missing it costs nothing, and enumerating candidates
+   * by path role instead would mean walking the tree.
+   *
+   * The earliest open wins: a baseline from further back can only over-report, and over-reporting costs
+   * a backend restart while under-reporting costs a server running code the developer already deleted.
+   */
+  async #openBuilderGap(reason: string): Promise<void> {
+    if (this.#builderGapFingerprints || !this.#backendGraph.ready) return;
+    this.#builderGapFingerprints = await this.#backendGraph.fingerprint();
+    this.logger.verbose(`[builder-gap] stamped ${this.#builderGapFingerprints.size} backend file(s) (${reason})`);
+  }
+  /** Which backend files moved while the builder was away. Consumes the baseline. */
+  async #takeBuilderGapChanges(): Promise<string[]> {
+    const before = this.#builderGapFingerprints;
+    this.#builderGapFingerprints = null;
+    if (!before) return [];
+    const moved = filesChangedSince(before, await this.#backendGraph.fingerprint());
+    if (moved.length === 0) {
+      // Said out loud even when the answer is "nothing", because the alternative — silence — is also
+      // what a stamp that was never taken looks like.
+      this.logger.verbose(`[builder-gap] none of the ${before.size} stamped backend file(s) moved`);
+      return moved;
+    }
+    this.logger.info(
+      `[builder-gap] ${moved.length} backend file(s) changed while the builder was away; the backend is running the old ones`,
+    );
+    return moved;
+  }
+  /** The restart path's half of the above: the wake path merges its own file list in instead. */
+  async #restartBackendForGapChanges(): Promise<void> {
+    const moved = await this.#takeBuilderGapChanges();
+    if (moved.length === 0) return;
+    this.#scheduleBackendRestart({ files: moved, roles: [] });
   }
   #flushPendingBuilderMessages(): void {
     const pending = this.#pendingBuilderMessages.splice(0);
@@ -1251,6 +1401,9 @@ export class AkanAppHost {
     }
     if (!this.#builder?.recycle(reason)) return;
     this.#lastRssRecycleAtMono = performance.now();
+    // Stamped at the request rather than at the exit, because a builder that is draining has already
+    // stopped taking work: whether its watcher still gets an event out is not something to rely on.
+    void this.#openBuilderGap("builder recycle");
   }
   async #handleInvalidate(message: Extract<BuilderMessage, { type: "invalidate" }>) {
     this.#logDevPlan(message);
@@ -1339,6 +1492,9 @@ export class AkanAppHost {
     }
     this.#builderRecoveryAttempts = 0;
     this.logger.info("[builder-recovery] builder recovered");
+    // The other way a builder comes back: a wake that failed, or a start that had to be retried. Either
+    // way the tree went unwatched, and this is the first moment there is something to act on it.
+    void this.#restartBackendForGapChanges();
     const status: DevBuildStatus = {
       generation: reason.generation ?? this.#nextBackendBuildStatusGeneration(),
       phase: "scan",
@@ -1565,6 +1721,9 @@ export class AkanAppHost {
         onExit: () => {
           settle(() => reject(new Error(`[cli] builder exited before emitting builder-ready (attempt ${attempt})`)));
         },
+        onAway: () => {
+          void this.#openBuilderGap("builder replacement");
+        },
         onReady: () => {
           settle(resolve);
           this.#flushPendingBuilderMessages();
@@ -1573,6 +1732,8 @@ export class AkanAppHost {
           this.logger.verbose("[builder-recovery] builder ready after restart; replaying latest state");
           this.#replayBuilderState();
           this.#flushPendingBuilderMessages();
+          void this.#restartBackendForGapChanges();
+          void this.#checkRecycledBuilderFloor();
         },
       });
     });

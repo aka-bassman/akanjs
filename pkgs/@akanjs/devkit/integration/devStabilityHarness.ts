@@ -190,6 +190,23 @@ export default function Page() {
 }
 `,
       ),
+      // A second route exists so a test can ask for a page the backend has *never* built, at a moment of
+      // its choosing. Route clients are built on demand and cached, so on a one-route fixture the first
+      // request of a test is the only one that reaches the builder at all.
+      this.writeFile(
+        "page/second/_index.tsx",
+        `import { ClientMarker } from "../../ui/ClientMarker";
+
+export default function Page() {
+  return (
+    <main>
+      <h1>Second route</h1>
+      <ClientMarker />
+    </main>
+  );
+}
+`,
+      ),
       this.writeFile(
         "page/styles.css",
         `main {

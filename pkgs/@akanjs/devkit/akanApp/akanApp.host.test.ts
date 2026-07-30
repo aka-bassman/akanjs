@@ -14,15 +14,16 @@ import {
   decideBuilderRssRecycle,
   decideBuilderRssSettle,
   decideIdleSuspend,
+  filesChangedSince,
   hasAnyBuildFailure,
   hasBuildFailureForGeneration,
   isLegacyBackendFallbackFile,
+  isRssCeilingUnreachable,
   mergeBackendRestartReasons,
   mergeInvalidateMessages,
   normalizeBackendReportedGeneration,
   resolveIdleSuspendMs,
   shouldAbandonBackendRecovery,
-  shouldAbandonBuilderRssCeiling,
   shouldHoldForReturningBuilder,
   shouldMarkBuildPhaseRecovered,
   shouldQueueBuildStatusReplay,
@@ -32,6 +33,7 @@ import {
   shouldRestartBackendByDevPlan,
   shouldRestartBuilderByDevPlan,
   shouldRestartDevHostByDevPlan,
+  shouldWarnBuilderRssCeilingTight,
 } from "./akanApp.host";
 
 const invalidateWithActions = (actions: DevChangeAction[]): Extract<BuilderMessage, { type: "invalidate" }> => ({
@@ -163,6 +165,12 @@ describe("holding requests for a returning builder", () => {
     expect(shouldHoldForReturningBuilder({ status: "starting", heldCount: 3 })).toBe(true);
   });
 
+  test("holds through the drain too, not only after the process is gone", () => {
+    // The window this decision originally missed: the builder is still alive and refusing, which is
+    // the same gap as a restart from anyone waiting on a page.
+    expect(shouldHoldForReturningBuilder({ status: "recycling", heldCount: 0 })).toBe(true);
+  });
+
   test("fails immediately when nothing is bringing the builder back", () => {
     expect(shouldHoldForReturningBuilder({ status: "stopped", heldCount: 0 })).toBe(false);
   });
@@ -208,11 +216,23 @@ describe("builder rss recycle", () => {
     expect(decide({ msSinceLastRecycle: 5_000, minIntervalMs: 1_000 })).toBe("recycle");
   });
 
-  // An app whose fresh boot is already over the ceiling would otherwise be recycled forever.
-  test("abandons the ceiling once recycling stops buying relief", () => {
-    expect(shouldAbandonBuilderRssCeiling(1)).toBe(false);
-    expect(shouldAbandonBuilderRssCeiling(2)).toBe(true);
-    expect(shouldAbandonBuilderRssCeiling(1, 1)).toBe(true);
+  // Says so, and keeps enforcing: a page load is two route builds, so an app whose builds sit over the
+  // ceiling reaches this on its first navigation — which is normal work, not a reason to drop the only
+  // bound the builder has.
+  test("mentions a tight ceiling rather than acting on it", () => {
+    expect(shouldWarnBuilderRssCeilingTight(1)).toBe(false);
+    expect(shouldWarnBuilderRssCeilingTight(2)).toBe(true);
+    expect(shouldWarnBuilderRssCeilingTight(1, 1)).toBe(true);
+  });
+
+  // The one case recycling cannot fix, measured on the replacement before it has built anything: every
+  // future replacement lands on the same floor, so the loop would only ever cost boot builds.
+  test("gives up only when a fresh builder is already over the ceiling", () => {
+    expect(isRssCeilingUnreachable(ceiling + 1, ceiling)).toBe(true);
+    expect(isRssCeilingUnreachable(ceiling - 1, ceiling)).toBe(false);
+    // An unreadable rss is no information, and no ceiling is nothing to be unreachable.
+    expect(isRssCeilingUnreachable(null, ceiling)).toBe(false);
+    expect(isRssCeilingUnreachable(ceiling + 1, null)).toBe(false);
   });
 
   // Measured on Linux: the builder peaked at 522MiB and settled at 214MiB with no help, so a 400MiB
@@ -480,6 +500,38 @@ describe("BackendImportGraph", () => {
     await writeFile(path.join(cwdPath, "server.ts"), "export default 1;\n");
     await graph.refresh();
     expect(graph.has(path.join(cwdPath, "lib/leaving.ts"))).toBe(false);
+  });
+
+  test("reports which backend files moved while nobody was watching", async () => {
+    const { graph, cwdPath } = await makeGraph({
+      "main.ts": 'import "./server";\n',
+      "server.ts": 'import "./lib/handler";\nexport default 1;\n',
+      "lib/handler.ts": "export const handler = () => null;\n",
+    });
+    await graph.refresh();
+    const before = await graph.fingerprint();
+
+    // The builder is gone here, so no watcher event exists for this save — which is the whole reason
+    // the stamps are taken. `mtimeMs` has a coarse clock on Linux, so the size has to move too.
+    await writeFile(path.join(cwdPath, "lib/handler.ts"), "export const handler = () => 'changed';\n");
+
+    expect(filesChangedSince(before, await graph.fingerprint())).toEqual([path.join(cwdPath, "lib/handler.ts")]);
+  });
+
+  test("says nothing when the tree is untouched, and names a deleted file", async () => {
+    const { graph, cwdPath } = await makeGraph({
+      "main.ts": 'import "./server";\n',
+      "server.ts": 'import "./lib/handler";\nexport default 1;\n',
+      "lib/handler.ts": "export const handler = () => null;\n",
+    });
+    await graph.refresh();
+    const before = await graph.fingerprint();
+    // A recycle with no edit in it is the common case, and it must not cost a backend restart.
+    expect(filesChangedSince(before, await graph.fingerprint())).toEqual([]);
+
+    await rm(path.join(cwdPath, "lib/handler.ts"));
+    // Deleted counts as changed: the backend is still running what used to be there.
+    expect(filesChangedSince(before, await graph.fingerprint())).toEqual([path.join(cwdPath, "lib/handler.ts")]);
   });
 
   test("keeps the previous graph when a refresh finds no entrypoints", async () => {

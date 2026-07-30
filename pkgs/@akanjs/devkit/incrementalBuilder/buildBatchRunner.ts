@@ -74,7 +74,16 @@ export class BuildBatchRunner {
       );
       return result;
     }
-    const message = `build worker exited with code ${exitCode} before reporting a result`;
+    // A worker the kernel OOM-killed exits with code `null` and `SIGKILL`, which without the signal
+    // reads exactly like an ordinary crash — and the two have opposite fixes: one is a build error to
+    // find, the other is a memory limit to raise. The peak here is the largest transient in the tree
+    // (a boot build measured 548MB on a tenant app, 1.1GB on apps/akan), so on a small sandbox this is
+    // the process the kernel reaches for first.
+    const message = proc.signalCode
+      ? `build worker was killed by ${proc.signalCode} before reporting a result${
+          proc.signalCode === "SIGKILL" ? " — most often the kernel OOM killer; check the sandbox's memory limit" : ""
+        }`
+      : `build worker exited with code ${exitCode} before reporting a result`;
     this.#logger.error(`[build-batch] generation=${request.generation} ${message}`);
     return {
       generation: request.generation,

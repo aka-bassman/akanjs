@@ -513,6 +513,13 @@ export class FixtureService extends serve("fixture" as const, { serverMode: "bat
 describe("dev resource budgets", () => {
   const BOOT_MS = 150_000;
   const WAIT_MS = 90_000;
+  /**
+   * Measured on this fixture at **260-516ms** per save. Set ~6× above that, like every budget here: it is
+   * looking for a path that got slower by a factor — a boot build that stopped being avoidable, a worker
+   * spawn that stopped being warm — not for jitter on a busy laptop. `apps/akan`, ~25× this fixture's
+   * pages bundle, took ~1.5s per save when the plan started.
+   */
+  const SAVE_LATENCY_BUDGET_MS = 3_000;
   const budgetTest = (name: string, fn: () => Promise<void>): void => {
     if (integrationEnabled) test(name, fn, 300_000);
     else test.skip(name, fn);
@@ -669,15 +676,21 @@ describe("dev resource budgets", () => {
     );
     await harness.waitForHttpText("marker-after-recycle", WAIT_MS);
 
-    // A replacement that is still over the ceiling proves the ceiling cannot be met, and the host has
-    // to stop rather than recycle forever. Two reports inside the minimum interval is the threshold.
+    // This fixture's builder boots well under the ceiling and blows past it on its first build, which
+    // is the shape of every app the ceiling is derived for — a 1.2GB sandbox gives the builder ~420MB
+    // and a single route build costs ~247MB. So the host says the ceiling is tight...
     for (let i = 1; i <= 3; i++) {
       const { mark } = await harness.editUntilSeen(host, (attempt) =>
         harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-settled-${i}-${attempt}`),
       );
       await host.waitForLogSince(mark, /pages-rebundle ok/, WAIT_MS).catch(() => undefined);
     }
-    await host.waitForLogSince(start, /ceiling cannot be met for this app/, WAIT_MS);
+    await host.waitForLogSince(start, /ceiling costs about one boot build per interval/, WAIT_MS);
+    // ...and goes on enforcing it. This used to disable the ceiling for the rest of the session on the
+    // same evidence, which on a small sandbox means nothing bounds the builder from the first page load
+    // onwards. Recycling is throttled to one per interval; that throttle is the answer to the cost, not
+    // dropping the bound.
+    expect(host.logs.join("").slice(start)).not.toMatch(/no longer enforcing it this session/);
   });
 
   // The guard the memory work did not have. Every budget above asserts RSS; none of them asserts that a
@@ -700,6 +713,18 @@ describe("dev resource budgets", () => {
     );
     await host.waitForLogSince(mark, /pages-rebundle ok/, WAIT_MS);
 
+    // A builder that has been asked to drain is still alive and refuses everything new, so this request
+    // has to be held for the replacement exactly like one that arrives after the process is gone. Timing
+    // decides which of the two windows it actually lands in — the drain of an idle builder is short, and
+    // the log is polled — so what is asserted is the outcome both windows must produce. The drain itself
+    // is pinned deterministically one layer down, in `incrementalBuilder.host.test.ts`.
+    await host.waitForLogSince(start, /recycling builder pid=\d+/, WAIT_MS);
+    // Not awaited here: a held request only returns once the replacement is up, and waiting for it would
+    // put every assertion below on the far side of the window they are about.
+    const drainRequest = fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(WAIT_MS) }).then(
+      async (response) => ({ status: response.status, html: await response.text() }),
+    );
+
     // Wait until the replacement exists but is still doing its boot build. From here it cannot answer
     // anything for seconds — which is exactly the window a developer's reload lands in, and the point of
     // anchoring on the spawn rather than on the exit: the gap after it is wide and known, not a race.
@@ -708,7 +733,9 @@ describe("dev resource budgets", () => {
 
     const holdMark = host.markLog();
     const startedAtMono = performance.now();
-    const res = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(WAIT_MS) });
+    // The second route, never requested before, so this one cannot be answered from the route cache the
+    // request above just populated — it has to reach a builder that is not there yet.
+    const res = await fetch(`http://127.0.0.1:${port}/second`, { signal: AbortSignal.timeout(WAIT_MS) });
     const html = await res.text();
     const heldMs = Math.round(performance.now() - startedAtMono);
 
@@ -721,7 +748,44 @@ describe("dev resource budgets", () => {
     // And this is what stops the test passing having tested nothing: a request that arrives after the
     // replacement is already ready never reaches the path under test, and everything above holds anyway.
     expect(host.logs.join("").slice(holdMark)).toMatch(/holding build-route until the builder is ready/);
+
+    // The one fired at the drain, whichever side of the exit it landed on.
+    const drained = await drainRequest;
+    expect(drained.status).toBe(200);
+    expect(drained.html).toContain("marker-through-recycle");
     console.info(`[restart-guard] page held ${heldMs}ms across the recycle, then rendered`);
+  });
+
+  // The other half of a resource budget, and the half this plan spent: every megabyte above was bought
+  // with latency — a worker process spawned per save, a boot build per recycle and per wake, a hold
+  // window in front of requests that land in one. Nothing measured what that cost, so a change that
+  // traded another second per save for another 50MB would have passed every guard in this block.
+  budgetTest("keeps a save's round trip inside its budget", async () => {
+    const harness = await createHarness();
+    const host = await harness.startHost({ timeoutMs: BOOT_MS });
+    await harness.waitForHttpText("initial-client-marker", WAIT_MS);
+
+    const samples: number[] = [];
+    for (let i = 1; i <= 3; i++) {
+      let savedAtMono = 0;
+      // Timed from inside the mutate callback so a retried save — Bun drops watcher events, which is why
+      // `editUntilSeen` exists — is measured from the attempt that actually landed, not from the first.
+      const { mark } = await harness.editUntilSeen(host, async (attempt) => {
+        await harness.replaceText("ui/ClientMarker.tsx", /marker(-[\w-]+)?/, `marker-latency-${i}-${attempt}`);
+        savedAtMono = performance.now();
+      });
+      // The moment the running dev server is serving the new code, which is everything the developer is
+      // waiting for. Deliberately not the browser's refresh message: that one is only published when a
+      // client is connected, so measuring it would measure a WebSocket probe's reconnects as well.
+      await host.waitForLogSince(mark, /\[hmr\] backend apply/, WAIT_MS);
+      samples.push(performance.now() - savedAtMono);
+    }
+
+    const rounded = samples.map((ms) => Math.round(ms));
+    console.info(`[latency-guard] save -> new code live ${rounded.join("ms, ")}ms`);
+    // Per save, not summed: the interesting regression is one save getting slower, and the median would
+    // hide a first save that pays for something the rest do not.
+    expect(Math.max(...rounded)).toBeLessThan(SAVE_LATENCY_BUDGET_MS);
   });
 
   budgetTest("suspends the builder when the dev server goes idle and wakes it on the next edit", async () => {
@@ -789,5 +853,43 @@ describe("dev resource budgets", () => {
     await host.waitForLogSince(mark, /\[builder\] replaying 1 request\(s\) held while the builder was away/, WAIT_MS);
     expect(status).toBe(200);
     expect(await DevStabilityHarness.builderProcess(host.proc.pid)).not.toBeNull();
+  });
+
+  // The gap on the other side of the same window: requests held across it are answered, but for a while
+  // nothing was *watching* across it. The suspend stops its watcher before the replacement builder has
+  // primed its index, and the replacement primes from the disk it finds — so a save in between is
+  // baseline to it, reported by nobody, and the backend goes on running the code it replaced. Phase 2
+  // made this window routine by recycling the builder on every rss ceiling crossing.
+  budgetTest("restarts the backend for a save that lands while the builder is away", async () => {
+    const harness = await createHarness();
+    const host = await harness.startHost({ timeoutMs: BOOT_MS, env: { AKAN_DEV_IDLE_SUSPEND_MS: "3000" } });
+    const start = host.markLog();
+    await harness.waitForHttpText("initial-client-marker", WAIT_MS);
+    await host.waitForLogSince(start, /\[idle-suspend\] .*released the builder/, WAIT_MS);
+
+    const mark = host.markLog();
+    const port = await harness.resolvePort();
+    // This request is the clock: it wakes the dev server and is answered only once the replacement
+    // builder is ready, so a write issued while it is in flight lands squarely inside the gap. Its own
+    // status is not asserted here — the write below restarts the backend, which drops the connection.
+    const request = fetch(`http://127.0.0.1:${port}/__csr`).catch(() => null);
+    // A service the backend imports, rather than this fixture's `srvkit/backendMarker.ts`: that marker is
+    // orphaned once `akan start` regenerates `server.ts`, so it is not in the backend graph at all and an
+    // edit to it restarts the backend by path role instead.
+    await harness.writeFile(
+      "lib/_fixture/fixture.service.ts",
+      `import { serve } from "akanjs/service";
+
+export class FixtureService extends serve("fixture" as const, { serverMode: "batch" }, () => ({})) {}
+// touched while the builder was away
+`,
+    );
+    await request;
+
+    await host.waitForLogSince(mark, /\[builder-gap\] 1 backend file\(s\) changed while the builder was away/, WAIT_MS);
+    await host.waitForLogSince(mark, /\[backend-reload\]/, WAIT_MS);
+    // And back to a working dev server, rather than one stuck restarting.
+    await host.waitForLogSince(mark, /backend ready pid=(\d+)|AkanApp gateway is running on port/, WAIT_MS);
+    await harness.waitForHttpText("initial-client-marker", WAIT_MS);
   });
 });

@@ -21,12 +21,22 @@ interface IncrementalBuilderHostOptions {
   onMessage: (message: BuilderMessage) => void;
 }
 
-export type IncrementalBuilderStatus = "starting" | "ready" | "restarting" | "stopped";
+/**
+ * `recycling` is the drain: the builder is still alive and still holds the work it accepted, but it
+ * refuses anything new. Saying so here is what lets the host hold those requests for the replacement
+ * instead of handing the developer the refusal.
+ */
+export type IncrementalBuilderStatus = "starting" | "ready" | "recycling" | "restarting" | "stopped";
 
 interface IncrementalBuilderStartOptions {
   onExit?: () => void;
   onReady?: () => void;
   onRestartReady?: () => void;
+  /**
+   * The builder is gone and a replacement is on its way. Distinct from `onExit`, which reports the
+   * builder giving up: this one says the dev server is temporarily without a watcher.
+   */
+  onAway?: () => void;
   /**
    * Ask the builder to re-announce the artifact it boots with. Needed whenever a *previous* builder's
    * artifact may still be live in a running backend — after an rss recycle, and after an idle wake.
@@ -142,6 +152,9 @@ export class IncrementalBuilderHost {
           this.#startOptions.onExit?.();
           return;
         }
+        // Said once for both branches below, because both leave the tree unwatched until a replacement
+        // has primed its own index — and an edit that lands in that window is reported by nobody.
+        this.#startOptions.onAway?.();
         // A recycle is a planned exit, so it neither counts as a failed attempt nor waits out the
         // crash backoff — the dev server is without a watcher until the replacement is up.
         if (wasRecycle) {
@@ -182,6 +195,11 @@ export class IncrementalBuilderHost {
     const proc = this.#proc;
     if (!this.send({ type: "builder-shutdown", reason })) return false;
     this.#recycleRequested = true;
+    // From here the builder answers nothing new — it refuses every request that arrives during the
+    // drain. Leaving the status at `ready` is what used to let those requests through to be refused,
+    // one at a time, into the dev error page a recycle is supposed to be invisible to. `ready` the
+    // field is deliberately untouched: `onExit` reads it to tell a planned exit from a boot failure.
+    this.#status = "recycling";
     this.logger.info(`recycling builder pid=${proc.pid} (${reason})`);
     this.#recycleTimer = setTimeout(() => {
       this.#recycleTimer = null;
@@ -215,7 +233,11 @@ export class IncrementalBuilderHost {
   }
   send(message: BuilderMessage): boolean {
     if (!this.#proc || this.#status !== "ready") {
-      this.logger.warn(`incrementalBuilderHost is ${this.#status}; cannot send ${message.type}`);
+      // A builder on its way back is routine and the host holds what it refuses here, so only the
+      // states nothing is recovering from are worth a warning.
+      if (this.#status === "recycling" || this.#status === "restarting")
+        this.logger.verbose(`incrementalBuilderHost is ${this.#status}; ${message.type} is for the replacement`);
+      else this.logger.warn(`incrementalBuilderHost is ${this.#status}; cannot send ${message.type}`);
       return false;
     }
     try {

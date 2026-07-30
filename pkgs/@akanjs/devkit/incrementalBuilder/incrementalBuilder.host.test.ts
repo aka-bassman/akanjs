@@ -78,6 +78,12 @@ describe("IncrementalBuilderHost", () => {
     expect(spawns[0]?.proc.kill).not.toHaveBeenCalled();
     expect(host.recycle("second request")).toBe(false);
 
+    // The drain refuses everything that arrives during it, so a request sent here is a request the
+    // developer gets an error page for. Reporting the state is what lets the host hold it instead.
+    expect(host.status).toBe("recycling");
+    expect(host.send({ type: "build-route", id: 9, routeId: "z", seeds: [], knownEntries: [] })).toBe(false);
+    expect(spawns[0]?.proc.send).toHaveBeenCalledTimes(1);
+
     // A planned exit skips the crash backoff — the dev server has no file watcher until it is back.
     spawns[0]?.options.onExit?.();
     expect(spawns).toHaveLength(2);
