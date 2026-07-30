@@ -15,3 +15,7 @@ The dev host now stamps `(mtime, size)` for every file in the backend import gra
 away — at suspend, at a recycle request, at a crash exit — and compares them when a builder is ready
 again, restarting the backend for anything that moved. Comparing stamps rather than waiting for events
 also covers the watcher dropping one, which Bun's recursive `fs.watch` does.
+
+A config change while suspended is exempt, because it replaces the backend along with the builder on its
+own. Where the backend graph scan has never succeeded — path-role fallback rules — there is nothing to
+stamp, and the host says so rather than staying quiet about it.

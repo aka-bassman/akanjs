@@ -642,8 +642,8 @@ export class AkanAppHost {
   #wokeAtMono: number | null = null;
   #idleWatcher: HmrWatcher | null = null;
   #suspendedChanges: ChangeBatch | null = null;
-  /** What the backend's files looked like when the builder went away; see `#openBuilderGap`. */
-  #builderGapFingerprints: SourceFingerprints | null = null;
+  /** The stat sweep taken when the builder went away, awaited by the take; see `#openBuilderGap`. */
+  #builderGapStamp: Promise<SourceFingerprints | null> | null = null;
   /** Requests that arrived while suspended, answered by the builder that the wake brings up. */
   #pendingBuilderMessages: BuilderMessage[] = [];
   readonly #builderRequests = new BuilderRequestRouter();
@@ -1210,7 +1210,7 @@ export class AkanAppHost {
     }
     this.#suspended = true;
     this.#stopBuilder();
-    await this.#openBuilderGap("idle suspend");
+    this.#openBuilderGap("idle suspend");
     this.logger.info(
       `[idle-suspend] no build activity for ${Math.round(idleMs / 1000)}s; released the builder — the next edit or route request brings it back`,
     );
@@ -1299,6 +1299,9 @@ export class AkanAppHost {
     const files = batch?.files ?? [];
     if (shouldRefreshConfigOnIdleWake(batch)) {
       this.logger.verbose("[idle-suspend] config changed while suspended; restarting the dev host");
+      // This replaces the backend along with the builder, so whatever moved during the suspend is
+      // already covered — and a baseline carried past its own gap costs a restart at the next one.
+      this.#discardBuilderGap("config change replaces the backend anyway");
       await this.#recycleDevChildren(
         { type: "invalidate", kinds: [...(batch?.kinds ?? [])], files },
         {
@@ -1333,16 +1336,37 @@ export class AkanAppHost {
    *
    * The earliest open wins: a baseline from further back can only over-report, and over-reporting costs
    * a backend restart while under-reporting costs a server running code the developer already deleted.
+   *
+   * Held as the in-flight sweep rather than as its result, so a take cannot read a baseline that is
+   * still being written — the sweep is milliseconds and the gap it covers is a boot build, but "usually
+   * finishes first" is the kind of guarantee this whole mechanism exists to replace.
    */
-  async #openBuilderGap(reason: string): Promise<void> {
-    if (this.#builderGapFingerprints || !this.#backendGraph.ready) return;
-    this.#builderGapFingerprints = await this.#backendGraph.fingerprint();
-    this.logger.verbose(`[builder-gap] stamped ${this.#builderGapFingerprints.size} backend file(s) (${reason})`);
+  #openBuilderGap(reason: string): void {
+    if (this.#builderGapStamp) return;
+    if (!this.#backendGraph.ready) {
+      // No graph means no stamps at all: the host is on path-role fallback rules and does not know which
+      // files the backend runs. Said out loud, because a hole nobody can see reads like coverage.
+      this.logger.verbose(`[builder-gap] no backend graph yet; a save during this ${reason} goes unnoticed`);
+      return;
+    }
+    this.#builderGapStamp = this.#backendGraph
+      .fingerprint()
+      .then((stamps) => {
+        this.logger.verbose(`[builder-gap] stamped ${stamps.size} backend file(s) (${reason})`);
+        return stamps;
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `[builder-gap] could not stamp the backend files: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return null;
+      });
   }
   /** Which backend files moved while the builder was away. Consumes the baseline. */
   async #takeBuilderGapChanges(): Promise<string[]> {
-    const before = this.#builderGapFingerprints;
-    this.#builderGapFingerprints = null;
+    const stamping = this.#builderGapStamp;
+    this.#builderGapStamp = null;
+    const before = stamping ? await stamping : null;
     if (!before) return [];
     const moved = filesChangedSince(before, await this.#backendGraph.fingerprint());
     if (moved.length === 0) {
@@ -1355,6 +1379,18 @@ export class AkanAppHost {
       `[builder-gap] ${moved.length} backend file(s) changed while the builder was away; the backend is running the old ones`,
     );
     return moved;
+  }
+  /**
+   * Drop the stamps without acting on them, for a path that is replacing the backend anyway.
+   *
+   * Not merely tidy: a baseline left open outlives the gap it was taken for and is compared against the
+   * *next* one, where everything saved in between reads as changed — one backend restart for work that
+   * has already been done.
+   */
+  #discardBuilderGap(reason: string): void {
+    if (!this.#builderGapStamp) return;
+    this.#builderGapStamp = null;
+    this.logger.verbose(`[builder-gap] stamps dropped (${reason})`);
   }
   /** The restart path's half of the above: the wake path merges its own file list in instead. */
   async #restartBackendForGapChanges(): Promise<void> {
@@ -1403,7 +1439,7 @@ export class AkanAppHost {
     this.#lastRssRecycleAtMono = performance.now();
     // Stamped at the request rather than at the exit, because a builder that is draining has already
     // stopped taking work: whether its watcher still gets an event out is not something to rely on.
-    void this.#openBuilderGap("builder recycle");
+    this.#openBuilderGap("builder recycle");
   }
   async #handleInvalidate(message: Extract<BuilderMessage, { type: "invalidate" }>) {
     this.#logDevPlan(message);
@@ -1722,7 +1758,7 @@ export class AkanAppHost {
           settle(() => reject(new Error(`[cli] builder exited before emitting builder-ready (attempt ${attempt})`)));
         },
         onAway: () => {
-          void this.#openBuilderGap("builder replacement");
+          this.#openBuilderGap("builder replacement");
         },
         onReady: () => {
           settle(resolve);
