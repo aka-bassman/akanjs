@@ -1,6 +1,6 @@
 ---
 description: Akan page routing conventions
-globs: apps/**/page/**/*.{ts,tsx,js,jsx}
+globs: apps/**/page/**/*.{ts,tsx,js,jsx},libs/**/page/**/*.{ts,tsx,js,jsx}
 alwaysApply: false
 ---
 
@@ -15,4 +15,8 @@ alwaysApply: false
 - Page modules should usually export `default`, `pageConfig`, `head`, `generateHead`, or `Loading`.
 - `_overrides.tsx` is a logic-free UI-override manifest: imports plus a single `export default override({ Slot: AppComponent })` (from `akanjs/ui`), no `"use client"`. It re-skins framework `akanjs/ui` components for its route subtree; nested manifests merge over ancestors slot-by-slot (closest wins).
 - Prefer `export default function Page` or `export default async function Page` for page components.
+- `libs/<lib>/page` follows the same rules and ships routes to apps that opt in with `syncPageLibs` in `akan.config.ts`: `true` takes every lib dep that has a `page` folder, an array takes the libs listed, `false` (the default) syncs nothing.
+- `akan sync` links those routes into `apps/<app>/page/(libs)/(<lib>)` — once per basePath when the app declares subRoutes. The folder is generated and gitignored; edit the lib source, never the link.
+- Both path segments are route groups, so a lib route mounts at its own path (`libs/shared/page/login/_index.tsx` serves `/login`). Two synced routes that resolve to the same pattern are a sync-time error.
+- `export const pageConfig = { devOnly: true }` keeps a route out of `akan build` while it keeps serving under `akan start` and keeps being typechecked. On a `_layout.tsx` it excludes every route under that directory too. Write it as a literal `true`/`false` — the build reads it off the source without evaluating the module.
 - Before changing route behavior, check `pkgs/akanjs/server/src/routeTree.tsx` and nearby routes for the expected pattern.
