@@ -12,3 +12,19 @@ alwaysApply: false
 - Use `Slice` for typed data views that feed client stores and zones; keep each slice focused on one purpose.
 - Use `Endpoint` for query and mutation contracts exposed to callers.
 - Connect external APIs or infrastructure through adapters, usually under `srvkit/`, and inject them into services instead of importing vendor clients directly into domain logic.
+
+## Authorization Defaults
+
+- **Every `slice()` takes an explicit `{ guards: {…} }` second argument, and `root:` is always `Admin`.**
+- **Every custom `mutation` / `query` / `message` names its own `guards: [...]` array.** Never rely on the slice default. `Public` belongs on a slice `get:`, never on a mutation.
+- The acting user arrives via `.with(Self)` / `.with(CurrentUserId)`. Never trust a client-supplied id.
+- Services re-check ownership even when a guard already gated the call — two independent gates.
+
+## Service Method Shape
+
+- Keep methods to a few lines: load → chain → `return await ….save()`. Write `return await` explicitly in tail position.
+- Side effects belong in `override async _preUpdate` / `_postCreate`, not inline. Fire-and-forget is explicitly `void`-ed.
+- Order deliberately: load every referenced document, then save, then notify.
+- Return `null` / `false` for "not allowed" or "not found" and let the signal decide whether that is an error.
+- `XInternal` → `XSlice` → `XEndpoint` are all declared even when empty, and `exec` is a one-liner delegating to the service.
+- Preference order for injection: `service<srv.XService>()` for another module's service · `plug(AdapterClass)` or `plug(StorageAdaptorRole)` for an adapter · `use<T>()` for an `option.ts`-registered legacy singleton · `env(...)` for config. See the srvkit adapters and guards rule.

@@ -20,6 +20,22 @@ alwaysApply: false
 - A pubsub room is authorized once, at subscribe. When a socket's credential changes the framework re-runs each room's guards and unsubscribes the ones that now fail (`SignalResolver.revalidateWsRooms`), so guards must stay side-effect free and safe to re-run.
 - A websocket carries its credential in the handshake snapshot on `ws.data` (`AppWsData`); clients that hold the token in memory send it with `fetch.setJwt(...)`, which forwards an auth frame over the socket.
 
+## Authorization Defaults
+
+- **Every `slice()` takes an explicit `{ guards: {…} }` second argument, and `root:` is always `Admin`.**
+- **Every custom `mutation` / `query` / `message` names its own `guards: [...]` array.** Never rely on the slice default. `Public` belongs on a slice `get:`, never on a mutation.
+- The acting user arrives via `.with(Self)` / `.with(CurrentUserId)` / `.with(Me)`. Never trust a client-supplied id.
+- Services re-check ownership even when a guard already gated the call — two independent gates.
+- Guard class shape, fail-closed rules, and the `static name = "User"` requirement live in the srvkit adapters and guards rule.
+
+## Service Method Shape
+
+- Keep methods to a few lines: load → chain → `return await ….save()`. Write `return await` explicitly in tail position; do not "optimize" it away.
+- Side effects belong in `override async _preUpdate` / `_postCreate`, not inline. Fire-and-forget is explicitly `void`-ed.
+- Order deliberately: load every referenced document, then save, then notify.
+- Return `null` / `false` for "not allowed" or "not found" and let the signal decide whether that is an error.
+- `XInternal` → `XSlice` → `XEndpoint` are all declared even when empty, and `exec` is a one-liner delegating to the service.
+
 ## Signal Body Types
 
 - `.body(...)` / `.param(...)` args accept `ConstantFieldTypeInput` only: scalars, model refs, or `enumOf(...)`.
@@ -42,3 +58,5 @@ alwaysApply: false
 
 - Injected dependencies resolve by field-name convention: a field named `<refName>Service` resolves to the service registered under `<refName>`, and `<refName>Signal` likewise (`pkgs/akanjs/service/injectInfo.ts`).
 - The `Service`/`Signal` suffix is required — the injector strips it to derive the registry lookup key. Name the field after the target refName plus the suffix, not arbitrarily.
+- Preference order inside a service: `service<srv.XService>()` for another module's service · `plug(AdapterClass)` or `plug(StorageAdaptorRole)` for an adapter · `use<T>()` only to reach an `option.ts`-registered legacy singleton · `env(...)` for config.
+- New adapters are `adapt("name" as const, ({ use, env, plug, memory }) => ({…}))` classes in `srvkit/` that self-register — do not add them to `lib/option.ts`. See the srvkit adapters and guards rule.

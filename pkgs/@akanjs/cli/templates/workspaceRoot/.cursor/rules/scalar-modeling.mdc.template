@@ -7,8 +7,10 @@ alwaysApply: false
 # Scalar Modeling
 
 - Define Akan models in `.constant.ts` files with `via` from `akanjs/constant`.
-- Import custom scalar helpers such as `ID`, `Int`, `Float`, `JSON`, `Upload`, `Any`, `enumOf`, or `dayjs` from `akanjs/base` when the model needs them.
+- Import custom scalar helpers such as `ID`, `Int`, `Float`, `Upload`, `Any`, `enumOf`, or `dayjs` from `akanjs/base` when the model needs them. There is no `JSON` scalar — use `Any` for open payloads. `String`, `Boolean`, and `Date` are used directly as globals, and `Number` is not a valid field type.
 - Use `Int` for whole-number counts and quantities; use `Float` only for values that need decimals.
-- Use `ID` for document references and prefer explicit structured fields over `JSON` unless the content is genuinely flexible.
-- For date defaults, prefer a function such as `default: () => dayjs()` so the value is created at runtime.
-- Follow the established model layering pattern: `Input`, `Object`, `Light<Model>`, full `<Model>`, and `<Model>Insight` when the domain needs those views.
+- Use `ID` for document references and prefer explicit structured fields over `Any` unless the content is genuinely flexible.
+- For date defaults, prefer a function such as `default: () => dayjs()` so the value is created at runtime. Defaults are a literal for scalars and a thunk for anything constructed.
+- Follow the established model layering pattern in this order: `Input`, `Object`, `Light<Model>`, full `<Model>`, and `<Model>Insight`. Write all five, and write `<Model>Insight` even when it is empty.
+- Put display and predicate logic on the `Light<Model>` class (`isNew()`, `canWrite(user?)`, `formatTimes()`) rather than in a util module — the Light class is the one both server and client hold. Collection-level helpers go `static` on the full model.
+- Arrays are `field([T])`; optional is the postfix `.optional()`. Give any field whose business meaning is not obvious a short trailing comment.
