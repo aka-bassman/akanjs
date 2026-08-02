@@ -266,6 +266,27 @@ workflow changes.
 - Generated list accessors like `listBy(...)` return `Promise<Doc[]>`. For a chainable builder (`.sort().skip().limit().select()`) use the model facade's `findMany`/`findOne` (`FindManyChain`, `pkgs/akanjs/document/into.ts`).
 - **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`); client fetch results are raw `GetStateObject` plain data (functions stripped, `pkgs/akanjs/base/types.ts`).
 
+### Text Search In A Filter — `q.search()`
+
+- Text search is a filter query node like any other: `bySearch: filter().arg("text", String).query((text, q) =>
+  q.search(text, { prefix: true }))`. The generated `listBySearch` / `countBySearch` / `queryBySearch` /
+  `insightBySearch` come for free — you do **not** need a slice to make search usable.
+- **Only add a search slice when the model's data is safe to enumerate.** A filter is server-side; a slice is a
+  client-callable endpoint, so on a model whose slice `get:` is `Public` a search slice hands anyone a way to walk the
+  table. Leave that decision to the mounting app.
+- `q.search()` compiles to a JOIN, not a WHERE fragment, so it **must sit at an AND position**. Nesting it under
+  `q.any()` or `q.not()` throws, and it is rejected in `updateOneByQuery` / `updateManyByQuery` — a query-level write
+  takes no join, so ignoring the node would silently widen the write to every other matching row.
+- Blank or whitespace-only input matches **nothing**. Never "fix" that into a passthrough: a passthrough turns a
+  search endpoint into a full listing.
+- Order by relevance with the built-in `relevance` sort key. It is an empty sort map, which the store reads as
+  "unspecified": score order when a search join is present, `createdAt` descending otherwise. That fallback is the
+  compiler's own, not a model-defined default — redefining `latest` on the model does not change it.
+- **A slice endpoint never reaches "unspecified".** The resolver fills `latest` before the query is built, so a
+  client asking for the score order has to name `relevance`; leaving `sort` off gets `latest`, not relevance.
+- Scope a search with `columns` (`q.search(text, { columns: ["title"] })`) and re-weight with `weights`, a tuple of
+  finite numbers positional over `["title", "desc", "tag", "filter"]`.
+
 ### Service / Signal Injection
 
 - Injected dependencies resolve by field-name convention: a field named `<refName>Service` resolves to the service registered under `<refName>`, and `<refName>Signal` likewise (`pkgs/akanjs/service/injectInfo.ts`).
@@ -323,6 +344,34 @@ Conventions that hold for both shapes:
 - **Use the JS globals directly (no import needed)**: `String`, `Boolean`, `Date`. They are monkey-patched to behave like scalars, so `field(String)` typechecks.
 - **`Number` is not a valid field/body type.** `NumberConstructor` is intentionally not augmented, so `field(Number)` / `.body("x", Number)` fails to typecheck. Use `Int` or `Float` instead.
 - Runtime resolution of every scalar (globals included) goes through `PrimitiveRegistry` by `refName` (`pkgs/akanjs/base/primitiveRegistry.ts`).
+
+### Text Search Fields — the `text` role
+
+- A field joins the full-text index by declaring one of five roles: `field(String, { text: "title" })`, and likewise
+  `"desc"`, `"tag"`, `"thumb"`, `"filter"`. Nothing else opts a field in, and there is no per-model switch.
+- Pick the role by what the value *is*, because `bm25` weights them positionally (`title` 10, `tag` 3, `desc` 1,
+  `filter` 0): `title` is the one line a human scans for, `desc` is prose, `tag` is a keyword list, `filter` is a
+  scoping value (status, owner, role) that must be matchable but must never outrank a real title hit.
+- `thumb` is mirrored for rendering a hit and is **not** indexed — never expect it to match.
+- **A `secret`, `hidden`, or `resolve()` field with `text` throws at class-build time**, not at query time. That is
+  deliberate: the mirror is plaintext, so an indexed secret would leak through search. Do not work around it. The
+  same throw covers a `text` field *underneath* one of those — a scalar's own field is reachable through its parent,
+  so `f.secret(Noti)` where `Noti.label` carries a role is rejected at the parent, not silently indexed.
+- The role works on a relation too (`image: field(File, { text: "thumb" })`) and on an array (`playing: field([String],
+  { text: "tag" })`); an array of objects indexes by leaf key, including an array leaf (`works[*].tags`). A field
+  inside a `Map` indexes nothing: there is no fixed path to extract it from.
+- Declaring roles is all the wiring there is. Mirror rows are maintained by SQL triggers — not document hooks —
+  because `updateOneByQuery` and friends fire no hooks, and most searchable-field mutations go through exactly that
+  path.
+- Search runs on sqlite/libsql only. `q.search()` against Postgres throws, loudly, rather than returning every row.
+- `AKAN_SEARCH_ENABLED=0` switches the index off process-wide; unset means on. It never deletes mirror data, and
+  re-enabling reconciles every ref. **Give every process the same value** — a process cannot drop triggers for models
+  it does not mount, so a mixed fleet leaves stale triggers behind.
+- The tokenizer is `AKAN_SEARCH_TOKENIZER` (or `database.search.tokenizer`, which wins), defaulting to
+  `unicode61 remove_diacritics 2`. Changing it rebuilds the index from the mirror on the next boot — the model
+  tables are never re-read — so it is a safe knob, unlike a `text` role change, which re-reads every row. The
+  rebuild takes no cross-process claim, so a fleet restarted at once repeats it in every process; stagger the
+  restart when the mirror is large.
 
 ### Image & File Fields
 

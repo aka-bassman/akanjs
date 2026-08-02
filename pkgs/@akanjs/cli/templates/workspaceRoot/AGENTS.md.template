@@ -743,6 +743,17 @@ A short list of things the type system does not always catch:
 - **Reading a secret field needs an explicit select.** `field(...).secret()` values (e.g. `passwordHash`) are stripped
   from query results by default. Fetch them with `{ select: { <field>: true } }`, e.g.
   `this.userModel.pickById(id, { select: { passwordHash: true } })`.
+- **Text search fields use the `text` role.** Opt a field into the full-text index with
+  `field(String, { text: "title" })` (or `"desc"` / `"tag"` / `"thumb"` / `"filter"`). Nothing else opts a field in.
+  `secret` / `hidden` / `resolve()` fields with `text` throw at class-build time — the mirror is plaintext. Search
+  runs on sqlite/libsql only; `q.search()` against Postgres throws. `thumb` is mirrored for rendering and is not
+  indexed.
+- **`q.search()` is a filter node, not a slice requirement.** Prefer
+  `bySearch: filter().arg("text", String).query((text, q) => q.search(text, { prefix: true }))` — the generated
+  `listBySearch` / `countBySearch` / `queryBySearch` / `insightBySearch` come for free. Only add a search slice when
+  the model's data is safe to enumerate. It must sit at an AND position (not under `q.any()` / `q.not()`), blank
+  input matches nothing, and score order needs the built-in `relevance` sort key — a slice endpoint that leaves
+  `sort` off gets `latest`, not relevance.
 
 ## Current User, Guards & Auth-Gated Pages
 

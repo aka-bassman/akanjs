@@ -54,6 +54,27 @@ alwaysApply: false
 - Generated list accessors like `listBy(...)` return `Promise<Doc[]>`. For a chainable builder (`.sort().skip().limit().select()`) use the model facade's `findMany`/`findOne` (`FindManyChain`, `pkgs/akanjs/document/into.ts`).
 - **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`); client fetch results are raw `GetStateObject` plain data (functions stripped, `pkgs/akanjs/base/types.ts`).
 
+## Text Search In A Filter — `q.search()`
+
+- Text search is a filter query node like any other: `bySearch: filter().arg("text", String).query((text, q) =>
+  q.search(text, { prefix: true }))`. The generated `listBySearch` / `countBySearch` / `queryBySearch` /
+  `insightBySearch` come for free — you do **not** need a slice to make search usable.
+- **Only add a search slice when the model's data is safe to enumerate.** A filter is server-side; a slice is a
+  client-callable endpoint, so on a model whose slice `get:` is `Public` a search slice hands anyone a way to walk the
+  table. Leave that decision to the mounting app.
+- `q.search()` compiles to a JOIN, not a WHERE fragment, so it **must sit at an AND position**. Nesting it under
+  `q.any()` or `q.not()` throws, and it is rejected in `updateOneByQuery` / `updateManyByQuery` — a query-level write
+  takes no join, so ignoring the node would silently widen the write to every other matching row.
+- Blank or whitespace-only input matches **nothing**. Never "fix" that into a passthrough: a passthrough turns a
+  search endpoint into a full listing.
+- Order by relevance with the built-in `relevance` sort key. It is an empty sort map, which the store reads as
+  "unspecified": score order when a search join is present, `createdAt` descending otherwise. That fallback is the
+  compiler's own, not a model-defined default — redefining `latest` on the model does not change it.
+- **A slice endpoint never reaches "unspecified".** The resolver fills `latest` before the query is built, so a
+  client asking for the score order has to name `relevance`; leaving `sort` off gets `latest`, not relevance.
+- Scope a search with `columns` (`q.search(text, { columns: ["title"] })`) and re-weight with `weights`, a tuple of
+  finite numbers positional over `["title", "desc", "tag", "filter"]`.
+
 ## Service / Signal Injection
 
 - Injected dependencies resolve by field-name convention: a field named `<refName>Service` resolves to the service registered under `<refName>`, and `<refName>Signal` likewise (`pkgs/akanjs/service/injectInfo.ts`).

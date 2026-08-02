@@ -217,7 +217,7 @@ describe("DatabaseResolver declaration contracts", () => {
       method: "findOne",
       args: [
         { kind: "all", queries: [{ category: "news" }, { removedAt: { kind: "op", op: "empty" } }] },
-        { sort: { createdAt: -1 }, skip: 0, sample: false, select: { secret: true } },
+        { sort: null, skip: 0, sample: false, select: { secret: true } },
       ],
     });
     await instance.pickInCategory("news", false, { select: { secret: true } });
@@ -225,7 +225,7 @@ describe("DatabaseResolver declaration contracts", () => {
       method: "pickOne",
       args: [
         { kind: "all", queries: [{ category: "news" }, { removedAt: { kind: "op", op: "empty" } }] },
-        { sort: { createdAt: -1 }, skip: 0, sample: false, select: { secret: true } },
+        { sort: null, skip: 0, sample: false, select: { secret: true } },
       ],
     });
     const bulkLoaded = await instance.serverResolverTestItemLoader.loadMany(["doc-2", "missing", "doc-1"]);
