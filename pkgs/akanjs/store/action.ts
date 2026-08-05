@@ -224,7 +224,7 @@ type FormSetter<
       ? K extends string
         ? SetterKey<"upload", K, RefName, _CapitalizedRefName>
         : never
-      : never]: (fileList: FileList, idx?: number) => Promise<void>;
+      : never]: (fileList: FileList | File[], idx?: number) => Promise<void>;
   } & {
     [K in `writeOn${_CapitalizedRefName}`]: (path: string | (string | number)[], value: any) => void;
   };
@@ -376,7 +376,11 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
         : {}),
       ...(field.isClass && !!fileUploadRefName && ConstantRegistry.getRefName(field.modelRef) === fileUploadRefName
         ? {
-            [namesOfField.uploadFieldOnModel]: async function (this: SetGet, fileList: FileList, index?: number) {
+            [namesOfField.uploadFieldOnModel]: async function (
+              this: SetGet,
+              fileList: FileList | File[],
+              index?: number,
+            ) {
               const form = (this.get() as { [key: string]: any })[names.modelForm] as { [key: string]: any };
               if (!fileList.length) return;
               const files = await (fetch[names.addModelFiles] as (...args: any) => Promise<ProtoFile[]>)(
