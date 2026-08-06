@@ -32,8 +32,14 @@ Enforced by `biome.json` and the grit plugins in `pkgs/@akanjs/devkit/lint/`. Se
 that looks wrong; do not "fix" it back.
 
 - **Never hand-order Tailwind classes.** `nursery/useSortedClasses` is an error and also sorts the string
-  arguments to `clsx()` and `cva()`. Sorter output such as `font-bold text-2xl text-base-content` or
+  arguments to `cn()`. Sorter output such as `font-bold text-2xl text-base-content` or
   `border-base-content/5 border-t` is correct. Write the classes in any order, run the formatter, leave the result.
+- **Stay inside the color vocabulary.** Vocabulary closure strips the raw Tailwind palette, so these render as
+  no CSS and fail lint (`no-raw-palette-class.grit`, `no-arbitrary-color.grit`, `no-daisyui-legacy-class.grit`,
+  `no-inline-color.grit`): raw palette classes (`bg-blue-500`), arbitrary color values (`bg-[#3b82f6]`), daisyUI
+  legacy classes (`btn-primary`, `card-body`), and color literals in `style={{...}}`. Use semantic tokens
+  (`bg-primary`, `text-foreground/70`). A legitimate fixed color (OS-chrome mockups, data-viz) takes a
+  `// biome-ignore lint/plugin: <reason>` with the reason spelled out. `apps/akan/page/v1/**` is excluded.
 - **Never `throw new Error`.** Throw `new Err("<module>.error.<key>")` and register the key as `[en, ko]` in that
   module's dictionary `.error({})`. Import `Err` from `"../dict"` on the server and from `"@libs/<lib>/client"` or
   `"@apps/<app>/client"` in UI. `no-throw-raw-error.grit` exempts `*.test.ts`, `*.spec.ts`, `*.constant.ts`, and
@@ -154,7 +160,7 @@ Do not narrate code. Do document the thing the code cannot say. Both halves are 
 - Avoid hooks. `useState` is for modal-open, tab, draft-input, and drag state only — never for server data. `useEffect` must be a genuine effect such as subscribe-with-cleanup or one-shot init. Prefer `Tab` over a `useState` mode switch. `.Template.tsx` files contain zero `useState`.
 - Forms are entirely store-driven: `value={xForm.field}` with `onChange={st.do.setFieldOnX}`, the setter passed by reference. Always use `Field.*`, never a bare `<input>` for a model field. Nested rows use `st.do.writeOnX("payments.3.name", v)` plus the generated `add<Field>OnX` / `sub<Field>OnX`.
 - Read with `st.use.*` and write with `st.do.*`. Client components do not call `fetch.*`.
-- Static class strings stay plain strings. Reach for `clsx` only for a conditional or to merge an incoming `className`, and merge the caller last: `clsx("base classes", conditional, className)`. `clsx` comes from `akanjs/client`. No `twMerge`, no `cn()`.
+- Static class strings stay plain strings. Reach for `cn` only for a conditional or to merge an incoming `className`, and merge the caller last: `cn("base classes", cond && "extra", className)`. `cn` comes from `akanjs/client` (token-aware tailwind-merge) and is the only class-combining function — no `clsx` (removed), no raw `twMerge` imports, no object syntax (`{ x: cond }` → `cond && "x"`).
 - Multi-slot components take extra named props (`wrapperClassName`, `bodyClassName`), never a `classNames` object.
 - Use daisyUI semantic tokens with opacity modifiers (`text-base-content/60`, `border-base-content/10`, `bg-base-100/70`, `bg-primary/10`). Never use `dark:` — theming is the daisyUI theme block in `page/*/styles.css`. Raw hex belongs only in marketing surfaces; match the neighbouring files.
 - Hoist enum→class lookups to a module-scope `as const` map typed `{ [key in cnst.XStatus["value"]]: string }`. Do not use `Record<...>`. Escalate the map to `webkit/` when a second module needs it.
@@ -445,8 +451,11 @@ export const pageConfig = { transition: "stack" } satisfies PageConfig;
 
 ## Akan Sync Conventions (`apps/**`, `libs/**`)
 
-- `apps/<appName>` root may only contain these files: `akan.app.json`, `akan.config.ts`, `capacitor.config.ts`, `client.ts`, `main.ts`, `package.json`, `server.ts`, `tsconfig.json`.
+- `apps/<appName>` root may only contain these files: `AGENTS.md`, `CLAUDE.md`, `akan.app.json`, `akan.config.ts`, `capacitor.config.ts`, `client.ts`, `main.ts`, `package.json`, `server.ts`, `tsconfig.json`.
 - `apps/<appName>` root may only contain these folders: `.akan`, `android`, `common`, `env`, `ios`, `lib`, `page`, `plugin`, `private`, `public`, `script`, `srvkit`, `ui`, `webkit`.
+- `akan sync` maintains a scoped agent guide per app/lib: `apps/<app>/AGENTS.md` / `libs/<lib>/AGENTS.md`. The
+  section between the `akan:agent` markers (the `## Recipes In Scope` index) is generated — do not hand-edit it;
+  content outside the markers is yours. `akan lint` fails when the generated section is stale.
 - The `plugin/` facet holds Akan plugin declarations; files use the `<name>.plugin.ts` convention (e.g. `pushNotification.plugin.ts`) and are re-exported from the generated `plugin/index.ts` barrel.
 - Do not add `apps/*/base`; place shared app utilities under `apps/*/common`.
 - `apps/*/lib` and `libs/*/lib` root files are limited to generated/support files: `cnst.ts`, `db.ts`, `dict.ts`, `option.ts`, `sig.ts`, `srv.ts`, `st.ts`, `useClient.ts`, `useServer.ts`.
@@ -506,6 +515,107 @@ cd dist/apps/akan && USE_AKANJS_PKGS=true AKAN_PUBLIC_REPO_NAME=akanjs AKAN_PUBL
 ```
 
 - Adjust `<appName>`, `AKAN_PUBLIC_APP_NAME`, and `AKAN_PUBLIC_BASE_PATHS` to match the app being tested.
+
+<!-- akan:agent:start -->
+## Workspace
+
+- Repo: akanjs
+- Apps: uidemotest, akan, minimal
+- Libraries: util, shared
+- Packages: akanjs, create-akan-workspace, @akanjs/cli, @akanjs/devkit
+
+## Akan Module Abstracts
+
+- Before changing a domain, service, or scalar module, read its `*.abstract.md` file first.
+- Update the abstract when business invariants, workflows, or public behavior change.
+- Do not update the abstract for formatting-only, import-only, or style-only changes.
+- Service modules live in `lib/_<service>`, but their abstract file is `<service>.abstract.md`.
+
+## Generated Files
+
+Do not hand-edit generated Akan files such as `apps/*/client.ts`, `apps/*/server.ts`, `*/lib/cnst.ts`, `*/lib/db.ts`, `*/lib/dict.ts`, `*/lib/sig.ts`, `*/lib/srv.ts`, `*/lib/st.ts`, `*/lib/useClient.ts`, `*/lib/useServer.ts`, `*/lib/**/index.ts`, `*/ui/index.ts`, `*/webkit/index.ts`, `*/srvkit/index.ts`, `*/common/index.ts`.
+If generated output is stale or broken, update the owning source file and run `akan repair generated` or `akan sync <app-or-lib>`.
+
+## Recipes
+
+Framework UI recipes (Tailwind-variant look factories), importable from every app and lib. Consume by exact name —
+`import { <name> } from "akanjs/ui"`, then `<name>(variants?, className?)`. The second arg merges internally and
+takes **an array too**, so never wrap it in `cn()`: `<name>({}, ["h-full", isWide && "w-full", className])`.
+Do not guess recipe names, import paths, or variant values; the list below carries
+the full contract (`*` marks the default, `key?` is a boolean flag), so there is no need to open the recipe file to
+consume one. tsc still reports variant mistakes. **Before inlining a repeated surface (card, box,
+tile, …): reuse a recipe, or add one as `apps/<app>/ui/Recipe/<name>.ts` (one recipe per file, re-exported from
+that folder's `index.ts`) — never re-implement the same look inline in several places, and never author a
+near-duplicate.** Full authoring/consumption policy: the `recipeRule` guideline.
+
+Import from `akanjs/ui`:
+- `badgeRecipe`(variant: default*|primary|secondary|accent|success|warning|info|error|outline) — 뱃지 look — 시맨틱 variant. `<Badge>` 가 소비하며, recipes.badge 슬롯으로 교체 가능.
+- `buttonRecipe`(variant: primary*|secondary|accent|outline|ghost|destructive|success|warning|info|link · size: xs|sm|md*|lg|icon) — 버튼 look — 시맨틱 variant × size. `<Button>` 이 소비하며, `_overrides.tsx` 의 recipes.button 슬롯으로 교체 가능.
+- `inputRecipe`(kind: field*|area) — 입력 표면 look — Input/TextArea 가 공유하는 필드 셸. kind 로 한 줄 필드(field)/멀티라인(area)을 고른다.
+
+App and lib recipes are **not** listed here. Each app/lib carries its own generated index —
+`apps/<app>/AGENTS.md` / `libs/<lib>/AGENTS.md` (`## Recipes In Scope`) — regenerated by `akan sync` and
+verified by `akan lint`. When working inside an app or lib, consult that file before consuming or authoring a look.
+
+## MCP Workflow Policy
+
+- Prefer Akan MCP workflows before direct source edits.
+- Direct source edits are denied when an allowlisted Akan workflow or repair tool can perform the change.
+- Use `akan mcp --mode plan` to inspect `list_workflows`, `explain_workflow`, and `plan_workflow`.
+- If `plan_workflow` returns `planPath` or `next.tool=apply_workflow`, call `apply_workflow({ planPath })` before editing source files directly.
+- Use `akan mcp --mode apply` only for allowlisted `apply_workflow`, `run_validation`, and repair tools.
+- After `apply_workflow`, run `run_validation` with `validationTarget` when present; otherwise use `applyReportPath`.
+- If no workflow exists, or apply reports unsupported/no-op/failed diagnostics that require manual action, keep edits scoped to owning source files and never patch generated files directly.
+- For compound requests, split the request into workflows and apply each `planPath` in order, such as `create-module` followed by `add-field`.
+- **CLI-only fallback (MCP not connected):** `akan mcp` starts a stdio MCP server, so the `list_workflows`/`plan_workflow`/`apply_workflow` tools exist only when your agent is wired to it as an MCP client. When they are unavailable, the CLI is a first-class equivalent: `akan workflow list` / `explain <name>` / `plan <name> ... --format json --out <planPath>` / `apply <planPath> --format json`, `akan doctor --strict --format json` for validation, and `akan repair generated|imports|module-shape --app <app> --format json` for repairs. Scaffolding primitives (`create-module`/`create-scalar`/`create-service` take the target app/lib as a POSITIONAL arg; `add-field`/`add-enum-field` use `--app`/`--module` flags) call the same code the workflows do.
+
+## Validation
+
+- `akan sync <app-or-lib>`
+- `akan lint <app-or-lib-or-pkg>`
+- `akan typecheck <app-name>`
+- `akan test <app-or-lib-or-pkg>`
+- `akan build <app-name>`
+- `akan doctor --strict --format json`
+
+## Framework Guide
+
+# Akan.js Framework Guide
+
+## Purpose
+Use this as the compact framework context for AI codegen. It should explain how Akan turns convention-based files into a full-stack app without teaching every API in one place.
+
+## Ownership
+- `apps/<app>` contains app code, pages, env files, module folders, UI, webkit, srvkit, and common utilities.
+- `libs/<lib>` contains reusable domain and utility libraries consumed by apps.
+- `pkgs/akanjs` contains framework facets such as base, constant, document, service, signal, store, client, ui, and CLI tooling.
+- Domain behavior lives near the model folder instead of being split by technical layer first.
+
+## Current Akan Patterns
+- Database module flow is `constant -> dictionary -> document -> service -> signal -> store -> UI`.
+- Scalars live under `lib/__scalar/<scalarName>` and represent embedded value objects.
+- Service modules live under `lib/_<serviceName>` when behavior is not centered on one stored model.
+- Generated registry files such as `cnst.ts`, `db.ts`, `dict.ts`, `sig.ts`, `srv.ts`, and `st.ts` are scanner outputs and should not be hand-authored.
+- Pages and components should consume generated client/server helpers rather than duplicating model shapes.
+
+## Codegen Rules
+- Prefer the most specific guideline for file syntax; use this guide only for global architecture context.
+- When generating a new feature, start with the smallest necessary layer set and add later layers only when required by behavior.
+- Keep business decisions in constant, document, or service; keep API exposure in signal; keep client coordination in store; keep rendering in UI files.
+- Use direct module imports where scanner rules expect them, and avoid inventing new top-level app folders.
+
+## Theming And UI Customization
+When a request implies a distinct look and feel, do not stop at colors — customize both the theme and, when needed, the components.
+
+- **Theme (`apps/<app>/page/styles.css`).** The app imports Tailwind and `akanjs/ui/styles.css`, then overrides semantic token *values* per theme under `:root, [data-theme="dark"]` and `[data-theme="light"]` (`--background`, `--foreground`, `--primary`, `--muted`, `--border`, … each with a `-foreground` pair for text). The framework maps them to Tailwind color names, so `bg-primary` / `text-foreground` follow the `data-theme` attribute; corner rounding uses `--radius-box` / `--radius-field`. Fetch `get_guideline` with `cssRule` for the full token set before a deep theme pass.
+- **Components (`page/**/_overrides.tsx`).** When a default `akanjs/ui` component (Button, Modal, Table, Input, Select, …) is too restrictive for the design, re-skin it per route instead of forking, wrapping, or fighting it with utility classes. Write a drop-in replacement in `apps/<app>/ui/` typed against the slot contract (`AkanModalComponent`, or `AkanUiOverrides["<Slot>"]`), composing the framework's headless parts, then bind it in a `page/**/_overrides.tsx` manifest with a single `export default override({ Slot: BrandComponent })`. Overrides cascade down the route tree like layouts (closest ancestor wins). Fetch `get_guideline` with `componentRule` and read the `references/ui/customize` docs page for the slot list and patterns.
+
+## Review Checklist
+- The instruction points to current docs pages, not removed docs routes.
+- Generated examples use current Akan builder APIs and scanner-friendly filenames.
+- The output contract tells the model which file paths to return.
+- The guide avoids broad framework essays when a concrete file rule is better.
+<!-- akan:agent:end -->
 
 ## Before You Finish
 

@@ -90,10 +90,10 @@ export const SlashMenuList = ({ options, selectedIndex, onSelect, onHighlight }:
   })).filter((section) => section.items.length > 0);
 
   return (
-    <div className="z-50 max-h-80 w-64 overflow-y-auto rounded-md border border-base-content/10 bg-base-100 p-1 shadow-lg">
+    <div className="z-50 max-h-80 w-64 overflow-y-auto rounded-md border border-foreground/10 bg-background p-1 shadow-lg">
       {grouped.map((section) => (
         <div key={section.group}>
-          <div className="px-2 py-1 font-medium text-base-content/40 text-xs uppercase tracking-wide">
+          <div className="px-2 py-1 font-medium text-foreground/40 text-xs uppercase tracking-wide">
             {GROUP_LABELS[section.group]}
           </div>
           {section.items.map(({ option, index }) => (
@@ -102,7 +102,7 @@ export const SlashMenuList = ({ options, selectedIndex, onSelect, onHighlight }:
               type="button"
               ref={(el) => option.setRefElement(el)}
               className={`flex w-full flex-col items-start rounded px-2 py-1.5 text-left transition-colors ${
-                index === selectedIndex ? "bg-base-200" : "hover:bg-base-200/60"
+                index === selectedIndex ? "bg-muted" : "hover:bg-muted/60"
               }`}
               // Keep editor selection intact while clicking the menu.
               onMouseDown={(event) => event.preventDefault()}
@@ -110,7 +110,7 @@ export const SlashMenuList = ({ options, selectedIndex, onSelect, onHighlight }:
               onClick={() => onSelect(option)}
             >
               <span className="font-medium text-sm">{option.label}</span>
-              <span className="text-base-content/50 text-xs">{option.description}</span>
+              <span className="text-foreground/50 text-xs">{option.description}</span>
             </button>
           ))}
         </div>

@@ -1,5 +1,5 @@
 "use client";
-import { clsx } from "akanjs/client";
+import { cn } from "akanjs/client";
 import { Button, Loading } from "akanjs/ui";
 import type { MouseEvent, ReactNode } from "react";
 import { useState } from "react";
@@ -17,7 +17,7 @@ interface TryButtonProps {
 export const TryButton = ({
   children,
   wrapperClassName,
-  className = "btn-primary",
+  className = "",
   disabled,
   completeOnSuccess,
   footer,
@@ -27,9 +27,9 @@ export const TryButton = ({
   const [loading, setLoading] = useState(false);
   const [completed, setCompleted] = useState(false);
   return (
-    <div className={clsx("flex flex-col gap-2", wrapperClassName)}>
+    <div className={cn("flex flex-col gap-2", wrapperClassName)}>
       <Button
-        className={clsx("w-full", className)}
+        className={cn("w-full", className)}
         disabled={disabled || loading || completed}
         onClick={async (e) => {
           setErrorMessage("");
@@ -48,7 +48,7 @@ export const TryButton = ({
           <Loading.Spin />
         ) : completed ? (
           <>
-            <input type="checkbox" className="checkbox checkbox-success checkbox-sm" checked readOnly />
+            <input type="checkbox" className="size-3.5 rounded border border-input accent-success" checked readOnly />
             {children}
           </>
         ) : (
@@ -56,7 +56,7 @@ export const TryButton = ({
         )}
       </Button>
       {footer}
-      {errorMessage ? <div className="text-error text-sm">{errorMessage}</div> : null}
+      {errorMessage ? <div className="text-destructive text-sm">{errorMessage}</div> : null}
     </div>
   );
 };

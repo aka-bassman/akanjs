@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Docs } from "@apps/akan/ui";
+import { Code, cardGridRecipe, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 
 export default function Page() {
@@ -23,7 +23,7 @@ export default function Page() {
           </div>
         </Docs.Description>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="model-layering" title={l.trans({ en: "Model Layering Pattern", ko: "Model 계층 패턴" })}>
         <Docs.Title>{l.trans({ en: "Model Layering Pattern", ko: "Model 계층 패턴" })}</Docs.Title>
@@ -73,13 +73,14 @@ export default function Page() {
               }),
             },
           ].map(({ title, desc }) => (
-            <div key={title} className="rounded-xl border border-base-300 bg-base-100 p-4">
-              <div className="font-bold text-base-content">{title}</div>
-              <div className="mt-2 text-base-content/70 text-sm">{desc}</div>
+            <div key={title} className={panelRecipe()}>
+              <div className="font-bold text-foreground">{title}</div>
+              <div className="mt-2 text-foreground/70 text-sm">{desc}</div>
             </div>
           ))}
         </div>
         <Code.Snippet
+          className="w-full"
           title="ticket.constant.ts"
           code={`import { dayjs, enumOf, Int } from "akanjs/base";
 import { via } from "akanjs/constant";
@@ -111,7 +112,7 @@ export class TicketInsight extends via(Ticket, (field) => ({
 })) {}`}
         />
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="fields-enums" title={l.trans({ en: "Fields And enumOf", ko: "Field와 enumOf" })}>
         <Docs.Title>{l.trans({ en: "Fields And enumOf", ko: "Field와 enumOf" })}</Docs.Title>
@@ -123,8 +124,9 @@ export class TicketInsight extends via(Ticket, (field) => ({
             })}
           </div>
         </Docs.Description>
-        <div className="grid gap-3 xl:grid-cols-2">
+        <div className={cardGridRecipe()}>
           <Code.Snippet
+            className="w-full"
             title="status enum"
             code={`import { enumOf } from "akanjs/base";
 
@@ -137,6 +139,7 @@ export class TicketStatus extends enumOf("ticketStatus", [
 type TicketStatusValue = TicketStatus["value"];`}
           />
           <Code.Snippet
+            className="w-full"
             title="practical field options"
             code={`export class TicketInput extends via((field) => ({
   title: field(String, { example: "Fix payment bug" }),
@@ -149,7 +152,7 @@ type TicketStatusValue = TicketStatus["value"];`}
           />
         </div>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide
         id="hidden-secret-fields"
@@ -164,19 +167,19 @@ type TicketStatusValue = TicketStatus["value"];`}
             })}
           </div>
         </Docs.Description>
-        <div className="grid gap-3 xl:grid-cols-2">
-          <div className="rounded-xl border border-base-300 bg-base-100 p-4">
-            <div className="font-bold text-base-content">field.hidden()</div>
-            <div className="mt-2 text-base-content/70">
+        <div className={cardGridRecipe()}>
+          <div className={panelRecipe()}>
+            <div className="font-bold text-foreground">field.hidden()</div>
+            <div className="mt-2 text-foreground/70">
               {l.trans({
                 en: "Use it for internal state that may exist on the document but should not be treated as a normal visible field.",
                 ko: "document에는 존재할 수 있지만 일반적으로 보이는 field처럼 다루면 안 되는 내부 상태에 사용합니다.",
               })}
             </div>
           </div>
-          <div className="rounded-xl border border-base-300 bg-base-100 p-4">
-            <div className="font-bold text-base-content">field.secret()</div>
-            <div className="mt-2 text-base-content/70">
+          <div className={panelRecipe()}>
+            <div className="font-bold text-foreground">field.secret()</div>
+            <div className="mt-2 text-foreground/70">
               {l.trans({
                 en: "Use it for sensitive values such as password, phone, token, account id, wallet, or notification settings that should not be selected by default.",
                 ko: "password, phone, token, account id, wallet, notification 설정처럼 기본 조회에서 빠져야 하는 민감 값에 사용합니다.",
@@ -185,6 +188,7 @@ type TicketStatusValue = TicketStatus["value"];`}
           </div>
         </div>
         <Code.Snippet
+          className="w-full"
           title="user.constant.ts"
           code={`export class UserObject extends via(UserInput, (field) => ({
   accountId: field.secret(String).optional(),
@@ -194,7 +198,7 @@ type TicketStatusValue = TicketStatus["value"];`}
 })) {}`}
         />
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="text-search-fields" title={l.trans({ en: "Text Search Fields", ko: "텍스트 검색 field" })}>
         <Docs.Title>{l.trans({ en: "Text Search Fields", ko: "텍스트 검색 field" })}</Docs.Title>
@@ -339,6 +343,7 @@ type TicketStatusValue = TicketStatus["value"];`}
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="user.constant.ts"
           code={`import { via } from "akanjs/constant";
 import { user } from "../__lib/lib.constant";
@@ -360,7 +365,7 @@ export class User extends via(UserObject, LightUser, (resolve) => ({}), ...user.
 export class UserInsight extends via(User, (field) => ({}), ...user.insights) {}`}
         />
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide
         id="model-helpers"
@@ -375,8 +380,9 @@ export class UserInsight extends via(User, (field) => ({}), ...user.insights) {}
             })}
           </div>
         </Docs.Description>
-        <div className="grid gap-3 xl:grid-cols-2">
+        <div className={cardGridRecipe()}>
           <Code.Snippet
+            className="w-full"
             title="LightBoard helper"
             code={`export class LightBoard extends via(
   BoardObject,
@@ -393,6 +399,7 @@ export class UserInsight extends via(User, (field) => ({}), ...user.insights) {}
 }`}
           />
           <Code.Snippet
+            className="w-full"
             title="Board static helper"
             code={`export class Board extends via(BoardObject, LightBoard, (resolve) => ({})) {
   static getBoard(boardList: LightBoard[], boardId: string) {
@@ -402,7 +409,7 @@ export class UserInsight extends via(User, (field) => ({}), ...user.insights) {}
           />
         </div>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="resolve-fields" title={l.trans({ en: "Resolved Fields", ko: "Resolve field" })}>
         <Docs.Title>{l.trans({ en: "Resolved Fields", ko: "Resolve field" })}</Docs.Title>
@@ -420,8 +427,9 @@ export class UserInsight extends via(User, (field) => ({}), ...user.insights) {}
             })}
           </div>
         </Docs.Description>
-        <div className="grid gap-3 xl:grid-cols-2">
+        <div className={cardGridRecipe()}>
           <Code.Snippet
+            className="w-full"
             title="story.constant.ts"
             code={`export class LightStory extends via(
   StoryObject,
@@ -440,6 +448,7 @@ export class UserInsight extends via(User, (field) => ({}), ...user.insights) {}
 }`}
           />
           <Code.Snippet
+            className="w-full"
             title="story.signal.ts"
             code={`export class StoryInternal extends internal(srv.story.with(srv.actionLog), ({ resolveField }) => ({
   view: resolveField(Int)
@@ -460,7 +469,7 @@ export class UserInsight extends via(User, (field) => ({}), ...user.insights) {}
           />
         </div>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide
         id="scalar-static-utilities"
@@ -478,6 +487,7 @@ export class UserInsight extends via(User, (field) => ({}), ...user.insights) {}
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="coordinate.constant.ts"
           code={`import { enumOf, Float } from "akanjs/base";
 import { via } from "akanjs/constant";
@@ -503,7 +513,7 @@ export class Coordinate extends via((field) => ({
 }`}
         />
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="insight-constants" title={l.trans({ en: "Insight Constants", ko: "Insight constant" })}>
         <Docs.Title>{l.trans({ en: "Insight Constants", ko: "Insight constant" })}</Docs.Title>
@@ -516,6 +526,7 @@ export class Coordinate extends via((field) => ({
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="ticket.constant.ts"
           code={`import { Int } from "akanjs/base";
 
@@ -525,7 +536,7 @@ export class TicketInsight extends via(Ticket, (field) => ({
 })) {}`}
         />
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="practical-rules" title={l.trans({ en: "Practical Rules", ko: "실전 규칙" })}>
         <Docs.Title>{l.trans({ en: "Practical Rules", ko: "실전 규칙" })}</Docs.Title>
@@ -561,16 +572,16 @@ export class TicketInsight extends via(Ticket, (field) => ({
                 ko: "순환 barrel reference를 피하기 위해 다른 constant는 직접 파일 경로에서 import합니다.",
               }),
             ].map((rule) => (
-              <div key={rule} className="rounded-xl border border-base-300 bg-base-100 px-4 text-base-content/70">
+              <div key={rule} className={panelRecipe({ padding: "row" }, "text-foreground/70")}>
                 {rule}
               </div>
             ))}
           </div>
         </Docs.Description>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
-      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 lg:flex" />
+      <DocsToc />
     </Scroll>
   );
 }

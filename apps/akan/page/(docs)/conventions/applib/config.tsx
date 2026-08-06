@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Docs } from "@apps/akan/ui";
+import { Code, cardGridRecipe, Divider, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 
 export default function Page() {
@@ -23,6 +23,7 @@ export default function Page() {
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="apps/myapp/akan.config.ts"
           code={`import type { AppConfig } from "akanjs";
 
@@ -31,7 +32,7 @@ const config: AppConfig = {};
 export default config;`}
         />
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="config-shape" title={l.trans({ en: "Config File Shape", ko: "설정 파일 형태" })}>
         <Docs.Title>{l.trans({ en: "Config File Shape", ko: "설정 파일 형태" })}</Docs.Title>
@@ -43,8 +44,9 @@ export default config;`}
             })}
           </div>
         </Docs.Description>
-        <div className="grid gap-3 xl:grid-cols-2">
+        <div className={cardGridRecipe()}>
           <Code.Snippet
+            className="w-full"
             title="object config"
             code={`import type { AppConfig } from "akanjs";
 
@@ -55,6 +57,7 @@ const config: AppConfig = {
 export default config;`}
           />
           <Code.Snippet
+            className="w-full"
             title="function config"
             code={`import type { AppConfig } from "akanjs";
 
@@ -69,7 +72,7 @@ export default config;`}
           />
         </div>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="routes" title="routes">
         <Docs.Title>routes</Docs.Title>
@@ -88,6 +91,7 @@ export default config;`}
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="apps/shop/akan.config.ts"
           code={`import type { AppConfig } from "akanjs";
 
@@ -107,7 +111,7 @@ export default config;`}
           })}
         </Docs.Alert>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="mobile" title="mobile">
         <Docs.Title>mobile</Docs.Title>
@@ -126,6 +130,7 @@ export default config;`}
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="apps/shop/akan.config.ts"
           code={`import type { AppConfig } from "akanjs";
 
@@ -159,7 +164,7 @@ export default config;`}
           })}
         </Docs.Alert>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="default-database-mode" title="defaultDatabaseMode">
         <Docs.Title>defaultDatabaseMode</Docs.Title>
@@ -178,6 +183,7 @@ export default config;`}
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="apps/enterprise/akan.config.ts"
           code={`import type { AppConfig } from "akanjs";
 
@@ -193,14 +199,17 @@ export default config;`}
               en: "Only customize this when your deployment model really needs separated or clustered database behavior. For details, see ",
               ko: "배포 모델에서 database 분리 또는 cluster 동작이 실제로 필요할 때만 커스터마이징하세요. 자세한 내용은 ",
             })}
-            <a href="/docs/arch/infra#database-mode" className="link link-primary">
+            <a
+              href="/docs/arch/infra#database-mode"
+              className="text-primary underline underline-offset-4 hover:no-underline"
+            >
               {l.trans({ en: "Database Mode", ko: "Database Mode" })}
             </a>
             {l.trans({ en: ".", ko: "를 참고하세요." })}
           </span>
         </Docs.Alert>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="images" title="images">
         <Docs.Title>images</Docs.Title>
@@ -219,6 +228,7 @@ export default config;`}
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="apps/catalog/akan.config.ts"
           code={`import type { AppConfig } from "akanjs";
 
@@ -236,7 +246,7 @@ const config: AppConfig = {
 export default config;`}
         />
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="i18n" title="i18n">
         <Docs.Title>i18n</Docs.Title>
@@ -255,6 +265,7 @@ export default config;`}
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="apps/global/akan.config.ts"
           code={`import type { AppConfig } from "akanjs";
 
@@ -274,7 +285,7 @@ export default config;`}
           })}
         </Docs.Alert>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="public-env" title="publicEnv">
         <Docs.Title>publicEnv</Docs.Title>
@@ -293,6 +304,7 @@ export default config;`}
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="apps/landing/akan.config.ts"
           code={`import type { AppConfig } from "akanjs";
 
@@ -309,7 +321,7 @@ export default config;`}
           })}
         </Docs.Alert>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="secrets" title="secrets">
         <Docs.Title>secrets</Docs.Title>
@@ -327,8 +339,9 @@ export default config;`}
             })}
           </div>
         </Docs.Description>
-        <div className="grid gap-3 xl:grid-cols-2">
+        <div className={cardGridRecipe()}>
           <Code.Snippet
+            className="w-full"
             title="apps/api/akan.config.ts"
             code={`import type { AppConfig } from "akanjs";
 
@@ -339,6 +352,7 @@ const config: AppConfig = {
 export default config;`}
           />
           <Code.Snippet
+            className="w-full"
             title=".gitignore (auto-synced)"
             code={`# akan:secrets (managed by akan.config.ts — do not edit)
 apps/api/certs/*.pem
@@ -359,7 +373,7 @@ apps/api/secrets/**/*
           })}
         </Docs.Alert>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="sync-page-libs" title="syncPageLibs">
         <Docs.Title>syncPageLibs</Docs.Title>
@@ -413,6 +427,7 @@ export default config;`}
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="apps/media/akan.config.ts"
           code={`import type { AppConfig } from "akanjs";
 
@@ -429,7 +444,7 @@ export default config;`}
           })}
         </Docs.Alert>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="barrel-imports" title="barrelImports">
         <Docs.Title>barrelImports</Docs.Title>
@@ -448,6 +463,7 @@ export default config;`}
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="apps/admin/akan.config.ts"
           code={`import type { AppConfig } from "akanjs";
 
@@ -464,7 +480,7 @@ export default config;`}
           })}
         </Docs.Alert>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="optimize-imports" title="optimizeImports">
         <Docs.Title>optimizeImports</Docs.Title>
@@ -483,6 +499,7 @@ export default config;`}
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="apps/dashboard/akan.config.ts"
           code={`import type { AppConfig } from "akanjs";
 
@@ -499,7 +516,7 @@ export default config;`}
           })}
         </Docs.Alert>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="docker" title="docker">
         <Docs.Title>docker</Docs.Title>
@@ -518,6 +535,7 @@ export default config;`}
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="apps/worker/akan.config.ts"
           code={`import type { AppConfig } from "akanjs";
 
@@ -532,6 +550,7 @@ const config: AppConfig = {
 export default config;`}
         />
         <Code.Snippet
+          className="w-full"
           title="apps/custom-runtime/akan.config.ts"
           code={`import type { AppConfig } from "akanjs";
 
@@ -572,7 +591,7 @@ export default config;`}
           })}
         </Docs.Alert>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide
         id="library-config-fields"
@@ -594,6 +613,7 @@ export default config;`}
           </div>
         </Docs.Description>
         <Code.Snippet
+          className="w-full"
           title="libs/shared/akan.config.ts"
           code={`import type { LibConfig } from "akanjs";
 
@@ -604,9 +624,9 @@ const config: LibConfig = {
 export default config;`}
         />
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
-      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 lg:flex" />
+      <DocsToc />
     </Scroll>
   );
 }
