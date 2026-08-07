@@ -95,7 +95,7 @@ export interface DocumentStore {
     query: DocumentQuery,
     update: DocumentUpdateInput,
   ): Promise<{ acknowledged: boolean; matchedCount: number; modifiedCount: number }>;
-  deleteManyByQuery(
+  removeManyByQuery(
     query: DocumentQuery,
   ): Promise<{ acknowledged: boolean; matchedCount: number; modifiedCount: number }>;
   bulkWrite(
@@ -1105,8 +1105,9 @@ export class SqlDocumentStore {
     return { acknowledged: true, matchedCount: changes, modifiedCount: changes };
   }
 
-  async deleteManyByQuery(query: DocumentQuery) {
-    // Query-level soft delete is a single atomic UPDATE stamping `removedAt` (bare value = set); it fires no hooks.
+  async removeManyByQuery(query: DocumentQuery) {
+    // Query-level remove is a single atomic UPDATE stamping `removedAt` (bare value = set); it fires no hooks.
+    // "remove", not "delete": the row survives, and `delete` stays free to mean an actual DELETE some day.
     return this.updateManyByQuery(query, { removedAt: dayjs() });
   }
 

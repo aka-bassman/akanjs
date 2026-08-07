@@ -239,10 +239,10 @@ export default function Page() {
     {
       name: "cascade remove",
       desc: l.trans({
-        en: "A relation field declared with cascade: \"remove\" removes its target through the target's service, so the target's _postRemove runs too.",
-        ko: 'cascade: "remove"로 선언한 관계 field는 대상의 service를 거쳐 삭제하므로 대상의 _postRemove도 함께 실행됩니다.',
+        en: 'A field declared with cascade: "removeRef" or "removeWith" removes through the target\'s service, so the target\'s _postRemove runs too. Declaring a _postRemove here is also what keeps that cascade one document at a time instead of one query.',
+        ko: 'cascade: "removeRef" 또는 "removeWith"로 선언한 field는 대상의 service를 거쳐 삭제하므로 대상의 _postRemove도 함께 실행됩니다. 여기에 _postRemove를 선언하는 것이 곧 그 캐스케이드를 한 번의 쿼리가 아니라 문서 단위로 유지하는 조건이기도 합니다.',
       }),
-      example: `image: field(File, { cascade: "remove" }).optional()`,
+      example: `image: field(File, { cascade: "removeRef" }).optional()`,
     },
   ];
 

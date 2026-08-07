@@ -4,7 +4,7 @@ import type { DocumentModel, QueryOf } from "akanjs/constant";
 import type { CacheAdaptor, CacheSetOptions } from "akanjs/service";
 import type { DataLoader } from "./dataLoader";
 import type { ExtractQuery, ExtractSort, FilterInstance } from "./filterMeta";
-import type { CRUDEventType, Mdl, SaveEventType } from "./into";
+import type { CRUDEventType, Mdl, SaveEventType, UpdateResult } from "./into";
 import type { DataInputOf, FindQueryOption, ListQueryOption } from "./types";
 
 export class CacheDatabase<T = unknown> {
@@ -105,6 +105,7 @@ type DatabaseModelWithQuerySort<
   __create: (data: _DataInput) => Promise<Doc>;
   __update: (id: string, data: Partial<Doc>) => Promise<Doc>;
   __remove: (id: string) => Promise<Doc>;
+  __removeMany: (query: _QueryOfDoc) => Promise<UpdateResult>;
   __list(query: _QueryOfDoc, queryOption?: _ListQueryOption): Promise<Doc[]>;
   __listIds(query: _QueryOfDoc, queryOption?: _ListQueryOption): Promise<string[]>;
   __find(query: _QueryOfDoc, queryOption?: _FindQueryOption): Promise<Doc | null>;

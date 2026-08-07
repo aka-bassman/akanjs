@@ -79,7 +79,7 @@ Runs before remove.
 
 Runs after remove. Return the document to continue.
 
-A relation field declared with cascade: "remove" removes its target through the target's service, so the target's _postRemove runs too.
+A field declared with cascade: "removeRef" or "removeWith" removes through the target's service, so the target's _postRemove runs too. Declaring a _postRemove here is also what keeps that cascade one document at a time instead of one query.
 
 A service file is where business workflows run. It coordinates documents, other services, signals, external APIs, environment options, and service lifecycle hooks.
 
