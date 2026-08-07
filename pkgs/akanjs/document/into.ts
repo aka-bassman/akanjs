@@ -77,16 +77,21 @@ export type Mdl<
   find(query: _RawQuery, projection?: _Projection): FindManyChain<Doc>;
   findOne(query: _RawQuery, projection?: _Projection): FindOneChain<Doc>;
   findById(id: string | undefined, projection?: _Projection): Promise<Doc | null>;
-  countDocuments(query: _RawQuery): Promise<number>;
+  count(query: _RawQuery): Promise<number>;
   exists(query: _RawQuery): Promise<string | null>;
+  // `Many`/`One` stay spelled out here. A bare `update`/`remove` would read like the document-path `update(id)` and
+  // `doc.remove()` while silently hitting every match — the one place the `find`/`findOne` split is worth breaking.
   updateOne(
     query: _RawQuery,
     update: DocumentUpdateInput<_RawDoc>,
     options?: DocumentUpdateOptions,
   ): Promise<UpdateResult>;
   updateMany(query: _RawQuery, update: DocumentUpdateInput<_RawDoc>): Promise<UpdateResult>;
+  removeOne(query: _RawQuery): Promise<UpdateResult>;
   removeMany(query: _RawQuery): Promise<UpdateResult>;
   bulkWrite(operations: BulkWriteOperation<Raw, _RawDoc, _RawQuery>[]): Promise<UpdateResult>;
+  /** @deprecated Renamed to `count`. */
+  countDocuments(query: _RawQuery): Promise<number>;
 };
 
 interface IntoConstantModel<T extends string, _CapitalizedRefName extends string, Raw, Insight> {

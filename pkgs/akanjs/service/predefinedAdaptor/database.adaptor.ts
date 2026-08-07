@@ -98,6 +98,9 @@ export interface DocumentStore {
   removeManyByQuery(
     query: DocumentQuery,
   ): Promise<{ acknowledged: boolean; matchedCount: number; modifiedCount: number }>;
+  removeOneByQuery(
+    query: DocumentQuery,
+  ): Promise<{ acknowledged: boolean; matchedCount: number; modifiedCount: number; upsertedId: string | null }>;
   bulkWrite(
     operations: { updateOne: { filter: DocumentQuery; update: DocumentUpdateInput; upsert?: boolean } }[],
   ): Promise<{ acknowledged: boolean; matchedCount: number; modifiedCount: number; upsertedId: string | null }>;
@@ -1109,6 +1112,12 @@ export class SqlDocumentStore {
     // Query-level remove is a single atomic UPDATE stamping `removedAt` (bare value = set); it fires no hooks.
     // "remove", not "delete": the row survives, and `delete` stays free to mean an actual DELETE some day.
     return this.updateManyByQuery(query, { removedAt: dayjs() });
+  }
+
+  async removeOneByQuery(query: DocumentQuery) {
+    // "One" is the newest match: `updateOneByQuery` orders its subquery `createdAt` descending. The caller cannot
+    // pick, and the result carries counts rather than an id, so this is for "at most one of these" — not a queue.
+    return this.updateOneByQuery(query, { removedAt: dayjs() });
   }
 
   // Prepends the mandatory `updatedAt = now` stamp to the compiled assignments so every atomic write bumps it.

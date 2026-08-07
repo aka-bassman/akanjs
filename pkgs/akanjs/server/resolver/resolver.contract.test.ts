@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Dayjs, dayjs, ENDPOINT_META, ID } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
-import { DocumentSchema, type SchemaOf } from "akanjs/document";
+import { assertFilterFitsCrud, DocumentSchema, type SchemaOf } from "akanjs/document";
 import {
   type AkanJob,
   adapt,
@@ -494,6 +494,10 @@ describe("ServiceResolver declaration contracts", () => {
       existsInCategory: (...args: unknown[]) => Promise<unknown>;
       queryInCategory: (...args: unknown[]) => unknown;
       getServerResolverTestItem: (id: string) => Promise<unknown>;
+      removeInCategory: (...args: unknown[]) => Promise<unknown>;
+      removeOneInCategory: (...args: unknown[]) => Promise<unknown>;
+      updateInCategory: (...args: unknown[]) => { set: (update: unknown) => Promise<unknown> };
+      updateOneInCategory: (...args: unknown[]) => { set: (update: unknown) => Promise<unknown> };
     };
     const databaseCalls: { method: string; args: unknown[] }[] = [];
     service.__databaseModel = new Proxy(
@@ -538,6 +542,61 @@ describe("ServiceResolver declaration contracts", () => {
       queries: [{ category: "news" }, { removedAt: { kind: "op", op: "empty" } }],
     });
     expect(await service.getServerResolverTestItem(validId)).toEqual({ id: validId, title: "loaded" });
+  });
+
+  test("generates a query-level write per filter, with the patch on a terminal set()", async () => {
+    const cascade = new CascadeRunner();
+    cascade.register(serverResolverTestConstant, new DocumentSchema(), ServerResolverTestService);
+    cascade.seal(() => null as never);
+    const ServiceRef = ServiceResolver.resolveDatabaseService(
+      serverResolverTestDatabase,
+      ServerResolverTestService,
+      cascade,
+    );
+    const service = new ServiceRef() as InstanceType<typeof ServiceRef> & {
+      __databaseModel: Record<string, (...args: unknown[]) => Promise<unknown>>;
+      removeInCategory: (...args: unknown[]) => Promise<unknown>;
+      removeOneInCategory: (...args: unknown[]) => Promise<unknown>;
+      updateInCategory: (...args: unknown[]) => { set: (update: unknown) => Promise<unknown> };
+      updateOneInCategory: (...args: unknown[]) => { set: (update: unknown) => Promise<unknown> };
+    };
+    const calls: { method: string; args: unknown[] }[] = [];
+    service.__databaseModel = new Proxy(
+      {},
+      {
+        get:
+          (_target, prop: string) =>
+          async (...args: unknown[]) => {
+            calls.push({ method: prop, args });
+            return { acknowledged: true, matchedCount: 1, modifiedCount: 1 };
+          },
+      },
+    );
+    const query = { kind: "all", queries: [{ category: "news" }, { removedAt: { kind: "op", op: "empty" } }] };
+
+    await service.removeInCategory("news");
+    expect(calls.at(-1)).toEqual({ method: "__removeMany", args: [query] });
+    await service.removeOneInCategory("news");
+    expect(calls.at(-1)).toEqual({ method: "__removeOne", args: [query] });
+    // The patch lands on `set()`, so it can never be mistaken for an omitted trailing filter arg.
+    await service.updateInCategory("news").set({ title: "Beta" });
+    expect(calls.at(-1)).toEqual({ method: "__updateMany", args: [query, { title: "Beta" }] });
+    await service.updateOneInCategory("news").set({ title: "Beta" });
+    expect(calls.at(-1)).toEqual({ method: "__updateOne", args: [query, { title: "Beta" }] });
+    // Building the chain touches nothing until `set()` runs.
+    const pending = service.updateInCategory("news");
+    expect(calls.at(-1)?.method).toBe("__updateOne");
+    await pending.set({ title: "Gamma" });
+    expect(calls.at(-1)).toEqual({ method: "__updateMany", args: [query, { title: "Gamma" }] });
+  });
+
+  test("refuses a filter keyed after its own model", () => {
+    // Filter methods are assigned after CRUD, so this collision would silently swap the single-document
+    // remove/update for a query-level one that fires no hooks — and therefore no cascade.
+    expect(() => assertFilterFitsCrud("chat", "chat", "Chat")).toThrow(
+      'Filter "chat" on "chat" generates removeChat/updateChat',
+    );
+    expect(() => assertFilterFitsCrud("chat", "inRoom", "Chat")).not.toThrow();
   });
 });
 

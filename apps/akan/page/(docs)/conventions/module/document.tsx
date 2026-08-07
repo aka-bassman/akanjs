@@ -178,7 +178,8 @@ export class TicketModel extends into(Ticket, TicketFilter, cnst.ticket, () => (
           <div className={panelRecipe()}>
             <div className="font-bold text-foreground">Query helpers</div>
             <div className="mt-2 text-foreground/70">
-              list, listIds, find, findId, pick, pickId, exists, count, insight, query
+              list, listIds, find, findId, pick, pickId, exists, count, insight, query, remove, removeOne, update,
+              updateOne
             </div>
           </div>
         </div>

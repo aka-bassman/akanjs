@@ -5,6 +5,7 @@ import type {
   CRUDEventType,
   DatabaseModel,
   DataInputOf,
+  DocumentUpdateInput,
   FilterInstance,
   FindQueryOption,
   GetDocObject,
@@ -103,6 +104,9 @@ export type DatabaseService<
   __update: (id: string, data: Partial<Doc>) => Promise<Doc>;
   __remove: (id: string) => Promise<Doc>;
   __removeMany: (query: _QueryOfDoc) => Promise<UpdateResult>;
+  __removeOne: (query: _QueryOfDoc) => Promise<UpdateResult>;
+  __updateMany: (query: _QueryOfDoc, update: DocumentUpdateInput<Doc>) => Promise<UpdateResult>;
+  __updateOne: (query: _QueryOfDoc, update: DocumentUpdateInput<Doc>) => Promise<UpdateResult>;
   __list(query?: _QueryOfDoc, queryOption?: _ListQueryOption): Promise<Doc[]>;
   __listIds(query?: _QueryOfDoc, queryOption?: _ListQueryOption): Promise<string[]>;
   __find(query?: _QueryOfDoc, queryOption?: _FindQueryOption): Promise<Doc | null>;

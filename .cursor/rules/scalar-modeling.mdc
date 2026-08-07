@@ -93,7 +93,7 @@ shape, so `cascade` never means "related" — it means one of exactly these:
 - A `removeWith` declaration **auto-creates its index** (`{ removedAt, fk }`, or `{ removedAt, typeKey, fk }` when
   polymorphic). Every non-base field lives in the `_doc` JSON column, so the lookup would otherwise scan the table
   on every owner removal.
-- **Query-level removes fire no hooks and therefore no cascade.** `removeManyByQuery` / `updateManyByQuery` stamp
+- **Query-level removes fire no hooks and therefore no cascade.** `removeManyByQuery` / `updateManyByQuery` and the generated `remove<Filter>` / `update<Filter>` stamp
   `removedAt` in one atomic UPDATE, so nothing downstream runs. Remove one document at a time when it cascades.
 - Cascades are **idempotent**: `removedAt IS NULL` is ANDed into every query-level write, so a retry after a partial
   failure re-stamps nothing. Cycles are cut by a visited set carried down the whole chain, with a depth cap of 16.

@@ -4463,7 +4463,7 @@ Akan has two ways to change stored data. Use document methods when you edit one 
 
 Document methods (`.set().save()`, `Model.update`, `Model.remove`) load a document, run save/update/remove hooks, then persist it.
 
-Query updates (`updateOne`, `updateMany`, `removeMany`, `bulkWrite`) compile to a single atomic SQL statement and do not load documents.
+Query updates (`updateOne`, `updateMany`, `removeOne`, `removeMany`, `bulkWrite`) compile to a single atomic SQL statement and do not load documents.
 
 Use the `u` update helper for operators, the same way `q` is used for query conditions.
 

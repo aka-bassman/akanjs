@@ -292,6 +292,9 @@ transition. Atomic counters live on the Model class with the updater-callback fo
 Indexes and derived totals go in `static override _onSchema`, not in the service. **Removal is always soft** — the
 model facade's `removeMany(query)` and the store's `removeManyByQuery` stamp `removedAt` like `remove(id)` does; the
 framework has no hard delete for a model table, and `delete` is deliberately left unused so it can mean one later.
+The facade keeps `Many`/`One` spelled out on its writes (`updateOne` / `updateMany` / `removeOne` / `removeMany`):
+a bare `update`/`remove` would read like the document-path `update(id)` / `doc.remove()` while hitting every match.
+Only the count was shortened — `count(query)`, with `countDocuments` kept as `@deprecated`.
 
 **`<model>.service.ts`** — keep methods to a few lines: load → chain → `return await ….save()`. Write `return await`
 explicitly in tail position; do not "optimize" it away. Side effects belong in `override async _preUpdate` /
@@ -363,6 +366,20 @@ workflow changes.
 - Apply ordering/paging via the store `init` fetch option instead: `initX(..., { sort, page, limit })` (`pkgs/akanjs/fetch/fetchType/sliceFetch.type.ts`).
 - Generated list accessors like `listBy(...)` return `Promise<Doc[]>`. For a chainable builder (`.sort().skip().limit().select()`) use the model facade's `findMany`/`findOne` (`FindManyChain`, `pkgs/akanjs/document/into.ts`).
 - **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`); client fetch results are raw `GetStateObject` plain data (functions stripped, `pkgs/akanjs/base/types.ts`).
+- Every filter generates fourteen methods: `list` · `listIds` · `find` · `findId` · `pick` · `pickId` · `exists` ·
+  `count` · `insight` · `query` · **`remove`** · **`removeOne`** · **`update`** · **`updateOne`**. The last four are
+  query-level writes — one atomic UPDATE, **no hooks**, and therefore no `_postRemove` and no cascade. Use them on a
+  model that carries no removal side effect; otherwise remove documents one at a time.
+- **`update<Filter>` / `updateOne<Filter>` are chains, not calls:** `await updateInRoot(rootId).set({ status:
+  "archived" })`. The patch cannot trail the filter args — a filter's own args may be optional and no tuple type
+  puts a required element after those — so it lands on a terminal `.set()`, mirroring the `UPDATE … SET …` it
+  compiles to. Building the chain touches nothing; only `.set()` runs a query.
+- `removeOne` / `updateOne` hit the **newest** match — the subquery they compile to is ordered `createdAt` descending
+  and there is no way to change that. They also report only counts, never which row they touched, so they are for
+  "there is at most one of these", not for claiming the next item off a queue. Pass a query that matches one row.
+- **A filter may not be keyed after its own model.** Filter methods are assigned after CRUD, so a filter `chat` on
+  model `chat` would silently swap the single-document `removeChat`/`updateChat` for a hookless query-level one. It
+  throws at boot instead (`assertFilterFitsCrud`).
 
 ### Text Search In A Filter — `q.search()`
 
@@ -514,7 +531,7 @@ shape, so `cascade` never means "related" — it means one of exactly these:
 - A `removeWith` declaration **auto-creates its index** (`{ removedAt, fk }`, or `{ removedAt, typeKey, fk }` when
   polymorphic). Every non-base field lives in the `_doc` JSON column, so the lookup would otherwise scan the table
   on every owner removal.
-- **Query-level removes fire no hooks and therefore no cascade.** `removeManyByQuery` / `updateManyByQuery` stamp
+- **Query-level removes fire no hooks and therefore no cascade.** `removeManyByQuery` / `updateManyByQuery` and the generated `remove<Filter>` / `update<Filter>` stamp
   `removedAt` in one atomic UPDATE, so nothing downstream runs. Remove one document at a time when it cascades.
 - Cascades are **idempotent**: `removedAt IS NULL` is ANDed into every query-level write, so a retry after a partial
   failure re-stamps nothing. Cycles are cut by a visited set carried down the whole chain, with a depth cap of 16.

@@ -2,10 +2,12 @@ import type { PromiseOrObject } from "akanjs/base";
 import { capitalize } from "akanjs/common";
 import type { QueryOf } from "akanjs/constant";
 import {
+  assertFilterFitsCrud,
   type CRUDEventType,
   type DatabaseModel,
   type DataInputOf,
   type Doc,
+  type DocumentUpdateInput,
   documentQueryHelper,
   type FindQueryOption,
   fillMissingFilterArgs,
@@ -13,6 +15,7 @@ import {
   getFilterMeta,
   type ListQueryOption,
   type SaveEventType,
+  type UpdateChain,
 } from "akanjs/document";
 import type { DatabaseService, ServiceCls } from "akanjs/service";
 import type { CascadeRunner } from "./CascadeRunner";
@@ -108,6 +111,15 @@ export class ServiceResolver {
       async __removeMany(this: DatabaseService, query: QueryOf<any>) {
         return await this.__databaseModel.__removeMany(query);
       },
+      async __removeOne(this: DatabaseService, query: QueryOf<any>) {
+        return await this.__databaseModel.__removeOne(query);
+      },
+      async __updateMany(this: DatabaseService, query: QueryOf<any>, update: DocumentUpdateInput) {
+        return await this.__databaseModel.__updateMany(query, update);
+      },
+      async __updateOne(this: DatabaseService, query: QueryOf<any>, update: DocumentUpdateInput) {
+        return await this.__databaseModel.__updateOne(query, update);
+      },
     };
     return dbServiceMethods;
   }
@@ -138,6 +150,7 @@ export class ServiceResolver {
       const queryFn = filterInfo.queryFn;
       if (!queryFn) throw new Error(`No query function for key: ${queryKey}`);
       const capitalizedQueryKey = capitalize(queryKey);
+      assertFilterFitsCrud(database.refName, queryKey, className);
       Object.assign(srvRef.prototype, {
         [`list${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
           const { query, queryOption } = getQueryDataFromKey(queryKey, args);
@@ -177,6 +190,22 @@ export class ServiceResolver {
         },
         [`query${capitalize(queryKey)}`]: function (this: DatabaseService, ...args: any) {
           return queryFn(...fillMissingFilterArgs(filterInfo, args), documentQueryHelper);
+        },
+        [`remove${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
+          const { query } = getQueryDataFromKey(queryKey, args);
+          return this.__removeMany(query);
+        },
+        [`removeOne${capitalizedQueryKey}`]: async function (this: DatabaseService, ...args: any) {
+          const { query } = getQueryDataFromKey(queryKey, args);
+          return this.__removeOne(query);
+        },
+        [`update${capitalizedQueryKey}`]: function (this: DatabaseService, ...args: any): UpdateChain {
+          const { query } = getQueryDataFromKey(queryKey, args);
+          return { set: (update) => this.__updateMany(query, update) };
+        },
+        [`updateOne${capitalizedQueryKey}`]: function (this: DatabaseService, ...args: any): UpdateChain {
+          const { query } = getQueryDataFromKey(queryKey, args);
+          return { set: (update) => this.__updateOne(query, update) };
         },
       });
     });

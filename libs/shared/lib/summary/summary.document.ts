@@ -29,7 +29,7 @@ export class SummaryModel extends into(Summary, SummaryFilter, cnst.summary, () 
   async archive(archiveType: "periodic" | "non-periodic", data: Omit<db.SummaryInput, "type">) {
     const [type, at] = cnst.Summary.getPeriodicType();
     const periodAt = dayjs(at);
-    if ((await this.Summary.countDocuments({ status: "active" })) > 1) {
+    if ((await this.Summary.count({ status: "active" })) > 1) {
       const summary = await this.Summary.pickOne({ status: "active" });
       const q = documentQueryHelper;
       await this.Summary.removeMany(q.all({ status: "active" }, { id: q.ne(summary.id) }));
@@ -78,7 +78,7 @@ export class SummaryModel extends into(Summary, SummaryFilter, cnst.summary, () 
     const model = (this.Summary as unknown as { db: { model: (name: string) => Mdl<unknown, unknown> } }).db.model(
       modelName,
     );
-    const count = await model.countDocuments(query);
+    const count = await model.count(query);
     return count;
   }
 }
