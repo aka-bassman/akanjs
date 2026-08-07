@@ -56,6 +56,8 @@ import type { BaseBuildArtifact, HttpRoutes, RenderState } from "./types";
 
 const CLIENT_CLOSED_REQUEST_STATUS = 499;
 export const DEFAULT_HTML_RESULT_CACHE_MAX_BODY_BYTES = 2 * 1024 * 1024;
+/** Well above any sensible TTL: this only has to reclaim a cache nobody is reading, not track expiry closely. */
+const ROUTE_CACHE_SWEEP_INTERVAL_MS = 60_000;
 const APPLE_APP_SITE_ASSOCIATION_PATH = "/.well-known/apple-app-site-association";
 const ANDROID_ASSET_LINKS_PATH = "/.well-known/assetlinks.json";
 
@@ -292,6 +294,11 @@ export class WebRouter {
   };
   readonly #htmlCache = new LruTtlCache<CachedHtmlResult>(
     parsePositiveInt(process.env.AKAN_HTML_RESULT_CACHE_MAX_ENTRIES) ?? 100,
+    {
+      sizeOf: (result) => result.html.length,
+      maxBytes: LruTtlCache.parseByteCeiling(process.env.AKAN_HTML_RESULT_CACHE_MAX_BYTES),
+      sweepIntervalMs: ROUTE_CACHE_SWEEP_INTERVAL_MS,
+    },
   );
   #htmlCacheHits = 0;
   #htmlCacheMisses = 0;
@@ -675,6 +682,7 @@ export class WebRouter {
     this.#devHmr?.dispose();
     this.#devHmr = null;
     this.#builderRpc = null;
+    this.#htmlCache.dispose();
     this.#rsc.kill();
     this.#hub = null;
   }
@@ -692,6 +700,7 @@ export class WebRouter {
       httpCsrCount: this.#requestStats.csr,
       httpImageCount: this.#requestStats.image,
       httpHtmlCacheEntries: this.#htmlCache.size,
+      httpHtmlCacheBytes: this.#htmlCache.byteSize,
       httpHtmlCacheHits: this.#htmlCacheHits,
       httpHtmlCacheMisses: this.#htmlCacheMisses,
       httpHtmlCacheBypass: this.#htmlCacheBypass,
