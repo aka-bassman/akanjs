@@ -650,7 +650,7 @@ export class TaskService extends serve(db.task, ({ plug }) => ({
 For a custom adapter class (not a predefined role), pass the class itself, e.g. `ipfsApi: plug(IpfsApi)`
 (see `libs/shared/lib/file/file.service.ts`). Injecting a file/image field is usually simpler than calling
 storage directly: declare `image: field(File).optional()` (or `images: field([File])`) on the model and let the
-store's generated `upload<Field>On<Model>(fileList)` action handle the upload. Add `{ cascade: "remove" }` to that
+store's generated `upload<Field>On<Model>(fileList)` action handle the upload. Add `{ cascade: "removeRef" }` to that
 field when the file belongs to the model alone, and removing the model removes the file and its stored object.
 
 ---
@@ -868,12 +868,23 @@ A short list of things the type system does not always catch:
   `secret` / `hidden` / `resolve()` fields with `text` throw at class-build time — the mirror is plaintext. Search
   runs on sqlite/libsql only; `q.search()` against Postgres throws. `thumb` is mirrored for rendering and is not
   indexed.
-- **`cascade: "remove"` takes a relation's target down with its owner.** Declare it on the relation itself —
-  `image: field(File, { cascade: "remove" })`, arrays included. The removal runs through the **target's service**,
-  so the target's own `_postRemove` runs too; that is how removing a model also deletes the file's stored object.
-  Only a relation accepts it: a `String`, an `ID`, or a scalar throws while the class is being built. Nothing
-  checks for other references to the same target, so declaring it asserts exclusive ownership. Document removal is
-  soft but the storage delete is not, and query-level removal fires no hooks and therefore no cascade.
+- **`cascade` names a direction, and the wrong one is a data loss.** Both actions can sit on the same field shape,
+  so the value has to say which end goes away. `cascade: "removeRef"` on the relation an owner holds
+  (`image: field(File, { cascade: "removeRef" })`, arrays included) removes the target when the owner is removed;
+  only a relation accepts it. `cascade: "removeWith"` on a child's own reference to its owner
+  (`field(ID, { ref: "agentSession", cascade: "removeWith" })`, or a relation, or `refPath` for a polymorphic
+  owner whose type field must be an `enumOf`) removes the child when the owner is — the owner never learns its
+  children exist. The removal runs through the **target's service** so its `_postRemove` runs too, unless the
+  target provably has no removal side effect, in which case the boot-time plan collapses it into one query. A
+  `removeWith` field gets its index automatically. Nothing checks for other references to the same target, so
+  `removeRef` asserts exclusive ownership. Removal is soft but a storage delete is not, and a query-level removal
+  fires no hooks and therefore no cascade.
+- **Removal is always soft, and `delete` is reserved.** `remove(id)`, the facade's `removeMany(query)`, and the
+  store's `removeManyByQuery` all stamp `removedAt`; the framework has no hard delete for a model table.
+- **The model facade spells out `Many`/`One` on its writes** — `updateOne`, `updateMany`, `removeOne`, `removeMany`
+  — because a bare `update`/`remove` would read like the document-path `update(id)` / `doc.remove()` while hitting
+  every match. Reads keep the short `find`/`findOne` pair, and counting is `count(query)` (`countDocuments` is
+  `@deprecated`).
 - **`q.search()` is a filter node, not a slice requirement.** Prefer
   `bySearch: filter().arg("text", String).query((text, q) => q.search(text, { prefix: true }))` — the generated
   `listBySearch` / `countBySearch` / `queryBySearch` / `insightBySearch` come for free. Only add a search slice when
@@ -951,8 +962,12 @@ akan sync automatically generates APIs across all layers. Only write custom logi
 | `pick[Query](args)`, `pickId[Query](args)` | Find one (throw if not found) |
 | `exists[Query](args)`, `count[Query](args)` | Existence check and count |
 | `insight[Query](args)`, `query[Query](args)` | Insight and raw query |
+| `remove[Query](args)`, `removeOne[Query](args)` | Query-level soft remove — all matches, or the newest one (`createdAt` desc, not caller-chosen) |
+| `update[Query](args).set(patch)`, `updateOne[Query](args).set(patch)` | Query-level update — the patch lands on a terminal `.set()`, because a filter's trailing args may be optional |
 
-**Rule**: Define `Filter` with `.query()` conditions in `document.ts`. akan sync auto-generates all 10 query helper methods per filter. Write `Document` chain methods only for state transitions with validation.
+**Rule**: Define `Filter` with `.query()` conditions in `document.ts`. akan sync auto-generates all 14 query helper methods per filter. Write `Document` chain methods only for state transitions with validation.
+
+**The four query-level writes fire no hooks**, so no `_pre`/`_postRemove` and no cascade run — same as `updateManyByQuery`. Reach for them when the model carries no removal side effect; otherwise remove documents one at a time. A filter keyed after its own model (filter `chat` on model `chat`) is rejected at boot, because `removeChat`/`updateChat` would otherwise shadow the generated single-document CRUD.
 
 ## Generated Context
 
