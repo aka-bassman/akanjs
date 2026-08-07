@@ -74,11 +74,12 @@ Use the local module shape before adding a new abstraction.
 9. Keep page and layout files server-oriented: route-level `usePage`, headers, static layout, and `akanjs/ui` `Tab` composition belong there.
 10. Put interactive loading, submit/import actions, local form state, and `router.push` in client `Util`, `Template`, or `Zone` components.
 11. Prefer `Tab` for static mode selection instead of extra `useState`; render one focused client component inside each `Tab.Panel`.
-12. Keep server-only logic out of client surfaces and client-only code out of server imports.
-13. Treat `AKAN_PUBLIC_*` env vars as public. Never put secrets in them.
-14. Add or update tests when behavior, contracts, or CLI output changes.
-15. Update `*.abstract.md` when business invariants, workflows, or public behavior change.
-16. Run the smallest relevant verification command after changes.
+12. Default to server rendering. Add `"use client"` only for a real client-only capability, and keep markup out of the component that carries it — see **SSR First** below.
+13. Keep server-only logic out of client surfaces and client-only code out of server imports.
+14. Treat `AKAN_PUBLIC_*` env vars as public. Never put secrets in them.
+15. Add or update tests when behavior, contracts, or CLI output changes.
+16. Update `*.abstract.md` when business invariants, workflows, or public behavior change.
+17. Run the smallest relevant verification command after changes. After touching any `.tsx`, that includes `akan quality ssr`.
 
 ## Common Commands
 
@@ -111,7 +112,11 @@ akan typecheck <%= appName %>
 # 3. Test — Run the test code (lib/*/*.signal.test.ts or others)
 akan test <%= appName %>
 
-# 4. Full production build — bundles the app, runs all type/lint checks combined
+# 4. SSR balance — only after touching .tsx files. Reports the server render share
+#    per app/lib and flags client code that should render on the server.
+akan quality ssr
+
+# 5. Full production build — bundles the app, runs all type/lint checks combined
 akan build <%= appName %>
 ```
 
@@ -128,6 +133,8 @@ akan create-scalar <scalar-name> <%= appName %>          # Add a scalar module (
 akan create-service <service-name> <%= appName %>        # Add a service module (lib/_<service-name>/)
 akan test <%= appName %>                             # Run the test code (lib/*/*.signal.test.ts or others)
 akan lint <%= appName %>                             # Lint only (no typecheck)
+akan quality scan                                # All code-quality warnings + SSR balance
+akan quality ssr                                 # SSR balance and client-boundary warnings only
 ```
 
 **CLI argument conventions.** Two argument styles, and mixing them up is a common mistake:
@@ -240,7 +247,7 @@ final fallback when no CLI command covers the change.
 | Add a reusable value type (e.g., Address, WorkHistory) | `lib/__scalar/<type>/` → constant, dictionary, abstract | `akan sync <name>` |
 | Create a new URL-visitable page | `page/` → `_index.tsx`, `_layout.tsx`, `[param]/_index.tsx` | Rebuild (akan start auto-detects) |
 | Change the app color theme / design tokens | `apps/<app>/page/styles.css` → override the semantic token values under `:root, [data-theme="dark"]` and `[data-theme="light"]` (`--primary`, `--background`, `--foreground`, …) | akan start hot-reloads |
-| Add a form or reusable UI component | `ui/` → PascalCase `.tsx` with `"use client"` if needed | `akan sync <name>` |
+| Add a form or reusable UI component | `ui/` → PascalCase `.tsx`, **no** `"use client"` unless it uses a hook, event handler, store, or browser API | `akan sync <name>` |
 | Add a React hook or browser helper | `webkit/` → camelCase `.ts` with `"use client"` | `akan sync <name>` |
 | Add a server-only guard, middleware, or adaptor | `srvkit/` → PascalCase `.ts` | `akan sync <name>` |
 | Add a pure helper (no DOM, no server API) | `common/` → camelCase `.ts` | `akan sync <name>` |
@@ -261,6 +268,120 @@ final fallback when no CLI command covers the change.
 | Use "use client" or `useState`/`useEffect` in pages/*.tsx, *.Unit.tsx, and *.View.tsx files | Server code cannot use React hooks. Wrap in a separate `"use client"` component. | Move hook logic to `webkit/` or a `"use client"` UI component |
 | Use `<a>` tag for internal navigation between pages | Akan.js uses `<Link>` from `akanjs/ui` for client-side navigation — avoids full page reloads. | `import { Link } from "akanjs/ui"` and use `<Link href="/task">...</Link>` |
 | Name a custom `Endpoint`/`Slice` like a generated CRUD op — `create<Model>`, `update<Model>`, `remove<Model>`, `view<Model>`, `edit<Model>`, `merge<Model>` | These names are already auto-generated. A collision can pass sync/typecheck/build and only fail at runtime. | Pick a distinct verb, e.g. `startTask`/`archiveTask`, never `createTask` for a custom endpoint |
+| Add `"use client"` to a file that renders markup but uses no hook, event handler, store, or browser API | The directive is a cost, not a formality: everything behind it ships twice, as HTML and as JS that re-runs in the browser. | Delete the directive. `akan quality ssr` flags this as `akan.ssr.unnecessary-use-client` |
+| Put a large static subtree inside a client component that only needs one `onClick` | The whole subtree lands in the bundle for the sake of one handler. | Keep the handler in a small client shell and pass the static markup in as `children`, or move it to a `Unit`/`View` |
+| Load server data with `useEffect(() => { void st.do.initTaskInTodo(); }, [])` | The page renders an empty shell, hydrates, then round-trips for data the server already had. | `await fetch.initTaskInTodo()` in the page and pass `init` to the `Zone` |
+
+## SSR First — Server Rendering Is The Default
+
+Akan is SSR-first. Every JSX element that renders on the server ships as HTML and costs nothing to hydrate; every
+element behind `"use client"` ships twice — as markup and as bundled JS that must re-run in the browser. The
+boundary question is not which file *may* be client, it is **how little** ends up on the client side.
+
+**The default is server. `"use client"` is a cost you justify per component, not a habit.** A component earns the
+directive only by using a client-only capability: a React hook, a JSX event handler, the store (`st.use.*` /
+`st.do.*`), a browser global, or a client-only third-party package. Rendering markup, mapping over data, reading a
+route param, and calling `l()` are all server work — `usePage()` and `l()` are legal in server components and never
+force a boundary.
+
+The file role decides *where* the boundary sits (`Template`/`Zone`/`Util` are client, `Unit`/`View` are server); it
+does not decide how much markup sits behind it. A `Zone` that hoards markup is still an SSR regression.
+
+Measure with `akan quality ssr` (`--format json` for tooling). It reports the server render share per app and lib —
+server-rendered JSX elements over total — plus the warnings below. Treat **50% server share as the floor** and a
+falling share as a regression to justify or revert.
+
+| Rule | Means |
+|---|---|
+| `akan.ssr.unnecessary-use-client` | The directive is there but nothing in the file needs it. Delete it. |
+| `akan.ssr.client-static-component` | A component in a client file renders real markup with zero client-only capability — pure server work sitting in the bundle. |
+| `akan.ssr.client-static-markup` | A large subtree wraps one or two interactive touches. Split it: interaction stays client, markup goes server. |
+| `akan.ssr.client-mount-load` | A `useEffect(…, [])` loads server data. The page can fetch it before the first byte. |
+| `akan.ssr.module-missing-server-view` | A module renders only from `Template`/`Zone`/`Util` and has no `Unit`/`View` at all. |
+| `akan.ssr.template-client-state` | A `Template` holds form state in `useState` instead of the store. |
+
+A third-party client package and the `ui/<Folder>/index_.tsx` + `lazy()` boundary both justify the directive and are
+not flagged. Interaction-driven `fetch.*` inside an `onClick` is not flagged either — only mount-time loads are,
+because those are the ones the server could have performed.
+
+### Server-Side Implementation Playbook
+
+**① Wrap the interaction, not the UI.** The smallest useful client component adds one behaviour and renders
+`children` untouched, so the markup inside never reaches the bundle.
+
+```tsx
+// apps/<%= appName %>/ui/ClickWrapper.tsx
+"use client";
+export const ClickWrapper = ({ children, onPick }: ClickWrapperProps) => <div onClick={onPick}>{children}</div>;
+
+// in a server page — Task.Unit.Card stays server-rendered
+<ClickWrapper onPick={…}>
+  <Task.Unit.Card task={task} />
+</ClickWrapper>
+```
+
+**② Split compound components so panels stay on the server.** A tab, accordion, or disclosure needs client state
+only for *which* part is visible — never for what the parts contain. `Tab` / `Tab.Menus` / `Tab.Menu` / `Tab.Panel`
+from `akanjs/ui` is the reference shape: only the provider and menu hold state, and `<Tab.Panel>` renders its
+children as-is, so a server `Unit`/`View` passed in stays server-rendered.
+
+```tsx
+<Tab defaultMenu="detail">
+  <Tab.Menus>
+    <Tab.Menu menu="detail">{l("task.detail")}</Tab.Menu>
+    <Tab.Menu menu="history">{l("task.history")}</Tab.Menu>
+  </Tab.Menus>
+  <Tab.Panel menu="detail">
+    <Task.View.General task={task} />
+  </Tab.Panel>
+</Tab>
+```
+
+Never collapse this into one `"use client"` file with a mode `useState` and every panel body inlined.
+
+**③ Sync state instead of fetching it.** A server component cannot hold state, so render the initial data on the
+server and hand it across the boundary as a serializable object. That is what `init` / `view` props are: the page
+calls `fetch.initTaskInTodo()` / `fetch.viewTask(id)`, passes the result into a `Zone`, and `Load.Units` /
+`Load.View` hydrate the store from it.
+
+```tsx
+export default async function Page() {
+  const [{ taskInitInTodo }] = await Promise.all([fetch.initTaskInTodo()]);
+  return <Task.Zone.Card init={taskInitInTodo} sliceName="taskInTodo" />;
+}
+```
+
+**④ Push the boundary down to the leaf that needs it.** When a `Zone` reads the store, it should hold *zero* markup
+and delegate to a server `View`, so the whole detail surface renders server-side wherever a page uses the `View`
+directly.
+
+```tsx
+"use client";
+export const Self = () => <Task.View.General task={st.use.task()} />;
+```
+
+**⑤ Hand the promise across, not the awaited value.** `ClientInit` / `ClientView` are `PromiseOrObject<T>`, so a
+page may pass an unawaited `fetch.initTaskInTodo()` and `Load.*` resolves it behind a skeleton. `await` blocks the
+shell for data the page needs immediately; passing the promise streams the rest. Independent fetches still go
+through one `Promise.all`.
+
+**⑥ Use named `ReactNode` slots, not just `children`.** A client shell can take several server-rendered subtrees:
+`Layout.Navbar` accepts `title`, `back`, `left`, `right`, and `children`, so it composes server content in five
+places instead of absorbing it.
+
+**⑦ Let the server do the derived work.** Display and predicate logic belongs on `LightTask` (`isNew()`,
+`canWrite(user?)`, `formatTimes()`), and enum→class lookups belong in a module-scope `as const` map. Both sides call
+the same method, so a client component that exists only to compute a label is markup in the wrong place.
+
+**⑧ Gate auth on the server.** Check the session in `_layout.tsx` and redirect there, before any HTML is sent. A
+client-side auth check costs a hydration round-trip and flashes the wrong UI first.
+
+**⑨ Prefer CSS over client state for pure visibility.** A `data-*` attribute plus `group-data-[…]` variants, or
+`<details>`/`<summary>`, keeps both branches server-rendered. Reach for `useState` when the state is real, not when
+a Tailwind variant would do.
+
+**⑩ Keep the heavy island out of the first load.** A large client-only widget goes behind the
+`ui/<Folder>/index_.tsx` + `lazy()` pair so the server renders the page around it.
 
 ## Code Style
 
