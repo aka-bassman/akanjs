@@ -54,6 +54,10 @@ that looks wrong; do not "fix" it back.
   `#private` remains the house style everywhere under `srvkit/`, including `adapt()` adapter classes.
 - **No `console.log` / `console.debug`.** Only `assert`, `error`, `info`, and `warn` are allowed. Server code uses
   the injected `this.logger.*` or `new Logger("ClassName")`.
+- **Never write a `//!` marker in browser-reachable code** — `ui/`, `webkit/`, `common/`, `page/**/*.tsx`,
+  `*.constant.ts`, `*.store.ts`, and the five module component suffixes (`no-bang-comment-in-client.grit`). Bun
+  classifies `//!` and `/*!` as legal comments and keeps them through minification, so the note ships to every
+  visitor. Use `// FIXME:` there; `//!` stays legal in server, `srvkit/`, and CLI files.
 - **Never redeclare a generated CRUD endpoint name** in `*.signal.ts` (`no-redeclare-predefined-endpoint.grit`).
 - **No deep imports past a barrel** (`no-deep-internal-import.grit`). Cross-module constant references such as
   `../map/map.constant` are the sanctioned exception.
@@ -115,7 +119,9 @@ Do not narrate code. Do document the thing the code cannot say. Both halves are 
   1. `TODO` — unfinished work that must be tracked in-code
   2. `FIXME` — known broken or incorrect behavior that must be fixed
   3. `XXX` — dangerous / surprising hazard that a reader must not miss
-  4. `//!` — disabled or must-fix code
+  4. `//!` — disabled or must-fix code. **Server, `srvkit/`, and CLI files only.** Bun's bundler treats `//!`
+     (and `/*!`) as a legal comment and keeps it through minification, so in browser-reachable code the note
+     ships verbatim to every visitor. Use `// FIXME:` there instead; `no-bang-comment-in-client.grit` enforces it.
   5. `//?` — an explanatory aside
   6. `//*` — a design note
   7. Deletion caution — warn why removing a line or block would break something non-obvious
