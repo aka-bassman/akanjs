@@ -20,6 +20,7 @@ import {
   RouteSeedIndexStore,
   RoutesManifestStore,
 } from "./artifact";
+import { resolveEncodedSidecar } from "./assetEncoding";
 import {
   getClientFacingOrigin,
   hasRouteCacheInvalidationScope,
@@ -1108,16 +1109,12 @@ export class WebRouter {
     headers.set("Last-Modified", new Date(lastModifiedMs).toUTCString());
     if (WebRouter.#isNotModified(req, etag, lastModifiedMs)) return new Response(null, { status: 304, headers });
 
-    const gzipPath = `${filePath}.gz`;
-    if (WebRouter.#acceptsGzip(req) && WebRouter.#isCompressible(options.contentType)) {
-      const gzipFile = Bun.file(gzipPath);
-      if (await gzipFile.exists()) {
-        const gzipBytes = await gzipFile.bytes();
-        headers.set("Content-Encoding", "gzip");
-        headers.set("Content-Length", String(gzipBytes.byteLength));
-        headers.set("Vary", "Accept-Encoding");
-        return new Response(WebRouter.#toArrayBuffer(gzipBytes), { headers });
-      }
+    const sidecar = await resolveEncodedSidecar(req, filePath, options.contentType);
+    if (sidecar) {
+      headers.set("Content-Encoding", sidecar.encoding);
+      headers.set("Content-Length", String(sidecar.bytes.byteLength));
+      headers.set("Vary", "Accept-Encoding");
+      return new Response(sidecar.bytes, { headers });
     }
 
     return new Response(file.stream(), { headers });
@@ -1202,22 +1199,6 @@ export class WebRouter {
     if (!ifModifiedSince) return false;
     const sinceMs = Date.parse(ifModifiedSince);
     return Number.isFinite(sinceMs) && sinceMs >= lastModifiedMs;
-  }
-
-  static #acceptsGzip(req: Request): boolean {
-    const acceptEncoding = req.headers.get("accept-encoding") ?? "";
-    return /\bgzip\b/.test(acceptEncoding);
-  }
-
-  static #isCompressible(contentType: string): boolean {
-    const type = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
-    return (
-      type.startsWith("text/") ||
-      type === "application/javascript" ||
-      type === "application/json" ||
-      type === "application/manifest+json" ||
-      type === "image/svg+xml"
-    );
   }
 
   static #safeResolve(baseDir: string, urlPath: string): string | null {
