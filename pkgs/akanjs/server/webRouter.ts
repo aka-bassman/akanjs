@@ -304,6 +304,7 @@ export class WebRouter {
   #htmlCacheHits = 0;
   #htmlCacheMisses = 0;
   #htmlCacheBypass = 0;
+  #runtimeManifest: { revision: number; manifest: MergedManifest } | null = null;
   renderState: RenderState;
   #seedIndex: RouteSeedIndex;
   constructor({ artifact, cssBytesByUrl, rsc, seedIndex, upgradeHmrWs }: WebRouterOptions) {
@@ -347,7 +348,7 @@ export class WebRouter {
     if (prebuilt) {
       this.#routeCache.seed(prebuilt);
       await this.#rsc.reload({
-        clientManifest: this.#mergeRuntimeManifest(this.#routeCache.merged).clientManifest,
+        clientManifest: this.#mergeRuntimeManifest().clientManifest,
         cssAssets: this.renderState.cssAssets,
         buildId: this.renderState.buildId,
       });
@@ -820,15 +821,27 @@ export class WebRouter {
     this.#logger.verbose(
       `[route-cache] ensure pathname=${url.pathname} routeId=${matched?.entry.routeId ?? "(none)"} in ${Date.now() - started}ms`,
     );
-    return this.#mergeRuntimeManifest(this.#routeCache.snapshot());
+    return this.#mergeRuntimeManifest();
   }
 
-  #mergeRuntimeManifest(manifest: MergedManifest): MergedManifest {
-    return {
-      ...manifest,
-      clientManifest: WebRouter.#mergeClientManifest(this.#artifact.rscRuntimeClientManifest, manifest.clientManifest),
-      ssrManifest: WebRouter.#mergeSsrManifest(this.#artifact.rscRuntimeSsrManifest, manifest.ssrManifest),
+  /**
+   * Memoized on the route cache's revision. Both the snapshot and the runtime merge copy the whole client manifest
+   * and SSR module map, which is a few hundred KB of structure for a small app — and this ran on every request. In
+   * production the revision never moves after `seed`, so the manifest is built once; in dev a rebuild bumps it and
+   * the next request pays for one fresh copy. The cached object is still a copy, so an in-flight request keeps
+   * consuming a stable manifest across an invalidate exactly as the per-request snapshot made it.
+   */
+  #mergeRuntimeManifest(): MergedManifest {
+    const revision = this.#routeCache.revision;
+    if (this.#runtimeManifest?.revision === revision) return this.#runtimeManifest.manifest;
+    const snapshot = this.#routeCache.snapshot();
+    const manifest: MergedManifest = {
+      ...snapshot,
+      clientManifest: WebRouter.#mergeClientManifest(this.#artifact.rscRuntimeClientManifest, snapshot.clientManifest),
+      ssrManifest: WebRouter.#mergeSsrManifest(this.#artifact.rscRuntimeSsrManifest, snapshot.ssrManifest),
     };
+    this.#runtimeManifest = { revision, manifest };
+    return manifest;
   }
   #renderSystemNotFoundFallbackResponse(req: Request, url: URL): Promise<Response> {
     return createSystemPageResponse({
