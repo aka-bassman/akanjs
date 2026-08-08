@@ -461,6 +461,7 @@ export interface FrameLayoutState {
   keyboard: KeyboardFrameState;
   contentViewport: FrameContentViewportState;
   keyboardAccessory: KeyboardAccessoryFrameState;
+  contentAnchor?: "bottom";
   platformProfile: FramePlatformProfile;
   zIndex: FrameLayerZIndex;
   pageStateByPath: Map<string, PageState>;
@@ -469,6 +470,7 @@ export interface FrameSlotRegistration {
   scope?: FrameSlotScope;
   type: FrameSlotType;
   role?: FrameSlotRole;
+  contentAnchor?: "bottom";
   height?: number;
   estimatedHeight?: number;
   source?: "navbar" | "topInset" | "bottomInset" | "bottomTab" | (string & {});

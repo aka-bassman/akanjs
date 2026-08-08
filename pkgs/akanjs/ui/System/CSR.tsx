@@ -226,6 +226,7 @@ const CSRWrapper = ({
               : bottomInset?.containerStyle
           }
           animationDuration={frameLayout.keyboard.animationDuration}
+          animationEasing={frameLayout.keyboard.animationEasing}
         >
           <CSRFrameSlotTargets slot="keyboardInset" />
         </KeyboardLayer>
@@ -281,14 +282,17 @@ const KeyboardLayer = ({
   className,
   style,
   animationDuration,
+  animationEasing,
   children,
-}: FrameLayerProps & { animationDuration?: number }) => (
+}: FrameLayerProps & { animationDuration?: number; animationEasing?: string }) => (
   <animated.div
     id={id}
     className={className}
     style={{
       ...(style ?? {}),
-      transition: `top ${animationDuration ?? 285}ms ease-out, height ${animationDuration ?? 285}ms ease-out`,
+      transition: `top ${animationDuration ?? 420}ms ${animationEasing ?? "cubic-bezier(0.16, 1, 0.3, 1)"}, height ${
+        animationDuration ?? 420
+      }ms ${animationEasing ?? "cubic-bezier(0.16, 1, 0.3, 1)"}`,
       willChange: "top, height",
     }}
   >
