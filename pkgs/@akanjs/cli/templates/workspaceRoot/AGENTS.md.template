@@ -260,6 +260,7 @@ final fallback when no CLI command covers the change.
 | Create a file without running sync | New files won't appear in barrel exports. Imports like `import * as cnst from "../cnst"` will fail. | Always run `akan sync <name>` after creating, renaming, or deleting any module file |
 | Use JS `#private` in `*.constant.ts`, `*.document.ts`, `*.service.ts`, or `*.store.ts` | `no-js-private-class-method.grit` bans `#private` in exactly those four file suffixes. The rule is scoped by file path, not class shape — `#private` stays the house style under `srvkit/`, including `adapt()` classes. | `private _methodName()` in those four files; `#methodName()` in `srvkit/` |
 | Use `console.log()` | Biome lint forbids `console.log`. Only `console.error`, `console.info`, `console.warn` are allowed. | Use one of the three allowed console methods, or `this.logger.*` / `new Logger("ClassName")` on the server |
+| Write a `//!` marker in `ui/`, `webkit/`, `common/`, `page/**/*.tsx`, `*.constant.ts`, `*.store.ts`, or a module component file | `no-bang-comment-in-client.grit` bans it. Bun classifies `//!` and `/*!` as legal comments and keeps them through minification, so the note ships to every visitor. | `// FIXME:` in browser-reachable code; `//!` stays legal in server, `srvkit/`, and CLI files |
 | `throw new Error("...")` | `no-throw-raw-error.grit` bans raw errors outside tests, `*.constant.ts`, and `common/`. Raw errors carry no dictionary key, so they cannot be localized or toasted. | `throw new Err("task.error.<key>")` plus an `[en, ko]` entry in the module dictionary's `.error({})` |
 | Hand-order Tailwind classes, or reorder them to "fix" a diff | `useSortedClasses` is an error and also sorts the string arguments to `clsx()` and `cva()`. Sorter output like `font-bold text-2xl` looks wrong but is correct. | Write classes in any order and let `akan lint` sort them |
 | `import` a third-party package inside a page, a barrel, or a module file | `no-import-external-library.grit` covers `page/**`, all barrels, and every `*.{constant,dictionary,document,service,signal,store}.ts` and `*.{Template,Unit,Util,View,Zone}.tsx`. | Re-export the symbol from a one-line shim in `base/`, `webkit/`, or `ui/` first, then import that |
@@ -484,6 +485,9 @@ Do not narrate code. Do document the thing the code cannot say. Both halves are 
 - Markers: `TODO` unfinished work · `FIXME` known broken behavior · `XXX` hazard a reader must not miss · `//!`
   disabled or must-fix code · `//?` an explanatory aside · `//*` a design note · deletion caution, warning why
   removing a line would break something non-obvious.
+- `//!` is for server, `srvkit/`, and CLI files only. Bun's bundler treats `//!` and `/*!` as legal comments and
+  keeps them through minification, so in browser-reachable code the note ships verbatim to every visitor. Use
+  `// FIXME:` there — `no-bang-comment-in-client.grit` enforces it.
 - Keep allowed comments to one short line, and give every suppression a reason:
   `// biome-ignore lint/<rule>: <why>`. Never a bare disable block.
 - Match nearby file style: if the surrounding code has few comments, keep it that way.

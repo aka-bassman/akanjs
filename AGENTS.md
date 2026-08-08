@@ -54,6 +54,10 @@ that looks wrong; do not "fix" it back.
   `#private` remains the house style everywhere under `srvkit/`, including `adapt()` adapter classes.
 - **No `console.log` / `console.debug`.** Only `assert`, `error`, `info`, and `warn` are allowed. Server code uses
   the injected `this.logger.*` or `new Logger("ClassName")`.
+- **Never write a `//!` marker in browser-reachable code** — `ui/`, `webkit/`, `common/`, `page/**/*.tsx`,
+  `*.constant.ts`, `*.store.ts`, and the five module component suffixes (`no-bang-comment-in-client.grit`). Bun
+  classifies `//!` and `/*!` as legal comments and keeps them through minification, so the note ships to every
+  visitor. Use `// FIXME:` there; `//!` stays legal in server, `srvkit/`, and CLI files.
 - **Never redeclare a generated CRUD endpoint name** in `*.signal.ts` (`no-redeclare-predefined-endpoint.grit`).
 - **No deep imports past a barrel** (`no-deep-internal-import.grit`). Cross-module constant references such as
   `../map/map.constant` are the sanctioned exception.
@@ -115,7 +119,9 @@ Do not narrate code. Do document the thing the code cannot say. Both halves are 
   1. `TODO` — unfinished work that must be tracked in-code
   2. `FIXME` — known broken or incorrect behavior that must be fixed
   3. `XXX` — dangerous / surprising hazard that a reader must not miss
-  4. `//!` — disabled or must-fix code
+  4. `//!` — disabled or must-fix code. **Server, `srvkit/`, and CLI files only.** Bun's bundler treats `//!`
+     (and `/*!`) as a legal comment and keeps it through minification, so in browser-reachable code the note
+     ships verbatim to every visitor. Use `// FIXME:` there instead; `no-bang-comment-in-client.grit` enforces it.
   5. `//?` — an explanatory aside
   6. `//*` — a design note
   7. Deletion caution — warn why removing a line or block would break something non-obvious
@@ -582,7 +588,10 @@ export const pageConfig = { transition: "stack" } satisfies PageConfig;
 ## Akan Sync Conventions (`apps/**`, `libs/**`)
 
 - `apps/<appName>` root may only contain these files: `AGENTS.md`, `CLAUDE.md`, `akan.app.json`, `akan.config.ts`, `capacitor.config.ts`, `client.ts`, `main.ts`, `package.json`, `server.ts`, `tsconfig.json`.
-- `apps/<appName>` root may only contain these folders: `.akan`, `android`, `common`, `env`, `ios`, `lib`, `page`, `plugin`, `private`, `public`, `script`, `srvkit`, `ui`, `webkit`.
+- `apps/<appName>` root may only contain these folders: `.akan`, `android`, `common`, `env`, `ios`, `lib`, `mobile`, `page`, `plugin`, `private`, `public`, `script`, `secrets`, `srvkit`, `ui`, `webkit`.
+- That allowlist has one source — `pkgs/@akanjs/devkit/workspaceLayout.ts`. `akan sync` (error), `akan doctor`
+  (diagnostic), and `akan quality scan` (warning) all read it, so add a new root entry there and mirror it into this
+  list, never into one of the three call sites.
 - `akan sync` maintains a scoped agent guide per app/lib: `apps/<app>/AGENTS.md` / `libs/<lib>/AGENTS.md`. The
   section between the `akan:agent` markers (the `## Recipes In Scope` index) is generated — do not hand-edit it;
   content outside the markers is yours. `akan lint` fails when the generated section is stale.

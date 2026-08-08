@@ -206,7 +206,7 @@ const Text = ({
 };
 Field.Text = memo(Text);
 
-//! 삭제
+// FIXME: 삭제
 interface PriceProps {
   label?: string;
   desc?: string;
@@ -734,7 +734,7 @@ const Date = <Nullable extends boolean>({
   return (
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
-      {/* //! daysi UI datetime-local 컴포넌트에 max 값 넣으면 오른쪽 끝 짤리는 버그 있음.*/}
+      {/* FIXME: daysi UI datetime-local 컴포넌트에 max 값 넣으면 오른쪽 끝 짤리는 버그 있음.*/}
       <input
         type={showTime ? "datetime-local" : "date"}
         className={cn(

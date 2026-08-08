@@ -477,7 +477,7 @@ export class DiLifecycle {
     }
     // Sealed only now: a service that registered a `remove` listener in `onInit` still counts against a bulk
     // cascade, and every target service is live, so an unmounted one fails here instead of mid-removal.
-    this.#cascade.seal((refName) => this.getService(refName));
+    this.#cascade.seal((refName: string) => this.getService(refName));
   }
 
   async #initializeInternal() {
