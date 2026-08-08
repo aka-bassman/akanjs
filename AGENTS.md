@@ -582,7 +582,10 @@ export const pageConfig = { transition: "stack" } satisfies PageConfig;
 ## Akan Sync Conventions (`apps/**`, `libs/**`)
 
 - `apps/<appName>` root may only contain these files: `AGENTS.md`, `CLAUDE.md`, `akan.app.json`, `akan.config.ts`, `capacitor.config.ts`, `client.ts`, `main.ts`, `package.json`, `server.ts`, `tsconfig.json`.
-- `apps/<appName>` root may only contain these folders: `.akan`, `android`, `common`, `env`, `ios`, `lib`, `page`, `plugin`, `private`, `public`, `script`, `srvkit`, `ui`, `webkit`.
+- `apps/<appName>` root may only contain these folders: `.akan`, `android`, `common`, `env`, `ios`, `lib`, `mobile`, `page`, `plugin`, `private`, `public`, `script`, `secrets`, `srvkit`, `ui`, `webkit`.
+- That allowlist has one source — `pkgs/@akanjs/devkit/workspaceLayout.ts`. `akan sync` (error), `akan doctor`
+  (diagnostic), and `akan quality scan` (warning) all read it, so add a new root entry there and mirror it into this
+  list, never into one of the three call sites.
 - `akan sync` maintains a scoped agent guide per app/lib: `apps/<app>/AGENTS.md` / `libs/<lib>/AGENTS.md`. The
   section between the `akan:agent` markers (the `## Recipes In Scope` index) is generated — do not hand-edit it;
   content outside the markers is yours. `akan lint` fails when the generated section is stale.

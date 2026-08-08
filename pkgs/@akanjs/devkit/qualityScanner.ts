@@ -5,6 +5,7 @@ import ignore from "ignore";
 import ts from "typescript";
 import { AbstractDoc } from "./abstractDoc";
 import { formatSsrBalance, type SsrBalanceEntry, SsrScanner } from "./ssrScanner";
+import { appRootAllowedFiles, libFacetRootAllowedFiles } from "./workspaceLayout";
 
 type QualitySeverity = "warning";
 type QualityScope = "global" | "file" | "convention" | "layout" | "ssr";
@@ -89,29 +90,6 @@ const SUGGESTED_RULES = [
   "Move shared app utilities to apps/*/common instead of creating apps/*/base.",
   "Avoid large mixed-purpose class files; class export files should import helpers from neighboring utility files instead of declaring them inline.",
 ];
-
-const APP_ROOT_FILES = new Set([
-  "akan.app.json",
-  "akan.config.ts",
-  "capacitor.config.ts",
-  "client.ts",
-  "main.ts",
-  "package.json",
-  "server.ts",
-  "tsconfig.json",
-]);
-
-const LIB_ROOT_FILES = new Set([
-  "cnst.ts",
-  "db.ts",
-  "dict.ts",
-  "option.ts",
-  "sig.ts",
-  "srv.ts",
-  "st.ts",
-  "useClient.ts",
-  "useServer.ts",
-]);
 
 const CONVENTION_SUFFIXES = [
   ".constant.ts",
@@ -449,7 +427,7 @@ export class AkanQualityScanner {
   #scanLayoutQuality(sourceFile: SourceFileInfo): QualityWarning[] {
     const segments = sourceFile.file.split("/");
     const warnings: QualityWarning[] = [];
-    if (segments[0] === "apps" && segments.length === 3 && !APP_ROOT_FILES.has(segments[2])) {
+    if (segments[0] === "apps" && segments.length === 3 && !appRootAllowedFiles.has(segments[2])) {
       warnings.push({
         rule: "akan.layout.app-root-file",
         scope: "layout",
@@ -460,7 +438,7 @@ export class AkanQualityScanner {
     }
 
     const libRootFile = getLibRootFile(sourceFile.file);
-    if (libRootFile && !LIB_ROOT_FILES.has(libRootFile)) {
+    if (libRootFile && !libFacetRootAllowedFiles.has(libRootFile)) {
       warnings.push({
         rule: "akan.layout.lib-root-file",
         scope: "layout",

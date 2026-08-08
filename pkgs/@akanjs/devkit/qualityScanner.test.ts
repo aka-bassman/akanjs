@@ -183,3 +183,17 @@ describe("AkanQualityScanner ssr rules", () => {
     expect(ssrBalance[2]).toMatchObject({ scope: "workspace", serverMass: 3, clientMass: 1 });
   });
 });
+
+describe("AkanQualityScanner layout rules", () => {
+  test("flags an unknown app root file but not a facet entrypoint", async () => {
+    const root = await makeWorkspace({
+      "apps/demo/client.ts": "export const client = 1;\n",
+      "apps/demo/helper.ts": "export const helper = 1;\n",
+    });
+
+    const warnings = rulesOf(await new AkanQualityScanner().scan(root), "akan.layout.app-root-file");
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.file).toBe("apps/demo/helper.ts");
+  });
+});
