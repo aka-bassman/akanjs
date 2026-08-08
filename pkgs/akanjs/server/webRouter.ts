@@ -53,7 +53,7 @@ import { type RscRedirectMethod, type RscRedirectStatus, type RscRenderResult, R
 import { createDefaultSitemapXml, getSitemapBasePath } from "./sitemap";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
 import type { RscTraceMetadata, SsrManifest } from "./ssrTypes";
-import { createSystemPageResponse, getSystemPageHomeHref } from "./systemPages";
+import { createSubRouteIndexResponse, createSystemPageResponse, getSystemPageHomeHref } from "./systemPages";
 import type { BaseBuildArtifact, HttpRoutes, RenderState } from "./types";
 
 const CLIENT_CLOSED_REQUEST_STATUS = 499;
@@ -584,6 +584,9 @@ export class WebRouter {
           );
         }
 
+        const subRouteIndex = this.#localSubRouteIndexResponse(req, url);
+        if (subRouteIndex) return await subRouteIndex;
+
         try {
           this.#requestStats.fullSsr += 1;
           const manifest = await this.#ensureRoute(url);
@@ -875,6 +878,29 @@ export class WebRouter {
       homeHref: this.#getSystemPageHomeHref(req, url.pathname),
       stylesheetHref: this.#getStylesheetHref(req, url.pathname),
     });
+  }
+
+  /**
+   * A build with subRoutes must keep every route file under `page/<basePath>`, so the site root owns no page and
+   * answers 404 — including the URL `akan start` opens a browser on. Locally that reads as a broken app, so serve a
+   * picker of the basePaths this build carries instead. Deployed hosts never reach it: `HostBasePathWebProxy`
+   * rewrites the root onto the basePath its host maps to before the router sees it.
+   */
+  #localSubRouteIndexResponse(req: Request, url: URL): Promise<Response> | null {
+    if (process.env.AKAN_PUBLIC_ENV !== "local" || !this.#artifact.basePaths.length) return null;
+    if (!WebRouter.#isSiteRootPathname(url.pathname, this.#artifact.i18n)) return null;
+    return createSubRouteIndexResponse({
+      method: req.method,
+      locale: WebRouter.#getLocale(url.pathname, this.#artifact.i18n),
+      basePaths: this.#artifact.basePaths,
+      subRoutes: this.#subRoutes,
+    });
+  }
+
+  static #isSiteRootPathname(pathname: string, i18n: AkanI18nConfig): boolean {
+    const segments = pathname.split("/").filter(Boolean);
+    if (!segments.length) return true;
+    return segments.length === 1 && i18n.locales.includes(segments[0] ?? "");
   }
 
   #renderErrorResponse(req: Request, scope: string, err: unknown): Promise<Response> {

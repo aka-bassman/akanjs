@@ -306,6 +306,64 @@ describe("WebRouter sub route host resolution", () => {
   });
 });
 
+describe("WebRouter local sub route index", () => {
+  const artifactWithSubRoutes = (): BaseBuildArtifact => ({
+    ...createTestArtifact(),
+    subRoutes: { soft: ["soft.example.test"] },
+    basePaths: ["soft", "office"],
+  });
+
+  async function requestRoot(
+    pathname: string,
+    { env, artifact }: { env?: string; artifact?: BaseBuildArtifact } = {},
+  ): Promise<{ response: Response; renderCount: number }> {
+    const previous = process.env.AKAN_PUBLIC_ENV;
+    if (env === undefined) delete process.env.AKAN_PUBLIC_ENV;
+    else process.env.AKAN_PUBLIC_ENV = env;
+    try {
+      return await withFullSsrCacheHarness(
+        async ({ fullSsr, fakeWorker }) => {
+          const response = await fullSsr(new Request(`https://akan.example.test${pathname}`));
+          return { response, renderCount: fakeWorker.renderCalls.length };
+        },
+        { artifact: artifact ?? artifactWithSubRoutes() },
+      );
+    } finally {
+      if (previous === undefined) delete process.env.AKAN_PUBLIC_ENV;
+      else process.env.AKAN_PUBLIC_ENV = previous;
+    }
+  }
+
+  test("serves a basePath picker at the site root instead of a 404", async () => {
+    const { response, renderCount } = await requestRoot("/en/", { env: "local" });
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(renderCount).toBe(0);
+    expect(html).toContain('href="/en/soft"');
+    expect(html).toContain('href="/en/office"');
+    expect(html).toContain("soft.example.test");
+  });
+
+  test("keeps the picker on the bare root and on every configured locale", async () => {
+    await expect(requestRoot("/", { env: "local" }).then((r) => r.response.status)).resolves.toBe(200);
+    const { response } = await requestRoot("/ko", { env: "local" });
+    await expect(response.text()).resolves.toContain('href="/ko/soft"');
+  });
+
+  test("leaves non-root paths to the renderer", async () => {
+    const { renderCount } = await requestRoot("/en/soft", { env: "local" });
+    expect(renderCount).toBe(1);
+  });
+
+  test("stays local-only and sub-route-only", async () => {
+    await expect(requestRoot("/en/", { env: "debug" }).then((r) => r.renderCount)).resolves.toBe(1);
+    await expect(
+      requestRoot("/en/", { env: "local", artifact: createTestArtifact() }).then((r) => r.renderCount),
+    ).resolves.toBe(1);
+  });
+});
+
 describe("WebRouter deep link associations", () => {
   const artifactWithDeepLinks = (): BaseBuildArtifact => ({
     ...createTestArtifact(),
