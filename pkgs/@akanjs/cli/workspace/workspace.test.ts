@@ -14,10 +14,29 @@ import { WorkspaceRunner } from "./workspace.runner";
 import { WorkspaceScript } from "./workspace.script";
 
 const tempRoots: string[] = [];
+const originalCwd = process.cwd();
+const originalFetch = globalThis.fetch;
+
+const stubNpmLatest = (latest = "1.0.0") => {
+  globalThis.fetch = mock(
+    async () =>
+      new Response(
+        JSON.stringify({
+          "dist-tags": { latest },
+        }),
+      ),
+  ) as never;
+};
 
 afterEach(async () => {
   CommandContainer.clear();
   mock.restore();
+  globalThis.fetch = originalFetch;
+  try {
+    process.chdir(originalCwd);
+  } catch {
+    // A timed-out createWorkspace can leave cwd on a deleted temp dir.
+  }
   await Promise.all(tempRoots.splice(0).map((root) => cleanupCliTempWorkspace(root)));
 });
 
@@ -232,71 +251,67 @@ describe("WorkspaceScript", () => {
 describe("WorkspaceRunner", () => {
   test("uses the provided akan version", async () => {
     const runner = new WorkspaceRunner();
-    const cwd = process.cwd();
+    stubNpmLatest();
     const { root } = await createTempApp("seed");
     tempRoots.push(root);
     process.chdir(root);
-    try {
-      await runner.createWorkspace("repo", "demo", {
-        dirname: "generated",
-        init: false,
-        akanVersion: "2.0.0-beta.0",
-      });
+    await runner.createWorkspace("repo", "demo", {
+      dirname: "generated",
+      init: false,
+      akanVersion: "2.0.0-beta.0",
+    });
 
-      const workspacePackageJson = (await Bun.file(`${root}/generated/repo/package.json`).json()) as {
-        scripts: Record<string, string>;
-        dependencies: Record<string, string>;
-        devDependencies: Record<string, string>;
-      };
-      expect(workspacePackageJson.scripts).toMatchObject({
-        "setup:agent": "akan agent install all --force",
-        "agent:doctor": "akan doctor --strict --format json",
-        "agent:mcp:plan": "akan mcp-install all --mode plan --force",
-        "agent:sample:service": "akan create-service billing demo --format json",
-        "agent:sample:module": "akan create-module project demo --page=true --format json",
-        "agent:sample:field":
-          "akan add-field --app demo --module project --field budget --type Int --default 0 --format json",
-        "agent:sample:status":
-          "akan add-enum-field --app demo --module project --field status --values draft,active,archived --default draft --format json",
-        "agent:sample:workflow:plan":
-          "akan workflow plan add-field --app demo --module task --field priority --type enum --values low,medium,high --default medium --format json --out .akan/workflows/plans/task-priority.json",
-        "agent:sample:workflow:dry-run":
-          "akan workflow apply .akan/workflows/plans/task-priority.json --dry-run --format json",
-      });
-      expect(workspacePackageJson.dependencies.akanjs).toBe("2.0.0-beta.0");
-      expect(workspacePackageJson.dependencies).toMatchObject({
-        "@react-spring/web": expect.any(String),
-        "@use-gesture/react": expect.any(String),
-        chance: expect.any(String),
-        croner: expect.any(String),
-        react: expect.any(String),
-        "react-dom": expect.any(String),
-        "react-icons": expect.any(String),
-        "react-refresh": expect.any(String),
-        "react-server-dom-webpack": expect.any(String),
-        "react-spring": expect.any(String),
-        scheduler: expect.any(String),
-        tailwindcss: expect.any(String),
-      });
-      expect(workspacePackageJson.dependencies).not.toHaveProperty("typescript");
-      expect(workspacePackageJson.devDependencies).toMatchObject({
-        "@biomejs/biome": expect.any(String),
-        "@types/bun": expect.any(String),
-        typescript: expect.any(String),
-      });
-      expect(workspacePackageJson.dependencies).not.toHaveProperty("@capacitor/core");
-      expect(workspacePackageJson.dependencies).not.toHaveProperty("@capacitor/cli");
-      expect(workspacePackageJson.dependencies).not.toHaveProperty("@libsql/client");
-      expect(workspacePackageJson.dependencies).not.toHaveProperty("postgres");
-      expect(workspacePackageJson.dependencies).not.toHaveProperty("ioredis");
-      expect(workspacePackageJson.dependencies).not.toHaveProperty("bullmq");
-      expect(workspacePackageJson.dependencies).not.toHaveProperty("protobufjs");
-      expect(workspacePackageJson.dependencies).not.toHaveProperty("@playwright/test");
-      expect(workspacePackageJson.dependencies).not.toHaveProperty("cordova-plugin-purchase");
-      expect(workspacePackageJson.dependencies).not.toHaveProperty("capacitor-plugin-safe-area");
-    } finally {
-      process.chdir(cwd);
-    }
+    const workspacePackageJson = (await Bun.file(`${root}/generated/repo/package.json`).json()) as {
+      scripts: Record<string, string>;
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+    expect(workspacePackageJson.scripts).toMatchObject({
+      "setup:agent": "akan agent install all --force",
+      "agent:doctor": "akan doctor --strict --format json",
+      "agent:mcp:plan": "akan mcp-install all --mode plan --force",
+      "agent:sample:service": "akan create-service billing demo --format json",
+      "agent:sample:module": "akan create-module project demo --page=true --format json",
+      "agent:sample:field":
+        "akan add-field --app demo --module project --field budget --type Int --default 0 --format json",
+      "agent:sample:status":
+        "akan add-enum-field --app demo --module project --field status --values draft,active,archived --default draft --format json",
+      "agent:sample:workflow:plan":
+        "akan workflow plan add-field --app demo --module task --field priority --type enum --values low,medium,high --default medium --format json --out .akan/workflows/plans/task-priority.json",
+      "agent:sample:workflow:dry-run":
+        "akan workflow apply .akan/workflows/plans/task-priority.json --dry-run --format json",
+    });
+    expect(workspacePackageJson.dependencies.akanjs).toBe("2.0.0-beta.0");
+    expect(workspacePackageJson.dependencies).toMatchObject({
+      "@react-spring/web": expect.any(String),
+      "@use-gesture/react": expect.any(String),
+      chance: expect.any(String),
+      croner: expect.any(String),
+      react: expect.any(String),
+      "react-dom": expect.any(String),
+      "react-icons": expect.any(String),
+      "react-refresh": expect.any(String),
+      "react-server-dom-webpack": expect.any(String),
+      "react-spring": expect.any(String),
+      scheduler: expect.any(String),
+      tailwindcss: expect.any(String),
+    });
+    expect(workspacePackageJson.dependencies).not.toHaveProperty("typescript");
+    expect(workspacePackageJson.devDependencies).toMatchObject({
+      "@biomejs/biome": expect.any(String),
+      "@types/bun": expect.any(String),
+      typescript: expect.any(String),
+    });
+    expect(workspacePackageJson.dependencies).not.toHaveProperty("@capacitor/core");
+    expect(workspacePackageJson.dependencies).not.toHaveProperty("@capacitor/cli");
+    expect(workspacePackageJson.dependencies).not.toHaveProperty("@libsql/client");
+    expect(workspacePackageJson.dependencies).not.toHaveProperty("postgres");
+    expect(workspacePackageJson.dependencies).not.toHaveProperty("ioredis");
+    expect(workspacePackageJson.dependencies).not.toHaveProperty("bullmq");
+    expect(workspacePackageJson.dependencies).not.toHaveProperty("protobufjs");
+    expect(workspacePackageJson.dependencies).not.toHaveProperty("@playwright/test");
+    expect(workspacePackageJson.dependencies).not.toHaveProperty("cordova-plugin-purchase");
+    expect(workspacePackageJson.dependencies).not.toHaveProperty("capacitor-plugin-safe-area");
   });
 
   test("generates agent rule files without overwriting by default", async () => {
@@ -331,32 +346,18 @@ describe("WorkspaceRunner", () => {
 
   test("writes local registry config before installing generated workspace dependencies", async () => {
     const runner = new WorkspaceRunner();
-    const cwd = process.cwd();
-    const originalFetch = globalThis.fetch;
+    stubNpmLatest();
     const { root } = await createTempApp("seed");
     tempRoots.push(root);
     process.chdir(root);
-    globalThis.fetch = mock(
-      async () =>
-        new Response(
-          JSON.stringify({
-            "dist-tags": { latest: "1.0.0" },
-          }),
-        ),
-    ) as never;
-    try {
-      await runner.createWorkspace("repo", "demo", {
-        dirname: "generated",
-        init: false,
-        akanVersion: "2.0.0-beta.0",
-        registryUrl: "http://127.0.0.1:4873/",
-      });
+    await runner.createWorkspace("repo", "demo", {
+      dirname: "generated",
+      init: false,
+      akanVersion: "2.0.0-beta.0",
+      registryUrl: "http://127.0.0.1:4873/",
+    });
 
-      await expect(Bun.file(`${root}/generated/repo/.npmrc`).text()).resolves.toBe("registry=http://127.0.0.1:4873/\n");
-    } finally {
-      globalThis.fetch = originalFetch;
-      process.chdir(cwd);
-    }
+    await expect(Bun.file(`${root}/generated/repo/.npmrc`).text()).resolves.toBe("registry=http://127.0.0.1:4873/\n");
   });
 
   test("invokes biome check with optional write flag", async () => {

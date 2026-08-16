@@ -45,6 +45,7 @@ Fixed order: `XFilter extends from(...)` → `X extends by(...)` → `XModel ext
 - The body is three lines: `await fetch.X` → `this.setX(...)` → toast. The optimistic shape is mutate the client model, `void fetch.*`, then commit.
 - Use `this.pick(...)` when the value must exist, `this.get()` when it may not, and `this.set({...})` to write.
 - Mutate lists through the collection API (`this.set({ xList: xList.set(x).save() })`), not array spread.
+- An action returns nothing — `st.do.<action>()` is typed `void` / `Promise<void>`, so hand the result to `this.set({...})` rather than returning it (`no-return-in-store-action.grit`); a bare `return;` guard stays fine.
 - **Never `import type { RootStore } from "../st"`** — it crashes `akan build` with a Bun SSR segfault.
 - Store actions do not `try/catch`; let the framework toast the `Err`.
 

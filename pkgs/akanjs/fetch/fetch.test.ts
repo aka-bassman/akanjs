@@ -140,6 +140,7 @@ const setAkanPublicEnv = () => {
 
 afterEach(() => {
   FetchClient.resetSharedRegistry();
+  FetchClient.resetSharedClient();
   globalThis.fetch = originalFetch;
   globalThis.WebSocket = originalWebSocket;
   globalThis.setTimeout = originalSetTimeout;
@@ -947,6 +948,55 @@ describe("FetchClient HTTP generation", () => {
       FetchClient.build<{ fetch: unknown }>({}, { missingConstant: missingConstantSignal }, { connect: false }),
     ).not.toThrow();
   });
+
+  test("shares one browser client across app and lib builds so a lib subscribe lands on the connected socket", () => {
+    setFakeWebSocket();
+    const globalWithWindow = globalThis as typeof globalThis & { window?: unknown };
+    globalWithWindow.window = {};
+    try {
+      const appSignal: SerializedSignal = {
+        prefix: "appThing",
+        endpoint: { appQuery: { type: "query", args: [], returns: { refName: "String" } } },
+      };
+      const libSignal: SerializedSignal = {
+        prefix: "libThing",
+        endpoint: { libRoom: { type: "pubsub", args: [arg("room", "roomId")], returns: { refName: "String" } } },
+      };
+      const app = FetchClient.build<{ fetch: unknown }>({}, { appThing: appSignal }, { origin: "https://api.example" });
+      const lib = FetchClient.build<{ fetch: unknown }>({}, { libThing: libSignal }, { origin: "https://api.example" });
+
+      expect(lib.fetch).toBe(app.fetch);
+      const proxy = app.fetch as FetchProxy;
+      expect(Object.keys(proxy.instance.serializedSignal)).toEqual(["appThing", "libThing"]);
+
+      proxy.instance.connect();
+      const ws = FakeWebSocket.instances[0];
+      ws.open();
+      (lib.fetch as Record<string, (...args: unknown[]) => unknown>).subscribeLibRoom("r1", () => undefined);
+      expect(JSON.parse(ws.sent.at(-1) ?? "{}")).toEqual({ key: "libRoom", data: ["r1"], subscribe: true });
+    } finally {
+      delete globalWithWindow.window;
+    }
+  });
+
+  test("keeps one client per package on the server", () => {
+    const serverSignal: SerializedSignal = {
+      prefix: "serverThing",
+      endpoint: { serverQuery: { type: "query", args: [], returns: { refName: "String" } } },
+    };
+    const app = FetchClient.build<{ fetch: unknown }>(
+      {},
+      { serverThing: serverSignal },
+      { origin: "https://api.example" },
+    );
+    const lib = FetchClient.build<{ fetch: unknown }>(
+      {},
+      { serverThing: serverSignal },
+      { origin: "https://api.example" },
+    );
+
+    expect(lib.fetch).not.toBe(app.fetch);
+  });
 });
 
 describe("FetchClient database signal helpers", () => {
@@ -1068,7 +1118,7 @@ describe("FetchClient database signal helpers", () => {
 });
 
 describe("WsClient", () => {
-  test("warns when realtime APIs are used before websocket connection", () => {
+  test("warns when realtime APIs are used and nothing ever connects", async () => {
     setFakeWebSocket();
     const originalConsoleWarn = console.warn;
     const warnings: string[] = [];
@@ -1080,10 +1130,37 @@ describe("WsClient", () => {
       client.emit("send", ["hello"]);
       client.subscribe({ key: "roomKey", data: ["r1"], handleEvent: () => undefined });
 
+      expect(warnings).toEqual([expect.stringContaining('before emit "send"')]);
+      await new Promise((resolve) => originalSetTimeout(resolve, 5));
       expect(warnings).toEqual([
         expect.stringContaining('before emit "send"'),
         expect.stringContaining('before subscribe "roomKey"'),
       ]);
+    } finally {
+      console.warn = originalConsoleWarn;
+    }
+  });
+
+  test("queues a subscribe issued before connect and replays it on open without warning", async () => {
+    setFakeWebSocket();
+    const originalConsoleWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = ((message: string) => {
+      warnings.push(message);
+    }) as typeof console.warn;
+    try {
+      const client = new WsClient("ws://example/ws");
+      const events: unknown[] = [];
+      client.subscribe({ key: "roomKey", data: ["r1"], handleEvent: (data) => events.push(data) });
+      client.connect();
+      const ws = FakeWebSocket.instances[0];
+      ws.open();
+
+      expect(JSON.parse(ws.sent.at(-1) ?? "{}")).toEqual({ key: "roomKey", data: ["r1"], subscribe: true });
+      ws.receive({ type: "pub", roomId: "roomKey-r1", data: { title: "event" } });
+      expect(events).toEqual([{ title: "event" }]);
+      await new Promise((resolve) => originalSetTimeout(resolve, 5));
+      expect(warnings).toEqual([]);
     } finally {
       console.warn = originalConsoleWarn;
     }

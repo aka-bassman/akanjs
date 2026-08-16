@@ -190,7 +190,7 @@ export class CascadeRunner {
     }
     if (!lines.length) return;
     const bulk = lines.filter((line) => line.endsWith("(bulk)")).length;
-    this.#logger.info(`${lines.length} cascade edge(s), ${bulk} in one query`);
+    this.#logger.verbose(`${lines.length} cascade edge(s), ${bulk} in one query`);
     for (const line of lines) this.#logger.verbose(line);
   }
 

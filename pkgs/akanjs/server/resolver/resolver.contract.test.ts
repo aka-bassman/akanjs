@@ -156,6 +156,10 @@ const makeFakeStore = () => {
       calls.push({ method: "removeManyByQuery", args: [query] });
       return { acknowledged: true, matchedCount: 1, modifiedCount: 1 };
     },
+    async removeOneByQuery(query: unknown) {
+      calls.push({ method: "removeOneByQuery", args: [query] });
+      return { acknowledged: true, matchedCount: 1, modifiedCount: 1 };
+    },
     async bulkWrite(operations: unknown) {
       calls.push({ method: "bulkWrite", args: [operations] });
       return { acknowledged: true, matchedCount: 1, modifiedCount: 1 };
@@ -262,6 +266,31 @@ describe("DatabaseResolver declaration contracts", () => {
       kind: "all",
       queries: [{}, { kind: "any", queries: [{ ownerId: "owner-1", category: "news" }] }],
     });
+  });
+
+  test("narrows the by-id facade writes to a single id query", async () => {
+    const { adaptor: DatabaseAdaptor } = DatabaseResolver.resolveDatabase(
+      serverResolverTestConstant,
+      serverResolverTestDatabase,
+    );
+    const instance = new DatabaseAdaptor() as InstanceType<typeof DatabaseAdaptor> & {
+      __store: ReturnType<typeof makeFakeStore>;
+      ServerResolverTestItem: {
+        updateById: (id: string, update: unknown, options?: unknown) => Promise<unknown>;
+        removeById: (id: string) => Promise<unknown>;
+      };
+    };
+    Object.assign(instance, { __database: new FakeSqliteDatabase(), __cache: new FakeSolidCache() });
+    await instance.onInit();
+
+    await instance.ServerResolverTestItem.updateById("doc-1", { title: "Beta" }, { upsert: true });
+    expect(instance.__store.calls.at(-1)).toEqual({
+      method: "updateOneByQuery",
+      args: [{ id: "doc-1" }, { title: "Beta" }, { upsert: true }],
+    });
+
+    await instance.ServerResolverTestItem.removeById("doc-1");
+    expect(instance.__store.calls.at(-1)).toEqual({ method: "removeOneByQuery", args: [{ id: "doc-1" }] });
   });
 
   test("indexes the column a removeWith child is found by", () => {

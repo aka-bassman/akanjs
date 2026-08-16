@@ -143,7 +143,8 @@
         "!**/*.spec.ts",
         "!**/*.spec.tsx",
         "!**/*.constant.ts",
-        "!**/common/**"
+        "!**/common/**",
+        "!apps/akan/env/**"
       ],
       "plugins": ["./node_modules/@akanjs/devkit/lint/no-throw-raw-error.grit"]
     },
@@ -161,6 +162,10 @@
     {
       "includes": ["**/*.constant.ts", "**/*.document.ts", "**/*.service.ts", "**/*.store.ts"],
       "plugins": ["./node_modules/@akanjs/devkit/lint/no-js-private-class-method.grit"]
+    },
+    {
+      "includes": ["**/*.store.ts"],
+      "plugins": ["./node_modules/@akanjs/devkit/lint/no-return-in-store-action.grit"]
     },
     {
       "includes": ["**/*.signal.ts"],

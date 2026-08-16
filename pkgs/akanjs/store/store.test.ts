@@ -488,4 +488,28 @@ describe("StoreRegistry and root assembly", () => {
     expect(instance.get().pageOfStoreTestItemByTitle).toBe(2);
     expect(slice.use).toHaveProperty("pageOfStoreTestItem");
   });
+
+  test("erases action return types on the do facade while keeping args and promise-ness", () => {
+    setupEnv();
+    class ReturningStore extends store("returningStore" as const, () => ({ returnedValue: 1 })) {
+      syncReturn(value: number) {
+        this.set({ returnedValue: value });
+        return value;
+      }
+      async asyncReturn(value: number) {
+        this.set({ returnedValue: value });
+        return { value };
+      }
+    }
+    StoreRegistry.register(ReturningStore);
+    const built = StoreRegistry.build(StoreRegistry.merge("returningRoot" as const, ReturningStore));
+
+    type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+    const syncIsVoid: Exact<ReturnType<typeof built.do.syncReturn>, void> = true;
+    const asyncIsVoid: Exact<ReturnType<typeof built.do.asyncReturn>, Promise<void>> = true;
+    const argsSurvive: Exact<Parameters<typeof built.do.syncReturn>, [value: number]> = true;
+    const setterIsVoid: Exact<ReturnType<typeof built.do.setReturnedValue>, void> = true;
+
+    expect([syncIsVoid, asyncIsVoid, argsSurvive, setterIsVoid]).toEqual([true, true, true, true]);
+  });
 });

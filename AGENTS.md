@@ -42,8 +42,9 @@ that looks wrong; do not "fix" it back.
   `// biome-ignore lint/plugin: <reason>` with the reason spelled out. `apps/akan/page/v1/**` is excluded.
 - **Never `throw new Error`.** Throw `new Err("<module>.error.<key>")` and register the key as `[en, ko]` in that
   module's dictionary `.error({})`. Import `Err` from `"../dict"` on the server and from `"@libs/<lib>/client"` or
-  `"@apps/<app>/client"` in UI. `no-throw-raw-error.grit` exempts `*.test.ts`, `*.spec.ts`, `*.constant.ts`, and
-  `common/**` — `common/` has no legal `Err` import path, so keep throwing code out of it.
+  `"@apps/<app>/client"` in UI. `no-throw-raw-error.grit` exempts `*.test.ts`, `*.spec.ts`, `*.constant.ts`,
+  `common/**`, and `apps/akan/env/**` — `common/` and `env/` have no legal `Err` import path, so keep throwing code
+  out of them.
 - **Never import a third-party package** from `page/**`, from any barrel, or from any
   `*.{constant,dictionary,document,service,signal,store}.ts` / `*.{Template,Unit,Util,View,Zone}.tsx`
   (`no-import-external-library.grit`). Re-export the symbol through a lib first. One-line re-export shims such as
@@ -58,6 +59,10 @@ that looks wrong; do not "fix" it back.
   `*.constant.ts`, `*.store.ts`, and the five module component suffixes (`no-bang-comment-in-client.grit`). Bun
   classifies `//!` and `/*!` as legal comments and keeps them through minification, so the note ships to every
   visitor. Use `// FIXME:` there; `//!` stays legal in server, `srvkit/`, and CLI files.
+- **Never return a value from a store action** (`no-return-in-store-action.grit`). Every method of a `store(...)`
+  class dispatches through `st.do.<action>()`, which is typed `void` / `Promise<void>`, so the value is
+  unreachable — write it into state with `this.set({ ... })`. A bare `return;` guard, a `return` inside a nested
+  callback, a getter, and a `static` helper are all still fine.
 - **Never redeclare a generated CRUD endpoint name** in `*.signal.ts` (`no-redeclare-predefined-endpoint.grit`).
 - **No deep imports past a barrel** (`no-deep-internal-import.grit`). Cross-module constant references such as
   `../map/map.constant` are the sanctioned exception.
@@ -300,7 +305,9 @@ model facade's `removeMany(query)` and the store's `removeManyByQuery` stamp `re
 framework has no hard delete for a model table, and `delete` is deliberately left unused so it can mean one later.
 The facade keeps `Many`/`One` spelled out on its writes (`updateOne` / `updateMany` / `removeOne` / `removeMany`):
 a bare `update`/`remove` would read like the document-path `update(id)` / `doc.remove()` while hitting every match.
-Only the count was shortened — `count(query)`, with `countDocuments` kept as `@deprecated`.
+Only the count was shortened — `count(query)`, with `countDocuments` kept as `@deprecated`. `updateById(id, update)`
+and `removeById(id)` are those same query-level writes narrowed to one id, **not** the document path: they fire no
+hooks either, so a model whose removal cascades or carries a `_postRemove` still goes through `remove<Model>(id)`.
 
 **`<model>.service.ts`** — keep methods to a few lines: load → chain → `return await ….save()`. Write `return await`
 explicitly in tail position; do not "optimize" it away. Side effects belong in `override async _preUpdate` /
@@ -315,7 +322,9 @@ delegating to the service.
 stores need none, because state and CRUD actions are generated. The body is three lines: `await fetch.X` →
 `this.setX(...)` → toast. The optimistic shape is mutate the client model, `void fetch.*`, then commit. Use
 `this.pick(...)` when the value must exist, `this.get()` when it may not, and `this.set({...})` to write. Mutate lists
-through the collection API (`this.set({ xList: xList.set(x).save() })`), not array spread. **Never
+through the collection API (`this.set({ xList: xList.set(x).save() })`), not array spread. **An action returns
+nothing** — `st.do.<action>()` is typed `void` / `Promise<void>`, so hand the result to `this.set({...})` rather
+than returning it (`no-return-in-store-action.grit`); a bare `return;` guard stays fine. **Never
 `import type { RootStore } from "../st"`** — it crashes `akan build` with a Bun SSR segfault.
 
 **`<model>.dictionary.ts`** — fixed chain, with empty stages still written:
@@ -537,7 +546,8 @@ shape, so `cascade` never means "related" — it means one of exactly these:
 - A `removeWith` declaration **auto-creates its index** (`{ removedAt, fk }`, or `{ removedAt, typeKey, fk }` when
   polymorphic). Every non-base field lives in the `_doc` JSON column, so the lookup would otherwise scan the table
   on every owner removal.
-- **Query-level removes fire no hooks and therefore no cascade.** `removeManyByQuery` / `updateManyByQuery` and the generated `remove<Filter>` / `update<Filter>` stamp
+- **Query-level removes fire no hooks and therefore no cascade.** `removeManyByQuery` / `updateManyByQuery`, the
+  generated `remove<Filter>` / `update<Filter>`, and the facade's `removeById` / `updateById` stamp
   `removedAt` in one atomic UPDATE, so nothing downstream runs. Remove one document at a time when it cascades.
 - Cascades are **idempotent**: `removedAt IS NULL` is ANDed into every query-level write, so a retry after a partial
   failure re-stamps nothing. Cycles are cut by a visited set carried down the whole chain, with a depth cap of 16.

@@ -89,6 +89,8 @@ export type Mdl<
   updateMany(query: _RawQuery, update: DocumentUpdateInput<_RawDoc>): Promise<UpdateResult>;
   removeOne(query: _RawQuery): Promise<UpdateResult>;
   removeMany(query: _RawQuery): Promise<UpdateResult>;
+  updateById(id: string, update: DocumentUpdateInput<_RawDoc>, options?: DocumentUpdateOptions): Promise<UpdateResult>;
+  removeById(id: string): Promise<UpdateResult>;
   bulkWrite(operations: BulkWriteOperation<Raw, _RawDoc, _RawQuery>[]): Promise<UpdateResult>;
   /** @deprecated Renamed to `count`. */
   countDocuments(query: _RawQuery): Promise<number>;

@@ -70,6 +70,10 @@ export const makeCliTempWorkspace = async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "akan-cli-"));
   await mkdir(root, { recursive: true });
   await writeText(path.join(root, ".gitignore"), "");
+  await writeText(
+    path.join(root, ".env"),
+    ["AKAN_PUBLIC_REPO_NAME=repo", "AKAN_PUBLIC_SERVE_DOMAIN=localhost", "AKAN_PUBLIC_ENV=local", ""].join("\n"),
+  );
   const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
   return { root, workspace };
 };

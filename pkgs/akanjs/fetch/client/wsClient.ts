@@ -40,6 +40,8 @@ export class WsClient {
   #roomSubscribeMap = new Map<string, SubscribeOption>();
   #listenerMap = new Map<string, Set<Listener>>();
   #destroyed = false;
+  #connectRequested = false;
+  #unconnectedWarnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   #jwt: string | null = null;
   connected = false;
 
@@ -70,6 +72,7 @@ export class WsClient {
   }
 
   connect() {
+    this.#connectRequested = true;
     if (this.#ws && this.#ws.readyState !== WebSocket.CLOSED) return;
     this.logger.debug(`Connecting to ${this.url}`);
     this.#destroyed = false;
@@ -188,10 +191,13 @@ export class WsClient {
   destroy() {
     this.logger.debug(`WebSocket destroying`);
     this.#destroyed = true;
+    this.#connectRequested = false;
     if (this.#reconnectTimer) {
       clearTimeout(this.#reconnectTimer);
       this.#reconnectTimer = null;
     }
+    for (const timer of this.#unconnectedWarnTimers.values()) clearTimeout(timer);
+    this.#unconnectedWarnTimers.clear();
     this.#ws?.close();
     this.#ws = null;
   }
@@ -232,8 +238,17 @@ export class WsClient {
   }
   #warnNotConnected(action: "emit" | "subscribe", key: string) {
     console.warn(
-      `[akanjs] WebSocket is not connected. Call fetch.instance.connect() or enable root layout "wsConnect" before ${action} "${key}".`,
+      `[akanjs] WebSocket is not connected. Call fetch.instance.connect(), or drop the root layout "wsConnect = false", before ${action} "${key}".`,
     );
+  }
+  #warnUnconnectedSubscribe(key: string) {
+    if (this.#connectRequested || this.#unconnectedWarnTimers.has(key)) return;
+    const timer = setTimeout(() => {
+      this.#unconnectedWarnTimers.delete(key);
+      if (this.#connectRequested || this.#destroyed) return;
+      this.#warnNotConnected("subscribe", key);
+    }, 0);
+    this.#unconnectedWarnTimers.set(key, timer);
   }
   emit(key: string, data: WsRequestPayload) {
     if (this.#ws?.readyState !== WebSocket.OPEN) {
@@ -247,7 +262,7 @@ export class WsClient {
   }
   subscribe(option: { key: string; data: unknown[]; handleEvent: (data: unknown) => void }) {
     const roomId = WsClient.makeRoomId(option.key, option.data);
-    if (!this.#ws) this.#warnNotConnected("subscribe", option.key);
+    if (!this.#ws) this.#warnUnconnectedSubscribe(option.key);
     if (!this.#roomSubscribeMap.has(roomId)) {
       this.#roomSubscribeMap.set(roomId, { key: option.key, data: option.data, listener: new Set() });
       if (this.#ws?.readyState === WebSocket.OPEN) {

@@ -37,6 +37,16 @@ export type FetchProxy<
   FetchClient &
   FetchType & { slice: SliceMetaObj; instance: FetchClient; _FetchType: FetchType; _SliceMetaObj: SliceMetaObj };
 
+interface SharedClientState {
+  proxy: FetchProxy | null;
+  origin: string | null;
+}
+
+const SHARED_CLIENT_KEY = Symbol.for("akanjs.fetch.sharedClient");
+const globalWithSharedClient = globalThis as typeof globalThis & { [SHARED_CLIENT_KEY]?: SharedClientState };
+const sharedClientState: SharedClientState = globalWithSharedClient[SHARED_CLIENT_KEY] ?? { proxy: null, origin: null };
+globalWithSharedClient[SHARED_CLIENT_KEY] = sharedClientState;
+
 type ClientSignalMap<SigType extends { fetch: any }> = {
   [K in keyof SigType as SigType[K] extends DatabaseSignal<any, any, any, any>
     ? K
@@ -79,6 +89,19 @@ export class FetchClient {
   static resetSharedRegistry() {
     FetchClient.#sharedSerializedSignal = {};
     FetchClient.#sharedRegistryVersion++;
+  }
+  static resetSharedClient() {
+    sharedClientState.proxy = null;
+    sharedClientState.origin = null;
+  }
+  static #resolveSharedClientProxy(origin: string, Err?: ErrorConstructor) {
+    if (typeof window === "undefined") return null;
+    // A build asking for another origin owns its own instance; the tab-wide socket stays on the first one.
+    if (sharedClientState.proxy) return sharedClientState.origin === origin ? sharedClientState.proxy : null;
+    const proxy = FetchClient.#makeProxy<unknown, Record<string, SliceMeta>>(new FetchClient(origin, {}, {}, Err));
+    sharedClientState.proxy = proxy;
+    sharedClientState.origin = origin;
+    return proxy;
   }
   static #mergeSerializedSignalInto(
     serializedSignal: { [key: string]: SerializedSignal },
@@ -705,10 +728,11 @@ export class FetchClient {
     sig: ClientSignalMap<SigType>;
     fetch: SigType["fetch"];
   } {
-    if (base) base.instance.applySignal(serializedSignal);
+    const shared = base ?? FetchClient.#resolveSharedClientProxy(origin, Err);
+    if (shared) shared.instance.applySignal(serializedSignal);
     if (base && Err) base.instance.setErrorConstructor(Err);
     const proxy =
-      base ??
+      shared ??
       FetchClient.#makeProxy<unknown, Record<string, SliceMeta>>(new FetchClient(origin, {}, serializedSignal, Err));
     if (connect) proxy.instance.connect();
     const sig = {} as any;
