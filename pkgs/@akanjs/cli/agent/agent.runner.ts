@@ -1,5 +1,12 @@
-import { AGENT_BLOCK_END, AGENT_BLOCK_START, renderRecipeEntries, upsertAgentBlock } from "@akanjs/devkit/agentsIndex";
-import { AkanContextAnalyzer } from "@akanjs/devkit/akanContext";
+import {
+  AGENT_BLOCK_END,
+  AGENT_BLOCK_START,
+  readDevkitVersion,
+  renderRecipeEntries,
+  stampBlockVersion,
+  upsertAgentBlock,
+} from "@akanjs/devkit/agentsIndex";
+import { AkanContextAnalyzer, type AkanWorkspaceContext } from "@akanjs/devkit/akanContext";
 import { runner, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, LibExecutor } from "@akanjs/devkit/executors";
 import { Prompter } from "@akanjs/devkit/prompter";
@@ -90,6 +97,18 @@ ${scopeIndexPointer}
 `;
 };
 
+// The convention set and the onboarding guide ship inside the package, so a framework release reaches an
+// existing workspace through `akan agent install` instead of leaving a copy that was written once at create
+// time. Onboarding is skipped in the framework monorepo itself: it teaches how to build *on* Akan, and pairing
+// it with the conventions would more than double an always-loaded file for readers who are changing Akan.
+const renderGuides = async (context: AkanWorkspaceContext) => {
+  const conventions = (await Prompter.getInstruction("conventions")).trim();
+  if (context.pkgs.some((pkg) => pkg.name === "akanjs")) return conventions;
+  const onboarding = (await Prompter.getInstruction("workspaceOnboarding")).trim();
+  const appName = context.apps[0]?.name ?? "app";
+  return `${conventions}\n\n${onboarding.replaceAll("<%= appName %>", appName)}`;
+};
+
 // The generated, workspace-derived section. It is the only part of AGENTS.md that
 // `akan agent install` rewrites; everything outside the markers is preserved.
 const renderManagedBlock = async (workspace: Workspace) => {
@@ -98,12 +117,16 @@ const renderManagedBlock = async (workspace: Workspace) => {
   const appNames = context.apps.map((app) => app.name);
   const sampleCleanup = await renderSampleCleanup(workspace, appNames);
   const recipeIndex = await renderRecipeIndex(workspace);
-  return `## Workspace
+  const guides = await renderGuides(context);
+  const version = await readDevkitVersion();
+  const block = `## Workspace
 
 - Repo: ${context.repoName}
 - Apps: ${context.apps.map((app) => app.name).join(", ") || "none"}
 - Libraries: ${context.libs.map((lib) => lib.name).join(", ") || "none"}
 - Packages: ${context.pkgs.map((pkg) => pkg.name).join(", ") || "none"}
+
+${guides}
 
 ${sampleCleanup}## Akan Module Abstracts
 
@@ -136,7 +159,19 @@ ${context.validationCommands.map((command) => `- \`${command}\``).join("\n")}
 
 ## Framework Guide
 
-${frameworkGuide.trim()}`;
+${frameworkGuide.trim()}
+
+## Before You Finish
+
+1. \`bun run akan lint <appName>\` — Tailwind class order, \`Err\`, \`console\`, \`#private\` scope, unused imports.
+2. \`bun run akan typecheck <appName>\` — server/client boundary violations.
+3. \`bun run akan sync <appName>\` if you added, renamed, or deleted any file.
+4. Did you write or change a \`.tsx\` file? \`bun run akan quality ssr\` — did the server share hold, and did you add
+   a \`"use client"\` you cannot justify?
+5. Re-read the file you wrote against its section above.
+6. Did you add a comment? Delete it unless it documents an external constraint or a security decision.
+7. Did behavior or an invariant change? Update the module's \`*.abstract.md\`.`;
+  return version ? stampBlockVersion(block, version) : block;
 };
 
 const renderAgentsMd = async (workspace: Workspace, existing: string | null) => {

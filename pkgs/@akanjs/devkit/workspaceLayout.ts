@@ -4,8 +4,7 @@
  * 같은 규칙을 scanInfo(`akan sync`, hard error) · akanContext(`akan doctor`, diagnostic) ·
  * qualityScanner(`akan quality scan`, warning) 세 곳이 각자 복사해 두면서 실제로 어긋났다
  * (스코프 AGENTS.md/CLAUDE.md 는 sync 만 허용, `plugin` 은 문서에만, `secrets` 는 doctor 만 거부).
- * 규칙을 추가할 때는 이 파일만 고치고, 루트 AGENTS.md 와 `.cursor/rules/akan-scan-conventions.mdc`
- * 의 목록도 같이 갱신한다.
+ * 규칙을 추가할 때는 이 파일만 고치고, 루트 AGENTS.md 의 목록도 같이 갱신한다.
  */
 
 export const appRootAllowedFiles = new Set([

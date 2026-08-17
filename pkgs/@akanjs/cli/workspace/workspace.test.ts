@@ -237,10 +237,13 @@ describe("WorkspaceScript", () => {
       recorder.record("generateAgentRules", ...args);
       return [{ filePath: "/workspace/AGENTS.md", content: "" }];
     };
+    script.agentScript.agent = async (...args: unknown[]) => {
+      recorder.record("agent", ...args);
+    };
 
     await script.generateAgentRules(workspace as never, { overwrite: true, cursorRules: false });
 
-    expect(recorder.names()).toEqual(["workspace.spinning", "generateAgentRules", "spinner.succeed"]);
+    expect(recorder.names()).toEqual(["workspace.spinning", "generateAgentRules", "agent", "spinner.succeed"]);
     expect(recorder.calls.find((call) => call.name === "generateAgentRules")?.args).toEqual([
       workspace,
       { overwrite: true, cursorRules: false },
@@ -325,12 +328,10 @@ describe("WorkspaceRunner", () => {
     const claudeGuide = await Bun.file(`${root}/CLAUDE.md`).text();
     expect(claudeGuide).toContain("@AGENTS.md");
     expect(agentsGuide).toContain("repo Agent Guide");
-    expect(agentsGuide).toContain("Prefer Akan MCP workflows before direct source edits");
-    expect(agentsGuide).toContain("apply_workflow({ planPath })");
-    expect(agentsGuide).toContain("validationTarget");
-    expect(agentsGuide).toContain("create-module` plan/apply first, then `add-field");
-    expect(agentsGuide).toContain("akan mcp --mode plan");
-    expect(agentsGuide).toContain("akan repair generated");
+    // The runner lays down the hand-editable preamble and an empty managed block; the conventions and framework
+    // guide inside it are rendered from the installed package by `akan agent install`, which the script composes.
+    expect(agentsGuide).toContain("<!-- akan:agent:start -->");
+    expect(agentsGuide).toContain("<!-- akan:agent:end -->");
     // The Cursor rule is a thin reference to AGENTS.md, not a duplicate of its content.
     expect(cursorRules).toContain("alwaysApply: true");
     expect(cursorRules).toContain("single source of truth");

@@ -597,6 +597,13 @@ describe("AgentRunner", () => {
     expect(agents).toContain("akan repair generated");
     expect(agents).toContain("<!-- akan:agent:start -->");
     expect(agents).toContain("<!-- akan:agent:end -->");
+    // The conventions and onboarding guides ship in the package, so the block carries both, stamped with the
+    // release that rendered it. A workspace outside the framework monorepo gets onboarding too.
+    expect(agents).toContain("Never hand-order Tailwind classes");
+    expect(agents).toContain("Quick Decision Matrix");
+    expect(agents).toMatch(/<!-- akan:agent:version \S+ -->/);
+    expect(agents).not.toContain("<%= appName %>");
+    expect(agents).toContain("akan start demo");
 
     const claude = await Bun.file(`${root}/CLAUDE.md`).text();
     expect(claude).toContain("@AGENTS.md");

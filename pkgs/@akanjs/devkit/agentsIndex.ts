@@ -19,6 +19,32 @@ const loadRecipeScanner = () => (recipeScannerLoad ??= import("./recipeScanner")
 export const AGENT_BLOCK_START = "<!-- akan:agent:start -->";
 export const AGENT_BLOCK_END = "<!-- akan:agent:end -->";
 
+const AGENT_VERSION_PREFIX = "<!-- akan:agent:version ";
+
+/**
+ * The generating release, stamped into the workspace block. Nothing re-runs `akan agent install` on its own, so
+ * without a stamp a workspace carrying conventions from four releases ago is indistinguishable from a current one —
+ * `akan doctor` compares this against the installed devkit and says so.
+ */
+export const stampBlockVersion = (block: string, version: string): string =>
+  `${AGENT_VERSION_PREFIX}${version} -->\n\n${block}`;
+
+/** The stamped version of a committed AGENTS.md, or null when it predates stamping or carries no block. */
+export const extractBlockVersion = (content: string): string | null =>
+  content.match(/<!-- akan:agent:version ([^\s]+) -->/)?.[1] ?? null;
+
+/** The running `@akanjs/devkit` version; null when its package.json is unreadable, which must not fail a doctor run. */
+export const readDevkitVersion = async (): Promise<string | null> => {
+  const { readFile } = await import("node:fs/promises");
+  const { getDirname } = await import("./getDirname");
+  try {
+    const raw = await readFile(`${getDirname(import.meta.url)}/package.json`, "utf-8");
+    return (JSON.parse(raw) as { version?: string }).version ?? null;
+  } catch {
+    return null;
+  }
+};
+
 export interface AgentsIndexScope {
   type: "app" | "lib";
   name: string;
