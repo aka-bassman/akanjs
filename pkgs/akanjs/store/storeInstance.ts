@@ -216,9 +216,9 @@ export class StoreInstance {
         Logger.verbose(`${k} action loading...`);
         const start = Date.now();
         try {
+          // action can return the result, but it is restricted to undefined, because of maintainability concerns
           const result = await (this.#ctx[k] as StoreAction)(...args);
           Logger.verbose(`=> ${k} action dispatched (${Date.now() - start}ms)`);
-          return result;
         } catch (error) {
           this.#showActionErrorMessage(k, error);
           Logger.error(`${k} action error return: ${error instanceof Error ? error.message : String(error)}`);
