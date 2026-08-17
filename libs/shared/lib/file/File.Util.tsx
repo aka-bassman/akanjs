@@ -1,10 +1,11 @@
 "use client";
 import { fetch, st } from "@libs/shared/client";
+import { buttonRecipe } from "@libs/util/ui";
 import { cn, getCookie } from "akanjs/client";
-import { buttonRecipe, Image, Loading } from "akanjs/ui";
+import { Image, Loading } from "akanjs/ui";
 import { lazy } from "akanjs/webkit";
 import { type ReactNode, useState } from "react";
-import { AiOutlineCheckCircle } from "react-icons/ai";
+import { AiOutlineCheckCircle, AiOutlineLoading } from "react-icons/ai";
 
 const ImageViewer = lazy(() => import("react-simple-image-viewer"), { ssr: false });
 
@@ -121,17 +122,12 @@ export const ExportPDF = () => {
         // 메모리 정리
         URL.revokeObjectURL(url);
       }}
-      className={buttonRecipe(
-        { variant: "primary" },
-        {
-          "bg-primary/80": loading === true,
-        },
-      )}
+      className={cn(buttonRecipe({ variant: "primary" }), loading === true && "bg-primary/80")}
       disabled={loading === true}
     >
       <div className="w-3">
         {loading === true ? (
-          <span className="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+          <AiOutlineLoading className="animate-spin text-xs" />
         ) : loading === false ? (
           <AiOutlineCheckCircle className="animate-pop-300" />
         ) : null}

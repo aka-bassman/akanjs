@@ -1,11 +1,9 @@
 "use client";
-// styleguard-disable arbitrary-color — SNS 로그인 버튼 색(Kakao·Naver·Google 등)은 각 서비스 브랜드
-// 가이드가 강제하는 고정값이다. 브랜드 준수 목적의 명시적 예외.
-import { type cnst, st, usePage } from "@libs/shared/client";
-import { Icon } from "@libs/util/ui";
-import { fetch } from "akanjs/client";
+import { type cnst, fetch, st, usePage } from "@libs/shared/client";
+import { buttonRecipe, Icon } from "@libs/util/ui";
+import { cn } from "akanjs/client";
 // import { client } from "akanjs/signal";
-import { buttonRecipe, Dropdown, Input, Link, Modal } from "akanjs/ui";
+import { Dropdown, Input, Link, Modal } from "akanjs/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { AiFillGithub, AiOutlineMenu, AiOutlinePoweroff } from "react-icons/ai";
 
@@ -31,7 +29,7 @@ export const Auth = ({ logo, password, ssoTypes = [], redirect }: AuthProps) => 
     github: (
       <button
         className={buttonRecipe(
-          undefined,
+          { variant: "default" },
           "relative flex w-full items-center border-none bg-black text-white shadow-sm",
         )}
       >
@@ -42,7 +40,7 @@ export const Auth = ({ logo, password, ssoTypes = [], redirect }: AuthProps) => 
     google: (
       <button
         className={buttonRecipe(
-          undefined,
+          { variant: "default" },
           "relative flex w-full items-center border border-border bg-white text-black shadow-sm",
         )}
       >
@@ -53,8 +51,8 @@ export const Auth = ({ logo, password, ssoTypes = [], redirect }: AuthProps) => 
     facebook: (
       <button
         className={buttonRecipe(
-          undefined,
-          "relative flex w-full items-center border-none bg-[#039be5] text-white shadow-sm",
+          { variant: "default" },
+          "relative flex w-full items-center border-none bg-[var(--telegram)] text-white shadow-sm",
         )}
       >
         <Icon.Facebook className="absolute left-[22px] rounded-full" width={30} />
@@ -64,7 +62,7 @@ export const Auth = ({ logo, password, ssoTypes = [], redirect }: AuthProps) => 
     apple: (
       <button
         className={buttonRecipe(
-          undefined,
+          { variant: "default" },
           "relative flex w-full items-center border-none bg-black text-white shadow-sm",
         )}
       >
@@ -75,8 +73,8 @@ export const Auth = ({ logo, password, ssoTypes = [], redirect }: AuthProps) => 
     kakao: (
       <button
         className={buttonRecipe(
-          undefined,
-          "relative flex w-full items-center border-none bg-[#FEE500] text-[#3c1e1e] shadow-sm hover:text-white",
+          { variant: "default" },
+          "relative flex w-full items-center border-none bg-[var(--kakao)] text-[var(--kakao-ink)] shadow-sm hover:text-white",
         )}
       >
         <Icon.Kakao className="absolute left-4 rounded-full" />
@@ -86,8 +84,8 @@ export const Auth = ({ logo, password, ssoTypes = [], redirect }: AuthProps) => 
     naver: (
       <button
         className={buttonRecipe(
-          undefined,
-          "relative flex w-full items-center border-none bg-[#1ec800] text-white shadow-sm hover:text-white",
+          { variant: "default" },
+          "relative flex w-full items-center border-none bg-[var(--naver)] text-white shadow-sm hover:text-white",
         )}
       >
         <Icon.Naver className="absolute left-4 rounded-full fill-white" />
@@ -145,9 +143,9 @@ export const Auth = ({ logo, password, ssoTypes = [], redirect }: AuthProps) => 
 export const ToolMenu = () => {
   return (
     <Dropdown
-      buttonClassName="m-1"
+      buttonClassName={buttonRecipe({ variant: "ghost" }, "m-1")}
+      dropdownClassName="z-[1] w-32 rounded-box bg-background p-2 shadow-sm"
       value={<AiOutlineMenu className="mt-0.5" />}
-      dropdownClassName="w-32 rounded-box bg-background p-2"
       content={
         <li onClick={() => void st.do.signoutAdmin()}>
           <div className="flex items-center gap-2 text-foreground">
@@ -167,7 +165,7 @@ export const ManageAdminRole = ({ id, roles }: ManageAdminRoleProps) => {
   if (roles.includes("admin"))
     return (
       <button
-        className={buttonRecipe({ variant: "destructive", size: "sm" }, "w-full")}
+        className={buttonRecipe({ size: "sm", variant: "destructive" }, "w-full")}
         onClick={() => void st.do.subAdminRole(id, "admin")}
       >
         Remove Admin
@@ -176,7 +174,7 @@ export const ManageAdminRole = ({ id, roles }: ManageAdminRoleProps) => {
   else
     return (
       <button
-        className={buttonRecipe({ variant: "warning", size: "sm" }, "w-full")}
+        className={buttonRecipe({ size: "sm", variant: "warning" }, "w-full")}
         onClick={() => void st.do.addAdminRole(id, "admin")}
       >
         Add Admin
@@ -192,7 +190,7 @@ export const ManageSuperAdminRole = ({ id, roles }: ManageSuperAdminRoleProps) =
   if (roles.includes("superAdmin"))
     return (
       <button
-        className={buttonRecipe({ variant: "destructive", size: "sm" }, "w-full")}
+        className={buttonRecipe({ size: "sm", variant: "destructive" }, "w-full")}
         onClick={() => void st.do.subAdminRole(id, "superAdmin")}
       >
         Remove SuperAdmin
@@ -201,7 +199,7 @@ export const ManageSuperAdminRole = ({ id, roles }: ManageSuperAdminRoleProps) =
   else
     return (
       <button
-        className={buttonRecipe({ variant: "warning", size: "sm" }, "w-full")}
+        className={buttonRecipe({ size: "sm", variant: "warning" }, "w-full")}
         onClick={() => void st.do.addAdminRole(id, "superAdmin")}
       >
         Add SuperAdmin
@@ -219,7 +217,7 @@ export const SetPassword = ({ className, id }: SetPasswordProps) => {
   return (
     <>
       <button
-        className={buttonRecipe({ variant: "secondary", size: "sm" }, className)}
+        className={cn(buttonRecipe({ size: "sm", variant: "default" }), className)}
         onClick={() => {
           setPasswordState({ modalOpen: true, password: "" });
         }}

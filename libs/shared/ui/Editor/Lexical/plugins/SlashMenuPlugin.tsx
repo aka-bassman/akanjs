@@ -5,6 +5,7 @@ import type { TextNode } from "lexical";
 import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
+import type { MentionSource } from "../mention.type";
 import type { EditorSlashOption } from "../plugin";
 import { useEditorUpload } from "../UploadContext";
 import type { SlashOption } from "./slashMenuPlugin.option";
@@ -16,9 +17,10 @@ const GROUP_LABELS: Record<SlashGroup, string> = {
   list: "Lists",
   media: "Media",
   structure: "Structure",
+  reference: "References",
 };
 // Group render order.
-const GROUP_ORDER: SlashGroup[] = ["text", "list", "media", "structure"];
+const GROUP_ORDER: SlashGroup[] = ["text", "list", "media", "structure", "reference"];
 
 /**
  * Slash-command block picker. Typing `/` opens a grouped, searchable menu;
@@ -26,11 +28,19 @@ const GROUP_ORDER: SlashGroup[] = ["text", "list", "media", "structure"];
  * Selecting an option removes the `/query` text and runs the block conversion
  * or media insertion.
  */
-export const SlashMenuPlugin = ({ extraOptions = [] }: { extraOptions?: readonly EditorSlashOption[] }) => {
+interface SlashMenuPluginProps {
+  extraOptions?: readonly EditorSlashOption[];
+  mentionSources?: readonly MentionSource[];
+}
+
+export const SlashMenuPlugin = ({ extraOptions = [], mentionSources = [] }: SlashMenuPluginProps) => {
   const [editor] = useLexicalComposerContext();
   const upload = useEditorUpload();
   const [query, setQuery] = useState<string | null>(null);
-  const allOptions = useMemo(() => buildOptions(upload, extraOptions), [upload, extraOptions]);
+  const allOptions = useMemo(
+    () => buildOptions(upload, extraOptions, mentionSources),
+    [upload, extraOptions, mentionSources],
+  );
 
   // `/` opens the menu at a word boundary; query is a single token (no spaces),
   // matching the Lexical playground convention so the menu closes on space.
@@ -58,6 +68,9 @@ export const SlashMenuPlugin = ({ extraOptions = [] }: { extraOptions?: readonly
       onQueryChange={setQuery}
       onSelectOption={onSelectOption}
       triggerFn={triggerFn}
+      // Lexical appends this anchor to <body> with no z-index; without one the menu
+      // renders under any positioned overlay hosting the editor (Modal, BottomSheet).
+      anchorClassName="z-[9999]"
       menuRenderFn={(anchorRef, { selectedIndex, selectOptionAndCleanUp, setHighlightedIndex }) => {
         if (anchorRef.current === null || options.length === 0) return null;
         return createPortal(
@@ -90,7 +103,7 @@ export const SlashMenuList = ({ options, selectedIndex, onSelect, onHighlight }:
   })).filter((section) => section.items.length > 0);
 
   return (
-    <div className="z-50 max-h-80 w-64 overflow-y-auto rounded-md border border-foreground/10 bg-background p-1 shadow-lg">
+    <div className="max-h-80 w-64 overflow-y-auto rounded-md border border-foreground/10 bg-background p-1 shadow-lg">
       {grouped.map((section) => (
         <div key={section.group}>
           <div className="px-2 py-1 font-medium text-foreground/40 text-xs uppercase tracking-wide">

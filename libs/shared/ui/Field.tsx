@@ -1,6 +1,6 @@
 "use client";
 import { cnst, Err, fetch, st } from "@libs/shared/client";
-import { MapView, Upload } from "@libs/util/ui";
+import { inputRecipe, MapView, Upload } from "@libs/util/ui";
 import { cn } from "akanjs/client";
 import { capitalize, pathGet } from "akanjs/common";
 import type { ProtoFile } from "akanjs/constant";
@@ -39,6 +39,7 @@ const Rich = memo((props: RichProps) => {
     nullable,
     disabled,
     editorHeight,
+    plugins,
   } = props;
   const { sliceName } = slice;
   const names = {
@@ -71,6 +72,7 @@ const Rich = memo((props: RichProps) => {
         disabled={disabled}
         className={cn("w-full", "")}
         height={editorHeight}
+        plugins={plugins}
       />
     </div>
   );
@@ -174,7 +176,7 @@ export const Postcode = ({
         {label ? <AkanField.Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
         <input
           value={address ?? ""}
-          className="h-10 w-96 rounded-field border border-input bg-background px-3 text-sm focus:border-primary focus:outline-none"
+          className={inputRecipe({}, "w-96")}
           onClick={() => {
             setPostModalOpen(true);
           }}

@@ -1,7 +1,8 @@
 "use client";
 import { cnst, msg, st, usePage } from "@libs/shared/client";
+import { buttonRecipe } from "@libs/util/ui";
 import { cn } from "akanjs/client";
-import { buttonRecipe, Input, Radio } from "akanjs/ui";
+import { Input, Radio } from "akanjs/ui";
 import { useEffect, useState } from "react";
 
 interface LeaveInfoProps {

@@ -1,5 +1,4 @@
 import { cn } from "akanjs/client";
-import { AiOutlineLoading3Quarters } from "react-icons/ai";
 
 interface ConnectStatusProps {
   className?: string;
@@ -21,10 +20,9 @@ export const ConnectStatus = ({
   return (
     <div className="relative grid place-items-center">
       <div
-        data-tip={tooltip}
+        title={tooltip}
         className={cn(
           `size-1.5 rounded-full`,
-          !!tooltip && "tooltip",
           conn === "healthy" && "bg-success",
           conn === "healthy" && (connectedClassName ?? ""),
           conn === "unhealthy" && "bg-warning",
@@ -35,9 +33,9 @@ export const ConnectStatus = ({
         )}
       />
       {conn !== "disconnected" ? (
-        <AiOutlineLoading3Quarters
+        <span
           className={cn(
-            "absolute size-3 animate-spin",
+            "absolute size-4 animate-spin",
             conn === "healthy" && "text-success",
             conn === "unhealthy" && "text-warning",
           )}

@@ -5,7 +5,6 @@ import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
-import { HorizontalRulePlugin } from "@lexical/react/LexicalHorizontalRulePlugin";
 import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin";
 import { ListPlugin } from "@lexical/react/LexicalListPlugin";
 import { MarkdownShortcutPlugin } from "@lexical/react/LexicalMarkdownShortcutPlugin";
@@ -26,13 +25,21 @@ import type { AddFile } from "./editor.type";
 import { validateLinkUrl } from "./editor.util";
 import { AKAN_TRANSFORMERS } from "./markdown";
 import { reconcileAttachments } from "./media";
-import { collectPluginNodes, collectPluginSlashOptions, type EditorPlugin } from "./plugin";
+import {
+  collectPluginMentionSources,
+  collectPluginNodes,
+  collectPluginSlashOptions,
+  type EditorPlugin,
+} from "./plugin";
 import { AutoLinkPlugin } from "./plugins/AutoLinkPlugin";
 import { CalloutPlugin } from "./plugins/CalloutPlugin";
 import { CodeHighlightPlugin } from "./plugins/CodeHighlightPlugin";
 import { CollapsiblePlugin } from "./plugins/CollapsiblePlugin";
 import { DraggableBlockPlugin } from "./plugins/DraggableBlockPlugin";
 import { FloatingToolbarPlugin } from "./plugins/FloatingToolbarPlugin";
+import { HorizontalRulePlugin } from "./plugins/HorizontalRulePlugin";
+import { MentionLinkPlugin } from "./plugins/MentionLinkPlugin";
+import { MentionPlugin } from "./plugins/MentionPlugin";
 import { SlashMenuPlugin } from "./plugins/SlashMenuPlugin";
 import { TableActionsPlugin } from "./plugins/TableActionsPlugin";
 import { UploadPlugin } from "./plugins/UploadPlugin";
@@ -146,6 +153,7 @@ export default function Editor({
     createEditorConfig({ editable, initialJson: value ?? defaultValue, extraNodes: collectPluginNodes(plugins) }),
   );
   const extraSlashOptions = useMemo(() => collectPluginSlashOptions(plugins), [plugins]);
+  const mentionSources = useMemo(() => collectPluginMentionSources(plugins), [plugins]);
 
   // Latest values kept in refs so the change/upload callbacks stay identity-stable.
   const onChangeRef = useRef(onChange);
@@ -278,7 +286,11 @@ export default function Editor({
           <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
           <ExternalValuePlugin value={value} />
           <EditableSyncPlugin editable={editable} />
-          {editable && slashMenu ? <SlashMenuPlugin extraOptions={extraSlashOptions} /> : null}
+          <MentionLinkPlugin />
+          {editable && slashMenu ? (
+            <SlashMenuPlugin extraOptions={extraSlashOptions} mentionSources={mentionSources} />
+          ) : null}
+          {editable && mentionSources.length ? <MentionPlugin sources={mentionSources} /> : null}
           {editable && toolbar ? <FloatingToolbarPlugin /> : null}
           {editable && blockActions && anchorElem ? <DraggableBlockPlugin anchorElem={anchorElem} /> : null}
           {editable ? <CalloutPlugin /> : null}

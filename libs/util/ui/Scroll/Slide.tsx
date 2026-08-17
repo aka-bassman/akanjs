@@ -1,7 +1,6 @@
 "use client";
 import { cn } from "akanjs/client";
 import { type ReactNode, useCallback, useContext } from "react";
-
 import { ScrollContext } from "./context";
 import { Render } from "./Render";
 

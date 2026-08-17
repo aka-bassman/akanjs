@@ -1,11 +1,11 @@
 "use client";
 import { st, usePage } from "@libs/shared/client";
 import { Field, Only } from "@libs/shared/ui";
-import { CodeInput, Upload } from "@libs/util/ui";
+import { buttonRecipe, CodeInput, inputRecipe, Upload } from "@libs/util/ui";
 import { cn } from "akanjs/client";
 import { formatPhone, isEmail, isPhoneNumber } from "akanjs/common";
 import type { ProtoFile } from "akanjs/constant";
-import { Button, buttonRecipe, Image, Input, Layout } from "akanjs/ui";
+import { Button, Image, Input, Layout } from "akanjs/ui";
 import { useEffect, useRef, useState } from "react";
 import { AiOutlineClose, AiOutlineEdit, AiOutlinePlus, AiOutlineSave } from "react-icons/ai";
 
@@ -85,7 +85,7 @@ export const SubmitPhone = ({ className = "", userId, redirect, hash }: SubmitPh
   const phone = st.use.phone();
   return (
     <button
-      className={buttonRecipe({ variant: "primary" }, className)}
+      className={cn(buttonRecipe({ variant: "primary" }), className)}
       disabled={!isPhoneNumber(phone)}
       onClick={() => {
         void st.do.setPhoneInPrepareUser(userId, phone, { hash, redirect });
@@ -150,7 +150,7 @@ export const SubmitName = ({ userId, redirect, className }: SubmitNameProps) => 
   const userForm = st.use.userForm();
   return (
     <button
-      className={buttonRecipe({ variant: "primary" }, className)}
+      className={cn(buttonRecipe({ variant: "primary" }), className)}
       disabled={!userForm.name || userForm.name.length < 2}
       onClick={async () => {
         if (!userForm.name) return;
@@ -345,7 +345,7 @@ export const SubmitNicknameOfPrepareUser = ({ redirect, userId, className }: Sub
   const userForm = st.use.userForm();
   return (
     <button
-      className={buttonRecipe({ variant: "outline" }, ["border-primary bg-primary", className])}
+      className={cn(buttonRecipe({ variant: "default" }, "border-primary-light bg-primary-light"), className)}
       disabled={!userForm.nickname || userForm.nickname.length < 2 || userForm.nickname.length > 20}
       onClick={() => {
         void st.do.setNicknameOfPrepareUser(userId, { redirect });
@@ -364,7 +364,7 @@ export const SubmitNickname = ({ redirect, className }: SubmitNicknameProps) => 
   const userForm = st.use.userForm();
   return (
     <button
-      className={buttonRecipe({ variant: "outline" }, ["border-primary-light bg-primary-light", className])}
+      className={cn(buttonRecipe({ variant: "default" }, "border-primary-light bg-primary-light"), className)}
       disabled={!userForm.nickname || userForm.nickname.length < 2 || userForm.nickname.length > 20}
       onClick={() => {
         void st.do.setNicknameOfSelf({ redirect });
@@ -465,7 +465,9 @@ export const SubmitAppliedImages = ({ redirect }: SubmitAppliedImagesProps) => {
     <Button
       className="border-primary-light bg-primary-light"
       disabled={userForm.appliedImages.length < 2}
-      onClick={() => st.do.setAppliedImagesOfSelf(userForm.appliedImages, { redirect })}
+      onClick={() => {
+        void st.do.setAppliedImagesOfSelf(userForm.appliedImages, { redirect });
+      }}
     >
       가입하기
     </Button>
@@ -483,7 +485,7 @@ export const SetAccountIdByAdmin = ({ className, accountId }: SetAccountIdByAdmi
     <div className={cn("flex items-center gap-2", className)}>
       <label className="w-24">AccountId: </label>
       <input
-        className="h-10 w-full rounded-field border border-input bg-background px-3 text-sm focus:border-primary focus:outline-none"
+        className={inputRecipe()}
         value={changeId}
         onChange={(e) => {
           setChangeId(e.target.value);
@@ -521,7 +523,7 @@ export const SetAccountIdByAdmin = ({ className, accountId }: SetAccountIdByAdmi
         </>
       ) : (
         <button
-          className={buttonRecipe()}
+          className={buttonRecipe({ variant: "default" })}
           onClick={() => {
             setEditState("edit");
           }}
@@ -542,7 +544,7 @@ export const SetPasswordByAdmin = ({ className }: SetPasswordByAdminProps) => {
     <div className={cn("flex items-center gap-2", className)}>
       <label className="w-24">Password: </label>
       <input
-        className="h-10 w-full rounded-field border border-input bg-background px-3 text-sm focus:border-primary focus:outline-none"
+        className={inputRecipe()}
         type="password"
         value={password}
         onChange={(e) => {
@@ -576,7 +578,7 @@ export const SetPasswordByAdmin = ({ className }: SetPasswordByAdminProps) => {
         </>
       ) : (
         <button
-          className={buttonRecipe()}
+          className={buttonRecipe({ variant: "default" })}
           onClick={() => {
             setEditState("edit");
           }}
@@ -599,7 +601,7 @@ export const SetPhoneByAdmin = ({ className, phone }: SetPhoneByAdminProps) => {
     <div className={cn("flex items-center gap-2", className)}>
       <label className="w-24">Phone: </label>
       <input
-        className="h-10 w-full rounded-field border border-input bg-background px-3 text-sm focus:border-primary focus:outline-none"
+        className={inputRecipe()}
         value={changePhone}
         onChange={(e) => {
           setChangePhone(formatPhone(e.target.value));
@@ -632,7 +634,7 @@ export const SetPhoneByAdmin = ({ className, phone }: SetPhoneByAdminProps) => {
         </>
       ) : (
         <button
-          className={buttonRecipe()}
+          className={buttonRecipe({ variant: "default" })}
           onClick={() => {
             setEditState("edit");
           }}

@@ -1,6 +1,7 @@
 import type { cnst } from "@libs/shared/client";
 import type { ProtoFile } from "akanjs/constant";
 import type { SliceMeta } from "akanjs/fetch";
+import type { EditorPlugin } from "./Editor";
 import type { UploadPolicy } from "./Editor/Lexical/upload";
 
 export interface RichProps {
@@ -26,4 +27,5 @@ export interface RichProps {
   disabled?: boolean;
   onPressEnter?: () => void;
   editorHeight?: string;
+  plugins?: EditorPlugin[];
 }

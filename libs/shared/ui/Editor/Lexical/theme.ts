@@ -1,6 +1,3 @@
-// styleguard-disable raw-palette — 코드 신택스 하이라이트(Prism 토큰별 색)와 형광펜 마커는
-// 각 토큰 종류를 구분하는 다색 팔레트가 본질적 요구다. 시맨틱 토큰으로 접으면 하이라이팅이 무너지므로
-// 이 에디터 색 테마 파일은 raw 팔레트를 명시적으로 허용한다.
 import type { EditorThemeClasses } from "lexical";
 
 /** Callout color variants (5). Kept out of `EditorThemeClasses` (which has no
@@ -15,6 +12,17 @@ export const CALLOUT_VARIANTS: Record<CalloutVariant, string> = {
   warning: `${CALLOUT_BASE} border-warning/30 border-l-warning bg-warning/10`,
   error: `${CALLOUT_BASE} border-destructive/30 border-l-destructive bg-destructive/10`,
 };
+
+/** Mention chip skin. Same reason as the callout variants: `EditorThemeClasses`
+ *  has no index signature, so `MentionNode.createDOM` applies it directly. */
+export const MENTION_CHIP =
+  "cursor-pointer rounded-sm bg-primary/10 px-1 font-medium text-primary transition-colors hover:bg-primary/20";
+
+/** Avatar half of the chip, added only when the mention carries an `imageUrl`.
+ *  A `::before` rather than a child element: the chip is a `TextNode`, so any real
+ *  child inside its DOM would be overwritten by text reconciliation. */
+export const MENTION_CHIP_AVATAR =
+  "before:mr-1 before:inline-block before:size-[1.05em] before:rounded-full before:bg-center before:bg-cover before:align-[-0.15em] before:content-[''] before:[background-image:var(--mention-avatar)]";
 
 /**
  * Akan editor theme — maps Lexical node types to Tailwind/daisyUI classes.
@@ -55,12 +63,14 @@ export const akanEditorTheme: EditorThemeClasses = {
     strikethrough: "line-through",
     underlineStrikethrough: "underline line-through underline-offset-2",
     code: "rounded bg-muted px-1.5 py-0.5 font-mono text-sm",
-    highlight: "rounded bg-yellow-200 px-0.5 dark:bg-yellow-500/30",
+    highlight: "rounded bg-warning px-0.5 dark:bg-warning/30",
   },
   code: "mt-4 block overflow-x-auto rounded-lg bg-muted p-4 font-mono text-sm leading-6",
   // Render as a filled line, not a border: Tailwind preflight zeroes `<hr>`
   // border widths, so `border-*` alone is invisible.
   hr: "my-4 h-px border-none bg-foreground/25",
+  // Selected divider — matches the selection ring the media nodes draw.
+  hrSelected: "outline outline-2 outline-primary outline-offset-4",
   // Table (Phase 3b) — `@lexical/table` renders <table>/<tr>/<td|th>; skin them
   // with daisyUI-flavored borders. Cells get relative positioning so the cell
   // selection overlay and (future) resizer sit correctly.
@@ -73,35 +83,35 @@ export const akanEditorTheme: EditorThemeClasses = {
   tableScrollableWrapper: "my-3 overflow-x-auto",
   // Prism token → class map for syntax-highlighted code blocks.
   codeHighlight: {
-    atrule: "text-purple-500",
-    attr: "text-sky-500",
-    boolean: "text-orange-500",
-    builtin: "text-emerald-500",
+    atrule: "text-accent",
+    attr: "text-info",
+    boolean: "text-warning",
+    builtin: "text-success",
     cdata: "text-foreground/50",
-    char: "text-emerald-500",
-    class: "text-yellow-500",
-    "class-name": "text-yellow-500",
+    char: "text-success",
+    class: "text-warning",
+    "class-name": "text-warning",
     comment: "text-foreground/40 italic",
-    constant: "text-orange-500",
-    deleted: "text-red-500",
+    constant: "text-warning",
+    deleted: "text-destructive",
     doctype: "text-foreground/40",
-    entity: "text-red-400",
-    function: "text-blue-500",
-    important: "text-orange-600",
-    inserted: "text-emerald-500",
-    keyword: "text-purple-500",
-    namespace: "text-orange-400",
-    number: "text-orange-500",
+    entity: "text-destructive",
+    function: "text-info",
+    important: "text-warning",
+    inserted: "text-success",
+    keyword: "text-accent",
+    namespace: "text-warning",
+    number: "text-warning",
     operator: "text-foreground/70",
     prolog: "text-foreground/40",
-    property: "text-sky-500",
+    property: "text-info",
     punctuation: "text-foreground/60",
-    regex: "text-emerald-600",
-    selector: "text-emerald-500",
-    string: "text-emerald-500",
-    symbol: "text-orange-500",
-    tag: "text-red-500",
-    url: "text-sky-500",
-    variable: "text-orange-400",
+    regex: "text-success",
+    selector: "text-success",
+    string: "text-success",
+    symbol: "text-warning",
+    tag: "text-destructive",
+    url: "text-info",
+    variable: "text-warning",
   },
 };

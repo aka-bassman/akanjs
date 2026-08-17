@@ -36,13 +36,27 @@ const generateHexStringFromSeed = (seed: string, length = 256) => {
   return hexString.substring(0, length * 2);
 };
 
-export const generateJwtSecret = (appName: string, environment: BaseEnv["environment"]) => {
-  const seed = `${appName}-${environment}-jwt-secret`;
+export const generateJwtSecret = (
+  appName: string,
+  environment: BaseEnv["environment"],
+  repoWideSeed = "jwt-secret",
+) => {
+  const seed = `${appName}-${environment}-${repoWideSeed}`;
   return generateHexStringFromSeed(seed);
 };
 
-export const generateAeskey = (appName: string, environment: BaseEnv["environment"]) => {
-  const seed = `${appName}-${environment}-aes-key`;
+export const resolveJwtSecret = (
+  appName: string,
+  environment: BaseEnv["environment"],
+  configuredSecret?: string,
+  repoWideSeed?: string,
+) =>
+  process.env.JWT_SECRET ??
+  configuredSecret ??
+  generateJwtSecret(appName, environment, repoWideSeed ?? getEnv().repoName);
+
+export const generateAeskey = (appName: string, environment: BaseEnv["environment"], repoWideSeed = "aes-key") => {
+  const seed = `${appName}-${environment}-${repoWideSeed}`;
   return createHash("sha256").update(seed).digest("hex");
 };
 

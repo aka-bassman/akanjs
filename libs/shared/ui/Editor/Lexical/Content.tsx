@@ -8,16 +8,16 @@ import { useState } from "react";
 
 import { createEditorConfig } from "./config";
 import { CodeHighlightPlugin } from "./plugins/CodeHighlightPlugin";
+import { HrefGuardPlugin } from "./plugins/HrefGuardPlugin";
+import { MentionLinkPlugin } from "./plugins/MentionLinkPlugin";
 
-/**
- * Read-only render of Akan editor content (`editable: false`). Mounts no
- * interaction/history/change plugins — just the rich-text render tree, so the
- * marks/blocks look identical to the editable view (shared theme).
- *
- * Non-Lexical `content` (legacy Yoopta/Slate) fails safe to an empty render via
- * the soft guard in `createEditorConfig` — matching the data-wipe policy.
- */
-export default function Content({ content, className = "" }: { content: unknown; className?: string }) {
+interface ContentProps {
+  content: unknown;
+  className?: string;
+  disableHref?: boolean;
+}
+
+export default function Content({ content, className = "", disableHref = false }: ContentProps) {
   const [initialConfig] = useState(() => createEditorConfig({ editable: false, initialJson: content }));
 
   return (
@@ -28,6 +28,7 @@ export default function Content({ content, className = "" }: { content: unknown;
           ErrorBoundary={LexicalErrorBoundary}
         />
         <CodeHighlightPlugin />
+        {disableHref ? <HrefGuardPlugin /> : <MentionLinkPlugin />}
       </div>
     </LexicalComposer>
   );

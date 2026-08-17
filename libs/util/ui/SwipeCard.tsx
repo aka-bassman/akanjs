@@ -116,7 +116,7 @@ export const SwipeCard = memo(
 
         let offset = { x: 0, y: 0 };
         let speed = { x: 0, y: 0 };
-        let lastLocation = { x: 0, y: 0, time: new Date().getTime() };
+        let lastLocation = { x: 0, y: 0, time: Date.now() };
         let mouseIsClicked = false;
 
         const handleMove = (coordinates: { x: number; y: number }) => {

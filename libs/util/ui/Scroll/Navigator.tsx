@@ -24,7 +24,7 @@ export const Navigator = ({ className }: NavigatorProps) => {
           className={cn(
             "mb-2 size-3 cursor-pointer rounded-full hover:text-primary",
             slide === slideId && "bg-primary",
-            slide !== slideId && "bg-muted-foreground",
+            slide !== slideId && "bg-muted",
           )}
         />
       ))}

@@ -1,6 +1,6 @@
 "use client";
+import { buttonRecipe } from "@libs/util/ui";
 import { cn } from "akanjs/client";
-import { buttonRecipe } from "akanjs/ui";
 import type { NodeKey } from "lexical";
 import { type ReactNode, type PointerEvent as ReactPointerEvent, useRef } from "react";
 import {
@@ -168,11 +168,9 @@ export const MediaMenuButton = ({ children, title, active, onClick }: MediaMenuB
   <button
     type="button"
     title={title}
-    className={buttonRecipe({ variant: "ghost", size: "xs" }, [
+    className={buttonRecipe({ size: "xs", variant: "ghost" }, [
       "min-h-7 gap-1 px-2",
-      {
-        "bg-muted text-foreground": active,
-      },
+      active && "bg-muted text-foreground",
     ])}
     onClick={onClick}
   >

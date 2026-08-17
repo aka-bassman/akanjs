@@ -3,13 +3,14 @@ import { usePage } from "@libs/util/client";
 import { useCamera } from "@libs/util/webkit";
 import { cn, Device } from "akanjs/client";
 import type { ProtoFile } from "akanjs/constant";
-import { BottomSheet, type BottomSheetRef, badgeRecipe, buttonRecipe, Image } from "akanjs/ui";
+import { BottomSheet, type BottomSheetRef, Image } from "akanjs/ui";
 import { type ChangeEvent, useRef, useState } from "react";
-import { AiFillFileImage, AiFillFileText, AiOutlineDelete, AiOutlineLoading3Quarters } from "react-icons/ai";
+import { AiFillFileImage, AiFillFileText, AiOutlineDelete, AiOutlineLoading } from "react-icons/ai";
 import { GiFiles } from "react-icons/gi";
 import { TbDragDrop } from "react-icons/tb";
 
 import { CropImage, type CropRef } from "./CropImage";
+import { badgeRecipe, buttonRecipe, tableRecipe } from "./Recipe";
 
 interface UploadProps {
   onChange?: (fileList: FileList) => void;
@@ -90,7 +91,7 @@ export const File = ({
     <div className={cn("relative flex flex-wrap gap-2", className)}>
       <div
         className={cn(
-          "flex size-full cursor-pointer flex-col items-center rounded-field border-2 py-5 transition-colors",
+          buttonRecipe({ variant: "default" }, "flex size-full flex-col items-center border-2 py-5"),
           uploadClassName,
           isDragging && !isUploading && "border-2 border-success border-dashed",
           isUploading && "hover:bg-muted",
@@ -160,7 +161,7 @@ export const File = ({
             )}
           >
             <div className="flex w-[30%] flex-col items-center justify-center gap-2">
-              <div className="inline-block size-8 animate-spin rounded-full border-2 border-info border-t-transparent" />
+              <AiOutlineLoading className="animate-spin text-info text-lg" />
               <Progress value={file?.progress ? (file.status !== "uploading" ? 0 : file.progress) : 0} max={100} />
             </div>
           </div>
@@ -202,7 +203,7 @@ export const FileList = ({
   const { l } = usePage();
   const inputFileRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isUploading] = useState(false);
 
   const onFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     if (isUploading) return;
@@ -264,7 +265,7 @@ export const FileList = ({
                   setIsDragging(false);
                 }}
                 onDrop={onDrop}
-                className={cn("table size-full")}
+                className={cn(tableRecipe({}, "size-full"))}
               >
                 <tbody className="w-full rounded-md">
                   <tr className="w-full">
@@ -283,15 +284,19 @@ export const FileList = ({
                         <td className="text-center align-middle text-xs md:text-sm">
                           <div className={badgeRecipe({ variant: "info" })}>
                             {file.status}
-                            <AiOutlineLoading3Quarters className={cn("animate-spin", !isUploading && "hidden")} />
+                            <div
+                              className={cn("size-5 animate-spin", !isUploading && "hidden", isUploading && "block")}
+                            />
                           </div>
                         </td>
                         <td className="text-center align-middle text-sm">
                           <div
-                            className={buttonRecipe(
-                              { variant: "outline", size: "icon" },
-                              "size-6 border-destructive p-0 text-destructive hover:bg-destructive hover:text-destructive-foreground",
-                            )}
+                            className={buttonRecipe({
+                              size: "xs",
+                              variant: "destructive",
+                              shape: "square",
+                              outline: true,
+                            })}
                             onClick={() => onRemove?.(file)}
                           >
                             <AiOutlineDelete />
@@ -317,7 +322,7 @@ export const FileList = ({
         ) : (
           <div
             className={cn(
-              "group flex size-full cursor-pointer flex-col items-center rounded-field border-2 py-5 transition-colors",
+              buttonRecipe({ variant: "default" }, "group flex size-full flex-col items-center border-2 py-5"),
               uploadClassName,
               isDragging && !isUploading && "border-2 border-success border-dashed",
               isUploading && "hover:bg-muted",
@@ -392,7 +397,7 @@ const UploadImage = ({
   renderComplete,
   aspectRatio,
 }: UploadImageProps) => {
-  const { checkPermission, getPhoto, pickImage } = useCamera();
+  const { getPhoto } = useCamera();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const bottomSheetRef = useRef<BottomSheetRef | null>(null);
   const cropImageRef = useRef<CropRef | null>(null);
@@ -522,7 +527,10 @@ const UploadImage = ({
                   }
                 }}
                 className={cn(
-                  "group relative flex size-full cursor-pointer items-center justify-center rounded-field transition-colors md:text-lg",
+                  buttonRecipe(
+                    { variant: "default" },
+                    "group relative flex size-full items-center justify-center md:text-lg",
+                  ),
                   styleType === "circle" && "rounded-full",
                   styleType === "square" && "rounded-md",
                   isDragging && "border-2 border-success border-dashed",
@@ -547,7 +555,7 @@ const UploadImage = ({
                       styleType === "square" && "rounded-md",
                     )}
                   >
-                    <div className="inline-block size-8 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    <AiOutlineLoading className="animate-spin text-lg" />
                     <Progress value={protoFile.progress ?? 0} max={100} />
                   </div>
                 ) : null}
@@ -567,7 +575,7 @@ const UploadImage = ({
         >
           <CropImage aspectRatio={aspectRatio} ref={cropImageRef} src={image ?? ""} />
           <div className="flex w-full items-center justify-center gap-2">
-            <button className={buttonRecipe(undefined, "w-full")} onClick={onCancel}>
+            <button className={buttonRecipe({ variant: "default" }, "w-full")} onClick={onCancel}>
               취소
             </button>
             <button

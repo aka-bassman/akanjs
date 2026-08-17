@@ -23,8 +23,8 @@ export const dictionary = modelDictionary(["en", "ko"])
       accountId: t(["Account ID", "아이디"]).desc(["Account ID Description", "아이디 설명"]),
     })),
     bySearch: fn(["By Search", "검색어별 조회"]).arg((t) => ({
-      text: t(["Search Text", "검색어"]).desc(["Text to search for", "검색할 문자열"]),
-      roles: t(["Roles", "역할"]).desc(["Roles to narrow the search", "검색 범위를 좁힐 역할"]),
+      text: t(["Text", "검색어"]).desc(["Account ID text", "아이디 검색어"]),
+      roles: t(["Roles", "역할"]).desc(["Roles Description", "역할 설명"]),
     })),
   }))
   .enum<AdminRole>("adminRole", (t) => ({
@@ -32,7 +32,13 @@ export const dictionary = modelDictionary(["en", "ko"])
     admin: t(["Admin", "관리자"]).desc(["Admin Description", "관리자 설명"]),
     superAdmin: t(["Super Admin", "최고 관리자"]).desc(["Super Admin Description", "최고 관리자 설명"]),
   }))
-  .slice<AdminSlice>((fn) => ({}))
+  .slice<AdminSlice>((fn) => ({
+    inMention: fn(["Mentionable Admins", "멘션 가능한 관리자"])
+      .desc(["Admins matching a mention search", "멘션 검색어에 일치하는 관리자"])
+      .arg((t) => ({
+        text: t(["Text", "검색어"]).desc(["Account ID text", "아이디 검색어"]),
+      })),
+  }))
   .endpoint<AdminEndpoint>((fn) => ({
     isAdminSystemInitialized: fn(["Is Admin System Initialized", "관리자 시스템 초기화 여부"]),
     createAdminWithInitialize: fn(["Create Admin With Initialize", "초기 관리자 생성"]).arg((t) => ({

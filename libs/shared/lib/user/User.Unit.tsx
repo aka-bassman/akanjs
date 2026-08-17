@@ -10,9 +10,7 @@ export const Card = ({ user }: ModelProps<"user", cnst.LightUser>) => {
 export const Avatar = ({ user }: ModelProps<"user", cnst.LightUser>) => {
   return (
     <Tooltip content={user.nickname}>
-      <div>
-        <AvatarUI src={user.image?.url} />
-      </div>
+      <AvatarUI src={user.image?.url} />
     </Tooltip>
   );
 };

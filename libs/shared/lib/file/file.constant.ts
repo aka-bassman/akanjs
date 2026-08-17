@@ -4,8 +4,8 @@ import { type ProtoFile, via } from "akanjs/constant";
 export class FileStatus extends enumOf("fileStatus", ["active", "uploading"]) {}
 
 export class FileInput extends via((field) => ({
-  filename: field(String),
-  mimetype: field(String),
+  filename: field(String, { text: "title" }),
+  mimetype: field(String, { text: "filter" }),
   encoding: field(String),
   imageSize: field<[number, number]>([Int], { default: [0, 0] }),
   url: field(String, { default: "" }),

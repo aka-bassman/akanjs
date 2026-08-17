@@ -14,11 +14,11 @@ import {
   EmailApi,
   generateAeskey,
   generateHost,
-  generateJwtSecret,
   ObjectStorageApi,
   PurpleApi,
+  resolveJwtSecret,
 } from "@libs/util/srvkit";
-import type { SshOptions } from "akanjs/base";
+import { getEnv, type SshOptions } from "akanjs/base";
 import { AkanOption } from "akanjs/server";
 import type { LibOptions } from "./srv";
 
@@ -49,6 +49,8 @@ export type SSOOptions = {
 };
 
 export interface SecurityOptions {
+  jwtSecret?: string;
+  aeskey?: string;
   verifies: ("wallet" | "password" | "phone" | "kakao" | "naver" | "email")[][];
   sso: SSOOptions;
 }
@@ -113,8 +115,11 @@ export const option = new AkanOption<ModulesOptions>().use((options) => {
     storageApi,
     privStorageApi,
     blobStorageApi,
-    jwtSecret: generateJwtSecret(options.appName, options.environment),
-    aeskey: generateAeskey(options.appName, options.environment),
+    jwtSecret: resolveJwtSecret(options.appName, options.environment, options.security?.jwtSecret),
+    aeskey:
+      process.env.AES_KEY ??
+      options.security?.aeskey ??
+      generateAeskey(options.appName, options.environment, getEnv().repoName),
     host: generateHost(options),
     discordApi: options.discord ? new DiscordApi(options.discord).initBots() : null,
   };

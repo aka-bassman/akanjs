@@ -1,14 +1,12 @@
 "use client";
-// styleguard-disable arbitrary-color — SNS 로그인 버튼 색(Kakao #FEE500·Naver #1ec800·Google 등)은
-// 각 서비스 브랜드 가이드가 강제하는 고정값이다. 브랜드 준수 목적의 명시적 예외.
 import { type cnst, fetch, st, usePage } from "@libs/shared/client";
 import { pad } from "@libs/util/common";
-import { AreYouRobot, Icon } from "@libs/util/ui";
+import { AreYouRobot, buttonRecipe, Icon } from "@libs/util/ui";
 import { usePushNotification } from "@libs/util/webkit";
 import { dayjs } from "akanjs/base";
 import { cn, getCookie, router, setCookie } from "akanjs/client";
 import { isEmail, isPhoneNumber } from "akanjs/common";
-import { buttonRecipe, Input, Link, Loading, Modal, Switch } from "akanjs/ui";
+import { Input, Link, Loading, Modal, Switch } from "akanjs/ui";
 import { useInterval } from "akanjs/webkit";
 import { type ReactNode, useEffect, useState } from "react";
 import { AiFillCheckCircle, AiFillGithub } from "react-icons/ai";
@@ -44,7 +42,7 @@ export const SetPasswordWithPhone = ({ disabled, hash = "verify" }: SetPasswordW
           />
           <button
             className={buttonRecipe(
-              { variant: !phoneCodeAt ? "primary" : "secondary" },
+              { variant: !phoneCodeAt ? "primary" : "default" },
               "w-20 whitespace-nowrap text-xs",
             )}
             disabled={!!disabled || !isPhoneNumber(self.phone)} // || self.verifies.includes("phone")}
@@ -173,7 +171,7 @@ export const SignInPassword = ({
         id="signin-button"
         className={buttonRecipe({ variant: "primary" }, [
           "w-full gap-2 text-background md:mt-5",
-          isReady ? "" : "pointer-events-none opacity-50",
+          !isReady && "pointer-events-none opacity-50",
         ])}
         disabled={!isSubmitable}
         onClick={() => void st.do.signinWithPassword({ redirect, replace })}
@@ -203,7 +201,7 @@ export const ChangePassword = ({ siteKey }: { siteKey: string }) => {
   return (
     <>
       <button
-        className={buttonRecipe({ size: "sm" })}
+        className={buttonRecipe({ size: "sm", variant: "default" })}
         onClick={() => {
           st.do.setUserModal("changePassword");
         }}
@@ -218,7 +216,7 @@ export const ChangePassword = ({ siteKey }: { siteKey: string }) => {
         title="비밀번호 변경"
         action={
           <button
-            className={buttonRecipe(undefined, "w-full")}
+            className={buttonRecipe({ variant: "default" }, "w-full")}
             onClick={() => void st.do.changePassword()}
             disabled={password.length < 7 || password !== passwordConfirm || !turnstileToken}
           >
@@ -275,9 +273,8 @@ export const SSOButtons = ({
     kakao: (
       <button
         className={buttonRecipe(
-          undefined,
-          // biome-ignore lint/plugin: Kakao brand yellow is fixed by Kakao's login button guidelines
-          "relative flex w-full items-center border-none bg-[#FEE500] text-[#3c1e1e] shadow-sm hover:bg-[#FEE500] hover:opacity-50",
+          { variant: "default" },
+          "relative flex w-full items-center border-none bg-[var(--kakao)] text-[var(--kakao-ink)] shadow-sm hover:bg-[var(--kakao)] hover:opacity-50",
         )}
       >
         <Icon.Kakao className="absolute left-4 rounded-full" />
@@ -287,9 +284,8 @@ export const SSOButtons = ({
     naver: (
       <button
         className={buttonRecipe(
-          undefined,
-          // biome-ignore lint/plugin: Naver brand green is fixed by Naver's login button guidelines
-          "relative flex w-full items-center border-none bg-[#1ec800] text-white shadow-sm hover:bg-[#1ec800] hover:opacity-50",
+          { variant: "default" },
+          "relative flex w-full items-center border-none bg-[var(--naver)] text-white shadow-sm hover:bg-[var(--naver)] hover:opacity-50",
         )}
       >
         <Icon.Naver className="absolute left-4 rounded-full fill-white" />
@@ -299,7 +295,7 @@ export const SSOButtons = ({
     github: (
       <button
         className={buttonRecipe(
-          undefined,
+          { variant: "default" },
           "relative flex w-full items-center border-none bg-black text-white shadow-sm",
         )}
       >
@@ -310,7 +306,7 @@ export const SSOButtons = ({
     google: (
       <button
         className={buttonRecipe(
-          undefined,
+          { variant: "default" },
           "relative flex w-full items-center border border-border bg-white text-black shadow-sm",
         )}
       >
@@ -321,9 +317,8 @@ export const SSOButtons = ({
     facebook: (
       <button
         className={buttonRecipe(
-          undefined,
-          // biome-ignore lint/plugin: Google brand blue is fixed by Google's sign-in branding guidelines
-          "relative flex w-full items-center border-none bg-[#039be5] text-white shadow-sm",
+          { variant: "default" },
+          "relative flex w-full items-center border-none bg-[var(--telegram)] text-white shadow-sm",
         )}
       >
         <Icon.Facebook className="absolute left-[22px] rounded-full" width={30} />
@@ -333,7 +328,7 @@ export const SSOButtons = ({
     apple: (
       <button
         className={buttonRecipe(
-          undefined,
+          { variant: "default" },
           "relative flex w-full items-center border-none bg-black text-white shadow-sm",
         )}
       >
@@ -344,14 +339,12 @@ export const SSOButtons = ({
   };
   const subSsoButtonMap: { [key in cnst.SsoType["value"]]: ReactNode } = {
     kakao: (
-      // biome-ignore lint/plugin: Kakao brand yellow is fixed by Kakao's login button guidelines
-      <button className="relative flex size-14 items-center justify-center rounded-full bg-[#FEE500] hover:bg-[#FEE500] hover:opacity-50">
+      <button className="relative flex size-14 items-center justify-center rounded-full bg-[var(--kakao)] hover:bg-[var(--kakao)] hover:opacity-50">
         <Icon.Kakao className="" />
       </button>
     ),
     naver: (
-      // biome-ignore lint/plugin: Naver brand green is fixed by Naver's login button guidelines
-      <button className="relative flex size-14 items-center justify-center rounded-full bg-[#1ec800] hover:bg-[#1ec800] hover:opacity-50">
+      <button className="relative flex size-14 items-center justify-center rounded-full bg-[var(--naver)] hover:bg-[var(--naver)] hover:opacity-50">
         <Icon.Naver className="fill-white" />
       </button>
     ),
@@ -368,8 +361,7 @@ export const SSOButtons = ({
       </button>
     ),
     facebook: (
-      // biome-ignore lint/plugin: Facebook brand blue is fixed by Meta's login button guidelines
-      <button className="relative flex size-14 items-center justify-center rounded-full bg-[#1778F2]">
+      <button className="relative flex size-14 items-center justify-center rounded-full bg-[var(--facebook)]">
         <Icon.Facebook className="mr-[0.5px] mb-1 fill-transparent" />
       </button>
     ),
@@ -422,7 +414,7 @@ export const ForgotPassword = () => {
       <div className="mb-2 flex w-full items-baseline">
         <Input
           // icon={<AiOutlineMail />}
-          // iconClassName="btn btn-square text-xl"
+          // iconClassName={buttonRecipe({ shape: "square" , variant: "default" }, "text-xl")}
           className="w-full"
           inputClassName="w-full"
           placeholder={l("user.accountIdPlaceholder")}
@@ -518,7 +510,7 @@ interface ActivateProps {
 export const Activate = ({ className, userId, redirect }: ActivateProps) => {
   return (
     <button
-      className={buttonRecipe({ variant: "primary" }, className)}
+      className={cn(buttonRecipe({ variant: "primary" }), className)}
       onClick={() => {
         void st.do.activateUser(userId, { redirect });
       }}
@@ -542,7 +534,7 @@ export const PhoneSignRoute = ({
   const phone = st.use.phone();
   return (
     <button
-      className={buttonRecipe({ variant: "primary" }, className)}
+      className={cn(buttonRecipe({ variant: "primary" }), className)}
       disabled={!isPhoneNumber(phone)}
       onClick={async () => {
         const userId = await fetch.getUserIdHasPhone(phone);
@@ -583,7 +575,7 @@ export const SigninWithPhoneCode = ({ redirect, userId, className = "" }: Signin
   }, [phoneCode]);
   return (
     <button
-      className={buttonRecipe({ variant: "primary" }, className)}
+      className={cn(buttonRecipe({ variant: "primary" }), className)}
       disabled={phoneCode.length !== 6}
       onClick={handleClick}
     >
@@ -606,7 +598,7 @@ export const VerifyPhoneInPrepareUser = ({ userId, redirect, className = "" }: V
   }, [phoneCode]);
   return (
     <button
-      className={buttonRecipe({ variant: "primary" }, className)}
+      className={cn(buttonRecipe({ variant: "primary" }), className)}
       disabled={phoneCode.length !== 6}
       onClick={handleClick}
     >
@@ -620,11 +612,9 @@ interface PushNotificationSwitchProps {
 }
 
 export const PushNotificationSwitch = ({ className }: PushNotificationSwitchProps) => {
-  const user = st.use.user();
-  const self = st.use.self();
   const pushNotification = usePushNotification();
   const deviceToken = st.use.deviceToken();
-  // FIXME: 추후 수정필요
+  //! TODO: 추후 수정필요
   // const checked = self.notiDeviceTokens?.includes(deviceToken) ?? false;
   const checked = false as boolean;
   useEffect(() => {

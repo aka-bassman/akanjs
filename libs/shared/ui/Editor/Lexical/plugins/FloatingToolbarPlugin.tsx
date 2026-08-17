@@ -2,8 +2,7 @@
 import { $isLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { $findMatchingParent, mergeRegister } from "@lexical/utils";
-import { cn } from "akanjs/client";
-import { buttonRecipe } from "akanjs/ui";
+import { buttonRecipe, inputRecipe } from "@libs/util/ui";
 import {
   $getSelection,
   $isRangeSelection,
@@ -15,7 +14,6 @@ import {
 } from "lexical";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-
 import { safeExternalUrl } from "../url";
 import type { ToolbarState } from "./floatingToolbarPlugin.type";
 
@@ -194,7 +192,7 @@ export const FloatingToolbar = ({
               title={mark.title}
               className={buttonRecipe({ variant: "ghost", size: "xs" }, [
                 "min-h-7 px-2 font-mono",
-                state.formats.has(mark.format) ? "bg-muted" : "",
+                state.formats.has(mark.format) && "bg-muted text-foreground",
               ])}
               onClick={() => onToggleMark(mark.format)}
             >
@@ -207,7 +205,7 @@ export const FloatingToolbar = ({
             title="Link (⌘K)"
             className={buttonRecipe({ variant: "ghost", size: "xs" }, [
               "min-h-7 px-2",
-              state.linkUrl ? "bg-muted" : "",
+              state.linkUrl && "bg-muted text-foreground",
             ])}
             onClick={onStartLinkEdit}
           >
@@ -248,10 +246,7 @@ export const LinkInput = ({ initial, invalid, onSubmit, onCancel, onChange }: Li
         type="url"
         value={url}
         placeholder="https://…"
-        className={cn(
-          "h-8 w-52 rounded-field border bg-background px-2 text-foreground text-sm focus:outline-none",
-          invalid ? "border-destructive" : "border-input focus:border-primary",
-        )}
+        className={inputRecipe({ size: "xs" }, ["w-52", invalid && "border-destructive"])}
         onMouseDown={(event) => event.stopPropagation()}
         onChange={(event) => {
           setUrl(event.target.value);

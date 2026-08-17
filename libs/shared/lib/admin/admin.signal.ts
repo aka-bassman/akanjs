@@ -21,7 +21,13 @@ export class AdminInternal extends internal(srv.admin, ({ initialize, process, r
 export class AdminSlice extends slice(
   srv.admin,
   { guards: { root: AdminGuard, get: AdminGuard, cru: SuperAdmin } },
-  () => ({}),
+  (init) => ({
+    inMention: init()
+      .search("text", String)
+      .exec(function (text) {
+        return this.adminService.queryBySearch(text);
+      }),
+  }),
 ) {}
 
 export class AdminEndpoint extends endpoint(srv.admin, ({ query, mutation, pubsub, message }) => ({
@@ -33,10 +39,10 @@ export class AdminEndpoint extends endpoint(srv.admin, ({ query, mutation, pubsu
     .exec(async function (data) {
       return await this.adminService.createAdminWithInitialize(data);
     }),
-  me: query(cnst.Admin)
-    .with(Me)
+  me: query(cnst.Admin, { nullable: true })
+    .with(Me, { nullable: true })
     .exec(async function (me) {
-      return await this.adminService.getAdmin(me.id);
+      return me ? await this.adminService.getAdmin(me.id) : null;
     }),
   setAdminPassword: mutation(Boolean)
     .body("adminId", ID)

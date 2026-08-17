@@ -10,8 +10,8 @@ export const Item = ({ children, direction = "right" }: ItemProps) => {
       <div
         className={cn(
           "absolute top-[4px] left-[-28px] z-10 size-4 rounded-full border-2 border-primary",
-          direction === "right" && "bg-secondary md:right-[-28px] md:left-auto",
-          direction === "left" && "bg-secondary md:left-[-28px]",
+          direction === "right" && "bg-muted md:right-[-28px] md:left-auto",
+          direction === "left" && "bg-muted md:left-[-28px]",
         )}
       />
       {children}

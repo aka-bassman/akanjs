@@ -48,15 +48,19 @@ export const Provider = ({ className, children }: ProviderProps) => {
 
     if (slidePositions.length === 0) return;
 
+    const scrollBottom = window.scrollY + window.innerHeight;
+    const documentHeight = document.documentElement.scrollHeight;
+    const isScrollBottom = scrollBottom >= documentHeight - 2;
     const passedSlides = slidePositions.filter(({ rect }) => rect.top <= anchorY);
     const visibleSlides = slidePositions.filter(({ rect }) => rect.bottom > 0 && rect.top < window.innerHeight);
-    const nextSlide = passedSlides.at(-1)?.id ?? visibleSlides[0]?.id ?? slidePositions[0].id;
+    const nextSlide = isScrollBottom
+      ? slidePositions.at(-1)?.id
+      : (passedSlides.at(-1)?.id ?? visibleSlides[0]?.id ?? slidePositions[0].id);
 
     if (!nextSlide) return;
 
     setSlide((prevSlide) => (prevSlide === nextSlide ? prevSlide : nextSlide));
   }, [slideIds]);
-
   const scheduleActiveSlideUpdate = useCallback(() => {
     if (animationFrameRef.current !== null) return;
     animationFrameRef.current = window.requestAnimationFrame(() => {
@@ -80,10 +84,10 @@ export const Provider = ({ className, children }: ProviderProps) => {
 
   useEffect(() => {
     scheduleActiveSlideUpdate();
-    document.addEventListener("scroll", scheduleActiveSlideUpdate, { capture: true, passive: true });
+    window.addEventListener("scroll", scheduleActiveSlideUpdate, { passive: true });
     window.addEventListener("resize", scheduleActiveSlideUpdate);
     return () => {
-      document.removeEventListener("scroll", scheduleActiveSlideUpdate, { capture: true });
+      window.removeEventListener("scroll", scheduleActiveSlideUpdate);
       window.removeEventListener("resize", scheduleActiveSlideUpdate);
       if (animationFrameRef.current === null) return;
       window.cancelAnimationFrame(animationFrameRef.current);
