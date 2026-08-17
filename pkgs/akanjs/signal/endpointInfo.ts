@@ -29,6 +29,11 @@ export type EndpointType = "query" | "mutation" | "pubsub" | "message" | "prompt
  * A prompt travels as `Any` because `PrimitiveRegistry.has(Any)` is true, so `resolveReturn` and `makeResponse`
  * hand the messages back untouched. Registering a scalar for `PromptMessage` would buy nothing the builder's
  * `exec` constraint does not already give, and would push a client-side model into every app that never uses one.
+ *
+ * It does not follow that a prompt's payload is unmasked. What a return ref masks is the value's own fields, and
+ * a prompt's are fixed by the protocol; the document inside an attachment is a JSON string by the time any return
+ * ref could reach it. So masking is declared at the attachment instead — `Msg.mask` — where the model is named
+ * and a payload that lost its class on the way still masks correctly.
  */
 const promptCarrier = Any;
 

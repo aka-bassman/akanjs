@@ -7,7 +7,7 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.8 -->
+<!-- akan:agent:version 3.0.0-alpha.10 -->
 
 ## Workspace
 
@@ -90,6 +90,17 @@ that looks wrong; do not "fix" it back.
   (`no-import-client-functions.grit`, `no-use-client-in-server.grit`, `non-scalar-props-restricted.grit`).
 - `noArrayIndexKey` and `useExhaustiveDependencies` are **off** on purpose: `key={idx}` for embedded scalars and
   short dependency arrays are intentional, not oversights.
+- **A grit plugin diagnostic is suppressed as `lint/plugin`, not `plugin`** — `// biome-ignore lint/plugin: <reason>`
+  for one line, `// biome-ignore-all lint/plugin: <reason>` for a file. The bare `// biome-ignore plugin:` form Biome's
+  own category name suggests does nothing. Suppress a plugin only where the rule is genuinely wrong for the file, and
+  say why: the module-convention plugins (`no-import-external-library`, `no-deep-internal-import`, the store/signal
+  ones) apply to `apps/**` and `libs/**` only, so a plain package under `pkgs/` never needs the escape hatch.
+- **`biome.json` is strict JSON — a comment in it breaks config resolution.** Biome 2.5.8 does not report the parse
+  error; it falls back to discovery and aborts on whatever nested config the walk finds, typically inside a directory
+  `files.includes` excludes. Rename the file to `biome.jsonc` to document a disabled rule; `akan lint` pins the config
+  path either way, so it reports the parse error on the offending line.
+- **`akan lint` prints up to 200 diagnostics** (`--maxDiagnostics <n>`, `0` for no limit). Biome's own default is 20
+  with no count, which reads as progress when the mix of findings merely changed.
 
 ## Coding Style (`**/*.{ts,tsx}`)
 
@@ -279,7 +290,7 @@ Full version with code, the `Tab` composition example, and a review checklist: `
 - Conditional render is `cond ? <X/> : null`. Never `{cond && <X/>}` — in a `className` context it renders the literal string `"false"`. Early `return null` is for guard clauses only.
 - Never hand-roll loading, empty, or list states. Use `Load.Units` / `Load.View` / `Load.Edit` with `renderItem`, `renderList`, `renderView`, and `renderEmpty`; `<Empty />` for a bare placeholder; and `Model.New` / `Model.Edit` / `Model.SureToRemove` for CRUD modals.
 - Avoid hooks. `useState` is for modal-open, tab, draft-input, and drag state only — never for server data. `useEffect` must be a genuine effect such as subscribe-with-cleanup or one-shot init. Prefer `Tab` over a `useState` mode switch. `.Template.tsx` files contain zero `useState`.
-- Forms are entirely store-driven: `value={xForm.field}` with `onChange={st.do.setFieldOnX}`, the setter passed by reference. Always use `Field.*`, never a bare `<input>` for a model field. Nested rows use `st.do.writeOnX("payments.3.name", v)` plus the generated `add<Field>OnX` / `sub<Field>OnX`.
+- Forms are entirely store-driven: `value={xForm.field}` with `onChange={st.do.setFieldOnX}`, the setter passed by reference. Always use `Field.*`, never a bare `<input>` for a model field. Nested rows use `st.do.writeOnX("payments.3.name", v)` plus the generated `add<Field>OnX` / `sub<Field>OnX`. **Passing the setter by reference is also what makes the framework emit `data-akan-action` / `data-akan-state`** on the control — the annotation an in-page agent, an E2E selector, and an external browser agent all read. Wrapping it in an inline arrow (`onChange={(v) => st.do.setFieldOnX(v)}`) silently drops that: a closure the caller wrote says nothing about what it does. Never hand-write a `data-akan-*` attribute.
 - Read with `st.use.*` and write with `st.do.*`. Client components do not call `fetch.*`.
 - Static class strings stay plain strings. Reach for `cn` only for a conditional or to merge an incoming `className`, and merge the caller last: `cn("base classes", cond && "extra", className)`. `cn` comes from `akanjs/client` (token-aware tailwind-merge) and is the only class-combining function — no `clsx` (removed), no raw `twMerge` imports, no object syntax (`{ x: cond }` → `cond && "x"`).
 - Multi-slot components take extra named props (`wrapperClassName`, `bodyClassName`), never a `classNames` object.
@@ -351,6 +362,33 @@ than returning it (`no-return-in-store-action.grit`); a bare `return;` guard sta
 `.of() → .model() → .insight() → .query() → .sort() → .enum() → .slice() → .endpoint() → .error() → .translate()`.
 Name every argument in `.arg()`, including framework-supplied `skip` / `limit` / `sort`. Use `modelDictionary`,
 `scalarDictionary`, or `serviceDictionary` to match the module kind.
+**`.store()` is the one optional stage, and the one written as a separate statement — never in the chain:**
+
+```ts
+export const dictionary = modelDictionary(["en", "ko"]).of(…).model(…).endpoint<UserEndpoint>(…).error({…});
+
+dictionary.store<UserStore>((t) => ({
+  logout: t(["Log Out", "로그아웃"]).desc(["Ends this session", "이 세션을 종료한다"]),
+}));
+```
+
+**Chaining it is a type cycle, not a style choice.** `*.dictionary.ts` → `*.store.ts` → `useClient` → `sig.ts` →
+`*.signal.ts` → `../dict` → `dict.ts` → back to `*.dictionary.ts`: signals import `Err` from the dictionary barrel,
+so naming a store type anywhere inside the chained initializer makes `dictionary` reference itself and the whole
+client type graph collapses to `any` (`TS7022` on `dictionary`, `pageProto`, `runtime`, `sig`, plus `TS2310` on the
+store class). As a separate statement the first line's type is already resolved when the store type is read, and
+the cycle does not close. `import type { UserStore }` does not help — the edge is the type reference, not the import.
+
+Available on `modelDictionary` and `serviceDictionary` alike — a service module (`lib/_<service>`) has a store too,
+and `logout` over `signoutUser` is the canonical case for this stage. `scalarDictionary` has no `.store()` because a
+scalar module has no store.
+
+It names custom store actions (labels and `.desc()` only, no `.arg()` — an argument's words come from wherever the
+argument came from, the endpoint's `.arg()` or the model field's own entry). **A generated action never needs an
+entry**: `createX` / `updateX` / `createXInForm` / `setFieldOnX` / `submitX` and the rest are named by a rule and
+borrow the model's own `.desc()`, so they are exempt from every description check. Write an entry only where
+inheriting would be wrong — an action named after the endpoint it calls already reads as that endpoint's `.desc()`,
+which is most of them. `akan.agent.missing-store-description` names the rest.
 
 **`<module>.abstract.md`** — a title line, one declarative sentence naming what the module owns, a `## Rules` list of
 two to five invariants the code cannot show, and an optional workflow arrow chain
@@ -363,7 +401,7 @@ workflow changes.
 - Keep execution contracts and triggers in `.signal.ts` classes built with `internal(...)`, `slice(...)`, and `endpoint(...)`.
 - Use `Internal` for internal triggers such as init, interval, cron, or queue jobs.
 - Use `Slice` for typed data views that feed client stores and zones; keep each slice focused on one purpose.
-- Use `Endpoint` for the five call contracts exposed to callers: `query`, `mutation`, `message`, `pubsub`, and `prompt`.
+- Use `Endpoint` for query and mutation contracts exposed to callers.
 - Connect external APIs or infrastructure through adapters, usually under `srvkit/`, and inject them into services instead of importing vendor clients directly into domain logic.
 
 ### Guards And Transports
@@ -376,8 +414,7 @@ workflow changes.
 ### Authorization Defaults
 
 - **Every `slice()` takes an explicit `{ guards: {…} }` second argument, and `root:` is always `Admin`.**
-- **Every custom `mutation` / `query` / `message` / `prompt` names its own `guards: [...]` array.** Never rely on the slice default. `Public` belongs on a slice `get:`, never on a mutation.
-- **Mark `static scope` on every guard** — `"account"` when the verdict depends only on the caller, and the default `"resource"` otherwise. Only `account` guards are evaluated when filtering an MCP catalogue, because a resource guard has no arguments there and would fail closed on every entry.
+- **Every custom `mutation` / `query` / `message` names its own `guards: [...]` array.** Never rely on the slice default. `Public` belongs on a slice `get:`, never on a mutation.
 - Resource guards are `Can<Verb><Model>` classes in `srvkit/guards.ts` that `implements Guard` with an `async canPass(context)`. They **fail closed**: no resource named ⇒ `false`; a load that throws ⇒ `logger.warn` then `false`. Admin bypass goes first.
 - Keep `static name = "User";` on guard classes. `fetch` serializes guard names and the API explorer filters on them; it looks like dead code, and deleting it breaks the UI. Comment it so the next reader knows.
 - The acting user arrives via `.with(Self)` / `.with(CurrentUserId)` / `.with(Me)`. Never trust a client-supplied id.
@@ -390,104 +427,6 @@ workflow changes.
 - `.body(...)` / `.param(...)` args accept `ConstantFieldTypeInput` only: scalars, model refs, or `enumOf(...)`.
 - Numbers must use `Int` or `Float` — `Number` is rejected (`pkgs/akanjs/signal/endpointInfo.ts`).
 - `Upload` is valid only inside a mutation flagged for file upload: `mutation([cnst.File], { fileUpload: true }).body("files", [Upload])` (see `libs/shared/lib/file/file.signal.ts`). It is not a model field type.
-- A `prompt()` takes `.param()` and `.search()` **only** — `prompts/get` sends a flat string map, so there is nowhere
-  to put a `body`, `msg`, or `room`, and the builder refuses them. `.search()` is the only way to declare an
-  optional prompt argument.
-
-### MCP Exposure
-
-Every signal can be served to agents as an MCP server on `POST /mcp`, and **nothing is exposed until it says so**.
-Turn it on in an app's `main.ts` — `new AkanApp("./server", { mcp: { … } })` — which takes `enabled`, `readOnly`,
-`path`, `version`, `instructions`, `allowedOrigins`, `pageSize`, `language`, and `auth`. **`main.ts` is the only
-app-authored place it can go**: `server.ts` is generated and takes no options, and the gateway reaches a child
-through its environment, so every field also has an env spelling (`AKAN_MCP`, `AKAN_MCP_READONLY`, `AKAN_MCP_PATH`,
-`AKAN_MCP_VERSION`, `AKAN_MCP_INSTRUCTIONS`, `AKAN_MCP_ALLOWED_ORIGINS`, `AKAN_MCP_PAGE_SIZE`, `AKAN_MCP_LANGUAGE`,
-`AKAN_MCP_AUTH_SERVERS`, `AKAN_MCP_SCOPES`, `AKAN_MCP_RESOURCE`) — that is the channel, not a fallback. A value
-written in code wins over the env of the same name, and an explicit `undefined` is not a value. Both booleans also
-answer to `AKAN_PUBLIC_MCP` / `AKAN_PUBLIC_MCP_READONLY`.
-
-- **Opt in per endpoint** with `query(cnst.X, { guards: […], mcp: { expose: true } })` and per slice with
-  `init({ guards: […], mcp: { expose: true } })`. Generated CRUD opts in on the slice class instead —
-  `slice(srv.x, { guards: {…}, mcp: { get: true, update: true } }, …)`, one flag per verb, never a blanket `true` —
-  and the model's own unfiltered list and insight are `mcp: { list: true }` on that same map, the `""` slice being
-  the one with nowhere for an author to write `expose`. **A named slice inherits no guards from the `slice()`
-  call**: `root:` / `get:` / `cru:` reach the root slice and base CRUD only, so an exposed slice writes its own.
-  `libs/shared`'s `banner` is the worked example.
-- **The refusals are fail-closed and survive opting in**: `pubsub` and `message` (their internal args read a socket
-  an MCP request does not have), an `Any` or `Upload` return, a file upload, **a mutation with no real `guards`**
-  (`[Public]` is having none, spelled out), and **an argument typed `Any` that must be filled**. A `prompt` refuses
-  two more, its `arguments` being one string per name with no schema beside it: a **list argument** and **any `Any`
-  argument** — and `resource: true`, because only a read publishes a resource template.
-- **Read the boot log first when a tool is missing.** It prints `MCP catalogue: tools=… prompts=…` and one `warn`
-  per endpoint that opted in and was kept out, published with no description, or published with no guards at all.
-  `akan quality scan` covers the two shapes visible in source, `akan.mcp.missing-description` and
-  `akan.mcp.unguarded-exposure`; a refusal turns on a resolved return type, so no source rule can see one. The API
-  explorer badges the per-endpoint rules (`MCP` / `MCP refused`) from `mcpRefusalOf` in `akanjs/common`.
-- Write the model's `.desc()`. The six entries `mcp: { list: true }` and the base CRUD flags publish have no text
-  of their own and borrow the model's: the `.of()` label over the framework's `Slice List - Universal`, and the
-  `.desc()` appended to a generated `Get X` that names the verb and says nothing about what an X is.
-- **An `Any` argument is left out of the published schema** and a value sent for one is refused by name, so the
-  endpoint reads it as omitted. The one this matters for is the root list's raw `query` descriptor: read as sent, it
-  would hand an agent an arbitrary filter over every model exposed through `mcp: { list: true }`.
-- **A nullable model return publishes no `outputSchema`**: `structuredContent` is an object by definition, so
-  neither `null` nor an array can ride in it — which is why a list is wrapped as `{ items: … }` — and a declared
-  schema obliges every result to match it. A nullable *list* keeps its schema. A scalar has no structured half at
-  all and ships as the value itself, not as JSON.
-- **An `outputSchema` names no `hidden` or `secret` field** — `resolveReturn` strips both from every response, and
-  on a model like `user` the names are themselves the leak. The *input* schema keeps them: they are legal to send.
-- An endpoint that did not opt in answers the *same* "unknown tool" as one that does not exist, and a guard's
-  refusal reads `You are not permitted to perform this action.` rather than naming the guard. Never make either
-  more helpful — the difference is what enumerates the private surface. A domain `Err` keeps its own words.
-- A caller's own mistake is reported as one and never as a server failure: an argument that is missing, unparseable
-  or undeclared, and a document that is not there, come back as `isError` naming it (a `prompt`, having no `isError`
-  to carry a refusal, answers `-32602`). Only a real failure logs a stack — an agent can drive the rest at will.
-- `mcp: { readOnly, destructive, idempotent }` only override the hints a client renders; they are never a gate.
-  **`AKAN_MCP_READONLY=true` is the read-only-deployment valve, not the exposure switch** — it drops every mutation
-  whatever it declared, and says so in the boot log like any other refusal.
-- **Resource URIs** are `akan://<model>/{id}`, `akan://<model>/light/{id}`, `akan://<model>/list`, and
-  `akan://<model>/list/<sliceKey>` — the root list taking no third segment because any token there is one a slice
-  could also be named. **Those four shapes are the whole set**, so `mcp: { resource: true }` is honoured only on the
-  generated reads that have one; a custom endpoint keeps its tool, gets no template, and is named in the boot log.
-- **Auth is OAuth resource metadata plus a bearer check.** `AKAN_MCP_AUTH_SERVERS`, `AKAN_MCP_SCOPES` and
-  `AKAN_MCP_RESOURCE` configure what is published at `/.well-known/oauth-protected-resource`, and at that path plus
-  the mount path, which clients try first. A provably unusable token — expired, or audienced elsewhere — is refused
-  up front rather than degraded to an anonymous caller, which tells an agent a tool does not exist instead of to
-  authenticate. **A token carrying no `aud` is refused once `AKAN_MCP_AUTH_SERVERS` names an issuer** and accepted
-  while none is: that issuer mints tokens for its other resources too, which is the confused-deputy case RFC 8707
-  is a MUST for, whereas a first-party Akan token is bound by app and environment. `insufficient_scope` waits for
-  `AKAN_MCP_SCOPES`, first-party tokens carrying no scope claim, and the **signature is not checked** — that needs
-  the app's own secret — so a wrongly signed or opaque token degrades silently.
-- A browser-hosted client needs `allowedOrigins`; every other MCP client sends no `Origin` at all. Both the origin
-  comparison and the audience a token is checked against read the *forwarded* host, so each is only as trustworthy
-  as an edge that **overwrites** `x-forwarded-host` rather than appending to it — `AKAN_MCP_RESOURCE` pins the
-  identifier where that cannot be guaranteed.
-- **Three revisions are spoken** from one stateless handler: the modern `2026-07-28` and the legacy `2025-11-25` /
-  `2025-06-18`. A modern request must mirror `MCP-Protocol-Version` and `Mcp-Method` into headers (plus `Mcp-Name`
-  when the body names one), an absent mirror being refused exactly like a contradictory one — a gateway rule keyed
-  on a header never fires for the request that omitted it. Legacy requests are not checked.
-- **The catalogue is one language**, `en` unless `language` says otherwise, built once at boot and cached by
-  clients: there is no `Accept-Language` negotiation, and domain error text resolves in that same language.
-
-**`prompt()`** is the endpoint kind a *user* invokes by name — a client renders it as a slash command — rather than
-one the model chooses, and it takes `.param()` and `.search()` only. `exec` returns `PromptMessage[]`, or a bare
-string wrapped into one user message; build them with `Msg.user` / `Msg.assistant` / `Msg.link` / `Msg.resource` /
-`Msg.image` / `Msg.audio` / `Msg.imageOf`, each taking optional `annotations` last (`audience`, `priority` 0..1,
-`lastModified`) — give the instruction a high `priority` and its attachments a low one, or a client with a full
-window keeps the attachment over the ask. **A prompt's payload is not field-masked**: it rides the `Any` carrier, so
-`hidden`/`secret` fields survive. Pass a `Light<Model>` or an object you assembled yourself; a value whose model
-declares one is named in the log, once per model class, bare or wrapped in an object. **A `prompt` is also mounted
-as a plain HTTP `GET` whether or not the app enabled MCP** — that route is what lets a web UI preview one, and it is
-in the app's OpenAPI document like any other `GET`, answering the one fixed `PromptMessage[]` shape. MCP exposure
-gates the catalogue, not the surface, so guard it like any other read: one that declares no `guards` is named in the
-boot log, and an explicit `[Public]` is a decision and stays quiet.
-
-**`McpProgress.report(n, { total, message })`** reports progress from anywhere inside a call — a service, an
-adapter, a loop several frames down — and is a no-op when nobody is streaming, so the same code runs unchanged over
-HTTP, a websocket, and in tests. `McpProgress.streaming` says whether anyone is reading. A pubsub subscription has
-no equivalent: the transport carries no channel that outlives one request.
-
-Protocol mechanics past these rules — the cursor, the era split, the full error-code table — and the reasoning
-behind each decision are in `apps/akan/page/(docs)/cheatsheet/interface/mcp.tsx` and `local/signal-mcp/PLAN.md`.
 
 ### Reserved Endpoint Names
 
@@ -576,6 +515,147 @@ Conventions that hold for both shapes:
 - Best-effort code returns a sentinel (`null`, `undefined`, `[0, 0]`, `{}`). There are no Result/Either wrappers.
 - `try/catch` is rare and always converts an exception into a decision, never swallows one. Guards catch → `logger.warn` → `return false`; adapters catch → `logger.error` → `return null`; UI uses `try/finally` to reset a spinner. A bodyless `catch {}` is acceptable only with a one-line reason.
 - Store actions do not `try/catch` — let the framework toast the `Err`. Client-side validation failure is `msg.error("<key>")` plus an early return, never a throw.
+
+### MCP Exposure
+
+Any signal can be served to AI agents as an MCP server on `POST /mcp`, and **nothing is exposed until it says so**.
+Turn it on in the app's `main.ts` — `new AkanApp("./server", { mcp: { … } })` — which takes `enabled`, `readOnly`,
+`path`, `version`, `instructions`, `allowedOrigins`, `pageSize`, `language`, and `auth`. That is the only
+app-authored place for it: `server.ts` is generated and takes no options, and the gateway configures a child
+through its environment — so each field also has an env spelling (`AKAN_MCP`, `AKAN_MCP_READONLY`,
+`AKAN_MCP_PATH`, `AKAN_MCP_VERSION`, `AKAN_MCP_INSTRUCTIONS`, `AKAN_MCP_ALLOWED_ORIGINS`, `AKAN_MCP_PAGE_SIZE`,
+`AKAN_MCP_LANGUAGE`, `AKAN_MCP_AUTH_SERVERS`, `AKAN_MCP_SCOPES`, `AKAN_MCP_RESOURCE`), which code overrides.
+The two booleans answer to `AKAN_PUBLIC_MCP` / `AKAN_PUBLIC_MCP_READONLY` too, the same pairing `AKAN_OPENAPI`
+has, and a value written in code wins over the env of the same name — an explicit `undefined` is not a value.
+`AKAN_MCP_PATH` is normalized to a leading `/`, because the route key and the OAuth metadata path are both built by
+concatenation.
+
+```typescript
+// <model>.signal.ts — a tool, a resource-backed slice, and a slash-command prompt
+export class TaskSlice extends slice(
+  srv.task,
+  // generated CRUD per verb; `list` is the model's own unfiltered list, which `slice()` generates itself
+  { guards: { root: Admin, get: SignedIn, cru: SignedIn }, mcp: { get: true, list: true } },
+  (init) => ({
+    // its own guards: the map above reaches base CRUD and the root slice, never a named slice
+    inTodo: init({ guards: [SignedIn], mcp: { expose: true } }).exec(function () {
+      return this.taskService.queryByStatuses(["todo"]);
+    }),
+  }),
+) {}
+
+export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => ({
+  startTask: mutation(cnst.Task, { guards: [SignedIn], mcp: { expose: true } })
+    .param("taskId", ID)
+    .exec(async function (taskId) {
+      return await this.taskService.startTask(taskId);
+    }),
+  reviewTask: prompt({ guards: [SignedIn], mcp: { expose: true } })
+    .param("taskId", ID)
+    .exec(async function (taskId) {
+      const task = await this.taskService.getTask(taskId);
+      return [Msg.user(`Review this task and suggest next steps.`), Msg.resource(`akan://task/${taskId}`, task)];
+    }),
+})) {}
+```
+
+- **The refusals are fail-closed and survive opting in**: `pubsub` and `message` (their internal args read a socket
+  an MCP request does not have), an `Any` or `Upload` return, a file upload, **a mutation with no real `guards`**
+  (`[Public]` is having none, spelled out — it answers true unconditionally), and **an argument typed `Any` that
+  must be filled**.
+  A `prompt` refuses two more, because its `arguments` is one string per name with no schema beside it: a **list
+  argument**, which could never carry a second value, and **any `Any` argument** — a tool leaves that out of its
+  schema, and a prompt has no schema to leave it out of. `resource: true` is refused there too: only a read
+  publishes a resource template.
+- **Every refusal is named in the boot log**, and so is every published entry that declares no `guards` at all —
+  the access is what `[Public]` grants, but only one of the two is a decision you made. One `warn` per endpoint
+  plus a `MCP catalogue: tools=… prompts=…` count. Read that line first when a tool you exposed is missing —
+  fail-closed is right, and a silent fail-closed leaves you nothing to read. `akan quality scan` covers the two
+  shapes visible in source, `akan.mcp.missing-description` and `akan.mcp.unguarded-exposure`; the API explorer
+  badges the per-endpoint rules (`MCP` / `MCP refused`) from the same rule the catalogue runs.
+- **An `Any` argument is left out of the published schema** rather than described as `{}` — it tells a model
+  nothing — and a value sent for one is refused by name, so the endpoint reads it as omitted. That is what happens
+  to the root list's raw `query` descriptor: read as sent, it would be an arbitrary filter over every model you
+  exposed through `mcp: { list: true }`. Expose a named filter slice when an agent should narrow a list.
+- **A nullable model return publishes no `outputSchema`**, and its empty answer ships as the text `null` with no
+  `structuredContent`. That field is an object by definition, so `null` cannot ride in it any more than an array
+  can — a list is wrapped as `{ items: … }` for the same reason — and a declared schema obliges every result to
+  match it, so a client SDK throws on the first call that finds nothing. A nullable *list* keeps its schema, and a
+  scalar return has no structured half at all: it ships as the value itself, not as JSON.
+- **An `outputSchema` names no `hidden` or `secret` field.** Every response has both stripped, so publishing them
+  promises a property no answer can carry — and on a model like `user` the names are the leak. Your *input* schema
+  keeps them: they are legal to send, and the same model describes a request body.
+- An endpoint that did not opt in answers the *same* "unknown tool" as one that does not exist. Never make that
+  message more helpful — the difference is what enumerates your private surface. A guard's refusal is generalized
+  the same way: the caller reads `You are not permitted to perform this action.`, never `Access denied by guard:
+  Admin`, which names your authorization structure to the one caller barred from it. A domain `Err` resolves
+  through the dictionary first and keeps its own words.
+- `mcp: { readOnly, destructive, idempotent }` only override the hints a client renders. Clients are told to
+  distrust hints; they are never a gate.
+- **`AKAN_MCP_READONLY=true` is the read-only-deployment valve, not the exposure switch.** It drops every mutation
+  whatever it declared, and reports each one in the boot log like any other refusal.
+- OAuth resource metadata is published at `/.well-known/oauth-protected-resource` (and at that path plus the mount
+  path, the spelling most clients try first). `AKAN_MCP_AUTH_SERVERS`, `AKAN_MCP_SCOPES`, and `AKAN_MCP_RESOURCE`
+  configure it; `insufficient_scope` is enforced only once `AKAN_MCP_SCOPES` is set. A token carrying no `aud` at
+  all is refused once `AKAN_MCP_AUTH_SERVERS` names an issuer — that issuer mints tokens for its other resources
+  too — and accepted while none is named, because a first-party Akan token is bound by app and environment.
+- `akan quality scan` warns **`akan.mcp.missing-description`** for anything exposed without a dictionary `.desc()`.
+  An agent picks a tool by its description, so a missing one is a broken tool. What the framework generates is
+  exempt and borrows the model's own text, having none of its own: `mcp: { list: true }` reads the `.of()` label,
+  and the base CRUD tools append the model's `.desc()` to their generated `Get X`. Write that model `.desc()` — it
+  is the only text those entries can carry. The scan is not the whole answer either, because it reads source: **the
+  boot log names every published entry with no description**, generated ones included.
+- A browser-hosted client needs `allowedOrigins` **and** the CORS answer the server sends back for those origins.
+  Every other MCP client sends no `Origin` at all, and the one that does is matched against the forwarded host so
+  a proxy does not turn each call into a 403 — which is only as trustworthy as an edge that *overwrites* that
+  header. `AKAN_MCP_RESOURCE` pins the resource identifier where you cannot guarantee it.
+- **A `resources/read` uri that does not decode** — a stray `%` — is `Unknown resource`, not a server failure.
+- **A caller's own mistake is reported as one** and never as a server failure: an argument that is missing,
+  unparseable or **undeclared** comes back as `isError` naming it — `additionalProperties: false` travels in the
+  published schema and nothing on the wire enforces it — and so does a document that is not there, as
+  `No <model> found for the arguments given.` A `prompt`, having no `isError` to carry a refusal, answers `-32602`.
+  Only a real failure logs a stack; an agent can drive the rest at will.
+- **Three revisions are spoken**: the modern `2026-07-28` and the legacy `2025-11-25` / `2025-06-18`, which are
+  wire-identical over the POST-only surface this implements — a client whose proposal is not listed is told to
+  disconnect. An unknown proposal is answered at whichever end of that list it is closer to, and an unimplemented
+  method answers `404` to a modern client but `200` to a legacy one, whose era spends `404` on "your session is
+  gone".
+- **A modern-era request mirrors `MCP-Protocol-Version` and `Mcp-Method` into headers** (plus `Mcp-Name` when the
+  body names one), and one that leaves a mirror out is refused just like one that contradicts the body: a gateway
+  rule keyed on a header never fires for the request that omitted it. Legacy requests are not checked. Capabilities
+  are derived from the catalogue, so a server with no prompts does not advertise `prompts`.
+- **An expired or wrongly-audienced bearer token is refused up front**, so an agent is told to authenticate rather
+  than that the tool does not exist. Its **signature is not checked** — that needs your app's own secret — so a
+  token signed wrong, like an opaque one, still degrades to an anonymous caller.
+- **Resource URIs**: `akan://<model>/{id}`, `akan://<model>/light/{id}`, `akan://<model>/list` for the model's own
+  list, and `akan://<model>/list/<sliceKey>` for a slice's. The root list takes no third segment on purpose — any
+  token there is one a slice could also be named. **Those four are the whole set**, so `mcp: { resource: true }`
+  is honoured only on the generated reads: a custom endpoint keeps its tool, gets no resource template, and is
+  named in the boot log saying so.
+- **The catalogue is one language**, `en` unless `language` says otherwise: it is built once at boot and cached by
+  clients, so there is no `Accept-Language` negotiation.
+
+**`prompt()`** is invoked by the *user* — a client renders it as a slash command — not chosen by the model. `exec`
+returns `PromptMessage[]`, or a bare string that is wrapped into one user message; build them with `Msg.user` /
+`Msg.assistant` / `Msg.link` / `Msg.resource` / `Msg.image` / `Msg.imageOf`. It takes `.param()` and `.search()`
+only, because `prompts/get` sends a flat string map. **An embedded payload is masked by the model you name** —
+`Msg.resource(uri, task, { model: cnst.LightTask })`, or `Msg.mask(cnst.LightTask, task)` for one piece of an
+assembly. Taking the model as an argument is what makes a `{ ...doc }` spread maskable, since that and `toJSON()`
+arrive with the class already gone; a value with no model named whose `hidden`/`secret` fields are populated is
+**refused**, one level into a plain object too. **A `prompt` is also mounted as a
+plain HTTP `GET` whether or not you enabled MCP**, because that route is what lets a web UI preview one — and it
+is in your OpenAPI document like any other `GET`, answering the one fixed `PromptMessage[]` shape. MCP exposure
+gates the catalogue, not the surface, so guard it
+like any other read — and a prompt declaring no
+`guards` at all is named in the boot log, while an explicit `[Public]` is a decision and stays quiet. Every `Msg` builder takes
+optional `annotations` last (`audience`, `priority` 0..1, `lastModified`) — give the instruction a high `priority`
+and its attachments a low one, or a client with a full window drops blocks by position and keeps the attachment
+over the ask.
+
+**`McpProgress.report(n, { total, message })`** reports progress from anywhere inside a call, a service or adapter
+frames down included, and is a no-op when nobody is streaming — so the same code runs unchanged over HTTP, a
+websocket, and in tests. `McpProgress.streaming` says whether anyone is reading, for a report whose message
+costs something to assemble.
 
 ## Scalar Modeling (`**/*.constant.ts`)
 
@@ -747,6 +827,7 @@ export const pageConfig = { transition: "stack" } satisfies PageConfig;
 | `plugin/` | build- or CLI-time `AkanPlugin` | `<name>.plugin.ts`, registered in `akan.config.ts` |
 
 - Hooks return a named object of async closures, never a tuple.
+- `libs/<lib>/ui/tokens.css` is the one CSS file a lib owns: plain `:root` custom properties for colors that must **not** follow the theme (a vendor brand color, a fixed surface). Every app whose pages reach that lib compiles it automatically, ahead of the app's own stylesheets, so nothing is imported by hand and no app can forget it. Reference them as `bg-[var(--kakao)]`; `@theme` extensions stay in the app stylesheet, because the color vocabulary is closed per stylesheet. Theme-following colors are the app's, not the lib's.
 - A layer-root `index.ts` is generated, but a `ui/<Folder>/index.tsx` that builds a namespace is hand-written source. The distinguishing test is that a generated barrel contains nothing but `export * from "./X";` lines.
 - `ui/<Folder>/index_.tsx` (trailing underscore) is the `"use client"` + `lazy()` boundary, with a server-safe `index.tsx` beside it. Collapsing the pair into one file breaks RSC.
 
@@ -871,6 +952,7 @@ Use this as the compact framework context for AI codegen. It should explain how 
 When a request implies a distinct look and feel, do not stop at colors — customize both the theme and, when needed, the components.
 
 - **Theme (`apps/<app>/page/styles.css`).** The app imports Tailwind and `akanjs/ui/styles.css`, then overrides semantic token *values* per theme under `:root, [data-theme="dark"]` and `[data-theme="light"]` (`--background`, `--foreground`, `--primary`, `--muted`, `--border`, … each with a `-foreground` pair for text). The framework maps them to Tailwind color names, so `bg-primary` / `text-foreground` follow the `data-theme` attribute; corner rounding uses `--radius-box` / `--radius-field`. Fetch `get_guideline` with `cssRule` for the full token set before a deep theme pass.
+- **Lib tokens (`libs/<lib>/ui/tokens.css`).** Colors a lib's own components pin — a vendor brand color, a fixed surface — are declared once there as plain `:root` custom properties and compiled into every app that reaches the lib, ahead of the app's stylesheets. Reference them as `bg-[var(--kakao)]`; never copy the block into each app.
 - **Components (`page/**/_overrides.tsx`).** When a default `akanjs/ui` component (Button, Modal, Table, Input, Select, …) is too restrictive for the design, re-skin it per route instead of forking, wrapping, or fighting it with utility classes. Write a drop-in replacement in `apps/<app>/ui/` typed against the slot contract (`AkanModalComponent`, or `AkanUiOverrides["<Slot>"]`), composing the framework's headless parts, then bind it in a `page/**/_overrides.tsx` manifest with a single `export default override({ Slot: BrandComponent })`. Overrides cascade down the route tree like layouts (closest ancestor wins). Fetch `get_guideline` with `componentRule` and read the `references/ui/customize` docs page for the slot list and patterns.
 
 ## Review Checklist

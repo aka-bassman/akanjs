@@ -56,6 +56,17 @@ type DictEndpointShape<Endpoint> =
         : Endpoint extends Record<string, EndpointInfo>
           ? EndpointCompactShape<Endpoint>
           : Record<never, never>;
+/**
+ * The actions of a store, which is every method on it that dispatches.
+ *
+ * Derived from the shape rather than from a marker like `ENDPOINT_DICT_SHAPE`, because a store's custom actions
+ * are declared on the subclass — after `store()` has already returned, so there is nothing for it to stamp. What
+ * makes the shape readable anyway is that `st.do.<action>()` is typed `void`: an action returns nothing, so the
+ * void-returning methods are exactly the actions and `get` / `pick` / `slice` fall out on their own.
+ */
+type DictStoreShape<Store> = {
+  [K in keyof Store as Store[K] extends (...args: never[]) => void | Promise<void> ? K & string : never]: true;
+};
 type DictArgNames<ArgNames> = ArgNames extends readonly string[] ? ArgNames[number] : never;
 type DictFilterQuery<Filter> = DictFilterShape<Filter>["query"];
 type DictFilterSort<Filter> = DictFilterShape<Filter>["sort"];
@@ -130,6 +141,29 @@ type BaseModelCrudGetSignalTranslation<
 };
 type GetBaseSignalKey<T extends string> = keyof BaseModelCrudGetSignalTranslation<T>;
 
+/** Under its own `store` node rather than beside `signal`, because the two hold the same key by design. */
+const registerStoreToRoot = <Languages extends [string, ...string[]]>(
+  languages: Languages,
+  storeDictionary: { [key: string]: FieldTranslation<Languages> },
+  refName: string,
+  rootDict: RootDictionary,
+) => {
+  languages.forEach((language) => {
+    ensureNode(getRootModelNode(rootDict, language, refName), "store");
+  });
+  Object.entries(storeDictionary).forEach(([key, value]) => {
+    value.trans.forEach((t, idx) => {
+      ensureNode(ensureNode(getTranslatedRootModelNode(rootDict, languages, idx, refName), "store"), key).t = t;
+    });
+    value.descTrans?.forEach((t, idx) => {
+      ensureNode(
+        ensureNode(ensureNode(getTranslatedRootModelNode(rootDict, languages, idx, refName), "store"), key),
+        "desc",
+      ).t = t;
+    });
+  });
+};
+
 export class ModelDictInfo<
   Languages extends [string, ...string[]] = [string],
   ModelKey extends string = keyof BaseObject,
@@ -140,6 +174,7 @@ export class ModelDictInfo<
   BaseSignalKey extends string = never,
   SliceKey extends string = "",
   EndpointKey extends string = never,
+  StoreKey extends string = never,
   ErrorKey extends string = never,
   EtcKey extends string = never,
 > {
@@ -245,6 +280,9 @@ export class ModelDictInfo<
   endpointDictionary: { [K in EndpointKey]: FunctionTranslation<Languages> } = {} as {
     [K in EndpointKey]: FunctionTranslation<Languages>;
   };
+  storeDictionary: { [K in StoreKey]: FieldTranslation<Languages> } = {} as {
+    [K in StoreKey]: FieldTranslation<Languages>;
+  };
   errorDictionary: { [K in ErrorKey]: Languages } = {} as {
     [K in ErrorKey]: Languages;
   };
@@ -278,6 +316,7 @@ export class ModelDictInfo<
       BaseSignalKey,
       SliceKey,
       EndpointKey,
+      StoreKey,
       ErrorKey,
       EtcKey
     >;
@@ -302,6 +341,7 @@ export class ModelDictInfo<
       BaseSignalKey,
       SliceKey,
       EndpointKey,
+      StoreKey,
       ErrorKey,
       EtcKey
     >;
@@ -327,6 +367,7 @@ export class ModelDictInfo<
       BaseSignalKey,
       SliceKey,
       EndpointKey,
+      StoreKey,
       ErrorKey,
       EtcKey
     >;
@@ -351,6 +392,7 @@ export class ModelDictInfo<
       BaseSignalKey,
       SliceKey,
       EndpointKey,
+      StoreKey,
       ErrorKey,
       EtcKey
     >;
@@ -375,6 +417,7 @@ export class ModelDictInfo<
       BaseSignalKey,
       SliceKey,
       EndpointKey,
+      StoreKey,
       ErrorKey,
       EtcKey
     >;
@@ -400,6 +443,7 @@ export class ModelDictInfo<
       BaseSignalKey,
       keyof DictSliceShape<Slice> & string,
       EndpointKey,
+      StoreKey,
       ErrorKey,
       EtcKey
     >;
@@ -425,6 +469,41 @@ export class ModelDictInfo<
       BaseSignalKey,
       SliceKey,
       keyof DictEndpointShape<Endpoint> & string,
+      StoreKey,
+      ErrorKey,
+      EtcKey
+    >;
+  }
+  /**
+   * What a store's custom actions are called, in the words a person would use.
+   *
+   * Optional, and the only stage that is: an action whose name matches the endpoint it wraps already reads as
+   * that endpoint's `.desc()`, which is most of them — the house naming rule (`st.do.X` reads the same as
+   * `fetch.X`) is what makes that true. This stage is for the rest, where inheriting the endpoint's words would
+   * be actively wrong: nine `getSummaryListIn*` actions that all call one endpoint, or `logout` over
+   * `signoutUser`, where the store name is the verb a user would say and the endpoint name is the verb the API
+   * has. `akan quality scan` names those and no others.
+   *
+   * Labels only, no `.arg()`. Parameter names are not in a class's type the way an endpoint builder's are, and an
+   * action mostly takes none anyway — its data comes from the form state the user already filled in.
+   */
+  store<Store>(
+    translate: (t: (trans: Languages) => FieldTranslation<Languages>) => Partial<{
+      [K in keyof DictStoreShape<Store>]: FieldTranslation<Languages>;
+    }>,
+  ) {
+    Object.assign(this.storeDictionary, translate(FieldTranslation.translate));
+    return this as unknown as ModelDictInfo<
+      Languages,
+      ModelKey,
+      InsightKey,
+      QueryKey,
+      SortKey,
+      EnumKey,
+      BaseSignalKey,
+      SliceKey,
+      EndpointKey,
+      StoreKey | (keyof DictStoreShape<Store> & string),
       ErrorKey,
       EtcKey
     >;
@@ -441,6 +520,7 @@ export class ModelDictInfo<
       BaseSignalKey,
       SliceKey,
       EndpointKey,
+      StoreKey,
       ErrorKey | (keyof ErrorDict & string),
       EtcKey
     >;
@@ -457,6 +537,7 @@ export class ModelDictInfo<
       BaseSignalKey,
       SliceKey,
       EndpointKey,
+      StoreKey,
       ErrorKey,
       EtcKey | (keyof EtcDict & string)
     >;
@@ -473,6 +554,7 @@ export class ModelDictInfo<
       GetBaseSignalKey<RefName>,
       SliceKey,
       EndpointKey,
+      StoreKey,
       ErrorKey,
       EtcKey
     >;
@@ -496,6 +578,7 @@ export class ModelDictInfo<
     this.#registerBaseSignalToRoot(refName, rootDict);
     this.#registerSliceToRoot(refName, rootDict);
     this.#registerEndpointToRoot(refName, rootDict);
+    registerStoreToRoot(this.languages, this.storeDictionary, refName, rootDict);
     this.#registerErrorToRoot(refName, rootDict);
     this.#registerModelToRoot(refName, rootDict);
     this.#registerEtcToRoot(refName, rootDict);
@@ -777,6 +860,7 @@ export class ModelDictInfo<
       });
     });
   }
+  /** Under its own `store` node rather than beside `signal`, because the two hold the same key by design. */
   #registerErrorToRoot(refName: string, rootDict: RootDictionary) {
     this.languages.forEach((language) => {
       ensureNode(getRootModelNode(rootDict, language, refName), "error");
@@ -803,8 +887,15 @@ export class ModelDictInfo<
   }
 }
 
+/**
+ * Every parameter of `ModelDictInfo` is listed here positionally, so a parameter added to the class has to be
+ * added to all three lists below in the same slot. Omitting one does not fail to compile — inference silently
+ * shifts, so the last parameter falls off the end and becomes its default `never`: adding `StoreKey` before
+ * `ErrorKey` once cost an extending app the whole of the lib's `EtcKey` (`.translate()`) union, which reads at
+ * the call site as `l("<model>.<key>")` no longer existing.
+ */
 // biome-ignore lint/suspicious/noExplicitAny: wildcard type used to merge arbitrary dictionary instances.
-type AnyModelDictInfo = ModelDictInfo<any, any, any, any, any, any, any, any, any, any, any>;
+type AnyModelDictInfo = ModelDictInfo<any, any, any, any, any, any, any, any, any, any, any, any>;
 
 type MergeTwoModelDicts<ModelDict1, ModelDict2> =
   ModelDict1 extends ModelDictInfo<
@@ -817,6 +908,7 @@ type MergeTwoModelDicts<ModelDict1, ModelDict2> =
     infer BaseSignalKey1,
     infer SliceKey1,
     infer EndpointKey1,
+    infer StoreKey1,
     infer ErrorKey1,
     infer EtcKey1
   >
@@ -830,6 +922,7 @@ type MergeTwoModelDicts<ModelDict1, ModelDict2> =
         infer BaseSignalKey2,
         infer SliceKey2,
         infer EndpointKey2,
+        infer StoreKey2,
         infer ErrorKey2,
         infer EtcKey2
       >
@@ -843,6 +936,7 @@ type MergeTwoModelDicts<ModelDict1, ModelDict2> =
           BaseSignalKey1 | BaseSignalKey2,
           SliceKey1 | SliceKey2,
           EndpointKey1 | EndpointKey2,
+          StoreKey1 | StoreKey2,
           ErrorKey1 | ErrorKey2,
           EtcKey1 | EtcKey2
         >
@@ -1008,12 +1102,16 @@ export const scalarDictionary = <Languages extends [string, ...string[]] = [stri
 export class ServiceDictInfo<
   Languages extends [string, ...string[]] = [string],
   EndpointKey extends string = never,
+  StoreKey extends string = never,
   ErrorKey extends string = never,
   EtcKey extends string = never,
 > {
   languages: Languages;
   endpointDictionary: { [K in EndpointKey]: FunctionTranslation<Languages> } = {} as {
     [K in EndpointKey]: FunctionTranslation<Languages>;
+  };
+  storeDictionary: { [K in StoreKey]: FieldTranslation<Languages> } = {} as {
+    [K in StoreKey]: FieldTranslation<Languages>;
   };
   errorDictionary: { [K in ErrorKey]: Languages } = {} as {
     [K in ErrorKey]: Languages;
@@ -1035,15 +1133,41 @@ export class ServiceDictInfo<
     Object.assign(this.endpointDictionary, translate(fn)) as unknown as {
       [K in EndpointKey]: FunctionTranslation<Languages>;
     };
-    return this as unknown as ServiceDictInfo<Languages, keyof DictEndpointShape<Endpoint> & string, ErrorKey, EtcKey>;
+    return this as unknown as ServiceDictInfo<
+      Languages,
+      keyof DictEndpointShape<Endpoint> & string,
+      StoreKey,
+      ErrorKey,
+      EtcKey
+    >;
+  }
+  /**
+   * A service module has a store like a database module does, so it needs the same channel.
+   *
+   * `logout` over `signoutUser` is the canonical case for this stage and it lives in a service module, so leaving
+   * the stage off `ServiceDictInfo` made the one example nobody could write.
+   */
+  store<Store>(
+    translate: (t: (trans: Languages) => FieldTranslation<Languages>) => Partial<{
+      [K in keyof DictStoreShape<Store>]: FieldTranslation<Languages>;
+    }>,
+  ) {
+    Object.assign(this.storeDictionary, translate(FieldTranslation.translate));
+    return this as unknown as ServiceDictInfo<
+      Languages,
+      EndpointKey,
+      StoreKey | (keyof DictStoreShape<Store> & string),
+      ErrorKey,
+      EtcKey
+    >;
   }
   error<ErrorDict extends { [key: string]: Languages }>(errorDictionary: ErrorDict) {
     Object.assign(this.errorDictionary, errorDictionary);
-    return this as unknown as ServiceDictInfo<Languages, EndpointKey, keyof ErrorDict & string, EtcKey>;
+    return this as unknown as ServiceDictInfo<Languages, EndpointKey, StoreKey, keyof ErrorDict & string, EtcKey>;
   }
   translate<EtcDict extends { [key: string]: Languages }>(etcDictionary: EtcDict) {
     Object.assign(this.etcDictionary, etcDictionary);
-    return this as unknown as ServiceDictInfo<Languages, EndpointKey, ErrorKey, keyof EtcDict & string>;
+    return this as unknown as ServiceDictInfo<Languages, EndpointKey, StoreKey, ErrorKey, keyof EtcDict & string>;
   }
 
   _toTranslation(): { [key: string]: string[] } {
@@ -1054,6 +1178,7 @@ export class ServiceDictInfo<
       getRootModelNode(rootDict, language, refName);
     });
     this.#registerEndpointToRoot(refName, rootDict);
+    registerStoreToRoot(this.languages, this.storeDictionary, refName, rootDict);
     this.#registerErrorToRoot(refName, rootDict);
     this.#registerEtcToRoot(refName, rootDict);
   }

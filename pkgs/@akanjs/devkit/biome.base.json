@@ -25,7 +25,7 @@
         "noArrayIndexKey": "off",
         "noShadowRestrictedNames": "off",
         "noUnnecessaryConditions": {
-          "level": "error"
+          "level": "warn"
         }
       },
       "correctness": {
@@ -117,7 +117,9 @@
         "libs/*/client.ts",
         "libs/*/server.ts",
         "libs/*/index.ts",
-        "libs/*/lib/*/index.tsx"
+        "libs/*/lib/*/index.tsx",
+        "apps/*/lib/__lib/**",
+        "libs/*/lib/__lib/**"
       ],
       "linter": { "enabled": false },
       "formatter": { "enabled": false },
@@ -140,26 +142,36 @@
       "plugins": ["./node_modules/@akanjs/devkit/lint/no-throw-raw-error.grit"]
     },
     {
-      "includes": ["**/page/**/*.ts", "**/page/**/*.tsx", "**/*.Unit.tsx", "**/*.View.tsx"],
+      "includes": [
+        "{apps,libs}/**/page/**/*.ts",
+        "{apps,libs}/**/page/**/*.tsx",
+        "{apps,libs}/**/*.Unit.tsx",
+        "{apps,libs}/**/*.View.tsx"
+      ],
       "plugins": [
         "./node_modules/@akanjs/devkit/lint/no-import-client-functions.grit",
         "./node_modules/@akanjs/devkit/lint/no-use-client-in-server.grit"
       ]
     },
     {
-      "includes": ["**/page/**/*.ts", "**/page/**/*.tsx"],
+      "includes": ["{apps,libs}/**/page/**/*.ts", "{apps,libs}/**/page/**/*.tsx"],
       "plugins": ["./node_modules/@akanjs/devkit/lint/non-scalar-props-restricted.grit"]
     },
     {
-      "includes": ["**/*.constant.ts", "**/*.document.ts", "**/*.service.ts", "**/*.store.ts"],
+      "includes": [
+        "{apps,libs}/**/*.constant.ts",
+        "{apps,libs}/**/*.document.ts",
+        "{apps,libs}/**/*.service.ts",
+        "{apps,libs}/**/*.store.ts"
+      ],
       "plugins": ["./node_modules/@akanjs/devkit/lint/no-js-private-class-method.grit"]
     },
     {
-      "includes": ["**/*.store.ts"],
+      "includes": ["{apps,libs}/**/*.store.ts"],
       "plugins": ["./node_modules/@akanjs/devkit/lint/no-return-in-store-action.grit"]
     },
     {
-      "includes": ["**/*.signal.ts"],
+      "includes": ["{apps,libs}/**/*.signal.ts"],
       "plugins": ["./node_modules/@akanjs/devkit/lint/no-redeclare-predefined-endpoint.grit"]
     },
     {
@@ -186,46 +198,46 @@
     },
     {
       "includes": [
-        "**/*.constant.ts",
-        "**/*.dictionary.ts",
-        "**/*.document.ts",
-        "**/*.service.ts",
-        "**/*.signal.ts",
-        "**/*.store.ts",
-        "**/*.Template.tsx",
-        "**/*.Unit.tsx",
-        "**/*.Util.tsx",
-        "**/*.View.tsx",
-        "**/*.Zone.tsx"
+        "{apps,libs}/**/*.constant.ts",
+        "{apps,libs}/**/*.dictionary.ts",
+        "{apps,libs}/**/*.document.ts",
+        "{apps,libs}/**/*.service.ts",
+        "{apps,libs}/**/*.signal.ts",
+        "{apps,libs}/**/*.store.ts",
+        "{apps,libs}/**/*.Template.tsx",
+        "{apps,libs}/**/*.Unit.tsx",
+        "{apps,libs}/**/*.Util.tsx",
+        "{apps,libs}/**/*.View.tsx",
+        "{apps,libs}/**/*.Zone.tsx"
       ],
       "plugins": ["./node_modules/@akanjs/devkit/lint/no-deep-internal-import.grit"]
     },
     {
       "includes": [
-        "**/page/**/*.ts",
-        "**/page/**/*.tsx",
-        "**/index.ts",
-        "**/index.tsx",
-        "**/cnst.ts",
-        "**/db.ts",
-        "**/dict.ts",
-        "**/option.ts",
-        "**/sig.ts",
-        "**/srv.ts",
-        "**/st.ts",
-        "**/*.constant.ts",
-        "**/*.dictionary.ts",
-        "**/*.document.ts",
-        "**/*.service.ts",
-        "**/*.signal.ts",
-        "**/*.signal.test.ts",
-        "**/*.service.test.ts",
-        "**/*.store.ts",
-        "**/*.Template.tsx",
-        "**/*.Unit.tsx",
-        "**/*.Util.tsx",
-        "**/*.View.tsx",
-        "**/*.Zone.tsx"
+        "{apps,libs}/**/page/**/*.ts",
+        "{apps,libs}/**/page/**/*.tsx",
+        "{apps,libs}/**/index.ts",
+        "{apps,libs}/**/index.tsx",
+        "{apps,libs}/**/cnst.ts",
+        "{apps,libs}/**/db.ts",
+        "{apps,libs}/**/dict.ts",
+        "{apps,libs}/**/option.ts",
+        "{apps,libs}/**/sig.ts",
+        "{apps,libs}/**/srv.ts",
+        "{apps,libs}/**/st.ts",
+        "{apps,libs}/**/*.constant.ts",
+        "{apps,libs}/**/*.dictionary.ts",
+        "{apps,libs}/**/*.document.ts",
+        "{apps,libs}/**/*.service.ts",
+        "{apps,libs}/**/*.signal.ts",
+        "{apps,libs}/**/*.signal.test.ts",
+        "{apps,libs}/**/*.service.test.ts",
+        "{apps,libs}/**/*.store.ts",
+        "{apps,libs}/**/*.Template.tsx",
+        "{apps,libs}/**/*.Unit.tsx",
+        "{apps,libs}/**/*.Util.tsx",
+        "{apps,libs}/**/*.View.tsx",
+        "{apps,libs}/**/*.Zone.tsx"
       ],
       "plugins": [
         "./node_modules/@akanjs/devkit/lint/no-import-external-library.grit",

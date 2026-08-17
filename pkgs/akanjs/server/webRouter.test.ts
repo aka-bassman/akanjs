@@ -121,6 +121,7 @@ async function withFullSsrCacheHarness<T>(
     artifact?: BaseBuildArtifact;
     worker?: FakeRscWorker;
     nodeEnv?: string;
+    commandType?: string;
     htmlCacheEnabled?: string;
     htmlCachePaths?: string;
     htmlCacheMaxBodyBytes?: string;
@@ -130,6 +131,7 @@ async function withFullSsrCacheHarness<T>(
 ): Promise<T> {
   const envSnapshot = {
     NODE_ENV: process.env.NODE_ENV,
+    AKAN_COMMAND_TYPE: process.env.AKAN_COMMAND_TYPE,
     AKAN_PUBLIC_APP_NAME: process.env.AKAN_PUBLIC_APP_NAME,
     AKAN_PUBLIC_REPO_NAME: process.env.AKAN_PUBLIC_REPO_NAME,
     AKAN_PUBLIC_SERVE_DOMAIN: process.env.AKAN_PUBLIC_SERVE_DOMAIN,
@@ -142,6 +144,8 @@ async function withFullSsrCacheHarness<T>(
     AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES: process.env.AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES,
   };
   process.env.NODE_ENV = options.nodeEnv ?? "production";
+  if (options.commandType === undefined) delete process.env.AKAN_COMMAND_TYPE;
+  else process.env.AKAN_COMMAND_TYPE = options.commandType;
   process.env.AKAN_PUBLIC_APP_NAME = "akan-test";
   process.env.AKAN_PUBLIC_REPO_NAME = "akan";
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.test";
@@ -361,6 +365,30 @@ describe("WebRouter local sub route index", () => {
     await expect(
       requestRoot("/en/", { env: "local", artifact: createTestArtifact() }).then((r) => r.renderCount),
     ).resolves.toBe(1);
+  });
+});
+
+describe("WebRouter dev mode selection", () => {
+  const devRoutes = async (commandType?: string) => {
+    // A dev router opens the builder IPC channel, which exists only in a process the CLI spawned.
+    const originalSend = process.send;
+    process.send = ((): boolean => true) as typeof process.send;
+    try {
+      return await withFullSsrCacheHarness(async ({ renderEnvRoutes }) => Object.keys(renderEnvRoutes), {
+        nodeEnv: "production",
+        commandType,
+      });
+    } finally {
+      process.send = originalSend;
+    }
+  };
+
+  test("keeps dev mode under `akan start` even when NODE_ENV claims production", async () => {
+    await expect(devRoutes("start")).resolves.toContain("/_akan/hmr");
+  });
+
+  test("stays in production mode when no command claims otherwise", async () => {
+    await expect(devRoutes()).resolves.not.toContain("/_akan/hmr");
   });
 });
 

@@ -86,6 +86,15 @@ export class FetchClient {
     this.handler = this.#makeHandlerProxy();
     this.applySignal(serializedSignal);
   }
+  /**
+   * Every signal any client in this process has applied, which is the whole callable surface of the app.
+   *
+   * A copy, because this is the registry each client merges its own signals into and a reader that mutated it
+   * would change what the next client applies. Read by the agent catalogue, which needs the argument schemas.
+   */
+  static get sharedSerializedSignal(): { [key: string]: SerializedSignal } {
+    return { ...FetchClient.#sharedSerializedSignal };
+  }
   static resetSharedRegistry() {
     FetchClient.#sharedSerializedSignal = {};
     FetchClient.#sharedRegistryVersion++;

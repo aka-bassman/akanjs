@@ -818,6 +818,29 @@ describe("Workspace and app executor environment contracts", () => {
     expect(offsetMinimalStart.env.AKAN_PUBLIC_CLIENT_PORT).toBe("8286");
     expect(offsetMinimalStart.env.AKAN_PUBLIC_SERVER_PORT).toBe("8286");
   });
+
+  test("pins the start command to development so an ambient NODE_ENV cannot pick the production router", async () => {
+    const root = await makeTempRoot();
+    process.env.AKAN_PUBLIC_REPO_NAME = "repo";
+    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+    process.env.AKAN_PUBLIC_ENV = "local";
+    await writeJson(path.join(root, "package.json"), rootPackageJson());
+    await mkdir(path.join(root, "apps/ambient"), { recursive: true });
+    await writeFile(path.join(root, "apps/ambient/akan.config.ts"), "export default {};\n");
+
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
+      const started = await AppExecutor.from(workspace, "ambient").prepareCommand("start");
+      expect(started.env.NODE_ENV).toBe("development");
+      // The builder runs in this process and bakes NODE_ENV into the dev bundles it emits.
+      expect(process.env.NODE_ENV).toBe("development");
+    } finally {
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+    }
+  });
 });
 
 describe("PkgExecutor package generation", () => {

@@ -23,4 +23,14 @@ Import from `@apps/minimal/ui`:
 - `neonBadgeRecipe`(variant: default*|primary|secondary|accent|neutral|success|warning|info|error|outline · size: xs|sm|md*|lg · outline?) — 네온 뱃지 스킨 — 프레임워크 badgeRecipe 의 **look 교체용**.
 - `neonButtonRecipe`(variant: default|primary*|secondary|accent|neutral|outline|ghost|destructive|success|warning|info|link · size: xs|sm|md*|lg|icon · shape: default*|square|circle · outline?) — 네온/사이버펑크 버튼 스킨 — 프레임워크 buttonRecipe 의 **look 교체용**.
 - `neonInputRecipe`(kind: field*|area · size: xs|sm|md*|lg|xl · tone: default*|primary|error) — 네온 입력 표면 스킨 — 프레임워크 inputRecipe 의 **look 교체용**.
+
+Import from `@libs/util/ui`:
+- `alertRecipe`(variant: default*|info|success|warning|error) — Alert bar. Mirrors daisyUI's grid-flow-col layout and padding; the tinted variants replace
+- `badgeRecipe`(variant: default*|primary|secondary|accent|neutral|success|warning|info|error|outline · size: xs|sm|md*|lg · outline: true|false*) — Workspace badge look. Same variants as akanjs's `badgeRecipe` plus the size axis daisyUI had
+- `buttonRecipe`(variant: default*|primary|secondary|accent|neutral|outline|ghost|destructive|success|warning|info|link · size: xs|sm|md*|lg|xl|icon · shape: default*|square|circle · outline: true|false*) — Workspace button look. Extends akanjs's `buttonRecipe` vocabulary with the two axes daisyUI had and
+- `cardRecipe`(surface: none*|bordered|filled · size: sm|md*|lg) — Card shell. daisyUI's `.card` was `border-radius: var(--radius-box)` plus `relative; display:flex;
+- `checkboxRecipe`(size: xs|sm|md*|lg · tone: default*|primary|secondary|accent|success|warning|error) — Checkbox. daisyUI drew its own box with `appearance: none` plus a clip-path tick; this keeps the
+- `inputRecipe`(kind: field*|area · size: xs|sm|md*|lg|xl · tone: default*|primary) — Input surface — the shell shared by `<input>`, `<textarea>` and `<select>`.
+- `tableRecipe`(size: sm|md*) — Table. daisyUI styled cells through descendant selectors, which a utility recipe can only reach with
+- `tabRecipe`(active: true|false*)
 <!-- akan:agent:end -->

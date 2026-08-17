@@ -5,7 +5,7 @@ import { createOverridable, useUiRecipe } from "./UiOverride";
 
 // badgeRecipe/BadgeVariants live in the server-safe ./recipe layer (no "use client") so server
 // components can compose classNames. Re-exported here so `from "./Badge"` relative importers keep resolving.
-export { badgeRecipe, type BadgeVariants };
+export { type BadgeVariants, badgeRecipe };
 
 export type BadgeProps = HTMLAttributes<HTMLSpanElement> & BadgeVariants;
 

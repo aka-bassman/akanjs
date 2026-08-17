@@ -72,6 +72,17 @@ that looks wrong; do not "fix" it back.
   (`no-import-client-functions.grit`, `no-use-client-in-server.grit`, `non-scalar-props-restricted.grit`).
 - `noArrayIndexKey` and `useExhaustiveDependencies` are **off** on purpose: `key={idx}` for embedded scalars and
   short dependency arrays are intentional, not oversights.
+- **A grit plugin diagnostic is suppressed as `lint/plugin`, not `plugin`** — `// biome-ignore lint/plugin: <reason>`
+  for one line, `// biome-ignore-all lint/plugin: <reason>` for a file. The bare `// biome-ignore plugin:` form Biome's
+  own category name suggests does nothing. Suppress a plugin only where the rule is genuinely wrong for the file, and
+  say why: the module-convention plugins (`no-import-external-library`, `no-deep-internal-import`, the store/signal
+  ones) apply to `apps/**` and `libs/**` only, so a plain package under `pkgs/` never needs the escape hatch.
+- **`biome.json` is strict JSON — a comment in it breaks config resolution.** Biome 2.5.8 does not report the parse
+  error; it falls back to discovery and aborts on whatever nested config the walk finds, typically inside a directory
+  `files.includes` excludes. Rename the file to `biome.jsonc` to document a disabled rule; `akan lint` pins the config
+  path either way, so it reports the parse error on the offending line.
+- **`akan lint` prints up to 200 diagnostics** (`--maxDiagnostics <n>`, `0` for no limit). Biome's own default is 20
+  with no count, which reads as progress when the mix of findings merely changed.
 
 ## Coding Style (`**/*.{ts,tsx}`)
 
@@ -261,7 +272,7 @@ Full version with code, the `Tab` composition example, and a review checklist: `
 - Conditional render is `cond ? <X/> : null`. Never `{cond && <X/>}` — in a `className` context it renders the literal string `"false"`. Early `return null` is for guard clauses only.
 - Never hand-roll loading, empty, or list states. Use `Load.Units` / `Load.View` / `Load.Edit` with `renderItem`, `renderList`, `renderView`, and `renderEmpty`; `<Empty />` for a bare placeholder; and `Model.New` / `Model.Edit` / `Model.SureToRemove` for CRUD modals.
 - Avoid hooks. `useState` is for modal-open, tab, draft-input, and drag state only — never for server data. `useEffect` must be a genuine effect such as subscribe-with-cleanup or one-shot init. Prefer `Tab` over a `useState` mode switch. `.Template.tsx` files contain zero `useState`.
-- Forms are entirely store-driven: `value={xForm.field}` with `onChange={st.do.setFieldOnX}`, the setter passed by reference. Always use `Field.*`, never a bare `<input>` for a model field. Nested rows use `st.do.writeOnX("payments.3.name", v)` plus the generated `add<Field>OnX` / `sub<Field>OnX`.
+- Forms are entirely store-driven: `value={xForm.field}` with `onChange={st.do.setFieldOnX}`, the setter passed by reference. Always use `Field.*`, never a bare `<input>` for a model field. Nested rows use `st.do.writeOnX("payments.3.name", v)` plus the generated `add<Field>OnX` / `sub<Field>OnX`. **Passing the setter by reference is also what makes the framework emit `data-akan-action` / `data-akan-state`** on the control — the annotation an in-page agent, an E2E selector, and an external browser agent all read. Wrapping it in an inline arrow (`onChange={(v) => st.do.setFieldOnX(v)}`) silently drops that: a closure the caller wrote says nothing about what it does. Never hand-write a `data-akan-*` attribute.
 - Read with `st.use.*` and write with `st.do.*`. Client components do not call `fetch.*`.
 - Static class strings stay plain strings. Reach for `cn` only for a conditional or to merge an incoming `className`, and merge the caller last: `cn("base classes", cond && "extra", className)`. `cn` comes from `akanjs/client` (token-aware tailwind-merge) and is the only class-combining function — no `clsx` (removed), no raw `twMerge` imports, no object syntax (`{ x: cond }` → `cond && "x"`).
 - Multi-slot components take extra named props (`wrapperClassName`, `bodyClassName`), never a `classNames` object.
@@ -333,6 +344,33 @@ than returning it (`no-return-in-store-action.grit`); a bare `return;` guard sta
 `.of() → .model() → .insight() → .query() → .sort() → .enum() → .slice() → .endpoint() → .error() → .translate()`.
 Name every argument in `.arg()`, including framework-supplied `skip` / `limit` / `sort`. Use `modelDictionary`,
 `scalarDictionary`, or `serviceDictionary` to match the module kind.
+**`.store()` is the one optional stage, and the one written as a separate statement — never in the chain:**
+
+```ts
+export const dictionary = modelDictionary(["en", "ko"]).of(…).model(…).endpoint<UserEndpoint>(…).error({…});
+
+dictionary.store<UserStore>((t) => ({
+  logout: t(["Log Out", "로그아웃"]).desc(["Ends this session", "이 세션을 종료한다"]),
+}));
+```
+
+**Chaining it is a type cycle, not a style choice.** `*.dictionary.ts` → `*.store.ts` → `useClient` → `sig.ts` →
+`*.signal.ts` → `../dict` → `dict.ts` → back to `*.dictionary.ts`: signals import `Err` from the dictionary barrel,
+so naming a store type anywhere inside the chained initializer makes `dictionary` reference itself and the whole
+client type graph collapses to `any` (`TS7022` on `dictionary`, `pageProto`, `runtime`, `sig`, plus `TS2310` on the
+store class). As a separate statement the first line's type is already resolved when the store type is read, and
+the cycle does not close. `import type { UserStore }` does not help — the edge is the type reference, not the import.
+
+Available on `modelDictionary` and `serviceDictionary` alike — a service module (`lib/_<service>`) has a store too,
+and `logout` over `signoutUser` is the canonical case for this stage. `scalarDictionary` has no `.store()` because a
+scalar module has no store.
+
+It names custom store actions (labels and `.desc()` only, no `.arg()` — an argument's words come from wherever the
+argument came from, the endpoint's `.arg()` or the model field's own entry). **A generated action never needs an
+entry**: `createX` / `updateX` / `createXInForm` / `setFieldOnX` / `submitX` and the rest are named by a rule and
+borrow the model's own `.desc()`, so they are exempt from every description check. Write an entry only where
+inheriting would be wrong — an action named after the endpoint it calls already reads as that endpoint's `.desc()`,
+which is most of them. `akan.agent.missing-store-description` names the rest.
 
 **`<module>.abstract.md`** — a title line, one declarative sentence naming what the module owns, a `## Rules` list of
 two to five invariants the code cannot show, and an optional workflow arrow chain
@@ -582,9 +620,11 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
 **`prompt()`** is invoked by the *user* — a client renders it as a slash command — not chosen by the model. `exec`
 returns `PromptMessage[]`, or a bare string that is wrapped into one user message; build them with `Msg.user` /
 `Msg.assistant` / `Msg.link` / `Msg.resource` / `Msg.image` / `Msg.imageOf`. It takes `.param()` and `.search()`
-only, because `prompts/get` sends a flat string map. **A prompt's payload is not field-masked** — it rides the
-`Any` carrier — so pass a `LightTask` or an object you assembled, never a full document; a value whose model
-declares a `hidden`/`secret` field is named in the log once per model class, bare or wrapped in an object. **A `prompt` is also mounted as a
+only, because `prompts/get` sends a flat string map. **An embedded payload is masked by the model you name** —
+`Msg.resource(uri, task, { model: cnst.LightTask })`, or `Msg.mask(cnst.LightTask, task)` for one piece of an
+assembly. Taking the model as an argument is what makes a `{ ...doc }` spread maskable, since that and `toJSON()`
+arrive with the class already gone; a value with no model named whose `hidden`/`secret` fields are populated is
+**refused**, one level into a plain object too. **A `prompt` is also mounted as a
 plain HTTP `GET` whether or not you enabled MCP**, because that route is what lets a web UI preview one — and it
 is in your OpenAPI document like any other `GET`, answering the one fixed `PromptMessage[]` shape. MCP exposure
 gates the catalogue, not the surface, so guard it
@@ -769,6 +809,7 @@ export const pageConfig = { transition: "stack" } satisfies PageConfig;
 | `plugin/` | build- or CLI-time `AkanPlugin` | `<name>.plugin.ts`, registered in `akan.config.ts` |
 
 - Hooks return a named object of async closures, never a tuple.
+- `libs/<lib>/ui/tokens.css` is the one CSS file a lib owns: plain `:root` custom properties for colors that must **not** follow the theme (a vendor brand color, a fixed surface). Every app whose pages reach that lib compiles it automatically, ahead of the app's own stylesheets, so nothing is imported by hand and no app can forget it. Reference them as `bg-[var(--kakao)]`; `@theme` extensions stay in the app stylesheet, because the color vocabulary is closed per stylesheet. Theme-following colors are the app's, not the lib's.
 - A layer-root `index.ts` is generated, but a `ui/<Folder>/index.tsx` that builds a namespace is hand-written source. The distinguishing test is that a generated barrel contains nothing but `export * from "./X";` lines.
 - `ui/<Folder>/index_.tsx` (trailing underscore) is the `"use client"` + `lazy()` boundary, with a server-safe `index.tsx` beside it. Collapsing the pair into one file breaks RSC.
 

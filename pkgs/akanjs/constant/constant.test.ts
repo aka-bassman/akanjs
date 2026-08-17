@@ -165,6 +165,10 @@ type _RelationMethodAssertions = [
   Assert<Equal<Extract<NonFunctionalKeys<InstanceType<typeof MethodUserLight>>, "hello">, never>>,
   Assert<Equal<Extract<NonFunctionalKeys<InstanceType<typeof MethodUserLight>>, "name">, "name">>,
 ];
+type _UnknownModelAssertions = [
+  Assert<Equal<PurifiedModel<unknown>, unknown>>,
+  Assert<Equal<DocumentModel<unknown>, unknown>>,
+];
 
 const validUserId = "1234567890abcdef12345678";
 const validChildId = "abcdefabcdefabcdefabcdef";

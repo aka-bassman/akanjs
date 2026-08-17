@@ -1,3 +1,4 @@
+export * from "./agent";
 export * from "./base.signal";
 export * from "./endpoint";
 export * from "./endpointInfo";

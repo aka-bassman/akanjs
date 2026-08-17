@@ -6,7 +6,7 @@ import {
   makeAdminSignoutResponse as makeSignoutResponse,
   SuperAdmin,
 } from "@libs/shared/srvkit";
-import { ID } from "akanjs/base";
+import { ID, Int } from "akanjs/base";
 import { endpoint, internal, Req, slice } from "akanjs/signal";
 import * as cnst from "../cnst";
 import { Err } from "../dict";
@@ -83,6 +83,28 @@ export class AdminEndpoint extends endpoint(srv.admin, ({ query, mutation, pubsu
         }
         throw error;
       }
+    }),
+  /**
+   * The one endpoint in this library that bypasses every layer below it — guards on the model, soft delete, cascade,
+   * `_postRemove`, and the `hidden`/`secret` masking every other response performs. `InsightQuery` is what makes it
+   * a read, and the guard is what makes it `SuperAdmin`'s alone; neither is optional here.
+   *
+   * A `mutation` even though it cannot write, for two transport reasons: a `query` is a GET that never sends a body,
+   * so the statement would have to travel in the URL — where it lands in every access log along the way and hits the
+   * length limit — and a query's response is memoized per URL, which is wrong for an ad-hoc statement.
+   *
+   * Not MCP-exposed, deliberately. The catalogue is built once at boot rather than per caller, so publishing this
+   * would tell every client that can reach `/mcp` that an arbitrary-SQL tool exists — which is the disclosure the
+   * opt-in default exists to prevent. An operator UI and a session-authenticated agent both reach it over HTTP.
+   *
+   * Named `runAdminSql` rather than anything with `Insight` in it: `adminInsight` is the generated aggregate of the
+   * Admin model, and two neighbours a letter apart meaning different things is how a caller reaches for the wrong one.
+   */
+  runAdminSql: mutation(cnst.InsightRows, { guards: [SuperAdmin] })
+    .body("sql", String, { example: 'SELECT COUNT(*) AS total FROM "user"' })
+    .body("limit", Int, { nullable: true })
+    .exec(async function (sql, limit) {
+      return await this.adminService.runInsight(sql, limit);
     }),
   addAdminRole: mutation(cnst.Admin)
     .body("adminId", ID)

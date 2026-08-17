@@ -293,7 +293,13 @@ export class WebRouter {
   #subRoutes: Record<string, string[]>;
   #rsc: RscWorker;
   #hub: HmrWsHub | null = null;
-  #prodMode = process.env.NODE_ENV === "production";
+  /**
+   * `akan start` is the dev server whatever the environment claims. Its artifact directory carries no routes
+   * manifest — only `akan build` writes one — so the production branch cannot build a route on demand and
+   * throws on every request instead. `NODE_ENV` arrives by accident often enough (a workspace `.env` Bun loads
+   * on its own, a CI image default) that the command which started this process has to outrank it.
+   */
+  #prodMode = process.env.NODE_ENV === "production" && process.env.AKAN_COMMAND_TYPE !== "start";
   #builderRpc: BuilderRpc | null;
   #routeCache: RouteClientCache;
   #devHmr: DevHmrController | null = null;
@@ -322,6 +328,8 @@ export class WebRouter {
   #seedIndex: RouteSeedIndex;
   constructor({ artifact, cssBytesByUrl, rsc, seedIndex, upgradeHmrWs }: WebRouterOptions) {
     this.#logger.verbose(`[SSR] loaded ${Object.keys(cssBytesByUrl).length} CSS assets`);
+    if (process.env.NODE_ENV === "production" && !this.#prodMode)
+      this.#logger.warn("[SSR] NODE_ENV=production ignored under `akan start`; serving in dev mode");
     this.#artifact = artifact;
     const { subRoutes, ignoredBasePaths } = resolveSubRouteHosts({
       subRoutes: artifact.subRoutes,

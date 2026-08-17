@@ -9,6 +9,7 @@ import { AiOutlinePlus } from "react-icons/ai";
 import { BiHelpCircle, BiTrash, BiX } from "react-icons/bi";
 import { MdDragIndicator } from "react-icons/md";
 
+import { agentAttrs } from "./agentAttrs";
 import { badgeRecipe } from "./Badge";
 import { buttonRecipe } from "./Button";
 import { DraggableList } from "./DraggableList";
@@ -186,6 +187,7 @@ const Text = ({
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Input
+        {...agentAttrs(onChange)}
         cacheKey={cache ? `${label}-${desc}-text` : undefined}
         inputStyleType={inputStyleType}
         value={value ?? ""}
@@ -251,6 +253,7 @@ const Price = ({
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Input
+        {...agentAttrs(onChange)}
         inputStyleType={inputStyleType}
         value={value ?? ""}
         nullable={nullable}
@@ -317,6 +320,7 @@ const TextArea = ({
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Input.TextArea
+        {...agentAttrs(onChange)}
         value={value ?? ""}
         cacheKey={cache ? `${label}-${desc}-textArea` : undefined}
         nullable={nullable}
@@ -365,7 +369,7 @@ const Switch = ({
   offDesc,
 }: SwitchProps) => {
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable label={label} desc={desc} /> : null}
       <div className="flex items-center gap-2">
         <UiSwitch
@@ -415,7 +419,7 @@ const ToggleSelect = <I extends string | number | boolean | null>({
   const { l } = usePage();
   const isEnumValue = isEnum(items as EnumInstance<string, I>);
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <UtilToggleSelect
         className="mt-2"
@@ -472,7 +476,7 @@ const MultiToggleSelect = <I extends string | number | boolean>({
   const { l } = usePage();
   const isEnumValue = isEnum(items as EnumInstance<string, I>);
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={!!minlength} label={label} desc={desc} /> : null}
       <UtilToggleSelect.Multi
         nullable={!minlength}
@@ -539,7 +543,7 @@ const TextList = ({
   const { l } = usePage();
   const recipe = useUiRecipe("button") ?? buttonRecipe;
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={!minlength} label={label} desc={desc} /> : null}
       <div className="mb-5 h-full gap-2 rounded-md border border-border p-2">
         <DraggableList
@@ -654,7 +658,7 @@ const Tags = ({
   };
 
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={!minlength} label={label} desc={desc} /> : null}
       <div className="flex w-full flex-wrap items-center gap-1 rounded-md border border-foreground/20 p-2">
         {value.map((val, idx) => (
@@ -737,7 +741,7 @@ const Date = <Nullable extends boolean>({
   dateClassName,
 }: DateProps<Nullable>) => {
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       {/* FIXME: daysi UI datetime-local 컴포넌트에 max 값 넣으면 오른쪽 끝 짤리는 버그 있음.*/}
       <input
@@ -876,6 +880,7 @@ const Number = ({
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} unit={unit} /> : null}
       <Input.Number
+        {...agentAttrs(onChange)}
         min={min}
         max={max}
         cacheKey={cache ? `${label}-${desc}-number` : undefined}
@@ -943,7 +948,7 @@ const DoubleNumber = ({
 }: DoubleNumberProps) => {
   const { l } = usePage();
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <div className="flex items-center gap-2">
         <Input.Number
@@ -1033,6 +1038,7 @@ const Email = ({
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Input.Email
+        {...agentAttrs(onChange)}
         value={value ?? ""}
         cacheKey={cache ? `${label}-${desc}-email` : undefined}
         nullable={nullable}
@@ -1097,6 +1103,7 @@ const Phone = ({
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Input
+        {...agentAttrs(onChange)}
         value={value ?? ""}
         cacheKey={cache ? `${label}-${desc}-phone` : undefined}
         nullable={nullable}
@@ -1167,6 +1174,7 @@ const Password = ({
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <div className="flex flex-col gap-2">
         <Input.Password
+          {...agentAttrs(onChange)}
           cacheKey={cache ? `${label}-${desc}-password` : undefined}
           value={value ?? ""}
           nullable={nullable}

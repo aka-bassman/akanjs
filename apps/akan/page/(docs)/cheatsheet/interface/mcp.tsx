@@ -252,7 +252,7 @@ akan://task/list/inTodo{?skip,limit,sort}`}
     const task = await this.taskService.getLightTask(taskId);
     return [
       Msg.user(\`Review this task in a \${tone ?? "neutral"} tone and suggest next steps.\`),
-      Msg.resource(\`akan://task/\${taskId}\`, task),
+      Msg.resource(\`akan://task/\${taskId}\`, task, { model: cnst.LightTask }),
     ];
   }),`}
         />
@@ -260,8 +260,8 @@ akan://task/list/inTodo{?skip,limit,sort}`}
           <ul className="list-disc space-y-2 pl-5">
             <li>
               {l.trans({
-                en: "Msg.user and Msg.assistant carry text, Msg.link points at something without paying for it, Msg.resource embeds a value, and Msg.image / Msg.imageOf inline bytes.",
-                ko: "Msg.user와 Msg.assistant는 텍스트를, Msg.link는 비용 없이 참조를, Msg.resource는 값 자체를 싣고, Msg.image / Msg.imageOf는 바이트를 인라인합니다.",
+                en: "Msg.user and Msg.assistant carry text, Msg.link points at something without paying for it, Msg.resource embeds a value, and Msg.image / Msg.imageOf inline bytes. Name the model on an embedded value so its hidden and secret fields are stripped.",
+                ko: "Msg.user와 Msg.assistant는 텍스트를, Msg.link는 비용 없이 참조를, Msg.resource는 값 자체를 싣고, Msg.image / Msg.imageOf는 바이트를 인라인합니다. 값을 실을 때 model 이름을 적으면 hidden·secret field가 벗겨집니다.",
               })}
             </li>
             <li>
@@ -546,8 +546,8 @@ AKAN_MCP_RESOURCE=https://api.example.com/mcp`}
             </li>
             <li>
               {l.trans({
-                en: "A prompt that declares no guards at all is named in the boot log, because its plain GET route is mounted whether or not MCP is on. An explicit [Public] is a decision and stays quiet. Msg.resource says the same kind of thing about its payload: a value whose model declares a hidden or secret field is named once per model class, and one level into a plain object too, because { order } is how a document usually arrives. It warns rather than masks even where it can read the metadata: masking would rebuild a value the caller still holds, and it could only ever reach the payloads that arrived with a class behind them — a spread or a toJSON() has already thrown the metadata away, so half would be masked and half would not, and an author who believes prompts are masked is worse off on the half that is not.",
-                ko: "guards를 아예 선언하지 않은 prompt는 부팅 로그에 이름이 남습니다. MCP를 켰든 아니든 평범한 GET 라우트가 올라가기 때문입니다. 명시적인 [Public]은 하나의 결정이므로 조용히 넘어갑니다. Msg.resource도 payload에 대해 같은 일을 합니다. hidden이나 secret field를 선언한 model의 값이 실리면 model class마다 한 번씩 이름을 남기고, plain object 한 겹 안까지 봅니다. { order }가 document가 도착하는 보통의 모양이기 때문입니다. metadata를 읽을 수 있는 자리에서도 마스킹이 아니라 경고에 머무는 이유는 이렇습니다. 마스킹은 호출자가 아직 들고 있는 값을 다시 만드는 일이고, 클래스가 남아 있는 payload에만 닿을 수 있습니다. spread나 toJSON()은 이미 metadata를 버렸으므로 절반은 마스킹되고 절반은 되지 않으며, prompt가 마스킹된다고 믿는 작성자는 되지 않는 절반에서 더 위험해집니다.",
+                en: "A prompt that declares no guards at all is named in the boot log, because its plain GET route is mounted whether or not MCP is on. An explicit [Public] is a decision and stays quiet. Its payload is a separate question, and masking answers it by taking the model as an argument rather than reading it off the value: Msg.resource(uri, task, { model: cnst.LightTask }), or Msg.mask for one piece of an assembly. That is what makes a spread maskable — { ...doc }, toJSON(), and a round-trip through JSON.stringify all arrive with the class gone, so anything that read the value could only ever mask half the payloads. An undeclared value whose secret fields are populated is refused rather than sent, one level into a plain object too, because { order } is how a document usually arrives.",
+                ko: "guards를 아예 선언하지 않은 prompt는 부팅 로그에 이름이 남습니다. MCP를 켰든 아니든 평범한 GET 라우트가 올라가기 때문입니다. 명시적인 [Public]은 하나의 결정이므로 조용히 넘어갑니다. payload는 별개의 문제이고, 마스킹은 값에서 model을 읽는 대신 인자로 받아서 답합니다. Msg.resource(uri, task, { model: cnst.LightTask }), 조립된 payload의 한 조각이라면 Msg.mask입니다. spread를 마스킹할 수 있게 되는 지점이 여기입니다. { ...doc }, toJSON(), JSON.stringify 왕복은 모두 클래스가 사라진 채로 도착하므로, 값을 읽는 방식으로는 payload의 절반만 마스킹할 수 있었습니다. model을 적지 않은 값에 secret field가 채워져 있으면 보내지 않고 거부하며, plain object 한 겹 안까지 봅니다. { order }가 document가 도착하는 보통의 모양이기 때문입니다.",
               })}
             </li>
             <li>

@@ -1,3 +1,5 @@
+export { Agent } from "./Agent";
+export { agentAttrs } from "./agentAttrs";
 export { animated } from "./animated";
 export { Badge } from "./Badge";
 export { BottomSheet, type BottomSheetRef } from "./BottomSheet";

@@ -1,10 +1,13 @@
-import { ACTION_META, STATE_DERIVED_META, STATE_INIT_META } from "akanjs/base";
+import { ACTION_META, ACTION_OWNER_META, STATE_DERIVED_META, STATE_INIT_META } from "akanjs/base";
 import { Translator } from "akanjs/client";
 import { capitalize, Logger, parseAkanI18nEnv } from "akanjs/common";
+import type { SerializedArg } from "akanjs/signal";
 import { enableMapSet, produce } from "immer";
 import type { RefObject } from "react";
+import { type ActionOwner, actionTagOf, tagAction } from "./actionTag";
 import { useEffect, useRef, useSyncExternalStore } from "./hooks";
 import type { RootStoreCls } from "./rootStore";
+import type { SliceActionKey, SliceActionRole, SliceStateRole } from "./sliceRole";
 import type { SliceStateKey } from "./state";
 import { evaluateInitializers, type SearchParamsState, type StateDerivedMeta } from "./stateBuilder";
 
@@ -13,16 +16,6 @@ enableMapSet();
 type StoreStateRecord = Record<string, unknown>;
 type StoreAction = (...args: unknown[]) => unknown;
 type TranslationParam = Record<string, string | number>;
-
-type SliceActionKey =
-  | "initModel"
-  | "refreshModel"
-  | "selectModel"
-  | "setPageOfModel"
-  | "addPageOfModel"
-  | "setLimitOfModel"
-  | "setQueryArgsOfModel"
-  | "setSortOfModel";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -172,6 +165,41 @@ export class StoreInstance {
   do: { [key: string]: StoreAction } = {};
   slice: { [key: string]: unknown } = {};
 
+  readonly #sliceActionRoles = new Map<string, SliceActionRole>();
+  readonly #sliceStateRoles = new Map<string, SliceStateRole>();
+  readonly #actionArity = new Map<string, number>();
+  readonly #actionOwners = new Map<string, ActionOwner>();
+
+  /** Which module declared each action, and whether the framework generated it. See `ActionOwner`. */
+  get actionOwners(): ReadonlyMap<string, ActionOwner> {
+    return this.#actionOwners;
+  }
+
+  /**
+   * How many arguments each action declares.
+   *
+   * Recorded because `do[key]` is a rest-argument wrapper around the real method, so its own `length` is zero for
+   * everything — the arity is gone by the time anyone holding the instance could ask. A rest parameter on the method
+   * itself still reads as zero; nothing can recover that.
+   */
+  get actionArity(): ReadonlyMap<string, number> {
+    return this.#actionArity;
+  }
+
+  /** What each generated slice key is, for a reader that has only the finished store. See `SliceActionRole`. */
+  get sliceActionRoles(): ReadonlyMap<string, SliceActionRole> {
+    return this.#sliceActionRoles;
+  }
+
+  get sliceStateRoles(): ReadonlyMap<string, SliceStateRole> {
+    return this.#sliceStateRoles;
+  }
+
+  /** Keys the store materializes from a computation, the URL, or storage. `set` throws on them. */
+  get derivedKeys(): ReadonlySet<string> {
+    return this.#derivedMeta.derivedKeys;
+  }
+
   constructor(store?: RootStoreCls) {
     if (store) this.addStore(store);
   }
@@ -189,6 +217,7 @@ export class StoreInstance {
       hasNewStateKey = true;
     }
     if (hasNewStateKey) this.#state = nextState;
+    for (const [key, owner] of Object.entries(store[ACTION_OWNER_META] ?? {})) this.#actionOwners.set(key, owner);
     this.#mergeActions(store[ACTION_META]);
     this.#extendAccessors(derivedState, store[ACTION_META]);
     this.#buildSlices(store);
@@ -199,6 +228,7 @@ export class StoreInstance {
   #mergeActions(actions: { [key: string]: StoreAction }) {
     for (const [k, method] of Object.entries(actions)) {
       this.#ctx[k] = (...args: unknown[]) => method.call(this.#ctx, ...args);
+      this.#actionArity.set(k, method.length);
     }
   }
 
@@ -208,11 +238,11 @@ export class StoreInstance {
         this.use[k] = () => this.sel((s) => s[k]);
         if (this.#derivedMeta.derivedKeys.has(k)) continue;
         const setKey = `set${capitalize(k)}`;
-        this.do[setKey] = (value: unknown) => this.set({ [k]: value });
+        this.do[setKey] = tagAction((value: unknown) => this.set({ [k]: value }), { action: setKey, state: k });
       }
     }
     for (const k of Object.keys(actions)) {
-      this.do[k] = async (...args: unknown[]) => {
+      const dispatch = async (...args: unknown[]) => {
         Logger.verbose(`${k} action loading...`);
         const start = Date.now();
         try {
@@ -225,6 +255,9 @@ export class StoreInstance {
           throw error;
         }
       };
+      // Carried over from the method rather than rebuilt, because a generated setter knows the state path it writes
+      // and this wrapper does not. Everything else at least knows its own name.
+      this.do[k] = tagAction(dispatch, actionTagOf(actions[k]) ?? { action: k });
     }
   }
 
@@ -254,7 +287,7 @@ export class StoreInstance {
     });
   }
 
-  #buildSlice(refName: string, sliceName: string, serializedSlice: { args?: any[] }) {
+  #buildSlice(refName: string, sliceName: string, serializedSlice: { args?: SerializedArg[] }) {
     const [fieldName, className] = [refName, capitalize(refName)];
     const names: { [key in SliceStateKey | SliceActionKey | "model" | "Model"]: string } = {
       model: fieldName,
@@ -324,14 +357,20 @@ export class StoreInstance {
       argLength: serializedSlice.args?.length ?? 0,
     };
 
+    const args = serializedSlice.args ?? [];
     for (const key of Object.keys(namesOfSliceAction) as SliceActionKey[]) {
       const rootActionKey = namesOfSliceAction[key];
-      if (this.do[rootActionKey]) targetSlice.do[names[key]] = this.do[rootActionKey];
+      if (!this.do[rootActionKey]) continue;
+      targetSlice.do[names[key]] = this.do[rootActionKey];
+      this.#sliceActionRoles.set(rootActionKey, { role: key, refName, sliceName, args });
     }
 
     for (const key of Object.keys(namesOfSliceState) as SliceStateKey[]) {
       const rootStateKey = namesOfSliceState[key];
-      if (this.use[rootStateKey]) targetSlice.use[names[key]] = this.use[rootStateKey];
+      if (this.use[rootStateKey]) {
+        targetSlice.use[names[key]] = this.use[rootStateKey];
+        this.#sliceStateRoles.set(rootStateKey, { role: key, refName, sliceName });
+      }
       const setRootKey = `set${capitalize(rootStateKey)}`;
       const setLocalKey = `set${capitalize(names[key])}`;
       if (this.do[setRootKey]) targetSlice.do[setLocalKey] = this.do[setRootKey];

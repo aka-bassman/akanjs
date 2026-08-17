@@ -1,5 +1,4 @@
-import { FIELD_META } from "akanjs/base";
-import { Logger } from "akanjs/common";
+import { leakingFieldsOf, type MaskModel, mask } from "akanjs/constant";
 import type { JsonSchema } from "../schema";
 
 export type PromptRole = "user" | "assistant";
@@ -66,6 +65,12 @@ export interface PromptFileSource {
   filename?: string;
   mimetype?: string;
 }
+
+/**
+ * A model class, named by the caller so an attachment can be masked by what it *is* rather than by what it still
+ * carries at runtime. The same model any other audience masks by — see `mask` in `akanjs/constant`.
+ */
+export type PromptModel = MaskModel;
 
 /**
  * The string fields each block type must carry, and the set of legal types at once.
@@ -140,10 +145,6 @@ export class Msg {
     additionalProperties: false,
   };
 
-  static readonly #logger = new Logger("Msg");
-  /** Keyed by the model class, because that is what the fact is about — one warning, not one per prompt call. */
-  static readonly #warnedModels = new WeakSet<object>();
-
   static user(text: string, annotations?: PromptAnnotations): PromptMessage {
     return { role: "user", content: Msg.#annotated({ type: "text", text }, annotations) };
   }
@@ -155,21 +156,48 @@ export class Msg {
   /**
    * Embeds the value itself. The payload travels in the prompt, so prefer `link` for anything large.
    *
-   * XXX: this value is **not** field-masked. A prompt returns through the `Any` carrier, so `resolveReturn`
-   * hands it back untouched and `hidden`/`secret` fields survive — the one place in the framework where
-   * returning a document does not strip them. Pass a `Light<Model>`, which excludes them by construction, or an
-   * object you assembled yourself. `#warnUnmasked` says so in the log when it happens anyway; a comment only
-   * reaches whoever opens this file.
+   * Name the model it is an instance of and the `hidden`/`secret` fields are stripped before it goes out:
+   * `Msg.resource(uri, order, { model: cnst.Order })`. A payload you assembled yourself needs no model and is
+   * embedded as given — but one that still carries a document's secret fields is refused rather than sent, so
+   * the rule is the same either way: a document travels masked, or it does not travel.
    */
-  static resource(uri: string, value: unknown, annotations?: PromptAnnotations): PromptMessage {
-    Msg.#warnUnmasked(uri, value);
+  static resource(
+    uri: string,
+    value: unknown,
+    { model, ...annotations }: { model?: PromptModel } & PromptAnnotations = {},
+  ): PromptMessage {
+    const payload = model ? Msg.mask(model, value) : Msg.#assertMasked(uri, value);
     return {
       role: "user",
       content: Msg.#annotated(
-        { type: "resource", resource: { uri, mimeType: "application/json", text: JSON.stringify(value) } },
+        { type: "resource", resource: { uri, mimeType: "application/json", text: JSON.stringify(payload) } },
         annotations,
       ),
     };
+  }
+
+  /**
+   * Strips what a model marks `hidden` or `secret`, by the model the caller names rather than by the one the
+   * value happens to still carry.
+   *
+   * That distinction is the whole fix. A check that reads the class off the value can only mask what arrives as an
+   * instance, so a `{ ...doc }` spread, a `toJSON()`, or a round-trip through `JSON.stringify` reached the wire
+   * with the metadata already gone and nothing could be done about it. A named model is metadata the value cannot
+   * lose, so a hydrated document and a plain object copied out of one mask identically.
+   *
+   * This is the field half of `resolveReturn` and deliberately not the whole of it. That one also loads every
+   * relation it walks past, which is right for a query's return value and wrong for an attachment, where it would
+   * turn embedding one document into a fan of queries nobody asked for. So a populated relation is masked in
+   * place and one that is still an id is left as an id.
+   *
+   * Public because a payload can be an assembly of several documents — `{ order, customer }` names no single
+   * model, so each piece is masked on its way in.
+   *
+   * Returns `unknown` rather than the argument's type, because what comes back is missing fields that type still
+   * promises. The value's only destination is a JSON payload, so nothing downstream wanted the type anyway.
+   */
+  static mask(model: PromptModel, value: unknown): unknown {
+    return mask(model, value);
   }
 
   /**
@@ -231,30 +259,26 @@ export class Msg {
   }
 
   /**
-   * Says the XXX above out loud when it actually applies.
+   * Refuses an undeclared payload that still carries a document's secret fields, rather than sending it.
    *
-   * The framework cannot mask this payload — it never learns the model behind an `Any` return — but it can read
-   * the field metadata off the value it was handed and name the fields that are about to travel. Not gated on the
-   * environment: a value that leaks is most worth hearing about where it leaks to a real agent, and the WeakSet
-   * bounds it to one line per model class per process rather than one per call.
+   * A warning was the older answer, on the reasoning that masking off the value's own class would reach only the
+   * payloads that still had one — half masked, half not, and an author who believes prompts are masked is worse
+   * off on the unmasked half. `mask` removes that objection by taking the model as an argument instead, so there
+   * is now a way to be right about every payload and this is the shape that did not take it.
    *
-   * It warns rather than masks even where the metadata is right here to read. Masking would mean rebuilding the
-   * value — deleting fields off an instance the caller still holds is a side effect on their object, and cloning
-   * changes what they asked to embed — and it would only ever reach the payloads that arrived with a class behind
-   * them. A `{ ...doc }` spread, a `toJSON()`, or a round-trip through `JSON.stringify` has already lost the
-   * metadata by the time it gets here, so half the payloads would be masked and half would not. An author who
-   * learns that prompts are masked is worse off on the unmasked half than one who knows they never are: one rule,
-   * and a warning wherever the framework can see it being broken.
+   * It throws only where it can prove a leak: a value whose class says those fields exist and whose own keys say
+   * they are populated. A `Light<Model>`, or anything assembled by hand, declares no such fields and passes.
    */
-  static #warnUnmasked(uri: string, value: unknown) {
-    for (const sample of Msg.#samples(value)) Msg.#warnSample(uri, sample);
+  static #assertMasked(uri: string, value: unknown) {
+    for (const sample of Msg.#samples(value)) Msg.#assertSample(uri, sample);
+    return value;
   }
 
   /**
-   * The values a warning could be about: the payload, and — when the payload is a plain object — one level into it.
+   * The values a refusal could be about: the payload, and — when the payload is a plain object — one level into it.
    *
    * A list is homogeneous in practice, so its first element answers for it; walking every element to decide
-   * whether to log would cost more than the thing it is warning about.
+   * whether to refuse would cost more than the thing it is checking.
    *
    * The level down is what makes the common assembly reachable. A document rarely travels alone — it arrives as
    * `{ order }` or `{ order, customer }` — and a plain object's own constructor carries no field metadata, so a
@@ -272,18 +296,12 @@ export class Msg {
     });
   }
 
-  static #warnSample(uri: string, sample: Record<string, unknown>) {
-    const model = sample.constructor;
-    if (!model || Msg.#warnedModels.has(model)) return;
-    const fields = (model as unknown as { [key: symbol]: unknown })[FIELD_META];
-    if (!fields || typeof fields !== "object") return;
-    const masked = Object.entries(fields as Record<string, { fieldType?: string }>)
-      .filter(([key, field]) => (field.fieldType === "hidden" || field.fieldType === "secret") && key in sample)
-      .map(([key]) => key);
-    if (!masked.length) return;
-    Msg.#warnedModels.add(model);
-    Msg.#logger.warn(
-      `Msg.resource("${uri}") embeds ${model.name}, whose hidden/secret fields are in the payload: ${masked.join(", ")}. A prompt payload is not field-masked — pass a Light model or an object you assembled.`,
+  static #assertSample(uri: string, sample: Record<string, unknown>) {
+    const model = sample.constructor as PromptModel | undefined;
+    const leaking = model ? leakingFieldsOf(model, sample) : [];
+    if (!leaking.length) return;
+    throw new Error(
+      `Msg.resource("${uri}") embeds ${model?.name} with its hidden/secret fields populated: ${leaking.join(", ")}. Name the model so they are stripped — Msg.resource(uri, value, { model: cnst.${model?.name} }), or Msg.mask(cnst.${model?.name}, value) for one piece of an assembled payload.`,
     );
   }
 

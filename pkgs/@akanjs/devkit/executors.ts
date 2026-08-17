@@ -1365,6 +1365,12 @@ export class AppExecutor extends SysExecutor {
         this.cp("public", `${this.dist.cwdPath}/public`, { dereference: true }),
       ]);
     } else await this.removeDir(".akan");
+    //? `akan start` is the dev server, and it must say so rather than inherit an answer. Bun auto-loads the
+    //? workspace `.env`, so NODE_ENV=production can reach this process without ever being exported in a shell —
+    //? and a dev server that believes it is production serves from the production route cache, whose every
+    //? route throws because a dev artifact carries no routes manifest. Written into `process.env` and not only
+    //? into the child env because the builder runs here and bakes NODE_ENV into the bundles it emits.
+    if (type === "start") process.env.NODE_ENV = "development";
     const devPort = type === "start" ? (await this.getDevPort()).toString() : undefined;
     const env = this.getCommandEnv({
       AKAN_COMMAND_TYPE: type,

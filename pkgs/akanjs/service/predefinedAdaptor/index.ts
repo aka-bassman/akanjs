@@ -1,6 +1,7 @@
 export * from "./cache.adaptor";
 export * from "./compress.adaptor";
 export * from "./database.adaptor";
+export * from "./insightQuery";
 export * from "./logging.adaptor";
 export * from "./queue.adaptor";
 export * from "./role.adaptor";

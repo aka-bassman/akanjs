@@ -378,9 +378,9 @@ export class SignalResolver {
           // be previewed from the web UI. The query fast path is deliberately not shared: it skips guards.
           //
           // XXX: this route exists whether or not the app enabled MCP, and whatever the prompt opted into — MCP
-          // exposure gates the catalogue, not the HTTP surface. A prompt rides the `Any` carrier, so its payload
-          // is handed back unmasked (see `Msg.resource`); guard it like any other read rather than assuming the
-          // MCP switch is what stands in front of it.
+          // exposure gates the catalogue, not the HTTP surface. So guard it like any other read rather than
+          // assuming the MCP switch is what stands in front of it. Field masking is not the gap it once was
+          // (`Msg.mask` takes the model), but masking answers *what* goes out and never *who* may ask.
           //
           // Which is why the unguarded case is said out loud rather than left to a reader of the comment above.
           // An explicit `[Public]` is a decision and stays quiet; an absent `guards` decided nothing.

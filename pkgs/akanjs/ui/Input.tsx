@@ -13,6 +13,7 @@ import React, {
 } from "react";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
 
+import { agentAttrs } from "./agentAttrs";
 import { inputRecipe } from "./recipe";
 import { createOverridable, useUiRecipe } from "./UiOverride";
 
@@ -111,6 +112,7 @@ const DefaultInput = ({
       {icon ? <div className={cn("flex items-center justify-center", iconClassName)}>{icon}</div> : null}
       <input
         {...rest}
+        {...agentAttrs(onChange)}
         ref={inputRef}
         value={value}
         onChange={(e) => {
@@ -205,6 +207,7 @@ const DefaultTextArea = ({
     <div className={cn("relative mb-5", className)}>
       <textarea
         {...rest}
+        {...agentAttrs(onChange)}
         ref={inputRef}
         value={value}
         onChange={(e) => {
@@ -305,6 +308,7 @@ const DefaultPassword = ({
         ) : null}
         <input
           {...rest}
+          {...agentAttrs(onChange)}
           type={showPassword ? "text" : "password"}
           ref={inputRef}
           value={value}
@@ -423,6 +427,7 @@ const DefaultEmail = ({
         ) : null}
         <input
           {...rest}
+          {...agentAttrs(onChange)}
           type="email"
           value={value}
           ref={inputRef}
@@ -590,6 +595,7 @@ const DefaultNumber = ({
         ) : null}
         <input
           {...rest}
+          {...agentAttrs(onChange)}
           ref={inputRef}
           value={formatValue}
           onKeyDown={handleKeyDown}
@@ -633,6 +639,7 @@ const DefaultCheckbox = ({ checked, onChange, className, ...rest }: CheckboxProp
   return (
     <input
       {...rest}
+      {...agentAttrs(onChange)}
       type="checkbox"
       checked={checked}
       // Native rendering with `accent-color` rather than an appearance-none rebuild: the browser keeps

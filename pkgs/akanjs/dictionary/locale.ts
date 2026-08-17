@@ -168,6 +168,14 @@ export type ModelTrans<
     }>;
   error: { [K in ErrorKey]: Trans };
 } & { [K in EtcKey]: Trans };
+/**
+ * Store action labels, keyed off the resolved `.store()` keys rather than off the store class.
+ *
+ * The endpoint half needs the class because it reads argument names out of it. A store entry is a label and a
+ * description with no arguments to name, so the keys the stage already resolved are the whole of it — which is
+ * also why a generated `dict.ts` passes no store type at all.
+ */
+export type StoreTranslatorKey<T extends string, StoreKey extends string> = `${T}.store.${StoreKey}${"" | ".desc"}`;
 export type ModelTranslatorKey<T extends string, Model, Insight, Filter, Slice, Endpoint, EtcKey extends string> =
   | `${T}.modelName`
   | `${T}.modelDesc`
@@ -234,11 +242,14 @@ export const registerModelTrans = <
   infer _BaseSignalKey,
   infer _SliceKey,
   infer _EndpointKey,
+  infer StoreKey,
   infer ErrorKey,
   infer EtcKey
 >
   ? DictModule<
-      ModelTranslatorKey<RefName, Model, Insight, Filter, Slice, Endpoint, EtcKey> | EnumTranslatorKey<EnumKey>,
+      | ModelTranslatorKey<RefName, Model, Insight, Filter, Slice, Endpoint, EtcKey>
+      | EnumTranslatorKey<EnumKey>
+      | StoreTranslatorKey<RefName, StoreKey>,
       `${RefName}.error.${ErrorKey}`
     >
   : never => {
@@ -252,11 +263,14 @@ export const registerModelTrans = <
     infer _BaseSignalKey,
     infer _SliceKey,
     infer _EndpointKey,
+    infer StoreKey,
     infer ErrorKey,
     infer EtcKey
   >
     ? DictModule<
-        ModelTranslatorKey<RefName, Model, Insight, Filter, Slice, Endpoint, EtcKey> | EnumTranslatorKey<EnumKey>,
+        | ModelTranslatorKey<RefName, Model, Insight, Filter, Slice, Endpoint, EtcKey>
+        | EnumTranslatorKey<EnumKey>
+        | StoreTranslatorKey<RefName, StoreKey>,
         `${RefName}.error.${ErrorKey}`
       >
     : never;
@@ -280,15 +294,22 @@ export const registerScalarTrans = <T extends string, Model, ScalarDict>(
 
 export const registerServiceTrans = <T extends string, Endpoint, ServiceDict>(
   serviceDict: ServiceDict,
-): ServiceDict extends ServiceDictInfo<infer _Languages, infer _EndpointKey, infer ErrorKey, infer EtcKey>
-  ? DictModule<ServiceTranslatorKey<T, Endpoint, EtcKey>, `${T}.error.${ErrorKey}`>
+): ServiceDict extends ServiceDictInfo<
+  infer _Languages,
+  infer _EndpointKey,
+  infer StoreKey,
+  infer ErrorKey,
+  infer EtcKey
+>
+  ? DictModule<ServiceTranslatorKey<T, Endpoint, EtcKey> | StoreTranslatorKey<T, StoreKey>, `${T}.error.${ErrorKey}`>
   : never => {
   return { dict: serviceDict } as unknown as ServiceDict extends ServiceDictInfo<
     infer _Languages,
     infer _EndpointKey,
+    infer StoreKey,
     infer ErrorKey,
     infer EtcKey
   >
-    ? DictModule<ServiceTranslatorKey<T, Endpoint, EtcKey>, `${T}.error.${ErrorKey}`>
+    ? DictModule<ServiceTranslatorKey<T, Endpoint, EtcKey> | StoreTranslatorKey<T, StoreKey>, `${T}.error.${ErrorKey}`>
     : never;
 };

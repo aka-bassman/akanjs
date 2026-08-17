@@ -1,5 +1,6 @@
 import {
   ACTION_META,
+  ACTION_OWNER_META,
   type MergeAllKeyOfObjects,
   type MergeAllKeyOfTypes,
   type MergeAllTypes,
@@ -37,15 +38,25 @@ function getStoreRegistryState(): StoreRegistryState {
 
 export class StoreRegistry {
   static #state = getStoreRegistryState();
+  /** The one store every `st.use` / `st.do` in the process goes through. What an agent bridge drives. */
+  static get instance(): StoreInstance {
+    return StoreRegistry.#state.instance;
+  }
   static register<StrCls extends StoreCls>(store: StrCls): StrCls {
     const parentStore = Object.getPrototypeOf(store) as StoreCls | null;
     const actions = { ...(parentStore?.[ACTION_META] ?? {}) };
+    // The class body is exactly the module's own actions: everything generated is already on the parent, assigned
+    // by `store()` before this subclass existed. That is the only place the owning module is knowable, and the
+    // dictionary node an action's words live in is named after it.
+    const owners = { ...(parentStore?.[ACTION_OWNER_META] ?? {}) };
     Object.entries(Object.getOwnPropertyDescriptors(store.prototype)).forEach(([key, descriptor]) => {
       if (key === "constructor") return;
       if (!descriptor.value || typeof descriptor.value !== "function") return;
       actions[key] = descriptor.value;
+      owners[key] = { refName: store.refName, generated: false };
     });
     store[ACTION_META] = actions;
+    store[ACTION_OWNER_META] = owners;
     StoreRegistry.#state.store.set(store.refName, store);
     return store;
   }
@@ -69,6 +80,7 @@ export class StoreRegistry {
       static [STATE_INIT_META] = Object.assign({}, ...stores.map((store) => store[STATE_INIT_META]));
       static [STATE_DERIVED_META] = mergeDerivedMeta(...stores.map((store) => store[STATE_DERIVED_META]));
       static [ACTION_META] = Object.assign({}, ...stores.map((store) => store[ACTION_META]));
+      static [ACTION_OWNER_META] = Object.assign({}, ...stores.map((store) => store[ACTION_OWNER_META] ?? {}));
       static slice: { [key: string]: { [key: string]: SerializedSlice } } = {};
     }
     stores.forEach((store) => {

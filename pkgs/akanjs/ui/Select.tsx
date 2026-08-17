@@ -7,6 +7,7 @@ import { BiCheck, BiChevronDown, BiX } from "react-icons/bi";
 import { BsQuestionCircleFill } from "react-icons/bs";
 import { TiDelete } from "react-icons/ti";
 
+import { agentAttrs } from "./agentAttrs";
 import { useUiOverride } from "./UiOverride";
 
 interface LabelOption<T> {
@@ -164,7 +165,7 @@ const DefaultSelect = <
   }, [value]);
 
   return (
-    <div className={cn("relative min-w-[150px]", className)} ref={dropdownRef}>
+    <div {...agentAttrs(onChange)} className={cn("relative min-w-[150px]", className)} ref={dropdownRef}>
       <div
         data-open={isOpen}
         className={cn(

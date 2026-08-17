@@ -181,6 +181,40 @@ export default function Page() {
       </Scroll.Slide>
       <Divider />
 
+      <Scroll.Slide id="lib-tokens" title={l.trans({ en: "Lib-Owned Tokens", ko: "라이브러리 소유 토큰" })}>
+        <Docs.Title>{l.trans({ en: "Lib-Owned Tokens", ko: "라이브러리 소유 토큰" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "A lib whose components need fixed colors — a vendor sign-in button, a brand mark — declares them once in libs/<lib>/ui/tokens.css. Every app whose pages reach that lib compiles the file automatically, ahead of its own stylesheets, so the app stays the last word on any variable both declare. Nothing is imported by hand, and adding an app cannot forget it.",
+              ko: "벤더 로그인 버튼이나 브랜드 마크처럼 고정 색상이 필요한 라이브러리는 libs/<lib>/ui/tokens.css 에 한 번만 선언합니다. 해당 라이브러리에 도달하는 앱은 이 파일을 자동으로, 자신의 스타일시트보다 먼저 컴파일하므로 같은 변수를 선언했다면 앱이 최종 승자입니다. 손으로 import 할 것이 없고, 앱을 추가하며 빠뜨릴 수도 없습니다.",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="libs/social/ui/tokens.css"
+            code={`:root {
+  --kakao: #fee500;
+  --kakao-foreground: #3c1e1e;
+  --naver: #1ec800;
+}`}
+          />
+          <Code.Snippet
+            className="w-full"
+            title="libs/social/ui/KakaoButton.tsx"
+            language="typescript"
+            code={`<button className="bg-[var(--kakao)] text-[var(--kakao-foreground)]">Kakao</button>`}
+          />
+          <Docs.Alert type="info">
+            {l.trans({
+              en: "These are plain custom properties, not a Tailwind @theme extension: the color vocabulary is closed per stylesheet, so bg-kakao would generate no CSS. Reference them as bg-[var(--kakao)], which the color lint rules allow by design. An @import the pipeline cannot resolve fails the build rather than compiling to nothing.",
+              ko: "이것은 Tailwind @theme 확장이 아니라 순수 custom property 입니다. 색 어휘는 스타일시트 단위로 폐쇄되므로 bg-kakao 는 CSS 를 생성하지 않습니다. bg-[var(--kakao)] 로 참조하세요 — 색상 lint 규칙이 의도적으로 허용하는 형태입니다. 해석할 수 없는 @import 는 조용히 사라지지 않고 빌드를 실패시킵니다.",
+            })}
+          </Docs.Alert>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
       <Scroll.Slide id="font-declaration" title={l.trans({ en: "Font Declaration", ko: "폰트 선언 방식" })}>
         <Docs.Title>{l.trans({ en: "Font Declaration", ko: "폰트 선언 방식" })}</Docs.Title>
         <Docs.Description>

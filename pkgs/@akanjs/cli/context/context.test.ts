@@ -608,6 +608,8 @@ describe("AgentRunner", () => {
     const claude = await Bun.file(`${root}/CLAUDE.md`).text();
     expect(claude).toContain("@AGENTS.md");
     expect(claude).not.toContain("Prefer Akan MCP workflows before direct source edits");
+    // The comment rule is the one thing CLAUDE.md restates instead of leaving to the guide.
+    expect(claude).toContain("## Comments — Overrides Your Default");
     const cursor = await Bun.file(`${root}/.cursor/rules/akan.mdc`).text();
     expect(cursor).toContain("@AGENTS.md");
     expect(cursor).not.toContain("Prefer Akan MCP workflows before direct source edits");

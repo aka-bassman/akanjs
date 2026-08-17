@@ -5,6 +5,7 @@ export * from "./deserialize";
 export * from "./fieldInfo";
 export * from "./getDefault";
 export * from "./immerify";
+export * from "./mask";
 export * from "./purify";
 export * from "./serialize";
 export * from "./textFieldPathSet";

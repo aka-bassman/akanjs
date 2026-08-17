@@ -96,6 +96,8 @@ export class AkanApp {
   /** Hosted by `akan start`: crash loops should yield to the dev host, which restarts on file edits. */
   readonly #devHosted = process.env.AKAN_COMMAND_TYPE === "start";
   readonly #healthTimeoutMs = AkanApp.#parseHealthTimeoutMs();
+  /** Child stderr is bundler/runtime noise the gateway cannot act on; it still reaches the rotating log file. */
+  readonly #printChildStderr = process.env.AKAN_CHILD_STDERR === "1";
   readonly #serverPath: string;
   readonly #artifactDir: string;
   readonly #replica: AkanReplicaConfig;
@@ -202,10 +204,16 @@ export class AkanApp {
     return Math.max(min, parsed);
   }
 
+  /**
+   * The command that started this gateway outranks an inherited `NODE_ENV`: the command is a statement about
+   * this run, while the env var can arrive from a shell export, a CI image, or the workspace `.env` Bun loads
+   * on its own. Handing a dev child `NODE_ENV=production` makes it serve from the production route cache and
+   * throw on every route, since only `akan build` writes the routes manifest that cache expects.
+   */
   static #defaultChildNodeEnv() {
-    if (process.env.NODE_ENV) return process.env.NODE_ENV;
     if (process.env.AKAN_COMMAND_TYPE === "start") return "development";
     if (process.env.AKAN_COMMAND_TYPE === "build") return "production";
+    if (process.env.NODE_ENV) return process.env.NODE_ENV;
     return Bun.main.endsWith(".js") ? "production" : "development";
   }
 
@@ -1269,7 +1277,7 @@ export class AkanApp {
 
   #writeChildOutputLineRaw(idx: number, role: AkanChildRole, type: "stdout" | "stderr", line: string) {
     const prefixedLine = `[child:${idx} ${role}] [${type}] ${line}`;
-    process[type].write(prefixedLine);
+    if (type === "stdout" || this.#printChildStderr) process[type].write(prefixedLine);
     this.#logWriter?.write(`${idx}-${role}`, AkanApp.#stripAnsi(prefixedLine));
   }
 

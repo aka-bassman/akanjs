@@ -29,8 +29,8 @@ export class RoomEndpoint extends endpoint(roomSrv, ({ pubsub }) => ({
     {
       name: "prompt / Msg",
       desc: l.trans({
-        en: "`prompt()` is the fifth endpoint kind and the one a *user* invokes by name — an MCP client renders it as a slash command — rather than one the model chooses. `exec` returns `PromptMessage[]`, or a bare string that is wrapped into a single user message. Build messages with `Msg.user`, `Msg.assistant`, `Msg.link`, `Msg.resource`, `Msg.image`, `Msg.audio`, and `Msg.imageOf`. A prompt takes `.param()` and `.search()` only, because `prompts/get` carries a flat string map. Its payload is **not** field-masked, so pass a `Light<Model>` or an object you assembled rather than a full document.",
-        ko: "`prompt()`는 다섯 번째 endpoint 종류로, model이 고르는 것이 아니라 *사용자*가 이름으로 호출합니다 — MCP client는 slash command로 렌더링합니다. `exec`는 `PromptMessage[]`를 반환하며, 문자열 하나를 반환하면 user message 하나로 감쌉니다. message는 `Msg.user`, `Msg.assistant`, `Msg.link`, `Msg.resource`, `Msg.image`, `Msg.audio`, `Msg.imageOf`로 만듭니다. `prompts/get`이 flat string map을 실어 보내므로 prompt는 `.param()`과 `.search()`만 받습니다. payload는 field masking이 **되지 않으므로** full document 대신 `Light<Model>`이나 직접 구성한 object를 넘기세요.",
+        en: "`prompt()` is the fifth endpoint kind and the one a *user* invokes by name — an MCP client renders it as a slash command — rather than one the model chooses. `exec` returns `PromptMessage[]`, or a bare string that is wrapped into a single user message. Build messages with `Msg.user`, `Msg.assistant`, `Msg.link`, `Msg.resource`, `Msg.image`, `Msg.audio`, and `Msg.imageOf`. A prompt takes `.param()` and `.search()` only, because `prompts/get` carries a flat string map. An embedded payload is masked by the model you name — `Msg.resource(uri, task, { model: cnst.Task })`, or `Msg.mask(cnst.Task, task)` for one piece of an assembly — and an undeclared value whose secret fields are populated is refused rather than sent.",
+        ko: "`prompt()`는 다섯 번째 endpoint 종류로, model이 고르는 것이 아니라 *사용자*가 이름으로 호출합니다 — MCP client는 slash command로 렌더링합니다. `exec`는 `PromptMessage[]`를 반환하며, 문자열 하나를 반환하면 user message 하나로 감쌉니다. message는 `Msg.user`, `Msg.assistant`, `Msg.link`, `Msg.resource`, `Msg.image`, `Msg.audio`, `Msg.imageOf`로 만듭니다. `prompts/get`이 flat string map을 실어 보내므로 prompt는 `.param()`과 `.search()`만 받습니다. 실어 보내는 payload는 이름을 적은 model 기준으로 마스킹됩니다 — `Msg.resource(uri, task, { model: cnst.Task })`, 조립된 payload의 한 조각이라면 `Msg.mask(cnst.Task, task)` — 그리고 model을 적지 않은 값에 secret field가 채워져 있으면 보내지 않고 거부합니다.",
       }),
       code: `import { SignedIn } from "@apps/myapp/srvkit"; // guards are yours, not the framework's
 import { endpoint, Msg } from "akanjs/signal";
@@ -43,7 +43,7 @@ export class TaskEndpoint extends endpoint(srv.task, ({ prompt }) => ({
       const task = await this.taskService.getLightTask(taskId);
       return [
         Msg.user(\`Review this task in a \${tone ?? "neutral"} tone.\`),
-        Msg.resource(\`akan://task/\${taskId}\`, task),
+        Msg.resource(\`akan://task/\${taskId}\`, task, { model: cnst.LightTask }),
       ];
     }),
 })) {}`,

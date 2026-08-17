@@ -1,7 +1,28 @@
 import { describe, expect, test } from "bun:test";
 import { FIELD_META } from "akanjs/base";
-import { Logger } from "akanjs/common";
 import { Msg } from "./Msg";
+
+/** A model that declares a field masking must strip, stamped the way `via()` stamps a real one. */
+class Leaky {
+  password = "hunter2";
+  title = "post";
+}
+(Leaky as unknown as Record<symbol, unknown>)[FIELD_META] = {
+  password: { fieldType: "secret" },
+  title: { fieldType: "property" },
+};
+
+/** A model with nothing to strip — what a `Light<Model>` looks like to this check. */
+class Clean {
+  title = "post";
+}
+(Clean as unknown as Record<symbol, unknown>)[FIELD_META] = { title: { fieldType: "property" } };
+
+const payloadOf = (message: ReturnType<typeof Msg.resource>) => {
+  const { content } = message;
+  if (content.type !== "resource") throw new Error("expected an embedded resource");
+  return content.resource.text;
+};
 
 describe("Msg", () => {
   test("builds text messages under both roles", () => {
@@ -49,52 +70,65 @@ describe("Msg", () => {
     expect(Msg.link("https://cdn/a.png?v=2").content).toMatchObject({ name: "a.png" });
   });
 
-  test("says so when an unmasked model rides in a prompt payload", () => {
-    // The framework cannot strip these — a prompt returns through the `Any` carrier, so nothing upstream knows the
-    // model — but it can read the field metadata off the value and name what is about to travel.
-    class Leaky {
-      password = "hunter2";
+  test("strips hidden and secret fields by the model the caller names", () => {
+    expect(JSON.parse(payloadOf(Msg.resource("akan://post/1", new Leaky(), { model: Leaky })))).toEqual({
+      title: "post",
+    });
+  });
+
+  test("masks a payload that lost its class, which is the case a value-side check could never reach", () => {
+    // `{ ...doc }`, `toJSON()`, and a round-trip through `JSON.stringify` all arrive with the metadata gone. Naming
+    // the model is what makes those maskable: the model is an argument, so the value has nothing left to lose.
+    for (const value of [{ ...new Leaky() }, JSON.parse(JSON.stringify(new Leaky()))]) {
+      expect(Msg.mask(Leaky, value)).toEqual({ title: "post" });
+    }
+  });
+
+  test("masks through arrays and into a populated relation, but leaves an unpopulated one as an id", () => {
+    class Post {
+      author: unknown;
       title = "post";
     }
-    (Leaky as unknown as Record<symbol, unknown>)[FIELD_META] = {
-      password: { fieldType: "secret" },
+    (Post as unknown as Record<symbol, unknown>)[FIELD_META] = {
+      author: { fieldType: "property", isClass: true, modelRef: Leaky },
       title: { fieldType: "property" },
     };
-    const lines: string[] = [];
-    const stop = Logger.addSink(({ message }) => lines.push(message));
-    try {
-      Msg.resource("akan://post/1", new Leaky());
-      Msg.resource("akan://post/2", new Leaky());
-      Msg.resource("akan://post/3", { title: "assembled by hand" });
-    } finally {
-      stop();
-    }
-    const warned = lines.filter((line) => line.includes("Msg.resource"));
-    // One line per model class, not per call: the fact is about the class, and a prompt may be called in a loop.
-    expect(warned).toHaveLength(1);
-    expect(warned[0]).toContain("password");
+    const populated = Object.assign(new Post(), { author: new Leaky() });
+    expect(Msg.mask(Post, [populated])).toEqual([{ author: { title: "post" }, title: "post" }]);
+    // A relation still held as an id is not a document to walk, and loading it would turn one attachment into a
+    // fan of queries — the half of `resolveReturn` this deliberately does not do.
+    expect(Msg.mask(Post, Object.assign(new Post(), { author: "post-id" }))).toEqual({
+      author: "post-id",
+      title: "post",
+    });
+  });
+
+  test("refuses an undeclared payload whose secret fields are populated", () => {
+    expect(() => Msg.resource("akan://post/1", new Leaky())).toThrow(/password/);
+    // Named, so the message says which model and what to write.
+    expect(() => Msg.resource("akan://post/1", new Leaky())).toThrow(/model: cnst.Leaky/);
+  });
+
+  test("lets through what declares nothing to strip", () => {
+    // A Light model excludes them by construction, and an object assembled by hand declares no fields at all.
+    expect(() => Msg.resource("akan://post/3", { title: "assembled by hand" })).not.toThrow();
+    expect(() => Msg.resource("akan://post/4", new Clean())).not.toThrow();
   });
 
   test("sees a document wrapped in a plain object, which is how one usually arrives", () => {
     // A document rarely travels alone. `{ order }` / `{ order, customer }` is the ordinary assembly, and a plain
     // object's own constructor carries no field metadata — so a check that read only the outer value saw nothing.
-    class Wrapped {
-      accountId = "acc";
-    }
-    (Wrapped as unknown as Record<symbol, unknown>)[FIELD_META] = { accountId: { fieldType: "hidden" } };
-    const lines: string[] = [];
-    const stop = Logger.addSink(({ message }) => lines.push(message));
-    try {
-      Msg.resource("akan://order/1", { order: new Wrapped(), note: "for review" });
-      // A spread has already thrown the metadata away, so nothing here or anywhere else can see it.
-      Msg.resource("akan://order/2", { ...new Wrapped() });
-    } finally {
-      stop();
-    }
-    const warned = lines.filter((line) => line.includes("Msg.resource"));
-    expect(warned).toHaveLength(1);
-    expect(warned[0]).toContain("accountId");
-    expect(warned[0]).toContain("akan://order/1");
+    expect(() => Msg.resource("akan://order/1", { order: new Leaky(), note: "for review" })).toThrow(/password/);
+    // A wrapper names no single model, so each piece is masked on its way in instead.
+    expect(() =>
+      Msg.resource("akan://order/2", { order: Msg.mask(Leaky, new Leaky()), note: "for review" }),
+    ).not.toThrow();
+  });
+
+  test("cannot see a spread payload, which is why masking takes the model rather than reading it", () => {
+    // Nothing here or anywhere else can tell this from an object assembled by hand. It passes, and `Msg.mask` is
+    // the reason that is now a gap in detection rather than a gap in what the framework can do about it.
+    expect(() => Msg.resource("akan://order/3", { ...new Leaky() })).not.toThrow();
   });
 
   test("wraps a bare string into one user message", () => {

@@ -459,7 +459,9 @@ is convention that keeps hand-written code reading like generated code.
   generated. Never `import type { RootStore } from "../st"` — it crashes `akan build` with a Bun SSR segfault.
 - **`dictionary.ts`** — fixed chain with empty stages still written:
   `.of() → .model() → .insight() → .query() → .sort() → .enum() → .slice() → .endpoint() → .error() → .translate()`.
-  Every label is `t(["English", "한국어"])`, and nearly every one also carries `.desc([en, ko])`.
+  Every label is `t(["English", "한국어"])`, and nearly every one also carries `.desc([en, ko])`. One optional stage,
+  `.store()`, sits between `.endpoint()` and `.error()` for custom store actions whose name differs from the
+  endpoint they call — omit it rather than writing it empty.
 - **`srvkit/` adapters** — an injected singleton is an `adapt("name" as const, ({ use, env, plug, memory }) => ({…}))`
   class, injected with `plug(TheClass)`. It self-registers, so do not add it to `lib/option.ts`. `this.logger` is
   provided; lifecycle work goes in `override async onInit()`. A per-use value object stays a plain class you `new` at
