@@ -13,6 +13,7 @@ const StoreTestInput = via((f) => ({
   title: f(String),
   count: f(Int, { default: 0 }),
   tags: f([String]),
+  settings: f(Map, { of: String, default: () => new Map<string, string>() }).optional(),
 }));
 const StoreTestObject = via(StoreTestInput, (f) => ({
   memo: f(String).optional(),
@@ -91,7 +92,9 @@ const makeSignal = () => {
     removeStoreTestItem: mock(
       async (id: string) => new StoreTestFull({ id, title: "removed", removedAt: new Date() } as never),
     ),
-    storeTestItem: mock(async (id: string) => new StoreTestFull({ id, title: "loaded" })),
+    storeTestItem: mock(
+      async (id: string) => new StoreTestFull({ id, title: "loaded", settings: { theme: "dark" } } as never),
+    ),
     storeTestItemList: mock(async () => [
       new StoreTestLight({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada" }),
       new StoreTestLight({ id: "bbbbbbbbbbbbbbbbbbbbbbbb", title: "Ben" }),
@@ -392,6 +395,27 @@ describe("signal generated store contract", () => {
       queryArgsOfStoreTestItemByTitle: ["Ben!"],
       sortOfStoreTestItemByTitle: "titleAsc",
     });
+  });
+
+  test("seeds the edit form with a cloned map, not an empty object", async () => {
+    setupEnv();
+    const signal = makeSignal();
+    class EditStore extends store(signal, () => ({})) {}
+    StoreRegistry.register(EditStore);
+    const instance = new StoreInstance(makeRoot("editRoot", EditStore));
+
+    await instance.do.editStoreTestItem("aaaaaaaaaaaaaaaaaaaaaaaa");
+    const model = instance.get().storeTestItem as { settings: Map<string, string> };
+    const form = () => instance.get().storeTestItemForm as { settings: Map<string, string> };
+
+    expect(form().settings).toBeInstanceOf(Map);
+    expect(form().settings.get("theme")).toBe("dark");
+    expect(form().settings).not.toBe(model.settings);
+
+    await instance.do.writeOnStoreTestItem("settings.theme", "light");
+    expect(form().settings.get("theme")).toBe("light");
+    expect(model.settings.get("theme")).toBe("dark");
+    expect(storeTestConstant.input.purify(form() as never)).toMatchObject({ settings: { theme: "light" } });
   });
 
   test("stamps every sibling slice stale on create and clears it on refresh", async () => {

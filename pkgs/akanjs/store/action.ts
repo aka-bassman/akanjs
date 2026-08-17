@@ -751,7 +751,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       const id = typeof modelOrId === "string" ? modelOrId : modelOrId.id;
       this.set({ [names.modelFormLoading]: id, [names.modelModal]: modal ?? "edit" });
       const model = await (fetch[names.model] as (...args: any[]) => Promise<Full>)(id, { onError });
-      const modelForm = deepObjectify<Input>(model as unknown as Input);
+      const modelForm = immerify(modelRef, deepObjectify<Input>(model as unknown as Input) as object) as Input;
       this.set({
         [names.model]: model,
         [names.modelFormLoading]: false,

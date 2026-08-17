@@ -1,12 +1,14 @@
 import { ACTION_META, STATE_DERIVED_META, STATE_INIT_META } from "akanjs/base";
 import { Translator } from "akanjs/client";
 import { capitalize, Logger, parseAkanI18nEnv } from "akanjs/common";
-import { produce } from "immer";
+import { enableMapSet, produce } from "immer";
 import type { RefObject } from "react";
 import { useEffect, useRef, useSyncExternalStore } from "./hooks";
 import type { RootStoreCls } from "./rootStore";
 import type { SliceStateKey } from "./state";
 import { evaluateInitializers, type SearchParamsState, type StateDerivedMeta } from "./stateBuilder";
+
+enableMapSet();
 
 type StoreStateRecord = Record<string, unknown>;
 type StoreAction = (...args: unknown[]) => unknown;
