@@ -7,6 +7,7 @@ import { Logger } from "akanjs/common";
 import type { AkanChildRole, AkanChildStatus, AkanIpcMessage, AkanMetricsReport, AkanUpstream } from "akanjs/service";
 import { isTraceEnabled } from "akanjs/signal";
 import { makeAkanChildProxyHeaders } from "./akanAppHeaders";
+import type { McpServerOption } from "./akanServer";
 import type { BuilderCsrReq, BuilderCsrRes, BuilderMessage, BuilderReq, BuilderRes } from "./artifact";
 import { resolveEncodedSidecar } from "./assetEncoding";
 import { isPortInUseError } from "./lifecycle/portInUse";
@@ -68,6 +69,11 @@ export interface AkanAppOptions {
   port?: number;
   wsBasePort?: number;
   openapi?: boolean;
+  /**
+   * MCP server config for the children, which are the processes that actually mount `/mcp`. Declared here
+   * because `server.ts` is generated and takes no options, so `main.ts` is the only app-authored place left.
+   */
+  mcp?: boolean | McpServerOption;
 }
 
 interface AkanReplicaConfig {
@@ -98,6 +104,7 @@ export class AkanApp {
   readonly #port: number;
   readonly #wsBasePort: number;
   readonly #openapi?: boolean;
+  readonly #mcpEnv: Record<string, string>;
   readonly #children = new Map<number, ChildState>();
   readonly #roomChildren = new Map<string, Set<number>>();
   readonly #childRooms = new Map<number, Set<string>>();
@@ -139,6 +146,30 @@ export class AkanApp {
     this.#port = Number(resolvedOptions.port ?? process.env.PORT ?? 8282);
     this.#wsBasePort = Number(resolvedOptions.wsBasePort ?? process.env.AKAN_WS_BASE_PORT ?? this.#port + 10_000);
     this.#openapi = resolvedOptions.openapi;
+    this.#mcpEnv = AkanApp.#toMcpEnv(resolvedOptions.mcp);
+  }
+
+  /**
+   * `McpServerOption`, spelled as the environment a child is spawned with — the only channel the gateway has to
+   * a process it starts, and the same one a deployment configures MCP through when it sets nothing in code.
+   */
+  static #toMcpEnv(mcp: boolean | McpServerOption | undefined): Record<string, string> {
+    if (mcp === undefined) return {};
+    if (typeof mcp === "boolean") return { AKAN_MCP: String(mcp) };
+    const { enabled, readOnly, path: mcpPath, version, instructions, allowedOrigins, pageSize, language, auth } = mcp;
+    return {
+      AKAN_MCP: String(enabled ?? true),
+      ...(readOnly === undefined ? {} : { AKAN_MCP_READONLY: String(readOnly) }),
+      ...(mcpPath ? { AKAN_MCP_PATH: mcpPath } : {}),
+      ...(version ? { AKAN_MCP_VERSION: version } : {}),
+      ...(instructions ? { AKAN_MCP_INSTRUCTIONS: instructions } : {}),
+      ...(allowedOrigins?.length ? { AKAN_MCP_ALLOWED_ORIGINS: allowedOrigins.join(",") } : {}),
+      ...(pageSize === undefined ? {} : { AKAN_MCP_PAGE_SIZE: String(pageSize) }),
+      ...(language ? { AKAN_MCP_LANGUAGE: language } : {}),
+      ...(auth?.authorizationServers?.length ? { AKAN_MCP_AUTH_SERVERS: auth.authorizationServers.join(",") } : {}),
+      ...(auth?.scopes?.length ? { AKAN_MCP_SCOPES: auth.scopes.join(",") } : {}),
+      ...(auth?.resource ? { AKAN_MCP_RESOURCE: auth.resource } : {}),
+    };
   }
 
   static #resolveServerPath(serverPath: string) {
@@ -304,6 +335,7 @@ export class AkanApp {
         AKAN_CHILD_SOCKET: upstream.http.socketPath,
         AKAN_CHILD_WS_PORT: upstream.ws ? String(upstream.ws.port) : "",
         ...(this.#openapi === undefined ? {} : { AKAN_OPENAPI: this.#openapi ? "true" : "false" }),
+        ...this.#mcpEnv,
       },
       ipc: (message) => this.#handleMessage(idx, message as AkanIpcMessage, proc),
       stdout: "pipe",

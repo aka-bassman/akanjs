@@ -373,6 +373,25 @@ export class SignalResolver {
             POST: normalHttpHandler,
           };
           break;
+        case "prompt":
+          // Served as a plain GET beside the queries, so the same prompt a client renders as a slash command can
+          // be previewed from the web UI. The query fast path is deliberately not shared: it skips guards.
+          //
+          // XXX: this route exists whether or not the app enabled MCP, and whatever the prompt opted into — MCP
+          // exposure gates the catalogue, not the HTTP surface. A prompt rides the `Any` carrier, so its payload
+          // is handed back unmasked (see `Msg.resource`); guard it like any other read rather than assuming the
+          // MCP switch is what stands in front of it.
+          //
+          // Which is why the unguarded case is said out loud rather than left to a reader of the comment above.
+          // An explicit `[Public]` is a decision and stays quiet; an absent `guards` decided nothing.
+          if (!(endpointInfo.signalOption.guards ?? []).length)
+            SignalResolver.logger.warn(
+              `Prompt "${key}" declares no guards, and its GET route is mounted whether or not this app enables MCP.`,
+            );
+          routes[path] = {
+            GET: normalHttpHandler,
+          };
+          break;
         case "pubsub":
           wsRoutes[key] = async (ws, message, event) => {
             const websocket = SignalResolver.#getWebsocket(registry);

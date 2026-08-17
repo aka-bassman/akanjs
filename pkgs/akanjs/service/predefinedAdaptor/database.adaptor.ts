@@ -19,6 +19,7 @@ import {
   documentQueryHelper,
   encodeDocumentValue,
   isDocumentUpdateNode,
+  NoDocumentError,
   resolveDocumentUpdate,
   type SchemaOf,
   sanitizeJson,
@@ -1210,13 +1211,13 @@ export class SqlDocumentStore {
 
   async pickOne(query?: DocumentQuery, options: FindOneOptions = {}) {
     const doc = await this.findOne(query, options);
-    if (!doc) throw new Error(`No Document (${this.table}): ${JSON.stringify(query)}`);
+    if (!doc) throw new NoDocumentError(`No Document (${this.table}): ${JSON.stringify(query)}`);
     return doc;
   }
 
   async pickById(id: string) {
     const doc = await this.findOne({ id } as DocumentQuery);
-    if (!doc) throw new Error(`No Document (${this.table}): ${id}`);
+    if (!doc) throw new NoDocumentError(`No Document (${this.table}): ${id}`);
     return doc;
   }
 
@@ -1507,7 +1508,7 @@ export class SqlDocumentStore {
 
   private async pickByIdForWrite(id: string) {
     const doc = await this.findOneForWrite({ id } as DocumentQuery);
-    if (!doc) throw new Error(`No Document (${this.table}): ${id}`);
+    if (!doc) throw new NoDocumentError(`No Document (${this.table}): ${id}`);
     return doc;
   }
 

@@ -363,7 +363,7 @@ workflow changes.
 - Keep execution contracts and triggers in `.signal.ts` classes built with `internal(...)`, `slice(...)`, and `endpoint(...)`.
 - Use `Internal` for internal triggers such as init, interval, cron, or queue jobs.
 - Use `Slice` for typed data views that feed client stores and zones; keep each slice focused on one purpose.
-- Use `Endpoint` for query and mutation contracts exposed to callers.
+- Use `Endpoint` for the five call contracts exposed to callers: `query`, `mutation`, `message`, `pubsub`, and `prompt`.
 - Connect external APIs or infrastructure through adapters, usually under `srvkit/`, and inject them into services instead of importing vendor clients directly into domain logic.
 
 ### Guards And Transports
@@ -376,7 +376,8 @@ workflow changes.
 ### Authorization Defaults
 
 - **Every `slice()` takes an explicit `{ guards: {…} }` second argument, and `root:` is always `Admin`.**
-- **Every custom `mutation` / `query` / `message` names its own `guards: [...]` array.** Never rely on the slice default. `Public` belongs on a slice `get:`, never on a mutation.
+- **Every custom `mutation` / `query` / `message` / `prompt` names its own `guards: [...]` array.** Never rely on the slice default. `Public` belongs on a slice `get:`, never on a mutation.
+- **Mark `static scope` on every guard** — `"account"` when the verdict depends only on the caller, and the default `"resource"` otherwise. Only `account` guards are evaluated when filtering an MCP catalogue, because a resource guard has no arguments there and would fail closed on every entry.
 - Resource guards are `Can<Verb><Model>` classes in `srvkit/guards.ts` that `implements Guard` with an `async canPass(context)`. They **fail closed**: no resource named ⇒ `false`; a load that throws ⇒ `logger.warn` then `false`. Admin bypass goes first.
 - Keep `static name = "User";` on guard classes. `fetch` serializes guard names and the API explorer filters on them; it looks like dead code, and deleting it breaks the UI. Comment it so the next reader knows.
 - The acting user arrives via `.with(Self)` / `.with(CurrentUserId)` / `.with(Me)`. Never trust a client-supplied id.
@@ -389,6 +390,104 @@ workflow changes.
 - `.body(...)` / `.param(...)` args accept `ConstantFieldTypeInput` only: scalars, model refs, or `enumOf(...)`.
 - Numbers must use `Int` or `Float` — `Number` is rejected (`pkgs/akanjs/signal/endpointInfo.ts`).
 - `Upload` is valid only inside a mutation flagged for file upload: `mutation([cnst.File], { fileUpload: true }).body("files", [Upload])` (see `libs/shared/lib/file/file.signal.ts`). It is not a model field type.
+- A `prompt()` takes `.param()` and `.search()` **only** — `prompts/get` sends a flat string map, so there is nowhere
+  to put a `body`, `msg`, or `room`, and the builder refuses them. `.search()` is the only way to declare an
+  optional prompt argument.
+
+### MCP Exposure
+
+Every signal can be served to agents as an MCP server on `POST /mcp`, and **nothing is exposed until it says so**.
+Turn it on in an app's `main.ts` — `new AkanApp("./server", { mcp: { … } })` — which takes `enabled`, `readOnly`,
+`path`, `version`, `instructions`, `allowedOrigins`, `pageSize`, `language`, and `auth`. **`main.ts` is the only
+app-authored place it can go**: `server.ts` is generated and takes no options, and the gateway reaches a child
+through its environment, so every field also has an env spelling (`AKAN_MCP`, `AKAN_MCP_READONLY`, `AKAN_MCP_PATH`,
+`AKAN_MCP_VERSION`, `AKAN_MCP_INSTRUCTIONS`, `AKAN_MCP_ALLOWED_ORIGINS`, `AKAN_MCP_PAGE_SIZE`, `AKAN_MCP_LANGUAGE`,
+`AKAN_MCP_AUTH_SERVERS`, `AKAN_MCP_SCOPES`, `AKAN_MCP_RESOURCE`) — that is the channel, not a fallback. A value
+written in code wins over the env of the same name, and an explicit `undefined` is not a value. Both booleans also
+answer to `AKAN_PUBLIC_MCP` / `AKAN_PUBLIC_MCP_READONLY`.
+
+- **Opt in per endpoint** with `query(cnst.X, { guards: […], mcp: { expose: true } })` and per slice with
+  `init({ guards: […], mcp: { expose: true } })`. Generated CRUD opts in on the slice class instead —
+  `slice(srv.x, { guards: {…}, mcp: { get: true, update: true } }, …)`, one flag per verb, never a blanket `true` —
+  and the model's own unfiltered list and insight are `mcp: { list: true }` on that same map, the `""` slice being
+  the one with nowhere for an author to write `expose`. **A named slice inherits no guards from the `slice()`
+  call**: `root:` / `get:` / `cru:` reach the root slice and base CRUD only, so an exposed slice writes its own.
+  `libs/shared`'s `banner` is the worked example.
+- **The refusals are fail-closed and survive opting in**: `pubsub` and `message` (their internal args read a socket
+  an MCP request does not have), an `Any` or `Upload` return, a file upload, **a mutation with no real `guards`**
+  (`[Public]` is having none, spelled out), and **an argument typed `Any` that must be filled**. A `prompt` refuses
+  two more, its `arguments` being one string per name with no schema beside it: a **list argument** and **any `Any`
+  argument** — and `resource: true`, because only a read publishes a resource template.
+- **Read the boot log first when a tool is missing.** It prints `MCP catalogue: tools=… prompts=…` and one `warn`
+  per endpoint that opted in and was kept out, published with no description, or published with no guards at all.
+  `akan quality scan` covers the two shapes visible in source, `akan.mcp.missing-description` and
+  `akan.mcp.unguarded-exposure`; a refusal turns on a resolved return type, so no source rule can see one. The API
+  explorer badges the per-endpoint rules (`MCP` / `MCP refused`) from `mcpRefusalOf` in `akanjs/common`.
+- Write the model's `.desc()`. The six entries `mcp: { list: true }` and the base CRUD flags publish have no text
+  of their own and borrow the model's: the `.of()` label over the framework's `Slice List - Universal`, and the
+  `.desc()` appended to a generated `Get X` that names the verb and says nothing about what an X is.
+- **An `Any` argument is left out of the published schema** and a value sent for one is refused by name, so the
+  endpoint reads it as omitted. The one this matters for is the root list's raw `query` descriptor: read as sent, it
+  would hand an agent an arbitrary filter over every model exposed through `mcp: { list: true }`.
+- **A nullable model return publishes no `outputSchema`**: `structuredContent` is an object by definition, so
+  neither `null` nor an array can ride in it — which is why a list is wrapped as `{ items: … }` — and a declared
+  schema obliges every result to match it. A nullable *list* keeps its schema. A scalar has no structured half at
+  all and ships as the value itself, not as JSON.
+- **An `outputSchema` names no `hidden` or `secret` field** — `resolveReturn` strips both from every response, and
+  on a model like `user` the names are themselves the leak. The *input* schema keeps them: they are legal to send.
+- An endpoint that did not opt in answers the *same* "unknown tool" as one that does not exist, and a guard's
+  refusal reads `You are not permitted to perform this action.` rather than naming the guard. Never make either
+  more helpful — the difference is what enumerates the private surface. A domain `Err` keeps its own words.
+- A caller's own mistake is reported as one and never as a server failure: an argument that is missing, unparseable
+  or undeclared, and a document that is not there, come back as `isError` naming it (a `prompt`, having no `isError`
+  to carry a refusal, answers `-32602`). Only a real failure logs a stack — an agent can drive the rest at will.
+- `mcp: { readOnly, destructive, idempotent }` only override the hints a client renders; they are never a gate.
+  **`AKAN_MCP_READONLY=true` is the read-only-deployment valve, not the exposure switch** — it drops every mutation
+  whatever it declared, and says so in the boot log like any other refusal.
+- **Resource URIs** are `akan://<model>/{id}`, `akan://<model>/light/{id}`, `akan://<model>/list`, and
+  `akan://<model>/list/<sliceKey>` — the root list taking no third segment because any token there is one a slice
+  could also be named. **Those four shapes are the whole set**, so `mcp: { resource: true }` is honoured only on the
+  generated reads that have one; a custom endpoint keeps its tool, gets no template, and is named in the boot log.
+- **Auth is OAuth resource metadata plus a bearer check.** `AKAN_MCP_AUTH_SERVERS`, `AKAN_MCP_SCOPES` and
+  `AKAN_MCP_RESOURCE` configure what is published at `/.well-known/oauth-protected-resource`, and at that path plus
+  the mount path, which clients try first. A provably unusable token — expired, or audienced elsewhere — is refused
+  up front rather than degraded to an anonymous caller, which tells an agent a tool does not exist instead of to
+  authenticate. **A token carrying no `aud` is refused once `AKAN_MCP_AUTH_SERVERS` names an issuer** and accepted
+  while none is: that issuer mints tokens for its other resources too, which is the confused-deputy case RFC 8707
+  is a MUST for, whereas a first-party Akan token is bound by app and environment. `insufficient_scope` waits for
+  `AKAN_MCP_SCOPES`, first-party tokens carrying no scope claim, and the **signature is not checked** — that needs
+  the app's own secret — so a wrongly signed or opaque token degrades silently.
+- A browser-hosted client needs `allowedOrigins`; every other MCP client sends no `Origin` at all. Both the origin
+  comparison and the audience a token is checked against read the *forwarded* host, so each is only as trustworthy
+  as an edge that **overwrites** `x-forwarded-host` rather than appending to it — `AKAN_MCP_RESOURCE` pins the
+  identifier where that cannot be guaranteed.
+- **Three revisions are spoken** from one stateless handler: the modern `2026-07-28` and the legacy `2025-11-25` /
+  `2025-06-18`. A modern request must mirror `MCP-Protocol-Version` and `Mcp-Method` into headers (plus `Mcp-Name`
+  when the body names one), an absent mirror being refused exactly like a contradictory one — a gateway rule keyed
+  on a header never fires for the request that omitted it. Legacy requests are not checked.
+- **The catalogue is one language**, `en` unless `language` says otherwise, built once at boot and cached by
+  clients: there is no `Accept-Language` negotiation, and domain error text resolves in that same language.
+
+**`prompt()`** is the endpoint kind a *user* invokes by name — a client renders it as a slash command — rather than
+one the model chooses, and it takes `.param()` and `.search()` only. `exec` returns `PromptMessage[]`, or a bare
+string wrapped into one user message; build them with `Msg.user` / `Msg.assistant` / `Msg.link` / `Msg.resource` /
+`Msg.image` / `Msg.audio` / `Msg.imageOf`, each taking optional `annotations` last (`audience`, `priority` 0..1,
+`lastModified`) — give the instruction a high `priority` and its attachments a low one, or a client with a full
+window keeps the attachment over the ask. **A prompt's payload is not field-masked**: it rides the `Any` carrier, so
+`hidden`/`secret` fields survive. Pass a `Light<Model>` or an object you assembled yourself; a value whose model
+declares one is named in the log, once per model class, bare or wrapped in an object. **A `prompt` is also mounted
+as a plain HTTP `GET` whether or not the app enabled MCP** — that route is what lets a web UI preview one, and it is
+in the app's OpenAPI document like any other `GET`, answering the one fixed `PromptMessage[]` shape. MCP exposure
+gates the catalogue, not the surface, so guard it like any other read: one that declares no `guards` is named in the
+boot log, and an explicit `[Public]` is a decision and stays quiet.
+
+**`McpProgress.report(n, { total, message })`** reports progress from anywhere inside a call — a service, an
+adapter, a loop several frames down — and is a no-op when nobody is streaming, so the same code runs unchanged over
+HTTP, a websocket, and in tests. `McpProgress.streaming` says whether anyone is reading. A pubsub subscription has
+no equivalent: the transport carries no channel that outlives one request.
+
+Protocol mechanics past these rules — the cursor, the era split, the full error-code table — and the reasoning
+behind each decision are in `apps/akan/page/(docs)/cheatsheet/interface/mcp.tsx` and `local/signal-mcp/PLAN.md`.
 
 ### Reserved Endpoint Names
 

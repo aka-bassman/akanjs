@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BackendEnv } from "akanjs/base";
+import { Logger } from "akanjs/common";
 
 const createEnv = (tmp: string) =>
   ({
@@ -171,6 +172,118 @@ describe("AkanServer OpenAPI config", () => {
       expect(new AkanServer("serverGet", createEnv(tmp), "all", createLib()).openapi).toBe(true);
     } finally {
       delete process.env.AKAN_OPENAPI;
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("AkanServer MCP config", () => {
+  test("reads every option from env and lets code override it", async () => {
+    setAkanEnv();
+    const { AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-"));
+    const vars = [
+      "AKAN_MCP",
+      "AKAN_MCP_READONLY",
+      "AKAN_MCP_PATH",
+      "AKAN_MCP_VERSION",
+      "AKAN_MCP_INSTRUCTIONS",
+      "AKAN_MCP_ALLOWED_ORIGINS",
+      "AKAN_MCP_PAGE_SIZE",
+      "AKAN_MCP_LANGUAGE",
+      "AKAN_MCP_AUTH_SERVERS",
+    ];
+
+    try {
+      // The gateway reaches a child through its environment and nothing else, so this is the whole surface an
+      // app can configure — `server.ts` is generated and constructs this class with no options at all.
+      process.env.AKAN_MCP = "true";
+      process.env.AKAN_MCP_READONLY = "true";
+      process.env.AKAN_MCP_PATH = "/agent";
+      process.env.AKAN_MCP_VERSION = "1.2.3";
+      process.env.AKAN_MCP_INSTRUCTIONS = "Domain tools for the test app.";
+      process.env.AKAN_MCP_ALLOWED_ORIGINS = "https://a.example.com, https://b.example.com";
+      process.env.AKAN_MCP_PAGE_SIZE = "25";
+      process.env.AKAN_MCP_LANGUAGE = "ko";
+      process.env.AKAN_MCP_AUTH_SERVERS = "https://auth.example.com";
+
+      const fromEnv = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
+      expect(fromEnv.mcp).toBe(true);
+      expect(fromEnv.mcpReadOnly).toBe(true);
+      expect(fromEnv.mcpOption).toEqual({
+        path: "/agent",
+        version: "1.2.3",
+        instructions: "Domain tools for the test app.",
+        allowedOrigins: ["https://a.example.com", "https://b.example.com"],
+        pageSize: 25,
+        language: "ko",
+      });
+      expect(fromEnv.mcpAuth).toEqual({ authorizationServers: ["https://auth.example.com"] });
+
+      const overridden = new AkanServer("serverGet", createEnv(tmp), "all", createLib(), {
+        mcp: { language: "en", readOnly: false },
+      });
+      expect(overridden.mcpOption.language).toBe("en");
+      expect(overridden.mcpOption.instructions).toBe("Domain tools for the test app.");
+      expect(overridden.mcpReadOnly).toBe(false);
+
+      // "Code wins over the env of the same name" is about a value, not about a key being present: a caller
+      // assembling options conditionally passes `undefined`, which a spread would read as a value and erase.
+      const partial = new AkanServer("serverGet", createEnv(tmp), "all", createLib(), {
+        mcp: { path: undefined, language: "en", auth: { resource: undefined } },
+      });
+      expect(partial.mcpOption.path).toBe("/agent");
+      expect(partial.mcpOption.language).toBe("en");
+      expect(partial.mcpAuth.authorizationServers).toEqual(["https://auth.example.com"]);
+    } finally {
+      for (const name of vars) delete process.env[name];
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("gives the mount path its leading slash and takes the public spelling of both switches", async () => {
+    setAkanEnv();
+    const { AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-path-"));
+    const vars = ["AKAN_MCP_PATH", "AKAN_PUBLIC_MCP", "AKAN_PUBLIC_MCP_READONLY"];
+    try {
+      // Route key and OAuth metadata path are both built by concatenation, so a bare `mcp` published its metadata
+      // at `/.well-known/oauth-protected-resourcemcp` — a URL no client would ever look for.
+      process.env.AKAN_MCP_PATH = "mcp";
+      // The pairing `AKAN_OPENAPI` already has: a value carried under the public prefix need not be spelled twice.
+      process.env.AKAN_PUBLIC_MCP = "true";
+      process.env.AKAN_PUBLIC_MCP_READONLY = "true";
+      const server = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
+      expect(server.mcpOption.path).toBe("/mcp");
+      expect(server.mcp).toBe(true);
+      expect(server.mcpReadOnly).toBe(true);
+    } finally {
+      for (const name of vars) delete process.env[name];
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("says in the boot log what the catalogue holds", async () => {
+    setAkanEnv();
+    const { AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-boot-"));
+    process.env.AKAN_MCP = "true";
+    const lines: string[] = [];
+    const stop = Logger.addSink(({ message }) => lines.push(message));
+    const server = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
+    try {
+      // Routes on, web off: the report rides with the builtin routes, so a `script`/`console` command that mounts
+      // none stays quiet about a catalogue it is not serving.
+      await server.init({ web: false });
+      const log = lines.join("\n");
+      expect(log).toContain("MCP catalogue: tools=0 prompts=0 resourceTemplates=0");
+      // Nothing in this fixture opts in, which on a server that turned MCP on is nearly always a missing
+      // `expose` rather than an empty app — and the one thing an empty `tools/list` cannot tell you.
+      expect(log).toContain("MCP is enabled but nothing opted in");
+    } finally {
+      stop();
+      delete process.env.AKAN_MCP;
+      await server.stop();
       await rm(tmp, { recursive: true, force: true });
     }
   });

@@ -184,6 +184,108 @@ describe("AkanQualityScanner ssr rules", () => {
   });
 });
 
+const signalOf = (entries: string) =>
+  [
+    `import { endpoint, slice } from "akanjs/signal";`,
+    `export class PostSlice extends slice(srv.post, { guards: {}, mcp: { get: true } }, (init) => ({`,
+    entries,
+    `})) {}`,
+    "",
+  ].join("\n");
+
+describe("AkanQualityScanner mcp rules", () => {
+  test("flags an exposed endpoint whose dictionary entry carries no desc", async () => {
+    const root = await makeWorkspace({
+      "libs/shared/lib/post/post.signal.ts": [
+        `import { endpoint } from "akanjs/signal";`,
+        `export class PostEndpoint extends endpoint(srv.post, ({ query }) => ({`,
+        `  publishPost: query(Boolean, { guards: [Admin], mcp: { expose: true } }).exec(() => true),`,
+        `  archivePost: query(Boolean, { guards: [Admin], mcp: { expose: true } }).exec(() => true),`,
+        `  quietPost: query(Boolean, { guards: [Admin] }).exec(() => true),`,
+        `})) {}`,
+        "",
+      ].join("\n"),
+      "libs/shared/lib/post/post.dictionary.ts": [
+        `export const dictionary = modelDictionary(["en", "ko"]).endpoint((fn) => ({`,
+        `  publishPost: fn(["Publish", "게시"]).desc(["Publishes a post", "글을 게시합니다"]),`,
+        `  archivePost: fn(["Archive", "보관"]).arg((t) => ({`,
+        `    postId: t(["Post", "글"]).desc(["Post to archive", "보관할 글"]),`,
+        `  })),`,
+        `}));`,
+        "",
+      ].join("\n"),
+    });
+
+    const warnings = rulesOf(await new AkanQualityScanner().scan(root), "akan.mcp.missing-description");
+
+    // `archivePost` describes only its argument, which says nothing about when to reach for the tool.
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toContain("archivePost");
+    expect(warnings[0]?.line).toBe(4);
+    expect(warnings[0]?.fix).toContain(".desc(");
+  });
+
+  test("accepts a slice described on its own entry or on the endpoint it generates", async () => {
+    const root = await makeWorkspace({
+      "libs/shared/lib/post/post.signal.ts": signalOf(
+        [
+          `  inPublic: init({ mcp: { expose: true } }).exec(function () { return this.postService.queryInPublic(); }),`,
+          `  inTag: init({ mcp: { expose: true } }).exec(function () { return this.postService.queryInTag(); }),`,
+          `  inDraft: init({ mcp: { expose: true } }).exec(function () { return this.postService.queryInDraft(); }),`,
+        ].join("\n"),
+      ),
+      "libs/shared/lib/post/post.dictionary.ts": [
+        `export const dictionary = modelDictionary(["en", "ko"])`,
+        `  .slice((fn) => ({`,
+        `    inPublic: fn(["In Public", "공개"]).desc(["Public posts", "공개된 글"]),`,
+        `    inTag: fn(["In Tag", "태그"]),`,
+        `    inDraft: fn(["In Draft", "초안"]),`,
+        `  }))`,
+        `  .endpoint((fn) => ({`,
+        `    postListInTag: fn(["Post List In Tag", "태그별 글"]).desc(["Posts under a tag", "태그에 속한 글"]),`,
+        `  }));`,
+        "",
+      ].join("\n"),
+    });
+
+    const warnings = rulesOf(await new AkanQualityScanner().scan(root), "akan.mcp.missing-description");
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toContain("inDraft");
+  });
+
+  test("flags an exposure that declares no guards, whatever the slice call declared", async () => {
+    const root = await makeWorkspace({
+      "libs/shared/lib/post/post.signal.ts": signalOf(
+        [
+          `  inPublic: init({ guards: [Public], mcp: { expose: true } }).exec(function () { return this.postService.queryInPublic(); }),`,
+          `  inTag: init({ mcp: { expose: true } }).exec(function () { return this.postService.queryInTag(); }),`,
+          `  inDraft: init({ ...sharedOption, mcp: { expose: true } }).exec(function () { return this.postService.queryInDraft(); }),`,
+        ].join("\n"),
+      ),
+      "libs/shared/lib/post/post.dictionary.ts": `export const dictionary = modelDictionary(["en", "ko"]);\n`,
+    });
+
+    const warnings = rulesOf(await new AkanQualityScanner().scan(root), "akan.mcp.unguarded-exposure");
+
+    // `inPublic` decided; `inDraft` may have inherited a `guards` from the spread, so it is unreadable, not missing.
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toContain("inTag");
+    expect(warnings[0]?.fix).toContain("guards: [Public]");
+  });
+
+  test("stays silent on a module that exposes nothing to MCP", async () => {
+    const root = await makeWorkspace({
+      "libs/shared/lib/post/post.signal.ts": signalOf(
+        `  inPublic: init().exec(function () { return this.postService.queryInPublic(); }),`,
+      ),
+      "libs/shared/lib/post/post.dictionary.ts": `export const dictionary = modelDictionary(["en", "ko"]);\n`,
+    });
+
+    expect(rulesOf(await new AkanQualityScanner().scan(root), "akan.mcp.missing-description")).toHaveLength(0);
+  });
+});
+
 describe("AkanQualityScanner layout rules", () => {
   test("flags an unknown app root file but not a facet entrypoint", async () => {
     const root = await makeWorkspace({

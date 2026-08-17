@@ -14,7 +14,16 @@ import {
   type SliceInfoServerArgs,
   type SliceInfoSrvs,
 } from "./sliceInfo";
-import type { CnstFull, CnstInput, CnstInsight, CnstLight, DbFilter, SrvMap, SrvRefName } from "./types";
+import type {
+  CnstFull,
+  CnstInput,
+  CnstInsight,
+  CnstLight,
+  DbFilter,
+  McpSliceOption,
+  SrvMap,
+  SrvRefName,
+} from "./types";
 
 export type SliceDictArgShape = { [key: string]: readonly string[] };
 export type SliceDictShape<SliceInfoObj extends { [key: string]: SliceInfo }> = {
@@ -38,6 +47,7 @@ export type SliceCls<
   createGuards: GuardCls[];
   updateGuards: GuardCls[];
   removeGuards: GuardCls[];
+  mcp?: McpSliceOption;
 };
 
 interface RootSliceOption {
@@ -50,6 +60,7 @@ interface RootSliceOption {
     remove?: Cls<Guard> | Cls<Guard>[];
   };
   prefix?: string;
+  mcp?: McpSliceOption;
 }
 
 type RootSliceQuery<SrvModule extends ServiceModel, Full = CnstFull<SrvModule>> = QueryOf<DocumentModel<Full>>;
@@ -151,9 +162,12 @@ export function slice<
     static createGuards = createGuards;
     static updateGuards = updateGuards;
     static removeGuards = removeGuards;
+    static mcp = option.mcp;
     static [SLICE_META] = Object.assign(
       {
-        [""]: init({ guards: rootGuards })
+        // `mcp.list` is the root slice's own opt-in: it is built here, not by the author, so it would otherwise
+        // be the one slice that can never be exposed.
+        [""]: init({ guards: rootGuards, ...(option.mcp?.list ? { mcp: { expose: true } } : {}) })
           .search<"query", object>("query", Any)
           .exec((query) => query ?? {}),
       },

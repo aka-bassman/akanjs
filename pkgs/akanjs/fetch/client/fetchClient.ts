@@ -248,6 +248,8 @@ export class FetchClient {
     const parseReturn = this.#makeReturnParser(endpoint.returns);
     const { bodyArgs, uploadArgs } = FetchClient.classifyHttpArgs(endpoint.args);
     switch (endpoint.type) {
+      // A prompt is a GET that returns messages instead of a model, so it rides the query path unchanged.
+      case "prompt":
       case "query": {
         const queryFn = async (...argData: unknown[]) => {
           const args = argData.slice(0, argLength);
@@ -289,6 +291,7 @@ export class FetchClient {
   }
   #registerEndpoint(key: string, endpoint: SerializedEndpoint, prefix?: string) {
     switch (endpoint.type) {
+      case "prompt":
       case "query": {
         this.#setHandlerFactory(key, () => this.#makeHttpFn(key, endpoint, prefix));
         return;

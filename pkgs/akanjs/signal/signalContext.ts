@@ -16,12 +16,17 @@ import {
 } from "akanjs/constant";
 import type { Adaptor, AdaptorCls, DatabaseService, InjectRegistry, LiveRegistry } from "akanjs/service";
 import type { Internal, InternalCls, InternalInfo, MiddlewareCls } from ".";
-import type { EndpointInfo } from "./endpointInfo";
+import type { EndpointInfo, EndpointType } from "./endpointInfo";
 import { Exception } from "./exception";
 import type { Guard, GuardCls } from "./guard";
+// Deliberately past the barrel: `./mcp` re-exports `McpDocument`, which would drag `akanjs/fetch` into the
+// signal graph. `Msg` itself imports nothing.
+import { Msg } from "./mcp/Msg";
 import { isTraceEnabled, runWithTrace, SignalTrace, traceSpan } from "./trace";
 
 export type SignalTransportType = "http" | "websocket";
+
+const httpEndpointTypes = new Set<EndpointType>(["query", "mutation", "prompt"]);
 
 interface WebSocketRequest {
   ws: Bun.ServerWebSocket<unknown>;
@@ -72,6 +77,7 @@ export class SignalContext<
       env,
       live,
       middleware,
+      ctx,
     }: {
       endpointInfo: EndpointInfo;
       adaptor: Adaptor;
@@ -79,12 +85,19 @@ export class SignalContext<
       env: Env;
       live: LiveRegistry;
       middleware: Map<string, MiddlewareCls>;
+      /**
+       * Runs the endpoint against a caller-built context instead of one derived from the request. MCP needs it:
+       * its arguments arrive as one named object rather than in a URL, but every guard, middleware and
+       * internalArg reads the request through this context, so the transport has to stay the same one.
+       */
+      ctx?: Ctx;
     },
   ) {
     this.key = key;
-    this.transport = endpointInfo.type === "query" || endpointInfo.type === "mutation" ? "http" : "websocket";
+    this.transport = httpEndpointTypes.has(endpointInfo.type) ? "http" : "websocket";
     this.endpointInfo = endpointInfo;
-    if (this.transport === "http") this.ctx = new HttpExecutionContext(reqOrWsReq as Bun.BunRequest) as Ctx;
+    if (ctx) this.ctx = ctx;
+    else if (this.transport === "http") this.ctx = new HttpExecutionContext(reqOrWsReq as Bun.BunRequest) as Ctx;
     else this.ctx = new WebSocketExecutionContext(reqOrWsReq as WebSocketRequest) as Ctx;
     this.adaptor = adaptor;
     this.#registry = registry;
@@ -147,6 +160,32 @@ export class SignalContext<
   async authorize(): Promise<boolean> {
     try {
       await this.#withMiddleware(async () => await this.#checkGuards(), { endpointMiddlewares: false })();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Evaluates only the guards marked `static scope = "account"` — the ones that read the caller and nothing
+   * else — so a catalogue can hide entries the caller certainly cannot use.
+   *
+   * **Never an access gate.** An endpoint whose guards are all resource-scoped passes here and is stopped later
+   * by `#checkGuards` with the arguments those guards need. Erring visible is deliberate: a resource guard fails
+   * closed with no arguments, so evaluating one here would delete every legitimate entry from the listing.
+   */
+  async canListForAccount(): Promise<boolean> {
+    const guards = (this.endpointInfo.signalOption.guards ?? []).filter((GuardCls) => GuardCls.scope === "account");
+    if (guards.length === 0) return true;
+    try {
+      await this.#withMiddleware(
+        async () => {
+          for (const GuardCls of guards) {
+            if (!(await SignalContext.#getGuard(GuardCls).canPass(this)))
+              throw new Exception.Forbidden(`Access denied by guard: ${GuardCls.name}`);
+          }
+        },
+        { endpointMiddlewares: false },
+      )();
       return true;
     } catch {
       return false;
@@ -227,9 +266,14 @@ export class SignalContext<
       );
     };
     const next = this.#withMiddleware(coreExec);
-    const result = this.trace ? await traceSpan("execChain", () => next()) : await next();
+    const raw = this.trace ? await traceSpan("execChain", () => next()) : await next();
     if (this.endpointInfo.type === "pubsub") return;
-    if (result instanceof Response) return result;
+    if (raw instanceof Response) return raw;
+    // A prompt declares `PromptMessage[]` but rides the `Any` carrier, so `resolveReturn` and `makeResponse` both
+    // hand the value straight back and nothing downstream would notice a malformed one. Normalizing here rather
+    // than in the MCP dispatcher is what makes the HTTP route and `prompts/get` return the same shape — the web
+    // preview is only a preview if it is.
+    const result = this.endpointInfo.type === "prompt" ? Msg.normalize(raw) : raw;
     if (!this.trace) {
       const resolved = await SignalContext.resolveReturn(result, {
         signalContext: this,

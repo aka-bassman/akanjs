@@ -27,6 +27,16 @@ export {
   resolveAkanI18nConfig,
 } from "./localeConfig";
 export { lowerlize } from "./lowerlize";
+export {
+  isMcpDescribableArg,
+  type McpExposureEndpoint,
+  type McpExposureHints,
+  type McpExposureOption,
+  mcpBaseVerbOf,
+  mcpHintsOf,
+  mcpPromptRefusalOf,
+  mcpRefusalOf,
+} from "./mcpExposure";
 export { mergeVersion } from "./mergeVersion";
 export { objectify } from "./objectify";
 export { pathGet } from "./pathGet";

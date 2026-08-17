@@ -140,7 +140,7 @@ export interface ConstantData {
 export type { ArgType, SerializedArg, SerializedReturns };
 
 export interface EndpointNode {
-  type: "query" | "mutation" | "pubsub" | "message";
+  type: "query" | "mutation" | "pubsub" | "message" | "prompt";
   args: SerializedArg[];
   returns: SerializedReturns;
   path?: string;
@@ -198,7 +198,7 @@ export interface RouteRow {
   signal: string;
   key: string;
   source: "declared" | "crud" | "slice";
-  type: "query" | "mutation" | "message" | "pubsub";
+  type: "query" | "mutation" | "message" | "pubsub" | "prompt";
   transport: "http" | "ws";
   method: "GET" | "POST" | null;
   /** Fully prefixed, `:param` placeholders intact — e.g. `/api/user/:userId`. */

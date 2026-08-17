@@ -15,11 +15,16 @@ export const signalUi = {
     "min-h-[300px] w-full rounded-xl border border-border bg-background p-4 font-normal text-foreground text-sm",
 };
 
+/** Writes carry the accent, reads do not — so the two write types are named and everything else reads. */
 export const getEndpointBadgeClassName = (type: string) =>
-  badgeRecipe({ variant: type === "query" || type === "pubsub" ? "primary" : "secondary" });
+  badgeRecipe({ variant: type === "mutation" || type === "message" ? "secondary" : "primary" });
 
 export const getGuardBadgeClassName = (guard: string) =>
   badgeRecipe({ variant: guard === "Public" ? "primary" : guard === "None" ? "default" : "secondary" });
+
+/** Published to agents carries the accent; opted in and refused is outlined, because it is a thing to go fix. */
+export const getMcpBadgeClassName = (exposed: boolean) =>
+  badgeRecipe({ variant: exposed ? "accent" : "warning", size: "sm", outline: !exposed });
 
 export const getStatusBadgeClassName = (status: string) =>
   badgeRecipe({

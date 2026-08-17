@@ -1,5 +1,6 @@
 import { type BaseEnv, getEnv } from "akanjs/base";
 import { Logger } from "akanjs/common";
+import { DictionaryLookup } from "akanjs/dictionary";
 import type {
   Adaptor,
   AdaptorCls,
@@ -19,6 +20,7 @@ import { DiLifecycle } from "./di/diLifecycle";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { isPortInUseError } from "./lifecycle/portInUse";
 import { ShutdownManager } from "./lifecycle/shutdownManager";
+import { type McpAuthOption, McpRouter } from "./mcp";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { WebProxyRunner } from "./proxy";
 import { SignalResolver } from "./resolver";
@@ -36,6 +38,44 @@ export interface AkanServerProps extends AkanLibProps {
 
 export interface AkanServerOptions {
   openapi?: boolean;
+  /** `true` mounts `/mcp` with everything its endpoints opted into; the object form adds the read-only valve. */
+  mcp?: boolean | McpServerOption;
+}
+
+export interface McpServerOption {
+  enabled?: boolean;
+  /**
+   * Drops every mutation from the catalogue whatever it opted into — for a deployment that must not be able to
+   * write, such as a read replica or a demo. Off by default: `mcp: { expose: true }` plus the endpoint's guards
+   * are the decision, and this switch cannot tell its author why their endpoint vanished.
+   */
+  readOnly?: boolean;
+  /**
+   * Mount path, `/mcp` by default. The published OAuth resource identifier follows it, so changing it changes
+   * the `aud` a token has to carry.
+   */
+  path?: string;
+  /** Reported as `serverInfo.version`. Defaults to `0.0.0`, the same placeholder the OpenAPI document uses. */
+  version?: string;
+  /**
+   * Free-text usage guidance handed to the model alongside the tool list — the one place to say what this app
+   * is for and which tool to reach for first. Defaults to a bare one-liner naming the app.
+   */
+  instructions?: string;
+  /**
+   * Extra origins allowed past the DNS-rebinding check, beyond the server's own host. Needed only for a
+   * browser-hosted MCP client; native ones send no `Origin` at all.
+   */
+  allowedOrigins?: string[];
+  /** Entries per catalogue page. A client that wants the whole list follows `nextCursor` until it stops. */
+  pageSize?: number;
+  /**
+   * The one language the catalogue and its error text are written in, `en` by default. Server-wide on purpose:
+   * the document is built once at boot and cached by clients, and it is read by a model rather than by a person.
+   */
+  language?: string;
+  /** OAuth resource-server identity: which issuers a client may authenticate with, and the scopes to demand. */
+  auth?: McpAuthOption;
 }
 
 interface AkanAppPrepared {
@@ -77,6 +117,10 @@ export class AkanServer {
   prefix = "/api";
   websocketPrefix = "/ws";
   openapi = AkanServer.#isOpenApiEnvEnabled();
+  mcp = AkanServer.#isEnvEnabled("AKAN_MCP", "AKAN_PUBLIC_MCP");
+  mcpReadOnly = AkanServer.#isEnvEnabled("AKAN_MCP_READONLY", "AKAN_PUBLIC_MCP_READONLY");
+  mcpAuth: McpAuthOption = AkanServer.#mcpAuthFromEnv();
+  mcpOption: Omit<McpServerOption, "enabled" | "readOnly" | "auth"> = AkanServer.#mcpOptionFromEnv();
   serverMode: "federation" | "batch" | "all";
   shutdownTimeoutMs = AkanServer.#defaultShutdownTimeoutMs();
 
@@ -99,6 +143,7 @@ export class AkanServer {
     this.libs = libs;
     this.env = { ...env };
     this.openapi = options?.openapi ?? this.openapi;
+    this.setMcp(options?.mcp ?? this.mcp);
     this.serverMode = serverMode;
     this.#di = new DiLifecycle(this.env, serverMode, ...libs);
   }
@@ -113,6 +158,16 @@ export class AkanServer {
   setOpenApi(openapi = true) {
     if (this.status !== "stopped") throw new Error("OpenAPI config must be set before app initialization.");
     this.openapi = openapi;
+    return this;
+  }
+  setMcp(mcp: boolean | McpServerOption = true) {
+    if (this.status !== "stopped") throw new Error("MCP config must be set before app initialization.");
+    this.mcp = typeof mcp === "boolean" ? mcp : (mcp.enabled ?? true);
+    if (typeof mcp === "boolean") return this;
+    const { enabled: _enabled, readOnly, auth, ...rest } = mcp;
+    if (readOnly !== undefined) this.mcpReadOnly = readOnly;
+    if (auth) this.mcpAuth = { ...this.mcpAuth, ...AkanServer.#defined(auth) };
+    this.mcpOption = { ...this.mcpOption, ...AkanServer.#defined(rest) };
     return this;
   }
   setDatabaseConfig(database: DatabaseConfig) {
@@ -462,11 +517,31 @@ export class AkanServer {
                   title: `${this.env.appName} API`,
                   version: "0.0.0",
                   servers: this.#getOpenApiServers(),
+                  resolveDescription: AkanServer.#createDescriptionResolver(),
                 }),
               ),
           },
         }
       : {};
+    // Mounted at the root, not under `this.prefix`: the canonical resource URI a client authenticates against
+    // is the endpoint's own URL, and `https://<host>/mcp` is the one worth publishing.
+    const mcpRouter =
+      this.mcp && this.serverMode !== "batch"
+        ? new McpRouter({
+            registry: this.#di.registry,
+            env: this.env,
+            live: this.#di.live,
+            middleware: new Map(this.#di.modules.middleware),
+            instructions: `Domain tools for the ${this.env.appName} app.`,
+            ...this.mcpOption,
+            readOnly: this.mcpReadOnly,
+            auth: this.mcpAuth,
+          })
+        : null;
+    const mcpRoutes: HttpRoutes = mcpRouter?.createRoutes() ?? {};
+    // Builds the catalogue here rather than on the first agent request, so what MCP published — and what it
+    // refused despite an author opting in — is in the boot log of the process that decided it.
+    mcpRouter?.report();
     // Registered only when the gate passes, so outside `local` the paths do not exist at all and fall
     // through to the SSR catch-all as a natural 404 rather than a handler that answers "forbidden".
     const devtoolsRoutes = new DevtoolsRouter({
@@ -479,7 +554,17 @@ export class AkanServer {
       openapi: this.openapi,
       getStatus: () => this.status,
     }).createRoutes();
-    return { ...openapiRoutes, ...devtoolsRoutes };
+    return { ...openapiRoutes, ...mcpRoutes, ...devtoolsRoutes };
+  }
+
+  /**
+   * Rebuilt per request rather than cached on the instance: libs register their dictionaries at module-evaluation
+   * time, and the document itself is already re-serialized per request, so a stale snapshot would be the only
+   * thing here that could disagree with the rest of the response.
+   */
+  static #createDescriptionResolver() {
+    const lookup = new DictionaryLookup();
+    return (key: string) => lookup.text(key);
   }
 
   #getOpenApiServers() {
@@ -497,14 +582,80 @@ export class AkanServer {
 
   static #isServerOptions(value: AkanLib | AkanServerOptions | undefined): value is AkanServerOptions {
     return Boolean(
-      value && !("database" in value) && !("service" in value) && !("scalar" in value) && "openapi" in value,
+      value &&
+        !("database" in value) &&
+        !("service" in value) &&
+        !("scalar" in value) &&
+        ("openapi" in value || "mcp" in value),
     );
   }
 
   static #isOpenApiEnvEnabled() {
-    return [process.env.AKAN_OPENAPI, process.env.AKAN_PUBLIC_OPENAPI].some(
-      (value) => value === "true" || value === "1",
-    );
+    return AkanServer.#isEnvEnabled("AKAN_OPENAPI", "AKAN_PUBLIC_OPENAPI");
+  }
+
+  static #isEnvEnabled(...names: string[]) {
+    return names.some((name) => process.env[name] === "true" || process.env[name] === "1");
+  }
+
+  /** Both differ per environment, so they belong in env rather than in the app's source alongside the switch. */
+  static #mcpAuthFromEnv(): McpAuthOption {
+    const authorizationServers = AkanServer.#envList("AKAN_MCP_AUTH_SERVERS");
+    const scopes = AkanServer.#envList("AKAN_MCP_SCOPES");
+    return {
+      ...(authorizationServers?.length ? { authorizationServers } : {}),
+      ...(scopes?.length ? { scopes } : {}),
+      ...(process.env.AKAN_MCP_RESOURCE ? { resource: process.env.AKAN_MCP_RESOURCE } : {}),
+    };
+  }
+
+  /**
+   * The rest of `McpServerOption`, in the one channel that reaches this process.
+   *
+   * `server.ts` is generated and constructs `AkanServer` with no options, and a child of the gateway is handed
+   * nothing but its environment — so without an env spelling per field, the only settable parts were the two
+   * booleans and `instructions` / `allowedOrigins` / `path` / `version` / `pageSize` / `language` had no path
+   * from an app at all. An option passed in code still wins: `setMcp` merges over this.
+   */
+  /**
+   * Keys whose value is `undefined` are dropped before the merge. "An option written in code wins over the env of
+   * the same name" is the contract, and a spread reads an explicitly-`undefined` property as a value — so
+   * `{ path: undefined }` from a caller assembling options conditionally erased what the environment supplied.
+   */
+  static #defined<T extends object>(source: T): Partial<T> {
+    return Object.fromEntries(Object.entries(source).filter(([, value]) => value !== undefined)) as Partial<T>;
+  }
+
+  static #mcpOptionFromEnv(): Omit<McpServerOption, "enabled" | "readOnly" | "auth"> {
+    const allowedOrigins = AkanServer.#envList("AKAN_MCP_ALLOWED_ORIGINS");
+    const pageSize = Number(process.env.AKAN_MCP_PAGE_SIZE);
+    return {
+      ...AkanServer.#mcpPathFromEnv(),
+      ...(process.env.AKAN_MCP_VERSION ? { version: process.env.AKAN_MCP_VERSION } : {}),
+      ...(process.env.AKAN_MCP_INSTRUCTIONS ? { instructions: process.env.AKAN_MCP_INSTRUCTIONS } : {}),
+      ...(allowedOrigins?.length ? { allowedOrigins } : {}),
+      ...(Number.isInteger(pageSize) && pageSize > 0 ? { pageSize } : {}),
+      ...(process.env.AKAN_MCP_LANGUAGE ? { language: process.env.AKAN_MCP_LANGUAGE } : {}),
+    };
+  }
+
+  /**
+   * Both consumers build their path by concatenation — the route key, and the RFC 9728 metadata path the resource
+   * identifier is inserted into — so `AKAN_MCP_PATH=mcp` served a route named `mcp` and published its metadata at
+   * `/.well-known/oauth-protected-resourcemcp`, which no client would ever look for. Normalized rather than
+   * rejected: the intent is unambiguous, and a server that refuses to boot over a missing slash is worse.
+   */
+  static #mcpPathFromEnv() {
+    const path = process.env.AKAN_MCP_PATH?.trim();
+    if (!path) return {};
+    return { path: path.startsWith("/") ? path : `/${path}` };
+  }
+
+  static #envList(name: string) {
+    return process.env[name]
+      ?.split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
   }
 
   /**

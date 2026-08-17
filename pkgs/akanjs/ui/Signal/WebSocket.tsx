@@ -18,7 +18,7 @@ const WebSocketEndpoints = ({ refName, fetch, openAll }: WebSocketEndpointsProps
   const endpointEntries = Object.entries(signal.endpoint)
     .sort(([keyA], [keyB]) => (keyA > keyB ? 1 : -1))
     .filter(([key, endpoint]) => {
-      if (endpoint.type === "query" || endpoint.type === "mutation") return false;
+      if (endpoint.type !== "pubsub" && endpoint.type !== "message") return false;
       // if (endpoint.guards?.includes("Public") && tryRoles.includes("Public")) return true;
       // if ((endpoint.guards?.includes("User") || endpoint.guards?.includes("Every")) && tryRoles.includes("User"))
       //   return true;
