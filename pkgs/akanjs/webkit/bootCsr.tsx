@@ -18,6 +18,7 @@ import {
 } from "akanjs/client";
 import {
   assertUniqueRoutePatterns,
+  getRouteExports,
   Logger,
   parseAkanI18nEnv,
   parseBasePaths,
@@ -307,39 +308,7 @@ function validateRouteModuleExports(key: string, mod: RouteModule) {
     if (!mod.default) throw new Error(`[route-convention] ${key} generated override wrapper has no default export`);
     return;
   }
-  const allowed =
-    parsed.kind === "page"
-      ? new Set(["default", "pageConfig", "head", "metadata", "generateHead", "generateMetadata", "Loading"])
-      : parsed.isInternalRootLayout
-        ? new Set([
-            "default",
-            "pageConfig",
-            "head",
-            "metadata",
-            "generateHead",
-            "generateMetadata",
-            "fonts",
-            "manifest",
-            "theme",
-            "reconnect",
-            "wsConnect",
-            "layoutStyle",
-            "gaTrackingId",
-            "Loading",
-            "NotFound",
-            "Error",
-          ])
-        : new Set([
-            "default",
-            "pageConfig",
-            "head",
-            "metadata",
-            "generateHead",
-            "generateMetadata",
-            "Loading",
-            "NotFound",
-            "Error",
-          ]);
+  const allowed = getRouteExports(parsed.kind, { rootLayout: parsed.isInternalRootLayout });
   for (const exportName of Object.keys(mod)) {
     if (!allowed.has(exportName)) {
       throw new Error(`[route-convention] unsupported export "${exportName}" in ${key}`);

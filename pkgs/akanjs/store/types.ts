@@ -36,6 +36,13 @@ export type Get<State, Actions> = {
   get: () => State & Actions;
 };
 
+type VoidAction<T> = T extends (...args: infer Args) => infer Ret
+  ? [Ret] extends [PromiseLike<unknown>]
+    ? (...args: Args) => Promise<void>
+    : (...args: Args) => void
+  : T;
+export type VoidActions<Action> = { [K in keyof Action]: VoidAction<Action[K]> };
+
 export type StoreSliceMap<SlceCls extends SliceCls> = SlceCls[typeof SLICE_META];
 export type StoreSliceSuffix<SlceCls extends SliceCls, Suffix extends keyof StoreSliceMap<SlceCls>> = Suffix & string;
 export type StoreSliceSuffixCap<SlceCls extends SliceCls, Suffix extends keyof StoreSliceMap<SlceCls>> = Capitalize<

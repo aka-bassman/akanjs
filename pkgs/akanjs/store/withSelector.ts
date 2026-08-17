@@ -2,7 +2,7 @@ import type { Prettify } from "akanjs/base";
 import type { FieldState } from "akanjs/constant";
 import type { RefObject } from "react";
 import type { RootStoreCls } from "./rootStore";
-import type { SliceStateAction } from "./types";
+import type { SliceStateAction, VoidActions } from "./types";
 
 type SetKey<Key extends string> = `set${Capitalize<Key>}`;
 
@@ -28,7 +28,7 @@ type WithSelectorsOf<State, WritableState, Action, InternalSliceObj> = {
   use: {
     [K in keyof State]: () => State[K];
   };
-  do: Action & {
+  do: VoidActions<Action> & {
     [K in keyof WritableState as K extends string ? SetKey<K> : never]: (value: FieldState<WritableState[K]>) => void;
   };
   get: () => State;
@@ -52,9 +52,7 @@ export interface SliceSelectors<RefName extends string, State, Action> {
     [K in keyof State]: () => State[K];
   };
   do: Prettify<
-    {
-      [K in keyof Action]: Action[K];
-    } & {
+    VoidActions<Action> & {
       [K in keyof State as K extends string ? SetKey<K> : never]: (value: FieldState<State[K]>) => void;
     }
   >;

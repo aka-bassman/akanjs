@@ -9,6 +9,36 @@ const DIRECTORY_SCOPED_LEAVES = new Set(["_layout", "_index", "_overrides"]);
 
 export type RouteModuleKind = "page" | "layout" | "overrides";
 
+export const PAGE_ROUTE_EXPORTS: ReadonlySet<string> = new Set([
+  "default",
+  "pageConfig",
+  "head",
+  "metadata",
+  "generateHead",
+  "generateMetadata",
+  "Loading",
+]);
+export const LAYOUT_ROUTE_EXPORTS: ReadonlySet<string> = new Set([...PAGE_ROUTE_EXPORTS, "NotFound", "Error"]);
+export const ROOT_LAYOUT_ROUTE_EXPORTS: ReadonlySet<string> = new Set([
+  ...LAYOUT_ROUTE_EXPORTS,
+  "fonts",
+  "manifest",
+  "theme",
+  "reconnect",
+  "wsConnect",
+  "layoutStyle",
+  "gaTrackingId",
+]);
+/** Root-layout exports that are plain config rather than components, so a PascalCase check cannot allow them. */
+export const RESERVED_ROUTE_CONFIG_EXPORTS: ReadonlySet<string> = new Set(
+  [...ROOT_LAYOUT_ROUTE_EXPORTS].filter((name) => name !== "default" && !/^[A-Z]/.test(name)),
+);
+
+export function getRouteExports(kind: "page" | "layout", { rootLayout = false } = {}): ReadonlySet<string> {
+  if (kind === "page") return PAGE_ROUTE_EXPORTS;
+  return rootLayout ? ROOT_LAYOUT_ROUTE_EXPORTS : LAYOUT_ROUTE_EXPORTS;
+}
+
 export interface ParsedRouteModuleKey {
   key: string;
   kind: RouteModuleKind;

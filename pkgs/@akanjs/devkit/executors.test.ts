@@ -149,8 +149,10 @@ describe("Executor filesystem helpers", () => {
       "AI Development Guide",
     );
     expect(await readFile(path.join(root, "workspace/docs/GENERATED.md"), "utf8")).toContain("Generated Akan Files");
+    // Rules and their plugin registrations live in the package's base config, so a framework release reaches an
+    // existing workspace on `bun update` — the workspace file only extends it and scopes its own files.
     expect(await readFile(path.join(root, "workspace/biome.json"), "utf8")).toContain(
-      "./node_modules/@akanjs/devkit/lint/no-import-client-functions.grit",
+      '"extends": ["@akanjs/devkit/biome.base.json"]',
     );
   });
 

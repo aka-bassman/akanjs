@@ -236,6 +236,26 @@ describe("via and ConstantField", () => {
     expect(address.zip).toBe(10000);
   });
 
+  test("keeps map entries when re-crystalizing an already crystalized value", () => {
+    const user = createUser();
+    const copiedUser = new UserFull(user as never);
+
+    expect(copiedUser.metadata).toBeInstanceOf(Map);
+    expect(copiedUser.metadata.get("locale")).toBe("ko");
+
+    const complex = new ComplexInput(
+      complexInput({
+        settings: { theme: "dark" },
+        addressBook: { home: { city: "Seoul", zip: 12345, coordinate: { lat: 37, lng: 127 } } },
+      }),
+    ) as { settings: Map<string, string>; addressBook: Map<string, InstanceType<typeof AddressInput>> };
+    const copiedComplex = new ComplexInput(complex as never) as typeof complex;
+
+    expect(copiedComplex.settings.get("theme")).toBe("dark");
+    expect(copiedComplex.addressBook.get("home")).toBeInstanceOf(AddressInput);
+    expect(copiedComplex.addressBook.get("home")?.city).toBe("Seoul");
+  });
+
   test("supports maps, deep nested objects, and high-dimensional arrays", () => {
     const cube = [
       [

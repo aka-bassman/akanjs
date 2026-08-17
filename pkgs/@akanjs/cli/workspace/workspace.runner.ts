@@ -1,5 +1,6 @@
 import path from "node:path";
 import { collectScopeRecipeSources, extractAgentBlock, renderScopeAgentBlock } from "@akanjs/devkit/agentsIndex";
+import { biomeVersion } from "@akanjs/devkit/biomeBase";
 import { type Exec, runner, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { SysExecutor, WorkspaceExecutor } from "@akanjs/devkit/executors";
 import { FileSys } from "@akanjs/devkit/fileSys";
@@ -57,17 +58,17 @@ export class WorkspaceRunner extends runner("workspace") {
       })),
     );
 
-    if (!cursorRules) return created;
+    if (cursorRules)
+      created.push(
+        ...(await workspace.applyTemplate({
+          basePath: ".cursor/rules",
+          template: "workspaceRoot/.cursor/rules/akan.mdc.template",
+          dict,
+          overwrite,
+        })),
+      );
 
-    return [
-      ...created,
-      ...(await workspace.applyTemplate({
-        basePath: ".cursor/rules",
-        template: "workspaceRoot/.cursor/rules/akan.mdc.template",
-        dict,
-        overwrite,
-      })),
-    ];
+    return created;
   }
 
   async createWorkspace(
@@ -88,10 +89,7 @@ export class WorkspaceRunner extends runner("workspace") {
     // 1. create root files
     const workspace = WorkspaceExecutor.fromRoot({ workspaceRoot, repoName });
     const templateSpinner = workspace.spinning(`Creating workspace template files in ${dirname}/${repoName}...`);
-    const [latestBiomeVersion, latestTypesBunVersion] = await Promise.all([
-      getLatestPackageVersion("@biomejs/biome", "latest", normalizedRegistryUrl),
-      getLatestPackageVersion("@types/bun", "latest", normalizedRegistryUrl),
-    ]);
+    const latestTypesBunVersion = await getLatestPackageVersion("@types/bun", "latest", normalizedRegistryUrl);
     await workspace.applyTemplate({
       basePath: ".",
       template: "workspaceRoot",
@@ -114,7 +112,7 @@ export class WorkspaceRunner extends runner("workspace") {
       },
       devDependencies: {
         ...rootPackageJson.devDependencies,
-        "@biomejs/biome": latestBiomeVersion,
+        "@biomejs/biome": biomeVersion,
         "@types/bun": latestTypesBunVersion,
         "@akanjs/devkit": akanVersion,
         ...(typescript ? { typescript } : {}),

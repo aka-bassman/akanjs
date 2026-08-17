@@ -32,7 +32,8 @@
     "pr:v3": "gh pr create --repo akan-team/akanjs --base v3 --fill"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.4",
+    "@akanjs/devkit": "workspace:*",
+    "@biomejs/biome": "2.5.8",
     "@changesets/cli": "^2.31.0",
     "@playwright/test": "^1.60.0",
     "@types/bun": "^1.3.14",

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { RESERVED_ROUTE_CONFIG_EXPORTS } from "akanjs/common";
 import ignore from "ignore";
 import ts from "typescript";
 import { AbstractDoc } from "./abstractDoc";
@@ -99,24 +100,6 @@ const CONVENTION_SUFFIXES = [
   ".signal.ts",
   ".store.ts",
 ] as const;
-
-// Non-PascalCase exports the framework recognizes on page/layout route modules (see PageModule/LayoutModule
-// in pkgs/akanjs/client/csrTypes.ts). PascalCase route exports (Loading, NotFound, Error) pass the component
-// check, and the `default` export is handled separately.
-const PAGE_RESERVED_EXPORTS = new Set([
-  "pageConfig",
-  "head",
-  "metadata",
-  "generateHead",
-  "generateMetadata",
-  "fonts",
-  "manifest",
-  "theme",
-  "reconnect",
-  "wsConnect",
-  "layoutStyle",
-  "gaTrackingId",
-]);
 
 // How to remediate each rule, keyed by rule id. Surfaced as a `fix:` line per warning (text + JSON output)
 // so the scan result tells the reader what to do, not just what is wrong.
@@ -669,7 +652,7 @@ function isRestrictedInternalKind(kind: ComponentFileDeclaration["kind"]) {
 
 function isAllowedComponentExport(declaration: ComponentFileDeclaration, isPage: boolean) {
   if (isComponentValueKind(declaration.kind) && isPascalCaseName(declaration.name)) return true;
-  return isPage && PAGE_RESERVED_EXPORTS.has(declaration.name);
+  return isPage && RESERVED_ROUTE_CONFIG_EXPORTS.has(declaration.name);
 }
 
 function isPascalCaseName(name: string) {

@@ -42,6 +42,7 @@ import { AkanAppConfig, AkanLibConfig, decreaseBuildNum, increaseBuildNum } from
 import { FileSys } from "./fileSys";
 import { getDirname } from "./getDirname";
 import { Linter } from "./linter";
+import { resolveRepoName } from "./repoIdentity";
 import { AppInfo, LibInfo, PkgInfo, WorkspaceInfo } from "./scanInfo";
 import { Spinner } from "./spinner";
 // Type-only: the implementation is loaded on demand in `getTypeChecker` to keep `typescript` out of
@@ -788,7 +789,7 @@ export class WorkspaceExecutor extends Executor {
   static #execs = new Map<string, WorkspaceExecutor>();
   static fromRoot({
     workspaceRoot = process.cwd(),
-    repoName = path.basename(process.cwd()),
+    repoName = resolveRepoName(workspaceRoot),
   }: {
     workspaceRoot?: string;
     repoName?: string;

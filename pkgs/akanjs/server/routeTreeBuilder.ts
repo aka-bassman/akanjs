@@ -13,6 +13,7 @@ import type {
 import {
   assertUniqueRoutePatterns,
   compareRouteSpecificity,
+  getRouteExports,
   matchRoutePattern,
   parseBasePaths,
   parseRouteModuleKey,
@@ -49,44 +50,6 @@ export interface RouteModuleCacheStats {
 }
 
 export class RouteTreeBuilder {
-  static readonly #pageRouteExports = new Set([
-    "default",
-    "pageConfig",
-    "head",
-    "metadata",
-    "generateHead",
-    "generateMetadata",
-    "Loading",
-  ]);
-  static readonly #rootLayoutExports = new Set([
-    "default",
-    "pageConfig",
-    "head",
-    "metadata",
-    "generateHead",
-    "generateMetadata",
-    "fonts",
-    "manifest",
-    "theme",
-    "reconnect",
-    "wsConnect",
-    "layoutStyle",
-    "gaTrackingId",
-    "Loading",
-    "NotFound",
-    "Error",
-  ]);
-  static readonly #layoutRouteExports = new Set([
-    "default",
-    "pageConfig",
-    "head",
-    "metadata",
-    "generateHead",
-    "generateMetadata",
-    "Loading",
-    "NotFound",
-    "Error",
-  ]);
   static readonly #moduleCacheStats: RouteModuleCacheStats = {
     moduleCount: 0,
     loadedModuleCount: 0,
@@ -311,12 +274,7 @@ export class RouteTreeBuilder {
       return;
     }
     const parsed = parseRouteModuleKey(key);
-    const allowed =
-      kind === "page"
-        ? RouteTreeBuilder.#pageRouteExports
-        : parsed.isInternalRootLayout
-          ? RouteTreeBuilder.#rootLayoutExports
-          : RouteTreeBuilder.#layoutRouteExports;
+    const allowed = getRouteExports(kind, { rootLayout: parsed.isInternalRootLayout });
     for (const exportName of Object.keys(mod)) {
       if (!allowed.has(exportName)) {
         throw new Error(`[route-convention] unsupported export "${exportName}" in ${key}`);

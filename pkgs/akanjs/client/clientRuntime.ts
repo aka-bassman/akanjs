@@ -75,6 +75,13 @@ globalWithRuntime[CLIENT_RUNTIME_KEY] = state;
 const missingRuntimeError = () =>
   new Error("Akan client runtime is not registered. Import the generated app client first.");
 
+const applyRuntimeErrorConstructor = (runtime: ClientRuntime) => {
+  const instance = (runtime.fetch as RuntimeFetch | undefined)?.instance as
+    | { setErrorConstructor?: (Err: unknown) => void }
+    | undefined;
+  if (typeof instance?.setErrorConstructor === "function") instance.setErrorConstructor(runtime.Err);
+};
+
 export const registerClientRuntime = <Runtime>(
   runtime: Runtime,
   { scope = "app" }: { scope?: RuntimeScope } = {},
@@ -82,6 +89,7 @@ export const registerClientRuntime = <Runtime>(
   if (state.scope === "app" && scope === "lib") return runtime;
   state.runtime = runtime as ClientRuntime;
   state.scope = scope;
+  applyRuntimeErrorConstructor(state.runtime);
   return runtime;
 };
 

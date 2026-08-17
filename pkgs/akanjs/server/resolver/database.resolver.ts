@@ -242,6 +242,9 @@ export class DatabaseResolver {
           updateMany: (query: QueryOf<any>, update: DocumentUpdateInput) => store.updateManyByQuery(query, update),
           removeOne: (query: QueryOf<any>) => store.removeOneByQuery(query),
           removeMany: (query: QueryOf<any>) => store.removeManyByQuery(query),
+          updateById: (id: string, update: DocumentUpdateInput, options?: { upsert?: boolean }) =>
+            store.updateOneByQuery({ id }, update, options),
+          removeById: (id: string) => store.removeOneByQuery({ id }),
           // Kept so existing call sites keep working; `@deprecated` on the `Mdl` type is what points them onward.
           countDocuments: (query: QueryOf<any>) => store.count(query),
           bulkWrite: (

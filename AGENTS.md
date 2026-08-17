@@ -1,9 +1,20 @@
 # Akan.js Monorepo — Agent Guide
 
 This is the canonical, tool-neutral guide for coding agents (Claude Code, Codex, Cursor, and others)
-working in this repository. It consolidates the rules in `.cursor/rules/*.mdc`, which remain the
-Cursor-native copies. Keep this file as the single source of truth: `CLAUDE.md` imports it, and when a
-rule changes, update it here and mirror it into the matching `.cursor/rules/*.mdc` file.
+working in this repository, and the only copy. Claude Code reads it through `CLAUDE.md` (`@AGENTS.md`)
+and Cursor through `.cursor/rules/akan.mdc`, both of which are pointers holding no content of their own —
+there is nothing to mirror a rule change into. The section between the `akan:agent` markers is generated
+by `akan agent install`; edit anything outside the markers freely.
+
+<!-- akan:agent:start -->
+<!-- akan:agent:version 3.0.0-alpha.8 -->
+
+## Workspace
+
+- Repo: akanjs
+- Apps: minimal, akan
+- Libraries: util, shared
+- Packages: akanjs, create-akan-workspace, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -42,8 +53,9 @@ that looks wrong; do not "fix" it back.
   `// biome-ignore lint/plugin: <reason>` with the reason spelled out. `apps/akan/page/v1/**` is excluded.
 - **Never `throw new Error`.** Throw `new Err("<module>.error.<key>")` and register the key as `[en, ko]` in that
   module's dictionary `.error({})`. Import `Err` from `"../dict"` on the server and from `"@libs/<lib>/client"` or
-  `"@apps/<app>/client"` in UI. `no-throw-raw-error.grit` exempts `*.test.ts`, `*.spec.ts`, `*.constant.ts`, and
-  `common/**` — `common/` has no legal `Err` import path, so keep throwing code out of it.
+  `"@apps/<app>/client"` in UI. `no-throw-raw-error.grit` exempts `*.test.ts`, `*.spec.ts`, `*.constant.ts`,
+  `common/**`, and `apps/akan/env/**` — `common/` and `env/` have no legal `Err` import path, so keep throwing code
+  out of them.
 - **Never import a third-party package** from `page/**`, from any barrel, or from any
   `*.{constant,dictionary,document,service,signal,store}.ts` / `*.{Template,Unit,Util,View,Zone}.tsx`
   (`no-import-external-library.grit`). Re-export the symbol through a lib first. One-line re-export shims such as
@@ -58,9 +70,22 @@ that looks wrong; do not "fix" it back.
   `*.constant.ts`, `*.store.ts`, and the five module component suffixes (`no-bang-comment-in-client.grit`). Bun
   classifies `//!` and `/*!` as legal comments and keeps them through minification, so the note ships to every
   visitor. Use `// FIXME:` there; `//!` stays legal in server, `srvkit/`, and CLI files.
+- **Never return a value from a store action** (`no-return-in-store-action.grit`). Every method of a `store(...)`
+  class dispatches through `st.do.<action>()`, which is typed `void` / `Promise<void>`, so the value is
+  unreachable — write it into state with `this.set({ ... })`. A bare `return;` guard, a `return` inside a nested
+  callback, a getter, and a `static` helper are all still fine.
 - **Never redeclare a generated CRUD endpoint name** in `*.signal.ts` (`no-redeclare-predefined-endpoint.grit`).
 - **No deep imports past a barrel** (`no-deep-internal-import.grit`). Cross-module constant references such as
   `../map/map.constant` are the sanctioned exception.
+- **Never import across the client/server boundary.** Client files (`ui/`, `webkit/`, `page/`, `*.store.ts`, every
+  `.tsx`) may not import a `*.document.ts` / `*.dictionary.ts` / `*.service.ts` / `*.signal.ts`, `srvkit/`, a
+  package `server` entrypoint, or the `db` / `srv` / `sig` / `dict` / `option` / `useServer` barrels
+  (`no-import-server-in-client.grit`). Server files (those four suffixes plus `srvkit/`) may not import a
+  `*.store.ts`, a module component, `ui/`, `webkit/`, a package `client` entrypoint, or the `st` / `store` /
+  `useClient` barrels (`no-import-client-in-server.grit`). Shared files — `common/` and `*.constant.ts` — are held
+  to **both**, so they reach neither side. `import type` is erased before bundling and stays legal in every
+  direction; a mixed value-and-type import is not exempt. Scoped to `apps/**` and `libs/**`: `pkgs/akanjs/**`
+  implements the boundary and is where the two graphs legitimately meet.
 - **Server-component discipline** is enforced on `page/**`, `*.Unit.tsx`, and `*.View.tsx`
   (`no-import-client-functions.grit`, `no-use-client-in-server.grit`, `non-scalar-props-restricted.grit`).
 - `noArrayIndexKey` and `useExhaustiveDependencies` are **off** on purpose: `key={idx}` for embedded scalars and
@@ -300,7 +325,9 @@ model facade's `removeMany(query)` and the store's `removeManyByQuery` stamp `re
 framework has no hard delete for a model table, and `delete` is deliberately left unused so it can mean one later.
 The facade keeps `Many`/`One` spelled out on its writes (`updateOne` / `updateMany` / `removeOne` / `removeMany`):
 a bare `update`/`remove` would read like the document-path `update(id)` / `doc.remove()` while hitting every match.
-Only the count was shortened — `count(query)`, with `countDocuments` kept as `@deprecated`.
+Only the count was shortened — `count(query)`, with `countDocuments` kept as `@deprecated`. `updateById(id, update)`
+and `removeById(id)` are those same query-level writes narrowed to one id, **not** the document path: they fire no
+hooks either, so a model whose removal cascades or carries a `_postRemove` still goes through `remove<Model>(id)`.
 
 **`<model>.service.ts`** — keep methods to a few lines: load → chain → `return await ….save()`. Write `return await`
 explicitly in tail position; do not "optimize" it away. Side effects belong in `override async _preUpdate` /
@@ -315,7 +342,9 @@ delegating to the service.
 stores need none, because state and CRUD actions are generated. The body is three lines: `await fetch.X` →
 `this.setX(...)` → toast. The optimistic shape is mutate the client model, `void fetch.*`, then commit. Use
 `this.pick(...)` when the value must exist, `this.get()` when it may not, and `this.set({...})` to write. Mutate lists
-through the collection API (`this.set({ xList: xList.set(x).save() })`), not array spread. **Never
+through the collection API (`this.set({ xList: xList.set(x).save() })`), not array spread. **An action returns
+nothing** — `st.do.<action>()` is typed `void` / `Promise<void>`, so hand the result to `this.set({...})` rather
+than returning it (`no-return-in-store-action.grit`); a bare `return;` guard stays fine. **Never
 `import type { RootStore } from "../st"`** — it crashes `akan build` with a Bun SSR segfault.
 
 **`<model>.dictionary.ts`** — fixed chain, with empty stages still written:
@@ -537,7 +566,8 @@ shape, so `cascade` never means "related" — it means one of exactly these:
 - A `removeWith` declaration **auto-creates its index** (`{ removedAt, fk }`, or `{ removedAt, typeKey, fk }` when
   polymorphic). Every non-base field lives in the `_doc` JSON column, so the lookup would otherwise scan the table
   on every owner removal.
-- **Query-level removes fire no hooks and therefore no cascade.** `removeManyByQuery` / `updateManyByQuery` and the generated `remove<Filter>` / `update<Filter>` stamp
+- **Query-level removes fire no hooks and therefore no cascade.** `removeManyByQuery` / `updateManyByQuery`, the
+  generated `remove<Filter>` / `update<Filter>`, and the facade's `removeById` / `updateById` stamp
   `removedAt` in one atomic UPDATE, so nothing downstream runs. Remove one document at a time when it cascades.
 - Cascades are **idempotent**: `removedAt IS NULL` is ANDed into every query-level write, so a retry after a partial
   failure re-stamps nothing. Cycles are cut by a visited set carried down the whole chain, with a depth cap of 16.
@@ -655,14 +685,6 @@ cd dist/apps/akan && USE_AKANJS_PKGS=true AKAN_PUBLIC_REPO_NAME=akanjs AKAN_PUBL
 
 - Adjust `<appName>`, `AKAN_PUBLIC_APP_NAME`, and `AKAN_PUBLIC_BASE_PATHS` to match the app being tested.
 
-<!-- akan:agent:start -->
-## Workspace
-
-- Repo: akanjs
-- Apps: minimal, akan
-- Libraries: util, shared
-- Packages: akanjs, create-akan-workspace, @akanjs/cli, @akanjs/devkit
-
 ## Akan Module Abstracts
 
 - Before changing a domain, service, or scalar module, read its `*.abstract.md` file first.
@@ -757,7 +779,6 @@ When a request implies a distinct look and feel, do not stop at colors — custo
 - Generated examples use current Akan builder APIs and scanner-friendly filenames.
 - The output contract tells the model which file paths to return.
 - The guide avoids broad framework essays when a concrete file rule is better.
-<!-- akan:agent:end -->
 
 ## Before You Finish
 
@@ -769,3 +790,4 @@ When a request implies a distinct look and feel, do not stop at colors — custo
 5. Re-read the file you wrote against its section above.
 6. Did you add a comment? Delete it unless it documents an external constraint or a security decision.
 7. Did behavior or an invariant change? Update the module's `*.abstract.md`.
+<!-- akan:agent:end -->
