@@ -111,13 +111,6 @@ export class AdminService extends serve(db.admin, ({ use, service, memory, signa
     void admin.updateAccess().save();
     return await this._issueAdminToken(admin, account);
   }
-  /**
-   * One read-only statement against this app's own database, for a question no domain endpoint expresses.
-   *
-   * `InsightQuery` is what makes it read-only and what keeps `_doc` — every `hidden` and `secret` field — from
-   * crossing the boundary. This layer adds nothing to that and must not: the guard is the signal's, and re-checking
-   * the SQL here would be a second, weaker copy of the same rules.
-   */
   async runInsight(sql: string, limit?: number | null) {
     return await new InsightQuery(this.database.getConnection()).run(sql, { limit: limit ?? undefined });
   }

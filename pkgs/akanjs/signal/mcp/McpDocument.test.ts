@@ -26,16 +26,14 @@ ConstantRegistry.buildModel("mcpPost", McpPostInput, McpPostObject, McpPost, Lig
 const signal = (): Record<string, SerializedSignal> => ({
   mcpPost: {
     prefix: "mcpPost",
-    mcp: { get: true },
     getGuards: ["Public"],
     cruGuards: ["Admin"],
     slice: {
       // The root slice `slice()` generates: its one argument is a raw query descriptor typed `Any`.
-      "": { args: [{ type: "search", name: "query", refName: "Any" }], guards: ["Public"], mcp: { expose: true } },
+      "": { args: [{ type: "search", name: "query", refName: "Any" }], guards: ["Public"] },
       byAuthor: {
         args: [{ type: "search", name: "authorId", refName: "ID", nullable: true }],
         guards: ["Public"],
-        mcp: { expose: true },
       },
       // What `init().param("from", Date).search("periodTypes", …)` actually serializes to — a slice's params are
       // required and are not `search`, which is the shape a search-only fixture never exercises.
@@ -45,42 +43,36 @@ const signal = (): Record<string, SerializedSignal> => ({
           { type: "search", name: "periodTypes", refName: "String", arrDepth: 1, nullable: true },
         ],
         guards: ["Public"],
-        mcp: { expose: true },
       },
       internalOnly: { args: [], guards: ["Admin"] },
     },
     endpoint: {
-      countMcpPosts: { type: "query", args: [], returns: { refName: "Int" }, mcp: { expose: true } },
+      countMcpPosts: { type: "query", args: [], returns: { refName: "Int" }, guards: ["Public"] },
       findMcpPost: {
         type: "query",
         args: [],
         returns: { refName: "mcpPost", modelType: "full", nullable: true },
         guards: ["Public"],
-        mcp: { expose: true },
       },
       searchMcpPosts: {
         type: "query",
         args: [],
         returns: { refName: "mcpPost", modelType: "light", arrDepth: 1, nullable: true },
         guards: ["Public"],
-        mcp: { expose: true },
       },
       undeclaredMcpPost: { type: "query", args: [], returns: { refName: "String" } },
-      // Asks to be addressable, which only the generated reads have a uri shape for.
       summaryMcpPost: {
         type: "query",
         args: [{ type: "search", name: "status", refName: "String", nullable: true }],
         returns: { refName: "String" },
         guards: ["Public"],
-        mcp: { expose: true, resource: true },
       },
-      rawMcpPost: { type: "query", args: [], returns: { refName: "Any" }, mcp: { expose: true } },
+      rawMcpPost: { type: "query", args: [], returns: { refName: "Any" }, guards: ["Public"] },
       publishMcpPost: {
         type: "mutation",
         args: [],
         returns: { refName: "Boolean" },
         guards: ["Admin"],
-        mcp: { expose: true },
       },
       // Takes the model on the way in and gives it back on the way out — the one tool that publishes both halves.
       draftMcpPost: {
@@ -88,15 +80,16 @@ const signal = (): Record<string, SerializedSignal> => ({
         args: [{ type: "body", name: "data", refName: "mcpPost", modelType: "input" }],
         returns: { refName: "mcpPost", modelType: "full" },
         guards: ["Admin"],
-        mcp: { expose: true },
       },
-      unguardedMcpPost: { type: "mutation", args: [], returns: { refName: "Boolean" }, mcp: { expose: true } },
+      // No guards at all: nobody decided who may reach it, which is what the guarded rule refuses.
+      unguardedMcpPost: { type: "mutation", args: [], returns: { refName: "Boolean" } },
+      // `[Public]` on a write is having no guard, spelled out — a decision, and still refused.
+      wipeMcpPosts: { type: "mutation", args: [], returns: { refName: "Boolean" }, guards: ["Public"] },
       importMcpPost: {
         type: "mutation",
         args: [{ type: "body", name: "payload", refName: "Any" }],
         returns: { refName: "Boolean" },
         guards: ["Admin"],
-        mcp: { expose: true },
       },
       reviewMcpPost: {
         type: "prompt",
@@ -106,39 +99,34 @@ const signal = (): Record<string, SerializedSignal> => ({
         ],
         returns: { refName: "Any" },
         guards: ["Public"],
-        mcp: { expose: true },
       },
-      unguardedPrompt: { type: "prompt", args: [], returns: { refName: "Any" }, mcp: { expose: true } },
+      unguardedPrompt: { type: "prompt", args: [], returns: { refName: "Any" } },
       undeclaredPrompt: { type: "prompt", args: [], returns: { refName: "Any" }, guards: ["Public"] },
       bodyPrompt: {
         type: "prompt",
         args: [{ type: "body", name: "data", refName: "mcpPost", modelType: "input" }],
         returns: { refName: "Any" },
         guards: ["Public"],
-        mcp: { expose: true },
       },
       tagsPrompt: {
         type: "prompt",
         args: [{ type: "search", name: "tags", refName: "String", arrDepth: 1, nullable: true }],
         returns: { refName: "Any" },
         guards: ["Public"],
-        mcp: { expose: true },
       },
       rawArgPrompt: {
         type: "prompt",
         args: [{ type: "search", name: "filter", refName: "Any", nullable: true }],
         returns: { refName: "Any" },
         guards: ["Public"],
-        mcp: { expose: true },
       },
-      // Asks to be addressable *and* is keyed like a generated list, so the uri shape resolved and the option then
-      // fell out at the prompt branch — the one place an unhonoured `resource: true` was neither refused nor kept.
+      // Keyed like a generated list, so a uri shape resolves for it — and it is still not addressable, because
+      // `resources/read` resolves a template to a tool and a prompt is never one.
       mcpPostListDigest: {
         type: "prompt",
         args: [],
         returns: { refName: "Any" },
         guards: ["Public"],
-        mcp: { expose: true, resource: true },
       },
     },
   },
@@ -147,9 +135,13 @@ const signal = (): Record<string, SerializedSignal> => ({
 const names = (doc: McpDocument) => doc.tools.map((tool) => tool.name);
 
 describe("McpDocument", () => {
-  test("publishes only what opted in", () => {
+  test("publishes every candidate its guards admit, with nothing to opt in", () => {
+    // Exposure follows the guards, so generated CRUD, every slice and every custom endpoint are all candidates —
+    // the same surface HTTP already serves, narrowed per caller at listing time rather than per endpoint at build
+    // time. `internalOnly` is here on `Admin` guards alone, which no author had to remember to write twice.
     expect(names(new McpDocument(signal()))).toEqual([
       "countMcpPosts",
+      "createMcpPost",
       "draftMcpPost",
       "findMcpPost",
       "lightMcpPost",
@@ -157,67 +149,64 @@ describe("McpDocument", () => {
       "mcpPostInsight",
       "mcpPostInsightByAuthor",
       "mcpPostInsightInPeriod",
+      "mcpPostInsightInternalOnly",
       "mcpPostList",
       "mcpPostListByAuthor",
       "mcpPostListInPeriod",
+      "mcpPostListInternalOnly",
       "publishMcpPost",
+      "removeMcpPost",
       "searchMcpPosts",
       "summaryMcpPost",
+      "updateMcpPost",
     ]);
   });
 
-  test("readOnly drops every mutation whatever it opted into", () => {
-    // The deployment-level valve, not the exposure decision: `publishMcpPost` opted in and is guarded.
+  test("readOnly drops every mutation whatever its guards allow", () => {
+    // The deployment-level valve, not the exposure decision: `publishMcpPost` is guarded and would publish.
     const exposed = names(new McpDocument(signal(), { readOnly: true }));
     expect(exposed).not.toContain("publishMcpPost");
     expect(exposed).toContain("mcpPostList");
   });
 
-  test("refuses shapes MCP cannot carry even after they opt in", () => {
+  test("refuses shapes MCP cannot carry, and everything the guards do not admit", () => {
     const exposed = names(new McpDocument(signal()));
-    // `Any` has no schema to publish, and an unguarded mutation is an accident every time.
+    // `Any` has no schema to publish.
     expect(exposed).not.toContain("rawMcpPost");
-    expect(exposed).not.toContain("unguardedMcpPost");
     // An `Any` arg is left out of the schema, so one that must be filled leaves a tool that can only fail.
     expect(exposed).not.toContain("importMcpPost");
-    // Never opted in at all.
+    // The guarded rule, in its two shapes: no guards at all, and a write whose only guard is `Public`.
     expect(exposed).not.toContain("undeclaredMcpPost");
-    expect(exposed).not.toContain("createMcpPost");
+    expect(exposed).not.toContain("unguardedMcpPost");
+    expect(exposed).not.toContain("wipeMcpPosts");
     expect(exposed).toContain("publishMcpPost");
   });
 
-  test("says why an endpoint that opted in was kept out instead of dropping it silently", () => {
-    // The rejections above are fail-closed by design and were also silent: a deliberate `expose: true` vanished
-    // from the catalogue with nowhere to look but the framework source. The server prints these at boot.
+  test("says why every candidate it kept out was kept out, instead of dropping it silently", () => {
+    // Fail-closed and, before this, silent. It matters more now that nobody writes an opt-in: there is no absent
+    // flag to explain a missing tool, so this list is the only place the answer exists. Printed at boot.
     const refusals = Object.fromEntries(new McpDocument(signal()).refusals.map(({ key, reason }) => [key, reason]));
     expect(Object.keys(refusals).sort()).toEqual([
       "bodyPrompt",
       "importMcpPost",
-      "mcpPostListDigest",
       "rawArgPrompt",
       "rawMcpPost",
-      "summaryMcpPost",
       "tagsPrompt",
+      "undeclaredMcpPost",
       "unguardedMcpPost",
+      "unguardedPrompt",
+      "wipeMcpPosts",
     ]);
     expect(refusals.rawMcpPost).toContain("`Any`");
-    expect(refusals.unguardedMcpPost).toContain("`[Public]` is having none");
+    // The two halves of the guarded rule read differently, because they are different mistakes: one is an omission
+    // and the other is a decision that is still wrong for a write.
+    expect(refusals.undeclaredMcpPost).toContain("declares no guards");
+    expect(refusals.wipeMcpPosts).toContain("`[Public]` is having none");
+    // A prompt answers to the guarded rule exactly as a query does.
+    expect(refusals.unguardedPrompt).toContain("declares no guards");
     // Names the argument: "it has an `Any` argument" still leaves an author hunting for which one.
     expect(refusals.importMcpPost).toContain("`payload`");
     expect(refusals.bodyPrompt).toContain("flat string map");
-    // Nothing that never opted in is reported — silence there is what opting in means.
-    expect(refusals.undeclaredMcpPost).toBeUndefined();
-  });
-
-  test("names a published entry that declares no guards without refusing it", () => {
-    // Access identical to an explicit `[Public]`, so refusing it would be wrong — but one of the two is a decision
-    // somebody made, and a named slice inherits no `get:` from the slice call, which is how the other happens.
-    const doc = new McpDocument(signal());
-    expect(doc.unguarded).toEqual(["countMcpPosts"]);
-    // `[Public]` spelled out stays quiet, and so does a prompt: an unguarded one is warned about where it is
-    // resolved, because its GET route is mounted whether or not the app enables MCP.
-    expect(doc.unguarded).not.toContain("mcpPostListByAuthor");
-    expect(doc.unguarded).not.toContain("unguardedPrompt");
   });
 
   test("keeps hidden and secret field names out of the output schema and in the input schema", () => {
@@ -386,24 +375,23 @@ describe("McpDocument", () => {
       // A slice's required params belong in the template too: without them the uri addresses a read that can
       // only fail. `parse` reads every query key back, so both kinds round-trip through form expansion.
       "akan://mcpPost/list/inPeriod{?from,periodTypes,skip,limit,sort}",
+      "akan://mcpPost/list/internalOnly{?skip,limit,sort}",
     ]);
     // An insight is an aggregate with nothing to point a uri at.
     expect(doc.resourceTemplates.some((template) => template.name.includes("Insight"))).toBe(false);
     expect(doc.resources).toEqual([]);
   });
 
-  test("withholds a template a custom endpoint asked for rather than pointing it at the model", () => {
-    // `resource: true` needs a uri, and `#uriTemplate` knows only the shapes the framework generates. Falling back
-    // to the model's own published `akan://mcpPost/{mcpPostId}` twice — once under `summaryMcpPost` — where `parse`
-    // sends it to `mcpPost` regardless, so the advertised read answered somebody else's endpoint or nothing, and
-    // its own `status` argument was nowhere in the uri at all.
+  test("gives a custom endpoint a tool but never an address", () => {
+    // Only the generated reads have a uri shape. Building one for a custom endpoint from the model's own key
+    // published `akan://mcpPost/{mcpPostId}` twice — once under `summaryMcpPost` — where `parse` sends it to
+    // `mcpPost` regardless, so the advertised read answered somebody else's endpoint, and `summaryMcpPost`'s own
+    // `status` argument was nowhere in the uri at all.
     const doc = new McpDocument(signal());
     expect(names(doc)).toContain("summaryMcpPost");
     expect(doc.resourceTemplates.map((template) => template.name)).not.toContain("summaryMcpPost");
     expect(doc.resourceTemplates.filter((t) => t.uriTemplate === "akan://mcpPost/{mcpPostId}")).toHaveLength(1);
     expect(doc.resolveResource("akan://mcpPost/6712ab34cd56ef7890123456")?.exposed.key).toBe("mcpPost");
-    const refusal = doc.refusals.find(({ key }) => key === "summaryMcpPost");
-    expect(refusal?.reason).toContain("no template");
   });
 
   test("refuses a prompt argument a flat string map cannot carry, whatever its type", () => {
@@ -455,23 +443,26 @@ describe("McpDocument", () => {
     expect(doc.resolveResource("akan://mcpPost/6712ab34cd56ef7890123456")?.exposed.key).toBe("mcpPost");
     // Never advertised: an opted-out endpoint has to be unreachable, not merely refused later by its guards.
     expect(doc.resolveResource("akan://mcpTag/6712ab34cd56ef7890123456")).toBeNull();
-    expect(doc.resolveResource("akan://mcpPost/list/internalOnly")).toBeNull();
+    // A refused endpoint has to be unreachable, not merely refused later by its guards.
+    expect(doc.resolveResource("akan://mcpPost/list/undeclared")).toBeNull();
   });
 
-  test("refuses a resource template on a prompt rather than computing one and dropping it", () => {
-    // A prompt is not a tool, so `resources/read` can never resolve to one. The key here matches a generated list,
-    // which is what made the uri resolvable and the silence possible: the old branch order computed the template
-    // and then `continue`d past the map it would have been stored in.
+  test("never addresses a prompt, whatever its key looks like", () => {
+    // A prompt is not a tool, so `resources/read` can never resolve to one. This key matches a generated list,
+    // which is what made a uri resolvable for it at all.
     const doc = new McpDocument(signal());
     expect(doc.findPrompt("mcpPostListDigest")).toBeDefined();
     expect(doc.resourceTemplates.map((template) => template.name)).not.toContain("mcpPostListDigest");
     expect(doc.resolveResource("akan://mcpPost/list/digest")).toBeNull();
-    expect(doc.refusals.find(({ key }) => key === "mcpPostListDigest")?.reason).toContain("not honoured on a prompt");
   });
 
   test("lists a prompt with its arguments, and never as a tool", () => {
     const doc = new McpDocument(signal());
-    expect(doc.prompts.map((prompt) => prompt.name)).toEqual(["mcpPostListDigest", "reviewMcpPost", "unguardedPrompt"]);
+    expect(doc.prompts.map((prompt) => prompt.name)).toEqual([
+      "mcpPostListDigest",
+      "reviewMcpPost",
+      "undeclaredPrompt",
+    ]);
     // A prompt rides the `Any` carrier, which `#isExposable` refuses — the split has to happen before it.
     expect(names(doc)).not.toContain("reviewMcpPost");
     expect(doc.findPrompt("reviewMcpPost")?.prompt.arguments).toEqual([
@@ -482,9 +473,9 @@ describe("McpDocument", () => {
 
   test("exposes a prompt on the same terms as a query", () => {
     const doc = new McpDocument(signal());
-    // An empty guard list means public here exactly as it does for a query; opting in is the decision.
-    expect(doc.findPrompt("unguardedPrompt")).toBeDefined();
-    expect(doc.findPrompt("undeclaredPrompt")).toBeUndefined();
+    // `[Public]` written down publishes; declaring nothing does not, exactly as for a query.
+    expect(doc.findPrompt("undeclaredPrompt")).toBeDefined();
+    expect(doc.findPrompt("unguardedPrompt")).toBeUndefined();
     // `prompts/get` sends a flat string map, so there is nowhere to put a body.
     expect(doc.findPrompt("bodyPrompt")).toBeUndefined();
   });

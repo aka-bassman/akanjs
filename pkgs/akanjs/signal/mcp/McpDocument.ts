@@ -2,7 +2,7 @@ import { capitalize, isMcpDescribableArg, mcpHintsOf, mcpRefusalOf } from "akanj
 import { FetchClient } from "akanjs/fetch";
 import { type AgentCandidate, AgentCatalogue, type AgentRefusal, type AgentUndescribed } from "../agent";
 import { type JsonSchema, JsonSchemaBuilder } from "../schema";
-import type { McpOption, SerializedArg, SerializedEndpoint, SerializedSignal } from "../types";
+import type { SerializedArg, SerializedEndpoint, SerializedSignal } from "../types";
 import { McpUriTemplate } from "./McpUriTemplate";
 import type { McpPrompt, McpResource, McpResourceTemplate, McpTool, McpToolAnnotations } from "./mcpProtocol";
 
@@ -11,8 +11,8 @@ export interface McpDocumentOptions {
   excludeSignals?: string[];
   /**
    * Drops every mutation from the catalogue regardless of what it opted into. Off by default: the endpoint's own
-   * `mcp: { expose: true }` plus its guards are the decision, and a second switch that silently unlists a
-   * deliberately exposed endpoint gives its author no way to see why. This is the read-only-deployment valve.
+   * an endpoint's guards are the decision, and a second switch that silently unlists a published endpoint gives
+   * its author no way to see why. This is the read-only-deployment valve.
    */
   readOnly?: boolean;
 }
@@ -21,12 +21,11 @@ export interface McpExposedEndpoint {
   refName: string;
   key: string;
   endpoint: SerializedEndpoint;
-  mcp: McpOption;
 }
 
 /**
- * An opt-in this catalogue did not honour — the whole endpoint, or only the resource template it asked for. The
- * bookkeeping is audience-independent and lives on `AgentCatalogue`; these are the MCP names for it.
+ * A candidate this catalogue did not publish. The bookkeeping is audience-independent and lives on
+ * `AgentCatalogue`; these are the MCP names for it.
  */
 export type McpRefusal = AgentRefusal;
 export type McpUndescribed = AgentUndescribed;
@@ -48,23 +47,12 @@ export class McpDocument {
   /** Every readable thing is addressed by a template, so there are no fixed resources to enumerate. */
   readonly resources: McpResource[] = [];
   /**
-   * What opted in and was refused anyway — the rejections below are fail-closed by design, and an author whose
-   * deliberate `expose: true` vanished otherwise has nowhere to look but the framework source.
+   * Every candidate that was not published, with the sentence saying why — the rejections are fail-closed by
+   * design, and an author whose endpoint is missing otherwise has nowhere to look but the framework source.
    */
   readonly refusals: McpRefusal[];
   /** What is published with no description of its own, which is the field a model picks a tool by. */
   readonly undescribed: McpUndescribed[];
-  /**
-   * Published tools whose endpoint declares no guards at all. Not a refusal — the access is the same as an
-   * explicit `[Public]`, and reads are legitimately public — but the two are a different act, and only one of them
-   * is a decision someone made. A slice's `guards: { get: … }` reaches the root slice and base CRUD and never a
-   * named slice, so a named slice that opted into MCP is the shape that silently arrives here.
-   *
-   * Prompts are left out: one with no guards is already warned about where it is resolved, because its GET route
-   * is mounted whether or not the app enables MCP.
-   */
-  readonly unguarded: string[];
-
   readonly #schema = new JsonSchemaBuilder({ refPrefix: "#/$defs/" });
   #allSchemas: Record<string, JsonSchema> | null = null;
   #readSchemas: Record<string, JsonSchema> | null = null;
@@ -78,9 +66,8 @@ export class McpDocument {
   constructor(serializedSignal: Record<string, SerializedSignal>, options: McpDocumentOptions = {}) {
     this.#options = options;
     this.#catalogue = new AgentCatalogue(options);
-    const { tools, prompts, unguarded } = this.#collect(serializedSignal);
+    const { tools, prompts } = this.#collect(serializedSignal);
     this.refusals = this.#catalogue.refusals;
-    this.unguarded = unguarded;
     this.tools = tools.map((item) => this.#tool(item));
     this.prompts = prompts.map((item) => {
       const prompt = this.#prompt(item);
@@ -129,27 +116,22 @@ export class McpDocument {
    * Which of the catalogue's candidates this audience takes, and in what shape.
    *
    * The enumeration and the naming policy are `AgentCatalogue`'s — every audience walks the same registry and
-   * holds one name per entry. What is MCP's own is only this: that `mcp:` is the option that admits an endpoint,
-   * and that an admitted one becomes a tool, a prompt, and sometimes an addressable uri.
+   * holds one name per entry. What is MCP's own is only this: that every candidate is published unless a rule
+   * refuses it, and that a published one becomes a tool, a prompt, and sometimes an addressable uri.
    */
   #collect(serializedSignal: Record<string, SerializedSignal>): {
     tools: McpExposedEndpoint[];
     prompts: McpExposedEndpoint[];
-    unguarded: string[];
   } {
     const tools: McpExposedEndpoint[] = [];
     const prompts: McpExposedEndpoint[] = [];
-    const unguarded: string[] = [];
     for (const candidate of AgentCatalogue.candidates(serializedSignal, {
       excludeSignals: this.#options.excludeSignals,
     })) {
-      const mcp = McpDocument.#exposureOf(candidate);
-      if (!mcp) continue;
       const item: McpExposedEndpoint = {
         refName: candidate.refName,
         key: candidate.key,
         endpoint: candidate.endpoint,
-        mcp,
       };
       // Fail-closed and shared with the API explorer, so the reason an author reads is the rule that ran.
       const reason = mcpRefusalOf(item.endpoint, { readOnly: this.#options.readOnly });
@@ -160,58 +142,36 @@ export class McpDocument {
       if (!this.#catalogue.claim(item.key)) continue;
       if (item.endpoint.type === "prompt") {
         // A prompt is never addressable: `resources/read` resolves a template to a tool, and a prompt is not one.
-        // Refused by kind rather than by key shape — a prompt keyed like a generated list (`xListY`) computed a uri
-        // and then dropped it on the way out, which was the last place an option went quietly unhonoured.
-        if (item.mcp.resource)
-          this.#catalogue.refuse(
-            item.key,
-            "`resource: true` is not honoured on a prompt: only a read publishes a resource template.",
-          );
         prompts.push(item);
         continue;
       }
-      // `resource: true` asks for a uri, and only the reads the framework generates have one — `#uriTemplate` knows
-      // those key shapes and nothing else. Falling back to the model's own, which this did, published
-      // `akan://x/{xId}` under a custom endpoint's name: the same uri the model's own `get` publishes, which
-      // `parse` then routes to *that* endpoint, so every read of the advertised template answered somebody else or
-      // nothing at all. The tool is unaffected, so only the template is withheld — and said out loud, because an
-      // option that is quietly not honoured is the same silence the refusal list exists to end.
-      const uriTemplate = item.mcp.resource
+      // Only the reads the framework generates have a uri shape — `#uriTemplate` knows those key shapes and
+      // nothing else. A custom endpoint gets no template: falling back to the model's own published
+      // `akan://x/{xId}` under a custom name, which `parse` then routed to *that* endpoint, so every read of the
+      // advertised template answered somebody else or nothing at all.
+      const uriTemplate = McpDocument.#addressable(candidate)
         ? McpDocument.#uriTemplate(item.refName, item.key, item.endpoint)
         : undefined;
-      if (item.mcp.resource && !uriTemplate)
-        this.#catalogue.refuse(
-          item.key,
-          "`resource: true` needs the uri shape only a generated read has, so it carries no template.",
-        );
       this.#byToolName.set(item.key, item);
       if (uriTemplate) this.#templates.set(item.key, uriTemplate);
-      if (!item.endpoint.guards?.length) unguarded.push(item.key);
       tools.push(item);
     }
-    return { tools, prompts, unguarded };
+    return { tools, prompts };
   }
 
   /**
-   * The `mcp:` option that admits a candidate, or nothing — which is every endpoint, since exposure is opt-in.
+   * Whether this candidate is one of the generated reads that has an `akan://` address.
    *
-   * Where it is written depends on where the endpoint came from. A generated CRUD endpoint carries no option of
-   * its own, so its verb opts in on the signal; a slice's generated pair opts in on the slice; a custom endpoint
-   * writes its own.
+   * Only the list side of a slice is addressable; an insight is an aggregate with nothing to point a URI at, and a
+   * custom endpoint has no generated key shape to build one from.
    */
-  static #exposureOf(candidate: AgentCandidate): McpOption | null {
-    const { origin, refName, key, signal, slice, endpoint, baseVerb } = candidate;
-    if (origin === "base")
-      return baseVerb && signal.mcp?.[baseVerb] ? { expose: true, resource: baseVerb === "get" } : null;
-    if (origin === "slice") {
-      if (!slice?.mcp?.expose) return null;
-      // Only the list side is addressable; an insight is an aggregate with nothing to point a URI at.
-      return { ...slice.mcp, resource: slice.mcp.resource !== false && key.startsWith(`${refName}List`) };
-    }
-    return endpoint.mcp?.expose ? endpoint.mcp : null;
+  static #addressable({ origin, refName, key, baseVerb }: AgentCandidate): boolean {
+    if (origin === "base") return baseVerb === "get";
+    if (origin === "slice") return key.startsWith(`${refName}List`);
+    return false;
   }
 
-  #tool({ refName, key, endpoint, mcp }: McpExposedEndpoint): McpTool {
+  #tool({ refName, key, endpoint }: McpExposedEndpoint): McpTool {
     const { paramArgs, searchArgs, bodyArgs } = FetchClient.classifyHttpArgs(endpoint.args);
     // MCP hands over one flat named object, so path, query and body args are all just properties of it.
     const args = [...paramArgs, ...searchArgs, ...bodyArgs].filter(isMcpDescribableArg);
@@ -233,7 +193,7 @@ export class McpDocument {
         ...this.#defs(properties),
       },
       ...(outputSchema ? { outputSchema } : {}),
-      annotations: mcpHintsOf(key, endpoint, mcp) satisfies McpToolAnnotations,
+      annotations: mcpHintsOf(key, endpoint) satisfies McpToolAnnotations,
     };
   }
 

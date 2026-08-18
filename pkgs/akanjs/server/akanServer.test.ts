@@ -276,10 +276,11 @@ describe("AkanServer MCP config", () => {
       // none stays quiet about a catalogue it is not serving.
       await server.init({ web: false });
       const log = lines.join("\n");
-      expect(log).toContain("MCP catalogue: tools=0 prompts=0 resourceTemplates=0");
-      // Nothing in this fixture opts in, which on a server that turned MCP on is nearly always a missing
-      // `expose` rather than an empty app — and the one thing an empty `tools/list` cannot tell you.
-      expect(log).toContain("MCP is enabled but nothing opted in");
+      expect(log).toContain("MCP catalogue: tools=5 prompts=0 resourceTemplates=3");
+      // Nobody wrote an opt-in, so the boot log is the only place a missing tool has an explanation — and this
+      // fixture's `[Public]` writes and guardless reads are exactly the two shapes the guarded rule keeps out.
+      expect(log).toContain('did not expose "createServerResolverTestItem"');
+      expect(log).toContain('did not expose "updateTitle"');
     } finally {
       stop();
       delete process.env.AKAN_MCP;

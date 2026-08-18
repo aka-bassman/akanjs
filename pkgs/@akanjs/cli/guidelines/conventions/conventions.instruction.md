@@ -370,8 +370,10 @@ workflow changes.
 
 - **Every `slice()` takes an explicit `{ guards: {…} }` second argument, and `root:` is always `Admin`.**
 - **Every custom `mutation` / `query` / `message` names its own `guards: [...]` array.** Never rely on the slice default. `Public` belongs on a slice `get:`, never on a mutation.
+- **The guards are also the MCP exposure decision** — see MCP Exposure. An endpoint that names none is not published to agents at all, and a mutation whose only guard is `Public` is refused, so a missing `guards` array now costs visibility as well as authorization.
 - Resource guards are `Can<Verb><Model>` classes in `srvkit/guards.ts` that `implements Guard` with an `async canPass(context)`. They **fail closed**: no resource named ⇒ `false`; a load that throws ⇒ `logger.warn` then `false`. Admin bypass goes first.
 - Keep `static name = "User";` on guard classes. `fetch` serializes guard names and the API explorer filters on them; it looks like dead code, and deleting it breaks the UI. Comment it so the next reader knows.
+- **Every guard class also declares `static scope: GuardScope`, and it is required with no default.** `"account"` means the verdict reads the caller and nothing about the call, so it can be evaluated with no arguments — which is what lets an MCP listing hide what this caller certainly cannot use. `"resource"` means it needs the call's arguments (`context.getArg()`) and fails closed without them, so it is never evaluated for a listing: the entry stays visible and is stopped at call time. Getting it wrong is not a type error, so the marker is mandatory rather than defaulted — `SignedIn` / `Admin` / role checks are `"account"`, and every `Can<Verb><Model>` is `"resource"`.
 - The acting user arrives via `.with(Self)` / `.with(CurrentUserId)` / `.with(Me)`. Never trust a client-supplied id.
 - Guards ship with the library that owns the model and are imported by its own signals through the package path, so a mounting app inherits authorization and cannot forget it.
 - Services re-check ownership even when a guard already gated the call — two independent gates.
@@ -473,8 +475,15 @@ Conventions that hold for both shapes:
 
 ### MCP Exposure
 
-Any signal can be served to AI agents as an MCP server on `POST /mcp`, and **nothing is exposed until it says so**.
-Turn it on in the app's `main.ts` — `new AkanApp("./server", { mcp: { … } })` — which takes `enabled`, `readOnly`,
+Every signal is served to AI agents as an MCP server on `POST /mcp`. **`/mcp` is mounted by default and exposure
+follows an endpoint's guards — there is no per-endpoint opt-in, and nothing to write in a signal file.** An endpoint
+that declares a real guard is published; one that declares none is refused, and so is a mutation whose only guard is
+`Public`. `AKAN_MCP=false` takes the whole surface off. The reasoning is that the guards are already the
+authorization decision and `filterForAccount` re-reads them per caller on every listing, so a second per-endpoint
+switch says nothing the guards do not — while guaranteeing that every endpoint added later is invisible to agents
+until somebody remembers it.
+
+Settings live in the app's `main.ts` — `new AkanApp("./server", { mcp: { … } })` — which takes `enabled`, `readOnly`,
 `path`, `version`, `instructions`, `allowedOrigins`, `pageSize`, `language`, and `auth`. That is the only
 app-authored place for it: `server.ts` is generated and takes no options, and the gateway configures a child
 through its environment — so each field also has an env spelling (`AKAN_MCP`, `AKAN_MCP_READONLY`,
@@ -486,26 +495,26 @@ has, and a value written in code wins over the env of the same name — an expli
 concatenation.
 
 ```typescript
-// <model>.signal.ts — a tool, a resource-backed slice, and a slash-command prompt
+// <model>.signal.ts — every one of these is an MCP tool or prompt, with no `mcp:` option anywhere
 export class TaskSlice extends slice(
   srv.task,
-  // generated CRUD per verb; `list` is the model's own unfiltered list, which `slice()` generates itself
-  { guards: { root: Admin, get: SignedIn, cru: SignedIn }, mcp: { get: true, list: true } },
+  { guards: { root: Admin, get: SignedIn, cru: SignedIn } },
   (init) => ({
-    // its own guards: the map above reaches base CRUD and the root slice, never a named slice
-    inTodo: init({ guards: [SignedIn], mcp: { expose: true } }).exec(function () {
+    // its own guards: the map above reaches base CRUD and the root slice, never a named slice — so a named slice
+    // that names none is refused rather than published, which is the one shape to watch for.
+    inTodo: init({ guards: [SignedIn] }).exec(function () {
       return this.taskService.queryByStatuses(["todo"]);
     }),
   }),
 ) {}
 
 export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => ({
-  startTask: mutation(cnst.Task, { guards: [SignedIn], mcp: { expose: true } })
+  startTask: mutation(cnst.Task, { guards: [SignedIn] })
     .param("taskId", ID)
     .exec(async function (taskId) {
       return await this.taskService.startTask(taskId);
     }),
-  reviewTask: prompt({ guards: [SignedIn], mcp: { expose: true } })
+  reviewTask: prompt({ guards: [SignedIn] })
     .param("taskId", ID)
     .exec(async function (taskId) {
       const task = await this.taskService.getTask(taskId);
@@ -514,24 +523,21 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
 })) {}
 ```
 
-- **The refusals are fail-closed and survive opting in**: `pubsub` and `message` (their internal args read a socket
-  an MCP request does not have), an `Any` or `Upload` return, a file upload, **a mutation with no real `guards`**
-  (`[Public]` is having none, spelled out — it answers true unconditionally), and **an argument typed `Any` that
-  must be filled**.
+- **The refusals are fail-closed**: **an endpoint that declares no `guards` at all** (nobody decided who may reach
+  it), **a mutation with no real `guards`** (`[Public]` is having none, spelled out — it answers true
+  unconditionally), `pubsub` and `message` (their internal args read a socket an MCP request does not have), an
+  `Any` or `Upload` return, a file upload, and **an argument typed `Any` that must be filled**.
   A `prompt` refuses two more, because its `arguments` is one string per name with no schema beside it: a **list
   argument**, which could never carry a second value, and **any `Any` argument** — a tool leaves that out of its
-  schema, and a prompt has no schema to leave it out of. `resource: true` is refused there too: only a read
-  publishes a resource template.
-- **Every refusal is named in the boot log**, and so is every published entry that declares no `guards` at all —
-  the access is what `[Public]` grants, but only one of the two is a decision you made. One `warn` per endpoint
-  plus a `MCP catalogue: tools=… prompts=…` count. Read that line first when a tool you exposed is missing —
-  fail-closed is right, and a silent fail-closed leaves you nothing to read. `akan quality scan` covers the two
-  shapes visible in source, `akan.mcp.missing-description` and `akan.mcp.unguarded-exposure`; the API explorer
-  badges the per-endpoint rules (`MCP` / `MCP refused`) from the same rule the catalogue runs.
+  schema, and a prompt has no schema to leave it out of.
+- **Every refusal is named in the boot log**: one `warn` per endpoint plus a `MCP catalogue: tools=… prompts=…`
+  count. Read that line first when a tool you expected is missing — and it is the *only* place the answer exists,
+  because there is no absent opt-in to notice. The API explorer badges the same rule per endpoint (`MCP` /
+  `MCP refused`), from the same shared implementation the catalogue runs.
 - **An `Any` argument is left out of the published schema** rather than described as `{}` — it tells a model
   nothing — and a value sent for one is refused by name, so the endpoint reads it as omitted. That is what happens
   to the root list's raw `query` descriptor: read as sent, it would be an arbitrary filter over every model you
-  exposed through `mcp: { list: true }`. Expose a named filter slice when an agent should narrow a list.
+  publish. Declare a named filter slice when an agent should narrow a list.
 - **A nullable model return publishes no `outputSchema`**, and its empty answer ships as the text `null` with no
   `structuredContent`. That field is an object by definition, so `null` cannot ride in it any more than an array
   can — a list is wrapped as `{ items: … }` for the same reason — and a declared schema obliges every result to
@@ -540,13 +546,13 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
 - **An `outputSchema` names no `hidden` or `secret` field.** Every response has both stripped, so publishing them
   promises a property no answer can carry — and on a model like `user` the names are the leak. Your *input* schema
   keeps them: they are legal to send, and the same model describes a request body.
-- An endpoint that did not opt in answers the *same* "unknown tool" as one that does not exist. Never make that
+- A refused endpoint answers the *same* "unknown tool" as one that does not exist. Never make that
   message more helpful — the difference is what enumerates your private surface. A guard's refusal is generalized
   the same way: the caller reads `You are not permitted to perform this action.`, never `Access denied by guard:
   Admin`, which names your authorization structure to the one caller barred from it. A domain `Err` resolves
   through the dictionary first and keeps its own words.
-- `mcp: { readOnly, destructive, idempotent }` only override the hints a client renders. Clients are told to
-  distrust hints; they are never a gate.
+- The `readOnly` / `destructive` / `idempotent` hints a client renders are derived from the endpoint type and key
+  and are not configurable. Clients are told to distrust hints; they are never a gate.
 - **`AKAN_MCP_READONLY=true` is the read-only-deployment valve, not the exposure switch.** It drops every mutation
   whatever it declared, and reports each one in the boot log like any other refusal.
 - OAuth resource metadata is published at `/.well-known/oauth-protected-resource` (and at that path plus the mount
@@ -554,12 +560,12 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
   configure it; `insufficient_scope` is enforced only once `AKAN_MCP_SCOPES` is set. A token carrying no `aud` at
   all is refused once `AKAN_MCP_AUTH_SERVERS` names an issuer — that issuer mints tokens for its other resources
   too — and accepted while none is named, because a first-party Akan token is bound by app and environment.
-- `akan quality scan` warns **`akan.mcp.missing-description`** for anything exposed without a dictionary `.desc()`.
-  An agent picks a tool by its description, so a missing one is a broken tool. What the framework generates is
-  exempt and borrows the model's own text, having none of its own: `mcp: { list: true }` reads the `.of()` label,
-  and the base CRUD tools append the model's `.desc()` to their generated `Get X`. Write that model `.desc()` — it
-  is the only text those entries can carry. The scan is not the whole answer either, because it reads source: **the
-  boot log names every published entry with no description**, generated ones included.
+- **The boot log names every published entry with no dictionary `.desc()`.** An agent picks a tool by its
+  description, so a missing one is a broken tool. What the framework generates has no text of its own and borrows
+  the model's: the generated list reads the `.of()` label, and the base CRUD tools append the model's `.desc()` to
+  their generated `Get X`. Write that model `.desc()` — it is the only text those entries can carry. There is no
+  `akan quality scan` rule for this any more: a source scanner found the exposure only as an `mcp:` literal, and
+  with exposure derived from the guards the resolved catalogue is the only place that can answer.
 - A browser-hosted client needs `allowedOrigins` **and** the CORS answer the server sends back for those origins.
   Every other MCP client sends no `Origin` at all, and the one that does is matched against the forwarded host so
   a proxy does not turn each call into a 403 — which is only as trustworthy as an edge that *overwrites* that
@@ -584,9 +590,8 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
   token signed wrong, like an opaque one, still degrades to an anonymous caller.
 - **Resource URIs**: `akan://<model>/{id}`, `akan://<model>/light/{id}`, `akan://<model>/list` for the model's own
   list, and `akan://<model>/list/<sliceKey>` for a slice's. The root list takes no third segment on purpose — any
-  token there is one a slice could also be named. **Those four are the whole set**, so `mcp: { resource: true }`
-  is honoured only on the generated reads: a custom endpoint keeps its tool, gets no resource template, and is
-  named in the boot log saying so.
+  token there is one a slice could also be named. **Those four are the whole set**, so only the generated reads are
+  addressable: a custom endpoint keeps its tool and gets no resource template.
 - **The catalogue is one language**, `en` unless `language` says otherwise: it is built once at boot and cached by
   clients, so there is no `Accept-Language` negotiation.
 

@@ -18,8 +18,8 @@ export default function Page() {
           </div>
           <div>
             {l.trans({
-              en: "Exposure is opt-in everywhere. Turning the server on publishes nothing: an endpoint appears only after it declares mcp: { expose: true }, and an endpoint that did not declare it answers the same 'unknown tool' as one that does not exist.",
-              ko: "노출은 전부 opt-in입니다. 서버를 켜는 것만으로는 아무것도 공개되지 않습니다. endpoint는 mcp: { expose: true }를 선언해야 목록에 나타나며, 선언하지 않은 endpoint는 존재하지 않는 것과 똑같은 'unknown tool' 응답을 돌려줍니다.",
+              en: "Exposure follows the guards, and there is nothing to write in a signal file. /mcp is mounted by default; an endpoint that names a real guard is published, one that names none is refused, and a mutation whose only guard is [Public] is refused. A refused endpoint answers the same 'unknown tool' as one that does not exist. The guards are already the authorization decision and are re-read per caller on every listing, so a second per-endpoint switch would say nothing they do not — while guaranteeing that every endpoint added later is invisible to agents until somebody remembers it.",
+              ko: "노출은 guard를 따르며, signal 파일에 적을 것은 없습니다. /mcp는 기본으로 마운트됩니다. 실질 guard를 적은 endpoint는 게시되고, 아무 guard도 적지 않은 endpoint는 거부되며, guard가 [Public] 뿐인 mutation도 거부됩니다. 거부된 endpoint는 존재하지 않는 것과 똑같은 'unknown tool'을 돌려줍니다. guard는 이미 인가 결정이고 목록을 낼 때마다 caller 기준으로 다시 평가되므로, endpoint 단위 스위치를 하나 더 두면 guard가 말하지 않는 것은 아무것도 말하지 못한 채 '나중에 추가되는 endpoint는 누가 기억할 때까지 agent에 보이지 않는다'만 보장하게 됩니다.",
             })}
           </div>
           <ul className="list-disc space-y-2 pl-5">
@@ -70,7 +70,7 @@ export default function Page() {
         />
         <Code.Snippet
           title={l.trans({ en: "or by env", ko: "또는 env로" })}
-          code={`AKAN_MCP=true
+          code={`AKAN_MCP=false   # on by default; this is the way off
 AKAN_MCP_INSTRUCTIONS="Domain tools for the akan app."
 AKAN_MCP_LANGUAGE=en`}
         />
@@ -111,25 +111,25 @@ AKAN_MCP_LANGUAGE=en`}
       </Scroll.Slide>
       <div className="divider" />
 
-      <Scroll.Slide id="tool" title={l.trans({ en: "2. Expose An Endpoint", ko: "2. Endpoint 노출하기" })}>
-        <Docs.Title>{l.trans({ en: "2. Expose An Endpoint", ko: "2. Endpoint 노출하기" })}</Docs.Title>
+      <Scroll.Slide id="tool" title={l.trans({ en: "2. Write An Endpoint", ko: "2. Endpoint 작성하기" })}>
+        <Docs.Title>{l.trans({ en: "2. Write An Endpoint", ko: "2. Endpoint 작성하기" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Add mcp to the signal option next to guards. The tool name is the endpoint key unchanged, its input schema comes from the declared arguments, and its output schema from the return model.",
-              ko: "guards 옆 signal option에 mcp를 추가합니다. tool 이름은 endpoint key 그대로이고, input schema는 선언한 인자에서, output schema는 반환 model에서 나옵니다.",
+              en: "Name the guards and you are done — every endpoint that has them is a tool. The tool name is the endpoint key unchanged, its input schema comes from the declared arguments, and its output schema from the return model.",
+              ko: "guard만 적으면 끝입니다. guard가 있는 endpoint는 모두 tool이 됩니다. tool 이름은 endpoint key 그대로이고, input schema는 선언한 인자에서, output schema는 반환 model에서 나옵니다.",
             })}
           </div>
         </Docs.Description>
         <Code.Snippet
           title="task.signal.ts"
           code={`export class TaskEndpoint extends endpoint(srv.task, ({ query, mutation }) => ({
-  taskSummary: query(cnst.TaskInsight, { guards: [SignedIn], mcp: { expose: true } })
+  taskSummary: query(cnst.TaskInsight, { guards: [SignedIn] })
     .search("status", cnst.TaskStatus)
     .exec(async function (status) {
       return await this.taskService.insightByStatuses([status ?? "todo"]);
     }),
-  startTask: mutation(cnst.Task, { guards: [CanWriteTask], mcp: { expose: true } })
+  startTask: mutation(cnst.Task, { guards: [CanWriteTask] })
     .param("taskId", ID)
     .exec(async function (taskId) {
       return await this.taskService.startTask(taskId);
@@ -139,8 +139,8 @@ AKAN_MCP_LANGUAGE=en`}
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Write the dictionary entry at the same time. An agent picks a tool by its description, so a missing one is a broken tool — akan quality scan reports it as akan.mcp.missing-description.",
-              ko: "dictionary 항목도 같이 씁니다. agent는 설명을 보고 tool을 고르므로, 설명이 없는 tool은 고장난 tool입니다 — akan quality scan이 akan.mcp.missing-description으로 보고합니다.",
+              en: "Write the dictionary entry at the same time. An agent picks a tool by its description, so a missing one is a broken tool — the boot log names every published entry that has none.",
+              ko: "dictionary 항목도 같이 씁니다. agent는 설명을 보고 tool을 고르므로, 설명이 없는 tool은 고장난 tool입니다. 부팅 로그가 설명 없이 게시된 항목을 모두 이름으로 남깁니다.",
             })}
           </div>
         </Docs.Description>
@@ -155,13 +155,13 @@ AKAN_MCP_LANGUAGE=en`}
       </Scroll.Slide>
       <div className="divider" />
 
-      <Scroll.Slide id="slice" title={l.trans({ en: "3. Expose A Slice And CRUD", ko: "3. Slice와 CRUD 노출하기" })}>
-        <Docs.Title>{l.trans({ en: "3. Expose A Slice And CRUD", ko: "3. Slice와 CRUD 노출하기" })}</Docs.Title>
+      <Scroll.Slide id="slice" title={l.trans({ en: "3. Slices And CRUD", ko: "3. Slice와 CRUD" })}>
+        <Docs.Title>{l.trans({ en: "3. Slices And CRUD", ko: "3. Slice와 CRUD" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A slice opts in through its own init option. Generated CRUD carries no option of its own, so it opts in on the slice class instead — one flag per verb, so that reading a model never quietly brings write access with it.",
-              ko: "slice는 자신의 init option으로 opt-in합니다. 생성된 CRUD는 자체 option이 없으므로 slice class에서 opt-in하며, verb마다 플래그가 따로 있습니다. 읽기를 여는 것이 조용히 쓰기까지 함께 열지 않도록 하기 위해서입니다.",
+              en: "A named slice is published from its own guards, and generated CRUD from the slice() guards map — the get, cru and per-verb entries you already wrote. A read guarded by Public publishes; a write guarded only by Public does not, so opening a model for reading never quietly brings write access with it.",
+              ko: "이름 있는 slice는 자기 guard로, 생성된 CRUD는 slice() guards map — 이미 적어 둔 get·cru·verb별 항목 — 으로 게시됩니다. Public으로 가드된 읽기는 게시되고 Public만 가진 쓰기는 게시되지 않으므로, 읽기를 여는 것이 조용히 쓰기까지 함께 열지 않습니다.",
             })}
           </div>
         </Docs.Description>
@@ -169,9 +169,9 @@ AKAN_MCP_LANGUAGE=en`}
           title="task.signal.ts"
           code={`export class TaskSlice extends slice(
   srv.task,
-  { guards: { root: Admin, get: SignedIn, cru: SignedIn }, mcp: { get: true, update: true, list: true } },
+  { guards: { root: Admin, get: SignedIn, cru: SignedIn } },
   (init) => ({
-    inTodo: init({ guards: [SignedIn], mcp: { expose: true } }).exec(function () {
+    inTodo: init({ guards: [SignedIn] }).exec(function () {
       return this.taskService.queryByStatuses(["todo"]);
     }),
   }),
@@ -180,24 +180,24 @@ AKAN_MCP_LANGUAGE=en`}
         <Docs.Description>
           <div>
             {l.trans({
-              en: "list is the model's own unfiltered list and insight — one flag publishes both, and there is no switch that gives an agent the list while holding back the aggregate. It sits on the same verb map because slice() generates that slice itself, leaving nowhere for an author to write expose. Its raw query argument is not published: an Any argument tells a model nothing, so it is left out of the schema, and a value sent for it is refused by name rather than read. Expose a named filter slice when an agent should be able to narrow a list.",
-              ko: "list는 모델 자체의 필터 없는 목록과 insight입니다. 플래그 하나가 둘을 함께 게시하며, 목록만 주고 집계는 빼는 스위치는 없습니다. 그 slice는 slice()가 직접 생성하므로 expose를 적을 자리가 없어 verb map에 함께 놓았습니다. 원본 query 인자는 공개되지 않습니다. Any 인자는 model에게 아무 정보도 주지 못하므로 schema에서 빠지고, 그 이름으로 값을 보내면 읽는 대신 거부합니다. agent가 목록을 좁힐 수 있게 하려면 이름 있는 filter slice를 노출하세요.",
+              en: "The root slice — the model's own unfiltered list and insight — is generated by slice() and published from root in the guards map. Its raw query argument is not published: an Any argument tells a model nothing, so it is left out of the schema, and a value sent for it is refused by name rather than read. Declare a named filter slice when an agent should be able to narrow a list.",
+              ko: "루트 slice — 모델 자체의 필터 없는 목록과 insight — 는 slice()가 생성하고 guards map의 root로 게시됩니다. 원본 query 인자는 공개되지 않습니다. Any 인자는 model에게 아무 정보도 주지 못하므로 schema에서 빠지고, 그 이름으로 값을 보내면 읽는 대신 거부합니다. agent가 목록을 좁힐 수 있게 하려면 이름 있는 filter slice를 선언하세요.",
             })}
           </div>
         </Docs.Description>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A named slice inherits no guards from the slice() call: that map's root, get and cru reach the root slice and generated CRUD only, so an exposed slice writes its own guards — which is what the line above does. Leave it off and the read is unguarded, the same access an explicit [Public] grants but with nobody having decided it. The boot log names every published entry that declares none.",
-              ko: "이름 있는 slice는 slice() 호출의 guards를 물려받지 않습니다. 그 맵의 root·get·cru는 root slice와 생성된 CRUD까지만 닿기 때문에, 노출하는 slice는 위 코드처럼 자기 guards를 직접 적습니다. 적지 않으면 가드 없는 읽기가 됩니다. 명시적인 [Public]과 접근 범위는 같지만, 그것을 결정한 사람이 없습니다. 부팅 로그는 guards를 선언하지 않은 채 게시된 항목을 모두 이름으로 남깁니다.",
+              en: "A named slice inherits no guards from the slice() call: that map's root, get and cru reach the root slice and generated CRUD only, so a named slice writes its own — which is what the line above does. Leave it off and the slice is refused rather than published, and the boot log names it. That is the one shape to watch for, and it is now a missing tool instead of an unguarded one.",
+              ko: "이름 있는 slice는 slice() 호출의 guards를 물려받지 않습니다. 그 맵의 root·get·cru는 root slice와 생성된 CRUD까지만 닿기 때문에, 이름 있는 slice는 위 코드처럼 자기 guard를 직접 적습니다. 적지 않으면 게시되는 대신 거부되고 부팅 로그에 이름이 남습니다. 주의할 형태는 이것 하나이며, 이제 가드 없는 노출이 아니라 없는 tool로 나타납니다.",
             })}
           </div>
         </Docs.Description>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "libs/shared's banner is the worked example in this repo: mcp: { get: true } on the slice plus guards: [Public] and expose on inPublic, and nothing else. Those are exactly the reads whose guard is already Public, so an agent reaches what an anonymous browser reaches — exposure adds a transport, not an audience. Exposing anything else a library owns is the mounting app's decision.",
-              ko: "이 저장소의 실제 예시는 libs/shared의 banner입니다. slice에 mcp: { get: true }, inPublic에 guards: [Public]과 expose, 그게 전부입니다. 모두 가드가 이미 Public인 읽기라서, agent가 닿는 범위는 익명 브라우저가 닿는 범위와 같습니다. 노출은 청중이 아니라 전송 수단을 하나 더하는 일입니다. 라이브러리가 가진 나머지를 노출할지는 그것을 마운트하는 app이 정합니다.",
+              en: "libs/shared's banner is the worked example in this repo, and it carries no MCP configuration at all: { root: Admin, get: Public, cru: Admin } is the whole declaration. Its reads publish because Public is written down, its writes publish under Admin and are hidden from an anonymous listing by that guard's account scope. An agent reaches exactly what the same credential reaches over HTTP — exposure adds a transport, not an audience.",
+              ko: "이 저장소의 실제 예시는 libs/shared의 banner이고, MCP 설정은 한 줄도 없습니다. { root: Admin, get: Public, cru: Admin } 이 선언 전부입니다. 읽기는 Public이 적혀 있으니 게시되고, 쓰기는 Admin으로 게시되며 그 guard의 account scope 덕에 익명 목록에서는 감춰집니다. agent가 닿는 범위는 같은 자격이 HTTP로 닿는 범위와 정확히 같습니다. 노출은 청중이 아니라 전송 수단을 하나 더하는 일입니다.",
             })}
           </div>
         </Docs.Description>
@@ -225,8 +225,8 @@ akan://task/list/inTodo{?skip,limit,sort}`}
           </div>
           <div>
             {l.trans({
-              en: "Those four shapes are the whole set, so mcp: { resource: true } is honoured only on the reads that have one. Write it on a custom endpoint and the tool is published as usual, the resource template is not, and the boot log names the endpoint saying so — it used to fall back to the model's own URI, publishing a template that parse routed to the model's own get and that named none of the endpoint's arguments.",
-              ko: "URI 모양은 이 넷이 전부이므로, mcp: { resource: true }는 그 모양을 가진 조회에서만 반영됩니다. 커스텀 endpoint에 적으면 tool은 평소대로 게시되고 resource template만 빠지며, 부팅 로그에 그 endpoint의 이름이 남습니다. 예전에는 모델 자신의 URI로 폴백해서, parse가 모델의 get으로 보내버리고 그 endpoint의 인자는 어디에도 없는 template을 발행했습니다.",
+              en: "Those four shapes are the whole set, so only the generated reads are addressable and there is no option to ask for more. A custom endpoint keeps its tool and gets no template — building one from the model's key published a URI that parse routed to the model's own get and that named none of the endpoint's arguments.",
+              ko: "URI 모양은 이 넷이 전부이므로 주소가 붙는 것은 생성된 조회뿐이고, 더 요청할 옵션은 없습니다. 커스텀 endpoint는 tool은 그대로 갖고 template은 받지 않습니다. 모델 key로 만들어 붙이면 parse가 모델의 get으로 보내버리고 그 endpoint의 인자는 어디에도 없는 URI가 발행됐습니다.",
             })}
           </div>
         </Docs.Description>
@@ -245,7 +245,7 @@ akan://task/list/inTodo{?skip,limit,sort}`}
         </Docs.Description>
         <Code.Snippet
           title="task.signal.ts"
-          code={`reviewTask: prompt({ guards: [SignedIn], mcp: { expose: true } })
+          code={`reviewTask: prompt({ guards: [SignedIn] })
   .param("taskId", ID)
   .search("tone", String)
   .exec(async function (taskId, tone) {
@@ -338,8 +338,8 @@ akan://task/list/inTodo{?skip,limit,sort}`}
           <ul className="list-disc space-y-2 pl-5">
             <li>
               {l.trans({
-                en: 'Mark static scope = "account" on a guard whose verdict depends only on the caller. Only those are evaluated when filtering a listing, so an anonymous agent is not offered a shelf of admin tools it can only fail at. Unmarked means "resource", which has no arguments there and would fail closed on every entry.',
-                ko: '판정이 caller에만 의존하는 guard에는 static scope = "account"를 표기합니다. 목록 필터링에는 이런 guard만 평가되므로, 익명 agent에게 실패만 할 admin tool 목록을 내밀지 않게 됩니다. 미표기는 "resource"이며, 목록에서는 인자가 없어 모든 항목이 fail closed 됩니다.',
+                en: 'Every guard declares static scope: GuardScope, and it is required with no default. "account" is a verdict that depends only on the caller: only those are evaluated when filtering a listing, so an anonymous agent is not offered a shelf of admin tools it can only fail at. "resource" needs the call\'s arguments, has none there, and is never evaluated for a listing — the entry stays visible and is stopped at call time. Because exposure follows the guards, one wrong mark lists an endpoint\'s name and argument schema to callers who cannot use it, which is why there is no default to get wrong quietly.',
+                ko: '모든 guard는 static scope: GuardScope를 선언하며, 기본값 없이 필수입니다. "account"는 판정이 caller에만 의존하는 경우입니다. 목록 필터링에는 이런 guard만 평가되므로, 익명 agent에게 실패만 할 admin tool 목록을 내밀지 않게 됩니다. "resource"는 호출 인자가 필요한데 목록에는 인자가 없어 아예 평가되지 않습니다. 항목은 목록에 남고 호출 단계에서 막힙니다. 노출이 guard를 따르므로 표기를 하나 틀리면 쓸 수 없는 caller에게도 endpoint의 이름과 인자 schema가 나갑니다. 그래서 조용히 틀릴 수 있는 기본값을 두지 않았습니다.',
               })}
             </li>
             <li>
@@ -396,8 +396,8 @@ AKAN_MCP_RESOURCE=https://api.example.com/mcp`}
           <ul className="list-disc space-y-2 pl-5">
             <li>
               {l.trans({
-                en: "A mutation with no real guards is refused whatever it declared, and [Public] counts as none — it answers true unconditionally, so it is having no guard spelled out. An unguarded write reaching an agent is an accident every time.",
-                ko: "실질적인 guards가 없는 mutation은 선언과 무관하게 거부되며, [Public]도 없는 것으로 칩니다. 무조건 true를 반환하니 가드 없음을 적어둔 것과 같습니다. 가드 없는 쓰기가 agent에 닿는 것은 언제나 사고입니다.",
+                en: "An endpoint that declares no guards at all is refused: nobody decided who may reach it, and a catalogue entry is where that omission would stop being invisible. A mutation is refused when [Public] is its only guard, because Public answers true unconditionally — it is having no guard, spelled out. An unguarded write reaching an agent is an accident every time.",
+                ko: "아무 guard도 선언하지 않은 endpoint는 거부됩니다. 누가 접근해도 되는지 결정한 사람이 없고, 카탈로그 항목은 그 누락이 더 이상 보이지 않는 상태로 남지 않게 되는 자리입니다. mutation은 guard가 [Public] 뿐일 때 거부됩니다. Public은 무조건 true를 반환하니 가드 없음을 적어둔 것과 같습니다. 가드 없는 쓰기가 agent에 닿는 것은 언제나 사고입니다.",
               })}
             </li>
             <li>
@@ -432,14 +432,14 @@ AKAN_MCP_RESOURCE=https://api.example.com/mcp`}
             </li>
             <li>
               {l.trans({
-                en: "Every refusal above is named in the boot log — one warn per endpoint, under a line counting what was published. Fail-closed is the right default, but a silent one left the author of a deliberate mcp: { expose: true } nothing to read but the framework source. The API explorer badges the per-endpoint rules beside the guards, running the same function, so it agrees on those and on nothing else: a name another endpoint already published, a resource: true with no uri shape to honour, and the read-only deployment valve are decided while the catalogue assembles itself and appear in that log alone.",
-                ko: "위의 거부는 모두 부팅 로그에 이름과 함께 남습니다. 게시된 개수를 세는 줄 아래로 endpoint마다 warn 한 줄씩입니다. fail-closed는 옳은 기본값이지만 조용한 fail-closed는 mcp: { expose: true }를 일부러 적은 작성자에게 프레임워크 소스 말고는 읽을 것을 주지 않았습니다. API explorer는 endpoint 단위 규칙을 같은 함수로 돌려 가드 옆에 뱃지로 붙이므로 거기까지만 일치합니다. 이미 다른 endpoint가 가져간 이름, 실을 uri 모양이 없는 resource: true, 그리고 read-only 배포 밸브는 카탈로그가 조립되는 동안 정해지므로 그 로그에만 남습니다.",
+                en: "Every refusal above is named in the boot log — one warn per endpoint, under a line counting what was published. Read that line first when a tool you expected is missing, and note that it is the only place the answer exists: there is no absent opt-in to notice. The API explorer badges the per-endpoint rules beside the guards, running the same function, so it agrees on those and on nothing else: a name another endpoint already published and the read-only deployment valve are decided while the catalogue assembles itself and appear in that log alone.",
+                ko: "위의 거부는 모두 부팅 로그에 이름과 함께 남습니다. 게시된 개수를 세는 줄 아래로 endpoint마다 warn 한 줄씩입니다. 기대한 tool이 없으면 그 줄을 먼저 보세요. 그리고 답이 있는 곳은 그 로그뿐입니다. 빠진 opt-in 같은 단서가 없기 때문입니다. API explorer는 endpoint 단위 규칙을 같은 함수로 돌려 가드 옆에 뱃지로 붙이므로 거기까지만 일치합니다. 이미 다른 endpoint가 가져간 이름과 read-only 배포 밸브는 카탈로그가 조립되는 동안 정해지므로 그 로그에만 남습니다.",
               })}
             </li>
             <li>
               {l.trans({
-                en: "akan quality scan reads the two of those a source file can answer: akan.mcp.missing-description, and akan.mcp.unguarded-exposure for an exposure whose option object names no guards. The second one is worth having statically because the omission is syntactic — guards sits in the same literal as mcp: { expose: true }, and a named slice inherits nothing from the slice() call's own guards map. A refusal is the class no scanner can reach: it turns on a resolved return type, so the boot log is the only place it is decided.",
-                ko: "akan quality scan은 그중 소스 파일이 답할 수 있는 둘을 봅니다. akan.mcp.missing-description, 그리고 option 객체에 guards가 없는 노출에 대한 akan.mcp.unguarded-exposure입니다. 두 번째를 정적으로 잡을 수 있는 이유는 누락이 문법적이기 때문입니다. guards는 mcp: { expose: true }와 같은 literal 안에 있고, named slice는 slice() 호출의 guards map에서 아무것도 물려받지 않습니다. 거부는 어떤 scanner도 닿을 수 없는 부류입니다. 해석된 반환 타입에 달려 있어서 부팅 로그만이 그것을 정합니다.",
+                en: "There is no akan quality scan rule for any of this any more. Both rules there found an exposure by matching an mcp: { expose: true } literal in a builder call, and with exposure derived from the guards there is no literal left to match. A refusal turns on a resolved return type and a resolved guard list, so the boot log — which holds the assembled catalogue — is the only place it can be decided or read.",
+                ko: "이제 이와 관련한 akan quality scan 규칙은 없습니다. 그쪽 두 규칙은 builder 호출 안의 mcp: { expose: true } 리터럴을 찾아 노출을 인식했고, 노출이 guard에서 파생되는 지금은 찾을 리터럴이 없습니다. 거부는 해석된 반환 타입과 해석된 guard 목록에 달려 있으므로, 조립된 카탈로그를 들고 있는 부팅 로그만이 그것을 정하고 읽을 수 있는 자리입니다.",
               })}
             </li>
             <li>
@@ -462,14 +462,14 @@ AKAN_MCP_RESOURCE=https://api.example.com/mcp`}
             </li>
             <li>
               {l.trans({
-                en: "The same log names every published entry that has no description, generated ones included. akan quality scan warns too, but it reads source: it sees expose only where you wrote it as a literal in the builder call, and a model .desc() is not written as any entry's description. The boot log holds the resolved catalogue, so it can simply look.",
-                ko: "같은 로그가 설명 없이 게시된 항목의 이름도 모두 남깁니다. 생성된 항목까지 포함해서입니다. akan quality scan도 경고하지만 그쪽은 소스를 읽습니다. expose를 builder 호출 안에 리터럴로 적은 자리에서만 볼 수 있고, model의 .desc()는 어떤 항목의 설명으로도 적혀 있지 않습니다. 부팅 로그는 해석된 카탈로그를 들고 있으니 그냥 보면 됩니다.",
+                en: "The same log names every published entry that has no description, generated ones included — and it is the only thing that does. A source rule could not: the text a generated entry borrows is a model .desc(), which is not written as that entry's description anywhere. The boot log holds the resolved catalogue, so it can simply look.",
+                ko: "같은 로그가 설명 없이 게시된 항목의 이름도 모두 남깁니다. 생성된 항목까지 포함해서이고, 그렇게 해주는 것은 이 로그뿐입니다. 소스 규칙으로는 불가능합니다. 생성된 항목이 물려받는 문구는 model의 .desc()이고, 그것은 어디에도 그 항목의 설명으로 적혀 있지 않습니다. 부팅 로그는 해석된 카탈로그를 들고 있으니 그냥 보면 됩니다.",
               })}
             </li>
             <li>
               {l.trans({
-                en: "A guard's refusal reads 'You are not permitted to perform this action.' rather than the framework's own 'Access denied by guard: Admin', which names the authorization structure to the one caller barred from it — the same reason an unexposed tool and a nonexistent one share a message. A domain Err resolves through the dictionary first and keeps its own words.",
-                ko: "가드 거부는 프레임워크 원문인 'Access denied by guard: Admin' 대신 '이 작업을 수행할 권한이 없습니다'라는 문구로 나갑니다. 원문은 허용되지 않은 바로 그 호출자에게 인가 구조를 알려주는 셈이며, 미노출 tool과 존재하지 않는 tool이 같은 메시지를 쓰는 것과 같은 이유입니다. 도메인 Err는 먼저 사전에서 해석되어 자기 문구를 그대로 유지합니다.",
+                en: "A guard's refusal reads 'You are not permitted to perform this action.' rather than the framework's own 'Access denied by guard: Admin', which names the authorization structure to the one caller barred from it — the same reason a refused tool and a nonexistent one share a message. A domain Err resolves through the dictionary first and keeps its own words.",
+                ko: "가드 거부는 프레임워크 원문인 'Access denied by guard: Admin' 대신 '이 작업을 수행할 권한이 없습니다'라는 문구로 나갑니다. 원문은 허용되지 않은 바로 그 호출자에게 인가 구조를 알려주는 셈이며, 거부된 tool과 존재하지 않는 tool이 같은 메시지를 쓰는 것과 같은 이유입니다. 도메인 Err는 먼저 사전에서 해석되어 자기 문구를 그대로 유지합니다.",
               })}
             </li>
             <li>
@@ -528,8 +528,8 @@ AKAN_MCP_RESOURCE=https://api.example.com/mcp`}
             </li>
             <li>
               {l.trans({
-                en: "The two entries mcp: { list: true } publishes take their text from the model's own .of() label. The root slice is generated by slice() and its dictionary entry is written by the framework, so it would otherwise read 'Slice List - Universal' with nowhere for you to write over it — a placeholder in the one field a model picks a tool by.",
-                ko: "mcp: { list: true }가 게시하는 두 항목은 model 자신의 .of() 라벨에서 문구를 가져옵니다. 루트 slice는 slice()가 생성하고 그 사전 항목은 프레임워크가 쓰기 때문에, 그대로 두면 'Slice List - Universal'로 나가고 작성자가 덮어쓸 자리도 없습니다. model이 tool을 고르는 유일한 필드에 placeholder가 놓이는 셈입니다.",
+                en: "The root slice's list and insight take their text from the model's own .of() label. That slice is generated by slice() and its dictionary entry is written by the framework, so it would otherwise read 'Slice List - Universal' with nowhere for you to write over it — a placeholder in the one field a model picks a tool by.",
+                ko: "루트 slice의 목록과 insight는 model 자신의 .of() 라벨에서 문구를 가져옵니다. 그 slice는 slice()가 생성하고 사전 항목은 프레임워크가 쓰기 때문에, 그대로 두면 'Slice List - Universal'로 나가고 작성자가 덮어쓸 자리도 없습니다. model이 tool을 고르는 유일한 필드에 placeholder가 놓이는 셈입니다.",
               })}
             </li>
             <li>
@@ -558,8 +558,8 @@ AKAN_MCP_RESOURCE=https://api.example.com/mcp`}
             </li>
             <li>
               {l.trans({
-                en: "mcp: { readOnly, destructive, idempotent } only override the hints a client renders. Clients are told to distrust hints; they are never a gate.",
-                ko: "mcp: { readOnly, destructive, idempotent }는 client가 표시하는 힌트만 바꿉니다. client는 힌트를 신뢰하지 않도록 안내받으며, 힌트는 결코 게이트가 아닙니다.",
+                en: "The readOnly, destructive and idempotent hints a client renders are derived from the endpoint type and key, and are not configurable. Clients are told to distrust hints; they are never a gate, so there is nothing lost in deriving them.",
+                ko: "client가 표시하는 readOnly·destructive·idempotent 힌트는 endpoint 타입과 key에서 파생되며 설정할 수 없습니다. client는 힌트를 신뢰하지 않도록 안내받고 힌트는 게이트가 아니므로, 파생으로 두어 잃는 것은 없습니다.",
               })}
             </li>
             <li>

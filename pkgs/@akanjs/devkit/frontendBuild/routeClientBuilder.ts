@@ -4,7 +4,7 @@ import type { BaseBuildArtifact, ClientManifest, SsrManifest } from "akanjs/serv
 import type { App } from "../commandDecorators";
 import { createBarrelImportsPlugin } from "../transforms/barrelImportsPlugin";
 import { toClientReferencePath } from "../transforms/rscUseClientTransform";
-import type { ClientEntryDiscovery } from "./clientBuildTypes";
+import type { ClientBundleTarget, ClientEntryDiscovery } from "./clientBuildTypes";
 import { ClientEntriesBundler } from "./clientEntriesBundler";
 import { GraphClientEntryDiscovery } from "./clientEntryDiscovery";
 import { VENDOR_SPECIFIERS } from "./vendorSpecifiers";
@@ -163,12 +163,11 @@ export class RouteClientBuilder {
   }
 
   async #buildSsrBundle(bootstrapEntries: BootstrapEntries) {
-    const externalOptions = RouteClientBuilder.resolveSsrClientExternalOptions(this.#command);
     return new ClientEntriesBundler({
       app: this.#app,
       entries: bootstrapEntries.buildEntries,
       plugins: [await createBarrelImportsPlugin(this.#app)],
-      ...externalOptions,
+      ...RouteClientBuilder.resolveSsrClientBundleOptions(this.#command),
       outputSubdir: "client-ssr",
       command: this.#command,
     }).bundle();
@@ -239,20 +238,28 @@ export class RouteClientBuilder {
     return { [Bun.resolveSync("akanjs/fetch", serverEntry)]: "akanjs/fetch" };
   }
 
-  static resolveSsrClientExternalOptions(command: "build" | "start"): {
+  /**
+   * `target: "bun"` is load-bearing: these chunks are `await import()`-ed by the SSR renderer, so a dependency
+   * resolved through its `browser` export condition can touch `document` at module scope and throw mid-render,
+   * degrading the whole document to client rendering. Bun's `conditions` only adds to the target's defaults —
+   * `browser` still wins — so the target itself has to say server.
+   */
+  static resolveSsrClientBundleOptions(command: "build" | "start"): {
+    target: ClientBundleTarget;
     external: readonly string[];
     externalSubpaths?: readonly string[];
     externalAliases?: Record<string, string>;
   } {
     if (command === "start") {
       return {
+        target: "bun",
         external: SSR_CLIENT_EXTERNALS,
         externalSubpaths: ["akanjs/fetch"],
         externalAliases: RouteClientBuilder.resolveSsrClientRuntimeAliases(),
       };
     }
 
-    return { external: SSR_CLIENT_ALIAS_EXTERNALS };
+    return { target: "bun", external: SSR_CLIENT_ALIAS_EXTERNALS };
   }
 
   static resolveAkanServerEntry(): string {

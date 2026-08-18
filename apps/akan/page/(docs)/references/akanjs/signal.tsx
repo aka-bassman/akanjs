@@ -8,8 +8,8 @@ export default function Page() {
     {
       name: "Public / None / guard",
       desc: l.trans({
-        en: 'Guard classes decide whether a request can pass before endpoint or slice execution. `Public` always passes, `None` blocks, and `guard(name)` creates a named guard base class for app-specific rules. Guards run on every transport, so read the caller with `context.get("account")` instead of branching on http/websocket. Slice `guards` cover only the generated query/mutation endpoints — declare `guards` on each `pubsub`/`message` endpoint to protect a socket. Mark `static scope = "account"` when the verdict depends only on the caller; unmarked means `"resource"`, and only `account` guards are evaluated when filtering an MCP catalogue.',
-        ko: 'Guard class는 endpoint 또는 slice 실행 전에 request가 통과할 수 있는지 결정합니다. `Public`은 항상 통과하고, `None`은 막으며, `guard(name)`은 app-specific rule을 위한 named guard base class를 생성합니다. Guard는 모든 transport에서 실행되므로 http/websocket을 분기하지 말고 `context.get("account")`로 caller를 읽으세요. Slice `guards`는 생성된 query/mutation endpoint만 덮으므로, socket을 보호하려면 각 `pubsub`/`message` endpoint에 `guards`를 선언해야 합니다. 판정이 caller에만 의존하면 `static scope = "account"`를 표기하세요. 미표기는 `"resource"`이며, MCP 카탈로그 필터링에는 `account` guard만 평가됩니다.',
+        en: 'Guard classes decide whether a request can pass before endpoint or slice execution. `Public` always passes, `None` blocks, and `guard(name)` creates a named guard base class for app-specific rules. Guards run on every transport, so read the caller with `context.get("account")` instead of branching on http/websocket. Slice `guards` cover only the generated query/mutation endpoints — declare `guards` on each `pubsub`/`message` endpoint to protect a socket. Every guard declares `static scope: GuardScope`, and it is required: `"account"` when the verdict depends only on the caller, `"resource"` when it needs the arguments of the call. Only `account` guards are evaluated when filtering an MCP catalogue, and since exposure follows the guards, a wrong mark would list an endpoint to callers who cannot use it.',
+        ko: 'Guard class는 endpoint 또는 slice 실행 전에 request가 통과할 수 있는지 결정합니다. `Public`은 항상 통과하고, `None`은 막으며, `guard(name)`은 app-specific rule을 위한 named guard base class를 생성합니다. Guard는 모든 transport에서 실행되므로 http/websocket을 분기하지 말고 `context.get("account")`로 caller를 읽으세요. Slice `guards`는 생성된 query/mutation endpoint만 덮으므로, socket을 보호하려면 각 `pubsub`/`message` endpoint에 `guards`를 선언해야 합니다. 모든 guard는 `static scope: GuardScope`를 선언하며 필수입니다. 판정이 caller에만 의존하면 `"account"`, 호출 인자가 필요하면 `"resource"`입니다. MCP 카탈로그 필터링에는 `account` guard만 평가되고, 노출이 guard를 따르므로 잘못 표기하면 쓸 수 없는 caller에게도 endpoint가 목록에 나갑니다.',
       }),
       code: `import { guard, Public } from "akanjs/signal";
 
@@ -36,7 +36,7 @@ export class RoomEndpoint extends endpoint(roomSrv, ({ pubsub }) => ({
 import { endpoint, Msg } from "akanjs/signal";
 
 export class TaskEndpoint extends endpoint(srv.task, ({ prompt }) => ({
-  reviewTask: prompt({ guards: [SignedIn], mcp: { expose: true } })
+  reviewTask: prompt({ guards: [SignedIn] }) // guards decide MCP exposure; there is no opt-in to write
     .param("taskId", ID)
     .search("tone", String)
     .exec(async function (taskId, tone) {

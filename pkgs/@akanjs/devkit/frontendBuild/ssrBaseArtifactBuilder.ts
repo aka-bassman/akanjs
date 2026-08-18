@@ -110,7 +110,7 @@ export class SsrBaseArtifactBuilder {
     const ssrBundle = await new ClientEntriesBundler({
       app: this.#app,
       entries: [rscSegmentOutletEntry],
-      ...RouteClientBuilder.resolveSsrClientExternalOptions(this.#command),
+      ...RouteClientBuilder.resolveSsrClientBundleOptions(this.#command),
       outputSubdir: "client-ssr",
       command: this.#command,
     }).bundle();

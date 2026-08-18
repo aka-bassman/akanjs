@@ -121,48 +121,35 @@ export class McpRouter {
   }
 
   /**
-   * Says once, at boot, what this build actually published — and names every endpoint whose author opted in and
-   * was kept out anyway.
+   * Says once, at boot, what this build actually published — and names every endpoint that was kept out.
    *
-   * The rejections behind those are fail-closed by design: an endpoint MCP cannot carry is simply not in the
-   * catalogue. That is the right default and the wrong silence — a deliberate `mcp: { expose: true }` that
-   * vanished left its author nowhere to look but the framework source, and the read-only valve had the same hole
-   * called out when it was given its default. A refusal turns on a resolved return type, and on whether a guard
-   * list holds anything more than `Public`, so it is the one class of these that reads only from here.
+   * The rejections are fail-closed by design: an endpoint MCP cannot carry, or whose guards do not admit it, is
+   * simply not in the catalogue. That is the right default and the wrong silence, and it matters more now that
+   * exposure follows the guards — nobody wrote an opt-in whose absence would explain a missing tool, so this log
+   * is the only place the answer exists. A refusal turns on a resolved return type and a resolved guard list, so
+   * it reads only from here.
    *
-   * An entry published with no description rides here because the scanner finds only a literal
-   * `mcp: { expose: true }` inside a builder call — never a hoisted option, an `expose: flag`, or a slice's verb
-   * map — and the text every generated entry borrows is a *model* `.desc()`, which no source rule would read as
-   * that entry's description. This holds the resolved catalogue, so it can simply look.
-   *
-   * So does an entry that declares no guards. Its access is what an explicit `[Public]` would grant, so it is not
-   * a refusal — but nobody decided it, and a named slice inherits no `get:` from the slice call, which is the way
-   * that happens without anyone writing it down. `akan quality scan` names that shape too
-   * (`akan.mcp.unguarded-exposure`), the omission being syntactic; what is left for here is every exposure the
-   * scanner cannot read as a literal, and the generated entries it skips.
+   * An entry published with no description rides here for the same reason: the text every generated entry borrows
+   * is a *model* `.desc()`, which no source rule would read as that entry's description. This holds the resolved
+   * catalogue, so it can simply look.
    *
    * Called by whatever mounts the router rather than from `createRoutes`, so building a router to answer one
    * request — which tests and tooling do — does not narrate a catalogue nobody asked about.
    */
   report() {
     try {
-      const { tools, prompts, resourceTemplates, refusals, undescribed, unguarded } = this.#getDocument();
+      const { tools, prompts, resourceTemplates, refusals, undescribed } = this.#getDocument();
       const counts = `tools=${tools.length} prompts=${prompts.length} resourceTemplates=${resourceTemplates.length}`;
       McpRouter.logger.info(`MCP catalogue: ${counts}${this.#props.readOnly ? " (read-only deployment)" : ""}`);
-      // Opting in is per endpoint and per slice, so an empty catalogue on a server that enabled MCP is nearly
-      // always a missing `expose`, not an empty app.
+      // Exposure follows the guards, so an empty catalogue on an app that has endpoints means every one of them
+      // was refused — the lines below say which rule took each.
       if (!tools.length && !prompts.length)
         McpRouter.logger.warn(
-          "MCP is enabled but nothing opted in. Add `mcp: { expose: true }` to an endpoint, or `mcp: { get: true }` to a slice.",
+          "MCP is enabled but published nothing. Every candidate was refused; see the reasons below.",
         );
       for (const { key, reason } of refusals) McpRouter.logger.warn(`MCP did not expose "${key}": ${reason}`);
       for (const { key, reason } of undescribed)
         McpRouter.logger.warn(`MCP exposed "${key}" with no description: ${reason}`);
-      for (const key of unguarded)
-        McpRouter.logger.warn(
-          `MCP exposed "${key}", which declares no guards. Write \`guards: [Public]\` if anonymous reads are the intent — ` +
-            `a slice's \`guards: { get: … }\` reaches base CRUD and the root slice, never a named slice.`,
-        );
     } catch (error) {
       // This is the only thing that builds the catalogue early, so a failure here must not be what stops a server
       // from booting. Nothing was cached, so the first request rebuilds it and raises this properly.

@@ -39,6 +39,8 @@ WebSocket message handler. Use msg(...) for incoming payload fields.
 
 Realtime subscription channel. Use room(...) to describe the subscription room.
 
+Prompt an MCP client renders as a slash command. exec returns PromptMessage[] or a bare string. Takes .param(...) and .search(...) only.
+
 Required path-style argument. Common in query, mutation, and slice list methods.
 
 Optional search/query argument. It is nullable by default.
@@ -120,6 +122,8 @@ Use ...model.internals, ...model.slices, and ...model.endpoints when extending g
 Use srv.model.with(otherSrv) when the signal needs another service in this.*Service.
 
 Put nullable arguments near the end because required arguments cannot follow nullable ones.
+
+An endpoint that names a real guard is reachable by an AI agent; one that names none is not. There is no mcp option to write. See the MCP Server cheatsheet.
 
 ## Code Examples
 

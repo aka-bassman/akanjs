@@ -5,12 +5,11 @@ import { RESERVED_ROUTE_CONFIG_EXPORTS } from "akanjs/common";
 import ignore from "ignore";
 import ts from "typescript";
 import { AbstractDoc } from "./abstractDoc";
-import { McpScanner } from "./mcpScanner";
 import { formatSsrBalance, type SsrBalanceEntry, SsrScanner } from "./ssrScanner";
 import { appRootAllowedFiles, libFacetRootAllowedFiles } from "./workspaceLayout";
 
 type QualitySeverity = "warning";
-type QualityScope = "global" | "file" | "convention" | "layout" | "ssr" | "mcp";
+type QualityScope = "global" | "file" | "convention" | "layout" | "ssr";
 
 export interface QualityWarning {
   rule: string;
@@ -145,10 +144,6 @@ const RULE_FIXES: Record<string, string> = {
     "Add a <Model>.Unit.tsx for list/card rendering and a <Model>.View.tsx for the detail surface, then have the Zone delegate to them.",
   "akan.ssr.template-client-state":
     "Bind the field to the store instead: `value={xForm.field}` with `onChange={st.do.setFieldOnX}`.",
-  "akan.mcp.missing-description":
-    "Add `.desc([en, ko])` to this entry in the module's dictionary — for a slice, either on the slice entry or on the `<model>List<Slice>` endpoint it generates. Describe when to reach for it, not what it is named.",
-  "akan.mcp.unguarded-exposure":
-    "Name the guards in the same option object as `mcp`: `init({ guards: [SignedIn], mcp: { expose: true } })`. Write `guards: [Public]` if anonymous reads are the intent — the access is the same, but only one of the two is a decision. The `slice()` call's guards map reaches the root slice and base CRUD, never a named slice.",
 };
 
 function getRuleFix(rule: string): string | undefined {
@@ -179,7 +174,6 @@ export class AkanQualityScanner {
       ...sourceFiles.flatMap((sourceFile) => this.#scanLayoutQuality(sourceFile)),
       ...abstractFiles.flatMap((abstractFile) => this.#scanAbstractQuality(abstractFile)),
       ...ssr.warnings,
-      ...new McpScanner().scan(sourceFiles),
     ];
 
     return {

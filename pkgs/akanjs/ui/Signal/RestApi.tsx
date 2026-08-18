@@ -1,10 +1,10 @@
 "use client";
 import { PrimitiveRegistry } from "akanjs/base";
 import { usePage } from "akanjs/client";
-import { mcpBaseVerbOf, mcpHintsOf, mcpRefusalOf } from "akanjs/common";
+import { mcpHintsOf, mcpRefusalOf } from "akanjs/common";
 import { type ConstantCls, ConstantRegistry } from "akanjs/constant";
 import { FetchClient, type FetchProxy } from "akanjs/fetch";
-import type { McpOption, SerializedEndpoint } from "akanjs/signal";
+import type { SerializedEndpoint } from "akanjs/signal";
 import { st } from "akanjs/store";
 import { useMemo, useState } from "react";
 import { AiOutlineApi, AiOutlineCopy, AiOutlineFileWord, AiOutlineSend } from "react-icons/ai";
@@ -38,25 +38,17 @@ const RestApiEndpoints = ({ refName, fetch, prefix, endpoints, openAll, httpUri 
   const tryRoles = st.use.tryRoles();
   const signal = fetch.serializedSignal[refName];
   const signalPrefix = prefix ?? signal.prefix;
-  // Each group carries the MCP option from the level that writes it: a generated CRUD endpoint from its slice's
-  // verb map, a slice endpoint from the slice, a custom one from itself — the same three places the catalogue
-  // reads. Without it the explorer could not answer "what is open to an agent" without grepping for `mcp:`.
-  const baseEndpointEntries = Object.entries(FetchClient.getBaseEndpoint(refName, signal)).map(([key, endpoint]) => {
-    const verb = mcpBaseVerbOf(refName, key);
-    return { key, endpoint, mcp: verb && signal.mcp?.[verb] ? { expose: true } : undefined };
-  });
+  const baseEndpointEntries = Object.entries(FetchClient.getBaseEndpoint(refName, signal)).map(([key, endpoint]) => ({
+    key,
+    endpoint,
+  }));
   const sliceEndpointEntries = Object.entries(signal.slice ?? {}).flatMap(([suffix, slice]) =>
     Object.entries(FetchClient.getEndpointFromSlice(refName, suffix, slice)).map(([key, endpoint]) => ({
       key,
       endpoint,
-      mcp: slice.mcp,
     })),
   );
-  const customEndpointEntries = Object.entries(signal.endpoint).map(([key, endpoint]) => ({
-    key,
-    endpoint,
-    mcp: endpoint.mcp,
-  }));
+  const customEndpointEntries = Object.entries(signal.endpoint).map(([key, endpoint]) => ({ key, endpoint }));
   const endpointEntries = [...baseEndpointEntries, ...sliceEndpointEntries, ...customEndpointEntries]
     .filter(({ key }) => !endpoints || endpoints.includes(key))
     .sort((a, b) => (a.key > b.key ? 1 : -1))
@@ -77,7 +69,7 @@ const RestApiEndpoints = ({ refName, fetch, prefix, endpoints, openAll, httpUri 
     });
   return (
     <div>
-      {endpointEntries.map(({ key, endpoint, mcp }) => (
+      {endpointEntries.map(({ key, endpoint }) => (
         <RestApiEndpoint
           key={key}
           signalPrefix={signalPrefix}
@@ -85,7 +77,6 @@ const RestApiEndpoints = ({ refName, fetch, prefix, endpoints, openAll, httpUri 
           fetch={fetch}
           endpointKey={key}
           endpoint={endpoint}
-          mcp={mcp}
           open={openAll}
           httpUri={httpUri}
         />
@@ -101,7 +92,6 @@ interface RestApiEndpointProps {
   signalPrefix?: string;
   endpointKey: string;
   endpoint: SerializedEndpoint;
-  mcp?: McpOption;
   open?: boolean;
   httpUri?: string;
 }
@@ -112,16 +102,15 @@ const RestApiEndpoint = ({
   signalPrefix,
   endpointKey,
   endpoint,
-  mcp,
   open,
   httpUri,
 }: RestApiEndpointProps) => {
   const { l } = usePage();
   const [viewStatus, setViewStatus] = useState<"doc" | "test">("doc");
   const path = FetchClient.makeHttpUrl(endpointKey, endpoint, signalPrefix, new Map());
-  // An endpoint can opt in and still be kept out — the same fail-closed rules the server runs, so the badge says
-  // what the catalogue says rather than what the author hoped.
-  const mcpRefusal = mcp?.expose ? mcpRefusalOf(endpoint) : null;
+  // The same fail-closed rules the server runs, so the badge says what the catalogue says. Exposure follows the
+  // guards, so every endpoint is a candidate and the refusal is the whole answer.
+  const mcpRefusal = mcpRefusalOf(endpoint);
   return (
     <SignalCollapse
       open={open}
@@ -133,9 +122,7 @@ const RestApiEndpoint = ({
           <div className={getEndpointBadgeClassName(endpoint.type)}>
             {endpoint.type === "mutation" ? "POST" : "GET"}
           </div>
-          {mcp?.expose ? (
-            <div className={getMcpBadgeClassName(!mcpRefusal)}>{mcpRefusal ? "MCP refused" : "MCP"}</div>
-          ) : null}
+          <div className={getMcpBadgeClassName(!mcpRefusal)}>{mcpRefusal ? "MCP refused" : "MCP"}</div>
           <div className="font-bold text-lg">{path}</div>
           <div className="text-foreground/70 text-sm">{l._(`${refName}.signal.${endpointKey}`)}</div>
         </div>
@@ -154,22 +141,20 @@ const RestApiEndpoint = ({
               ))}
             </div>
           ) : null}
-          {mcp?.expose ? (
-            <div className="mt-2 flex flex-wrap items-center gap-2 font-normal text-sm">
-              <span className="text-foreground/70">MCP</span>
-              {mcpRefusal ? (
-                <span className="text-warning">{mcpRefusal}</span>
-              ) : (
-                Object.entries(mcpHintsOf(endpointKey, endpoint, mcp))
-                  .filter(([, on]) => on)
-                  .map(([hint]) => (
-                    <span className={badgeRecipe({ variant: "outline", size: "sm" })} key={hint}>
-                      {hint}
-                    </span>
-                  ))
-              )}
-            </div>
-          ) : null}
+          <div className="mt-2 flex flex-wrap items-center gap-2 font-normal text-sm">
+            <span className="text-foreground/70">MCP</span>
+            {mcpRefusal ? (
+              <span className="text-warning">{mcpRefusal}</span>
+            ) : (
+              Object.entries(mcpHintsOf(endpointKey, endpoint))
+                .filter(([, on]) => on)
+                .map(([hint]) => (
+                  <span className={badgeRecipe({ variant: "outline", size: "sm" })} key={hint}>
+                    {hint}
+                  </span>
+                ))
+            )}
+          </div>
           <div className="mt-2 font-normal text-foreground/70 text-sm">
             {l._(`${refName}.signal.${endpointKey}.desc`)}
           </div>

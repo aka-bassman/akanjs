@@ -100,6 +100,7 @@ Headings:
 - Styling Foundation
 - Design System First
 - Theme System Declaration
+- Lib-Owned Tokens
 - Font Declaration
 
 CSS And Styling
@@ -135,6 +136,12 @@ Theme System Declaration
 Theme and color are declared from the app style entry. The app imports Tailwind and Akan UI styles, defines raw CSS variables per theme under :root / [data-theme], then maps them to Tailwind color names with @theme inline. Switching themes is just toggling the data-theme attribute.
 
 Because @theme inline references var(), the same class (bg-primary, text-foreground …) resolves to different colors per data-theme — so one app can define light, dark, brand, or admin themes without changing any component class.
+
+Lib-Owned Tokens
+
+A lib whose components need fixed colors — a vendor sign-in button, a brand mark — declares them once in libs/<lib>/ui/tokens.css. Every app whose pages reach that lib compiles the file automatically, ahead of its own stylesheets, so the app stays the last word on any variable both declare. Nothing is imported by hand, and adding an app cannot forget it.
+
+These are plain custom properties, not a Tailwind @theme extension: the color vocabulary is closed per stylesheet, so bg-kakao would generate no CSS. Reference them as bg-[var(--kakao)], which the color lint rules allow by design. An @import the pipeline cannot resolve fails the build rather than compiling to nothing.
 
 Font Declaration
 
@@ -333,6 +340,8 @@ Controls CSR page motion so mobile navigation can feel closer to native apps.
 Handles OS system areas such as notches, home indicators, and Android system bars.
 
 Separates app chrome such as navbars, tabs, fixed actions, and keyboard accessories from page content.
+
+A BottomInset with keyboardSticky can also opt into contentAnchor="bottom" so scrollable content resizes with the keyboard while preserving the content bottom edge.
 
 Native Bridge
 
@@ -1355,7 +1364,11 @@ Headings:
 
 akanjs/signal
 
-Guard classes decide whether a request can pass before endpoint or slice execution. `Public` always passes, `None` blocks, and `guard(name)` creates a named guard base class for app-specific rules. Guards run on every transport, so read the caller with `context.get("account")` instead of branching on http/websocket. Slice `guards` cover only the generated query/mutation endpoints — declare `guards` on each `pubsub`/`message` endpoint to protect a socket.
+Guard classes decide whether a request can pass before endpoint or slice execution. `Public` always passes, `None` blocks, and `guard(name)` creates a named guard base class for app-specific rules. Guards run on every transport, so read the caller with `context.get("account")` instead of branching on http/websocket. Slice `guards` cover only the generated query/mutation endpoints — declare `guards` on each `pubsub`/`message` endpoint to protect a socket. Every guard declares `static scope: GuardScope`, and it is required: `"account"` when the verdict depends only on the caller, `"resource"` when it needs the arguments of the call. Only `account` guards are evaluated when filtering an MCP catalogue, and since exposure follows the guards, a wrong mark would list an endpoint to callers who cannot use it.
+
+`prompt()` is the fifth endpoint kind and the one a *user* invokes by name — an MCP client renders it as a slash command — rather than one the model chooses. `exec` returns `PromptMessage[]`, or a bare string that is wrapped into a single user message. Build messages with `Msg.user`, `Msg.assistant`, `Msg.link`, `Msg.resource`, `Msg.image`, `Msg.audio`, and `Msg.imageOf`. A prompt takes `.param()` and `.search()` only, because `prompts/get` carries a flat string map. An embedded payload is masked by the model you name — `Msg.resource(uri, task, { model: cnst.Task })`, or `Msg.mask(cnst.Task, task)` for one piece of an assembly — and an undeclared value whose secret fields are populated is refused rather than sent.
+
+Reports progress for a long-running MCP tool call. Reached through `AsyncLocalStorage`, so an endpoint reports from wherever the work happens — a service, an adapter, a loop several frames down — without threading a channel through every signature. Outside a streamed call it is a no-op, so the same code runs unchanged over plain HTTP, a websocket, and in tests. The server switches to an SSE response only once the first report arrives, and only when the client asked with both `Accept: text/event-stream` and a `_meta.progressToken`.
 
 Internal argument providers for advanced endpoints. `Req` gives the Bun request, `Res` gives the mutable response context, and `Ws` gives websocket subscription state and event hooks.
 
@@ -2138,9 +2151,9 @@ WebSocket message handler. Use msg(...) for incoming payload fields.
 
 Realtime subscription channel. Use room(...) to describe the subscription room.
 
-Required path-style argument. Common in query, mutation, and slice list methods.
+Prompt an MCP client renders as a slash command. exec returns PromptMessage[] or a bare string. Takes .param(...) and .search(...) only.
 
-Optional search/query argument. It is nullable by default.
+Required path-style argument. Common in query, mutation, and slice list methods.
 
 ## model.store.ts
 
@@ -4178,6 +4191,176 @@ Use `Load.Edit` on a server-rendered page when the page already knows default va
 
 New article page
 
+## MCP Server
+
+Source: /cheatsheet/interface/mcp
+Mirror: /llms/pages/cheatsheet/interface/mcp.md
+Priority: P2
+
+Headings:
+- MCP Server
+- 1. Turn The Server On
+- 2. Write An Endpoint
+- 3. Slices And CRUD
+- 4. Write A Prompt
+- 5. Report Progress
+- Authorization
+- Gotchas
+
+MCP Server
+
+Every signal you already wrote can be served to AI agents over the Model Context Protocol. There is no second API to build: the same endpoint runs through the same guards, the same middleware, and the same service, and its dictionary entries become the text an agent reads to decide what to call.
+
+Exposure follows the guards, and there is nothing to write in a signal file. /mcp is mounted by default; an endpoint that names a real guard is published, one that names none is refused, and a mutation whose only guard is [Public] is refused. A refused endpoint answers the same 'unknown tool' as one that does not exist. The guards are already the authorization decision and are re-read per caller on every listing, so a second per-endpoint switch would say nothing they do not — while guaranteeing that every endpoint added later is invisible to agents until somebody remembers it.
+
+query and mutation become tools; a readable query also becomes a resource.
+
+prompt becomes a slash command the user invokes.
+
+pubsub and message are never exposed — their arguments read a socket an MCP request does not have.
+
+1. Turn The Server On
+
+The server mounts at POST /mcp, at the root rather than under the API prefix: the canonical resource a client authenticates against is the endpoint's own URL.
+
+or by env
+
+main.ts is where this goes, because server.ts is generated and constructs AkanServer with no options. The gateway configures the child that actually mounts /mcp through its environment, so every field has an env spelling too — an option written in code wins over the env of the same name.
+
+instructions is the one place to say what this app is for and which tool to reach for first. It goes to the model alongside the tool list.
+
+AKAN_MCP_READONLY=true drops every mutation whatever it declared. It is the valve for a deployment that must not be able to write, not the exposure switch.
+
+## Deep Links
+
+Source: /cheatsheet/mobile/links
+Mirror: /llms/pages/cheatsheet/mobile/links.md
+Priority: P2
+
+Headings:
+- Deep Link Setup
+
+Deep Links
+
+Deep Link Setup
+
+Deep links open a CSR route from outside the app. Use schemes for app-only URLs and domains for verified HTTPS links. Push notification clicks use the same routing path through data.url.
+
+Think of deep link as the feature, and schemes/domains as the two common ways to implement it. Scheme links such as shop://orders/1 are easy to test and app-only. Domain links such as https://shop.example.com/orders/1 require iOS/Android verification, but they behave like normal web links and are better for sharing, emails, and push notification URLs.
+
+Custom app-only URLs such as shop://orders/1. Easy to test, but not domain-verified.
+
+Verified HTTPS links such as https://shop.example.com/orders/1. iOS uses apple-app-site-association; Android uses assetlinks.json.
+
+Apple Developer Team ID used for universal link association files.
+
+Signing certificate fingerprints used by Android app links. Debug builds and release builds usually have different fingerprints.
+
+## Push Notifications
+
+Source: /cheatsheet/mobile/push
+Mirror: /llms/pages/cheatsheet/mobile/push.md
+Priority: P2
+
+Headings:
+- Push Setup
+
+Push Notifications
+
+Push Setup
+
+Push setup has three separate surfaces: web push, Android push, and iOS push. Akan gives one client API, usePushNotification(), but the platform setup is still different.
+
+Akan automates
+
+Serving /firebase-messaging-sw.js for web push.
+
+Android POST_NOTIFICATIONS permission when target.permissions includes push.
+
+iOS aps-environment, remote-notification background mode, and Capacitor AppDelegate bridge.
+
+You provide
+
+App package dependencies for Capacitor push and FCM.
+
+Firebase web config, google-services.json, and GoogleService-Info.plist.
+
+Firebase Console app registration and APNs credentials.
+
+Web push
+
+## Setup
+
+Source: /cheatsheet/mobile/setup
+Mirror: /llms/pages/cheatsheet/mobile/setup.md
+Priority: P2
+
+Headings:
+- Mobile Setup Flow
+- Mobile Config
+- Capacitor Plugins
+- Android Setup
+- iOS Setup
+- Verify Setup
+
+Setup
+
+Mobile Setup Flow
+
+Akan mobile apps reuse the CSR web app inside a Capacitor Android/iOS shell. The web app owns pages and business logic. The native shell owns package identity, device permissions, plugin linking, native files, signing, and store builds.
+
+Start with the mobile identity, declare only the Capacitor plugins the app actually uses, then prepare Android and iOS builds. Push notifications and deep links are optional features; configure them only when the app needs them.
+
+App name, package id, version, target basePath, permissions, native files.
+
+List the native plugins used by this app in apps/myapp/package.json.
+
+Prepare platform toolchains, app IDs, signing, and sync/build commands.
+
+Mobile Config
+
+The mobile block in akan.config.ts describes the native package. These values become Android application metadata, iOS bundle metadata, target entry paths, native permission hints, and native file copy rules.
+
+Native display name. Users see it on the launcher/home screen unless the platform or store overrides it.
+
+Stable native package identity. Android uses it as applicationId/package name; iOS uses it as bundle id. Any platform console registration must match it exactly.
+
+version is the user-facing version. buildNum is the store build number and must increase for every native store submission.
+
+## UI & Keyboard
+
+Source: /cheatsheet/mobile/ui
+Mirror: /llms/pages/cheatsheet/mobile/ui.md
+Priority: P2
+
+Headings:
+- Gesture & Page Transitions
+- Keyboard Accessory Layout
+
+UI & Keyboard
+
+Gesture & Page Transitions
+
+Mobile pages can opt into native-feeling CSR transitions with pageConfig.transition. Stack pages support the iOS-style back swipe by default on iOS, while Android defaults to a scale-out transition and disables edge gestures unless a page opts in.
+
+/csr/stack_en.mp4
+
+Pushes a detail page over the current page. Use it for drill-down navigation such as detail, edit, or settings pages.
+
+/csr/bottomup_en.mp4
+
+Opens a focused surface from the bottom. Use it for compose, picker, camera, or modal-like flows.
+
+/csr/fade_en.mp4
+
+Changes context without implying a deeper navigation stack.
+
+/csr/scale_en.mp4
+
+Uses a compact scale motion. This is the default Android-style transition for deeper routes.
+
+Controls edge-swipe navigation for page transitions. Leave it to the platform default unless the page needs to explicitly enable or disable gesture handling.
+
 ## Dependency Injection
 
 Source: /cheatsheet/observability/di
@@ -4416,6 +4599,7 @@ Headings:
 - Lazy Loading
 - External Libraries
 - Large Components
+- Server Adapters
 - SSR Or Client Only
 - Tips
 
@@ -4441,7 +4625,7 @@ You can also split your own components. This is useful when a page has a heavy e
 
 Lazy editor
 
-SSR Or Client Only
+Server Adapters
 
 ## Mutating
 
@@ -4616,6 +4800,11 @@ Chat Flow
 - CRUD: /llms/pages/cheatsheet/interface/crud.md
 - Endpoint: /llms/pages/cheatsheet/interface/endpoint.md
 - Form: /llms/pages/cheatsheet/interface/form.md
+- MCP Server: /llms/pages/cheatsheet/interface/mcp.md
+- Deep Links: /llms/pages/cheatsheet/mobile/links.md
+- Push Notifications: /llms/pages/cheatsheet/mobile/push.md
+- Setup: /llms/pages/cheatsheet/mobile/setup.md
+- UI & Keyboard: /llms/pages/cheatsheet/mobile/ui.md
 - Dependency Injection: /llms/pages/cheatsheet/observability/di.md
 - Error Handling: /llms/pages/cheatsheet/observability/error.md
 - Logging: /llms/pages/cheatsheet/observability/logging.md

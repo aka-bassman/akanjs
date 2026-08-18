@@ -8,7 +8,7 @@ import { capitalize } from "./capitalize";
  * eventually disagree, and an audit surface that disagrees with the catalogue is worse than none.
  *
  * Every rejection returns the sentence an author reads, at boot in the server log and in the explorer. Fail-closed
- * with no reason is what left a deliberate `mcp: { expose: true }` vanishing with nowhere to look but the source.
+ * with no reason leaves an author whose endpoint is missing from the catalogue nowhere to look but the source.
  */
 export interface McpExposureEndpoint {
   type: string;
@@ -26,20 +26,10 @@ export interface McpExposureOption {
   readOnly?: boolean;
 }
 
-/** The author's overrides for the hints derived below. */
-export interface McpExposureHints {
-  readOnly?: boolean;
-  destructive?: boolean;
-  idempotent?: boolean;
-}
-
 /** `Any` publishes as the empty schema, which tells a model nothing — so it is left out rather than described. */
 export const isMcpDescribableArg = (arg: { refName: string }) => arg.refName !== "Any";
 
-/**
- * Which slice-level verb opts in each CRUD endpoint a model generates. They carry no signal option of their own,
- * so `mcp: { get: true }` on the slice is the only place their exposure can be written.
- */
+/** Which CRUD verb a generated endpoint key is, or `null` when the key is not one of the five. */
 export const mcpBaseVerbOf = (refName: string, key: string) => {
   const cap = capitalize(refName);
   if (key === refName || key === `light${cap}`) return "get" as const;
@@ -54,19 +44,24 @@ export const mcpBaseVerbOf = (refName: string, key: string) => {
  * and never stand in for a guard. `openWorldHint` is always false: every endpoint reaches this app's own
  * database, not the wider internet.
  */
-export const mcpHintsOf = (key: string, endpoint: { type: string }, mcp: McpExposureHints = {}) => {
-  const readOnly = mcp.readOnly ?? endpoint.type === "query";
-  const destructive = mcp.destructive ?? (!readOnly && /^(remove|delete)/.test(key));
+export const mcpHintsOf = (key: string, endpoint: { type: string }) => {
+  const readOnly = endpoint.type === "query";
+  const destructive = !readOnly && /^(remove|delete)/.test(key);
   return {
     readOnlyHint: readOnly,
     destructiveHint: destructive,
-    idempotentHint: mcp.idempotent ?? (readOnly || /^(set|update)/.test(key)),
+    idempotentHint: readOnly || /^(set|update)/.test(key),
     openWorldHint: false,
   };
 };
 
 /** The sentence explaining why this endpoint is not in the catalogue, or `null` when it is. */
 export const mcpRefusalOf = (endpoint: McpExposureEndpoint, { readOnly }: McpExposureOption = {}): string | null => {
+  // The whole exposure policy, and the first gate because it applies to every kind. Publishing follows the guards:
+  // an endpoint with none has had no decision made about who may reach it, and a catalogue entry is the one place
+  // that omission stops being invisible. `guards: [Public]` is the same access, written down, and publishes.
+  if (!endpoint.guards?.length)
+    return "it declares no guards, and exposure follows them — write `guards: [Public]` if anonymous access is the intent.";
   if (endpoint.type === "prompt") return mcpPromptRefusalOf(endpoint);
   if (endpoint.type === "pubsub" || endpoint.type === "message")
     return `\`${endpoint.type}\` rides the websocket, and its internal arguments read a socket an MCP request does not have.`;
@@ -76,7 +71,7 @@ export const mcpRefusalOf = (endpoint: McpExposureEndpoint, { readOnly }: McpExp
     return `a return typed \`${endpoint.returns.refName}\` cannot be described to a model.`;
   if (endpoint.fileUpload || endpoint.args.some((arg) => arg.refName === "Upload"))
     return "a file upload has no MCP representation.";
-  if (endpoint.type === "mutation" && !endpoint.guards?.some((name) => name !== "Public"))
+  if (endpoint.type === "mutation" && !endpoint.guards.some((name) => name !== "Public"))
     return "a mutation needs a real guard — `[Public]` is having none, spelled out.";
   const opaque = endpoint.args.find((arg) => !isMcpDescribableArg(arg) && arg.type !== "search" && !arg.nullable);
   if (opaque)

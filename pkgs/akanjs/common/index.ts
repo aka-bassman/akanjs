@@ -30,7 +30,6 @@ export { lowerlize } from "./lowerlize";
 export {
   isMcpDescribableArg,
   type McpExposureEndpoint,
-  type McpExposureHints,
   type McpExposureOption,
   mcpBaseVerbOf,
   mcpHintsOf,

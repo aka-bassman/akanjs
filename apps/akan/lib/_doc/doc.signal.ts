@@ -15,13 +15,13 @@ export class DocInternal extends internal(srv.doc, () => ({})) {}
  * unusable to the agents they exist for.
  */
 export class DocEndpoint extends endpoint(srv.doc, ({ query }) => ({
-  listDocPages: query([cnst.DocPage], { guards: [Public], mcp: { expose: true } })
+  listDocPages: query([cnst.DocPage], { guards: [Public] })
     .search("section", cnst.DocSection)
     .exec(async function (section) {
       return await this.docService.listPages(section);
     }),
 
-  readDocPage: query(String, { guards: [Public], mcp: { expose: true } })
+  readDocPage: query(String, { guards: [Public] })
     .param("href", String, { example: "/references/akanjs/signal" })
     .exec(async function (href) {
       // An href that names nothing is the caller's own mistake, and an agent that gets it wrong needs to be told
@@ -31,7 +31,7 @@ export class DocEndpoint extends endpoint(srv.doc, ({ query }) => ({
       return body;
     }),
 
-  searchDocPages: query([cnst.DocPage], { guards: [Public], mcp: { expose: true } })
+  searchDocPages: query([cnst.DocPage], { guards: [Public] })
     .param("text", String, { example: "cascade remove" })
     .search("limit", Int)
     .exec(async function (text, limit) {

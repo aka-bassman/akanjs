@@ -1,9 +1,9 @@
-import { Any, type Assign, type Cls, type MergeAllKeyOfObjects, SLICE_DICT_SHAPE, SLICE_META } from "akanjs/base";
+import { Any, type Assign, type MergeAllKeyOfObjects, SLICE_DICT_SHAPE, SLICE_META } from "akanjs/base";
 import { applyMixins } from "akanjs/common";
 import type { DocumentModel, QueryOf } from "akanjs/constant";
 import type { FilterInstance } from "akanjs/document";
 import { type Adaptor, type AdaptorCls, dangerouslyAdapt, type ServiceModel } from "akanjs/service";
-import type { Guard, GuardCls } from "./guard";
+import type { GuardCls } from "./guard";
 import {
   buildSlice,
   type SliceBuilder,
@@ -14,16 +14,7 @@ import {
   type SliceInfoServerArgs,
   type SliceInfoSrvs,
 } from "./sliceInfo";
-import type {
-  CnstFull,
-  CnstInput,
-  CnstInsight,
-  CnstLight,
-  DbFilter,
-  McpSliceOption,
-  SrvMap,
-  SrvRefName,
-} from "./types";
+import type { CnstFull, CnstInput, CnstInsight, CnstLight, DbFilter, SrvMap, SrvRefName } from "./types";
 
 export type SliceDictArgShape = { [key: string]: readonly string[] };
 export type SliceDictShape<SliceInfoObj extends { [key: string]: SliceInfo }> = {
@@ -47,20 +38,18 @@ export type SliceCls<
   createGuards: GuardCls[];
   updateGuards: GuardCls[];
   removeGuards: GuardCls[];
-  mcp?: McpSliceOption;
 };
 
 interface RootSliceOption {
   guards?: {
-    root?: Cls<Guard> | Cls<Guard>[];
-    get?: Cls<Guard> | Cls<Guard>[];
-    cru?: Cls<Guard> | Cls<Guard>[];
-    create?: Cls<Guard> | Cls<Guard>[];
-    update?: Cls<Guard> | Cls<Guard>[];
-    remove?: Cls<Guard> | Cls<Guard>[];
+    root?: GuardCls | GuardCls[];
+    get?: GuardCls | GuardCls[];
+    cru?: GuardCls | GuardCls[];
+    create?: GuardCls | GuardCls[];
+    update?: GuardCls | GuardCls[];
+    remove?: GuardCls | GuardCls[];
   };
   prefix?: string;
-  mcp?: McpSliceOption;
 }
 
 type RootSliceQuery<SrvModule extends ServiceModel, Full = CnstFull<SrvModule>> = QueryOf<DocumentModel<Full>>;
@@ -140,7 +129,7 @@ export function slice<
     srv.cnst.insight,
     srv.db.filter,
   );
-  const toGuards = (guard?: Cls<Guard> | Cls<Guard>[]) => (guard ? (Array.isArray(guard) ? guard : [guard]) : []);
+  const toGuards = (guard?: GuardCls | GuardCls[]) => (guard ? (Array.isArray(guard) ? guard : [guard]) : []);
   const rootGuards = toGuards(option.guards?.root);
   const getGuards = toGuards(option.guards?.get);
   const cruGuards = toGuards(option.guards?.cru);
@@ -162,12 +151,9 @@ export function slice<
     static createGuards = createGuards;
     static updateGuards = updateGuards;
     static removeGuards = removeGuards;
-    static mcp = option.mcp;
     static [SLICE_META] = Object.assign(
       {
-        // `mcp.list` is the root slice's own opt-in: it is built here, not by the author, so it would otherwise
-        // be the one slice that can never be exposed.
-        [""]: init({ guards: rootGuards, ...(option.mcp?.list ? { mcp: { expose: true } } : {}) })
+        [""]: init({ guards: rootGuards })
           .search<"query", object>("query", Any)
           .exec((query) => query ?? {}),
       },

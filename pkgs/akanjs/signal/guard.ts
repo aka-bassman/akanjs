@@ -10,17 +10,19 @@ export interface Guard {
  * with no arguments — which is what lets a catalogue hide what the caller certainly cannot use. `resource` needs
  * the call's arguments and fails closed without them, so evaluating one early would erase legitimate entries.
  *
- * Unmarked means `resource`. That is the safe default for listing (the entry stays visible and is stopped at
- * call time), and it is why the marker can be retrofitted one guard at a time.
+ * Required, with no default. Exposure is decided by a guard rather than by an opt-in, so an unmarked guard would
+ * silently take the `resource` path and list its endpoint to every caller — the whole guarded surface's names,
+ * refused only at call time. There is no safe guess here, so the author states it.
  */
 export type GuardScope = "account" | "resource";
 
-export type GuardCls<Name extends string = string> = Cls<Guard, { readonly name: Name; readonly scope?: GuardScope }>;
+export type GuardCls<Name extends string = string> = Cls<Guard, { readonly name: Name; readonly scope: GuardScope }>;
 
 /** Creates a named guard base class for signal access checks. */
 export const guard = <T extends string>(name: T): GuardCls<T> => {
   return class Guard {
     static name = name;
+    static scope: GuardScope = "account";
     canPass(context: SignalContext): PromiseOrObject<boolean> {
       return true;
     }

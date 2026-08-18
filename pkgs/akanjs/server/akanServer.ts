@@ -38,16 +38,16 @@ export interface AkanServerProps extends AkanLibProps {
 
 export interface AkanServerOptions {
   openapi?: boolean;
-  /** `true` mounts `/mcp` with everything its endpoints opted into; the object form adds the read-only valve. */
+  /** `/mcp` is mounted by default; `false` takes it off, and the object form carries the rest of its settings. */
   mcp?: boolean | McpServerOption;
 }
 
 export interface McpServerOption {
   enabled?: boolean;
   /**
-   * Drops every mutation from the catalogue whatever it opted into — for a deployment that must not be able to
-   * write, such as a read replica or a demo. Off by default: `mcp: { expose: true }` plus the endpoint's guards
-   * are the decision, and this switch cannot tell its author why their endpoint vanished.
+   * Drops every mutation from the catalogue whatever its guards allow — for a deployment that must not be able to
+   * write, such as a read replica or a demo. Off by default, and reported per endpoint in the boot log, because a
+   * switch that silently unlists a published endpoint cannot tell its author why it vanished.
    */
   readOnly?: boolean;
   /**
@@ -117,7 +117,7 @@ export class AkanServer {
   prefix = "/api";
   websocketPrefix = "/ws";
   openapi = AkanServer.#isOpenApiEnvEnabled();
-  mcp = AkanServer.#isEnvEnabled("AKAN_MCP", "AKAN_PUBLIC_MCP");
+  mcp = AkanServer.#isEnvOn("AKAN_MCP", "AKAN_PUBLIC_MCP");
   mcpReadOnly = AkanServer.#isEnvEnabled("AKAN_MCP_READONLY", "AKAN_PUBLIC_MCP_READONLY");
   mcpAuth: McpAuthOption = AkanServer.#mcpAuthFromEnv();
   mcpOption: Omit<McpServerOption, "enabled" | "readOnly" | "auth"> = AkanServer.#mcpOptionFromEnv();
@@ -596,6 +596,17 @@ export class AkanServer {
 
   static #isEnvEnabled(...names: string[]) {
     return names.some((name) => process.env[name] === "true" || process.env[name] === "1");
+  }
+
+  /**
+   * On unless the env says otherwise, which is the opposite of `#isEnvEnabled`.
+   *
+   * MCP exposure follows an endpoint's guards rather than an opt-in, so there is nothing an app has to declare for
+   * its catalogue to be right — and a switch that must be found before anything works is a switch most deployments
+   * never find. `AKAN_MCP=false` is the way off.
+   */
+  static #isEnvOn(...names: string[]) {
+    return !names.some((name) => process.env[name] === "false" || process.env[name] === "0");
   }
 
   /** Both differ per environment, so they belong in env rather than in the app's source alongside the switch. */

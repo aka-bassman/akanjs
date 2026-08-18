@@ -1,4 +1,5 @@
 import { serviceDictionary } from "akanjs/dictionary";
+
 import type { SharedEndpoint } from "./shared.signal";
 
 export const dictionary = serviceDictionary(["en", "ko"])

@@ -46,7 +46,7 @@ Called when the user confirms.
 
 Custom button labels.
 
-Compact dropdown menu wrapper. It is commonly used for row actions, comment/story menus, and context actions in list UIs.
+Compact dropdown menu wrapper. It is commonly used for row actions, comment/story menus, and context actions in list UIs. A menu item may open a Modal: the menu stays mounted while it is closed, so the overlay survives, and clicks inside an overlay this menu opened do not count as outside clicks. An overlay it did not open still dismisses it.
 
 Trigger button content.
 
@@ -55,6 +55,8 @@ Dropdown menu content.
 Classes for the trigger button.
 
 Classes for the menu panel.
+
+Put it on a menu item that runs its own interaction (a switch, a copy button) so clicking it does not close the menu.
 
 Copy-to-clipboard trigger that also shows a global success message through Akan store messages.
 

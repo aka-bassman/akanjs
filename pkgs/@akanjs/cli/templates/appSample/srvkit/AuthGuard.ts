@@ -15,8 +15,8 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { a
 export class SignedIn implements Guard {
   static name = "SignedIn";
   // "account" — the verdict reads the caller and nothing about the call, so an MCP catalogue can evaluate it with
-  // no arguments and hide what this caller certainly cannot use. Unmarked means "resource", which is never
-  // evaluated for a listing: a guard like this one would then filter nothing.
+  // no arguments and hide what this caller certainly cannot use. Required: "resource" is never evaluated for a
+  // listing, so a guard like this one marked that way would filter nothing.
   static scope: GuardScope = "account";
 
   canPass(context: SignalContext): boolean {

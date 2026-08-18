@@ -535,8 +535,8 @@ const unsubscribe = fetch.subscribeChatAdded(rootId, (chat) => {
                 ko: "required argument가 nullable argument 뒤에 올 수 없으므로 nullable argument는 뒤쪽에 둡니다.",
               }),
               l.trans({
-                en: "Nothing reaches an AI agent until it declares mcp: { expose: true }. See the MCP Server cheatsheet.",
-                ko: "mcp: { expose: true }를 선언하기 전까지는 어떤 것도 AI agent에 노출되지 않습니다. MCP Server cheatsheet을 참고하세요.",
+                en: "An endpoint that names a real guard is reachable by an AI agent; one that names none is not. There is no mcp option to write. See the MCP Server cheatsheet.",
+                ko: "실질 guard를 적은 endpoint는 AI agent가 닿고, 아무 guard도 적지 않은 endpoint는 닿지 않습니다. 적어야 할 mcp 옵션은 없습니다. MCP Server cheatsheet을 참고하세요.",
               }),
             ].map((rule) => (
               <div key={rule} className={panelRecipe({ padding: "row" }, "text-foreground/70")}>

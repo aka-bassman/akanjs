@@ -66,7 +66,6 @@ export class FetchSerializer {
       ...(endpointInfo.signalOption.path ? { path: endpointInfo.signalOption.path } : {}),
       ...(endpointInfo.signalOption.fileUpload ? { fileUpload: true } : {}),
       ...(guards?.length ? { guards } : {}),
-      ...(endpointInfo.signalOption.mcp?.expose ? { mcp: endpointInfo.signalOption.mcp } : {}),
     };
   }
 
@@ -76,7 +75,6 @@ export class FetchSerializer {
       args: sliceInfo.args.map(FetchSerializer.#serializeArg),
       ...(sliceInfo.signalOption.path ? { path: sliceInfo.signalOption.path } : {}),
       ...(guards?.length ? { guards } : {}),
-      ...(sliceInfo.signalOption.mcp?.expose ? { mcp: sliceInfo.signalOption.mcp } : {}),
     };
   }
 
@@ -95,7 +93,6 @@ export class FetchSerializer {
     return {
       ...(prefix ? { prefix } : {}),
       ...(Object.keys(slice).length ? { slice } : {}),
-      ...(sliceCls.mcp ? { mcp: sliceCls.mcp } : {}),
       ...(sliceCls.getGuards.filter((g) => g.name !== "None").length
         ? { getGuards: sliceCls.getGuards.map((g) => g.name) }
         : {}),

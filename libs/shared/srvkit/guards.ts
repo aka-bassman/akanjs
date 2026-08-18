@@ -1,9 +1,10 @@
-import type { Guard, SignalContext } from "akanjs/signal";
+import type { Guard, GuardScope, SignalContext } from "akanjs/signal";
 import type { SerAccount } from "./account";
 import { allow } from "./guards.helper";
 
 export class Every implements Guard {
   static name = "Every";
+  static scope: GuardScope = "account";
   canPass(context: SignalContext): boolean {
     const account =
       context.transport === "http"
@@ -15,6 +16,7 @@ export class Every implements Guard {
 
 export class Owner implements Guard {
   static name = "Owner";
+  static scope: GuardScope = "resource";
   canPass(context: SignalContext): boolean {
     const account =
       context.transport === "http"
@@ -26,6 +28,7 @@ export class Owner implements Guard {
 
 export class Admin implements Guard {
   static name = "Admin";
+  static scope: GuardScope = "account";
   canPass(context: SignalContext): boolean {
     const account =
       context.transport === "http"
@@ -37,6 +40,7 @@ export class Admin implements Guard {
 
 export class SuperAdmin implements Guard {
   static name = "SuperAdmin";
+  static scope: GuardScope = "account";
   canPass(context: SignalContext): boolean {
     const account =
       context.transport === "http"
@@ -48,6 +52,7 @@ export class SuperAdmin implements Guard {
 
 export class User implements Guard {
   static name = "User";
+  static scope: GuardScope = "account";
   canPass(context: SignalContext): boolean {
     const account =
       context.transport === "http"
@@ -59,6 +64,7 @@ export class User implements Guard {
 
 export class SelfOrAdmin implements Guard {
   static name = "User";
+  static scope: GuardScope = "resource";
   private argName: string;
   constructor(argName?: string) {
     this.argName = argName ?? "userId";

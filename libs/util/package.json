@@ -30,7 +30,7 @@
     "jsonwebtoken": "^9.0.2",
     "lodash-move": "^1.1.1",
     "lodash.clamp": "^4.0.3",
-    "nodemailer": "^8.0.10",
+    "nodemailer": "^8.0.7",
     "path": "^0.12.7",
     "pigeon-maps": "^0.22.1",
     "puppeteer": "^24.43.1",
