@@ -344,33 +344,6 @@ than returning it (`no-return-in-store-action.grit`); a bare `return;` guard sta
 `.of() → .model() → .insight() → .query() → .sort() → .enum() → .slice() → .endpoint() → .error() → .translate()`.
 Name every argument in `.arg()`, including framework-supplied `skip` / `limit` / `sort`. Use `modelDictionary`,
 `scalarDictionary`, or `serviceDictionary` to match the module kind.
-**`.store()` is the one optional stage, and the one written as a separate statement — never in the chain:**
-
-```ts
-export const dictionary = modelDictionary(["en", "ko"]).of(…).model(…).endpoint<UserEndpoint>(…).error({…});
-
-dictionary.store<UserStore>((t) => ({
-  logout: t(["Log Out", "로그아웃"]).desc(["Ends this session", "이 세션을 종료한다"]),
-}));
-```
-
-**Chaining it is a type cycle, not a style choice.** `*.dictionary.ts` → `*.store.ts` → `useClient` → `sig.ts` →
-`*.signal.ts` → `../dict` → `dict.ts` → back to `*.dictionary.ts`: signals import `Err` from the dictionary barrel,
-so naming a store type anywhere inside the chained initializer makes `dictionary` reference itself and the whole
-client type graph collapses to `any` (`TS7022` on `dictionary`, `pageProto`, `runtime`, `sig`, plus `TS2310` on the
-store class). As a separate statement the first line's type is already resolved when the store type is read, and
-the cycle does not close. `import type { UserStore }` does not help — the edge is the type reference, not the import.
-
-Available on `modelDictionary` and `serviceDictionary` alike — a service module (`lib/_<service>`) has a store too,
-and `logout` over `signoutUser` is the canonical case for this stage. `scalarDictionary` has no `.store()` because a
-scalar module has no store.
-
-It names custom store actions (labels and `.desc()` only, no `.arg()` — an argument's words come from wherever the
-argument came from, the endpoint's `.arg()` or the model field's own entry). **A generated action never needs an
-entry**: `createX` / `updateX` / `createXInForm` / `setFieldOnX` / `submitX` and the rest are named by a rule and
-borrow the model's own `.desc()`, so they are exempt from every description check. Write an entry only where
-inheriting would be wrong — an action named after the endpoint it calls already reads as that endpoint's `.desc()`,
-which is most of them. `akan.agent.missing-store-description` names the rest.
 
 **`<module>.abstract.md`** — a title line, one declarative sentence naming what the module owns, a `## Rules` list of
 two to five invariants the code cannot show, and an optional workflow arrow chain

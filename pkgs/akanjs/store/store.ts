@@ -225,7 +225,7 @@ export function store<Sig extends ClientSignal<any, any, any> | string, State>(
     Object.assign(storeCls[ACTION_META], actions);
     Object.assign(
       storeCls[ACTION_OWNER_META],
-      Object.fromEntries(Object.keys(actions).map((key) => [key, { refName, generated: true }])),
+      Object.fromEntries(Object.keys(actions).map((key) => [key, { refName }])),
     );
     Object.assign(storeCls.slice, signal.serializedSignal.slice ?? {});
   }

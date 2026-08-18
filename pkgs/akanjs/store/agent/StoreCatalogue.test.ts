@@ -122,7 +122,6 @@ describe("StoreCatalogue actions", () => {
       effect: "mutation",
       refName: "catalogueTask",
       endpoint: "createCatalogueTask",
-      generated: true,
     });
     // A custom action gets the same treatment purely by being named after its endpoint.
     expect(catalogue.store.action.startCatalogueTask).toEqual({
@@ -140,7 +139,6 @@ describe("StoreCatalogue actions", () => {
       refName: "catalogueTask",
       field: "title",
       role: "set",
-      generated: true,
     });
     expect(catalogue.store.action.setStatusOnCatalogueTask?.args).toEqual([
       { type: "body", name: "status", refName: "String", enum: "catalogueStatus" },
@@ -191,14 +189,12 @@ describe("StoreCatalogue actions", () => {
       effect: "query",
       refName: "catalogueTask",
       role: "setPageOfModel",
-      generated: true,
     });
     expect(catalogue.store.action.initCatalogueTaskByStatus).toEqual({
       args: [{ type: "param", name: "status", refName: "String", enum: "catalogueStatus" }],
       effect: "query",
       refName: "catalogueTask",
       role: "initModel",
-      generated: true,
     });
     // The unnamed root slice takes no arguments, so the two must not be confused for one another.
     expect(catalogue.store.action.initCatalogueTask?.args).toEqual([]);

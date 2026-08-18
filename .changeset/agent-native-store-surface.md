@@ -23,7 +23,7 @@ but the house rule that makes `st.do.X` read the same as `fetch.X` — or from t
 generated from, or from the role the store recorded while it built the slice. Two things had to be added to make that
 possible: arity is captured in `#mergeActions` (the `st.do` wrapper takes rest arguments, so `Function.length` is
 zero for everything by the time anyone can ask), and `ACTION_OWNER_META` records which module declared each action,
-which is what makes the dictionary's `.store()` text reachable at runtime for the renamed actions it exists for.
+which is what names the dictionary node its words are read from.
 
 **`AgentBridge`** turns that into tools with JSON schemas, checks each argument against what it declared, dispatches
 through `st.do`, masks reads, and keeps a transcript. It holds no model, provider, or key — an app wires whichever

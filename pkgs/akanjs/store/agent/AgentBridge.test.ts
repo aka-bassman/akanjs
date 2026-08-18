@@ -81,8 +81,6 @@ beforeAll(() => {
   process.env.AKAN_PUBLIC_ENV = "testing";
   Translator.seed("en", {
     bridgeNote: {
-      // An action's own words win over anything it could inherit.
-      store: { submitDraft: { t: "Submit", desc: { t: "Submits whatever the form holds" } } },
       signal: {
         startBridgeNote: {
           t: "Start",
@@ -101,10 +99,6 @@ beforeAll(() => {
       await Promise.resolve();
     }
     async submitDraft() {
-      await Promise.resolve();
-    }
-    // A module's own action with no dictionary entry anywhere — the one shape that is real debt.
-    async tidyNote() {
       await Promise.resolve();
     }
   }
@@ -133,29 +127,18 @@ describe("AgentBridge catalogue", () => {
     expect(Object.keys(schema.$defs ?? {})).toContain("BridgeNoteInput");
   });
 
-  test("takes an action's own words, then the endpoint's, then the field's", () => {
-    expect(toolOf("submitDraft")?.description).toBe("Submits whatever the form holds");
+  test("takes the endpoint's words, then the field's", () => {
     expect(toolOf("startBridgeNote")?.description).toBe("Starts the note");
-    // A field setter has no words of its own and inherits none; the field's label is what it is about.
+    // A field setter inherits no endpoint words; the field's label is what it is about.
     expect(toolOf("setTitleOnBridgeNote")?.title).toBe("Title");
     expect(toolOf("setTitleOnBridgeNote")?.description).toBe("The one line a reader scans for");
+    // An action named after neither has nothing to borrow, and publishes its name alone.
+    expect(toolOf("submitDraft")?.description).toBeUndefined();
   });
 
-  test("records only what an author was supposed to write, never a generated action", () => {
-    const undescribed = bridge.undescribed.map(({ key }) => key);
-    // A module wrote this one and gave it no words anywhere.
-    expect(undescribed).toContain("tidyNote");
-    // These the framework named by a rule. Their only legitimate text is the model's own, so asking for a
-    // `.store()` entry would be asking for text nobody reads — and a list full of those teaches authors to ignore it.
-    expect(undescribed).not.toContain("setCountOnBridgeNote");
-    expect(undescribed).not.toContain("createBridgeNote");
-    expect(undescribed).not.toContain("submitBridgeNote");
-    expect(undescribed).not.toContain("setPageOfBridgeNote");
-  });
-
-  test("describes each argument from where the argument came from, not from the store entry", () => {
-    // `.store()` takes no `.arg()`. The prose exists at the endpoint's arg node and at the field's own node, and
-    // publishing a typed argument with no description throws that away.
+  test("describes each argument from where the argument came from", () => {
+    // The prose exists at the endpoint's arg node and at the field's own node, and publishing a typed argument
+    // with no description throws that away.
     const borrowed = toolOf("startBridgeNote")?.inputSchema as { properties: { noteId: { description?: string } } };
     expect(borrowed.properties.noteId.description).toBe("Which note to start");
     const setter = toolOf("setTitleOnBridgeNote")?.inputSchema as { properties: { title: { description?: string } } };

@@ -3,7 +3,7 @@ import { Translator } from "akanjs/client";
 import { parseAkanI18nEnv } from "akanjs/common";
 import { ConstantRegistry, type MaskModel, mask } from "akanjs/constant";
 import { FetchClient } from "akanjs/fetch";
-import type { AgentRefusal, AgentUndescribed, JsonSchema, SerializedArg, SerializedSignal } from "akanjs/signal";
+import type { AgentRefusal, JsonSchema, SerializedArg, SerializedSignal } from "akanjs/signal";
 // XXX: Module, not barrel — see the note in `StoreCatalogue`. `akanjs/signal` drags `bun:sqlite` into the browser.
 import { JsonSchemaBuilder } from "../../signal/schema/JsonSchemaBuilder";
 import type { StoreInstance } from "../storeInstance";
@@ -49,8 +49,6 @@ export interface AgentBridgeOptions {
 export class AgentBridge {
   readonly tools: AgentTool[];
   readonly refusals: AgentRefusal[];
-  /** Published entries with no words an author wrote. What a source scanner cannot see, per `AgentCatalogue`. */
-  readonly undescribed: AgentUndescribed[] = [];
 
   readonly #instance: StoreInstance;
   readonly #store: SerializedStore;
@@ -210,7 +208,7 @@ export class AgentBridge {
     const defs = this.#schema.referencedSchemas(properties);
     return {
       name,
-      ...this.#texts(name, action),
+      ...this.#texts(action),
       inputSchema: {
         type: "object",
         properties,
@@ -223,11 +221,10 @@ export class AgentBridge {
   }
 
   /**
-   * `.store()` names an action and nothing about its arguments — it takes no `.arg()`, because a store action has
-   * no argument metadata of its own to declare. The prose is already written where the argument came from: an
-   * endpoint-named action borrows `<refName>.signal.<endpoint>.arg.<name>.desc`, and a field setter's one argument
-   * is the field, described at `<refName>.<field>.desc`. A slice role's `page`/`limit`/`sort` are the framework's
-   * own and have no dictionary entry to borrow.
+   * A store action carries no argument metadata of its own, so the prose comes from wherever the argument came
+   * from: an endpoint-named action borrows `<refName>.signal.<endpoint>.arg.<name>.desc`, and a field setter's one
+   * argument is the field, described at `<refName>.<field>.desc`. A slice role's `page`/`limit`/`sort` are the
+   * framework's own and have no dictionary entry to borrow.
    */
   #argSchema(action: SerializedStoreAction, arg: SerializedArg) {
     const description = this.#argText(action, arg);
@@ -245,37 +242,21 @@ export class AgentBridge {
   }
 
   /**
-   * The words an agent picks the action by, from the one channel this codebase has for them.
+   * The words an agent picks the action by, borrowed from what the action is named after.
    *
-   * Order matters and follows the same leniency the MCP catalogue uses for a slice: an action's own `.store()`
-   * entry, then the endpoint it is named after — which is right rather than merely adequate, because the house
-   * rule makes `st.do.X` and `fetch.X` the same verb — then, on a field setter, the field's own label. Only what
-   * reaches none of the three is recorded as undescribed.
+   * The endpoint comes first, and it is right rather than merely adequate: the house rule makes `st.do.X` and
+   * `fetch.X` the same verb, so an action named after an endpoint reads as that endpoint's `.desc()`. A field
+   * setter falls back to the field's own label.
    */
-  #texts(name: string, action: SerializedStoreAction) {
-    const { refName, endpoint, field, generated } = action;
+  #texts({ refName, endpoint, field }: SerializedStoreAction) {
     const keys = refName
-      ? [
-          `${refName}.store.${name}`,
-          ...(endpoint ? [`${refName}.signal.${endpoint}`] : []),
-          ...(field ? [`${refName}.${field}`] : []),
-        ]
+      ? [...(endpoint ? [`${refName}.signal.${endpoint}`] : []), ...(field ? [`${refName}.${field}`] : [])]
       : [];
     for (const key of keys) {
       const title = this.#text(key);
       const description = this.#text(`${key}.desc`);
       if (title || description) return { ...(title ? { title } : {}), ...(description ? { description } : {}) };
     }
-    // A generated action is never recorded as debt. `createX`, `setFieldOnX`, `createXInForm` and the rest are named
-    // by a rule rather than by an author, so there is no `.store()` entry anyone should be writing for them — the
-    // model's own `.desc()` is their only legitimate text, and demanding more would teach authors to ignore the list.
-    if (!generated)
-      this.undescribed.push({
-        key: name,
-        reason: refName
-          ? `neither \`${refName}.store.${name}\` nor anything it inherits from has text, so an agent has the name and nothing else.`
-          : "it belongs to no model, so there is no dictionary node its text could be written in.",
-      });
     return {};
   }
 

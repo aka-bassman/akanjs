@@ -170,7 +170,7 @@ export class StoreInstance {
   readonly #actionArity = new Map<string, number>();
   readonly #actionOwners = new Map<string, ActionOwner>();
 
-  /** Which module declared each action, and whether the framework generated it. See `ActionOwner`. */
+  /** Which module declared each action. See `ActionOwner`. */
   get actionOwners(): ReadonlyMap<string, ActionOwner> {
     return this.#actionOwners;
   }

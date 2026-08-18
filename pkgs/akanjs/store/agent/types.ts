@@ -15,12 +15,6 @@ export interface SerializedStoreAction {
   refName?: string;
   /** The endpoint whose arguments it borrows, when it is named after one. */
   endpoint?: string;
-  /**
-   * The framework made this one, so it has no words of its own and borrows the model's.
-   *
-   * Absent on an action a module wrote itself, which is the only kind a `.store()` entry is ever needed for.
-   */
-  generated?: boolean;
   /** The generated role, absent on an action a module wrote itself. */
   role?: SliceActionKey | FormSetterRole;
   /** The model field it writes, on a form setter. */

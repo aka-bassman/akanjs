@@ -132,13 +132,7 @@ export class StoreCatalogue {
     this.#formSetterCache = this.#formSetters();
     const entries = Object.keys(this.#instance.do)
       .sort()
-      .map((key): [string, SerializedStoreAction] | null => {
-        const entry = this.#action(key);
-        if (!entry) return null;
-        // Stamped from one place because the answer is the same wherever the schema came from, and only the owner
-        // map holds it: `createX` and a module's own `createXWithExtras` both match an endpoint and look alike here.
-        return this.#instance.actionOwners.get(key)?.generated ? [entry[0], { ...entry[1], generated: true }] : entry;
-      })
+      .map((key): [string, SerializedStoreAction] | null => this.#action(key))
       .filter((entry): entry is [string, SerializedStoreAction] => !!entry);
     return Object.fromEntries(entries);
   }
@@ -265,8 +259,6 @@ export class StoreCatalogue {
       this.#refuse(key, `it declares ${arity} argument${arity > 1 ? "s" : ""} that no endpoint or field describes.`);
       return null;
     }
-    // The owning module is carried even here, because that is the dictionary node a renamed action's words are in —
-    // `logout` calls `signoutUser` and inherits nothing, which is exactly when `.store()` has to be reachable.
     const refName = this.#instance.actionOwners.get(key)?.refName;
     return [key, { args: [], effect: "state", ...(refName ? { refName } : {}) }];
   }

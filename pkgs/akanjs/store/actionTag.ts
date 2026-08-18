@@ -1,16 +1,8 @@
 import { ACTION_TAG } from "akanjs/base";
 
-/**
- * Where an action came from.
- *
- * `generated` is stamped by `store()`, which runs before any subclass body exists; the class body `register()` walks
- * afterwards is exactly the module's own. The distinction is what keeps `createX` / `setFieldOnX` / `submitX` out of
- * the description accounting: a generated action has no words of its own to write and borrows the model's, so
- * demanding a dictionary entry for one would be demanding text nobody reads.
- */
+/** Which module declared an action. The dictionary node its words live in is named after it. */
 export interface ActionOwner {
   refName: string;
-  generated: boolean;
 }
 
 export interface ActionTag {

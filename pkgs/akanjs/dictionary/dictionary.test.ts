@@ -86,13 +86,6 @@ type TestScalarEnum = {
 type TestServiceEndpoint = {
   ping: EndpointInfo<"query", Record<string, unknown>, ["body"]>;
 };
-/** What a store class looks like to the dictionary: void-returning methods are actions, everything else is not. */
-type TestStore = {
-  archiveTestItem: (id: string) => Promise<void>;
-  refreshTestItem: () => void;
-  get: () => TestModel;
-  slice: Record<string, unknown>;
-};
 
 const languages: [string, string, string, string] = ["en", "ko", "zhChs", "ja"];
 
@@ -151,19 +144,6 @@ const assertDictionaryTypeCoverage = () => {
     publish: fn(["Publish", "게시", "发布", "公開"]),
   }));
 
-  // @ts-expect-error a store entry must name an action, and `get` returns a value rather than dispatching
-  modelDictionary(languages).store<TestStore>((t) => ({
-    get: t(["Get", "조회", "获取", "取得"]),
-  }));
-
-  // @ts-expect-error a store entry must name an action that exists
-  modelDictionary(languages).store<TestStore>((t) => ({
-    archiveTestItems: t(["Archive", "보관", "归档", "アーカイブ"]),
-  }));
-
-  // Every entry is optional: an action whose name matches its endpoint already reads as that endpoint's `.desc()`.
-  modelDictionary(languages).store<TestStore>((t) => ({}));
-
   // @ts-expect-error service endpoint translations use the same static endpoint metadata
   serviceDictionary(languages).endpoint<TestEndpointCls>((fn) => ({}));
 
@@ -194,7 +174,6 @@ type ExtendedEtcKey =
     infer _BaseSignalKey,
     infer _SliceKey,
     infer _EndpointKey,
-    infer _StoreKey,
     infer _ErrorKey,
     infer EtcKey
   >
@@ -207,28 +186,20 @@ type _ExtendedDictRejectsUndeclaredKeys = AssertTrue<"neverDeclared" extends Ext
 /**
  * The service shape's generic slots, pinned by position.
  *
- * `.store()` was inserted between `EndpointKey` and `ErrorKey`, and every `infer` list that reads these positions
- * has to be widened in the same edit. Miss one and `ErrorKey` is inferred into the `StoreKey` slot — with **no type
- * error anywhere**, because both are `string`. Runtime keeps working, `.error()` entries are all still registered,
- * and the only symptom is `l("<service>.error.<key>")` quietly leaving the typed key union. That is why this is
- * asserted by position rather than by translating a key.
+ * A parameter inserted ahead of these shifts every `infer` list that reads them, and missing one is **no type
+ * error anywhere** — the neighbouring slots are all `string`. Runtime keeps working, the entries are all still
+ * registered, and the only symptom is `l("<service>.error.<key>")` quietly leaving the typed key union. That is
+ * why this is asserted by position rather than by translating a key.
  */
 const slotServiceDict = serviceDictionary(languages)
   .error({ slotError: ["Slot", "슬롯", "槽", "スロット"] })
   .translate({ slotEtc: ["Etc", "기타", "其他", "その他"] });
 type SlotServiceKeys =
-  typeof slotServiceDict extends ServiceDictInfo<
-    infer _Languages,
-    infer _EndpointKey,
-    infer StoreKey,
-    infer ErrorKey,
-    infer EtcKey
-  >
-    ? { store: StoreKey; error: ErrorKey; etc: EtcKey }
+  typeof slotServiceDict extends ServiceDictInfo<infer _Languages, infer _EndpointKey, infer ErrorKey, infer EtcKey>
+    ? { error: ErrorKey; etc: EtcKey }
     : never;
 type _ServiceErrorKeyStaysInItsSlot = AssertTrue<"slotError" extends SlotServiceKeys["error"] ? true : false>;
 type _ServiceEtcKeyStaysInItsSlot = AssertTrue<"slotEtc" extends SlotServiceKeys["etc"] ? true : false>;
-type _ServiceErrorKeyDidNotLandInStore = AssertTrue<"slotError" extends SlotServiceKeys["store"] ? false : true>;
 
 // And the same positions as `registerServiceTrans` reads them, which is the copy that actually feeds `l()`. The
 // class assertions above pass whether or not this one was widened alongside it.
@@ -322,14 +293,6 @@ const modelDict = modelDictionary(languages)
         ]),
       })),
   }))
-  .store<TestStore>((t) => ({
-    archiveTestItem: t(["Archive Item", "항목 보관", "归档项目", "項目をアーカイブ"]).desc([
-      "Files the item out of the active list",
-      "항목을 활성 목록에서 내린다",
-      "将项目从活动列表中归档",
-      "項目を有効な一覧から外す",
-    ]),
-  }))
   .error({
     notFound: ["Item not found", "항목을 찾을 수 없습니다", "找不到项目", "項目が見つかりません"],
   })
@@ -373,18 +336,6 @@ const serviceDict = serviceDictionary(languages)
   .translate({
     ready: ["Service ready", "서비스 준비됨", "服务已就绪", "サービス準備完了"],
   });
-
-// A service module has a store too, and `logout` over `signoutUser` — the canonical case for this stage — lives in
-// one. Written as a separate statement, which is the only shape a real module can use: naming a store type inside
-// the chain closes a type cycle through `useClient` → `sig` → `*.signal.ts` → `dict`.
-serviceDict.store<TestStore>((t) => ({
-  archiveTestItem: t(["Archive", "보관", "归档", "アーカイブ"]).desc([
-    "Files the item out of the active list",
-    "항목을 활성 목록에서 내린다",
-    "将项目从活动列表中归档",
-    "項目を有効な一覧から外す",
-  ]),
-}));
 
 const trans = makeTrans({
   dictionaryTestItem: { dict: modelDict } as never,
@@ -473,23 +424,6 @@ describe("makeTrans", () => {
     );
   });
 
-  test("translates store action paths under their own node", () => {
-    // `store` is a sibling of `signal` rather than a member of it, because a store action and the endpoint it
-    // wraps are named the same on purpose — the house rule is that `st.do.X` reads like `fetch.X`.
-    expect(trans.translate("en", "dictionaryTestItem.store.archiveTestItem" as never)).toBe("Archive Item");
-    expect(trans.translate("ko", "dictionaryTestItem.store.archiveTestItem" as never)).toBe("항목 보관");
-    expect(trans.translate("en", "dictionaryTestItem.store.archiveTestItem.desc" as never)).toBe(
-      "Files the item out of the active list",
-    );
-    expect(trans.translate("ja", "dictionaryTestItem.store.archiveTestItem.desc" as never)).toBe(
-      "項目を有効な一覧から外す",
-    );
-    // An action left out of the stage is the ordinary case, and resolves to nothing rather than to the endpoint.
-    expect(trans.translate("en", "dictionaryTestItem.store.refreshTestItem" as never)).toBe(
-      "dictionaryTestItem.store.refreshTestItem",
-    );
-  });
-
   test("translates scalar and service dictionaries", () => {
     expect(trans.translate("en", "dictionaryTestScalar.modelName" as never)).toBe("Dictionary Test Scalar");
     expect(trans.translate("ko", "dictionaryTestScalar.modelDesc" as never)).toBe("스칼라 설명");
@@ -510,11 +444,6 @@ describe("makeTrans", () => {
     expect(trans.translate("en", "dictionaryTestService.signal.ping.arg.body.desc" as never)).toBe("Body description");
     expect(trans.translate("ko", "dictionaryTestService.ready" as never)).toBe("서비스 준비됨");
     expect(trans.translate("zhChs", "dictionaryTestService.ready" as never)).toBe("服务已就绪");
-    // A service module's store entries register under the same `store` node a model's do.
-    expect(trans.translate("en", "dictionaryTestService.store.archiveTestItem" as never)).toBe("Archive");
-    expect(trans.translate("ko", "dictionaryTestService.store.archiveTestItem.desc" as never)).toBe(
-      "항목을 활성 목록에서 내린다",
-    );
     expect(trans.translate("ja", "dictionaryTestService.ready" as never)).toBe("サービス準備完了");
   });
 

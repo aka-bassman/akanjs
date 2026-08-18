@@ -1,6 +1,5 @@
 import { serviceDictionary } from "akanjs/dictionary";
 import type { SharedEndpoint } from "./shared.signal";
-import type { SharedStore } from "./shared.store";
 
 export const dictionary = serviceDictionary(["en", "ko"])
   .endpoint<SharedEndpoint>((fn) => ({}))
@@ -82,10 +81,3 @@ export const dictionary = serviceDictionary(["en", "ko"])
     "editor-excalidraw": ["Excalidraw", "엑스칼리드로우"],
     more: ["More", "더보기"],
   });
-
-dictionary.store<SharedStore>((t) => ({
-  logout: t(["Log Out", "로그아웃"]).desc([
-    "Signs this account out and clears the session",
-    "이 계정을 로그아웃하고 세션을 비운다",
-  ]),
-}));

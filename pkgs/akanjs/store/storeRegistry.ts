@@ -45,15 +45,14 @@ export class StoreRegistry {
   static register<StrCls extends StoreCls>(store: StrCls): StrCls {
     const parentStore = Object.getPrototypeOf(store) as StoreCls | null;
     const actions = { ...(parentStore?.[ACTION_META] ?? {}) };
-    // The class body is exactly the module's own actions: everything generated is already on the parent, assigned
-    // by `store()` before this subclass existed. That is the only place the owning module is knowable, and the
-    // dictionary node an action's words live in is named after it.
+    // A subclass body is the only place a module's own action names the module that wrote it: `store()` stamped
+    // the generated ones before this class existed.
     const owners = { ...(parentStore?.[ACTION_OWNER_META] ?? {}) };
     Object.entries(Object.getOwnPropertyDescriptors(store.prototype)).forEach(([key, descriptor]) => {
       if (key === "constructor") return;
       if (!descriptor.value || typeof descriptor.value !== "function") return;
       actions[key] = descriptor.value;
-      owners[key] = { refName: store.refName, generated: false };
+      owners[key] = { refName: store.refName };
     });
     store[ACTION_META] = actions;
     store[ACTION_OWNER_META] = owners;
