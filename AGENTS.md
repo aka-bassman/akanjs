@@ -75,6 +75,12 @@ that looks wrong; do not "fix" it back.
   unreachable — write it into state with `this.set({ ... })`. A bare `return;` guard, a `return` inside a nested
   callback, a getter, and a `static` helper are all still fine.
 - **Never redeclare a generated CRUD endpoint name** in `*.signal.ts` (`no-redeclare-predefined-endpoint.grit`).
+- **Never type a `*.Util.tsx` / `*.Zone.tsx` prop as a `cnst` model** (`no-model-type-in-util-zone.grit`). Those two
+  roles are always client components, so a `cnst.Banner` / `cnst.LightBanner` prop is a class instance the server has
+  to hand across the boundary; take `bannerId: string` and read the model from the store instead. Two shapes are
+  exempt because neither is an instance: `cnst.<Enum>["value"]`, whose indexed access resolves to a string union, and
+  a `ClientInit` / `ClientView` / `ClientEdit` type argument, which the framework maps to `GetStateObject<…>` plain
+  data. Any *other* indexed access is still flagged — `cnst.Banner["image"]` is a `File`.
 - **No deep imports past a barrel** (`no-deep-internal-import.grit`). Cross-module constant references such as
   `../map/map.constant` are the sanctioned exception.
 - **Never import across the client/server boundary.** Client files (`ui/`, `webkit/`, `page/`, `*.store.ts`, every

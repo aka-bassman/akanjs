@@ -1,0 +1,16 @@
+engine biome(1.0)
+language js(typescript, jsx)
+
+TsReferenceType() as $ref where {
+  $ref <: r"cnst\.[A-Za-z_$][A-Za-z0-9_$]*",
+  not $ref <: within TsIndexedAccessType() as $indexed where {
+    $indexed <: r"cnst\.[A-Za-z_$][A-Za-z0-9_$]*\[.value.\][\s\S]*"
+  },
+  not $ref <: within TsReferenceType() as $wrapper where {
+    $wrapper <: r"(?:Client|Server)(?:Init|View|Edit)<[\s\S]*"
+  },
+  register_diagnostic(
+    span = $ref,
+    message = "Util and Zone are client components, so a cnst model type here is a class instance crossing the server boundary. Take an id instead (bannerId: string), or hand server data across as ClientInit / ClientView. An enum union such as cnst.AdminRole['value'] is allowed."
+  )
+}
