@@ -1,5 +1,5 @@
 import {
-  type BaseEnv,
+  type BackendEnv,
   type Cls,
   ENDPOINT_META,
   FIELD_META,
@@ -327,7 +327,7 @@ export class SignalResolver {
       env,
       live,
       middleware,
-    }: { registry: InjectRegistry; env: BaseEnv; live: LiveRegistry; middleware: Map<string, MiddlewareCls> },
+    }: { registry: InjectRegistry; env: BackendEnv; live: LiveRegistry; middleware: Map<string, MiddlewareCls> },
   ): SignalRoutes {
     const endpointMeta = endpointCls[ENDPOINT_META] as { [key: string]: EndpointInfo };
     const routes: HttpRoutes = {};

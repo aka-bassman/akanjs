@@ -33,6 +33,6 @@ ${serviceModules.map((module) => `export { ${capitalize(module)}Service } from "
 ${databaseModules.map((module) => `export const ${module} = ServiceModel.fromModel(${capitalize(module)}Service, cnst.${module}, db.${module});`).join("\n")}
 ${serviceModules.map((module) => `export const ${module} = ServiceModel.from(${capitalize(module)}Service);`).join("\n")}
 
-export type LibOptions = ${libs.length ? libs.map((lib) => `${lib}.ModulesOptions`).join(" & ") : "{}"};
+export type LibOptions = ${libs.length ? libs.map((lib) => `${lib}.ModulesOptions`).join(" & ") : "BackendEnv"};
 `;
 }

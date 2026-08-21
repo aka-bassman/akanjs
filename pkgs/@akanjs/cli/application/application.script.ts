@@ -377,7 +377,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     let stopping = false;
     process.on("SIGINT", () => {
       if (stopping) {
-        Logger.rawLog("Abandoning the local database teardown; containers are left running.", undefined, "warn");
+        Logger.rawLog("Abandoning the local database teardown; containers are left running.", undefined, "error");
         process.exit(130);
       }
       stopping = true;
@@ -393,7 +393,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     Logger.rawLog(
       `Local database did not stop within ${ApplicationScript.dbShutdownTimeoutMs}ms; run \`akan dbdown\` once Docker responds.`,
       undefined,
-      "warn",
+      "error",
     );
   }
   async testSys(sys: Sys) {

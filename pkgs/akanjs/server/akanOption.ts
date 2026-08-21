@@ -1,4 +1,4 @@
-import type { BaseEnv, PromiseOrObject } from "akanjs/base";
+import type { BackendEnv, PromiseOrObject } from "akanjs/base";
 import type { Adaptor, AdaptorCls, LlmOption } from "akanjs/service";
 import type { AgentRelayPolicy, MiddlewareCls } from "akanjs/signal";
 import type { McpServerOption } from "./akanServer";
@@ -14,7 +14,7 @@ export interface AdaptorOverride {
  * App/library server option builder: use objects, signal middleware, adaptor overrides, web proxies, and the
  * server settings an app owns — MCP, the agent relay's access policy, and the LLM the relay speaks to.
  */
-export class AkanOption<Env extends BaseEnv = BaseEnv> {
+export class AkanOption<Env extends BackendEnv = BackendEnv> {
   readonly #getUses: ((env: Env) => Record<string, PromiseOrObject<unknown>>)[];
   readonly #middlewares: MiddlewareCls[] = [];
   readonly #adaptorOverrides: AdaptorOverride[] = [];
@@ -54,8 +54,8 @@ export class AkanOption<Env extends BaseEnv = BaseEnv> {
     return this;
   }
   /**
-   * Who may spend the LLM key through the `runAgentTurn` relay — the `AgentRelayAccess` policy, which defaults to
-   * allowing everyone because the framework has no account model to gate on. `null` reopens it.
+   * Who may spend the LLM key through the `runAgentTurn` relay. With no policy the call is refused — the same
+   * answer `None` gives — because the framework has no account model to gate on. `null` clears the policy.
    */
   setAgentAccess(policy: AgentRelayPolicy | null) {
     this.#agentAccess = policy;
@@ -92,5 +92,5 @@ export class AkanOption<Env extends BaseEnv = BaseEnv> {
 }
 
 export function createDefaultAkanOption() {
-  return new AkanOption<BaseEnv>().applyWebProxy(LocaleWebProxy, HostBasePathWebProxy);
+  return new AkanOption().applyWebProxy(LocaleWebProxy, HostBasePathWebProxy);
 }

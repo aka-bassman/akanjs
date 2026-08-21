@@ -29,11 +29,6 @@ export class DevtoolsFixture {
 
     const workspaceRoot = await mkdtemp(join(tmpdir(), "akan-devtools-"));
     const env = {
-      repoName: "akan",
-      serveDomain: "example.com",
-      appName: "devtools",
-      environment: "local",
-      operationMode: "local",
       workspaceRoot,
       database: {
         sqlite: {

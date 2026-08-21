@@ -7,11 +7,6 @@ import { Logger } from "akanjs/common";
 
 const createEnv = (tmp: string) =>
   ({
-    repoName: "akan",
-    serveDomain: "example.com",
-    appName: "serverGet",
-    environment: "local",
-    operationMode: "local",
     workspaceRoot: tmp,
     database: {
       sqlite: {
@@ -331,6 +326,7 @@ describe("AkanServer agent relay access", () => {
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-relay-"));
     try {
       expect(AgentRelayAccess.hasPolicy).toBe(false);
+      expect(await new AgentRelayAccess().canPass({ get: () => ({ id: "u1" }) } as never)).toBe(false);
       const option = new AkanOption().setAgentAccess((context) => !!context.get("account"));
       new AkanServer("serverGet", createEnv(tmp), "all", createLib(option));
       expect(AgentRelayAccess.hasPolicy).toBe(true);

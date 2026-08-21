@@ -648,8 +648,9 @@ libs never import it directly (`no-import-external-library`) — everything reac
   `AKAN_AGENT=false` takes it off — and negotiates streaming via `accept`, so assistant text arrives as it is
   generated with zero app code. The endpoint is a stateless relay and **never executes tools**: every tool runs in
   the caller's own browser session, gated by guards and the approval card. Its guard is `AgentRelayAccess`, which
-  defaults to allow and **warns at boot while no policy is registered** — a product with accounts locks it in its
-  `option.ts`, `option.setAgentAccess((ctx) => !!ctx.get("account"))`, or anonymous visitors spend the LLM key.
+  **refuses every call until a policy is registered** — the same answer `None` gives, with no boot warning. A
+  product with accounts locks it in its `option.ts`, `option.setAgentAccess((ctx) => !!ctx.get("account"))`;
+  without a policy the chat cannot spend the LLM key.
   `persist` keeps the transcript across reloads (sessionStorage; `{ storage: "local" }` to outlive the tab),
   default off. Re-skin through the `AgentChat` slot in `_overrides.tsx`.
 - **The LLM is configured in `option.ts`, never through the environment.** `option.setLlm({ apiKey, model, host })`

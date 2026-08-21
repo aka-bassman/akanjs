@@ -1,15 +1,21 @@
 import { describe, expect, test } from "bun:test";
-import type { BaseEnv } from "akanjs/base";
 import { getDefaultInjectRegistry, getDefaultLiveRegistry } from "akanjs/service";
 import { MCP_LEGACY_PRIOR_VERSION, MCP_LEGACY_VERSION, MCP_MODERN_VERSION } from "../../signal/mcp";
 import { McpRouter } from "./McpRouter";
+
+// The advertised server name is the runtime identity, not a server option, so `getEnv()` has to resolve.
+process.env.AKAN_PUBLIC_APP_NAME = "probe";
+process.env.AKAN_PUBLIC_REPO_NAME = "akan";
+process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+process.env.AKAN_PUBLIC_ENV = "local";
+process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
 
 const routes = () =>
   new McpRouter({
     registry: getDefaultInjectRegistry(),
     live: getDefaultLiveRegistry(),
     middleware: new Map(),
-    env: { appName: "probe" } as BaseEnv,
+    env: {},
     instructions: "Domain tools.",
   }).createRoutes() as Record<string, Record<string, (req: Request) => Promise<Response> | Response>>;
 

@@ -1,4 +1,4 @@
-import { type BaseEnv, ENDPOINT_META } from "akanjs/base";
+import { type BackendEnv, ENDPOINT_META } from "akanjs/base";
 import { Logger } from "akanjs/common";
 import { DictionaryLookup } from "akanjs/dictionary";
 import { NoDocumentError } from "akanjs/document";
@@ -37,7 +37,7 @@ export class McpPromptError extends Error {
 
 interface McpDispatcherProps {
   registry: InjectRegistry;
-  env: BaseEnv;
+  env: BackendEnv;
   live: LiveRegistry;
   middleware: Map<string, MiddlewareCls>;
   /** The one language error text is resolved in, matching the catalogue the client was handed. */

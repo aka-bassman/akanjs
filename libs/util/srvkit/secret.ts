@@ -60,9 +60,10 @@ export const generateAeskey = (appName: string, environment: BaseEnv["environmen
   return createHash("sha256").update(seed).digest("hex");
 };
 
-export const generateHost = (env: BackendEnv) => {
+export const generateHost = (options: BackendEnv) => {
+  const env = getEnv();
   if (process.env.HOST_NAME) return process.env.HOST_NAME;
-  else if (env.hostname) return env.hostname;
+  else if (options.hostname) return options.hostname;
   else if (env.operationMode === "local") return "localhost";
   else return `${env.appName}-${env.environment}.${getEnv().serveDomain}`;
 };

@@ -1,4 +1,4 @@
-import { type BaseEnv, getEnv } from "akanjs/base";
+import { type BackendEnv, type BaseEnv, getEnv } from "akanjs/base";
 import { Logger } from "akanjs/common";
 import { DictionaryLookup } from "akanjs/dictionary";
 import type {
@@ -31,7 +31,7 @@ import type { HttpRoutes, SignalRoutes, WebsocketRoutes } from "./types";
 import type { WebRouter } from "./webRouter";
 
 export interface AkanServerProps extends AkanLibProps {
-  env?: BaseEnv;
+  env?: BackendEnv;
   prefix?: string;
   websocketPrefix?: string;
   openapi?: boolean;
@@ -114,7 +114,7 @@ export class AkanServer {
   readonly logger: Logger;
   readonly name: string;
   readonly libs: AkanLib[];
-  readonly env: BaseEnv & { database?: DatabaseConfig; solid?: SolidConfig };
+  readonly env: BackendEnv;
   prefix = "/api";
   websocketPrefix = "/ws";
   openapi = AkanServer.#isOpenApiEnvEnabled();
@@ -130,7 +130,7 @@ export class AkanServer {
   #metricsTimer: Timer | null = null;
   constructor(
     name = "AkanServer",
-    env: BaseEnv = getEnv(),
+    env: BackendEnv = {},
     serverMode: "federation" | "batch" | "all" = (process.env.SERVER_MODE as
       | "federation"
       | "batch"
@@ -218,17 +218,18 @@ export class AkanServer {
 
   inspectConsole(): AkanServerConsoleInfo {
     this.#assertCanGet();
+    const env = getEnv();
     return {
       name: this.name,
       status: this.status,
       serverMode: this.serverMode,
       env: {
-        appName: this.env.appName,
-        environment: this.env.environment,
-        operationMode: this.env.operationMode,
-        repoName: this.env.repoName,
-        serveDomain: this.env.serveDomain,
-        databaseMode: this.env.databaseMode,
+        appName: env.appName,
+        environment: env.environment,
+        operationMode: env.operationMode,
+        repoName: env.repoName,
+        serveDomain: env.serveDomain,
+        databaseMode: env.databaseMode,
       },
       services: [...this.#di.registry.serviceCls.keys()].sort((a, b) => a.localeCompare(b)),
       signals: [...this.#di.registry.serverSignalCls.keys()].sort((a, b) => a.localeCompare(b)),
@@ -516,13 +517,14 @@ export class AkanServer {
   }
 
   #createBuiltinRoutes(): HttpRoutes {
+    const { appName } = getEnv();
     const openapiRoutes: HttpRoutes = this.openapi
       ? {
           "/openapi.json": {
             GET: () =>
               Response.json(
                 createOpenApiDocument(FetchSerializer.serializeRegistry(this.#di.live).signal, {
-                  title: `${this.env.appName} API`,
+                  title: `${appName} API`,
                   version: "0.0.0",
                   servers: this.#getOpenApiServers(),
                   resolveDescription: AkanServer.#createDescriptionResolver(),
@@ -540,7 +542,7 @@ export class AkanServer {
             env: this.env,
             live: this.#di.live,
             middleware: new Map(this.#di.modules.middleware),
-            instructions: `Domain tools for the ${this.env.appName} app.`,
+            instructions: `Domain tools for the ${appName} app.`,
             ...this.mcpOption,
             readOnly: this.mcpReadOnly,
             auth: this.mcpAuth,
@@ -554,7 +556,7 @@ export class AkanServer {
     // through to the SSR catch-all as a natural 404 rather than a handler that answers "forbidden".
     const devtoolsRoutes = new DevtoolsRouter({
       di: this.#di,
-      env: this.env,
+      env: getEnv(),
       name: this.name,
       serverMode: this.serverMode,
       prefix: this.prefix,

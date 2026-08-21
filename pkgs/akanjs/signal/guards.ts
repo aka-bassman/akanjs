@@ -24,8 +24,8 @@ export type AgentRelayPolicy = (context: SignalContext) => boolean | Promise<boo
  * Gate for the `runAgentTurn` relay. Every tool runs in the caller's own browser session, so the LLM key is the
  * one thing this endpoint spends — ungated, any visitor can bill the app's provider through fetch alone.
  *
- * The framework has no account model to gate on, so with no policy registered it allows everyone — what `Public`
- * said before, but with a seam: a product hardens it at boot, e.g.
+ * The framework has no account model to gate on, so with no policy registered it refuses every call — the same
+ * answer `None` gives. An app opens it at boot, e.g.
  * `AgentRelayAccess.use((context) => !!context.get("account"))`. The policy is the app's; the framework cannot know it.
  */
 export class AgentRelayAccess implements Guard {
@@ -44,17 +44,9 @@ export class AgentRelayAccess implements Guard {
     return !!AgentRelayAccess.#policy;
   }
 
-  /** Runs at boot, after the app entry has evaluated — a module-scope check would fire before `use()` could. */
-  static warnIfOpen() {
-    if (AgentRelayAccess.#policy) return;
-    AgentRelayAccess.#logger.warn(
-      'runAgentTurn is open to every caller — anyone can spend the LLM key. Register a policy at boot: AgentRelayAccess.use((context) => !!context.get("account")), or set AKAN_AGENT=false.',
-    );
-  }
-
   async canPass(context: SignalContext): Promise<boolean> {
     const policy = AgentRelayAccess.#policy;
-    if (!policy) return true;
+    if (!policy) return false;
     try {
       return await policy(context);
     } catch (error) {

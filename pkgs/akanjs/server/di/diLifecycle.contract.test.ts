@@ -37,13 +37,7 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
       use() {}
     }
 
-    const env = {
-      repoName: "akan",
-      serveDomain: "example.com",
-      appName: "serverLifecycle",
-      environment: "local",
-      operationMode: "local",
-    } satisfies BackendEnv;
+    const env = {} satisfies BackendEnv;
     const lib = new AkanLib("serverLifecycleTest", {
       databases: [],
       services: [],
@@ -68,11 +62,6 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
 
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-di-"));
     const env = {
-      repoName: "akan",
-      serveDomain: "example.com",
-      appName: "serverLifecycle",
-      environment: "local",
-      operationMode: "local",
       workspaceRoot: tmp,
       database: {
         sqlite: {
@@ -189,13 +178,7 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
     class ProjectBuildInternal extends internal(projectBuildServiceModel, () => ({})) {}
     class ProjectBuildSignal extends serverSignal(ProjectBuildEndpoint, ProjectBuildInternal) {}
 
-    const env = {
-      repoName: "akan",
-      serveDomain: "example.com",
-      appName: "serverLifecycle",
-      environment: "local",
-      operationMode: "local",
-    } satisfies BackendEnv;
+    const env = {} satisfies BackendEnv;
     const lib = new AkanLib("serverLifecycleTest", {
       databases: [],
       services: [
@@ -234,11 +217,6 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
 
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-di-disabled-"));
     const env = {
-      repoName: "akan",
-      serveDomain: "example.com",
-      appName: "serverLifecycle",
-      environment: "local",
-      operationMode: "local",
       workspaceRoot: tmp,
       database: {
         sqlite: {
@@ -320,11 +298,6 @@ describe("DiLifecycle adaptor overrides", () => {
 
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-di-"));
     const env = {
-      repoName: "akan",
-      serveDomain: "example.com",
-      appName: "adaptorOverride",
-      environment: "local",
-      operationMode: "local",
       workspaceRoot: tmp,
       database: {
         sqlite: {
@@ -379,11 +352,7 @@ describe("DiLifecycle adaptor overrides", () => {
 
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-llm-"));
     const env = {
-      repoName: "akan",
-      serveDomain: "example.com",
-      appName: "llmOption",
-      environment: "local",
-      operationMode: "local",
+      hostname: "llmOption",
       workspaceRoot: tmp,
       database: {
         sqlite: {
@@ -414,7 +383,7 @@ describe("DiLifecycle adaptor overrides", () => {
       databases: [],
       services: [],
       scalars: [],
-      option: new AkanOption().setLlm((options) => ({ apiKey: `key-${options.appName}`, model: "app-model" })),
+      option: new AkanOption().setLlm((options) => ({ apiKey: `key-${options.hostname}`, model: "app-model" })),
     });
     const lifecycle = new DiLifecycle(env, "all", dependency, app);
     try {

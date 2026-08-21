@@ -10,16 +10,12 @@ import { Req } from "./internalArg";
 import { serverSignal } from "./serverSignal";
 import { SignalRegistry } from "./signalRegistry";
 
-export class AgentInternal extends internal(srv.agent, ({ initialize }) => ({
-  warnOpenRelay: initialize().exec(() => {
-    AgentRelayAccess.warnIfOpen();
-  }),
-})) {}
+export class AgentInternal extends internal(srv.agent, () => ({})) {}
 
 export class AgentEndpoint extends endpoint(srv.agent, ({ mutation }) => ({
-  // The guard defaults to allow — the framework has no account model to gate on — and is the app's hardening seam:
-  // `AgentRelayAccess.use(policy)` at boot decides who may spend the LLM key. Tools still execute only in the
-  // caller's own browser session. The `Any` bodies keep the endpoint off MCP whatever the guard answers.
+  // No policy registered ⇒ `canPass` is false, the same answer `None` gives. `AgentRelayAccess.use(policy)` at
+  // boot is what opens it; tools still execute only in the caller's own browser session. The `Any` bodies keep
+  // the endpoint off MCP whatever the guard answers.
   runAgentTurn: mutation(AgentTurn, { guards: [AgentRelayAccess] })
     .body("messages", [Any])
     .body("tools", [Any])

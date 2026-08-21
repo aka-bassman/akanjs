@@ -225,10 +225,4 @@ export class ServerResolverTestServerSignal extends serverSignal(
   ServerResolverTestInternal,
 ) {}
 
-export const makeEnv = () => ({
-  repoName: "akan",
-  serveDomain: "example.com",
-  appName: "serverResolver",
-  environment: "local",
-  operationMode: "local",
-});
+export const makeEnv = () => ({});

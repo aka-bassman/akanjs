@@ -1,4 +1,4 @@
-import type { BaseEnv } from "akanjs/base";
+import { type BackendEnv, getEnv } from "akanjs/base";
 import { Logger } from "akanjs/common";
 import { DictionaryLookup } from "akanjs/dictionary";
 import type { InjectRegistry, LiveRegistry } from "akanjs/service";
@@ -25,7 +25,8 @@ import { McpEventStream } from "./McpEventStream";
 
 export interface McpRouterProps {
   registry: InjectRegistry;
-  env: BaseEnv;
+  /** Spread into every `SignalContext` this router's dispatcher builds; middleware reads it. */
+  env: BackendEnv;
   live: LiveRegistry;
   middleware: Map<string, MiddlewareCls>;
   path?: string;
@@ -140,14 +141,14 @@ export class McpRouter {
     try {
       const { tools, prompts, resourceTemplates, refusals, undescribed } = this.#getDocument();
       const counts = `tools=${tools.length} prompts=${prompts.length} resourceTemplates=${resourceTemplates.length}`;
-      McpRouter.logger.info(`MCP catalogue: ${counts}${this.#props.readOnly ? " (read-only deployment)" : ""}`);
+      McpRouter.logger.debug(`MCP catalogue: ${counts}${this.#props.readOnly ? " (read-only deployment)" : ""}`);
       // Exposure follows the guards, so an empty catalogue on an app that has endpoints means every one of them
       // was refused — the lines below say which rule took each.
       if (!tools.length && !prompts.length)
         McpRouter.logger.warn(
           "MCP is enabled but published nothing. Every candidate was refused; see the reasons below.",
         );
-      for (const { key, reason } of refusals) McpRouter.logger.warn(`MCP did not expose "${key}": ${reason}`);
+      for (const { key, reason } of refusals) McpRouter.logger.verbose(`MCP did not expose "${key}": ${reason}`);
       for (const { key, reason } of undescribed)
         McpRouter.logger.warn(`MCP exposed "${key}" with no description: ${reason}`);
     } catch (error) {
@@ -478,7 +479,8 @@ export class McpRouter {
   }
 
   #serverInfo() {
-    return { name: `${this.#props.env.appName}-mcp`, version: this.#props.version ?? "0.0.0" };
+    const env = getEnv();
+    return { name: `${env.appName}-mcp`, version: this.#props.version ?? "0.0.0" };
   }
 
   #result(call: McpCall, result: object, cache?: McpCacheHint) {

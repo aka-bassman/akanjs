@@ -15,7 +15,7 @@ export interface BaseEnv {
   operationMode: "local" | "edge" | "cloud" | "module";
   databaseMode?: DatabaseMode;
 }
-export type BackendEnv = BaseEnv & {
+export type BackendEnv = {
   hostname?: string | null;
   port?: number;
   database?: {

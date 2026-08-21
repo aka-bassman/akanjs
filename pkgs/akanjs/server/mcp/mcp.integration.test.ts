@@ -120,11 +120,6 @@ class McpItemServerSignal extends serverSignal(McpItemEndpoint, McpItemInternal)
 
 const createEnv = (tmp: string) =>
   ({
-    repoName: "akan",
-    serveDomain: "example.com",
-    appName: "mcpIntegration",
-    environment: "local",
-    operationMode: "local",
     workspaceRoot: tmp,
     database: {
       sqlite: { filePath: join(tmp, "akan.db"), journalMode: "WAL", busyTimeoutMs: 1000, foreignKeys: true },

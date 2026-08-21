@@ -9,8 +9,9 @@ afterEach(() => {
 });
 
 describe("AgentRelayAccess", () => {
-  test("allows everyone until a policy is registered", async () => {
-    expect(await new AgentRelayAccess().canPass(contextWith(null))).toBe(true);
+  test("refuses every caller until a policy is registered", async () => {
+    expect(await new AgentRelayAccess().canPass(contextWith(null))).toBe(false);
+    expect(await new AgentRelayAccess().canPass(contextWith({ id: "u1" }))).toBe(false);
   });
 
   test("delegates to the registered policy", async () => {

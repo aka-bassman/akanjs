@@ -1,4 +1,4 @@
-import type { BaseEnv } from "akanjs/base";
+import { type BackendEnv, getEnv } from "akanjs/base";
 import { Logger } from "akanjs/common";
 import {
   type Adaptor,
@@ -53,7 +53,7 @@ export class DiLifecycle {
     adaptorStages: [] as string[][],
     serviceStages: [] as string[][],
   };
-  readonly #env: BaseEnv;
+  readonly #env: BackendEnv;
   readonly #libs: AkanLib[];
   readonly #database = new Map<string, DatabaseModule>();
   readonly #service = new Map<string, ServiceModule>();
@@ -88,10 +88,10 @@ export class DiLifecycle {
     return !names.some((name) => process.env[name] === "false" || process.env[name] === "0");
   }
 
-  constructor(env: BaseEnv, serverMode: "federation" | "batch" | "all", ...libs: AkanLib[]) {
+  constructor(env: BackendEnv, serverMode: "federation" | "batch" | "all", ...libs: AkanLib[]) {
     this.#env = env;
     // Copied: "single" mode hands back the shared module-scope object, and applyAdaptor overrides mutate per app.
-    this.#predefinedAdaptor = { ...getPredefinedAdaptor(env.databaseMode ?? "single") };
+    this.#predefinedAdaptor = { ...getPredefinedAdaptor(getEnv().databaseMode ?? "single") };
     this.#libs = libs;
     this.#service.set("base", {
       service: srv.base,

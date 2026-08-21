@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { InArgs, InValue, Client as LibsqlClient } from "@libsql/client";
-import { type BaseEnv, DEFAULT_VALUE, dayjs, FIELD_META, type PromiseOrObject } from "akanjs/base";
+import { DEFAULT_VALUE, dayjs, FIELD_META, getEnv, type PromiseOrObject } from "akanjs/base";
 import { type ConstantModel, getDefault } from "akanjs/constant";
 import {
   createDocumentId,
@@ -148,7 +148,7 @@ export interface DatabaseAdaptor {
   getSearchIndex(): SearchIndex | null;
 }
 
-interface SqliteEnv extends BaseEnv {
+interface SqliteEnv {
   workspaceRoot?: string;
   database?: DatabaseConfig;
 }
@@ -497,7 +497,7 @@ export class SqliteDialect implements SqlDialect {
     // never duplicates prior placeholders. All operators in one update therefore observe the pre-update document.
     const cur = `json_extract(${this.docColumn()}, ${p})`;
     const arr = `COALESCE(${cur}, json('[]'))`;
-    // biome-ignore lint/nursery/noUnnecessaryConditions: exhaustive switch over a string-literal union, not a truthiness check
+    // biome-ignore lint/suspicious/noUnnecessaryConditions: exhaustive switch over a string-literal union, not a truthiness check
     switch (op) {
       case "set":
         return { sql: `json_set(${acc}, ${p}, json(?))`, params: [jsonStr(value)] };
@@ -622,7 +622,7 @@ export class PostgresDialect implements SqlDialect {
     const jsonbAt = `(${this.docColumn()}) #> ${p}`;
     const textAt = `(${this.docColumn()}) #>> ${p}`;
     const arr = `COALESCE(${jsonbAt}, '[]'::jsonb)`;
-    // biome-ignore lint/nursery/noUnnecessaryConditions: exhaustive switch over a string-literal union, not a truthiness check
+    // biome-ignore lint/suspicious/noUnnecessaryConditions: exhaustive switch over a string-literal union, not a truthiness check
     switch (op) {
       case "set":
         return { sql: `jsonb_set(${acc}, ${p}, ?::jsonb, true)`, params: [jsonStr(value)] };
@@ -1801,22 +1801,23 @@ export class SqliteDatabase
   extends adapt("sqliteDatabase", ({ env, plug }) => ({
     scheduler: plug(ScheduleAdaptorRole),
     config: env((env: SqliteEnv) => {
-      const appName = env.appName ?? "akan";
-      const environment = env.environment ?? "local";
-      const defaultFile = resolveDefaultSqliteFile({
-        appName,
-        fileName: `${appName}-${environment}.db`,
-        isProduction: process.env.NODE_ENV === "production",
-        operationMode: env.operationMode,
-        workspaceRoot: env.workspaceRoot,
-      });
+      const defaultFile = () => {
+        const { appName, environment, operationMode } = getEnv();
+        return resolveDefaultSqliteFile({
+          appName,
+          fileName: `${appName}-${environment}.db`,
+          isProduction: process.env.NODE_ENV === "production",
+          operationMode,
+          workspaceRoot: env.workspaceRoot,
+        });
+      };
       return {
         journalMode: "WAL",
         busyTimeoutMs: 5000,
         synchronous: "NORMAL",
         foreignKeys: true,
         ...env.database?.sqlite,
-        filePath: env.database?.sqlite?.filePath ?? process.env.SQLITE_DATABASE_PATH ?? defaultFile,
+        filePath: env.database?.sqlite?.filePath ?? process.env.SQLITE_DATABASE_PATH ?? defaultFile(),
         search: {
           enabled: env.database?.search?.enabled ?? parseSearchEnabled(process.env.AKAN_SEARCH_ENABLED),
           tokenizer: env.database?.search?.tokenizer ?? process.env.AKAN_SEARCH_TOKENIZER ?? DEFAULT_TOKENIZER,
@@ -1934,21 +1935,22 @@ export class LibsqlDatabase
   extends adapt("libsqlDatabase", ({ env, plug }) => ({
     scheduler: plug(ScheduleAdaptorRole),
     config: env((env: SqliteEnv) => {
-      const appName = env.appName ?? "akan";
-      const environment = env.environment ?? "local";
-      const defaultFile = resolveDefaultSqliteFile({
-        appName,
-        fileName: `${appName}-${environment}.db`,
-        isProduction: process.env.NODE_ENV === "production",
-        operationMode: env.operationMode,
-        workspaceRoot: env.workspaceRoot,
-      });
+      const defaultFile = () => {
+        const { appName, environment, operationMode } = getEnv();
+        return resolveDefaultSqliteFile({
+          appName,
+          fileName: `${appName}-${environment}.db`,
+          isProduction: process.env.NODE_ENV === "production",
+          operationMode,
+          workspaceRoot: env.workspaceRoot,
+        });
+      };
       return {
         url:
           env.database?.libsql?.url ??
           process.env.LIBSQL_URL ??
           process.env.LIBSQL_URI ??
-          `file:${env.database?.sqlite?.filePath ?? process.env.SQLITE_DATABASE_PATH ?? defaultFile}`,
+          `file:${env.database?.sqlite?.filePath ?? process.env.SQLITE_DATABASE_PATH ?? defaultFile()}`,
         authToken: env.database?.libsql?.authToken ?? process.env.LIBSQL_AUTH_TOKEN,
         search: {
           enabled: env.database?.search?.enabled ?? parseSearchEnabled(process.env.AKAN_SEARCH_ENABLED),

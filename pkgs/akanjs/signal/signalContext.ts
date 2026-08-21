@@ -1,5 +1,5 @@
 import {
-  type BaseEnv,
+  type BackendEnv,
   type Cls,
   FIELD_META,
   INTERNAL_META,
@@ -53,7 +53,7 @@ const isExceptionLike = (error: unknown): error is ExceptionLike => {
 
 export class SignalContext<
   Ctx extends HttpExecutionContext | WebSocketExecutionContext = HttpExecutionContext | WebSocketExecutionContext,
-  Env extends BaseEnv = BaseEnv,
+  Env extends BackendEnv = BackendEnv,
 > {
   key: string;
   transport: SignalTransportType;
@@ -216,7 +216,7 @@ export class SignalContext<
    * call for every registered middleware — and `Logging` is registered by default.
    */
   static #middlewareHandlers = new WeakMap<MiddlewareCls, WeakMap<object, Promise<MiddlewareHandler>>>();
-  static #getMiddlewareHandler(MiddlewareCls: MiddlewareCls, env: BaseEnv): Promise<MiddlewareHandler> {
+  static #getMiddlewareHandler(MiddlewareCls: MiddlewareCls, env: BackendEnv): Promise<MiddlewareHandler> {
     const byEnv =
       SignalContext.#middlewareHandlers.get(MiddlewareCls) ?? new WeakMap<object, Promise<MiddlewareHandler>>();
     SignalContext.#middlewareHandlers.set(MiddlewareCls, byEnv);

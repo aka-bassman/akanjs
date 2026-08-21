@@ -938,7 +938,7 @@ describe("SignalResolver declaration contracts", () => {
     resetResolverOrder();
     const filePath = path.join(tmpdir(), `solid-queue-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
     const queue = Object.assign(new SolidQueue(), {
-      config: getSolidConfig({ appName: "test", environment: "test", solid: { filePath, queuePollIntervalMs: 20 } }),
+      config: getSolidConfig({ solid: { filePath, queuePollIntervalMs: 20 } }),
       queueName: "queue-test",
       workerId: "worker-test",
     });
@@ -965,8 +965,9 @@ describe("SignalResolver declaration contracts", () => {
     while (!ran.length && Date.now() - startedAt < 2000) await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(ran).toHaveLength(1);
-    expect(ran[0]?.[0]).toBe(validId);
-    expect((ran[0]?.[1] as AkanJob).name).toBe("archiveItem");
+    const [itemId, job] = ran[0] as [string, AkanJob];
+    expect(itemId).toBe(validId);
+    expect(job.name).toBe("archiveItem");
 
     await queue.onDestroy();
     for (const suffix of ["", "-wal", "-shm"]) {

@@ -92,21 +92,20 @@ export type ModulesOptions = LibOptions & {
 };
 
 export const option = new AkanOption<ModulesOptions>().use((options) => {
-  const blobStorageApi = new BlobStorageApi(options.appName, {
+  const env = getEnv();
+  const blobStorageApi = new BlobStorageApi(env.appName, {
     baseDir: "local",
     urlPrefix:
-      options.operationMode === "local"
+      env.operationMode === "local"
         ? `http://localhost:${process.env.PORT ?? options.port ?? 8282}/api/localFile/getBlob`
         : "/api/localFile/getBlob",
   });
-  const storageApi = options.objectStorage
-    ? new ObjectStorageApi(options.appName, options.objectStorage)
-    : blobStorageApi;
+  const storageApi = options.objectStorage ? new ObjectStorageApi(env.appName, options.objectStorage) : blobStorageApi;
   // Private-only storage. On R2/S3 access control is bucket-level (R2 ignores per-object ACL),
   // so private files must live in a separate bucket that has NO public access configured.
   // Falls back to the public storageApi when `privateStorage` is not configured (e.g. local blob backend).
   const privStorageApi = options.privateStorage
-    ? new ObjectStorageApi(options.appName, options.privateStorage)
+    ? new ObjectStorageApi(env.appName, options.privateStorage)
     : storageApi;
   return {
     cloudflareApi: options.cloudflare ? new CloudflareApi(options.cloudflare) : null,
@@ -115,11 +114,9 @@ export const option = new AkanOption<ModulesOptions>().use((options) => {
     storageApi,
     privStorageApi,
     blobStorageApi,
-    jwtSecret: resolveJwtSecret(options.appName, options.environment, options.security?.jwtSecret),
+    jwtSecret: resolveJwtSecret(env.appName, env.environment, options.security?.jwtSecret),
     aeskey:
-      process.env.AES_KEY ??
-      options.security?.aeskey ??
-      generateAeskey(options.appName, options.environment, getEnv().repoName),
+      process.env.AES_KEY ?? options.security?.aeskey ?? generateAeskey(env.appName, env.environment, env.repoName),
     host: generateHost(options),
     discordApi: options.discord ? new DiscordApi(options.discord).initBots() : null,
   };

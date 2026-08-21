@@ -270,15 +270,11 @@ describe("solid sqlite utilities", () => {
       process.env.AKAN_SOLID_DB_PATH = "/tmp/solid.db";
       expect(
         getSolidConfig({
-          appName: "demo",
-          environment: "test",
           solid: { queueLeaseMs: 7, journalMode: "MEMORY" },
         }).filePath,
       ).toBe("/tmp/solid.db");
       expect(
         getSolidConfig({
-          appName: "demo",
-          environment: "test",
           solid: { queueLeaseMs: 7, journalMode: "MEMORY" },
         }),
       ).toMatchObject({

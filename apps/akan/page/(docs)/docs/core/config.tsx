@@ -257,8 +257,8 @@ export const option = new AkanOption<ModulesOptions>()
             {
               title: "setAgentAccess",
               desc: l.trans({
-                en: "Who may spend the LLM key through the runAgentTurn relay. It defaults to everyone, because the framework has no account model to gate on, and warns at boot until an app decides.",
-                ko: "runAgentTurn 릴레이로 LLM 키를 쓸 수 있는 caller입니다. 프레임워크에는 기준으로 삼을 계정 모델이 없어 기본값은 전원 허용이며, 앱이 정할 때까지 부팅 시 경고합니다.",
+                en: "Who may spend the LLM key through the runAgentTurn relay. With no policy the call is refused — the same answer None gives — because the framework has no account model to gate on.",
+                ko: "runAgentTurn 릴레이로 LLM 키를 쓸 수 있는 caller입니다. 프레임워크에는 기준으로 삼을 계정 모델이 없어, 정책이 없으면 호출은 None 가드와 같이 거절됩니다.",
               }),
             },
             {
