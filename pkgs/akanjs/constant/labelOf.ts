@@ -6,8 +6,8 @@
 export const labelOf = (model: unknown, value: unknown): string | undefined => {
   if (!value || typeof value !== "object") return undefined;
   const source = value as Record<string, unknown>;
-  const paths = (model as { text?: { title?: readonly string[] } } | null)?.text?.title;
-  const titlePath = paths?.find((path) => !path.includes(".") && !path.includes("["));
+  const paths = (model as { text?: { title?: Iterable<string> } } | null)?.text?.title;
+  const titlePath = [...(paths ?? [])].find((path) => !path.includes(".") && !path.includes("["));
   for (const key of [titlePath, "title", "name"]) {
     if (!key) continue;
     const candidate = source[key];

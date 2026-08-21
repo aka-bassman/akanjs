@@ -60,6 +60,15 @@ const serializedSignal: SerializedSignal = {
       returns: { refName: "catalogueTask", modelType: "full" },
       guards: ["SignedIn"],
     },
+    renameCatalogueTask: {
+      type: "mutation",
+      args: [
+        { type: "param", name: "taskId", refName: "ID" },
+        { type: "body", name: "title", refName: "String" },
+      ],
+      returns: { refName: "catalogueTask", modelType: "full" },
+      guards: ["SignedIn"],
+    },
   },
   slice: {
     "": { args: [] },
@@ -83,6 +92,7 @@ const makeSignal = () => {
 };
 
 let catalogue: StoreCatalogue;
+let instance: StoreInstance;
 let reasonOf: (key: string) => string | undefined;
 
 beforeAll(() => {
@@ -108,9 +118,14 @@ beforeAll(() => {
     pickCoordinates(x: number, y: number) {
       this.set({ draft: `${x},${y}` });
     }
+    // Named after renameCatalogueTask but missing its `title` parameter — the puffinplace shape: the schema-fed
+    // call would drop `title` and the action would read stale form state instead.
+    async renameCatalogueTask(taskId: string) {
+      await Promise.resolve(taskId);
+    }
   }
   StoreRegistry.register(TaskStore);
-  const instance = new StoreInstance(StoreRegistry.merge("catalogueRoot", TaskStore));
+  instance = new StoreInstance(StoreRegistry.merge("catalogueRoot", TaskStore));
   catalogue = new StoreCatalogue(instance, { catalogueTask: serializedSignal });
   reasonOf = (key: string) => catalogue.refusals.find((refusal) => refusal.key === key)?.reason;
 });
@@ -198,6 +213,27 @@ describe("StoreCatalogue actions", () => {
     });
     // The unnamed root slice takes no arguments, so the two must not be confused for one another.
     expect(catalogue.store.action.initCatalogueTask?.args).toEqual([]);
+  });
+
+  test("never publishes a setter for a base document field, without a refusal row", () => {
+    expect("setIdOnCatalogueTask" in instance.do).toBe(true);
+    for (const key of [
+      "setIdOnCatalogueTask",
+      "setCreatedAtOnCatalogueTask",
+      "setUpdatedAtOnCatalogueTask",
+      "setRemovedAtOnCatalogueTask",
+    ]) {
+      expect(catalogue.store.action[key]).toBeUndefined();
+      expect(reasonOf(key)).toBeUndefined();
+    }
+  });
+
+  test("refuses an endpoint-named action that declares fewer parameters than the endpoint", () => {
+    expect(catalogue.store.action.renameCatalogueTask).toBeUndefined();
+    expect(reasonOf("renameCatalogueTask")).toContain("declares 1 parameter while the same-named endpoint takes 2");
+    // The generated shape — more parameters than the endpoint (`create<Model>(data, options?)`) — stays published.
+    expect(catalogue.store.action.createCatalogueTask).toBeDefined();
+    expect(catalogue.store.action.startCatalogueTask).toBeDefined();
   });
 
   test("keys are sorted, so the catalogue text is the same on the next boot", () => {

@@ -10,6 +10,7 @@ import type {
   SerializedSlice,
   ServiceSignal,
 } from "akanjs/signal";
+import { agentTurnConstant } from "../agentTurn";
 import type { ClientSignal, FetchClientType, FetchSignalInput, MergeAllFetchTypes, SliceMeta } from "../fetchType";
 import { memoizeRequestQuery, cookies as requestCookies, headers as requestHeaders } from "../requestStorage";
 import type { GetSliceMetaObjFromDatabaseSignals } from "../types";
@@ -47,6 +48,19 @@ const globalWithSharedClient = globalThis as typeof globalThis & { [SHARED_CLIEN
 const sharedClientState: SharedClientState = globalWithSharedClient[SHARED_CLIENT_KEY] ?? { proxy: null, origin: null };
 globalWithSharedClient[SHARED_CLIENT_KEY] = sharedClientState;
 
+interface SharedSignalRegistry {
+  signal: { [key: string]: SerializedSignal };
+  version: number;
+}
+
+const SHARED_SIGNAL_KEY = Symbol.for("akanjs.fetch.sharedSignalRegistry");
+const globalWithSharedSignal = globalThis as typeof globalThis & { [SHARED_SIGNAL_KEY]?: SharedSignalRegistry };
+const sharedSignalRegistry: SharedSignalRegistry = globalWithSharedSignal[SHARED_SIGNAL_KEY] ?? {
+  signal: {},
+  version: 0,
+};
+globalWithSharedSignal[SHARED_SIGNAL_KEY] = sharedSignalRegistry;
+
 type ClientSignalMap<SigType extends { fetch: any }> = {
   [K in keyof SigType as SigType[K] extends DatabaseSignal<any, any, any, any>
     ? K
@@ -57,8 +71,9 @@ type ClientSignalMap<SigType extends { fetch: any }> = {
 
 /** Runtime fetch client that registers serialized Akan signals as HTTP/WebSocket methods. */
 export class FetchClient {
-  static #sharedSerializedSignal: { [key: string]: SerializedSignal } = {};
-  static #sharedRegistryVersion = 0;
+  static {
+    ConstantRegistry.setScalar(agentTurnConstant.refName, agentTurnConstant);
+  }
   readonly logger = new Logger("FetchClient");
   readonly origin: string;
   readonly http: HttpClient;
@@ -93,11 +108,11 @@ export class FetchClient {
    * would change what the next client applies. Read by the agent catalogue, which needs the argument schemas.
    */
   static get sharedSerializedSignal(): { [key: string]: SerializedSignal } {
-    return { ...FetchClient.#sharedSerializedSignal };
+    return { ...sharedSignalRegistry.signal };
   }
   static resetSharedRegistry() {
-    FetchClient.#sharedSerializedSignal = {};
-    FetchClient.#sharedRegistryVersion++;
+    sharedSignalRegistry.signal = {};
+    sharedSignalRegistry.version++;
   }
   static resetSharedClient() {
     sharedClientState.proxy = null;
@@ -147,9 +162,9 @@ export class FetchClient {
   applySignal(serializedSignal: { [key: string]: SerializedSignal }, { share = true }: { share?: boolean } = {}) {
     if (share && Object.keys(serializedSignal).length > 0) {
       for (const [refName, signal] of Object.entries(serializedSignal))
-        FetchClient.#mergeSerializedSignalInto(FetchClient.#sharedSerializedSignal, refName, signal);
-      FetchClient.#sharedRegistryVersion++;
-      this.#sharedRegistryAppliedVersion = FetchClient.#sharedRegistryVersion;
+        FetchClient.#mergeSerializedSignalInto(sharedSignalRegistry.signal, refName, signal);
+      sharedSignalRegistry.version++;
+      this.#sharedRegistryAppliedVersion = sharedSignalRegistry.version;
     }
     for (const [refName, signal] of Object.entries(serializedSignal))
       FetchClient.#mergeSerializedSignalInto(this.serializedSignal, refName, signal);
@@ -183,9 +198,9 @@ export class FetchClient {
     });
   }
   #syncSharedRegistry() {
-    if (this.#sharedRegistryAppliedVersion === FetchClient.#sharedRegistryVersion) return;
-    this.applySignal(FetchClient.#sharedSerializedSignal, { share: false });
-    this.#sharedRegistryAppliedVersion = FetchClient.#sharedRegistryVersion;
+    if (this.#sharedRegistryAppliedVersion === sharedSignalRegistry.version) return;
+    this.applySignal(sharedSignalRegistry.signal, { share: false });
+    this.#sharedRegistryAppliedVersion = sharedSignalRegistry.version;
   }
   #getOrCreateHandler(key: string): FetchHandler | undefined {
     const current = this.#handlerStore[key];
@@ -724,8 +739,15 @@ export class FetchClient {
         });
       }
     });
-    const instance = new FetchClient(getEnv().serverHttpUri, handler, serializedSignal);
+    const instance = new FetchClient(FetchClient.#originFromEnv(), handler, serializedSignal);
     return FetchClient.#makeProxy<MergeAllFetchTypes<Signals>, GetSliceMetaObjFromDatabaseSignals<Signals>>(instance);
+  }
+  static #originFromEnv() {
+    try {
+      return getEnv().serverHttpUri;
+    } catch {
+      return "";
+    }
   }
   static build<SigType extends { fetch: any }>(
     constant: object,

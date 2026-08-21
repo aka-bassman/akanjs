@@ -13,7 +13,7 @@ ${scalarModules.map((module) => `import { ${capitalize(module)} } from "./__scal
 ${databaseModules.length ? `import * as cnst from "./cnst";` : ""}
 ${databaseModules.map((module) => `import * as ${module}Db from "./${module}/${module}.document";`).join("\n")}
 
-${libs.map((lib) => `export { db as ${lib} } from "@libs/${lib}/server";`).join("\n")}
+${libs.map((lib) => `export * as ${lib} from "@libs/${lib}/lib/db";`).join("\n")}
 
 ${databaseModules.map((module) => `class ${capitalize(module)}Input extends by(cnst.${capitalize(module)}Input) {}`).join("\n")}
 ${databaseModules.map((module) => `class ${capitalize(module)}Insight extends by(cnst.${capitalize(module)}Insight) {}`).join("\n")}

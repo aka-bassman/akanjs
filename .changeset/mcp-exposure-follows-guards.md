@@ -46,3 +46,7 @@ reads the caller and nothing about the call, `"resource"` for one that needs the
 "resource"` to every guard class. Then read the boot log — `MCP catalogue: tools=…` followed by one line per
 refusal — because with no opt-in to be missing, that log is the only explanation for a tool that is not there.
 An endpoint you want an agent to reach needs real guards, which it needed anyway.
+
+**Settings moved off `new AkanApp(...)`.** `AkanAppOptions.mcp` is gone; the server settings live on the option
+chain in `lib/option.ts` — `option.setMcp({ enabled, readOnly, path, version, instructions, allowedOrigins,
+pageSize, language, auth })`. The old field is a type error on upgrade, which is the signal to move it.

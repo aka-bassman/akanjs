@@ -655,7 +655,7 @@ libs never import it directly (`no-import-external-library`) — everything reac
 - **The LLM is configured in `option.ts`, never through the environment.** `option.setLlm({ apiKey, model, host })`
   — or `setLlm((options) => …)` to read the key out of the app's own env object, which is where a secret belongs —
   fills whichever adaptor holds `LlmAdaptorRole`, reaching it as the `llmOption` use. The settings are the role's
-  rather than one provider's, so they survive a swap. **DeepSeek is the built-in default** (`deepseek-chat` at
+  rather than one provider's, so they survive a swap. **DeepSeek is the built-in default** (`deepseek-v4-flash` at
   `https://api.deepseek.com`); with no `apiKey` the app still boots and the chat answers `llmUnavailable`. Swap
   providers the way middleware is applied: `option.applyAdaptor(LlmAdaptorRole, ClaudeLlm)`, where the
   implementation is an `adapt()` class in a `srvkit/` implementing `LlmAdaptor.chat(request, onDelta?)` — ignore
@@ -676,7 +676,12 @@ libs never import it directly (`no-import-external-library`) — everything reac
   `static agent = { exclude: ["setMapBounds", "mapCamera"] }` withholds named actions and state keys that are not
   real levers (state a component writes into but never reads back). `st.use.x({ agent: false })` subscribes
   without counting toward liveness. Generated `set<Key>` conveniences are never published — declare a typed action
-  or `st.tool` when an agent should set one.
+  or `st.tool` when an agent should set one. Form setters for the base document fields (`setIdOnX`,
+  `setCreatedAtOnX`, `setUpdatedAtOnX`, `setRemovedAtOnX`) are never published either: the server stamps those.
+  An action named after an endpoint is published with the endpoint's argument schema **only when it can consume
+  it** — one declaring fewer parameters than the endpoint is refused (and warned once in the console), because
+  the schema-shaped call would drop the tail and read stale form state instead; trailing extras beyond the
+  endpoint's arguments stay legal (`create<Model>(data, options?)` is the generated shape).
 - **Hooks are the escape hatch, not the norm.** `st.useState(name, initial, meta)` publishes local state
   (read-only unless `set:` names a type), `st.expose(name, value)` a derived value, and
   `st.tool("x", { desc }).arg("id", ID).exec(fn)` a one-off action. `.exec()` is the only hook, so the chain

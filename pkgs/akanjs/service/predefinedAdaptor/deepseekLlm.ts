@@ -32,7 +32,7 @@ export class DeepseekLlm
   implements LlmAdaptor
 {
   get #model() {
-    return this.llmOption.model ?? "deepseek-chat";
+    return this.llmOption.model ?? "deepseek-v4-flash";
   }
   get #host() {
     return this.llmOption.host ?? "https://api.deepseek.com";

@@ -1,5 +1,5 @@
 import { type Cls, FIELD_META, PrimitiveRegistry, type PrimitiveScalar } from "akanjs/base";
-import { capitalize } from "akanjs/common";
+import { capitalize, Logger } from "akanjs/common";
 import { ConstantRegistry } from "akanjs/constant";
 import type { AgentRefusal, SerializedArg, SerializedSignal } from "akanjs/signal";
 // XXX: Reached as a module, never through the `akanjs/signal` barrel. That barrel value-imports `akanjs/service`,
@@ -74,7 +74,10 @@ export class StoreCatalogue {
   readonly #instance: StoreInstance;
   readonly #endpoints = new Map<string, { endpoint: SerializedSignal["endpoint"][string]; refName: string }>();
   readonly #refused = new Set<string>();
+  readonly #baseFieldSetters = new Set<string>();
   #formSetterCache: Map<string, SerializedStoreAction> | null = null;
+  static readonly #baseDocumentFields = new Set(["id", "createdAt", "updatedAt", "removedAt"]);
+  static readonly #warnedMismatches = new Set<string>();
 
   constructor(instance: StoreInstance, serializedSignal: Record<string, SerializedSignal>) {
     this.#instance = instance;
@@ -158,9 +161,12 @@ export class StoreCatalogue {
     // Generated `set<Key>` conveniences take an untyped value, so publishing one is a schema-less lever that writes
     // `undefined` on an empty call. Skipped without a refusal row — there is one per state key.
     if (this.#instance.generatedSetters.has(key)) return null;
+    // Base-field setters are skipped the same way — a refusal row four times per model would bury the real ones.
+    if (this.#baseFieldSetters.has(key)) return null;
     if (!this.visibility.visibleAction(key, this.#instance.actionOwners.get(key)?.refName)) return null;
     const endpoint = this.#endpoints.get(key);
-    if (endpoint) return [key, this.#endpointAction(key, endpoint)];
+    if (endpoint)
+      return this.#actionFitsEndpoint(key, endpoint.endpoint) ? [key, this.#endpointAction(key, endpoint)] : null;
     const formSetter = this.#formSetterCache?.get(key);
     if (formSetter) return [key, formSetter];
     const slice = this.#sliceAction(key);
@@ -169,9 +175,33 @@ export class StoreCatalogue {
   }
 
   /**
-   * An action named after an endpoint takes the endpoint's arguments. That is not a coincidence to be verified but
-   * the house naming rule — "the signal, store, and dictionary re-add the model, so `st.do.X` reads the same as
-   * `fetch.X`" — and it is where the store's schemas come from for free.
+   * The borrowed schema is only honest when the action can consume it: one that declares fewer parameters than the
+   * endpoint silently drops the tail and reads stale form state instead, so a schema-correct call becomes a wrong
+   * mutation reported as success. More parameters than the endpoint is the generated shape —
+   * `create<Model>(data, options?)` — and stays published. `Function.length` stops at the first default, so a
+   * defaulted mirror parameter reads as missing here; align it with the endpoint or exclude the action.
+   */
+  #actionFitsEndpoint(key: string, endpoint: SerializedSignal["endpoint"][string]) {
+    const arity = this.#instance.actionArity.get(key) ?? 0;
+    const declared = endpoint.args.length;
+    if (arity >= declared) return true;
+    this.#refuse(
+      key,
+      `it declares ${arity} parameter${arity === 1 ? "" : "s"} while the same-named endpoint takes ${declared} — a schema-shaped call would drop the tail and read form state instead. Align the action's parameters with the endpoint, or exclude the action.`,
+    );
+    if (!StoreCatalogue.#warnedMismatches.has(key)) {
+      StoreCatalogue.#warnedMismatches.add(key);
+      Logger.warn(
+        `st.do.${key} does not mirror endpoint ${key} (${arity} vs ${declared} args) — not published to agents.`,
+      );
+    }
+    return false;
+  }
+
+  /**
+   * An action named after an endpoint takes the endpoint's arguments — the house naming rule ("the signal, store,
+   * and dictionary re-add the model, so `st.do.X` reads the same as `fetch.X`") is where the store's schemas come
+   * from for free, and #actionFitsEndpoint is what holds the rule to its word.
    */
   #endpointAction(
     key: string,
@@ -197,6 +227,10 @@ export class StoreCatalogue {
       if (!fields) continue;
       for (const [field, meta] of Object.entries(fields)) {
         const names = formSetterNames(className, field);
+        if (StoreCatalogue.#baseDocumentFields.has(field)) {
+          for (const name of Object.values(names)) if (name in this.#instance.do) this.#baseFieldSetters.add(name);
+          continue;
+        }
         if (!(names.setFieldOnModel in this.#instance.do)) continue;
         if (names.uploadFieldOnModel in this.#instance.do)
           this.#refuse(names.uploadFieldOnModel, "it takes a browser `FileList`, which an agent has no way to hold.");
