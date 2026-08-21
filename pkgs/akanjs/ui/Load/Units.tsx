@@ -3,10 +3,10 @@ import { DataList } from "akanjs/base";
 import { cn } from "akanjs/client";
 import { capitalize, isQueryEqual, lowerlize } from "akanjs/common";
 import type { BaseInsight } from "akanjs/constant";
-import { ConstantRegistry } from "akanjs/constant";
+import { ConstantRegistry, labelOf } from "akanjs/constant";
 import type { ClientInit, ServerInit } from "akanjs/fetch";
 import { st } from "akanjs/store";
-import { useFetch } from "akanjs/webkit";
+import { useFetch, useScreenScope } from "akanjs/webkit";
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef } from "react";
 
 import { Empty } from "../Empty";
@@ -184,6 +184,15 @@ function Render<RefName extends string, Light extends { id: string }>({
   };
 
   const modelDataList = !loaded.current ? modelInitList.filter(filter).sort(sort) : modelList.filter(filter).sort(sort);
+  useScreenScope({
+    id: sliceName,
+    kind: refName,
+    items: () =>
+      modelDataList.map((item) => {
+        const label = labelOf(cnst.full, item);
+        return { id: item.id, ...(label ? { label } : {}) };
+      }),
+  });
   const showLoading = loaded.current && modelListLoading;
   if (renderList)
     return (

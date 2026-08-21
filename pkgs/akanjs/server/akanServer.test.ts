@@ -69,7 +69,7 @@ const loadRuntime = async () => {
     import("./resolver/resolver.contract.fixture"),
   ]);
 
-  const createLib = () =>
+  const createLib = (option = new AkanOption()) =>
     new AkanLib("serverGetTest", {
       databases: [
         {
@@ -86,12 +86,13 @@ const loadRuntime = async () => {
       ],
       services: [],
       scalars: [],
-      option: new AkanOption(),
+      option,
     });
 
   return {
     SolidPubSub,
     WebsocketAdaptorRole,
+    AkanOption,
     AkanServer,
     ServerResolverTestServerSignal,
     ServerResolverTestService,
@@ -195,8 +196,8 @@ describe("AkanServer MCP config", () => {
     ];
 
     try {
-      // The gateway reaches a child through its environment and nothing else, so this is the whole surface an
-      // app can configure — `server.ts` is generated and constructs this class with no options at all.
+      // A child of the gateway is handed nothing but its environment, so every field has an env spelling for a
+      // deployment to reach — what an app writes in `option.ts` merges over these.
       process.env.AKAN_MCP = "true";
       process.env.AKAN_MCP_READONLY = "true";
       process.env.AKAN_MCP_PATH = "/agent";
@@ -237,6 +238,38 @@ describe("AkanServer MCP config", () => {
       expect(partial.mcpAuth.authorizationServers).toEqual(["https://auth.example.com"]);
     } finally {
       for (const name of vars) delete process.env[name];
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("takes the app's own settings from its option.ts, under an option passed to the constructor", async () => {
+    setAkanEnv();
+    const { AkanOption, AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-option-"));
+    try {
+      process.env.AKAN_MCP_LANGUAGE = "ko";
+      process.env.AKAN_MCP_PAGE_SIZE = "25";
+      const option = new AkanOption().setMcp({ instructions: "Domain tools for the test app.", language: "en" });
+
+      const fromOption = new AkanServer("serverGet", createEnv(tmp), "all", createLib(option));
+      expect(fromOption.mcp).toBe(true);
+      expect(fromOption.mcpOption.instructions).toBe("Domain tools for the test app.");
+      expect(fromOption.mcpOption.language).toBe("en");
+      expect(fromOption.mcpOption.pageSize).toBe(25);
+
+      const overridden = new AkanServer("serverGet", createEnv(tmp), "all", createLib(option), {
+        mcp: { language: "ja" },
+      });
+      expect(overridden.mcpOption.language).toBe("ja");
+      expect(overridden.mcpOption.instructions).toBe("Domain tools for the test app.");
+
+      // A boolean carries no fields, so turning the surface off leaves what the option and the env already said.
+      const off = new AkanServer("serverGet", createEnv(tmp), "all", createLib(new AkanOption().setMcp(false)));
+      expect(off.mcp).toBe(false);
+      expect(off.mcpOption.language).toBe("ko");
+    } finally {
+      delete process.env.AKAN_MCP_LANGUAGE;
+      delete process.env.AKAN_MCP_PAGE_SIZE;
       await rm(tmp, { recursive: true, force: true });
     }
   });
@@ -285,6 +318,28 @@ describe("AkanServer MCP config", () => {
       stop();
       delete process.env.AKAN_MCP;
       await server.stop();
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("AkanServer agent relay access", () => {
+  test("registers the policy an app declares in its option.ts", async () => {
+    setAkanEnv();
+    const { AgentRelayAccess } = await import("../signal/guards");
+    const { AkanOption, AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-relay-"));
+    try {
+      expect(AgentRelayAccess.hasPolicy).toBe(false);
+      const option = new AkanOption().setAgentAccess((context) => !!context.get("account"));
+      new AkanServer("serverGet", createEnv(tmp), "all", createLib(option));
+      expect(AgentRelayAccess.hasPolicy).toBe(true);
+
+      const guard = new AgentRelayAccess();
+      expect(await guard.canPass({ get: () => null } as never)).toBe(false);
+      expect(await guard.canPass({ get: () => ({ id: "u1" }) } as never)).toBe(true);
+    } finally {
+      AgentRelayAccess.use(null);
       await rm(tmp, { recursive: true, force: true });
     }
   });

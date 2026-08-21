@@ -470,7 +470,7 @@ Conventions that hold for both shapes:
 - Resolve secrets as `process.env.X ?? options.x ?? deterministicGenerator(...)` **inside a function**, never at module scope.
 - Extend a function by appending an optional trailing parameter with a default, never by changing arity.
 - Parameters: up to three required primitives positional; optional flags in a trailing `{ … } = {}`; four or more parameters, or any two same-typed strings, in one named destructured object.
-- Release locks in `finally`. Load heavy optional dependencies through a module-level memoized promise (`sharpLoad ??= import("sharp")`).
+- Release locks in `finally`. Load heavy optional dependencies through a module-level memoized promise (`puppeteerLoad ??= import("puppeteer")`).
 
 ### Error Placement
 
@@ -489,16 +489,26 @@ authorization decision and `filterForAccount` re-reads them per caller on every 
 switch says nothing the guards do not — while guaranteeing that every endpoint added later is invisible to agents
 until somebody remembers it.
 
-Settings live in the app's `main.ts` — `new AkanApp("./server", { mcp: { … } })` — which takes `enabled`, `readOnly`,
-`path`, `version`, `instructions`, `allowedOrigins`, `pageSize`, `language`, and `auth`. That is the only
-app-authored place for it: `server.ts` is generated and takes no options, and the gateway configures a child
-through its environment — so each field also has an env spelling (`AKAN_MCP`, `AKAN_MCP_READONLY`,
+Settings live in the app's `lib/option.ts` — `option.setMcp({ … })`, taking `enabled`, `readOnly`, `path`,
+`version`, `instructions`, `allowedOrigins`, `pageSize`, `language`, and `auth`. **Not `main.ts`**: the gateway
+there only spawns children, and `option.ts` is the app-authored file `server.ts` already hands to the process that
+mounts `/mcp`. Every lib's option is read in mount order with the app's last, so an app tightens what a library
+declared without restating it. Each field also has an env spelling (`AKAN_MCP`, `AKAN_MCP_READONLY`,
 `AKAN_MCP_PATH`, `AKAN_MCP_VERSION`, `AKAN_MCP_INSTRUCTIONS`, `AKAN_MCP_ALLOWED_ORIGINS`, `AKAN_MCP_PAGE_SIZE`,
-`AKAN_MCP_LANGUAGE`, `AKAN_MCP_AUTH_SERVERS`, `AKAN_MCP_SCOPES`, `AKAN_MCP_RESOURCE`), which code overrides.
+`AKAN_MCP_LANGUAGE`, `AKAN_MCP_AUTH_SERVERS`, `AKAN_MCP_SCOPES`, `AKAN_MCP_RESOURCE`) for a deployment that
+configures what the source does not, which the option overrides.
 The two booleans answer to `AKAN_PUBLIC_MCP` / `AKAN_PUBLIC_MCP_READONLY` too, the same pairing `AKAN_OPENAPI`
 has, and a value written in code wins over the env of the same name — an explicit `undefined` is not a value.
 `AKAN_MCP_PATH` is normalized to a leading `/`, because the route key and the OAuth metadata path are both built by
 concatenation.
+
+```typescript
+// apps/<app>/lib/option.ts
+export const option = new AkanOption<ModulesOptions>().setMcp({
+  instructions: "Domain tools for the akan app. Start from taskInTodo.",
+  language: "en",
+});
+```
 
 ```typescript
 // <model>.signal.ts — every one of these is an MCP tool or prompt, with no `mcp:` option anywhere
@@ -622,6 +632,68 @@ over the ask.
 frames down included, and is a no-op when nobody is streaming — so the same code runs unchanged over HTTP, a
 websocket, and in tests. `McpProgress.streaming` says whether anyone is reading, for a report whose message
 costs something to assemble.
+
+## In-Page Agent
+
+Every akan app can host a component-level agent that reads the rendered screen and drives it. Tools, state, and
+context are **derived from the rendered screen, not from the bundle**: a store joins the surface only while a
+mounted component reads one of its keys (`st.use` / `st.sel` / `st.ref` all count), and only that store's
+catalogued actions and state are published. `Load` scopes, the route, and the live keys complete the context, so
+most screens publish a full surface with zero agent code. The React core is the `use-agentic` package; apps and
+libs never import it directly (`no-import-external-library`) — everything reaches them through `st.*` and
+`akanjs/ui`.
+
+- **Mount `<Agent.Chat />` once in a layout.** That is the floating chat, the approval card, and the client-side
+  loop. The default runner drives `runAgentTurn`, which the **framework serves on every app** — no lib to mount,
+  `AKAN_AGENT=false` takes it off — and negotiates streaming via `accept`, so assistant text arrives as it is
+  generated with zero app code. The endpoint is a stateless relay and **never executes tools**: every tool runs in
+  the caller's own browser session, gated by guards and the approval card. Its guard is `AgentRelayAccess`, which
+  defaults to allow and **warns at boot while no policy is registered** — a product with accounts locks it in its
+  `option.ts`, `option.setAgentAccess((ctx) => !!ctx.get("account"))`, or anonymous visitors spend the LLM key.
+  `persist` keeps the transcript across reloads (sessionStorage; `{ storage: "local" }` to outlive the tab),
+  default off. Re-skin through the `AgentChat` slot in `_overrides.tsx`.
+- **The LLM is configured in `option.ts`, never through the environment.** `option.setLlm({ apiKey, model, host })`
+  — or `setLlm((options) => …)` to read the key out of the app's own env object, which is where a secret belongs —
+  fills whichever adaptor holds `LlmAdaptorRole`, reaching it as the `llmOption` use. The settings are the role's
+  rather than one provider's, so they survive a swap. **DeepSeek is the built-in default** (`deepseek-chat` at
+  `https://api.deepseek.com`); with no `apiKey` the app still boots and the chat answers `llmUnavailable`. Swap
+  providers the way middleware is applied: `option.applyAdaptor(LlmAdaptorRole, ClaudeLlm)`, where the
+  implementation is an `adapt()` class in a `srvkit/` implementing `LlmAdaptor.chat(request, onDelta?)` — ignore
+  `onDelta` and the chat still answers whole.
+- **`<Agent.Zone id="comments">` runs a second agent over one section, in parallel with the root.** Everything
+  mounted inside — `st.use` subscriptions, hook tools, Guides — belongs to that zone's own conversation *and*
+  stays visible to the root agent: **zones are views, never walls**, so wrapping a section costs the root nothing.
+  An `Agent.Chat` inside binds to the zone session automatically; a zone's `readScreen` reads only its own
+  `data-agent-zone` container; guides follow the layout cascade (ancestors and own, never a sibling's). Zone
+  membership is positional — there is no per-declaration zone key, so a lib component joins whatever zone the app
+  mounts it in.
+- **Route guidance is `<Agent.Guide instructions="..." />`** rendered from a `_layout.tsx` or a page — the render
+  tree is the cascade: nested Guides concatenate outer-to-inner and navigating away withdraws them. It is a
+  component, not a pageConfig field. Module `*.abstract.md` files are developer docs and are never served to the
+  agent.
+- **Exposure is the store author's to trim.** `static agent = false` on a store class keeps the whole module off
+  the surface (the framework's base store declares it — its keys are plumbing and `tryJwt` is a credential);
+  `static agent = { exclude: ["setMapBounds", "mapCamera"] }` withholds named actions and state keys that are not
+  real levers (state a component writes into but never reads back). `st.use.x({ agent: false })` subscribes
+  without counting toward liveness. Generated `set<Key>` conveniences are never published — declare a typed action
+  or `st.tool` when an agent should set one.
+- **Hooks are the escape hatch, not the norm.** `st.useState(name, initial, meta)` publishes local state
+  (read-only unless `set:` names a type), `st.expose(name, value)` a derived value, and
+  `st.tool("x", { desc }).arg("id", ID).exec(fn)` a one-off action. `.exec()` is the only hook, so the chain
+  completes in one unconditional statement; its callable carries `data-akan-action`, so pass it to `onClick` by
+  reference like a store setter. `remove*`-named tools default to a confirm gate.
+- **Model-facing text is English, always** — tool `desc`, `instructions`, Guide text. The `l()` rule covers
+  strings a *user* reads: Chat's own buttons go through `l("base.*")`, the model's text never does.
+- A masked model never crosses the boundary: a value whose `hidden`/`secret` fields are populated is refused at
+  read unless a `mask:` model is named — the same rule and wording as `AgentBridge.read`.
+- **`prompt()` endpoints double as the chat's slash commands.** There is no listing endpoint — the client reads
+  its own serialized signals — so a prompt's dictionary `.desc()` is what the menu shows, and its guards are
+  enforced by the prompt's own GET at call time.
+- The framework publishes three built-ins on every store surface: `navigate` (internal paths only, the same
+  router `Link` rides), `readScreen` (the rendered DOM as compact text — headings, links, control values; the
+  chat's own UI is skipped via `data-agent-ui`, and a password value is never read), and `readState(key)` (one
+  masked store key). Declaring a store action or hook tool under one of those names shadows the built-in, so
+  reuse them only to mean that.
 
 ## Scalar Modeling (`**/*.constant.ts`)
 

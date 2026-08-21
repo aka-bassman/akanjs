@@ -1,4 +1,7 @@
 export * from "./agent";
+export * from "./agent.signal";
+export * from "./agentTurn";
+export * from "./agentTurnStream";
 export * from "./base.signal";
 export * from "./endpoint";
 export * from "./endpointInfo";

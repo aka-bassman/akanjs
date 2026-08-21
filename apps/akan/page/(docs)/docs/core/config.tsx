@@ -218,6 +218,80 @@ export const env: ModulesOptions = {
       </Scroll.Slide>
       <Divider />
 
+      <Scroll.Slide id="server-option" title={l.trans({ en: "Server Option", ko: "서버 옵션" })}>
+        <Docs.Title>{l.trans({ en: "Server Option", ko: "서버 옵션" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "lib/option.ts is where the app configures its server. env/ holds the values, akan.config.ts holds the build, and this file wires them into the runtime: use objects, signal middleware, adaptor overrides, web proxies, the MCP server, the agent relay's access policy, and the LLM that relay speaks to. Every library the app depends on brings its own option.ts, read in mount order with the app's last — so an app tightens what a library declared without restating it.",
+              ko: "lib/option.ts는 앱이 서버를 설정하는 자리입니다. env/는 값을, akan.config.ts는 빌드를 담고, 이 파일은 그것을 런타임에 연결합니다. use 객체, signal middleware, adaptor override, web proxy에 더해 MCP 서버, agent relay 접근 정책, 그 relay가 말을 거는 LLM까지 여기서 정합니다. 앱이 의존하는 모든 라이브러리도 각자 option.ts를 가지며, 마운트 순서대로 읽고 앱의 것을 마지막에 얹습니다. 그래서 앱은 라이브러리가 선언한 값을 다시 쓰지 않고 조일 수 있습니다.",
+            })}
+          </div>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title="lib/option.ts"
+          code={`import { AkanOption } from "akanjs/server";
+import type { LlmOption } from "akanjs/service";
+
+import type { LibOptions } from "./srv";
+
+export type ModulesOptions = LibOptions & {
+  llm?: LlmOption;
+};
+
+export const option = new AkanOption<ModulesOptions>()
+  .setLlm((options) => options.llm ?? {})
+  .setAgentAccess((context) => !!context.get("account"))
+  .setMcp({ instructions: "Domain tools for the app. Start from taskInTodo." });`}
+        />
+        <div className="space-y-1">
+          {[
+            {
+              title: "setLlm",
+              desc: l.trans({
+                en: "apiKey, model, and host for whichever adaptor holds LlmAdaptorRole. Take the key from the env object rather than writing it here — env.server.* is gitignored, this file is not.",
+                ko: "LlmAdaptorRole을 차지한 어댑터가 쓸 apiKey·model·host입니다. 키는 이 파일에 적지 말고 env 객체에서 받으세요. env.server.*는 gitignore 대상이지만 이 파일은 아닙니다.",
+              }),
+            },
+            {
+              title: "setAgentAccess",
+              desc: l.trans({
+                en: "Who may spend the LLM key through the runAgentTurn relay. It defaults to everyone, because the framework has no account model to gate on, and warns at boot until an app decides.",
+                ko: "runAgentTurn 릴레이로 LLM 키를 쓸 수 있는 caller입니다. 프레임워크에는 기준으로 삼을 계정 모델이 없어 기본값은 전원 허용이며, 앱이 정할 때까지 부팅 시 경고합니다.",
+              }),
+            },
+            {
+              title: "setMcp",
+              desc: l.trans({
+                en: "MCP server settings — instructions, readOnly, path, pageSize, language, auth. Not main.ts: the gateway there only spawns children, while this file is handed to the process that mounts /mcp.",
+                ko: "MCP 서버 설정입니다. instructions·readOnly·path·pageSize·language·auth를 받습니다. main.ts가 아닙니다. main.ts의 gateway는 child를 띄우기만 하고, 이 파일이 /mcp를 마운트하는 프로세스에 전달됩니다.",
+              }),
+            },
+            {
+              title: "use · applyMiddleware · applyAdaptor · applyWebProxy",
+              desc: l.trans({
+                en: "The registration half: env-derived singletons a service reaches with use<T>(), signal middleware, a predefined adaptor role rebound to the app's own implementation, and web proxies.",
+                ko: "등록 쪽입니다. service가 use<T>()로 잡는 env 기반 싱글턴, signal middleware, 미리 정의된 adaptor role을 앱 구현으로 다시 묶는 override, web proxy를 등록합니다.",
+              }),
+            },
+          ].map(({ title, desc }) => (
+            <div key={title} className={panelRecipe({ padding: "row" })}>
+              <span className="font-mono font-semibold text-primary">{title}: </span>
+
+              <span className="text-foreground/70 text-sm">{desc}</span>
+            </div>
+          ))}
+        </div>
+        <Docs.Alert type="info">
+          {l.trans({
+            en: "Each of these has an env spelling too (AKAN_MCP_*, AKAN_AGENT), for a deployment that must configure what the source does not. A value written in option.ts wins over the env of the same name.",
+            ko: "이 설정들에는 env 이름도 하나씩 있습니다(AKAN_MCP_*, AKAN_AGENT). 소스에 없는 값을 배포 시점에 정해야 할 때를 위한 것이며, option.ts에 쓴 값이 같은 이름의 env를 이깁니다.",
+          })}
+        </Docs.Alert>
+      </Scroll.Slide>
+      <Divider />
+
       <Scroll.Slide id="routes" title={l.trans({ en: "Routes and Domains", ko: "Route와 Domain" })}>
         <Docs.Title>{l.trans({ en: "Routes and Domains", ko: "Route와 Domain" })}</Docs.Title>
         <Docs.Description>

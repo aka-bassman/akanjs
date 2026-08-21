@@ -19,7 +19,6 @@ const packageJson: PackageJson = {
     react: "19.0.0",
     "react-dom": "19.0.0",
     "react-server-dom-webpack": "19.0.0",
-    sharp: "1.0.0",
     "@external/runtime": "2.0.0",
   },
 };
@@ -144,8 +143,6 @@ describe("AkanAppConfig", () => {
         react: "19.0.0",
         "react-dom": "19.0.0",
         "react-server-dom-webpack": "19.0.0",
-        croner: akanPackageJson.peerDependencies?.croner,
-        sharp: "1.0.0",
         "@external/runtime": "2.0.0",
       },
     });
@@ -184,8 +181,6 @@ describe("AkanAppConfig", () => {
       react: runtimeDependencies.react,
       "react-dom": runtimeDependencies["react-dom"],
       "react-server-dom-webpack": runtimeDependencies["react-server-dom-webpack"],
-      croner: runtimeDependencies.croner,
-      sharp: runtimeDependencies.sharp,
     });
   });
 
@@ -198,9 +193,6 @@ describe("AkanAppConfig", () => {
     const multipleConfig = new AkanAppConfig(app, [], packageJson, { defaultDatabaseMode: "multiple" }, baseDevEnv);
     const clusterConfig = new AkanAppConfig(app, [], packageJson, { defaultDatabaseMode: "cluster" }, baseDevEnv);
 
-    expect(singleConfig.getProductionPackageJson().dependencies).toMatchObject({
-      croner: runtimeDependencies.croner,
-    });
     expect(singleConfig.getProductionPackageJson().dependencies).not.toHaveProperty("ioredis");
     expect(singleConfig.getProductionPackageJson().dependencies).not.toHaveProperty("bullmq");
     expect(singleConfig.getProductionPackageJson().dependencies).not.toHaveProperty("@libsql/client");
@@ -210,7 +202,6 @@ describe("AkanAppConfig", () => {
     expect(multipleConfig.getProductionPackageJson().dependencies).toMatchObject({
       "@libsql/client": runtimeDependencies["@libsql/client"],
       bullmq: runtimeDependencies.bullmq,
-      croner: runtimeDependencies.croner,
       ioredis: runtimeDependencies.ioredis,
       protobufjs: runtimeDependencies.protobufjs,
     });
@@ -218,7 +209,6 @@ describe("AkanAppConfig", () => {
 
     expect(clusterConfig.getProductionPackageJson().dependencies).toMatchObject({
       bullmq: runtimeDependencies.bullmq,
-      croner: runtimeDependencies.croner,
       ioredis: runtimeDependencies.ioredis,
       postgres: runtimeDependencies.postgres,
       protobufjs: runtimeDependencies.protobufjs,

@@ -61,6 +61,8 @@ beforeAll(async () => {
   StoreRegistry.register(DeskStore);
   const instance = new StoreInstance(StoreRegistry.merge("dockRoot", DeskStore));
   const bridge = new AgentBridge(instance, { dockDesk: serializedSignal as never });
+  // What a mounted component's subscription does: without a live key the store publishes nothing.
+  instance.retainLive("deskDraft");
   html = await new Response(await renderToReadableStream(createElement(Dock, { bridge, open: true }))).text();
 });
 

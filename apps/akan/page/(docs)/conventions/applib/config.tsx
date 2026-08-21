@@ -421,8 +421,8 @@ export default config;`}
           </div>
           <div>
             {l.trans({
-              en: "Akan includes externalLibs in the production package dependencies together with required SSR and native runtime packages.",
-              ko: "Akan은 externalLibs를 필수 SSR/native runtime package와 함께 production package dependencies에 포함합니다.",
+              en: "Akan includes externalLibs in the production package dependencies together with the required SSR runtime packages.",
+              ko: "Akan은 externalLibs를 필수 SSR runtime package와 함께 production package dependencies에 포함합니다.",
             })}
           </div>
         </Docs.Description>
@@ -432,7 +432,7 @@ export default config;`}
           code={`import type { AppConfig } from "akanjs";
 
 const config: AppConfig = {
-  externalLibs: ["sharp"],
+  externalLibs: ["puppeteer"],
 };
 
 export default config;`}
@@ -618,7 +618,7 @@ export default config;`}
           code={`import type { LibConfig } from "akanjs";
 
 const config: LibConfig = {
-  externalLibs: ["sharp"],
+  externalLibs: ["puppeteer"],
 };
 
 export default config;`}

@@ -36,15 +36,18 @@ const options: AkanAppOptions = {
     {
       name: "AkanOption",
       desc: l.trans({
-        en: "App/library option builder used by `lib/option.ts`. It registers env-derived use objects, signal middleware, and web proxies consumed by the server runtime.",
-        ko: "`lib/option.ts`에서 사용하는 app/library option builder입니다. server runtime이 사용하는 env-derived use object, signal middleware, web proxy를 등록합니다.",
+        en: "App/library option builder used by `lib/option.ts`. It registers env-derived use objects, signal middleware, adaptor overrides, and web proxies, and carries the settings an app owns: `setMcp` for the MCP server, `setAgentAccess` for who may spend the LLM key through the agent relay, and `setLlm` for the model that relay speaks to. Every lib's option is read in mount order with the app's last.",
+        ko: "`lib/option.ts`에서 사용하는 app/library option builder입니다. env-derived use object, signal middleware, adaptor override, web proxy를 등록하고, 앱이 소유하는 설정을 함께 담습니다. `setMcp`는 MCP 서버, `setAgentAccess`는 agent relay로 LLM 키를 쓸 수 있는 caller, `setLlm`은 그 relay가 말을 거는 모델입니다. 모든 lib의 option을 마운트 순서대로 읽고 앱의 것을 마지막에 얹습니다.",
       }),
       code: `import { AkanOption } from "akanjs/server";
 
-export const option = new AkanOption()
+export const option = new AkanOption<ModulesOptions>()
   .use((env) => ({ appName: env.appName }))
   .applyMiddleware(Logging)
-  .applyWebProxy(localeWebProxy);`,
+  .applyWebProxy(localeWebProxy)
+  .setMcp({ instructions: "Domain tools for the akan app." })
+  .setLlm((options) => options.llm ?? {})
+  .setAgentAccess((context) => !!context.get("account"));`,
     },
     {
       name: "AkanResponse",

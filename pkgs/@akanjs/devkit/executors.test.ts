@@ -31,7 +31,6 @@ const rootPackageJson = (extra: Partial<PackageJson> = {}): PackageJson => ({
     react: "19.0.0",
     "react-dom": "19.0.0",
     "react-server-dom-webpack": "19.0.0",
-    sharp: "1.0.0",
     lodash: "4.0.0",
   },
   devDependencies: {
@@ -854,7 +853,7 @@ describe("PkgExecutor package generation", () => {
       exports: { "./extra": { import: "./extra.ts" } },
       peerDependencies: { react: "19.0.0" },
       peerDependenciesMeta: { react: { optional: true } },
-      optionalDependencies: { sharp: "1.0.0" },
+      optionalDependencies: { "@sample/native": "1.0.0" },
     });
 
     const workspace = new WorkspaceExecutor({ workspaceRoot: root, repoName: "repo" });
@@ -864,12 +863,12 @@ describe("PkgExecutor package generation", () => {
     expect(distPackageJson).toMatchObject({
       name: "@sample/tool",
       type: "module",
-      engines: { bun: ">=1.3.13" },
+      engines: { bun: ">=1.4.0" },
       dependencies: { lodash: "4.0.0" },
       devDependencies: { typescript: "6.0.0" },
       peerDependencies: { react: "19.0.0" },
       peerDependenciesMeta: { react: { optional: true } },
-      optionalDependencies: { sharp: "1.0.0" },
+      optionalDependencies: { "@sample/native": "1.0.0" },
     });
     expect(distPackageJson.exports?.["."]).toEqual({
       import: "./index.ts",

@@ -57,16 +57,13 @@ export default function Page() {
           </div>
         </Docs.Description>
         <Code.Snippet
-          title="main.ts"
-          code={`await new AkanApp("./server", {
-  openapi: true,
-  mcp: {
-    instructions: "Domain tools for the akan app. Start from taskListInTodo.",
-    readOnly: false,
-    pageSize: 100,
-    language: "en",
-  },
-}).start();`}
+          title="lib/option.ts"
+          code={`export const option = new AkanOption<ModulesOptions>().setMcp({
+  instructions: "Domain tools for the akan app. Start from taskListInTodo.",
+  readOnly: false,
+  pageSize: 100,
+  language: "en",
+});`}
         />
         <Code.Snippet
           title={l.trans({ en: "or by env", ko: "또는 env로" })}
@@ -78,8 +75,8 @@ AKAN_MCP_LANGUAGE=en`}
           <ul className="list-disc space-y-2 pl-5">
             <li>
               {l.trans({
-                en: "main.ts is where this goes, because server.ts is generated and constructs AkanServer with no options. The gateway configures the child that actually mounts /mcp through its environment, so every field has an env spelling too — an option written in code wins over the env of the same name.",
-                ko: "이 설정은 main.ts에 씁니다. server.ts는 생성 파일이고 AkanServer를 옵션 없이 만들기 때문입니다. gateway는 실제로 /mcp를 마운트하는 child를 환경변수로 설정하므로 모든 필드에 env 이름이 하나씩 있습니다. 코드에 쓴 값이 같은 이름의 env를 이깁니다.",
+                en: "lib/option.ts is where this goes, not main.ts: the gateway there only spawns children, while option.ts is already handed to the process that mounts /mcp. Every lib's option is read in mount order with the app's last, so an app tightens what a library declared without restating it. Every field has an env spelling too, for a deployment configuring what the source does not — and an option written in code wins over the env of the same name.",
+                ko: "이 설정은 main.ts가 아니라 lib/option.ts에 씁니다. main.ts의 gateway는 child를 띄우기만 하고, option.ts는 실제로 /mcp를 마운트하는 프로세스에 이미 전달되기 때문입니다. 모든 lib의 option을 마운트 순서대로 읽고 앱의 것을 마지막에 얹으므로, 앱은 라이브러리가 선언한 값을 다시 쓰지 않고 조일 수 있습니다. 소스에 없는 값을 배포 시점에 설정할 수 있도록 모든 필드에 env 이름도 하나씩 있으며, 코드에 쓴 값이 같은 이름의 env를 이깁니다.",
               })}
             </li>
             <li>

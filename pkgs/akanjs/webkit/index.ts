@@ -14,4 +14,6 @@ export { useGeoLocation } from "./useGeoLocation";
 export { useHistory } from "./useHistory";
 export { useInterval } from "./useInterval";
 export { useLocation } from "./useLocation";
+export type { ScreenScopeItem } from "./useScreenScope";
+export { useScreenScope } from "./useScreenScope";
 export { useThrottle } from "./useThrottle";

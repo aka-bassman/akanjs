@@ -12,6 +12,7 @@ import { formSetterNames } from "../formSetterNames";
 import type { SliceActionKey } from "../sliceRole";
 import type { SliceStateKey } from "../state";
 import type { StoreInstance } from "../storeInstance";
+import { AgentVisibility } from "./AgentVisibility";
 import type { SerializedStore, SerializedStoreAction, SerializedStoreState } from "./types";
 
 /** A model field as the catalogue reads it. The parts of `FieldProps` a store setter's argument comes from. */
@@ -58,6 +59,9 @@ const sliceStateModelTypes: { [key in SliceStateKey]?: SerializedStoreState["mod
  * already permits. That is why the default here is the opposite of the MCP catalogue's — every key is published
  * unless something about it cannot be described, and each of those is recorded as a refusal rather than dropped.
  *
+ * This is the visible universe, not the live view: a store's own `static agent` declaration is honored here, and
+ * the bridge narrows the result to the stores the rendered screen is reading when it answers.
+ *
  * Nothing is re-declared. An action's arguments come from the endpoint it is named after, from the field metadata
  * the form setter was generated from, or from the role the store recorded while building the slice; a key that
  * matches none of those three is published only when it takes no arguments at all.
@@ -65,6 +69,7 @@ const sliceStateModelTypes: { [key in SliceStateKey]?: SerializedStoreState["mod
 export class StoreCatalogue {
   readonly store: SerializedStore;
   readonly refusals: AgentRefusal[] = [];
+  readonly visibility = new AgentVisibility();
 
   readonly #instance: StoreInstance;
   readonly #endpoints = new Map<string, { endpoint: SerializedSignal["endpoint"][string]; refName: string }>();
@@ -75,7 +80,17 @@ export class StoreCatalogue {
     this.#instance = instance;
     for (const { key, endpoint, refName } of AgentCatalogue.candidates(serializedSignal))
       this.#endpoints.set(key, { endpoint, refName });
+    this.#refuseDeclaredExposures();
     this.store = { state: this.#state(), action: this.#actions() };
+  }
+
+  /** One line per opted-out store, so the Dock answers "why is X missing" without a row per hidden key. */
+  #refuseDeclaredExposures() {
+    for (const [refName, exposure] of this.visibility.declaredExposures()) {
+      if (exposure === false)
+        this.#refuse(refName, "its store declares `agent: false`, so none of its keys or actions are published.");
+      else for (const name of exposure.exclude) this.#refuse(name, "excluded by its store's `agent` declaration.");
+    }
   }
 
   #refuse(key: string, reason: string) {
@@ -88,6 +103,7 @@ export class StoreCatalogue {
     const state = this.#instance.get();
     const declared = StoreCatalogue.#declaredStateModels();
     const entries = Object.keys(state)
+      .filter((key) => this.visibility.visibleKey(key))
       .sort()
       .map((key): [string, SerializedStoreState] => {
         const role = this.#instance.sliceStateRoles.get(key);
@@ -139,6 +155,10 @@ export class StoreCatalogue {
 
   #action(key: string): [string, SerializedStoreAction] | null {
     if (this.#refused.has(key)) return null;
+    // Generated `set<Key>` conveniences take an untyped value, so publishing one is a schema-less lever that writes
+    // `undefined` on an empty call. Skipped without a refusal row — there is one per state key.
+    if (this.#instance.generatedSetters.has(key)) return null;
+    if (!this.visibility.visibleAction(key, this.#instance.actionOwners.get(key)?.refName)) return null;
     const endpoint = this.#endpoints.get(key);
     if (endpoint) return [key, this.#endpointAction(key, endpoint)];
     const formSetter = this.#formSetterCache?.get(key);

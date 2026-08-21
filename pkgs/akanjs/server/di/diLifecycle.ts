@@ -12,6 +12,8 @@ import {
   srv,
   type WebsocketAdaptor,
 } from "akanjs/service";
+import { agent as agentSignal } from "../../signal/agent.signal";
+import { agentTurnConstant, agentTurnDocument } from "../../signal/agentTurn";
 import { Base, BaseEndpoint, BaseInternal } from "../../signal/base.signal";
 import type { Endpoint } from "../../signal/endpoint";
 import type { Internal } from "../../signal/internal";
@@ -82,14 +84,25 @@ export class DiLifecycle {
     };
   }
 
+  static #envOn(...names: string[]) {
+    return !names.some((name) => process.env[name] === "false" || process.env[name] === "0");
+  }
+
   constructor(env: BaseEnv, serverMode: "federation" | "batch" | "all", ...libs: AkanLib[]) {
     this.#env = env;
-    this.#predefinedAdaptor = getPredefinedAdaptor(env.databaseMode ?? "single");
+    // Copied: "single" mode hands back the shared module-scope object, and applyAdaptor overrides mutate per app.
+    this.#predefinedAdaptor = { ...getPredefinedAdaptor(env.databaseMode ?? "single") };
     this.#libs = libs;
     this.#service.set("base", {
       service: srv.base,
       signal: SignalRegistry.registerService("base" as const, BaseInternal, BaseEndpoint, Base),
     });
+    // The in-page agent relay ships with the framework; a lib that still carries its own `agent` module wins the
+    // refName below (candidates merge last), so an older workspace copy keeps working unchanged.
+    const frameworkAgent: ServiceModule | null = DiLifecycle.#envOn("AKAN_AGENT", "AKAN_PUBLIC_AGENT")
+      ? { service: srv.agent, signal: agentSignal }
+      : null;
+    if (frameworkAgent) this.#service.set("agent", frameworkAgent);
     this.#middleware.set(Logging.refName, Logging);
     const defaultOption = createDefaultAkanOption();
     defaultOption.getMiddlewares().forEach((middleware) => {
@@ -101,6 +114,14 @@ export class DiLifecycle {
     libs.forEach((lib) => {
       lib.option.getMiddlewares().forEach((middleware) => {
         this.#middleware.set(middleware.refName, middleware);
+      });
+      lib.option.getAdaptorOverrides().forEach(({ role, adaptor }) => {
+        const roleKey = Object.entries(this.#predefinedAdaptorRole).find(([, roleCls]) => roleCls === role)?.[0];
+        if (!roleKey) {
+          this.logger.warn(`applyAdaptor got an unknown role "${role.refName}" — override ignored`);
+          return;
+        }
+        (this.#predefinedAdaptor as Record<string, AdaptorCls>)[roleKey] = adaptor;
       });
       this.webProxies.push(...lib.option.getWebProxies());
       lib.database.forEach((mod) => {
@@ -122,6 +143,10 @@ export class DiLifecycle {
       if (disabledModules.has(refName)) return;
       this.#service.set(refName, module as ServiceModule);
     });
+    if (frameworkAgent && this.#service.get("agent") !== frameworkAgent)
+      this.logger.info("agent relay is provided by a lib module — the framework's is skipped");
+    if (!this.#scalar.has("agentTurn"))
+      this.#scalar.set("agentTurn", { constant: agentTurnConstant, database: agentTurnDocument });
     this.#database.forEach((mod) => {
       const { adaptor, schema } = DatabaseResolver.resolveDatabase(mod.constant, mod.database);
       this.#adaptor.set(adaptor.refName, adaptor);
@@ -368,7 +393,11 @@ export class DiLifecycle {
   }
 
   async #initializeUses() {
-    const uses = Object.assign({}, ...this.#libs.map((lib) => lib.option.getUses(this.#env)));
+    // `llmOption` is seeded first so the predefined LLM adaptor always resolves its `use`, with or without an app.
+    const uses = Object.assign(
+      { llmOption: Object.assign({}, ...this.#libs.map((lib) => lib.option.getLlm(this.#env))) },
+      ...this.#libs.map((lib) => lib.option.getUses(this.#env)),
+    );
     const entries = Object.entries(uses);
     await runStage(
       "uses",

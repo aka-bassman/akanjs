@@ -1815,7 +1815,7 @@ export class PkgExecutor extends Executor {
           default: "./index.ts",
         },
       },
-      engines: { bun: ">=1.3.13" },
+      engines: { bun: ">=1.4.0" },
       ...dependencyMaps,
     };
     await Promise.all([this.dist.writeJson("package.json", distPkgJson), this.writeJson("package.json", distPkgJson)]);

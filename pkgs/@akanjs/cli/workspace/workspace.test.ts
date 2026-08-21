@@ -289,7 +289,6 @@ describe("WorkspaceRunner", () => {
       "@react-spring/web": expect.any(String),
       "@use-gesture/react": expect.any(String),
       chance: expect.any(String),
-      croner: expect.any(String),
       react: expect.any(String),
       "react-dom": expect.any(String),
       "react-icons": expect.any(String),

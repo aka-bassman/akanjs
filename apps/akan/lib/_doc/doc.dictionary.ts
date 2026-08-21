@@ -43,4 +43,9 @@ export const dictionary = serviceDictionary(["en", "ko"])
   }))
   .error({
     docPageNotFound: ["Documentation page not found", "문서 페이지를 찾을 수 없습니다"],
+    searchIndexLoadFailed: [
+      "Failed to load docs search index ({status})",
+      "문서 검색 인덱스를 불러오지 못했습니다 ({status})",
+    ],
+    searchIndexInvalid: ["Invalid docs search index", "문서 검색 인덱스가 올바르지 않습니다"],
   });

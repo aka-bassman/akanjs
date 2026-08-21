@@ -9,6 +9,7 @@ import {
   STATE_META,
 } from "akanjs/base";
 import { applyMixins } from "akanjs/common";
+import { attachAgentic } from "./agentic";
 import type { RootStoreCls } from "./rootStore";
 import type { StoreCls } from "./store";
 import { StoreInstance } from "./storeInstance";
@@ -62,6 +63,10 @@ export class StoreRegistry {
   static get(refName: string) {
     return StoreRegistry.#state.store.get(refName);
   }
+  /** Every registered module store by refName. What the agent surface derives key ownership and exposure from. */
+  static get stores(): ReadonlyMap<string, StoreCls> {
+    return StoreRegistry.#state.store;
+  }
   static merge<RefName extends string, StoreClses extends (StoreCls | RootStoreCls)[]>(
     refName: RefName,
     ...stores: StoreClses
@@ -90,6 +95,6 @@ export class StoreRegistry {
     return RootStore as any;
   }
   static build<RtStoreCls extends RootStoreCls>(store: RtStoreCls): WithSelectors<RtStoreCls> {
-    return StoreRegistry.#state.instance.addStore(store) as unknown as WithSelectors<RtStoreCls>;
+    return attachAgentic(StoreRegistry.#state.instance.addStore(store)) as unknown as WithSelectors<RtStoreCls>;
   }
 }

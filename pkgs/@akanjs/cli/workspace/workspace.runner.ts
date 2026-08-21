@@ -18,7 +18,6 @@ const defaultWorkspacePeerDependencies = new Set([
   "@react-spring/web",
   "@use-gesture/react",
   "chance",
-  "croner",
   "react",
   "react-dom",
   "react-icons",

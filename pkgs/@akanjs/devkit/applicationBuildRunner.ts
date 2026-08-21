@@ -56,7 +56,6 @@ const SSR_RENDER_EXTERNALS = [
 export const AKAN_OPTIONAL_BACKEND_EXTERNALS = [
   "@libsql/client",
   "bullmq",
-  "croner",
   "ioredis",
   "postgres",
   "protobufjs",

@@ -11,6 +11,7 @@ import type {
   SolidConfig,
 } from "akanjs/service";
 import type { ServerSignal, ServerSignalCls, WebsocketPublishData } from "akanjs/signal";
+import { AgentRelayAccess } from "../signal/guards";
 import { createOpenApiDocument } from "../signal/openapi";
 import { FetchSerializer } from "../signal/serializer";
 import type { AkanLib, AkanLibProps } from "./akanLib";
@@ -143,6 +144,13 @@ export class AkanServer {
     this.libs = libs;
     this.env = { ...env };
     this.openapi = options?.openapi ?? this.openapi;
+    // Each lib's `option.ts` in mount order, the app's last, and an option passed here over all of them.
+    libs.forEach((lib) => {
+      const mcp = lib.option.getMcp();
+      if (mcp !== undefined) this.setMcp(mcp);
+      const agentAccess = lib.option.getAgentAccess();
+      if (agentAccess !== undefined) AgentRelayAccess.use(agentAccess);
+    });
     this.setMcp(options?.mcp ?? this.mcp);
     this.serverMode = serverMode;
     this.#di = new DiLifecycle(this.env, serverMode, ...libs);
@@ -621,12 +629,9 @@ export class AkanServer {
   }
 
   /**
-   * The rest of `McpServerOption`, in the one channel that reaches this process.
-   *
-   * `server.ts` is generated and constructs `AkanServer` with no options, and a child of the gateway is handed
-   * nothing but its environment — so without an env spelling per field, the only settable parts were the two
-   * booleans and `instructions` / `allowedOrigins` / `path` / `version` / `pageSize` / `language` had no path
-   * from an app at all. An option passed in code still wins: `setMcp` merges over this.
+   * The rest of `McpServerOption`, spelled as environment — the channel a deployment configures what the source
+   * does not through, and the only one a child of the gateway is handed. An app writes these in its `option.ts`,
+   * which merges over this: a value written in code wins over the env of the same name.
    */
   /**
    * Keys whose value is `undefined` are dropped before the merge. "An option written in code wins over the env of

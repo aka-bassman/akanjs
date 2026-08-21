@@ -50,8 +50,6 @@ const DEFAULT_OPTIMIZE_IMPORTS = [
 ];
 const WORKSPACE_BARREL_FACETS = ["ui", "webkit", "common", "client", "server"] as const;
 const SSR_RUNTIME_PACKAGES = ["react", "react-dom", "react-server-dom-webpack"] as const;
-const NATIVE_RUNTIME_PACKAGES = ["sharp"] as const;
-const DEFAULT_BACKEND_RUNTIME_PACKAGES = ["croner"] as const;
 // The firebase client (push tokens) and the Capacitor toolchain — `@capacitor/cli` (`npx cap`),
 // `@capacitor/assets` (`npx @capacitor/assets`) plus the `@capacitor/core`/`ios`/`android` runtime
 // and native-platform packages that `npx cap add`/`sync` resolve from the workspace node_modules.
@@ -92,8 +90,6 @@ const DATABASE_MODE_RUNTIME_PACKAGES = {
 } satisfies Record<DatabaseMode, readonly string[]>;
 const AKAN_RUNTIME_PACKAGES = new Set<string>([
   ...SSR_RUNTIME_PACKAGES,
-  ...NATIVE_RUNTIME_PACKAGES,
-  ...DEFAULT_BACKEND_RUNTIME_PACKAGES,
   ...MOBILE_RUNTIME_PACKAGES,
   ...Object.values(DATABASE_MODE_RUNTIME_PACKAGES).flat(),
 ]);
@@ -428,13 +424,7 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
     return akanPackageJson.dependencies?.[lib] ?? akanPackageJson.peerDependencies?.[lib];
   }
   #getProductionRuntimePackages() {
-    return [
-      ...this.externalLibs,
-      ...SSR_RUNTIME_PACKAGES,
-      ...NATIVE_RUNTIME_PACKAGES,
-      ...DEFAULT_BACKEND_RUNTIME_PACKAGES,
-      ...this.getDatabaseModeRuntimePackages(),
-    ];
+    return [...this.externalLibs, ...SSR_RUNTIME_PACKAGES, ...this.getDatabaseModeRuntimePackages()];
   }
   getDatabaseModeRuntimePackages(databaseMode: DatabaseMode = this.defaultDatabaseMode) {
     return [...DATABASE_MODE_RUNTIME_PACKAGES[databaseMode]];

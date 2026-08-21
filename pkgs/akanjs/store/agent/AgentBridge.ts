@@ -8,6 +8,7 @@ import type { AgentRefusal, JsonSchema, SerializedArg, SerializedSignal } from "
 import { JsonSchemaBuilder } from "../../signal/schema/JsonSchemaBuilder";
 import type { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
+import type { AgentVisibility } from "./AgentVisibility";
 import { StoreCatalogue } from "./StoreCatalogue";
 import type { SerializedStore, SerializedStoreAction, SerializedStoreState, StoreActionEffect } from "./types";
 
@@ -47,7 +48,6 @@ export interface AgentBridgeOptions {
  * transcript; the conversation is the app's.
  */
 export class AgentBridge {
-  readonly tools: AgentTool[];
   readonly refusals: AgentRefusal[];
 
   readonly #instance: StoreInstance;
@@ -56,6 +56,9 @@ export class AgentBridge {
   readonly #schema = new JsonSchemaBuilder({ refPrefix: "#/$defs/" });
   readonly #byName = new Map<string, SerializedStoreAction>();
   readonly #calls: AgentCall[] = [];
+  readonly #visibility: AgentVisibility;
+  readonly #allTools: AgentTool[];
+  readonly #liveTools = new Map<string, { signature: string; tools: AgentTool[] }>();
 
   /**
    * The bridge for the app running in this process: the one store every `st.do` goes through, and every signal any
@@ -75,8 +78,42 @@ export class AgentBridge {
     const catalogue = new StoreCatalogue(instance, serializedSignal);
     this.#store = catalogue.store;
     this.refusals = catalogue.refusals;
+    this.#visibility = catalogue.visibility;
     for (const [name, action] of Object.entries(this.#store.action)) this.#byName.set(name, action);
-    this.tools = Object.entries(this.#store.action).map(([name, action]) => this.#tool(name, action));
+    this.#allTools = Object.entries(this.#store.action).map(([name, action]) => this.#tool(name, action));
+  }
+
+  /**
+   * The catalogued actions of the stores the rendered screen is reading right now — the live view, recomputed as
+   * components mount and unmount. Global exposure was the first cut's behavior and it published levers the screen
+   * does not respond to; the screen's own subscriptions are the honest boundary.
+   */
+  get tools(): AgentTool[] {
+    return this.toolsFor("");
+  }
+
+  /** The live view one zone session reads: owners counted from the keys that zone's own subtree subscribes. */
+  toolsFor(viewKey: string): AgentTool[] {
+    const live = this.#liveOwners(viewKey);
+    const signature = [...live].sort().join(",");
+    const cached = this.#liveTools.get(viewKey);
+    if (cached && cached.signature === signature) return cached.tools;
+    const tools = this.#allTools.filter((tool) => this.#ownerLive(tool.name, live));
+    this.#liveTools.set(viewKey, { signature, tools });
+    return tools;
+  }
+
+  get visibility(): AgentVisibility {
+    return this.#visibility;
+  }
+
+  #liveOwners(viewKey = "") {
+    return this.#visibility.liveOwners(this.#instance.liveKeysIn(viewKey));
+  }
+
+  #ownerLive(name: string, live: ReadonlySet<string>) {
+    const owner = this.#instance.actionOwners.get(name)?.refName;
+    return !owner || live.has(owner);
   }
 
   get state(): { [key: string]: SerializedStoreState } {
@@ -99,9 +136,12 @@ export class AgentBridge {
    * The mask is by the declared model rather than by the value's class, because `immerify` copies a form into a
    * plain object and the class is gone by the time anyone can ask.
    */
-  read(key: string): unknown {
+  read(key: string, viewKey = ""): unknown {
     const entry = this.#store.state[key];
     if (!entry) throw new Error(`Unknown state key: ${key}`);
+    const owner = this.#visibility.stateOwner(key);
+    if (owner && !this.#liveOwners(viewKey).has(owner))
+      throw new Error(`State key "${key}" is not part of the current screen's surface.`);
     const value = AgentBridge.#unwrap(this.#instance.get()[key]);
     if (entry.refName && entry.modelType) {
       const model = ConstantRegistry.getModelRef(entry.refName, entry.modelType) as MaskModel;
@@ -120,7 +160,7 @@ export class AgentBridge {
    * becomes `null`, which is what the slice query builders already expect; an omitted required one is refused,
    * because the alternative is a call that writes `undefined` into state and reports success.
    */
-  async call(name: string, args: Record<string, unknown> = {}) {
+  async call(name: string, args: Record<string, unknown> = {}, viewKey = "") {
     const action = this.#byName.get(name);
     if (!action) throw new Error(`Unknown action: ${name}`);
     // Recorded before the arguments are checked, so a call the bridge itself rejects is still in the transcript.
@@ -128,6 +168,8 @@ export class AgentBridge {
     const record: AgentCall = { name, args, at: new Date() };
     this.#calls.push(record);
     try {
+      if (!this.#ownerLive(name, this.#liveOwners(viewKey)))
+        throw new Error(`Action "${name}" is not part of the current screen's surface.`);
       const positional = action.args.map((arg) => this.#value(name, arg, args));
       await this.#instance.do[name]?.(...positional);
     } catch (error) {

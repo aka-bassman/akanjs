@@ -101,7 +101,6 @@ export const createTempApp = async (appName = "demo") => {
       react: "19.0.0",
       "react-dom": "19.0.0",
       "react-server-dom-webpack": "19.0.0",
-      sharp: "1.0.0",
     },
   });
   await writeJson(path.join(root, "tsconfig.json"), {

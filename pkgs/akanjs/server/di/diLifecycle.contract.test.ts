@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BackendEnv } from "akanjs/base";
-import { ServiceModel, SolidPubSub, serve } from "akanjs/service";
+import { adapt, type LlmAdaptor, LlmAdaptorRole, ServiceModel, SolidPubSub, serve } from "akanjs/service";
 import { endpoint } from "../../signal/endpoint";
 import { internal } from "../../signal/internal";
 import { serverSignal } from "../../signal/serverSignal";
@@ -294,6 +294,137 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
       expect(lifecycle.registry.internalCls.has("serverResolverTestItemInternal")).toBe(false);
       expect(lifecycle.registry.endpointCls.has("serverResolverTestItemEndpoint")).toBe(false);
       expect(lifecycle.live.sliceCls.has("serverResolverTestItem")).toBe(false);
+    } finally {
+      await lifecycle.destroyAll();
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("DiLifecycle adaptor overrides", () => {
+  test("applyAdaptor rebinds a predefined role and the framework agent module runs over it", async () => {
+    process.env.AKAN_PUBLIC_APP_NAME = "adaptorOverride";
+    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
+    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+    process.env.AKAN_PUBLIC_ENV = "local";
+    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
+    process.env.SERVER_MODE = "all";
+    process.env.NODE_ENV = "test";
+    const { DiLifecycle } = await import("./diLifecycle");
+
+    class FakeLlm extends adapt("fakeLlm" as const, () => ({})) implements LlmAdaptor {
+      async chat() {
+        return { text: "faked", stop: "end" as const };
+      }
+    }
+
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-di-"));
+    const env = {
+      repoName: "akan",
+      serveDomain: "example.com",
+      appName: "adaptorOverride",
+      environment: "local",
+      operationMode: "local",
+      workspaceRoot: tmp,
+      database: {
+        sqlite: {
+          filePath: join(tmp, "akan.db"),
+          journalMode: "WAL",
+          busyTimeoutMs: 1000,
+          synchronous: "NORMAL",
+          foreignKeys: true,
+        },
+      },
+      solid: {
+        filePath: join(tmp, "solid.db"),
+        journalMode: "WAL",
+        busyTimeoutMs: 1000,
+        synchronous: "NORMAL",
+        cleanupIntervalMs: 60_000,
+        queuePollIntervalMs: 60_000,
+        queueLeaseMs: 30_000,
+      },
+    } satisfies BackendEnv & { workspaceRoot: string };
+    const lib = new AkanLib("llmOverrideTest", {
+      databases: [],
+      services: [],
+      scalars: [],
+      option: new AkanOption().applyAdaptor(LlmAdaptorRole, FakeLlm),
+    });
+    const lifecycle = new DiLifecycle(env, "all", lib);
+    try {
+      await lifecycle.initializeAll();
+      expect(lifecycle.registry.adaptorRole.get(LlmAdaptorRole)).toBe(FakeLlm);
+      const agentService = lifecycle.live.service.get("agent") as {
+        runTurn(request: object): Promise<{ text: string }>;
+      };
+      expect(agentService).toBeDefined();
+      const turn = await agentService.runTurn({ messages: [], tools: [], context: [] });
+      expect(turn.text).toBe("faked");
+    } finally {
+      await lifecycle.destroyAll();
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("setLlm reaches whichever adaptor fills the LLM role, as the llmOption use", async () => {
+    process.env.AKAN_PUBLIC_APP_NAME = "llmOption";
+    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
+    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+    process.env.AKAN_PUBLIC_ENV = "local";
+    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
+    process.env.SERVER_MODE = "all";
+    process.env.NODE_ENV = "test";
+    const { DiLifecycle } = await import("./diLifecycle");
+
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-llm-"));
+    const env = {
+      repoName: "akan",
+      serveDomain: "example.com",
+      appName: "llmOption",
+      environment: "local",
+      operationMode: "local",
+      workspaceRoot: tmp,
+      database: {
+        sqlite: {
+          filePath: join(tmp, "akan.db"),
+          journalMode: "WAL",
+          busyTimeoutMs: 1000,
+          synchronous: "NORMAL",
+          foreignKeys: true,
+        },
+      },
+      solid: {
+        filePath: join(tmp, "solid.db"),
+        journalMode: "WAL",
+        busyTimeoutMs: 1000,
+        synchronous: "NORMAL",
+        cleanupIntervalMs: 60_000,
+        queuePollIntervalMs: 60_000,
+        queueLeaseMs: 30_000,
+      },
+    } satisfies BackendEnv & { workspaceRoot: string };
+    const dependency = new AkanLib("llmLibTest", {
+      databases: [],
+      services: [],
+      scalars: [],
+      option: new AkanOption().setLlm({ model: "lib-model", host: "https://lib.example.com" }),
+    });
+    const app = new AkanLib("llmAppTest", {
+      databases: [],
+      services: [],
+      scalars: [],
+      option: new AkanOption().setLlm((options) => ({ apiKey: `key-${options.appName}`, model: "app-model" })),
+    });
+    const lifecycle = new DiLifecycle(env, "all", dependency, app);
+    try {
+      await lifecycle.initializeAll();
+      // Libs merge in mount order with the app last, so an app narrows one field without restating the rest.
+      expect(lifecycle.registry.uses.get("llmOption")).toEqual({
+        apiKey: "key-llmOption",
+        model: "app-model",
+        host: "https://lib.example.com",
+      });
     } finally {
       await lifecycle.destroyAll();
       await rm(tmp, { recursive: true, force: true });

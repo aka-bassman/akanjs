@@ -242,3 +242,47 @@ describe("StoreCatalogue state", () => {
     });
   });
 });
+
+describe("StoreCatalogue exposure declarations", () => {
+  test("agent: false hides the whole store behind one refusal line", () => {
+    class HiddenStore extends store("catalogueHidden" as const, () => ({ hiddenDraft: "", hiddenTally: 0 })) {
+      static override agent = false as const;
+      wipeEverything() {
+        this.set({ hiddenDraft: "" });
+      }
+    }
+    StoreRegistry.register(HiddenStore);
+    const scoped = new StoreInstance(StoreRegistry.merge("catalogueHiddenRoot", HiddenStore));
+    const hiddenCatalogue = new StoreCatalogue(scoped, {});
+    expect(hiddenCatalogue.store.state.hiddenDraft).toBeUndefined();
+    expect(hiddenCatalogue.store.action.wipeEverything).toBeUndefined();
+    expect(hiddenCatalogue.refusals.find((refusal) => refusal.key === "catalogueHidden")?.reason).toContain(
+      "agent: false",
+    );
+  });
+
+  test("exclude withholds the named keys and actions while the rest stay derived", () => {
+    class TrimmedStore extends store("catalogueTrimmed" as const, () => ({ keepDraft: "", cutDraft: "" })) {
+      static override agent = { exclude: ["cutDraft", "cutSweep"] };
+      keepSweep() {
+        this.set({ keepDraft: "" });
+      }
+      cutSweep() {
+        this.set({ cutDraft: "" });
+      }
+    }
+    StoreRegistry.register(TrimmedStore);
+    const scoped = new StoreInstance(StoreRegistry.merge("catalogueTrimmedRoot", TrimmedStore));
+    const trimmedCatalogue = new StoreCatalogue(scoped, {});
+    expect(trimmedCatalogue.store.state.keepDraft).toBeTruthy();
+    expect(trimmedCatalogue.store.state.cutDraft).toBeUndefined();
+    expect(trimmedCatalogue.store.action.keepSweep).toBeTruthy();
+    expect(trimmedCatalogue.store.action.cutSweep).toBeUndefined();
+    expect(trimmedCatalogue.refusals.find((refusal) => refusal.key === "cutSweep")?.reason).toContain("agent");
+  });
+
+  test("a generated set<Key> convenience is skipped without a refusal row", () => {
+    expect(catalogue.store.action.setDraft).toBeUndefined();
+    expect(catalogue.refusals.find((refusal) => refusal.key === "setDraft")).toBeUndefined();
+  });
+});

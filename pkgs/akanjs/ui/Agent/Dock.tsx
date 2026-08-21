@@ -1,7 +1,8 @@
 "use client";
 import { cn } from "akanjs/client";
-import { AgentBridge } from "akanjs/store";
+import { type AgentBridge, ensureStoreSurface, StoreRegistry } from "akanjs/store";
 import { useRef, useState } from "react";
+import Context from "./Context";
 import Section from "./Section";
 import StateKey from "./StateKey";
 import Tool from "./Tool";
@@ -26,11 +27,18 @@ export interface DockProps {
  */
 export const Dock = ({ className, bridge, open = false }: DockProps) => {
   const held = useRef<AgentBridge | null>(null);
-  held.current ??= bridge ?? AgentBridge.of();
+  held.current ??= bridge ?? ensureStoreSurface().bridge;
   const agent = held.current;
   const [ran, setRan] = useState(0);
+  const liveKeys = StoreRegistry.instance.liveKeys;
+  const stateEntries = Object.entries(agent.state).sort(([a], [b]) => {
+    const [liveA, liveB] = [liveKeys.has(a), liveKeys.has(b)];
+    if (liveA !== liveB) return liveA ? -1 : 1;
+    return a < b ? -1 : 1;
+  });
   return (
     <aside
+      data-agent-ui=""
       className={cn(
         "fixed right-4 bottom-4 z-50 flex max-h-[70vh] w-80 flex-col gap-2 overflow-y-auto rounded-box border border-base-content/10 bg-base-100/95 p-3 shadow-lg",
         className,
@@ -43,9 +51,12 @@ export const Dock = ({ className, bridge, open = false }: DockProps) => {
         ))}
       </Section>
       <Section count={Object.keys(agent.state).length} title="State">
-        {Object.entries(agent.state).map(([name, entry]) => (
-          <StateKey bridge={agent} entry={entry} key={name} name={name} />
+        {stateEntries.map(([name, entry]) => (
+          <StateKey bridge={agent} entry={entry} key={name} live={liveKeys.has(name)} name={name} />
         ))}
+      </Section>
+      <Section count={liveKeys.size} title="Context">
+        <Context />
       </Section>
       <Section count={agent.refusals.length} title="Refused">
         {agent.refusals.map((refusal) => (

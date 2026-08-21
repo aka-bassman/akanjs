@@ -19,6 +19,12 @@ export const getBaseSearchParam = (searchParams: BaseSearchParamsState, key: str
   return Array.isArray(value) ? value[0] : value;
 };
 
+/**
+ * `agent: false` keeps the whole base store off the agent surface. Its keys are framework plumbing that other
+ * effects write into, so the generated setters are levers that do nothing (`setPath` does not navigate — the
+ * router overwrites it) — and `tryJwt`/`tryAccount` hold the caller's credential, which must never reach a model.
+ * The route context block carries the three keys an agent legitimately needs.
+ */
 export class BaseStore extends store("base" as const, () => ({
   csrLoaded: false,
   path: "/",
@@ -52,6 +58,7 @@ export class BaseStore extends store("base" as const, () => ({
   deviceToken: "" as string,
   currentPath: "" as string,
 })) {
+  static override agent = false as const;
   setDevMode(value: boolean) {
     this.set({ devMode: value });
     localStorage.setItem("devMode", value.toString());

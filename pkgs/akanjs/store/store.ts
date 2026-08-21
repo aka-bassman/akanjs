@@ -42,7 +42,15 @@ import {
   type WritableStateBuilder,
   type WritableStateOf,
 } from "./stateBuilder";
-import type { InternalSlice, SetGet, SetGetWritable, StoreSliceMap, StoreSliceName, StoreSliceSuffix } from "./types";
+import type {
+  InternalSlice,
+  SetGet,
+  SetGetWritable,
+  StoreAgentExposure,
+  StoreSliceMap,
+  StoreSliceName,
+  StoreSliceSuffix,
+} from "./types";
 
 type _SliceMap<S extends SliceCls> = StoreSliceMap<S>;
 type _StoreInput<S extends SliceCls> = SlceCnstInput<S>;
@@ -125,6 +133,7 @@ export type StoreCls<
     [ACTION_OWNER_META]: { [key: string]: ActionOwner };
     slice: { [key: string]: SerializedSlice };
     _slice: SlceCls[typeof SLICE_META];
+    agent?: StoreAgentExposure;
   }
 >;
 

@@ -11,6 +11,17 @@ export interface Submit {
   times: number;
 }
 
+/** `agent: false` subscribes without joining the agent surface — the read stays out of the live-key derivation. */
+export interface StoreUseOptions {
+  agent?: boolean;
+}
+
+/**
+ * A store class's own exposure declaration, read off `static agent`. `false` keeps the whole module off the agent
+ * surface; `exclude` withholds the named state keys and actions while the rest stay derived. Absent means exposed.
+ */
+export type StoreAgentExposure = false | { exclude: string[] };
+
 type IsAny<T> = 0 extends 1 & T ? true : false;
 type PickFunc<
   State,

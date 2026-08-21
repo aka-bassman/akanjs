@@ -444,6 +444,7 @@ Headings:
 - App Config
 - Config Shape
 - Application Env
+- Server Option
 - Routes and Domains
 - Mobile Metadata
 - Images And Public Env
@@ -507,9 +508,9 @@ Client env and publicEnv are different. env.client.* stores app values for each 
 
 Server env can also include options from shared libraries through env.server.type.ts. This lets an app keep one final server env object while reusing library-level defaults.
 
-Routes and Domains
+Server Option
 
-routes is where you list the public domains for the app. If your app has several clients, each route can also name the client with basePath. The multi-client page explains that structure in detail; here we focus on the config fields.
+lib/option.ts is where the app configures its server. env/ holds the values, akan.config.ts holds the build, and this file wires them into the runtime: use objects, signal middleware, adaptor overrides, web proxies, the MCP server, the agent relay's access policy, and the LLM that relay speaks to. Every library the app depends on brings its own option.ts, read in mount order with the app's last — so an app tightens what a library declared without restating it.
 
 ## Data Layer
 
@@ -1129,7 +1130,7 @@ Requirements
 
 For the first run, Bun is the only required dependency. Docker and native IDEs become useful when you add local services or mobile builds.
 
-Bun 1.3.13 or higher
+Bun 1.4.0 or higher
 
 Docker for local database services
 
@@ -1339,7 +1340,7 @@ Gateway/orchestrator used by app `main.ts` files. It starts child server replica
 
 Constructor option type for `AkanApp`. It configures replica layout, server path, runtime directory, HTTP port, and WebSocket base port for the gateway process.
 
-App/library option builder used by `lib/option.ts`. It registers env-derived use objects, signal middleware, and web proxies consumed by the server runtime.
+App/library option builder used by `lib/option.ts`. It registers env-derived use objects, signal middleware, adaptor overrides, and web proxies, and carries the settings an app owns: `setMcp` for the MCP server, `setAgentAccess` for who may spend the LLM key through the agent relay, and `setLlm` for the model that relay speaks to. Every lib's option is read in mount order with the app's last.
 
 Response helper for web proxy code. `next` continues the request, `rewrite` proxies to a different URL while preserving proxy metadata, and `redirect` returns a normal redirect response.
 
@@ -4225,7 +4226,7 @@ The server mounts at POST /mcp, at the root rather than under the API prefix: th
 
 or by env
 
-main.ts is where this goes, because server.ts is generated and constructs AkanServer with no options. The gateway configures the child that actually mounts /mcp through its environment, so every field has an env spelling too — an option written in code wins over the env of the same name.
+lib/option.ts is where this goes, not main.ts: the gateway there only spawns children, while option.ts is already handed to the process that mounts /mcp. Every lib's option is read in mount order with the app's last, so an app tightens what a library declared without restating it. Every field has an env spelling too, for a deployment configuring what the source does not — and an option written in code wins over the env of the same name.
 
 instructions is the one place to say what this app is for and which tool to reach for first. It goes to the model alongside the tool list.
 
@@ -4816,4 +4817,5 @@ Chat Flow
 - Querying: /llms/pages/cheatsheet/performance/query.md
 - Queueing: /llms/pages/cheatsheet/performance/queue.md
 - Realtime: /llms/pages/cheatsheet/performance/realtime.md
+- In-Page Agent: /llms/pages/docs/arch/agentic.md
 - UI Recipe Layer: /llms/pages/docs/arch/ui-recipe.md

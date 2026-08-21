@@ -1,6 +1,7 @@
 "use client";
 import { type ComponentType, createContext } from "react";
 import type { ClassNameValue as ClassValue } from "tailwind-merge";
+import type { ChatProps as AgentChatProps } from "../Agent/Chat";
 import type { BadgeProps } from "../Badge";
 import type { ButtonProps } from "../Button";
 import type { DatePickerProps, RangePickerProps, TimePickerProps } from "../DatePicker";
@@ -48,6 +49,7 @@ export interface AkanUiOverrides {
   Menu: ComponentType<MenuProps>;
   Tooltip: ComponentType<TooltipProps>;
   Unauthorized: ComponentType<UnauthorizedProps>;
+  AgentChat: ComponentType<AgentChatProps>;
 
   // Generic components. The public export keeps its full generic signature; the slot stores the widest
   // instantiation, so an override is authored against that erased prop type without touching generics.

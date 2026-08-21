@@ -105,6 +105,8 @@ beforeAll(() => {
   StoreRegistry.register(NoteStore);
   instance = new StoreInstance(StoreRegistry.merge("bridgeRoot", NoteStore));
   bridge = new AgentBridge(instance, { bridgeNote: serializedSignal });
+  // What a mounted component's subscription does: without a live key the store publishes nothing.
+  instance.retainLive("draft");
 });
 
 describe("AgentBridge catalogue", () => {
@@ -200,5 +202,25 @@ describe("AgentBridge read", () => {
     expect(bridge.read("pageOfBridgeNote")).toBe(1);
     expect(() => bridge.read("tally")).toThrow("belongs to no model");
     expect(() => bridge.read("nothingHere")).toThrow("Unknown state key");
+  });
+});
+
+describe("AgentBridge live view", () => {
+  test("tools follow the screen's subscriptions and the gate answers in surface terms", async () => {
+    expect(toolOf("startBridgeNote")).toBeTruthy();
+    instance.releaseLive("draft");
+    expect(bridge.tools).toEqual([]);
+    await expect(bridge.call("startBridgeNote", { noteId: "n9" })).rejects.toThrow(
+      'Action "startBridgeNote" is not part of the current screen',
+    );
+    expect(() => bridge.read("draft")).toThrow('State key "draft" is not part of the current screen');
+    instance.retainLive("draft");
+    expect(toolOf("startBridgeNote")).toBeTruthy();
+    expect(bridge.read("draft")).toBe("");
+  });
+
+  test("a generated set<Key> convenience is never a tool", () => {
+    expect(toolOf("setDraft")).toBeUndefined();
+    expect(bridge.refusals.find((refusal) => refusal.key === "setDraft")).toBeUndefined();
   });
 });
