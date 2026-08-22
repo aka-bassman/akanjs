@@ -13,7 +13,7 @@ import { Copy } from "../Copy";
 import { Collapse, dictText, docPill, docUi, Panel, Segmented } from "../Reference";
 import { Signal } from ".";
 import Arg from "./Arg";
-import { endpointEntriesOf, isWsEndpoint, matchesSearch } from "./endpointEntries";
+import { endpointEntriesOf, guardsOf, isWsEndpoint, matchesGuards, matchesSearch } from "./endpointEntries";
 import { getExampleData } from "./makeExample";
 import Response from "./Response";
 import { getGuardBadgeClassName, getMcpBadgeClassName, getMethodBadgeClassName, getMethodLabel } from "./style";
@@ -52,7 +52,7 @@ interface RestApiEndpointsProps {
   search?: string;
 }
 const RestApiEndpoints = ({ refName, fetch, prefix, endpoints, openAll, httpUri, search }: RestApiEndpointsProps) => {
-  const tryRoles = st.use.tryRoles({ agent: false });
+  const tryGuards = st.use.tryGuards({ agent: false });
   const signal = fetch.serializedSignal[refName];
   if (!signal) return <div className={docUi.emptyPanel}>No signal is registered as “{refName}”.</div>;
   const signalPrefix = prefix ?? signal.prefix;
@@ -61,27 +61,11 @@ const RestApiEndpoints = ({ refName, fetch, prefix, endpoints, openAll, httpUri,
     .filter(({ key, endpoint }) =>
       matchesSearch(key, FetchClient.makeHttpUrl(key, endpoint, signalPrefix, new Map()), search ?? ""),
     )
-    .filter(({ endpoint }) => {
-      if (isWsEndpoint(endpoint)) return false;
-      if (!endpoint.guards?.length) return true;
-      if (endpoint.guards?.includes("Public") && tryRoles.includes("Public")) return true;
-      if ((endpoint.guards?.includes("User") || endpoint.guards?.includes("Every")) && tryRoles.includes("User"))
-        return true;
-      if ((endpoint.guards?.includes("Admin") || endpoint.guards?.includes("Every")) && tryRoles.includes("Admin"))
-        return true;
-      if (
-        (endpoint.guards?.includes("SuperAdmin") || endpoint.guards?.includes("Every")) &&
-        tryRoles.includes("SuperAdmin")
-      )
-        return true;
-      return false;
-    });
+    .filter(({ endpoint }) => !isWsEndpoint(endpoint) && matchesGuards(endpoint, tryGuards));
   if (!endpointEntries.length)
     return (
       <div className={docUi.emptyPanel}>
-        {search?.trim()
-          ? `No endpoint matches “${search.trim()}”.`
-          : "No endpoint is reachable for the selected roles."}
+        {search?.trim() ? `No endpoint matches “${search.trim()}”.` : "No endpoint is gated by the selected guards."}
       </div>
     );
   return (
@@ -128,7 +112,7 @@ const RestApiEndpoint = ({
   // The same fail-closed rules the server runs, so the badge says what the catalogue says. Exposure follows the
   // guards, so every endpoint is a candidate and the refusal is the whole answer.
   const mcpRefusal = mcpRefusalOf(endpoint);
-  const guards = endpoint.guards?.filter((guard) => guard !== "None") ?? [];
+  const guards = guardsOf(endpoint);
   const label = dictText(l, `${refName}.signal.${endpointKey}`);
   const desc = dictText(l, `${refName}.signal.${endpointKey}.desc`);
   const hints = Object.entries(mcpHintsOf(endpointKey, endpoint)).filter(([, on]) => on);

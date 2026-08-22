@@ -3,12 +3,11 @@ import { type DataList, type Dayjs, dayjs, type EnumInstance, isEnum } from "aka
 import { cn, usePage } from "akanjs/client";
 import { capitalize, formatPhone, isPhoneNumber, lowerlize } from "akanjs/common";
 import type { SliceMeta } from "akanjs/fetch";
-import { st } from "akanjs/store";
+import { st, useFieldTool } from "akanjs/store";
 import { memo, type ReactNode, useState } from "react";
 import { AiOutlinePlus } from "react-icons/ai";
 import { BiHelpCircle, BiTrash, BiX } from "react-icons/bi";
 import { MdDragIndicator } from "react-icons/md";
-
 import { agentAttrs } from "./agentAttrs";
 import { badgeRecipe } from "./Badge";
 import { buttonRecipe } from "./Button";
@@ -182,6 +181,7 @@ const Text = ({
   inputClassName,
   inputStyleType = "bordered",
 }: TextProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -248,6 +248,7 @@ const Price = ({
   inputClassName,
   inputStyleType = "bordered",
 }: PriceProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -315,6 +316,7 @@ const TextArea = ({
   cache,
   inputClassName,
 }: TextAreaProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -368,6 +370,7 @@ const Switch = ({
   onDesc,
   offDesc,
 }: SwitchProps) => {
+  useFieldTool(onChange);
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable label={label} desc={desc} /> : null}
@@ -416,6 +419,7 @@ const ToggleSelect = <I extends string | number | boolean | null>({
   disabled,
   btnClassName,
 }: ToggleSelectProps<I>) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   const isEnumValue = isEnum(items as EnumInstance<string, I>);
   return (
@@ -473,6 +477,7 @@ const MultiToggleSelect = <I extends string | number | boolean>({
   onChange,
   disabled,
 }: MultiToggleSelectProps<I>) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   const isEnumValue = isEnum(items as EnumInstance<string, I>);
   return (
@@ -540,6 +545,7 @@ const TextList = ({
   validate,
   inputClassName,
 }: TextListProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   const recipe = useUiRecipe("button") ?? buttonRecipe;
   return (
@@ -646,6 +652,7 @@ const Tags = ({
   validate,
   inputClassName,
 }: TagsProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   const badge = useUiRecipe("badge") ?? badgeRecipe;
   const [inputVisible, setInputVisible] = useState(false);
@@ -740,6 +747,7 @@ const Date = <Nullable extends boolean>({
   showTime,
   dateClassName,
 }: DateProps<Nullable>) => {
+  useFieldTool(onChange);
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
@@ -875,6 +883,7 @@ const Number = ({
   formatter,
   parser,
 }: NumberProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -946,6 +955,7 @@ const DoubleNumber = ({
   validate,
   onPressEnter,
 }: DoubleNumberProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
@@ -1033,6 +1043,7 @@ const Email = ({
   inputClassName,
   inputStyleType,
 }: EmailProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -1097,6 +1108,7 @@ const Phone = ({
   onPressEnter,
   inputClassName,
 }: PhoneProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
 
   return (
@@ -1168,6 +1180,7 @@ const Password = ({
   inputClassName,
   showConfirm,
 }: PasswordProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>

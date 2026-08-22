@@ -61,4 +61,58 @@ describe("ScreenReader", () => {
     expect(text.length).toBeLessThan(ScreenReader.limit + 100);
     expect(text).toContain("truncated");
   });
+
+  test("a heading carries the anchor of the section it opens", () => {
+    const text = readOf(
+      `<div id="images-env"><h2>Images And Public Env</h2><p>body</p></div>
+       <div id="two-headings"><h2>First</h2><h2>Second</h2></div>`,
+    );
+    expect(text).toContain("## Images And Public Env (#images-env)");
+    // Only the heading a container leads with takes its id: the second heading is not what that name would reach.
+    expect(text).toContain("## First (#two-headings)");
+    expect(text).toContain("## Second");
+    expect(text).not.toContain("Second (#two-headings)");
+  });
+
+  test("a truncated read names the sections below the cut, so they can still be reached", () => {
+    const filler = `<p>${"a".repeat(ScreenReader.limit)}</p>`;
+    const text = readOf(
+      `${filler}<div id="images-env"><h2>Images And Public Env</h2><p>body</p></div>
+       <div id="defaults"><h2>Defaults</h2><p>body</p></div>`,
+    );
+    expect(text).toContain("Further down, unread:");
+    expect(text).toContain("## Images And Public Env (#images-env)");
+    expect(text).toContain("## Defaults (#defaults)");
+  });
+
+  test("a heading below even the walk budget is still named", () => {
+    const filler = `<p>${"b".repeat(ScreenReader.limit * 2 + 100)}</p>`;
+    const text = readOf(`${filler}<div id="build-runtime"><h2>Build And Runtime</h2><p>body</p></div>`);
+    expect(text).toContain("## Build And Runtime (#build-runtime)");
+  });
+
+  test("readFrom reads one heading's section and stops at the next of the same level", () => {
+    document.body.innerHTML = `
+      <main>
+        <h2>Alpha</h2><p>alpha body</p><h3>Alpha Detail</h3><p>detail body</p>
+        <h2>Beta</h2><p>beta body</p>
+      </main>`;
+    const heading = [...document.querySelectorAll("h2")].find((el) => el.textContent === "Alpha");
+    const text = ScreenReader.readFrom(heading as HTMLElement);
+    expect(text).toContain("## Alpha");
+    expect(text).toContain("alpha body");
+    expect(text).toContain("detail body");
+    expect(text).not.toContain("beta body");
+  });
+
+  test("readFrom climbs past the title wrapper to the section that holds the heading", () => {
+    // The real docs shape: the heading sits two divs inside the slide, so the innermost match is the heading alone.
+    document.body.innerHTML = `
+      <div id="images-env"><div class="title"><h2>Images And Public Env</h2></div><p>public env body</p></div>
+      <div id="defaults"><div class="title"><h2>Defaults</h2></div><p>defaults body</p></div>`;
+    const heading = document.querySelector("#images-env h2");
+    const text = ScreenReader.readFrom(heading as HTMLElement);
+    expect(text).toContain("public env body");
+    expect(text).not.toContain("defaults body");
+  });
 });

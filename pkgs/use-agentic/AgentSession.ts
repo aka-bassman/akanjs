@@ -1,7 +1,9 @@
+import { AgentProgress, type AgentProgressReport } from "./AgentProgress";
 import type {
   AgentRunner,
   ChatMessage,
   ContextBlock,
+  PublishedTool,
   RunnerRequest,
   SurfaceView,
   ToolCallRequest,
@@ -18,6 +20,19 @@ export interface PendingApproval {
   reject: (reason?: string) => void;
 }
 
+/**
+ * A decision the agent handed back to the user mid-turn. The loop is parked on it until it settles, exactly as it
+ * parks on an approval. `choices` is empty for a free-text ask, and `multiple` never accompanies an empty one.
+ */
+export interface PendingQuestion {
+  callId: string;
+  question: string;
+  choices: string[];
+  multiple: boolean;
+  answer: (value: string | string[]) => void;
+  dismiss: (reason?: string) => void;
+}
+
 /** Where a session keeps its transcript across page loads. Storage-neutral: the host decides what backs it. */
 export interface SessionHistory {
   load(): ChatMessage[] | null;
@@ -28,10 +43,21 @@ export interface SessionHistory {
 export interface AgentSessionOptions {
   instructions?: string;
   buildContext?: (surface: SurfaceView) => ContextBlock[];
-  /** Assistant turns per send before the session stops the loop. */
+  /** Assistant turns per send before the session asks whether to keep going, or stops. */
   maxTurns?: number;
   /** Restores settled messages at construction and saves after every change, debounced. Failures are silent. */
   history?: SessionHistory;
+  /**
+   * Awaited after a tool that changed something and before its change report is taken. A surface is read
+   * synchronously and a screen does not settle synchronously, so without this the report describes the moment
+   * before the change landed. `ScreenSettle.wait` is what an akan app passes.
+   */
+  settle?: () => Promise<void> | void;
+  /**
+   * Turns the turn cap into a question instead of a dead end. Omitted, the cap fails as before — a host that
+   * renders no `pendingQuestion` would otherwise wait forever for an answer nobody can give.
+   */
+  continueAsk?: { question: string; keep: string };
 }
 
 /**
@@ -44,12 +70,37 @@ export interface AgentSessionOptions {
  * them in the chat.
  */
 export class AgentSession {
+  /**
+   * The one built-in the session owns instead of the surface: the answer comes from the conversation, not the
+   * screen, so every host that renders `pendingQuestion` gets it and a zone agent asks inside its own transcript.
+   * A surface tool of this name shadows it, like any other built-in.
+   */
+  static readonly askUserTool: PublishedTool = {
+    name: "askUser",
+    description:
+      "Ask the user to decide something that is theirs to decide — an ambiguous request, a missing value, a choice between paths. Use it instead of guessing. Pass `choices` to offer options, or omit them for a free-text answer; the user may answer off-list either way. Returns what they chose or wrote, and errors if they dismiss it.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "What to ask, in one sentence." },
+        choices: { type: "array", items: { type: "string" }, description: "The options to offer, as short labels." },
+        multiple: { type: "boolean", description: "Let the user pick several choices. Ignored without choices." },
+      },
+      required: ["question"],
+      additionalProperties: false,
+    },
+    effect: "query",
+    needsConfirm: false,
+  };
+
   readonly #surface: SurfaceView;
   readonly #runner: AgentRunner;
   readonly #options: AgentSessionOptions;
   #messages: ChatMessage[] = [];
   #running = false;
   #pending: PendingApproval | null = null;
+  #question: PendingQuestion | null = null;
+  #progress: (AgentProgressReport & { callId: string }) | null = null;
   #controller: AbortController | null = null;
   #version = 0;
   #listeners = new Set<() => void>();
@@ -78,6 +129,15 @@ export class AgentSession {
     return this.#pending;
   }
 
+  get pendingQuestion(): PendingQuestion | null {
+    return this.#question;
+  }
+
+  /** What the tool running now last said about its own progress, for the row that is still spinning. */
+  get progress(): (AgentProgressReport & { callId: string }) | null {
+    return this.#progress;
+  }
+
   /** Bumped on every change, so a store binding can use it as the snapshot. */
   get version() {
     return this.#version;
@@ -100,8 +160,20 @@ export class AgentSession {
     else for (const message of input) this.#append(message);
     const maxTurns = this.#options.maxTurns ?? 8;
     try {
-      for (let turn = 0; turn < maxTurns; turn += 1) {
+      let budget = maxTurns;
+      for (let turn = 0; ; turn += 1) {
         if (controller.signal.aborted) return;
+        if (turn >= budget) {
+          // The cap is a guess about when a loop has gone wrong, and the user is the one who can tell. The answer
+          // rides as a user message, so a steer typed instead of the keep-going choice reaches the model as one.
+          const answer = await this.#askToContinue(turn, controller.signal);
+          if (answer === null) {
+            this.#fail(`Stopped after ${turn} assistant turns without a final answer.`);
+            return;
+          }
+          this.#append({ role: "user", text: answer });
+          budget = turn + maxTurns;
+        }
         const { toolCalls, stop } = await this.#assistantTurn(controller.signal);
         if (controller.signal.aborted || stop !== "toolUse" || !toolCalls.length) return;
         const toolResults: ToolCallResult[] = [];
@@ -111,13 +183,14 @@ export class AgentSession {
         }
         this.#append({ role: "tool", toolResults });
       }
-      this.#fail(`Stopped after ${maxTurns} assistant turns without a final answer.`);
     } catch (error) {
       if (!controller.signal.aborted) this.#fail(error instanceof Error ? error.message : String(error));
     } finally {
       this.#running = false;
       this.#controller = null;
       this.#pending = null;
+      this.#question = null;
+      this.#progress = null;
       this.#notify();
     }
   };
@@ -154,7 +227,9 @@ export class AgentSession {
     const instructions = [this.#options.instructions, ...guides].filter(Boolean).join("\n\n");
     const request: RunnerRequest = {
       messages: this.#messages,
-      tools,
+      tools: tools.some((tool) => tool.name === AgentSession.askUserTool.name)
+        ? tools
+        : [...tools, AgentSession.askUserTool],
       context: this.#options.buildContext?.(this.#surface) ?? AgentSession.#defaultContext(this.#surface),
       ...(instructions ? { instructions } : {}),
       signal,
@@ -179,7 +254,10 @@ export class AgentSession {
   async #execute(call: ToolCallRequest, signal: AbortSignal): Promise<ToolCallResult> {
     const base = { id: call.id, name: call.name };
     const entry = this.#surface.tool(call.name);
-    if (!entry) return { ...base, error: `Unknown tool: ${call.name}` };
+    if (!entry) {
+      if (call.name === AgentSession.askUserTool.name) return await this.#ask(call, signal);
+      return { ...base, error: `Unknown tool: ${call.name}` };
+    }
     const message = AgentSession.#confirmMessage(call.name, entry, call.args);
     if (message) {
       const approved = await this.#awaitApproval(call, message, signal);
@@ -187,7 +265,16 @@ export class AgentSession {
     }
     const before = this.#surface.snapshot();
     try {
-      const result = await this.#surface.call(call.name, call.args);
+      const result = await AgentProgress.run(
+        (report) => {
+          this.#progress = { ...report, callId: call.id };
+          this.#notify();
+        },
+        () => this.#surface.call(call.name, call.args),
+      );
+      // A query reads and returns; anything else may still be landing, and a report taken now would describe the
+      // screen as it was one tick before the call.
+      if (entry.effect !== "query") await this.#options.settle?.();
       const changes = this.#surface.diffSince(before);
       return {
         ...base,
@@ -196,7 +283,67 @@ export class AgentSession {
       };
     } catch (error) {
       return { ...base, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      if (this.#progress?.callId === call.id) {
+        this.#progress = null;
+        this.#notify();
+      }
     }
+  }
+
+  /** `null` when the user declined or no ask is configured: both mean stop and record why. */
+  async #askToContinue(turns: number, signal: AbortSignal): Promise<string | null> {
+    const ask = this.#options.continueAsk;
+    if (!ask) return null;
+    const settled = await this.#awaitAnswer(`continue-${turns}`, ask.question, [ask.keep], false, signal);
+    if ("error" in settled) return null;
+    return Array.isArray(settled.result) ? settled.result.join(", ") : settled.result;
+  }
+
+  /** No surface call and so no diff to report: the only thing this changes is what the model knows. */
+  async #ask(call: ToolCallRequest, signal: AbortSignal): Promise<ToolCallResult> {
+    const base = { id: call.id, name: call.name };
+    const question = typeof call.args.question === "string" ? call.args.question.trim() : "";
+    if (!question) return { ...base, error: "askUser needs a question to ask." };
+    // Deduped and trimmed because the answer is the choice's own text — two identical options cannot be told apart.
+    const choices = [
+      ...new Set(
+        (Array.isArray(call.args.choices) ? call.args.choices : [])
+          .filter((choice): choice is string => typeof choice === "string")
+          .map((choice) => choice.trim())
+          .filter(Boolean),
+      ),
+    ];
+    const multiple = call.args.multiple === true && choices.length > 1;
+    return { ...base, ...(await this.#awaitAnswer(call.id, question, choices, multiple, signal)) };
+  }
+
+  #awaitAnswer(
+    callId: string,
+    question: string,
+    choices: string[],
+    multiple: boolean,
+    signal: AbortSignal,
+  ): Promise<{ result: string | string[] } | { error: string }> {
+    return new Promise((resolve) => {
+      const settle = (value: { result: string | string[] } | { error: string }) => {
+        this.#question = null;
+        signal.removeEventListener("abort", onAbort);
+        this.#notify();
+        resolve(value);
+      };
+      const onAbort = () => settle({ error: "The user aborted the turn." });
+      signal.addEventListener("abort", onAbort);
+      this.#question = {
+        callId,
+        question,
+        choices,
+        multiple,
+        answer: (value) => settle({ result: value }),
+        dismiss: (reason) => settle({ error: reason ?? "The user dismissed the question without answering it." }),
+      };
+      this.#notify();
+    });
   }
 
   #awaitApproval(call: ToolCallRequest, message: string, signal: AbortSignal): Promise<true | string> {

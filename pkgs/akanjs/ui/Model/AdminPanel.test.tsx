@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, mock, test } from "bun:test";
 import type { ClientSignal } from "akanjs/fetch";
 import { act, type ReactNode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
+import { AgenticSurface, AgentProvider } from "use-agentic";
 
 let AdminPanel: typeof import("./AdminPanel").default;
 let makeStore: (state?: Record<string, unknown>) => void;
@@ -123,6 +124,67 @@ describe("Model.AdminPanel", () => {
     const text = container.textContent ?? "";
     expect(text).toContain("Latest");
     expect(text).toContain("Title Asc");
+    unmount();
+  });
+
+  test("publishes every toolbar control it draws, and withholds the name of one it does not", async () => {
+    makeStore();
+    const surface = new AgenticSurface();
+    const { container, unmount } = await mount(
+      <AgentProvider surface={surface}>
+        <AdminPanel slice={slice} components={components} />
+      </AgentProvider>,
+      () => calls.adminTestItemList.mock.calls.length > 0,
+    );
+
+    // The same names reach `readScreen`, so the agent can tie a control it reads to the tool that works it.
+    expect(container.querySelector('[data-akan-action="refreshAdminTestItem"]')).not.toBeNull();
+    expect(container.querySelector('[data-akan-action="setSortOfAdminTestItem"]')).not.toBeNull();
+    const tools = surface.snapshot().tools;
+    expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "exportCsvOfAdminTestItem",
+      "exportJsonOfAdminTestItem",
+      "refreshAdminTestItem",
+      "removeAdminTestItem",
+      "setLimitOfAdminTestItem",
+      "setSortOfAdminTestItem",
+      "setViewOfAdminTestItem",
+    ]);
+    // No Template and no View component, so the panel draws neither editor nor detail and neither is published —
+    // the row's remove button is the one action it does draw.
+    expect(tools.some((tool) => tool.name.endsWith("AdminTestItem") && tool.name.startsWith("edit"))).toBe(false);
+    // Row tools take an id, and this is where an agent reads one.
+    expect(surface.read("adminTestItem.items")).toEqual({
+      total: 1,
+      items: [{ id: "aaaaaaaaaaaaaaaaaaaaaaaa", label: "Ada" }],
+    });
+    const sort = tools.find((tool) => tool.name === "setSortOfAdminTestItem");
+    const sortProperties = sort?.parameters?.properties as { sortKey?: unknown } | undefined;
+    expect(sortProperties?.sortKey).toEqual({ type: "string", enum: ["latest", "oldest", "titleAsc"] });
+    await expect(surface.call("setLimitOfAdminTestItem", { limit: 33 })).rejects.toThrow(
+      'Argument "limit" of setLimitOfAdminTestItem must be one of: 10, 20, 50, 100.',
+    );
+    unmount();
+  });
+
+  test("publishes the editor verbs once a template gives the panel a form to draw", async () => {
+    makeStore();
+    const surface = new AgenticSurface();
+    const { unmount } = await mount(
+      <AgentProvider surface={surface}>
+        <AdminPanel slice={slice} components={{ ...components, Template: { General: () => null } }} />
+      </AgentProvider>,
+      () => calls.adminTestItemList.mock.calls.length > 0,
+    );
+
+    const names = surface.snapshot().tools.map((tool) => tool.name);
+    expect(names).toContain("newAdminTestItem");
+    expect(names).toContain("editAdminTestItem");
+    expect(names).toContain("submitAdminTestItem");
+    expect(names).toContain("cancelEditOfAdminTestItem");
+    // Still no View component, so the detail verbs stay unpublished.
+    expect(names).not.toContain("viewAdminTestItem");
+    expect(names).not.toContain("closeViewOfAdminTestItem");
     unmount();
   });
 

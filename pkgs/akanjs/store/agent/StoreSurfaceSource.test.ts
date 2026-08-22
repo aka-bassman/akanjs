@@ -75,14 +75,14 @@ beforeAll(() => {
 });
 
 describe("StoreSurfaceSource", () => {
-  test("contributes the three built-ins and nothing the store declared", () => {
+  test("contributes the built-ins and nothing the store declared", () => {
     // The store's own methods and generated setters are not tools: an agent gets what a component declared.
     expect(
       source
         .tools()
         .map((tool) => tool.name)
         .sort(),
-    ).toEqual(["navigate", "readScreen", "readState"]);
+    ).toEqual(["goBack", "highlight", "navigate", "readScreen", "readState"]);
     expect(entryOf("publishNote")).toBeUndefined();
     expect(entryOf("setTitleOnSurfaceNote")).toBeUndefined();
     expect(entryOf("createSurfaceNote")).toBeUndefined();
@@ -113,7 +113,18 @@ describe("StoreSurfaceSource", () => {
     expect(navigate?.guard?.({ path: "//evil.example" })).toContain("internal path");
     expect(navigate?.guard?.({ path: "/docs/intro" })).toBe(true);
     await expect(surface.call("navigate", { path: "https://evil.example" })).rejects.toThrow("internal path");
-    expect(await surface.call("navigate", { path: "/docs/intro" })).toBe("Navigating to /docs/intro.");
+    // Waiting for the screen to settle has nothing to wait for with no document, so the call still answers.
+    expect(await surface.call("navigate", { path: "/docs/intro" })).toContain("Now on /docs/intro.");
+  });
+
+  test("goBack is global, and refuses when there is nothing behind this page", async () => {
+    const surface = new AgenticSurface();
+    surface.addSource(source);
+    const goBack = entryOf("goBack");
+    expect(goBack?.effect).toBe("state");
+    expect(goBack?.parameters).toEqual({ type: "object", properties: {}, additionalProperties: false });
+    // History is the browser's, not a control the page draws — but an entry page has nothing behind it.
+    await expect(surface.call("goBack", {})).rejects.toThrow("no previous page");
   });
 
   test("a page's own hook registration shadows a built-in of the same name", async () => {
@@ -135,8 +146,27 @@ describe("StoreSurfaceSource", () => {
     surface.addSource(source);
     const readScreen = entryOf("readScreen");
     expect(readScreen?.effect).toBe("query");
-    expect(readScreen?.parameters).toEqual({ type: "object", properties: {}, additionalProperties: false });
+    expect(Object.keys((readScreen?.parameters?.properties ?? {}) as object)).toEqual(["section"]);
+    expect(readScreen?.parameters?.required).toBeUndefined();
     expect(await surface.call("readScreen", {})).toBe("No rendered document is available.");
+  });
+
+  test("a section nobody is rendering is the caller's mistake, and the refusal offers what is there", async () => {
+    const surface = new AgenticSurface();
+    surface.addSource(source);
+    await expect(surface.call("readScreen", { section: "taskList" })).rejects.toThrow(
+      "No section named taskList is on screen",
+    );
+    // With no document there is nothing to offer, but the refusal still says how to read the screen at all.
+    await expect(surface.call("readScreen", { section: "taskList" })).rejects.toThrow("This screen names no sections");
+  });
+
+  test("highlight is published as a screen-driving tool and answers honestly with no document", async () => {
+    const surface = new AgenticSurface();
+    surface.addSource(source);
+    expect(entryOf("highlight")?.effect).toBe("state");
+    expect(await surface.call("highlight", { target: "submitTask" })).toBe("No rendered document is available.");
+    await expect(surface.call("highlight", { target: "  " })).rejects.toThrow("highlight needs a target.");
   });
 });
 
@@ -156,6 +186,6 @@ describe("StoreSurfaceSource zone views", () => {
 
   test("the built-ins are published to every view, zone or root", () => {
     const zone = source.tools(["notes"]).map((tool) => tool.name);
-    expect(zone).toEqual(["navigate", "readScreen", "readState"]);
+    expect(zone).toEqual(["navigate", "goBack", "readScreen", "readState", "highlight"]);
   });
 });

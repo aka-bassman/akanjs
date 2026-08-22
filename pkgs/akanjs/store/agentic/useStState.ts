@@ -16,7 +16,7 @@ export interface StStateMeta<T> {
 }
 
 export const useStState = <T>(
-  name: string,
+  name: string | null,
   initial: T | (() => T),
   meta: StStateMeta<T> = {},
 ): [T, Dispatch<SetStateAction<T>>] => {
@@ -24,11 +24,11 @@ export const useStState = <T>(
   return useAgentState<T>(name, initial, {
     description: meta.desc,
     report: meta.report,
-    serialize: meta.serialize ?? ((value) => readableValue(name, value, meta.mask)),
+    serialize: meta.serialize ?? ((value) => readableValue(name ?? "", value, meta.mask)),
     ...(set
       ? {
           set: StToolBuilder.schemaOf(set),
-          parse: (value) => StToolBuilder.checkedValue(`set${capitalize(name)}`, "value", set, value) as T,
+          parse: (value) => StToolBuilder.checkedValue(`set${capitalize(name ?? "")}`, "value", set, value) as T,
         }
       : {}),
   });

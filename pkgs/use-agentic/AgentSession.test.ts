@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { AgenticSurface } from "./AgenticSurface";
+import { AgentProgress } from "./AgentProgress";
 import { AgentSession } from "./AgentSession";
 import type { AgentRunner, RunnerEvent, RunnerRequest } from "./types";
 
@@ -68,7 +69,7 @@ describe("AgentSession", () => {
     expect(toolMessage?.toolResults).toEqual([{ id: "c1", name: "bump", changes: [{ name: "count", value: 1 }] }]);
     expect(requests).toHaveLength(2);
     expect(requests[1].messages.filter((message) => message.role === "tool")).toHaveLength(1);
-    expect(requests[0].tools.map((tool) => tool.name)).toEqual(["bump"]);
+    expect(requests[0].tools.map((tool) => tool.name)).toEqual(["bump", "askUser"]);
     expect(session.messages[session.messages.length - 1].text).toBe("Done");
   });
 
@@ -257,6 +258,196 @@ describe("AgentSession", () => {
       { kind: "screen", scopes: [{ path: "task-list", kind: "task" }] },
       { kind: "resources", resources: [{ name: "total", value: 3 }] },
     ]);
+  });
+});
+
+describe("AgentSession settle and progress", () => {
+  test("settle runs after a changing call and before its report, and never after a query", async () => {
+    const surface = new AgenticSurface();
+    let count = 0;
+    let settles = 0;
+    surface.registerResource([], { name: "count", read: () => count });
+    // Lands a tick later, like a store action that fires `void fetch.*` and commits when the answer arrives.
+    surface.registerTool([], {
+      name: "bumpLater",
+      effect: "mutation",
+      run: () => {
+        setTimeout(() => {
+          count += 1;
+        }, 0);
+      },
+    });
+    surface.registerTool([], { name: "peek", effect: "query", run: () => count });
+    const { runner } = scripted(
+      [
+        { type: "toolCall", id: "c1", name: "bumpLater", args: {} },
+        { type: "toolCall", id: "c2", name: "peek", args: {} },
+        { type: "done", stop: "toolUse" },
+      ],
+      [{ type: "done", stop: "end" }],
+    );
+    const session = new AgentSession(surface, runner, {
+      settle: async () => {
+        settles += 1;
+        await tick();
+      },
+    });
+    await session.send("bump");
+    const results = session.messages.find((message) => message.role === "tool")?.toolResults;
+    expect(results?.[0].changes).toEqual([{ name: "count", value: 1 }]);
+    expect(results?.[1].result).toBe(1);
+    expect(settles).toBe(1);
+  });
+
+  test("a tool reports progress while it runs, and the slot empties after it", async () => {
+    const surface = new AgenticSurface();
+    const seen: (string | undefined)[] = [];
+    let session: AgentSession | null = null;
+    surface.registerTool([], {
+      name: "upload",
+      run: async () => {
+        AgentProgress.report("uploading 1/2", { done: 1, total: 2 });
+        seen.push(session?.progress?.message);
+        await tick();
+        AgentProgress.report("uploading 2/2", { done: 2, total: 2 });
+        seen.push(session?.progress?.message);
+        return "uploaded";
+      },
+    });
+    const { runner } = scripted(
+      [
+        { type: "toolCall", id: "c1", name: "upload", args: {} },
+        { type: "done", stop: "toolUse" },
+      ],
+      [{ type: "done", stop: "end" }],
+    );
+    session = new AgentSession(surface, runner);
+    await session.send("upload it");
+    expect(seen).toEqual(["uploading 1/2", "uploading 2/2"]);
+    expect(session.progress).toBeNull();
+    // Nothing is listening outside a call, so the same code is a no-op in a test or on the server.
+    expect(AgentProgress.watching).toBe(false);
+  });
+
+  test("the turn cap asks whether to keep going, and the answer rides as the user's turn", async () => {
+    const surface = new AgenticSurface();
+    surface.registerTool([], { name: "spin", run: () => null });
+    const { runner, requests } = scripted([
+      { type: "toolCall", id: "c", name: "spin", args: {} },
+      { type: "done", stop: "toolUse" },
+    ]);
+    const session = new AgentSession(surface, runner, {
+      maxTurns: 1,
+      continueAsk: { question: "Still working. Keep going?", keep: "Keep going" },
+    });
+    const turn = session.send("go");
+    await until(() => session.pendingQuestion !== null);
+    expect(session.pendingQuestion?.choices).toEqual(["Keep going"]);
+    session.pendingQuestion?.answer("look at the second tab instead");
+    await until(() => session.pendingQuestion !== null);
+    session.pendingQuestion?.dismiss();
+    await turn;
+    expect(requests).toHaveLength(2);
+    expect(requests[1].messages.at(-1)).toEqual({ role: "user", text: "look at the second tab instead" });
+    expect(session.messages.at(-1)?.error).toContain("Stopped after 2");
+  });
+});
+
+describe("AgentSession askUser", () => {
+  const asking = (args: Record<string, unknown>) =>
+    scripted(
+      [
+        { type: "toolCall", id: "q1", name: "askUser", args },
+        { type: "done", stop: "toolUse" },
+      ],
+      [
+        { type: "text", delta: "Understood" },
+        { type: "done", stop: "end" },
+      ],
+    );
+
+  test("the built-in rides on every turn, needing no confirmation of its own", async () => {
+    const { runner, requests } = scripted([{ type: "done", stop: "end" }]);
+    await new AgentSession(new AgenticSurface(), runner).send("hi");
+    const ask = requests[0].tools.find((tool) => tool.name === "askUser");
+    expect(ask?.needsConfirm).toBe(false);
+    expect(ask?.parameters?.required).toEqual(["question"]);
+  });
+
+  test("a pick parks the turn on pendingQuestion and comes back as the tool result", async () => {
+    const { runner } = asking({ question: "  Which theme?  ", choices: ["Dark", " Light ", "Dark", "", 7] });
+    const session = new AgentSession(new AgenticSurface(), runner);
+    const turn = session.send("set a theme");
+    await until(() => session.pendingQuestion !== null);
+    expect(session.pendingQuestion?.question).toBe("Which theme?");
+    expect(session.pendingQuestion?.choices).toEqual(["Dark", "Light"]);
+    expect(session.pendingQuestion?.multiple).toBe(false);
+    session.pendingQuestion?.answer("Dark");
+    await turn;
+    expect(session.messages.find((message) => message.role === "tool")?.toolResults).toEqual([
+      { id: "q1", name: "askUser", result: "Dark" },
+    ]);
+    expect(session.pendingQuestion).toBeNull();
+    expect(session.messages.at(-1)?.text).toBe("Understood");
+  });
+
+  test("several picks ride back as a list", async () => {
+    const { runner } = asking({ question: "Which columns?", choices: ["Name", "Status"], multiple: true });
+    const session = new AgentSession(new AgenticSurface(), runner);
+    const turn = session.send("pick columns");
+    await until(() => session.pendingQuestion !== null);
+    expect(session.pendingQuestion?.multiple).toBe(true);
+    session.pendingQuestion?.answer(["Name", "Status"]);
+    await turn;
+    expect(session.messages.find((message) => message.role === "tool")?.toolResults?.[0].result).toEqual([
+      "Name",
+      "Status",
+    ]);
+  });
+
+  test("a dismissal is the tool's error result, and so is a question with no text", async () => {
+    const session = new AgentSession(new AgenticSurface(), asking({ question: "Which theme?" }).runner);
+    const turn = session.send("ask me");
+    await until(() => session.pendingQuestion !== null);
+    session.pendingQuestion?.dismiss();
+    await turn;
+    expect(session.messages.find((message) => message.role === "tool")?.toolResults?.[0].error).toContain("dismissed");
+    const empty = new AgentSession(new AgenticSurface(), asking({ choices: ["A"] }).runner);
+    await empty.send("ask me");
+    expect(empty.pendingQuestion).toBeNull();
+    expect(empty.messages.find((message) => message.role === "tool")?.toolResults?.[0].error).toBe(
+      "askUser needs a question to ask.",
+    );
+  });
+
+  test("a surface tool of the same name shadows the built-in instead of doubling it", async () => {
+    const surface = new AgenticSurface();
+    let asked = 0;
+    surface.registerTool([], {
+      name: "askUser",
+      run: () => {
+        asked += 1;
+        return "the screen answered";
+      },
+    });
+    const { runner, requests } = asking({ question: "Which theme?" });
+    const session = new AgentSession(surface, runner);
+    await session.send("ask me");
+    expect(requests[0].tools.filter((tool) => tool.name === "askUser")).toHaveLength(1);
+    expect(asked).toBe(1);
+    expect(session.pendingQuestion).toBeNull();
+  });
+
+  test("abort settles a pending question and ends the loop", async () => {
+    const { runner, requests } = asking({ question: "Which theme?" });
+    const session = new AgentSession(new AgenticSurface(), runner);
+    const turn = session.send("ask me");
+    await until(() => session.pendingQuestion !== null);
+    session.abort();
+    await turn;
+    expect(session.pendingQuestion).toBeNull();
+    expect(session.isRunning).toBe(false);
+    expect(requests).toHaveLength(1);
   });
 });
 

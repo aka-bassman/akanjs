@@ -13,9 +13,12 @@ export interface AgentStateMeta<T> {
   parse?: (value: unknown) => T;
 }
 
-/** `useState` the agent can read — and write only through a named setter tool, and only when `set` declares one. */
+/**
+ * `useState` the agent can read — and write only through a named setter tool, and only when `set` declares one.
+ * A falsy name keeps the state and publishes nothing, so a conditional surface never changes the hook count.
+ */
 export const useAgentState = <T>(
-  name: string,
+  name: string | null,
   initial: T | (() => T),
   meta: AgentStateMeta<T> = {},
 ): [T, Dispatch<SetStateAction<T>>] => {
@@ -26,6 +29,7 @@ export const useAgentState = <T>(
   live.current = { value, meta };
   const scopeKey = scope.join(".");
   useEffect(() => {
+    if (!name) return;
     const { meta: declared } = live.current;
     return surface.registerResource(scope, {
       name,
@@ -40,7 +44,7 @@ export const useAgentState = <T>(
   const writable = !!meta.set;
   useEffect(() => {
     const { meta: declared } = live.current;
-    if (!declared.set) return;
+    if (!name || !declared.set) return;
     return surface.registerTool(scope, {
       name: `set${name.charAt(0).toUpperCase()}${name.slice(1)}`,
       description: `Set ${name}.${declared.description ? ` ${declared.description}` : ""}`,

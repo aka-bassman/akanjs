@@ -17,6 +17,12 @@ export interface SiderProps {
 export const Sider = ({ className, bgClassName, children }: SiderProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const path = st.use.path({ agent: false });
+  const openMenu = st.tool("openMenu", { desc: "Open the side navigation drawer.", effect: "state" }).exec(() => {
+    setIsOpen(true);
+  });
+  const closeMenu = st.tool("closeMenu", { desc: "Close the side navigation drawer.", effect: "state" }).exec(() => {
+    setIsOpen(false);
+  });
   useEffect(() => {
     setIsOpen(false);
   }, [path]);

@@ -1,7 +1,7 @@
 "use client";
 import { cn, fetch, usePage } from "akanjs/client";
 import type { PromptResult } from "akanjs/signal";
-import { AgentContext, type AgentPrompt, AgentPrompts, ensureStoreSurface } from "akanjs/store";
+import { AgentContext, type AgentPrompt, AgentPrompts, ensureStoreSurface, ScreenSettle } from "akanjs/store";
 import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AiOutlineClear, AiOutlineClose } from "react-icons/ai";
 import { type AgentRunner, AgentSession, SessionContext } from "use-agentic";
@@ -11,6 +11,7 @@ import { createOverridable } from "../UiOverride";
 import Approval from "./Approval";
 import Bubble from "./Bubble";
 import { fetchRunner } from "./fetchRunner";
+import Question from "./Question";
 import { type PersistOption, sessionHistoryOf } from "./sessionHistory";
 
 export interface ChatProps {
@@ -51,6 +52,8 @@ export const DefaultChat = ({
     provided ??
     new AgentSession(ensureStoreSurface().surface, runner ?? fetchRunner(), {
       buildContext: (surface) => AgentContext.of().blocks(surface),
+      settle: () => ScreenSettle.wait(),
+      continueAsk: { question: l("base.agentContinue"), keep: l("base.agentKeepGoing") },
       ...(instructions ? { instructions } : {}),
       ...(maxTurns ? { maxTurns } : {}),
       ...(persist ? { history: sessionHistoryOf(persist) } : {}),
@@ -89,7 +92,7 @@ export const DefaultChat = ({
   useEffect(() => {
     if (!open) return;
     inputRef.current?.focus();
-  }, [open]);
+  }, [open, session.pendingQuestion?.callId]);
   const runPrompt = async (prompt: AgentPrompt, args: string[]) => {
     const usage = `/${prompt.name} ${prompt.args.map((arg) => `<${arg.name}>`).join(" ")}`.trim();
     if (args.length < prompt.args.filter((arg) => arg.required).length) {
@@ -120,7 +123,16 @@ export const DefaultChat = ({
   };
   const send = () => {
     const text = draft.trim();
-    if (!text || session.isRunning) return;
+    if (!text) return;
+    // The composer is the free-text answer to a pending question: the card holds the picks, and a user who types
+    // instead of picking would otherwise be typing into a dead input while the turn waits on them.
+    const question = session.pendingQuestion;
+    if (question) {
+      setDraft("");
+      question.answer(question.multiple ? [text] : text);
+      return;
+    }
+    if (session.isRunning) return;
     const command = AgentPrompts.parseCommand(text);
     const prompt = command ? prompts.current?.find(command.name) : null;
     setDraft("");
@@ -139,7 +151,8 @@ export const DefaultChat = ({
   const resultOf = new Map(session.messages.flatMap((message) => message.toolResults ?? []).map((r) => [r.id, r]));
   const claimed = new Set(session.messages.flatMap((message) => message.toolCalls?.map((call) => call.id) ?? []));
   const bubbles = session.messages.flatMap((message, idx) => {
-    if (message.role !== "tool") return [<Bubble key={idx} message={message} results={resultOf} />];
+    if (message.role !== "tool")
+      return [<Bubble key={idx} message={message} progress={session.progress} results={resultOf} />];
     const orphans = (message.toolResults ?? []).filter((result) => !claimed.has(result.id));
     return orphans.length ? [<Bubble key={idx} message={{ ...message, toolResults: orphans }} />] : [];
   });
@@ -216,6 +229,9 @@ export const DefaultChat = ({
         )}
       </div>
       {session.pendingApproval ? <Approval approval={session.pendingApproval} /> : null}
+      {session.pendingQuestion ? (
+        <Question key={session.pendingQuestion.callId} question={session.pendingQuestion} />
+      ) : null}
       {menu.length ? (
         <div className="scrollbar-thin flex max-h-40 flex-col overflow-y-auto border-foreground/5 border-t py-1">
           {menu.map((prompt) => (
@@ -248,10 +264,10 @@ export const DefaultChat = ({
             event.preventDefault();
             send();
           }}
-          placeholder={l("base.agentPlaceholder")}
+          placeholder={session.pendingQuestion ? l("base.agentAnswer") : l("base.agentPlaceholder")}
           value={draft}
         />
-        {session.isRunning ? (
+        {session.isRunning && !session.pendingQuestion ? (
           <Button onClick={session.abort} size="sm" variant="outline">
             {l("base.stop")}
           </Button>

@@ -10,6 +10,7 @@ import { BiSolidNetworkChart } from "react-icons/bi";
 import { buttonRecipe } from "../Button";
 import { Collapse, dictText, docUi, Panel, Segmented } from "../Reference";
 import Arg from "./Arg";
+import { guardsOf } from "./endpointEntries";
 import Listener from "./Listener";
 import { makeRequestExample } from "./makeExample";
 import UiObject from "./Object";
@@ -34,7 +35,7 @@ interface MessageEndpointProps {
 const MessageEndpoint = ({ refName, endpointKey, endpoint, open }: MessageEndpointProps) => {
   const { l } = usePage();
   const [viewStatus, setViewStatus] = useState<"doc" | "test">("doc");
-  const guards = endpoint.guards?.filter((guard) => guard !== "None") ?? [];
+  const guards = guardsOf(endpoint);
   const label = dictText(l, `${refName}.signal.${endpointKey}`);
   const desc = dictText(l, `${refName}.signal.${endpointKey}.desc`);
   return (

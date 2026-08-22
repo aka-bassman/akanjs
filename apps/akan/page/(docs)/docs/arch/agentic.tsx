@@ -170,8 +170,8 @@ export const option = new AkanOption<ModulesOptions>()
           </div>
           <div>
             {l.trans({
-              en: "Three tools are on every screen whatever it declares:",
-              ko: "화면이 무엇을 선언하든 항상 실리는 툴이 셋 있습니다.",
+              en: "Six tools are on every screen whatever it declares:",
+              ko: "화면이 무엇을 선언하든 항상 실리는 툴이 여섯 있습니다.",
             })}
           </div>
           <div className="space-y-1">
@@ -184,15 +184,36 @@ export const option = new AkanOption<ModulesOptions>()
                 }),
               },
               {
-                title: "readScreen",
+                title: "goBack",
                 desc: l.trans({
-                  en: "The rendered DOM as compact text. The chat's own UI is skipped; a password value is never read.",
-                  ko: "렌더된 DOM을 압축 텍스트로. 채팅 자신의 UI는 건너뛰고, password 값은 절대 읽지 않습니다.",
+                  en: "The previous page in this session's history. Global like navigate, because history is not a control a page owns — a page that draws no back link is not a page you may not leave.",
+                  ko: "이 세션 히스토리의 이전 페이지. navigate처럼 전역입니다 — 히스토리는 페이지가 소유한 컨트롤이 아니고, 뒤로가기 링크를 그리지 않은 페이지가 떠날 수 없는 페이지는 아니니까요.",
+                }),
+              },
+              {
+                title: "readScreen(section?)",
+                desc: l.trans({
+                  en: "The rendered DOM as compact text. Headings carry their anchor and a truncated read names the sections below the cut, so a long screen stays reachable: pass one of those names — or a heading's own text — as section.",
+                  ko: "렌더된 DOM을 압축 텍스트로. 제목에 앵커가 붙고, 잘린 읽기는 잘린 아래쪽 섹션 이름을 알려줍니다. 그래서 긴 화면도 닿을 수 있습니다 — 그 이름이나 제목 텍스트를 section으로 넘기면 됩니다.",
                 }),
               },
               {
                 title: "readState(key)",
                 desc: l.trans({ en: "One masked store key.", ko: "마스킹된 스토어 키 하나." }),
+              },
+              {
+                title: "highlight(target)",
+                desc: l.trans({
+                  en: "Scrolls one thing into view and flashes it once the scroll lands, so the agent can show the user where a thing is instead of describing where it is. The target is a tool name, a state key, a scope path, an anchor, or a heading's text. Nothing hidden ever resolves.",
+                  ko: "대상을 화면으로 스크롤한 뒤, 스크롤이 멈추면 깜빡입니다. 어디 있는지 설명하는 대신 직접 가리킵니다. 대상은 툴 이름·상태 키·스코프 경로·앵커·제목 텍스트이고, 숨겨진 것은 절대 잡히지 않습니다.",
+                }),
+              },
+              {
+                title: "askUser(question, choices?)",
+                desc: l.trans({
+                  en: "Hands a decision back to the user. The turn parks on the question card until they pick an option or write their own answer; dismissing it is an error the agent reads, never a silent empty answer.",
+                  ko: "결정을 사용자에게 되돌립니다. 턴은 질문 카드에서 멈추고, 사용자가 보기를 고르거나 직접 답할 때까지 기다립니다. 건너뛰면 조용한 빈 답이 아니라 에이전트가 읽는 오류가 됩니다.",
+                }),
               },
             ].map(({ title, desc }) => (
               <div key={title} className={panelRecipe({ padding: "row" })}>
@@ -200,6 +221,12 @@ export const option = new AkanOption<ModulesOptions>()
                 <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
             ))}
+          </div>
+          <div>
+            {l.trans({
+              en: "A tool that changes the screen waits for the screen before it answers: router.push returns while the payload is still in flight, so navigate — and the session, after every non-query tool — waits for the DOM to hold still before reporting. A slow tool reports its own progress with AgentProgress.report, shown on that call's row. And the turn cap is a question rather than a dead end: at maxTurns the agent asks whether to keep going, and what the user types instead rides as their own turn.",
+              ko: "화면을 바꾸는 툴은 화면이 정착한 뒤에 답합니다. router.push는 페이로드가 아직 오는 중에 반환되므로, navigate는 (그리고 세션은 query가 아닌 모든 툴 뒤에서) DOM이 멈출 때까지 기다린 다음 변경을 보고합니다. 느린 툴은 AgentProgress.report로 자기 진행을 알리고, 그 호출의 행에 표시됩니다. 턴 상한도 막다른 길이 아니라 질문입니다 — maxTurns에 닿으면 계속할지 묻고, 사용자가 대신 입력한 말은 그 사용자의 턴으로 들어갑니다.",
+            })}
           </div>
           <div>
             {l.trans({

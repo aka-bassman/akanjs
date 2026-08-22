@@ -1,7 +1,8 @@
 "use client";
 import type { FetchProxy } from "akanjs/fetch";
+import { st } from "akanjs/store";
 import { docUi } from "../Reference";
-import { endpointEntriesOf, isWsEndpoint, matchesSearch } from "./endpointEntries";
+import { endpointEntriesOf, isWsEndpoint, matchesGuards, matchesSearch } from "./endpointEntries";
 import Message from "./Message";
 import PubSub from "./PubSub";
 
@@ -16,17 +17,22 @@ interface WebSocketEndpointsProps {
   search?: string;
 }
 const WebSocketEndpoints = ({ refName, fetch, openAll, search }: WebSocketEndpointsProps) => {
+  const tryGuards = st.use.tryGuards({ agent: false });
   if (!fetch.serializedSignal[refName])
     return <div className={docUi.emptyPanel}>No signal is registered as “{refName}”.</div>;
-  // Not filtered by the role toggle the way REST is: a pubsub room authorizes at subscribe, so its guards are the
-  // endpoint's own and the slice-level role map the toggle models says nothing about them.
-  const endpointEntries = endpointEntriesOf(refName, fetch)
-    .filter(({ endpoint }) => isWsEndpoint(endpoint))
+  const wsEntries = endpointEntriesOf(refName, fetch).filter(({ endpoint }) => isWsEndpoint(endpoint));
+  // A pubsub room authorizes once, at subscribe, so the guards the toggle filters on are the endpoint's own.
+  const endpointEntries = wsEntries
+    .filter(({ endpoint }) => matchesGuards(endpoint, tryGuards))
     .filter(({ key }) => matchesSearch(key, key, search ?? ""));
   if (!endpointEntries.length)
     return (
       <div className={docUi.emptyPanel}>
-        {search?.trim() ? `No endpoint matches “${search.trim()}”.` : "This signal declares no websocket endpoint."}
+        {!wsEntries.length
+          ? "This signal declares no websocket endpoint."
+          : search?.trim()
+            ? `No endpoint matches “${search.trim()}”.`
+            : "No websocket endpoint is gated by the selected guards."}
       </div>
     );
   return (

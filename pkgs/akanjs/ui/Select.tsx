@@ -1,12 +1,12 @@
 "use client";
 import { type Cls, type EnumInstance, isEnum } from "akanjs/base";
 import { cn, usePage } from "akanjs/client";
+import { useFieldTool } from "akanjs/store";
 import { useDebounce } from "akanjs/webkit";
 import { type ComponentType, createElement, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { BiCheck, BiChevronDown, BiX } from "react-icons/bi";
 import { BsQuestionCircleFill } from "react-icons/bs";
 import { TiDelete } from "react-icons/ti";
-
 import { agentAttrs } from "./agentAttrs";
 import { useUiOverride } from "./UiOverride";
 
@@ -82,6 +82,7 @@ const DefaultSelect = <
   renderOption,
   renderSelected,
 }: SelectProps<T, Multiple, Searchable, Option>) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   const [isOpen, setIsOpen] = useState(false);
   const labeledOptions: { label: string | boolean | number; value: T }[] = useMemo(

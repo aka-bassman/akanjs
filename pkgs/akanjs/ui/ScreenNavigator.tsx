@@ -1,6 +1,8 @@
 "use client";
 import { useDrag } from "@use-gesture/react";
 import { cn } from "akanjs/client";
+import { capitalize } from "akanjs/common";
+import { st } from "akanjs/store";
 import { animated } from "akanjs/ui";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { SpringValue, useSpringValue } from "react-spring";
@@ -28,6 +30,8 @@ interface ScreenNavigatorProps {
   children: React.ReactNode;
   setMenu?: (menu: string) => void;
   menus: string[];
+  /** Names this navigator for the in-page agent. Without it it publishes nothing — two on one screen would share a name. */
+  namespace?: string;
 }
 
 export const ScreenNavigator = ({
@@ -36,6 +40,7 @@ export const ScreenNavigator = ({
     //
   },
   menus,
+  namespace,
 }: ScreenNavigatorProps) => {
   const [currentMenu, setCurrentMenu] = useState(menus[0]);
   const xValue = useSpringValue(0, { config: { clamp: true } });
@@ -95,6 +100,15 @@ export const ScreenNavigator = ({
       setCurrentMenu(menus[1]);
     }
   };
+
+  const suffix = namespace ? capitalize(namespace) : "";
+  st.expose(namespace ? `screenIn${suffix}` : null, currentMenu, { desc: "The screen this navigator is showing." });
+  st.tool(namespace ? `goToScreenIn${suffix}` : null, {
+    desc: `Slide the ${namespace ?? ""} navigator to one screen.`,
+    effect: "state",
+  })
+    .arg("screen", String, { oneOf: menus })
+    .exec(onClickMenu);
 
   return (
     <ScreenNavigatorContext.Provider value={{ bind, xValue, onClickMenu, menus, currentMenu, setMenu }}>

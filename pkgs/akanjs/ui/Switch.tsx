@@ -1,5 +1,6 @@
 "use client";
 import { cn } from "akanjs/client";
+import { useFieldTool } from "akanjs/store";
 import { useState } from "react";
 import { agentAttrs } from "./agentAttrs";
 
@@ -31,6 +32,7 @@ export const Switch = ({
   className,
   variant = "primary",
 }: SwitchProps) => {
+  useFieldTool(onChange);
   const [internal, setInternal] = useState(defaultChecked ?? false);
   const isControlled = checked !== undefined;
   const isChecked = isControlled ? checked : internal;

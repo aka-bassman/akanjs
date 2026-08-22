@@ -679,6 +679,44 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   unconditional statement, and the callable carries `data-akan-action` like a store setter does. A `remove*` name
   defaults to a confirm gate. Reach a store action from the body — `.exec((id) => st.do.removeX(id))` — which is
   how an agent gets CRUD; `st.do` on its own reaches nobody.
+- **A falsy name declares the tool without publishing it** — the callable still drives the click a person makes,
+  and the agent never learns the tool exists. That is the only way a conditional surface stays legal, because
+  `.exec()` is a hook and the declaration can never be skipped: withhold the name, not the call. `st.useState`
+  and `st.expose` take a falsy name the same way, and an unpublished callable carries no `data-akan-action` —
+  that attribute names a tool an agent can reach. **Publish a tool only where the screen already renders the
+  control**: a lever no one can pull by hand is not one to hand an agent, and every published tool is paid for in
+  every turn's prompt. The mirror of the same rule is why the control gets a tool at all.
+- **An `enumOf` class is a complete argument type on its own**: `.arg("mode", TaskStatus)` publishes the values as
+  the argument's `enum`, refuses anything off them by name at call time, and narrows the `.exec` parameter to the
+  value union — nothing else to write, and the scalar (`string` / `integer` / `number`) comes from the values.
+  **A value set the *render* decides takes `.arg(name, type, { oneOf })`** instead, because `enumOf` registers
+  globally and a component cannot build one per render: pass the list it has — a slice's sort keys, the options a
+  prop carried — and it is published and enforced the same way. Neither reaches a set that fills in *after* the
+  first render, since a declaration is mount-static; put that in the tool's `guard`, which is re-read per call and
+  can name the current values in its refusal.
+- **A component that renders once per row publishes nothing.** A tool registered under one name by fifty rows is
+  forty-nine collisions and one survivor. The container publishes one tool taking the id instead —
+  `removeTask(taskId)`, never fifty `removeTask` — and the agent reads the ids from the `<slice>.items` resource
+  `Load.Units` and `Data.ListContainer` already expose.
+- **`akanjs/ui` publishes its own controls, so an app writes nothing for them.** `Data.ListContainer` (and every
+  `Model.AdminPanel`) publishes its toolbar and its row and modal verbs; `Load.Units`, `Load.Pagination` and
+  `Data.Pagination` publish `setPageOf<Model>`; `Layout.Sider`, `System.SelectLanguage`, `Link.Back` and
+  `System.ThemeToggle` publish the shell. **A component that can render twice on one screen takes a
+  `namespace` prop and publishes nothing without it** — `Tab`, `Dialog`, `ScreenNavigator`. Pass one
+  (`<Tab namespace="detail">`) and the tool becomes `switchTabInDetail`; leave it off and that tab is invisible to
+  the agent, because two tabs answering to `switchTab` would mean the first to mount loses.
+- **A form control publishes its own setter, and reading a form publishes one tool that fills several at once.**
+  Both are free: an app writes no `st.tool` for a form. A `Field.*` / `Input.*` / `Select` / `Switch` handed
+  `onChange={st.do.setTitleOnTask}` **by reference** publishes `setTitleOnTask` while it is on screen — the same
+  reference that earns `data-akan-action`, so the tool and the person press one function and an inline arrow
+  still publishes nothing. `st.use.taskForm()` adds `fillTaskForm(patch)`, which takes several fields in one call
+  and is the only way to reach a list, a map, or an embedded object, whose rows are written through
+  `writeOnTask(path, value)` and can carry no annotation. It is a patch: a field left out keeps its value.
+  `fillTaskForm` refuses a plain field whose control is not on screen and names the ones that are; a composite it
+  cannot see is let through, which is the one place an agent reaches a field the screen may not draw. Never a
+  relation (picked or uploaded, not typed), a base document field, or a `hidden`/`secret` one at any depth —
+  their reads are masked and a writer would be the door around that. `st.use.taskForm({ agent: false })`
+  withholds the patch tool; an inline arrow withholds a control's own.
 - **Reading is per key, not per store.** `st.useState(name, initial, meta)` publishes local state (read-only
   unless `set:` names a type) and `st.expose(name, value)` a derived value. A subscribed store key is listed in
   the state context block by name and pulled with `readState(key)`, masked by the model that key declares — while
@@ -694,11 +732,50 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
 - **`prompt()` endpoints double as the chat's slash commands.** There is no listing endpoint — the client reads
   its own serialized signals — so a prompt's dictionary `.desc()` is what the menu shows, and its guards are
   enforced by the prompt's own GET at call time.
-- The framework publishes three built-ins on every store surface: `navigate` (internal paths only, the same
-  router `Link` rides), `readScreen` (the rendered DOM as compact text — headings, links, control values; the
-  chat's own UI is skipped via `data-agent-ui`, and a password value is never read), and `readState(key)` (one
-  masked store key). Declaring a hook tool under one of those names shadows the built-in, so reuse them only to
-  mean that.
+- The framework publishes five built-ins on every store surface: `navigate` (internal paths only, the same
+  router `Link` rides), `goBack` (this session's history — global, because history is not a control a page owns and
+  a page that draws no back link is not one you may not leave), `readScreen` (the rendered DOM as compact text —
+  headings, links, control values; the chat's own UI is skipped via `data-agent-ui`, and a password value is never
+  read), `readState(key)` (one masked store key), and `highlight(target)`. Declaring a hook tool under one of those
+  names shadows the built-in, so reuse them only to mean that.
+- **A tool that changes the screen waits for the screen before it answers.** `router.push` returns while the RSC
+  payload is still in flight and a store action that fires `void fetch.*` commits a tick later, so `navigate`
+  awaits `ScreenSettle.wait()` — DOM quiescence, bounded, because the client router hands its promise to nobody —
+  and the session awaits it after every non-`query` tool before taking the change report. Without it the report
+  describes the moment before the change landed and the `readScreen` that follows reads the page the user left.
+  New tools and state from a fresh route are still only listed from the next turn: the catalogue is snapshotted
+  when the turn starts.
+- **`readScreen` takes a `section`, and `highlight` a `target`.** Both resolve a name the agent has already seen —
+  a `data-akan-action` / `data-akan-state` annotation, an `Agent.Zone` or `useScreenScope` container
+  (`data-agent-scope`, which `Load.Units` / `Load.View` / `Data.ListContainer` put on the container they render),
+  an element id, or **a heading by its own text**, matched on letters and digits so the slug an agent writes for a
+  heading it read resolves. That tolerance stops at headings: a heading is a landmark and scrolling to the wrong
+  one costs nothing, while two buttons reading "Save" are not the same control. **Nothing hidden ever resolves** —
+  a ring nobody can see reads as a broken tool, not as a miss. A section named by a heading is read to the next
+  heading of its level or higher.
+- **A screen is only aimable if its names are printed.** `readScreen` writes `(#anchor)` beside a heading that
+  opens an id'd or scoped container, and a truncated read ends with the headings below the cut — otherwise
+  everything past the 8000-character limit is unreachable, because nothing names it, and an agent asked to point
+  at a section it cannot name guesses a slug and is refused. A refusal lists the sections actually on screen.
+  `highlight` scrolls its target into view and flashes it **once the scroll lands**, since a smooth scroll across a
+  long page outlasts the flash; it is the one built-in that exists for the *user's* benefit, because showing where
+  a control is beats writing directions to it.
+- **A slow tool reports its own progress with `AgentProgress.report(message, { done, total })`** from wherever the
+  work is — a store action, an upload loop, an adapter — reached through a module slot rather than a parameter, and
+  a no-op when nobody is rendering it. The chat shows it on that call's row until the row resolves. It is the
+  browser twin of `McpProgress.report`.
+- **The turn cap is a question, not a dead end.** At `maxTurns` the session asks whether to keep going through the
+  same card `askUser` uses, and the answer rides as the user's own turn — so a steer typed instead of the
+  keep-going choice reaches the model as guidance. A host that renders no `pendingQuestion` passes no
+  `continueAsk` and keeps the old failure, because asking with nobody listening would hang.
+- **`askUser` is a fourth built-in the *session* owns, not the surface.** The answer comes from the conversation
+  rather than the screen, so it rides on every turn whatever the page declares, and a zone agent asks inside its
+  own transcript. `choices` offers a pick (`multiple` for several) and omitting them asks for free text; the card
+  keeps a free-text row either way, because the model wrote the options and only the user knows whether the answer
+  is among them. The loop parks on the question exactly as it parks on an approval, a dismissal is the tool's
+  error result rather than a silent empty answer, and the settled exchange renders as question-and-answer instead
+  of a tool row. **Never re-implement it per screen** — a `st.tool("askAboutX")` that opens a modal is the same
+  thing with a worse transcript — and a hook tool named `askUser` shadows it like any other built-in.
 
 ## Scalar Modeling (`**/*.constant.ts`)
 

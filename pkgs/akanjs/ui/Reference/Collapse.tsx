@@ -1,6 +1,6 @@
 import { cn } from "akanjs/client";
 import type { ReactNode } from "react";
-import { AiOutlineDown } from "react-icons/ai";
+import { BiChevronDown } from "react-icons/bi";
 import { docUi } from "./style";
 
 interface CollapseProps {
@@ -19,7 +19,7 @@ export const Collapse = ({ summary, children, open, className, contentClassName 
   >
     <summary className="flex cursor-pointer list-none items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/40 [&::-webkit-details-marker]:hidden">
       <div className="min-w-0 flex-1">{summary}</div>
-      <AiOutlineDown className="mt-1 shrink-0 text-foreground/30 transition-transform group-open:rotate-180" />
+      <BiChevronDown className="mt-1 shrink-0 text-foreground/30 transition-transform group-open:rotate-180" />
     </summary>
     <div className={cn("flex w-full flex-col gap-4 border-border/70 border-t p-4", contentClassName)}>{children}</div>
   </details>

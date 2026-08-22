@@ -4,6 +4,8 @@ import { createContext, type ReactNode } from "react";
 export interface DialogContextType {
   open: boolean;
   setOpen: (open: boolean) => void;
+  openDialog: () => void;
+  closeDialog: () => void;
   title: ReactNode;
   setTitle: (title: ReactNode) => void;
   action: ReactNode;
@@ -13,6 +15,8 @@ export interface DialogContextType {
 export const DialogContext = createContext<DialogContextType>({
   open: false,
   setOpen: (open: boolean) => null,
+  openDialog: () => null,
+  closeDialog: () => null,
   title: null,
   setTitle: (title: ReactNode) => null,
   action: null,

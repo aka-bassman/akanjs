@@ -2,6 +2,7 @@
 import { cn } from "akanjs/client";
 import { type ReactNode, useContext, useEffect } from "react";
 
+import { agentAttrs } from "../agentAttrs";
 import { Tooltip } from "../Tooltip";
 import { TabContext } from "./context";
 
@@ -25,14 +26,17 @@ export const Menu = ({
   scrollToTop,
   tooltip,
 }: MenuProps) => {
-  const { menu: currentMenu, setMenu, menuSet } = useContext(TabContext);
+  const { menu: currentMenu, setMenu, menus, switchTab } = useContext(TabContext);
   useEffect(() => {
-    if (!menuSet.current) return;
-    menuSet.current.add(menu);
-  }, [menu]);
+    if (!menus.current) return;
+    menus.current.set(menu, disabled);
+    return () => {
+      menus.current?.delete(menu);
+    };
+  }, [menu, disabled]);
   useEffect(() => {
-    if (!disabled || !menuSet.current) return;
-    if (currentMenu === menu) setMenu([...menuSet.current.values()].find((m) => m !== menu) ?? null);
+    if (!disabled || !menus.current) return;
+    if (currentMenu === menu) setMenu([...menus.current].find(([key, off]) => key !== menu && !off)?.[0] ?? null);
   }, [disabled]);
 
   const active = menu === currentMenu;
@@ -52,9 +56,10 @@ export const Menu = ({
         disabled={disabled}
         onClick={() => {
           if (disabled) return;
-          setMenu(menu);
+          switchTab(menu);
           if (scrollToTop) window.scrollTo({ top: 0, behavior: "smooth" });
         }}
+        {...agentAttrs(switchTab)}
         role="tab"
         type="button"
       >

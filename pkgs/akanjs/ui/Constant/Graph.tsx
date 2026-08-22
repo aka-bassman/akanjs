@@ -16,7 +16,7 @@ const kindDot: { [key in SchemaNodeKind]: string } = {
   external: "fill-foreground/25",
 };
 
-interface GraphProps {
+export interface GraphProps {
   className?: string;
   title?: string;
   nodes: SchemaGraphNode[];

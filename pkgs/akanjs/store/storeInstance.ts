@@ -1,11 +1,13 @@
 import { ACTION_META, ACTION_OWNER_META, STATE_DERIVED_META, STATE_INIT_META } from "akanjs/base";
 import { Translator } from "akanjs/client";
 import { capitalize, Logger, parseAkanI18nEnv } from "akanjs/common";
+import { ConstantRegistry } from "akanjs/constant";
 import type { SerializedArg } from "akanjs/signal";
 import { enableMapSet, produce } from "immer";
 import type { RefObject } from "react";
 import { useScopePath } from "use-agentic";
 import { type ActionOwner, actionTagOf, tagAction } from "./actionTag";
+import { useFormTools } from "./agentic/useFormTools";
 import { useEffect, useRef, useSyncExternalStore } from "./hooks";
 import type { RootStoreCls } from "./rootStore";
 import type { SliceActionKey, SliceActionRole, SliceStateRole } from "./sliceRole";
@@ -324,6 +326,13 @@ export class StoreInstance {
     return this;
   }
 
+  /** `<model>Form` for a model this client knows, or null — the only state key whose setters are worth publishing. */
+  static #formRefNameOf(key: string) {
+    if (!key.endsWith("Form")) return null;
+    const refName = key.slice(0, -"Form".length);
+    return ConstantRegistry.database.has(refName) ? refName : null;
+  }
+
   #mergeActions(actions: { [key: string]: StoreAction }) {
     for (const [k, method] of Object.entries(actions)) {
       this.#ctx[k] = (...args: unknown[]) => method.call(this.#ctx, ...args);
@@ -334,10 +343,22 @@ export class StoreInstance {
   #extendAccessors(state: StoreStateRecord, actions: { [key: string]: StoreAction }) {
     for (const k of Object.keys(state)) {
       if (typeof state[k] !== "function") {
-        this.use[k] = (options?: StoreUseOptions) => {
-          this.#useLive(k, options?.agent !== false);
-          return this.#sel((s) => s[k]);
-        };
+        // Reading a form is what publishes its field setters: the component that put the form on screen is the
+        // one saying an agent may fill it, and no app writes `st.tool` once per field to say the same thing.
+        const formRefName = StoreInstance.#formRefNameOf(k);
+        this.use[k] = formRefName
+          ? (options?: StoreUseOptions) => {
+              const publish = options?.agent !== false;
+              this.#useLive(k, publish);
+              useFormTools(publish ? formRefName : null, (action, value) => {
+                void (this.do[action] as ((value: unknown) => unknown) | undefined)?.(value);
+              });
+              return this.#sel((s) => s[k]);
+            }
+          : (options?: StoreUseOptions) => {
+              this.#useLive(k, options?.agent !== false);
+              return this.#sel((s) => s[k]);
+            };
         if (this.#derivedMeta.derivedKeys.has(k)) continue;
         const setKey = `set${capitalize(k)}`;
         // A declared action of the same name (`setPageOfX` is a slice action) wins the key; no convenience setter.

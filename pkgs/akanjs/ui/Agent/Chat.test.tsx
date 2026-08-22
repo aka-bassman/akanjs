@@ -173,6 +173,114 @@ describe("Agent.Chat", () => {
     unmount();
   });
 
+  test("asks the user through the question card and hands the pick back as the tool result", async () => {
+    const session = new lib.AgentSession(
+      new lib.AgenticSurface(),
+      scripted(
+        { toolCall: { id: "q1", name: "askUser", args: { question: "Which theme?", choices: ["Dark", "Light"] } } },
+        { text: "Applied." },
+      ),
+    );
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    let sendDone: Promise<void> = Promise.resolve();
+    await act(async () => {
+      sendDone = session.send("set the theme");
+      await untilFlushed(() => !!session.pendingQuestion);
+    });
+    // The card holds the question while it is pending, so the text is on screen once, not twice.
+    expect(container.innerHTML.split("Which theme?").length - 1).toBe(1);
+    const dark = [...container.querySelectorAll("button")].find((button) => button.textContent === "Dark");
+    expect(dark).toBeTruthy();
+    await act(async () => {
+      dark?.click();
+      await sendDone;
+    });
+    expect(session.messages.find((message) => message.role === "tool")?.toolResults?.[0].result).toBe("Dark");
+    // A settled ask reads as the exchange it was, so the tool's name never surfaces as a row.
+    expect(container.innerHTML).not.toContain("askUser");
+    expect(container.innerHTML).toContain("Which theme?");
+    expect(container.innerHTML).toContain("Applied.");
+    unmount();
+  });
+
+  test("a question with no choices is answered in the card's own input", async () => {
+    const session = new lib.AgentSession(
+      new lib.AgenticSurface(),
+      scripted(
+        { toolCall: { id: "q1", name: "askUser", args: { question: "What should I name it?" } } },
+        { text: "Named." },
+      ),
+    );
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    let sendDone: Promise<void> = Promise.resolve();
+    await act(async () => {
+      sendDone = session.send("name the draft");
+      await untilFlushed(() => !!session.pendingQuestion);
+    });
+    // One input, not two: the card holds the picks and the composer is the free-text answer.
+    expect(container.querySelectorAll("input")).toHaveLength(1);
+    const input = container.querySelector('input[placeholder="base.agentAnswer"]');
+    const propsKey = Object.keys(input ?? {}).find((key) => key.startsWith("__reactProps$")) ?? "";
+    const props = (input as unknown as Record<string, { onChange: (event: unknown) => void }>)[propsKey];
+    act(() => props.onChange({ target: { value: "Spring plan" } }));
+    const send = [...container.querySelectorAll("button")].find((button) => button.textContent === "base.send");
+    await act(async () => {
+      send?.click();
+      await sendDone;
+    });
+    expect(session.messages.find((message) => message.role === "tool")?.toolResults?.[0].result).toBe("Spring plan");
+    expect(container.innerHTML).toContain("Named.");
+    unmount();
+  });
+
+  test("a multi-pick question confirms the whole selection at once", async () => {
+    const session = new lib.AgentSession(
+      new lib.AgenticSurface(),
+      scripted(
+        {
+          toolCall: {
+            id: "q1",
+            name: "askUser",
+            args: { question: "Which columns?", choices: ["Name", "Status", "Owner"], multiple: true },
+          },
+        },
+        { text: "Shown." },
+      ),
+    );
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    let sendDone: Promise<void> = Promise.resolve();
+    await act(async () => {
+      sendDone = session.send("choose columns");
+      await untilFlushed(() => !!session.pendingQuestion);
+    });
+    const pick = (label: string) =>
+      [...container.querySelectorAll("button")].find((button) => button.textContent === label);
+    act(() => pick("Name")?.click());
+    act(() => pick("Owner")?.click());
+    await act(async () => {
+      pick("base.ok")?.click();
+      await sendDone;
+    });
+    expect(session.messages.find((message) => message.role === "tool")?.toolResults?.[0].result).toEqual([
+      "Name",
+      "Owner",
+    ]);
+    expect(container.innerHTML).toContain("Shown.");
+    unmount();
+  });
+
   test("shows one row per tool call, resolved in place instead of repeated as a result", async () => {
     const surface = new lib.AgenticSurface();
     surface.registerTool([], { name: "searchDocs", run: () => [{ href: "/docs/core/routing" }] });
@@ -197,6 +305,47 @@ describe("Agent.Chat", () => {
     // Two calls of one tool differ only by their arguments, so the row carries them.
     expect(container.innerHTML).toContain("routing");
     expect(container.innerHTML).toContain("Found it.");
+    unmount();
+  });
+
+  test("a slow tool says what it is doing on its own row until it resolves", async () => {
+    const surface = new lib.AgenticSurface();
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    surface.registerTool([], {
+      name: "uploadImages",
+      run: async () => {
+        lib.AgentProgress.report("resizing", { done: 1, total: 3 });
+        await held;
+        return "uploaded";
+      },
+    });
+    const session = new lib.AgentSession(
+      surface,
+      scripted({ toolCall: { id: "c1", name: "uploadImages", args: { count: 3 } } }, { text: "Uploaded." }),
+    );
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    let sendDone: Promise<void> = Promise.resolve();
+    await act(async () => {
+      sendDone = session.send("upload the images");
+      await untilFlushed(() => !!session.progress);
+    });
+    expect(container.innerHTML).toContain("resizing");
+    expect(container.innerHTML).toContain("1/3");
+    await act(async () => {
+      release();
+      await sendDone;
+    });
+    // The report is for the wait: once the row resolves it goes back to naming the call.
+    expect(container.innerHTML).not.toContain("resizing");
+    expect(container.innerHTML).toContain("uploadImages");
+    expect(container.innerHTML).toContain("Uploaded.");
     unmount();
   });
 

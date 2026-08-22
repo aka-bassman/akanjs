@@ -1,6 +1,7 @@
 "use client";
 export * from "./Agentic";
 export * from "./AgenticSurface";
+export * from "./AgentProgress";
 export * from "./AgentProvider";
 export * from "./AgentScope";
 export * from "./AgentSession";

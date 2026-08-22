@@ -1,5 +1,6 @@
 "use client";
-import { AgentContext, ensureStoreSurface } from "akanjs/store";
+import { usePage } from "akanjs/client";
+import { AgentContext, ensureStoreSurface, ScreenSettle } from "akanjs/store";
 import { type ReactNode, useMemo, useRef } from "react";
 import { AgenticSurface, type AgentRunner, AgentScope, AgentSession, SessionContext, useScopePath } from "use-agentic";
 import { fetchRunner } from "./fetchRunner";
@@ -27,11 +28,14 @@ export interface ZoneProps {
  * on one screen run two conversations in parallel, each seeing only its own subtree.
  */
 export const Zone = ({ className, id, label, instructions, runner, maxTurns, persist, children }: ZoneProps) => {
+  const { l } = usePage();
   const parent = useScopePath();
   const path = useMemo(() => AgenticSurface.childPath(parent, id), [parent.join("."), id]);
   const held = useRef<AgentSession | null>(null);
   held.current ??= new AgentSession(ensureStoreSurface().surface.view(path), runner ?? fetchRunner(), {
     buildContext: (view) => AgentContext.of().blocks(view, path),
+    settle: () => ScreenSettle.wait(),
+    continueAsk: { question: l("base.agentContinue"), keep: l("base.agentKeepGoing") },
     ...(maxTurns ? { maxTurns } : {}),
     ...(persist ? { history: sessionHistoryOf(persist, path.join(".")) } : {}),
   });

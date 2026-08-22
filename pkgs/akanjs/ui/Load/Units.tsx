@@ -6,7 +6,7 @@ import type { BaseInsight } from "akanjs/constant";
 import { ConstantRegistry, labelOf } from "akanjs/constant";
 import type { ClientInit, ServerInit } from "akanjs/fetch";
 import { st } from "akanjs/store";
-import { useFetch, useScreenScope } from "akanjs/webkit";
+import { useFetch, usePageTool, useScreenScope } from "akanjs/webkit";
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef } from "react";
 
 import { Empty } from "../Empty";
@@ -182,9 +182,17 @@ function Render<RefName extends string, Light extends { id: string }>({
     },
     reverse,
   };
+  usePageTool({
+    name: pagination && insight.count > limit ? namesOfSlice.setPageOfModel : null,
+    model: modelName,
+    page,
+    lastPage: Math.ceil(insight.count / (limit || insight.count || 1)),
+    total: insight.count,
+    onSelect: (page) => moreProps.onPageSelect(page, { scrollToTop: false }),
+  });
 
   const modelDataList = !loaded.current ? modelInitList.filter(filter).sort(sort) : modelList.filter(filter).sort(sort);
-  useScreenScope({
+  const scopePath = useScreenScope({
     id: sliceName,
     kind: refName,
     items: () =>
@@ -204,6 +212,7 @@ function Render<RefName extends string, Light extends { id: string }>({
             noDiv={noDiv}
             pagination={pagination}
             moreProps={moreProps}
+            scope={scopePath}
           >
             {renderList(modelDataList)}
           </ContainerWrapper>
@@ -224,6 +233,7 @@ function Render<RefName extends string, Light extends { id: string }>({
         noDiv={noDiv}
         pagination={pagination}
         moreProps={moreProps}
+        scope={scopePath}
       >
         {modelDataList.length
           ? (reverse ? [...modelDataList].reverse() : modelDataList)
@@ -328,6 +338,7 @@ interface ContainerWrapperProps {
   noDiv?: boolean;
   pagination?: boolean;
   moreProps: MoreProps;
+  scope?: string;
 }
 const ContainerWrapper = ({
   children,
@@ -336,6 +347,7 @@ const ContainerWrapper = ({
   noDiv,
   pagination,
   moreProps,
+  scope,
 }: ContainerWrapperProps) => {
   return noDiv ? (
     <MoreWrapper pagination={pagination} moreProps={moreProps}>
@@ -343,12 +355,12 @@ const ContainerWrapper = ({
     </MoreWrapper>
   ) : pagination ? (
     <MoreWrapper pagination={pagination} moreProps={moreProps}>
-      <div ref={containerRef} className={className}>
+      <div ref={containerRef} className={className} data-agent-scope={scope}>
         {children}
       </div>
     </MoreWrapper>
   ) : (
-    <div ref={containerRef} className={className}>
+    <div ref={containerRef} className={className} data-agent-scope={scope}>
       <MoreWrapper pagination={pagination} moreProps={moreProps}>
         {children}
       </MoreWrapper>

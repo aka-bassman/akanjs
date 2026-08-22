@@ -9,10 +9,10 @@ export interface StExposeMeta {
   report?: boolean;
 }
 
-export const useStExpose = (name: string, value: unknown, meta: StExposeMeta = {}): void => {
+export const useStExpose = (name: string | null, value: unknown, meta: StExposeMeta = {}): void => {
   useAgentResource(name, value, {
     description: meta.desc,
     report: meta.report,
-    serialize: meta.serialize ?? ((current) => readableValue(name, current, meta.mask)),
+    serialize: meta.serialize ?? ((current) => readableValue(name ?? "", current, meta.mask)),
   });
 };

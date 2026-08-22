@@ -34,6 +34,13 @@ interface StToolArg {
   name: string;
   type: ParamFieldType;
   optional: boolean;
+  oneOf?: readonly (string | number)[];
+}
+
+/** `oneOf` is the runtime half of `enumOf`: a value set only known once the component renders. */
+export interface StToolArgOption<V> {
+  optional?: boolean;
+  oneOf?: readonly V[];
 }
 
 type ArgValue<T> = T extends EnumInstance<string, infer V> ? V : T extends { [CLIENT_VALUE]: infer V } ? V : never;
@@ -44,32 +51,44 @@ type ArgValue<T> = T extends EnumInstance<string, infer V> ? V : T extends { [CL
  * This is not A12's rejected store-action builder — a store action derives its schema from the endpoint it is
  * named after, while a component tool exists nowhere else, so declaring is the only source there is. `.arg()` only
  * accumulates data; `.exec()` is the one hook, so the chain must complete in one unconditional statement.
+ *
+ * A falsy name declares the tool without publishing it: the callable still works for the click that a person
+ * makes, and nothing reaches the agent. That is how a conditional surface stays writable at all — `.exec()` is a
+ * hook, so a component can never skip the declaration, only the publication.
  */
 export class StToolBuilder<Args extends unknown[] = []> {
-  readonly #name: string;
+  readonly #name: string | null;
   readonly #meta: StToolMeta;
   readonly #args: StToolArg[];
 
-  constructor(name: string, meta: StToolMeta = {}, args: StToolArg[] = []) {
+  constructor(name: string | null, meta: StToolMeta = {}, args: StToolArg[] = []) {
     this.#name = name;
     this.#meta = meta;
     this.#args = args;
   }
 
   arg<T extends ParamFieldType>(name: string, type: T): StToolBuilder<[...Args, ArgValue<T>]>;
+  arg<T extends ParamFieldType, const V extends ArgValue<T>>(
+    name: string,
+    type: T,
+    option: StToolArgOption<V> & { optional: true },
+  ): StToolBuilder<[...Args, V | null]>;
+  arg<T extends ParamFieldType, const V extends ArgValue<T>>(
+    name: string,
+    type: T,
+    option: StToolArgOption<V>,
+  ): StToolBuilder<[...Args, V]>;
   arg<T extends ParamFieldType>(
     name: string,
     type: T,
-    option: { optional: true },
-  ): StToolBuilder<[...Args, ArgValue<T> | null]>;
-  arg<T extends ParamFieldType>(
-    name: string,
-    type: T,
-    option: { optional?: boolean } = {},
+    option: StToolArgOption<ArgValue<T>> = {},
   ): StToolBuilder<[...Args, ArgValue<T> | null]> {
     // Rejects an unsupported type where it is written, not on the agent's first call.
     StToolBuilder.schemaOf(type);
-    return new StToolBuilder(this.#name, this.#meta, [...this.#args, { name, type, optional: !!option.optional }]);
+    return new StToolBuilder(this.#name, this.#meta, [
+      ...this.#args,
+      { name, type, optional: !!option.optional, ...(option.oneOf ? { oneOf: option.oneOf } : {}) },
+    ]);
   }
 
   /** The only hook in the chain. `run`, `guard`, and `confirm` stay always-latest; the declaration is mount-static. */
@@ -78,40 +97,39 @@ export class StToolBuilder<Args extends unknown[] = []> {
     const scope = useScopePath();
     const live = useRef({ run, meta: this.#meta });
     live.current = { run, meta: this.#meta };
-    const declared = useRef<{ name: string; meta: StToolMeta; args: StToolArg[] } | null>(null);
+    const declared = useRef<{ name: string | null; meta: StToolMeta; args: StToolArg[] } | null>(null);
     declared.current ??= { name: this.#name, meta: this.#meta, args: this.#args };
     const callable = useRef<((...args: Args) => Promise<void>) | null>(null);
     if (!callable.current) {
-      const action = AgenticSurface.fullName(scope, this.#name);
-      callable.current = tagAction(
-        async (...args: Args) => {
-          await live.current.run(...args);
-        },
-        { action },
-      );
+      const call = async (...args: Args) => {
+        await live.current.run(...args);
+      };
+      // No name, no annotation: `data-akan-action` names a tool an agent can reach, and this one is unreachable.
+      callable.current = this.#name ? tagAction(call, { action: AgenticSurface.fullName(scope, this.#name) }) : call;
     }
     const scopeKey = scope.join(".");
     useEffect(() => {
       const spec = declared.current;
-      if (!spec) return;
+      const name = spec?.name;
+      if (!spec || !name) return;
       return surface.registerTool(scope, {
-        name: spec.name,
+        name,
         description: spec.meta.desc,
         effect: spec.meta.effect,
         parameters: StToolBuilder.parametersOf(spec.args),
         // A `remove*` tool confirms unless it declares otherwise — destructiveness read off the key, as MCP hints are.
-        ...(spec.meta.confirm === undefined && !spec.name.startsWith("remove")
+        ...(spec.meta.confirm === undefined && !name.startsWith("remove")
           ? {}
           : {
               confirm: (args: Record<string, unknown>) => {
-                const confirm = live.current.meta.confirm ?? spec.name.startsWith("remove");
+                const confirm = live.current.meta.confirm ?? name.startsWith("remove");
                 return typeof confirm === "function" ? confirm(args) : confirm;
               },
             }),
         ...(spec.meta.guard === undefined
           ? {}
           : { guard: (args: Record<string, unknown>) => live.current.meta.guard?.(args) ?? true }),
-        run: (named) => live.current.run(...(StToolBuilder.positionalOf(spec.name, spec.args, named) as Args)),
+        run: (named) => live.current.run(...(StToolBuilder.positionalOf(name, spec.args, named) as Args)),
       });
     }, [surface, scopeKey, this.#name]);
     return callable.current;
@@ -122,10 +140,15 @@ export class StToolBuilder<Args extends unknown[] = []> {
     const required = args.filter((arg) => !arg.optional).map((arg) => arg.name);
     return {
       type: "object",
-      properties: Object.fromEntries(args.map((arg) => [arg.name, StToolBuilder.schemaOf(arg.type)])),
+      properties: Object.fromEntries(args.map((arg) => [arg.name, StToolBuilder.#argSchemaOf(arg)])),
       ...(required.length ? { required } : {}),
       additionalProperties: false,
     };
+  }
+
+  static #argSchemaOf(arg: StToolArg): JsonSchema {
+    const schema = StToolBuilder.schemaOf(arg.type);
+    return arg.oneOf ? { ...schema, enum: [...arg.oneOf] } : schema;
   }
 
   /** Scalars and enums only — the value arrives as JSON from a model, so a class instance has no way in. */
@@ -162,12 +185,25 @@ export class StToolBuilder<Args extends unknown[] = []> {
         if (arg.optional) return null;
         throw new Error(`Missing argument "${arg.name}" for ${toolName}.`);
       }
-      return StToolBuilder.checkedValue(toolName, arg.name, arg.type, value);
+      return StToolBuilder.checkedValue(toolName, arg.name, arg.type, value, arg.oneOf);
     });
   }
 
   /** What `AgentBridge` does for endpoint arguments, for a component tool's own — nothing on the wire enforces the published schema. */
-  static checkedValue(toolName: string, argName: string, type: ParamFieldType, value: unknown): unknown {
+  static checkedValue(
+    toolName: string,
+    argName: string,
+    type: ParamFieldType,
+    value: unknown,
+    oneOf?: readonly (string | number)[],
+  ): unknown {
+    const checked = StToolBuilder.#checkedScalar(toolName, argName, type, value);
+    if (oneOf && !oneOf.includes(checked as string | number))
+      throw new Error(`Argument "${argName}" of ${toolName} must be one of: ${oneOf.join(", ")}.`);
+    return checked;
+  }
+
+  static #checkedScalar(toolName: string, argName: string, type: ParamFieldType, value: unknown): unknown {
     if (isEnum(type as Cls)) {
       const enumRef = type as EnumInstance;
       if (!enumRef.values.includes(value as never))

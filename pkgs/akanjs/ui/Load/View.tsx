@@ -72,7 +72,7 @@ function Render<T extends string, Full extends { id: string }>({
   }, [modelViewAt, modelObj.id]);
 
   const renderModel = loadedId.current === modelObj.id ? model : modelInit;
-  useScreenScope({
+  const scopePath = useScreenScope({
     id: `${refName}-view`,
     kind: refName,
     label: renderModel ? labelOf(cnst.full, renderModel) : undefined,
@@ -81,7 +81,9 @@ function Render<T extends string, Full extends { id: string }>({
   return noDiv && renderModel ? (
     <>{renderView(renderModel)}</>
   ) : renderModel ? (
-    <div className={cn("w-full", className)}>{renderView(renderModel)}</div>
+    <div className={cn("w-full", className)} data-agent-scope={scopePath}>
+      {renderView(renderModel)}
+    </div>
   ) : null;
 }
 

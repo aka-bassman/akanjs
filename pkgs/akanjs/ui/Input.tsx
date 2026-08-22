@@ -1,6 +1,7 @@
 "use client";
 import { cn, usePage } from "akanjs/client";
 import { isEmail } from "akanjs/common";
+import { useFieldTool } from "akanjs/store";
 import React, {
   type ChangeEvent,
   type InputHTMLAttributes,
@@ -12,7 +13,6 @@ import React, {
   useState,
 } from "react";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
-
 import { agentAttrs } from "./agentAttrs";
 import { inputRecipe } from "./recipe";
 import { createOverridable, useUiRecipe } from "./UiOverride";
@@ -62,6 +62,7 @@ const DefaultInput = ({
   validate,
   ...rest
 }: InputProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   const [firstFocus, setFirstFocus] = useState(true);
   const validateResult = validate ? validate(value) : undefined;
@@ -170,6 +171,7 @@ const DefaultTextArea = ({
   validate,
   ...rest
 }: TextAreaProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const validateResult = validate(value);
@@ -264,6 +266,7 @@ const DefaultPassword = ({
   validate,
   ...rest
 }: PasswordProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   const inputRef = useRef<HTMLInputElement>(null);
   const validateResult = validate(value);
@@ -380,6 +383,7 @@ const DefaultEmail = ({
   inputWrapperClassName,
   ...rest
 }: EmailProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   const inputRef = useRef<HTMLInputElement>(null);
   const isValidEmail = isEmail(value);
@@ -494,6 +498,7 @@ const DefaultNumber = ({
   parser,
   ...rest
 }: NumberProps) => {
+  useFieldTool(onChange);
   const { l } = usePage();
   const inputRef = useRef<HTMLInputElement>(null);
   const validateResult = validate ? validate(value) : undefined;
@@ -641,6 +646,7 @@ export type CheckboxProps = Omit<InputHTMLAttributes<HTMLInputElement>, "onChang
 };
 
 const DefaultCheckbox = ({ checked, onChange, className, ...rest }: CheckboxProps) => {
+  useFieldTool(onChange);
   return (
     <input
       {...rest}

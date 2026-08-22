@@ -1,13 +1,14 @@
 "use client";
-import { fetch, usePage } from "akanjs/client";
+import { cn, usePage } from "akanjs/client";
 import { decodeJwtPayload, lowerlize, mcpRefusalOf } from "akanjs/common";
 import { type Account, type FetchProxy, getDefaultAccount } from "akanjs/fetch";
 import { st } from "akanjs/store";
-import { type ReactNode, useEffect, useState } from "react";
-import { AiOutlineCopy, AiOutlineSearch } from "react-icons/ai";
-import { BiLock } from "react-icons/bi";
+import { type ReactNode, useState } from "react";
+import { AiOutlineCheck, AiOutlineCopy, AiOutlineSearch } from "react-icons/ai";
+import { BiChevronDown, BiLock } from "react-icons/bi";
 import { buttonRecipe } from "../Button";
 import { Copy } from "../Copy";
+import { Dropdown } from "../Dropdown";
 import { Input } from "../Input";
 import { Modal } from "../Modal";
 import {
@@ -19,12 +20,10 @@ import {
   Section,
   SummaryCard,
   SummaryGrid,
-  segmentItemClass,
-  segmentTrackClass,
   Toolbar,
   ToolbarField,
 } from "../Reference";
-import { endpointEntriesOf, isWsEndpoint } from "./endpointEntries";
+import { endpointEntriesOf, guardNamesOf, isWsEndpoint } from "./endpointEntries";
 import RestApi from "./RestApi";
 import WebSocket from "./WebSocket";
 
@@ -32,74 +31,88 @@ export default function Doc() {
   return <div></div>;
 }
 
+interface GuardItemProps {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}
+const GuardItem = ({ active, label, onClick }: GuardItemProps) => (
+  <button
+    className={buttonRecipe({ variant: "ghost", size: "sm" }, "w-full justify-start")}
+    onClick={onClick}
+    type="button"
+  >
+    <AiOutlineCheck className={cn("size-3.5 shrink-0", active ? "text-primary" : "text-transparent")} />
+    {label}
+  </button>
+);
+
 interface DocSettingProps {
-  guardNames?: string[];
-  roleTypes?: string[];
-  roleKeys?: { [key: string]: string };
+  fetch: FetchProxy;
   search?: string;
   onSearch?: (search: string) => void;
 }
-const DocSetting = ({
-  guardNames = ["Public"],
-  roleTypes = ["Public", "User", "Admin", "SuperAdmin"],
-  roleKeys = { me: "Admin", self: "User" },
-  search,
-  onSearch,
-}: DocSettingProps) => {
-  const tryRoles = st.use.tryRoles({ agent: false });
-  const tryAccount = st.use.tryAccount({ agent: false });
-  useEffect(() => {
-    st.set({ tryRoles: [...roleTypes] });
-  }, []);
-  const tryRoleForAll = roleTypes.every((roleType) => tryRoles.includes(roleType));
-  const baseUrl = fetch.origin;
-  const currentRoles = Object.entries(roleKeys)
-    .filter(([key]) => !!tryAccount[key as keyof typeof tryAccount])
-    .map(([, roleType]) => roleType);
+const DocSetting = ({ fetch, search, onSearch }: DocSettingProps) => {
+  const tryGuards = st.use.tryGuards({ agent: false });
+  const tryJwt = st.use.tryJwt({ agent: false });
+  const guardNames = guardNamesOf(fetch);
+  const selectionLabel =
+    tryGuards.length === 0 ? "All guards" : tryGuards.length === 1 ? tryGuards[0] : `${tryGuards.length} guards`;
   return (
     <Toolbar>
       <ToolbarField label="Base URL">
-        <Copy text={baseUrl}>
+        <Copy text={fetch.origin}>
           <button className={buttonRecipe({ variant: "ghost", size: "sm" }, "font-mono text-foreground/80")}>
-            {baseUrl}
+            {fetch.origin}
             <AiOutlineCopy className="text-foreground/40" />
           </button>
         </Copy>
       </ToolbarField>
-      <ToolbarField label="Roles">
-        <div className={segmentTrackClass}>
-          <button
-            className={segmentItemClass(tryRoleForAll)}
-            onClick={() => {
-              if (!tryRoleForAll) st.do.setTryRoles([...roleTypes]);
-            }}
-            type="button"
-          >
-            All
-          </button>
-          {roleTypes.map((roleType) => (
-            <button
-              key={roleType}
-              className={segmentItemClass(!tryRoleForAll && tryRoles.includes(roleType))}
-              onClick={() => {
-                if (tryRoleForAll) st.do.setTryRoles([roleType]);
-                else if (!tryRoles.includes(roleType)) st.do.setTryRoles([...tryRoles, roleType]);
-                else if (tryRoles.length !== 1) st.do.setTryRoles(tryRoles.filter((t) => t !== roleType));
-              }}
-              type="button"
-            >
-              {roleType}
-            </button>
-          ))}
-        </div>
-      </ToolbarField>
+      {guardNames.length ? (
+        <ToolbarField label="Guards">
+          <Dropdown
+            buttonClassName={buttonRecipe({ variant: "outline", size: "sm" }, "font-normal")}
+            dropdownClassName="right-auto left-0 max-h-80 min-w-52"
+            value={
+              <>
+                <span className="max-w-40 truncate">{selectionLabel}</span>
+                <BiChevronDown className="text-foreground/40" />
+              </>
+            }
+            content={
+              <>
+                <li data-dropdown-keep-open="">
+                  <GuardItem
+                    active={!tryGuards.length}
+                    label="All guards"
+                    onClick={() => {
+                      st.do.setTryGuards([]);
+                    }}
+                  />
+                </li>
+                {guardNames.map((guardName) => (
+                  <li data-dropdown-keep-open="" key={guardName}>
+                    <GuardItem
+                      active={tryGuards.includes(guardName)}
+                      label={guardName}
+                      onClick={() => {
+                        const next = tryGuards.includes(guardName)
+                          ? tryGuards.filter((name) => name !== guardName)
+                          : [...tryGuards, guardName];
+                        st.do.setTryGuards(next.length === guardNames.length ? [] : next);
+                      }}
+                    />
+                  </li>
+                ))}
+              </>
+            }
+          />
+        </ToolbarField>
+      ) : null}
       <ToolbarField label="Auth">
         <DocAuthModal>
-          <button
-            className={buttonRecipe({ variant: currentRoles.length ? "primary" : "outline", size: "sm" })}
-            type="button"
-          >
-            <BiLock /> {currentRoles.length ? currentRoles.join(", ") : "Anonymous"}
+          <button className={buttonRecipe({ variant: tryJwt ? "primary" : "outline", size: "sm" })} type="button">
+            <BiLock /> {tryJwt ? "Authorized" : "Anonymous"}
           </button>
         </DocAuthModal>
       </ToolbarField>
@@ -249,7 +262,7 @@ const Zone = ({ refName, fetch, openAll }: ZoneProps) => {
         <SummaryCard label="Web Socket" value={wsEntries.length} />
         <SummaryCard label="MCP Tools" value={mcpEntries.length} />
       </SummaryGrid>
-      <DocSetting onSearch={setSearch} search={search} />
+      <DocSetting fetch={fetch} onSearch={setSearch} search={search} />
       <Section title="REST API">
         <RestApi.Endpoints refName={refName} fetch={fetch} openAll={openAll} search={search} />
       </Section>

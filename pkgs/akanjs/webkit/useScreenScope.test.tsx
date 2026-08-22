@@ -2,7 +2,7 @@ import "../test/registerDom";
 import { describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { AgenticSurface, AgentProvider } from "use-agentic";
+import { AgenticSurface, AgentProvider, AgentScope } from "use-agentic";
 import { useScreenScope } from "./useScreenScope";
 
 const mount = (node: ReactNode) => {
@@ -37,6 +37,29 @@ describe("useScreenScope", () => {
     unmount();
     expect(surface.snapshot().scopes).toHaveLength(0);
     expect(surface.snapshot().resources).toHaveLength(0);
+  });
+
+  test("opens under the scope it is mounted in, so a zone view sees its own list", () => {
+    const surface = new AgenticSurface();
+    const List = () => {
+      useScreenScope({ id: "taskInOrg", kind: "task", items: () => [{ id: "t1" }] });
+      return null;
+    };
+    const unmount = mount(
+      <AgentProvider surface={surface}>
+        <AgentScope id="comments" kind="zone">
+          <List />
+        </AgentScope>
+      </AgentProvider>,
+    );
+    expect(surface.read("comments.taskInOrg.items")).toEqual({ total: 1, items: [{ id: "t1" }] });
+    expect(
+      surface
+        .view(["comments"])
+        .snapshot()
+        .resources.map((resource) => resource.name),
+    ).toEqual(["comments.taskInOrg.items"]);
+    unmount();
   });
 
   test("caps items and declares the truncation", () => {

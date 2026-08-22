@@ -12,6 +12,7 @@ const skipTags = new Set([
   "EMBED",
 ]);
 const headingLevels = { H1: 1, H2: 2, H3: 3, H4: 4, H5: 5, H6: 6 } as const;
+const headingSelector = "h1, h2, h3, h4, h5, h6";
 const blockTags = new Set([
   "ADDRESS",
   "ARTICLE",
@@ -46,9 +47,14 @@ const blockTags = new Set([
 
 /**
  * Serializes what the page is rendering into compact text an agent can answer questions from: headings keep their
- * level, links keep their href, controls keep their value and `data-akan-*` annotation. The agent's own UI is
- * marked `data-agent-ui` and skipped, so a turn never re-reads its own transcript, and a password value is never
- * read — the screen shows dots, so the DOM holds more than the user sees.
+ * level and their anchor, links keep their href, controls keep their value and `data-akan-*` annotation. The
+ * agent's own UI is marked `data-agent-ui` and skipped, so a turn never re-reads its own transcript, and a
+ * password value is never read — the screen shows dots, so the DOM holds more than the user sees.
+ *
+ * A heading carries `(#anchor)` whenever it opens a container that has an id or a scope path, because that is the
+ * name `readScreen({ section })` and `highlight` take: printing the text without the name leaves an agent
+ * guessing at a slug. For the same reason a truncated read ends with the headings below the cut instead of only
+ * a character count — otherwise everything past the limit is unreachable, since nothing names it.
  */
 export class ScreenReader {
   static readonly limit = 8000;
@@ -60,17 +66,108 @@ export class ScreenReader {
     if (title) reader.#lines.push(`Page: ${title}`);
     reader.#walk(root ?? document.body);
     reader.#flush();
-    const text = reader.#lines.join("\n").trim();
-    if (text.length <= ScreenReader.limit) return text || "The page is rendering nothing readable.";
-    return `${text.slice(0, ScreenReader.limit)}… [truncated ${text.length - ScreenReader.limit} more characters]`;
+    return reader.#text() || "The page is rendering nothing readable.";
+  }
+
+  /**
+   * One heading's own section: the heading, then what follows it until the next heading of the same level or
+   * higher. Reads the heading's container when the heading is the only one in it — the shape a docs slide or an
+   * `<article>` has — and otherwise the heading's own following siblings.
+   */
+  static readFrom(heading: HTMLElement, root?: HTMLElement | null): string {
+    if (typeof document === "undefined") return "No rendered document is available.";
+    const reader = new ScreenReader();
+    const container = ScreenReader.#sectionOf(heading, root);
+    if (container) reader.#walk(container);
+    else {
+      const level = headingLevels[heading.tagName.toUpperCase() as keyof typeof headingLevels] ?? 1;
+      reader.#walk(heading);
+      let next = heading.nextElementSibling;
+      while (next && !ScreenReader.#stops(next, level)) {
+        reader.#walk(next);
+        next = next.nextElementSibling;
+      }
+    }
+    reader.#flush();
+    return reader.#text() || "That section is rendering nothing readable.";
+  }
+
+  /**
+   * The outermost ancestor that still holds this heading and no other of its level — the section, not the title
+   * wrapper inside it. Climbing matters: a docs slide puts its heading two or three divs down, so the innermost
+   * match is often the heading and nothing else.
+   */
+  static #sectionOf(heading: HTMLElement, root?: HTMLElement | null): HTMLElement | null {
+    const level = headingLevels[heading.tagName.toUpperCase() as keyof typeof headingLevels] ?? 1;
+    const boundary = root ?? document.body;
+    let container: HTMLElement | null = null;
+    let parent = heading.parentElement;
+    for (let depth = 0; parent && parent !== boundary && depth < 6; depth += 1) {
+      const owned = [...parent.querySelectorAll(headingSelector)].filter((found) => ScreenReader.#stops(found, level));
+      if (owned.length !== 1) break;
+      container = parent;
+      parent = parent.parentElement;
+    }
+    return container;
+  }
+
+  /** The anchor a heading is addressable by: its own id, or the id or scope path of the container it opens. */
+  static anchorOf(heading: HTMLElement): string {
+    if (heading.id) return heading.id;
+    let parent = heading.parentElement;
+    for (let depth = 0; parent && depth < 4; depth += 1) {
+      const name = parent.getAttribute("data-agent-scope") ?? parent.getAttribute("data-agent-zone") ?? parent.id;
+      if (name && parent.querySelector(headingSelector) === heading) return name;
+      parent = parent.parentElement;
+    }
+    return "";
+  }
+
+  static #stops(el: Element, level: number) {
+    const found = headingLevels[el.tagName.toUpperCase() as keyof typeof headingLevels];
+    return !!found && found <= level;
   }
 
   #lines: string[] = [];
+  #headings: string[] = [];
   #buffer = "";
   #length = 0;
 
+  /**
+   * Past the walk budget the text is dropped but the headings are not: a section below the cut is exactly what the
+   * truncation note owes the reader, and it is the only way that part of the screen can be named at all.
+   */
+  #outline(node: Node): void {
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node as HTMLElement;
+    const tag = el.tagName.toUpperCase();
+    if (skipTags.has(tag) || el.hasAttribute("data-agent-ui")) return;
+    const level = headingLevels[tag as keyof typeof headingLevels];
+    if (level) {
+      const anchor = ScreenReader.anchorOf(el);
+      const text = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+      if (text) this.#headings.push(`${"#".repeat(level)} ${text}${anchor ? ` (#${anchor})` : ""}`);
+      return;
+    }
+    for (const child of el.childNodes) this.#outline(child);
+  }
+
+  #text() {
+    const text = this.#lines.join("\n").trim();
+    if (text.length <= ScreenReader.limit) return text;
+    const kept = text.slice(0, ScreenReader.limit);
+    const below = this.#headings.filter((heading) => !kept.includes(heading)).slice(0, 25);
+    const note = `… [truncated ${text.length - ScreenReader.limit} more characters]`;
+    return below.length
+      ? `${kept}${note}\nFurther down, unread: ${below.join(" · ")}. Pass one of those names as \`section\` to read it.`
+      : `${kept}${note}`;
+  }
+
   #walk(node: Node): void {
-    if (this.#length > ScreenReader.limit * 2) return;
+    if (this.#length > ScreenReader.limit * 2) {
+      this.#outline(node);
+      return;
+    }
     if (node.nodeType === Node.TEXT_NODE) {
       const text = (node.textContent ?? "").replace(/\s+/g, " ");
       if (text.trim()) this.#buffer += text;
@@ -112,7 +209,11 @@ export class ScreenReader {
     if (level) {
       this.#flush();
       this.#walkChildren(el);
+      const anchor = ScreenReader.anchorOf(el);
+      if (anchor) this.#buffer += ` (#${anchor})`;
+      const before = this.#lines.length;
       this.#flush(`${"#".repeat(level)} `);
+      if (this.#lines.length > before) this.#headings.push(this.#lines[this.#lines.length - 1]);
       return;
     }
     if (tag === "LI") {

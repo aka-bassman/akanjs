@@ -33,7 +33,7 @@ export class BaseStore extends store("base" as const, () => ({
   messages: [] as (typeof defaultMessage)[],
   tryJwt: null as string | null,
   trySignalType: "restapi" as SignalType,
-  tryRoles: [] as string[], //[...roleTypes] as RoleType[],
+  tryGuards: [] as string[],
   tryAccount: getDefaultAccount() as Account<{ [key: string]: string | undefined }>,
   keyboardHeight: 0,
   pageState: {
