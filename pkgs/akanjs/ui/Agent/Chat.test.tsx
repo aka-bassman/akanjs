@@ -41,12 +41,19 @@ beforeAll(async () => {
   ({ UiOverrideProvider } = await import("../UiOverride"));
 });
 
+/** The chat portals to the body, so the query scope is the body — and the host goes with the unmount. */
 const mount = (node: ReactNode) => {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
   act(() => root.render(node));
-  return { container, unmount: () => act(() => root.unmount()) };
+  return {
+    container: document.body,
+    unmount: () => {
+      act(() => root.unmount());
+      host.remove();
+    },
+  };
 };
 
 type Turn = { text?: string; toolCall?: ToolCallRequest };
@@ -411,5 +418,40 @@ describe("Agent.Chat", () => {
     expect(container.innerHTML).toContain("HELLO");
     expect(container.querySelector('button[aria-label="base.agent"]')).toBeNull();
     unmount();
+  });
+
+  test("leaves the page subtree for the overlay layer, and stays in flow when inline", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const render = (node: ReactNode) => {
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      const root = createRoot(host);
+      act(() => root.render(node));
+      return {
+        host,
+        drop: () => {
+          act(() => root.unmount());
+          host.remove();
+        },
+      };
+    };
+    const floating = render(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    // Dialog's modal portals to the body, so a z-index declared under `#pageContainers` (isolation: isolate)
+    // could never beat it — the chat has to leave the page subtree, not merely outrank the modal.
+    expect(floating.host.querySelector("aside")).toBeNull();
+    expect(document.body.querySelector("aside")?.className).toContain("z-[150]");
+    floating.drop();
+
+    const inline = render(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen inline />
+      </lib.AgentProvider>,
+    );
+    expect(inline.host.querySelector("aside")?.className).not.toContain("fixed");
+    inline.drop();
   });
 });

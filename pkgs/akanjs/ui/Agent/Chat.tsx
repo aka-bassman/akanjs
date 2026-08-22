@@ -2,7 +2,8 @@
 import { cn, fetch, usePage } from "akanjs/client";
 import type { PromptResult } from "akanjs/signal";
 import { AgentContext, type AgentPrompt, AgentPrompts, ensureStoreSurface, ScreenSettle } from "akanjs/store";
-import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { AiOutlineClear, AiOutlineClose } from "react-icons/ai";
 import { type AgentRunner, AgentSession, SessionContext } from "use-agentic";
 import { Button } from "../Button";
@@ -25,9 +26,17 @@ export interface ChatProps {
   defaultOpen?: boolean;
   /** Keeps the transcript across reloads — sessionStorage by default, `{ storage: "local" }` to outlive the tab. */
   persist?: PersistOption;
+  /** Renders in the page flow instead of floating above it — a zone chat that lives inside its own section. */
+  inline?: boolean;
 }
 
 const isApplePlatform = () => /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
+
+// Portalled to the body like Dialog's modal and the toast layer: the page tree sits under `#pageContainers`,
+// which is `isolation: isolate`, so a z-index declared inside it can never rise above a body-level overlay.
+// The layer sits above every dismissable surface (modal 10, dropdown/toast 100, sheet 101) so the agent can
+// still drive a form inside an open modal, and below Reconnect (200), which blocks the app on purpose.
+const floatingLayer = "fixed right-4 bottom-4 z-[150]";
 
 /**
  * The user-facing half of the in-page agent: one floating chat wired to the same surface the dock inspects.
@@ -44,6 +53,7 @@ export const DefaultChat = ({
   maxTurns,
   defaultOpen = false,
   persist,
+  inline = false,
 }: ChatProps) => {
   const { l } = usePage();
   const provided = useContext(SessionContext);
@@ -71,6 +81,10 @@ export const DefaultChat = ({
   const [hotkey, setHotkey] = useState<{ label: string; keys: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [overlay, setOverlay] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setOverlay(document.body);
+  }, []);
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [version, open]);
@@ -156,14 +170,16 @@ export const DefaultChat = ({
     const orphans = (message.toolResults ?? []).filter((result) => !claimed.has(result.id));
     return orphans.length ? [<Bubble key={idx} message={{ ...message, toolResults: orphans }} />] : [];
   });
+  const layer = (surface: ReactNode) => (inline ? surface : overlay ? createPortal(surface, overlay) : null);
   if (!open)
-    return (
+    return layer(
       <button
         aria-keyshortcuts={hotkey?.keys}
         aria-label={l("base.agent")}
         data-agent-ui=""
         className={cn(
-          "group/agent fixed right-4 bottom-4 z-50 flex size-12 items-center justify-center rounded-full border border-primary/20 bg-primary/90 text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-105",
+          "group/agent flex size-12 items-center justify-center rounded-full border border-primary/20 bg-primary/90 text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-105",
+          !inline && floatingLayer,
           className,
         )}
         onClick={() => setOpen(true)}
@@ -186,14 +202,15 @@ export const DefaultChat = ({
        C78.2 29.2 72.8 23.8 60 22 C72.8 20.2 78.2 14.8 80 2 Z"
           />
         </svg>
-      </button>
+      </button>,
     );
-  return (
-    // data-agent-ui keeps the chat out of readScreen, so a turn never re-reads its own transcript.
+  // data-agent-ui keeps the chat out of readScreen, so a turn never re-reads its own transcript.
+  return layer(
     <aside
       data-agent-ui=""
       className={cn(
-        "fixed right-4 bottom-4 z-50 flex h-[min(600px,calc(100dvh-2rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-box border border-border bg-background shadow-xl",
+        "flex h-[min(600px,calc(100dvh-2rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-box border border-border bg-background shadow-xl",
+        !inline && floatingLayer,
         className,
       )}
     >
@@ -277,7 +294,7 @@ export const DefaultChat = ({
           </Button>
         )}
       </div>
-    </aside>
+    </aside>,
   );
 };
 

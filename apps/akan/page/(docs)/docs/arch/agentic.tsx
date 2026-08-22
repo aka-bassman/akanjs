@@ -298,12 +298,12 @@ st.expose("selectedWaypointId", selected?.id ?? null);
           title="two zones, two parallel conversations"
           code={`<Agent.Zone id="comments" label="Comment management" instructions="Moderate the comment queue." persist>
   <Comment.Zone.Board init={commentInit} />
-  <Agent.Chat className="static" />
+  <Agent.Chat inline />
 </Agent.Zone>
 
 <Agent.Zone id="posts" label="Post management">
   <Post.Zone.Editor init={postInit} />
-  <Agent.Chat className="static" />
+  <Agent.Chat inline />
 </Agent.Zone>`}
         />
         <Docs.Description>
