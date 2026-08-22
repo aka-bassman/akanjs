@@ -8,8 +8,8 @@ import { ensureStoreSurface } from "./storeSurface";
  * The akan default context for a turn: where the user is (route), what is on screen (scopes and their curated
  * resources), and which store keys the mounted components are reading (live keys). Live entries carry names and
  * small primitives only — anything bigger is one `readState` call away, masked — so the block cannot bloat with
- * what happens to be in the store. Base-store keys are excluded by the base store's own `agent: false`
- * declaration, and the route block carries the three of them that matter.
+ * what happens to be in the store. Base-store plumbing is kept off the surface by `st.use.x({ agent: false })`
+ * at each call site, and the route block carries the three of them that matter.
  */
 export class AgentContext {
   static of(): AgentContext {
@@ -40,10 +40,7 @@ export class AgentContext {
   }
 
   #liveBlock(viewKey: string): ContextBlock[] {
-    const live = [...this.#instance.liveKeysIn(viewKey).keys()]
-      .filter((key) => this.#bridge.visibility.visibleKey(key))
-      .sort()
-      .map((key) => this.#liveEntry(key));
+    const live = this.#bridge.readableKeys(viewKey).map((key) => this.#liveEntry(key));
     return live.length ? [{ kind: "state", live, note: "Call readState(key) to read a value." }] : [];
   }
 

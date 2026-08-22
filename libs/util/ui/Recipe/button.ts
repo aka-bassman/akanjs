@@ -21,8 +21,6 @@ export const buttonRecipe = recipe(
     base: "inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
     variants: {
       variant: {
-        // daisyUI's bare `.btn` was `--btn-bg: var(--btn-color, var(--color-base-200))` with
-        // `--btn-fg: var(--color-base-content)` — a muted button, not a primary one. The framework
         // recipe follows shadcn instead, where the unnamed default IS primary and there is no neutral
         // fill at all (its `badgeRecipe` does have one, which is the asymmetry). Every `btn` with no
         // colour modifier lands here, so this has to be the default variant.

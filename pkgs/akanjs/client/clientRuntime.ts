@@ -47,6 +47,8 @@ type RuntimeFetch = typeof globalThis.fetch & {
   serializedSignal: Record<string, unknown>;
   setJwt: (jwt: string | null) => void;
   slice: Record<string, SliceMeta>;
+  /** Sort keys per model refName, registered from each serialized signal's filter. */
+  sortKeyMap?: Map<string, string[]>;
   ws: RuntimeWs;
   [key: string]: unknown;
 };

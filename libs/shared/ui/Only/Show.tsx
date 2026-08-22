@@ -7,7 +7,7 @@ interface ShowProps {
   show?: boolean | cnst.util.Responsive["value"][];
 }
 export const Show = ({ children, show = false }: ShowProps) => {
-  const responsive = st.use.responsive();
+  const responsive = st.use.responsive({ agent: false });
   if (typeof show === "boolean") return show ? children : null;
   else return show.includes(responsive) ? children : null;
 };

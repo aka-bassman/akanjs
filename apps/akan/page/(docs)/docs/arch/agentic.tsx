@@ -12,8 +12,8 @@ export default function Page() {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Every Akan app can host a chat agent that reads the rendered screen and drives it — the assistant on this page is one. Tools, state, and context are derived from what is actually on screen, not declared by hand. A store joins the surface only while a mounted component is reading one of its keys, so most screens publish a complete surface with zero agent code.",
-              ko: "모든 Akan 앱은 렌더된 화면을 읽고 조작하는 채팅 에이전트를 품을 수 있습니다. 지금 이 페이지의 어시스턴트가 바로 그것입니다. 툴·상태·컨텍스트는 손으로 선언하는 게 아니라 실제 화면에서 파생됩니다. 마운트된 컴포넌트가 스토어 키를 읽고 있는 동안에만 그 스토어가 표면에 실리므로, 대부분의 화면은 에이전트 코드 0줄로 완전한 표면을 발행합니다.",
+              en: "Every Akan app can host a chat agent that reads the rendered screen and drives it — the assistant on this page is one. What it may do is what a component declared, and what it may read is what a component subscribed. A store class publishes nothing on its own: an agent presses the controls the screen already offers the user, and never a lever the screen does not have.",
+              ko: "모든 Akan 앱은 렌더된 화면을 읽고 조작하는 채팅 에이전트를 품을 수 있습니다. 지금 이 페이지의 어시스턴트가 바로 그것입니다. 에이전트가 할 수 있는 일은 컴포넌트가 선언한 것이고, 읽을 수 있는 것은 컴포넌트가 구독한 것입니다. 스토어 클래스만으로는 아무것도 발행되지 않습니다. 에이전트는 화면이 이미 사용자에게 주는 컨트롤을 누를 뿐, 화면에 없는 레버는 당기지 않습니다.",
             })}
           </div>
           <div className="space-y-1">
@@ -159,13 +159,19 @@ export const option = new AkanOption<ModulesOptions>()
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="agent-surface" title={l.trans({ en: "The Derived Surface", ko: "파생되는 표면" })}>
-        <Docs.Title>{l.trans({ en: "The Derived Surface", ko: "파생되는 표면" })}</Docs.Title>
+      <Scroll.Slide id="agent-surface" title={l.trans({ en: "The Declared Surface", ko: "선언하는 표면" })}>
+        <Docs.Title>{l.trans({ en: "The Declared Surface", ko: "선언하는 표면" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "While a mounted component reads a store key through st.use, st.sel, or st.ref, that store's catalogued actions and state are published. Leave the screen and they withdraw on the next turn.",
-              ko: "마운트된 컴포넌트가 st.use·st.sel·st.ref로 스토어 키를 읽는 동안 그 스토어의 카탈로그된 액션과 상태가 발행됩니다. 화면을 떠나면 다음 턴부터 철회됩니다.",
+              en: "st.tool publishes one action and hands back the callable you wire to onClick, so the agent and the user press the same handler. st.use, st.sel, and st.ref make one store key readable while the component reading it is mounted. Unmount and both withdraw on the next turn.",
+              ko: "st.tool은 액션 하나를 발행하고 onClick에 연결할 callable을 돌려줍니다. 에이전트와 사용자가 같은 핸들러를 누르는 셈입니다. st.use·st.sel·st.ref는 그 키를 읽는 컴포넌트가 마운트된 동안 스토어 키 하나를 읽을 수 있게 합니다. 언마운트되면 다음 턴부터 둘 다 철회됩니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "Three tools are on every screen whatever it declares:",
+              ko: "화면이 무엇을 선언하든 항상 실리는 툴이 셋 있습니다.",
             })}
           </div>
           <div className="space-y-1">
@@ -197,38 +203,48 @@ export const option = new AkanOption<ModulesOptions>()
           </div>
           <div>
             {l.trans({
-              en: "Exposure is the store author's to trim. Generated set<Key> conveniences and form setters for id / createdAt / updatedAt / removedAt are never published. hidden and secret fields never cross the boundary.",
-              ko: "노출 다듬기는 스토어 작성자의 몫입니다. 생성된 set<Key> 편의 메서드와 id / createdAt / updatedAt / removedAt form setter는 발행되지 않습니다. hidden·secret 필드는 경계를 넘지 않습니다.",
+              en: "Reading is per key, not per store: a key the screen does not read stays unreadable even while a sibling key of the same store is live, and every read is masked by the model that key declares. hidden and secret fields never cross the boundary. Base-store plumbing is subscribed with `{ agent: false }` so routing and the caller's credential stay off the surface; a component that wants an agent to read a base key opts it in, as ThemeToggle does for theme.",
+              ko: "읽기는 스토어 단위가 아니라 키 단위입니다. 같은 스토어의 형제 키가 live여도 화면이 읽지 않는 키는 읽히지 않고, 모든 읽기는 그 키가 선언한 모델로 마스킹됩니다. hidden·secret 필드는 경계를 넘지 않습니다. base 스토어의 plumbing은 `{ agent: false }`로 구독해서 라우팅과 호출자의 자격증명이 표면에 올라가지 않게 하고, 에이전트가 읽어야 하는 키는 ThemeToggle의 theme처럼 옵트인합니다.",
             })}
           </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title="lib/<model>/<model>.store.ts · component hooks"
-          code={`export class MapStore extends store(cnst.map, () => ({ ... })) {
-  static override agent = { exclude: ["setMapBounds", "mapCamera"] };
-}
+          title="<Model>.Zone.tsx — the tool and the button are one declaration"
+          code={`const waypointList = st.use.waypointList();
+const publish = st.tool("publishPlan", { desc: "Publish the flight plan being edited." })
+  .exec(() => st.do.publishPlan());
+const focusWaypoint = st.tool("focusWaypoint", { desc: "Center the map on one waypoint." })
+  .arg("waypointId", ID)
+  .exec((waypointId) => st.do.selectWaypoint(waypointId));
 
 st.expose("selectedWaypointId", selected?.id ?? null);
-st.tool("focusWaypoint", { desc: "Center the map on one waypoint." })
-  .arg("waypointId", ID)
-  .exec((waypointId) => focusOn(waypointId));
 
-<Agent.Guide instructions="This screen edits the weekly flight plan. Prefer updateWaypoint over raw setters." />`}
+<Button onClick={publish}>{l("plan.publishPlan")}</Button>
+<Agent.Guide instructions="This screen edits the weekly flight plan. Focus a waypoint before editing it." />`}
         />
         <div className="space-y-1">
           {[
             {
-              title: "static agent = false",
-              desc: l.trans({ en: "Takes a whole store off the surface.", ko: "스토어 전체를 표면에서 내립니다." }),
+              title: "st.tool(name).arg(…).exec(fn)",
+              desc: l.trans({
+                en: "The only way an action reaches an agent. Returns the callable to wire to onClick; a remove* name confirms by default.",
+                ko: "액션이 에이전트에게 닿는 유일한 경로입니다. onClick에 연결할 callable을 돌려주고, remove* 이름은 기본으로 승인을 받습니다.",
+              }),
             },
             {
-              title: "static agent = { exclude }",
-              desc: l.trans({ en: "Withholds named actions and state keys.", ko: "지정한 액션과 상태 키를 감춥니다." }),
+              title: "st.useState · st.expose",
+              desc: l.trans({
+                en: "Local state and derived values, read-only unless set: names a type.",
+                ko: "로컬 상태와 파생 값입니다. set:으로 타입을 주기 전에는 읽기 전용입니다.",
+              }),
             },
             {
               title: "st.use.x({ agent: false })",
-              desc: l.trans({ en: "Subscribes without counting toward liveness.", ko: "구독하되 집계에서 뺍니다." }),
+              desc: l.trans({
+                en: "Subscribes without joining the surface. There is no store-level exposure switch — a store class says nothing about agents.",
+                ko: "구독하되 표면에는 넣지 않습니다. 스토어 단위 노출 스위치는 없습니다. 스토어 클래스는 에이전트에 대해 아무것도 말하지 않습니다.",
+              }),
             },
           ].map(({ title, desc }) => (
             <div key={title} className={panelRecipe({ padding: "row" })}>

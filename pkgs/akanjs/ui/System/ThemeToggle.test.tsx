@@ -5,6 +5,8 @@ import { createRoot } from "react-dom/client";
 
 let ThemeToggle: typeof import("./ThemeToggle").ThemeToggle;
 let lib: typeof import("use-agentic");
+let AgentBridge: typeof import("akanjs/store").AgentBridge;
+let StoreRegistry: typeof import("akanjs/store").StoreRegistry;
 
 /** Imported after the environment is set: `akanjs/store`'s baseSt reads the env while the module evaluates. */
 beforeAll(async () => {
@@ -13,26 +15,30 @@ beforeAll(async () => {
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
   process.env.AKAN_PUBLIC_ENV = "testing";
   ({ ThemeToggle } = await import("./ThemeToggle"));
+  ({ AgentBridge, StoreRegistry } = await import("akanjs/store"));
   lib = await import("use-agentic");
 });
 
 describe("ThemeToggle agent surface", () => {
-  test("publishes the theme and a setTheme tool the agent can drive, withdrawn on unmount", async () => {
+  test("publishes the theme and an applyTheme tool the agent can drive, withdrawn on unmount", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
     act(() => root.render(<ThemeToggle themes={["light", "dark"]} />));
     const surface = lib.AgenticSurface.shared;
     const snapshot = surface.snapshot();
-    expect(snapshot.tools.map((tool) => tool.name)).toContain("setTheme");
-    expect(snapshot.resources.map((resource) => resource.name)).toContain("theme");
+    const instance = StoreRegistry.instance;
+    const bridge = new AgentBridge(instance);
+    expect(snapshot.tools.map((tool) => tool.name)).toContain("applyTheme");
+    expect(instance.liveKeys.has("theme")).toBe(true);
+    expect(bridge.readableKeys()).toContain("theme");
     await act(async () => {
-      await surface.call("setTheme", { theme: "dark" });
+      await surface.call("applyTheme", { theme: "dark" });
     });
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
-    expect(surface.read("theme")).toBe("dark");
-    await expect(surface.call("setTheme", { theme: "solarized" })).rejects.toThrow("Unknown theme");
+    expect(bridge.read("theme")).toBe("dark");
     act(() => root.unmount());
-    expect(surface.snapshot().tools.map((tool) => tool.name)).not.toContain("setTheme");
+    expect(surface.snapshot().tools.map((tool) => tool.name)).not.toContain("applyTheme");
+    expect(instance.liveKeys.has("theme")).toBe(false);
   });
 });

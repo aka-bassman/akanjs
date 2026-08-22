@@ -61,7 +61,7 @@ export const DefaultTable = ({
   const sizeClassName = size === "small" ? "[&_td]:py-1 [&_th]:py-1" : "";
   const loadingClassName = loading ? "opacity-30" : "";
   const borderedClassName = bordered ? "border border-border rounded-xl" : "";
-  const responsive = st.use.responsive();
+  const responsive = st.use.responsive({ agent: false });
   const renderedColumns = useMemo(() => {
     return columns
       .filter((c) => !c.responsive || c.responsive.includes(responsive))

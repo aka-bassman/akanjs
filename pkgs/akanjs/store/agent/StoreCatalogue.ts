@@ -1,46 +1,10 @@
-import { type Cls, FIELD_META, PrimitiveRegistry, type PrimitiveScalar } from "akanjs/base";
-import { capitalize, Logger } from "akanjs/common";
+import type { Cls } from "akanjs/base";
 import { ConstantRegistry } from "akanjs/constant";
-import type { AgentRefusal, SerializedArg, SerializedSignal } from "akanjs/signal";
-// XXX: Reached as a module, never through the `akanjs/signal` barrel. That barrel value-imports `akanjs/service`,
-// which pulls `bun:sqlite` and `node:tls` into whatever loads it — and this file is client code, so importing
-// `{ AgentCatalogue } from "akanjs/signal"` breaks the browser bundle for every app. It typechecks and it passes
-// every test; only `akan build` catches it.
-import { AgentCatalogue } from "../../signal/agent/AgentCatalogue";
+import type { AgentRefusal } from "akanjs/signal";
 import { databaseStateModelTypes, databaseStateNames } from "../databaseStateNames";
-import { formSetterNames } from "../formSetterNames";
-import type { SliceActionKey } from "../sliceRole";
 import type { SliceStateKey } from "../state";
 import type { StoreInstance } from "../storeInstance";
-import { AgentVisibility } from "./AgentVisibility";
-import type { SerializedStore, SerializedStoreAction, SerializedStoreState } from "./types";
-
-/** A model field as the catalogue reads it. The parts of `FieldProps` a store setter's argument comes from. */
-interface CatalogueField {
-  fieldType?: string;
-  isClass?: boolean;
-  isMap?: boolean;
-  isArray?: boolean;
-  arrDepth?: number;
-  modelRef?: Cls;
-  enum?: { refName: string };
-  example?: unknown;
-}
-
-/** What each generated slice action takes, in the same terms an endpoint states its arguments. */
-const sliceActionArgs: {
-  [key in SliceActionKey]: { effect: "state" | "query"; args: "slice" | SerializedArg[] };
-} = {
-  initModel: { effect: "query", args: "slice" },
-  refreshModel: { effect: "query", args: [] },
-  // Takes the list item itself, not its id, and stores what it was handed — see the refusal in `#sliceActions`.
-  selectModel: { effect: "state", args: [] },
-  setPageOfModel: { effect: "query", args: [{ type: "param", name: "page", refName: "Int" }] },
-  addPageOfModel: { effect: "query", args: [{ type: "param", name: "page", refName: "Int" }] },
-  setLimitOfModel: { effect: "query", args: [{ type: "param", name: "limit", refName: "Int" }] },
-  setQueryArgsOfModel: { effect: "query", args: "slice" },
-  setSortOfModel: { effect: "query", args: [{ type: "param", name: "sort", refName: "String" }] },
-};
+import type { SerializedStoreState } from "./types";
 
 /** Which of the model's classes each slice state key holds. The rest hold a primitive or a query descriptor. */
 const sliceStateModelTypes: { [key in SliceStateKey]?: SerializedStoreState["modelType"] } = {
@@ -52,61 +16,35 @@ const sliceStateModelTypes: { [key in SliceStateKey]?: SerializedStoreState["mod
 };
 
 /**
- * What one built store offers an agent, derived from the store the browser is already running.
+ * Every store key an in-page agent may read, derived on the client from the store the browser is already running.
  *
- * The store is the audience-neutral half of the client surface the way a signal registry is the server's: a key on
- * `st.do` is the same call the user's own click makes, so an agent that drives it cannot reach past what the UI
- * already permits. That is why the default here is the opposite of the MCP catalogue's — every key is published
- * unless something about it cannot be described, and each of those is recorded as a refusal rather than dropped.
+ * Keys only — nothing here becomes a tool. What an agent may *do* is declared where the screen declares it, with
+ * `st.tool` beside the control that does the same thing for the user; a store method nobody declared is the app's
+ * own vocabulary and says nothing about what this screen offers. Deriving tools from the store published the
+ * bundle rather than the screen, and every lever the screen did not have was noise the model paid for.
  *
- * This is the visible universe, not the live view: a store's own `static agent` declaration is honored here, and
- * the bridge narrows the result to the stores the rendered screen is reading when it answers.
+ * Reads stay store-derived because a read has to be masked and only the store declares which model masks it. Which
+ * of these keys is readable at a given moment is liveness rather than this catalogue — the keys the mounted
+ * components subscribe. Plumbing in the base store opts out at the call site with `{ agent: false }`.
  *
- * Nothing is re-declared. An action's arguments come from the endpoint it is named after, from the field metadata
- * the form setter was generated from, or from the role the store recorded while building the slice; a key that
- * matches none of those three is published only when it takes no arguments at all.
+ * It is derived on the client rather than shipped from the server: the store classes are in the bundle already,
+ * and a second copy over the wire is a second thing to keep in step.
  */
 export class StoreCatalogue {
-  readonly store: SerializedStore;
+  readonly state: { [key: string]: SerializedStoreState };
   readonly refusals: AgentRefusal[] = [];
-  readonly visibility = new AgentVisibility();
 
   readonly #instance: StoreInstance;
-  readonly #endpoints = new Map<string, { endpoint: SerializedSignal["endpoint"][string]; refName: string }>();
-  readonly #refused = new Set<string>();
-  readonly #baseFieldSetters = new Set<string>();
-  #formSetterCache: Map<string, SerializedStoreAction> | null = null;
-  static readonly #baseDocumentFields = new Set(["id", "createdAt", "updatedAt", "removedAt"]);
-  static readonly #warnedMismatches = new Set<string>();
 
-  constructor(instance: StoreInstance, serializedSignal: Record<string, SerializedSignal>) {
+  constructor(instance: StoreInstance) {
     this.#instance = instance;
-    for (const { key, endpoint, refName } of AgentCatalogue.candidates(serializedSignal))
-      this.#endpoints.set(key, { endpoint, refName });
-    this.#refuseDeclaredExposures();
-    this.store = { state: this.#state(), action: this.#actions() };
-  }
-
-  /** One line per opted-out store, so the Dock answers "why is X missing" without a row per hidden key. */
-  #refuseDeclaredExposures() {
-    for (const [refName, exposure] of this.visibility.declaredExposures()) {
-      if (exposure === false)
-        this.#refuse(refName, "its store declares `agent: false`, so none of its keys or actions are published.");
-      else for (const name of exposure.exclude) this.#refuse(name, "excluded by its store's `agent` declaration.");
-    }
-  }
-
-  #refuse(key: string, reason: string) {
-    if (this.#refused.has(key)) return;
-    this.#refused.add(key);
-    this.refusals.push({ key, reason });
+    this.state = this.#state();
   }
 
   #state(): { [key: string]: SerializedStoreState } {
     const state = this.#instance.get();
     const declared = StoreCatalogue.#declaredStateModels();
     const entries = Object.keys(state)
-      .filter((key) => this.visibility.visibleKey(key))
       .sort()
       .map((key): [string, SerializedStoreState] => {
         const role = this.#instance.sliceStateRoles.get(key);
@@ -146,177 +84,6 @@ export class StoreCatalogue {
     return modelType ? { modelType } : {};
   }
 
-  #actions(): { [key: string]: SerializedStoreAction } {
-    // Runs first so a setter it refuses is already refused when the loop below reaches that key.
-    this.#formSetterCache = this.#formSetters();
-    const entries = Object.keys(this.#instance.do)
-      .sort()
-      .map((key): [string, SerializedStoreAction] | null => this.#action(key))
-      .filter((entry): entry is [string, SerializedStoreAction] => !!entry);
-    return Object.fromEntries(entries);
-  }
-
-  #action(key: string): [string, SerializedStoreAction] | null {
-    if (this.#refused.has(key)) return null;
-    // Generated `set<Key>` conveniences take an untyped value, so publishing one is a schema-less lever that writes
-    // `undefined` on an empty call. Skipped without a refusal row — there is one per state key.
-    if (this.#instance.generatedSetters.has(key)) return null;
-    // Base-field setters are skipped the same way — a refusal row four times per model would bury the real ones.
-    if (this.#baseFieldSetters.has(key)) return null;
-    if (!this.visibility.visibleAction(key, this.#instance.actionOwners.get(key)?.refName)) return null;
-    const endpoint = this.#endpoints.get(key);
-    if (endpoint)
-      return this.#actionFitsEndpoint(key, endpoint.endpoint) ? [key, this.#endpointAction(key, endpoint)] : null;
-    const formSetter = this.#formSetterCache?.get(key);
-    if (formSetter) return [key, formSetter];
-    const slice = this.#sliceAction(key);
-    if (slice) return [key, slice];
-    return this.#plainAction(key);
-  }
-
-  /**
-   * The borrowed schema is only honest when the action can consume it: one that declares fewer parameters than the
-   * endpoint silently drops the tail and reads stale form state instead, so a schema-correct call becomes a wrong
-   * mutation reported as success. More parameters than the endpoint is the generated shape —
-   * `create<Model>(data, options?)` — and stays published. `Function.length` stops at the first default, so a
-   * defaulted mirror parameter reads as missing here; align it with the endpoint or exclude the action.
-   */
-  #actionFitsEndpoint(key: string, endpoint: SerializedSignal["endpoint"][string]) {
-    const arity = this.#instance.actionArity.get(key) ?? 0;
-    const declared = endpoint.args.length;
-    if (arity >= declared) return true;
-    this.#refuse(
-      key,
-      `it declares ${arity} parameter${arity === 1 ? "" : "s"} while the same-named endpoint takes ${declared} — a schema-shaped call would drop the tail and read form state instead. Align the action's parameters with the endpoint, or exclude the action.`,
-    );
-    if (!StoreCatalogue.#warnedMismatches.has(key)) {
-      StoreCatalogue.#warnedMismatches.add(key);
-      Logger.warn(
-        `st.do.${key} does not mirror endpoint ${key} (${arity} vs ${declared} args) — not published to agents.`,
-      );
-    }
-    return false;
-  }
-
-  /**
-   * An action named after an endpoint takes the endpoint's arguments — the house naming rule ("the signal, store,
-   * and dictionary re-add the model, so `st.do.X` reads the same as `fetch.X`") is where the store's schemas come
-   * from for free, and #actionFitsEndpoint is what holds the rule to its word.
-   */
-  #endpointAction(
-    key: string,
-    { endpoint, refName }: { endpoint: SerializedSignal["endpoint"][string]; refName: string },
-  ) {
-    const effect = endpoint.type === "mutation" ? "mutation" : "query";
-    return { args: endpoint.args, effect, refName, endpoint: key } satisfies SerializedStoreAction;
-  }
-
-  /**
-   * The generated field setters, computed forward from the same field metadata `makeFormSetter` generated them from.
-   *
-   * A `hidden` or `secret` field is refused. Nothing else in the framework lets one of those cross an agent
-   * boundary — `resolveReturn` strips them on the way out and `Msg.mask` refuses a payload carrying them — and a
-   * setter is the same boundary facing the other way: publishing `setPasswordOnUser` names the field and invites a
-   * write to it in one entry.
-   */
-  #formSetters(): Map<string, SerializedStoreAction> {
-    const setters = new Map<string, SerializedStoreAction>();
-    for (const [refName, cnst] of ConstantRegistry.database) {
-      const className = capitalize(refName);
-      const fields = (cnst.full as unknown as { [key: symbol]: Record<string, CatalogueField> })[FIELD_META];
-      if (!fields) continue;
-      for (const [field, meta] of Object.entries(fields)) {
-        const names = formSetterNames(className, field);
-        if (StoreCatalogue.#baseDocumentFields.has(field)) {
-          for (const name of Object.values(names)) if (name in this.#instance.do) this.#baseFieldSetters.add(name);
-          continue;
-        }
-        if (!(names.setFieldOnModel in this.#instance.do)) continue;
-        if (names.uploadFieldOnModel in this.#instance.do)
-          this.#refuse(names.uploadFieldOnModel, "it takes a browser `FileList`, which an agent has no way to hold.");
-        const arg = this.#argOfField(names.setFieldOnModel, field, meta);
-        if (!arg) continue;
-        const base = { effect: "state", refName, field } satisfies Partial<SerializedStoreAction>;
-        setters.set(names.setFieldOnModel, { ...base, role: "set", args: [arg] });
-        if (!meta.isArray) continue;
-        const element = { ...arg, ...(arg.arrDepth && arg.arrDepth > 1 ? { arrDepth: arg.arrDepth - 1 } : {}) };
-        if (arg.arrDepth === 1) delete element.arrDepth;
-        setters.set(names.addFieldOnModel, { ...base, role: "add", args: [element] });
-        setters.set(names.addOrSubFieldOnModel, { ...base, role: "addOrSub", args: [element] });
-        setters.set(names.subFieldOnModel, {
-          ...base,
-          role: "sub",
-          args: [{ type: "param", name: "idx", refName: "Int" }],
-        });
-      }
-    }
-    return setters;
-  }
-
-  #argOfField(key: string, name: string, field: CatalogueField): SerializedArg | null {
-    if (field.fieldType === "hidden" || field.fieldType === "secret") {
-      this.#refuse(key, `\`${name}\` is a ${field.fieldType} field, which never crosses an agent boundary.`);
-      return null;
-    }
-    if (field.isMap) {
-      this.#refuse(key, `\`${name}\` is a Map, which has no argument schema to publish.`);
-      return null;
-    }
-    const arrDepth = field.arrDepth ?? 0;
-    if (field.enum)
-      return { type: "body", name, refName: "String", enum: field.enum.refName, ...(arrDepth ? { arrDepth } : {}) };
-    if (field.isClass) {
-      const model = field.modelRef ? ConstantRegistry.getRefName(field.modelRef, { allowEmpty: true }) : undefined;
-      this.#refuse(
-        key,
-        `\`${name}\` takes ${model ? `a \`${model}\`` : "an object"}, which an agent holding an id cannot build — it is chosen through the UI.`,
-      );
-      return null;
-    }
-    if (!field.modelRef || !PrimitiveRegistry.has(field.modelRef)) {
-      this.#refuse(key, `\`${name}\` has no primitive to describe it.`);
-      return null;
-    }
-    return {
-      type: "body",
-      name,
-      refName: PrimitiveRegistry.getName(field.modelRef as typeof PrimitiveScalar),
-      ...(arrDepth ? { arrDepth } : {}),
-      ...(StoreCatalogue.#exampleOf(field.example) ?? {}),
-    };
-  }
-
-  #sliceAction(key: string): SerializedStoreAction | null {
-    const role = this.#instance.sliceActionRoles.get(key);
-    if (!role) return null;
-    if (role.role === "selectModel") {
-      this.#refuse(key, "it takes the list item itself, and an agent holding an id would store a stub in its place.");
-      return null;
-    }
-    const { effect, args } = sliceActionArgs[role.role];
-    return { args: args === "slice" ? role.args : args, effect, refName: role.refName, role: role.role };
-  }
-
-  /**
-   * Everything else — a state setter the store generated for a plain key, and the actions a module wrote itself.
-   *
-   * Published only when it declares no parameters, which is the shape most custom actions have: the data comes from
-   * the form state the agent has already filled, in the same order a person fills it. One that does declare
-   * parameters and matched none of the three schema sources cannot be called safely, so it is refused by name.
-   *
-   * `Function.length` is the arity, so a rest parameter reads as none — the one shape that slips through. It slips
-   * through as callable with no arguments, which for a rest signature is the empty call.
-   */
-  #plainAction(key: string): [string, SerializedStoreAction] | null {
-    const arity = this.#instance.actionArity.get(key) ?? 0;
-    if (arity > 0) {
-      this.#refuse(key, `it declares ${arity} argument${arity > 1 ? "s" : ""} that no endpoint or field describes.`);
-      return null;
-    }
-    const refName = this.#instance.actionOwners.get(key)?.refName;
-    return [key, { args: [], effect: "state", ...(refName ? { refName } : {}) }];
-  }
-
   static #typeOf(value: unknown): SerializedStoreState["type"] {
     if (value === null || value === undefined) return "unknown";
     if (Array.isArray(value)) return "list";
@@ -345,11 +112,5 @@ export class StoreCatalogue {
     if (!value || typeof value !== "object") return {};
     const refName = ConstantRegistry.getRefName(value.constructor as Cls, { allowEmpty: true });
     return refName ? { refName } : {};
-  }
-
-  static #exampleOf(example: unknown) {
-    if (example === null || example === undefined) return null;
-    if (["string", "number", "boolean"].includes(typeof example)) return { example: example as string };
-    return example instanceof Date ? { example } : null;
   }
 }

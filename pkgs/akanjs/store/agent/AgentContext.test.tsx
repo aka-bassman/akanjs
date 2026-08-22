@@ -75,18 +75,19 @@ beforeAll(async () => {
   class CtxNoteStore extends store(makeSignal(), () => ({ mode: "draft" })) {}
   StoreRegistry.register(CtxNoteStore);
   instance = new StoreInstance(StoreRegistry.merge("ctxRoot", BaseStore, CtxNoteStore));
-  const bridge = new AgentBridge(instance, { ctxNote: serializedSignal });
+  const bridge = new AgentBridge(instance);
   context = new AgentContext(instance, bridge);
   surface = new AgenticSurface();
   surface.addSource(new StoreSurfaceSource(bridge));
 });
 
 describe("AgentContext", () => {
-  test("carries the route, the live keys minus the base store's, and inline primitives only", async () => {
+  test("carries the route, live keys except those subscribed with agent: false, and inline primitives only", async () => {
     const Reader = () => {
       instance.use.ctxNoteForm?.();
       instance.use.mode?.();
-      instance.use.pathname?.();
+      instance.use.pathname?.({ agent: false });
+      instance.use.theme?.();
       return null;
     };
     const unmount = mount(<Reader />);
@@ -105,6 +106,7 @@ describe("AgentContext", () => {
     expect(live.find((entry) => entry.key === "ctxNoteForm")?.value).toBeUndefined();
     expect(live.find((entry) => entry.key === "mode")?.value).toBe("draft");
     expect(live.find((entry) => entry.key === "pathname")).toBeUndefined();
+    expect(live.find((entry) => entry.key === "theme")?.value).toBe("system");
 
     const value = (await surface.call("readState", { key: "ctxNoteForm" })) as { title?: string };
     expect(typeof value).toBe("object");

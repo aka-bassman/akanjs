@@ -2,6 +2,7 @@
 import { cn } from "akanjs/client";
 import { type AgentBridge, ensureStoreSurface, StoreRegistry } from "akanjs/store";
 import { useRef, useState } from "react";
+import { AgenticSurface } from "use-agentic";
 import Context from "./Context";
 import Section from "./Section";
 import StateKey from "./StateKey";
@@ -12,25 +13,27 @@ import Transcript from "./Transcript";
 // name this type from that other module. Same reason `PanelProps` and `FieldProps` are exported.
 export interface DockProps {
   className?: string;
-  /** Pass the bridge an agent is already driving so both write into one transcript. Defaults to the app's own. */
+  /** The store keys and their masking. Defaults to the app's own. */
   bridge?: AgentBridge;
+  /** Where the declared tools live. Pass a zone's own to inspect it; defaults to the whole screen's. */
+  surface?: AgenticSurface;
   open?: boolean;
 }
 
 /**
- * The in-page surface of the agent bridge: what this page lets an agent do, what it refused, and what it has done.
- *
- * It drives the store directly rather than talking to a model, because a model is not the framework's to choose —
- * there is no provider or key here. An app wires its own agent to `bridge.tools` / `bridge.call` and can render this
- * beside it; on its own it is the way to see the catalogue a page actually publishes, which is the one thing no
- * amount of reading the source answers.
+ * The in-page surface of the agent: what this screen declared an agent may do, what it may read, and what it has
+ * done. Tools come from the surface rather than from the store, because a tool exists only where a component
+ * declared one — the dock is the way to see that this screen published what its author thought it did, which is
+ * the one thing no amount of reading the source answers.
  */
-export const Dock = ({ className, bridge, open = false }: DockProps) => {
-  const held = useRef<AgentBridge | null>(null);
-  held.current ??= bridge ?? ensureStoreSurface().bridge;
-  const agent = held.current;
+export const Dock = ({ className, bridge, surface, open = false }: DockProps) => {
+  const held = useRef<{ bridge: AgentBridge; surface: AgenticSurface } | null>(null);
+  held.current ??= { bridge: bridge ?? ensureStoreSurface().bridge, surface: surface ?? AgenticSurface.shared };
+  const agent = held.current.bridge;
+  const view = held.current.surface;
   const [ran, setRan] = useState(0);
   const liveKeys = StoreRegistry.instance.liveKeys;
+  const { tools } = view.snapshot();
   const stateEntries = Object.entries(agent.state).sort(([a], [b]) => {
     const [liveA, liveB] = [liveKeys.has(a), liveKeys.has(b)];
     if (liveA !== liveB) return liveA ? -1 : 1;
@@ -40,14 +43,14 @@ export const Dock = ({ className, bridge, open = false }: DockProps) => {
     <aside
       data-agent-ui=""
       className={cn(
-        "fixed right-4 bottom-4 z-50 flex max-h-[70vh] w-80 flex-col gap-2 overflow-y-auto rounded-box border border-base-content/10 bg-base-100/95 p-3 shadow-lg",
+        "fixed right-4 bottom-4 z-50 flex max-h-[70vh] w-80 flex-col gap-2 overflow-y-auto rounded-box border border-foreground/10 bg-background/95 p-3 shadow-lg",
         className,
       )}
     >
       <h2 className="font-semibold text-sm">Agent</h2>
-      <Section count={agent.tools.length} open={open} title="Actions">
-        {agent.tools.map((tool) => (
-          <Tool bridge={agent} key={tool.name} onRun={() => setRan(ran + 1)} tool={tool} />
+      <Section count={tools.length} open={open} title="Tools">
+        {tools.map((tool) => (
+          <Tool key={tool.name} onRun={() => setRan(ran + 1)} surface={view} tool={tool} />
         ))}
       </Section>
       <Section count={Object.keys(agent.state).length} title="State">
@@ -58,7 +61,7 @@ export const Dock = ({ className, bridge, open = false }: DockProps) => {
       <Section count={liveKeys.size} title="Context">
         <Context />
       </Section>
-      <Section count={agent.refusals.length} title="Refused">
+      <Section count={agent.refusals.length} title="Withheld">
         {agent.refusals.map((refusal) => (
           <div className="flex flex-col" key={refusal.key}>
             <span className="truncate font-mono text-xs">{refusal.key}</span>
@@ -66,8 +69,8 @@ export const Dock = ({ className, bridge, open = false }: DockProps) => {
           </div>
         ))}
       </Section>
-      <Section count={agent.transcript.length} open title="Transcript">
-        <Transcript calls={agent.transcript} />
+      <Section count={view.transcript.length} open title="Transcript">
+        <Transcript calls={view.transcript} />
       </Section>
     </aside>
   );

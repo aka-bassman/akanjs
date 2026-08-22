@@ -491,6 +491,8 @@ describe("signal serialization and registry", () => {
       modelType: "full",
       nullable: true,
     });
+    // Sort keys are the client's only source for the orderings a list UI may offer.
+    expect(databaseSignal.filter?.sortKeys).toEqual(["latest", "oldest", "relevance", "titleAsc"]);
     expect(databaseSignal.getGuards).toBeUndefined();
     expect(databaseSignal.cruGuards).toBeUndefined();
     expect(serviceSignal).toEqual({

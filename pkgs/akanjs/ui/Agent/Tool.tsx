@@ -1,10 +1,10 @@
 "use client";
 import { cn } from "akanjs/client";
-import type { AgentBridge, AgentTool } from "akanjs/store";
 import { useState } from "react";
+import type { PublishedTool, SurfaceView, ToolEffect } from "use-agentic";
 import { buttonRecipe } from "../recipe";
 
-const effectClass: { [key in AgentTool["effect"]]: string } = {
+const effectClass: { [key in ToolEffect]: string } = {
   state: "bg-muted text-foreground/70",
   query: "bg-info/15 text-info",
   mutation: "bg-warning/15 text-warning",
@@ -12,41 +12,48 @@ const effectClass: { [key in AgentTool["effect"]]: string } = {
 
 interface ToolProps {
   className?: string;
-  bridge: AgentBridge;
-  tool: AgentTool;
+  surface: SurfaceView;
+  tool: PublishedTool;
   onRun: () => void;
 }
 
 /**
- * One published action, with the arguments as JSON rather than as a generated form.
+ * One declared tool, with the arguments as JSON rather than as a generated form.
  *
  * A form per argument is what the API explorer does, and it is the wrong trade here: the point of the dock is to
- * watch a call land in the running app, and every schema shape the store publishes is already legible as JSON.
+ * watch a call land in the running app, and every schema shape a component declares is already legible as JSON.
  */
-export default function Tool({ className, bridge, tool, onRun }: ToolProps) {
+export default function Tool({ className, surface, tool, onRun }: ToolProps) {
   const [args, setArgs] = useState("{}");
   const [error, setError] = useState("");
+  const properties = (tool.parameters as { properties?: unknown } | undefined)?.properties ?? {};
   const run = async () => {
     setError("");
     try {
-      await bridge.call(tool.name, JSON.parse(args) as Record<string, unknown>);
+      await surface.call(tool.name, JSON.parse(args) as Record<string, unknown>);
     } catch (thrown) {
       setError(thrown instanceof Error ? thrown.message : String(thrown));
     }
     onRun();
   };
   return (
-    <details className={cn("rounded-field bg-base-100/60 px-2 py-1", className)}>
+    <details className={cn("rounded-field bg-background/60 px-2 py-1", className)}>
       <summary className="flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
-        <span className={cn("rounded-field px-1.5 py-0.5 text-[10px] uppercase", effectClass[tool.effect])}>
-          {tool.effect}
+        <span
+          className={cn(
+            "rounded-field px-1.5 py-0.5 text-[10px] uppercase",
+            tool.effect ? effectClass[tool.effect] : "bg-muted text-foreground/50",
+          )}
+        >
+          {tool.effect ?? "tool"}
         </span>
         <span className="truncate font-mono text-xs">{tool.name}</span>
+        {tool.needsConfirm ? <span className="shrink-0 text-[10px] text-foreground/40">confirm</span> : null}
       </summary>
       <div className="flex flex-col gap-2 py-2">
         {tool.description ? <p className="text-foreground/70 text-xs">{tool.description}</p> : null}
         <pre className="overflow-x-auto rounded-field bg-muted p-2 text-[10px] leading-tight">
-          {JSON.stringify(tool.inputSchema.properties, null, 2)}
+          {JSON.stringify(properties, null, 2)}
         </pre>
         <textarea
           className="w-full rounded-field bg-muted p-2 font-mono text-xs"

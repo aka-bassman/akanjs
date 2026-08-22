@@ -11,7 +11,7 @@ export default function Page() {
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="ml-1 inline-flex size-5 -translate-y-px items-center justify-center rounded-full bg-base-content/50 align-baseline text-white transition-colors hover:bg-base-content/70"
+      className="ml-1 inline-flex size-5 -translate-y-px items-center justify-center rounded-full bg-foreground/50 align-baseline text-white transition-colors hover:bg-foreground/70"
       aria-label={label}
       title={label}
     >
@@ -100,9 +100,9 @@ export default function Page() {
                 }),
               },
             ].map(({ title, desc, links }) => (
-              <div key={title} className="rounded-xl border border-base-300 bg-base-100 px-4 py-0">
+              <div key={title} className="rounded-xl border border-foreground/10 bg-background px-4 py-0">
                 <span className="font-mono font-semibold text-primary">{title}: </span>
-                <span className="text-base-content/70 text-sm">{desc}</span>
+                <span className="text-foreground/70 text-sm">{desc}</span>
                 {links?.map((link) => (
                   <ExternalLink key={link.href} href={link.href} label={link.label} />
                 ))}

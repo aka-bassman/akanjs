@@ -15,163 +15,107 @@
 - 4. Write A Prompt (#prompt)
 - 5. Report Progress (#progress)
 - Authorization (#auth)
-- Gotchas (#gotchas)
+- Tips (#tips)
 
 ## Content
 
 MCP Server
 
-Every signal you already wrote can be served to AI agents over the Model Context Protocol. There is no second API to build: the same endpoint runs through the same guards, the same middleware, and the same service, and its dictionary entries become the text an agent reads to decide what to call.
+Every signal you already wrote is served to AI agents at POST /mcp. There is no second API and nothing to write in a signal file: the same endpoint runs through the same guards, middleware, and service. The in-page chat is a different surface.
 
-Exposure follows the guards, and there is nothing to write in a signal file. /mcp is mounted by default; an endpoint that names a real guard is published, one that names none is refused, and a mutation whose only guard is [Public] is refused. A refused endpoint answers the same 'unknown tool' as one that does not exist. The guards are already the authorization decision and are re-read per caller on every listing, so a second per-endpoint switch would say nothing they do not — while guaranteeing that every endpoint added later is invisible to agents until somebody remembers it.
+In-Page Agent
 
-query and mutation become tools; a readable query also becomes a resource.
+Become tools. A generated read also gets a resource URI.
 
-prompt becomes a slash command the user invokes.
+A slash command the user invokes, not the model.
 
-pubsub and message are never exposed — their arguments read a socket an MCP request does not have.
+Never exposed — their arguments read a socket MCP does not have.
+
+Exposure follows the guards. A real guard publishes; no guards at all is refused; a mutation whose only guard is [Public] is refused. A Public read publishes. A refused endpoint answers the same unknown tool as one that does not exist.
 
 1. Turn The Server On
 
-The server mounts at POST /mcp, at the root rather than under the API prefix: the canonical resource a client authenticates against is the endpoint's own URL.
+/mcp is mounted by default. Configure it in lib/option.ts — not main.ts — so the process that mounts the route actually receives the settings. Every lib's option is read in mount order with the app's last. A value written in code wins over the env of the same name.
 
-or by env
+What this app is for and which tool to reach for first. Handed to the model with the tool list.
 
-lib/option.ts is where this goes, not main.ts: the gateway there only spawns children, while option.ts is already handed to the process that mounts /mcp. Every lib's option is read in mount order with the app's last, so an app tightens what a library declared without restating it. Every field has an env spelling too, for a deployment configuring what the source does not — and an option written in code wins over the env of the same name.
+Drops every mutation whatever it declared. A deployment valve, not the exposure switch.
 
-instructions is the one place to say what this app is for and which tool to reach for first. It goes to the model alongside the tool list.
+Mount path defaults to /mcp. Catalogue language is en, built once at boot. pageSize is entries per listing page.
 
-AKAN_MCP_READONLY=true drops every mutation whatever it declared. It is the valve for a deployment that must not be able to write, not the exposure switch.
+Only a browser-hosted client sends Origin. Native clients do not need this.
 
-Both switches answer to AKAN_PUBLIC_MCP and AKAN_PUBLIC_MCP_READONLY as well, the pairing AKAN_OPENAPI already has. AKAN_MCP_PATH is normalized to a leading slash: the route key and the OAuth metadata path are both built by concatenation, so mcp served a route named mcp and published its metadata where no client would look for it.
-
-allowedOrigins is needed only for a browser-hosted client, which is also the only caller that sends an Origin at all. Those origins get the CORS preflight answer and the matching header on the response, without which the request never leaves the browser. The comparison uses the forwarded host, so a reverse proxy does not turn every such call into a 403.
+Takes the whole surface off. AKAN_PUBLIC_MCP is the same pairing OpenAPI already has.
 
 2. Write An Endpoint
 
-Name the guards and you are done — every endpoint that has them is a tool. The tool name is the endpoint key unchanged, its input schema comes from the declared arguments, and its output schema from the return model.
+Name the guards and you are done. The tool name is the endpoint key, the input schema comes from the declared arguments, and the output schema from the return model.
 
 Write the dictionary entry at the same time. An agent picks a tool by its description, so a missing one is a broken tool — the boot log names every published entry that has none.
 
 3. Slices And CRUD
 
-A named slice is published from its own guards, and generated CRUD from the slice() guards map — the get, cru and per-verb entries you already wrote. A read guarded by Public publishes; a write guarded only by Public does not, so opening a model for reading never quietly brings write access with it.
+Generated CRUD publishes from the slice() guards map — get, cru, and the per-verb entries. A named slice does not inherit that map: write its own guards, or it is refused and named in the boot log.
 
-The root slice — the model's own unfiltered list and insight — is generated by slice() and published from root in the guards map. Its raw query argument is not published: an Any argument tells a model nothing, so it is left out of the schema, and a value sent for it is refused by name rather than read. Declare a named filter slice when an agent should be able to narrow a list.
-
-A named slice inherits no guards from the slice() call: that map's root, get and cru reach the root slice and generated CRUD only, so a named slice writes its own — which is what the line above does. Leave it off and the slice is refused rather than published, and the boot log names it. That is the one shape to watch for, and it is now a missing tool instead of an unguarded one.
-
-libs/shared's banner is the worked example in this repo, and it carries no MCP configuration at all: { root: Admin, get: Public, cru: Admin } is the whole declaration. Its reads publish because Public is written down, its writes publish under Admin and are hidden from an anonymous listing by that guard's account scope. An agent reaches exactly what the same credential reaches over HTTP — exposure adds a transport, not an audience.
-
-Every readable list and single read also gets a resource URI, so a client can attach one to a conversation instead of calling a tool. An insight does not: it is an aggregate with nothing to point a URI at.
+Every generated read also gets a resource URI. An insight does not — it is an aggregate with nothing to point at. A custom endpoint keeps its tool and gets no template. The root list is the bare .../list, with no third segment, because that segment is the slice key.
 
 generated resource uris
 
-The model's own list is the bare .../list, with no third segment. A slice key occupies that segment, and a slice may legally be named anything — so any token put there for the root list would be one a slice could also take, and the two would publish the same URI with only one of them readable.
-
-Those four shapes are the whole set, so only the generated reads are addressable and there is no option to ask for more. A custom endpoint keeps its tool and gets no template — building one from the model's key published a URI that parse routed to the model's own get and that named none of the endpoint's arguments.
+The root list's raw query argument is typed Any, so it is left out of the schema. Declare a named filter slice when an agent should narrow a list.
 
 4. Write A Prompt
 
-A prompt is invoked by the user, not chosen by the model — a client renders it as a slash command. exec returns PromptMessage[], or a bare string that is wrapped into one user message.
+A prompt is invoked by the user — a client renders it as a slash command. exec returns PromptMessage[], or a bare string that is wrapped into one user message. It takes .param() and .search() only: prompts/get sends a flat string map.
 
-Msg.user and Msg.assistant carry text, Msg.link points at something without paying for it, Msg.resource embeds a value, and Msg.image / Msg.imageOf inline bytes. Name the model on an embedded value so its hidden and secret fields are stripped.
+Msg.user and Msg.assistant carry text. Msg.link points without embedding. Msg.resource embeds a value. Msg.image / Msg.imageOf / Msg.audio inline bytes.
 
-A prompt takes .param() and .search() only. prompts/get sends a flat string map, so there is nowhere to put a body, and .search() is the only way to declare an optional argument.
+Name the model on an embedded value so hidden and secret fields are stripped: Msg.resource(uri, task, { model: cnst.LightTask }), or Msg.mask for one piece of an assembly. An undeclared value whose secret fields are populated is refused.
 
-A prompt's payload is not field-masked. It travels on the Any carrier, so hidden and secret fields would survive — pass a Light model or an object you assembled, never a full document.
+Give the instruction a high priority (0..1) and attachments a low one — a client with a full window otherwise drops blocks by position.
+
+A prompt is also a plain HTTP GET whether or not MCP is on, so a web UI can preview it. Guard it like any other read.
 
 5. Report Progress
 
-A long tool call can stream progress while it runs. McpProgress reaches the call through AsyncLocalStorage, so you report from wherever the work happens — a service, an adapter, a loop several frames down — without threading a channel through every signature.
+Report from wherever the work happens. Outside a streamed call it is a no-op, so the same service runs unchanged over HTTP, a websocket, and in tests.
 
-Outside a streamed call it is a no-op, so the same service code runs unchanged over plain HTTP, over a websocket, and in tests.
+The client must send both Accept: text/event-stream and a progressToken. The server switches only after the first report.
 
-Streaming needs the client to ask with both Accept: text/event-stream and a progressToken, and the server switches to it only once the first report arrives.
+Cancellation is the client closing the stream. Watch McpProgress.signal; the framework cannot stop an exec already in flight.
 
-Cancellation is the client closing the stream. Long work may watch McpProgress for the abort signal; the framework cannot stop an exec already in flight.
+McpProgress.streaming is true while anyone is reading, so an expensive message can be skipped.
 
 Authorization
 
-MCP arrives over HTTP and runs through the ordinary pipeline, so guards, Self, and the account middleware all behave exactly as they do for a browser call. Two things are specific to the catalogue.
+MCP arrives over HTTP and runs the ordinary pipeline, so guards, Self, and account middleware behave as they do for a browser call.
 
-Every guard declares static scope: GuardScope, and it is required with no default. "account" is a verdict that depends only on the caller: only those are evaluated when filtering a listing, so an anonymous agent is not offered a shelf of admin tools it can only fail at. "resource" needs the call's arguments, has none there, and is never evaluated for a listing — the entry stays visible and is stopped at call time. Because exposure follows the guards, one wrong mark lists an endpoint's name and argument schema to callers who cannot use it, which is why there is no default to get wrong quietly.
+The verdict reads the caller only. Evaluated when filtering a listing, so an anonymous agent is not offered admin tools it can only fail at.
 
-The listing is a UX filter, never the access decision. The call itself still runs every guard, so a resource guard stops it there.
+Needs the call's arguments, so it is never evaluated for a listing. The entry stays visible and is stopped at call time.
 
-OAuth Resource Server
+Every guard must declare static scope with no default. SignedIn / Admin are account; every Can<Verb><Model> is resource. The listing is a UX filter — the call still runs every guard.
 
-The server publishes RFC 9728 protected-resource metadata and answers an unauthenticated call with a WWW-Authenticate challenge pointing at it, so a client knows to authenticate rather than concluding the tool does not exist.
+OAuth resource server, by env
 
-env
+Unauthenticated calls get a WWW-Authenticate challenge, so a client authenticates instead of concluding the tool does not exist.
 
-insufficient_scope is enforced only once AKAN_MCP_SCOPES is set. First-party Akan tokens carry no scope claim, so enforcing by default would lock out every internal caller.
+insufficient_scope is enforced only once AKAN_MCP_SCOPES is set. First-party Akan tokens carry no scope claim.
 
-AKAN_MCP_RESOURCE overrides the published identifier. Leave it unset behind a normal proxy — the server reads the public host from x-forwarded-host rather than from the address the proxy dialed. That header arrives from the caller, so both the resource identifier and the same-origin comparison are only as trustworthy as an edge that overwrites it rather than appending; set this where you cannot guarantee that.
+A token with no aud is refused once AKAN_MCP_AUTH_SERVERS names an issuer, and accepted while none is named.
 
-A token carrying no aud at all is refused once AKAN_MCP_AUTH_SERVERS names an issuer, and accepted while none is named. That issuer mints tokens for its other resources too, which is the confused-deputy case RFC 8707 is a MUST for — whereas a first-party Akan token is bound by app and environment rather than by a resource URI, so refusing it by default would lock out every internal caller.
+Tips
 
-Gotchas
+A missing tool is explained in the boot log: MCP catalogue: tools=… then one verbose line per refusal. Turn verbose on, because there is no opt-in to notice — that log is the only place the answer exists.
 
-An endpoint that declares no guards at all is refused: nobody decided who may reach it, and a catalogue entry is where that omission would stop being invisible. A mutation is refused when [Public] is its only guard, because Public answers true unconditionally — it is having no guard, spelled out. An unguarded write reaching an agent is an accident every time.
+Write the model's .desc(). Generated CRUD tools append it to Get X, and the root list borrows the .of() label — those entries have no other text.
 
-An Any or Upload return is refused too: there is no schema to publish, and a tool whose shape cannot be described is not usable by a model.
+An Any or Upload return is refused. A required Any argument is refused too — leave optional Any out of the schema, and send nothing under that name.
 
-An Any argument is dropped from the schema for the same reason, and an endpoint whose Any argument must be filled is refused outright — the tool would be unusable either way. Dropped means unsendable: what the schema declares is what the server accepts, so a value sent under that name is refused like any other undeclared one. additionalProperties: false would not have done that on its own.
+A prompt also refuses a list argument and any Any argument: its arguments are one string per name, with no schema beside them.
 
-A prompt refuses two more argument types, because its arguments arrive as one string per name with no schema beside them: a list argument, which could never carry a second value, and any Any argument — a tool can leave that out of its schema, and a prompt has no schema to leave it out of.
+An unknown argument is reported as the caller's mistake. A missing document is too. Only a genuine failure answers that the server failed.
 
-An argument nobody declared is a caller mistake and is reported as one: 'Unknown argument "status".' additionalProperties: false travels in the published schema, but nothing on the wire enforces it and plenty of clients do not validate — so an extra name used to be read by nobody, and a filter the model believed it had applied came back as a successful, unfiltered list.
-
-A resources/read uri whose percent escapes do not decode — a stray % — is Unknown resource, the same answer a uri naming nothing gets. Left to propagate, the decoder's URIError became 'the server failed' with a stack in the log, on a method an agent may call with any string it likes.
-
-Every refusal above is named in the boot log — one warn per endpoint, under a line counting what was published. Read that line first when a tool you expected is missing, and note that it is the only place the answer exists: there is no absent opt-in to notice. The API explorer badges the per-endpoint rules beside the guards, running the same function, so it agrees on those and on nothing else: a name another endpoint already published and the read-only deployment valve are decided while the catalogue assembles itself and appear in that log alone.
-
-There is no akan quality scan rule for any of this any more. Both rules there found an exposure by matching an mcp: { expose: true } literal in a builder call, and with exposure derived from the guards there is no literal left to match. A refusal turns on a resolved return type and a resolved guard list, so the boot log — which holds the assembled catalogue — is the only place it can be decided or read.
-
-resource: true on a prompt is refused and said so. resources/read resolves a template to a tool and a prompt is not one — so it is refused by kind, not by key shape: a prompt keyed like a generated list computed a uri and then dropped it on the way out, which was the last place an unhonoured option went quietly.
-
-A scalar return ships as the value itself, not as JSON. Mirroring the payload as text is what the spec asks for when there is a structured result to mirror; a scalar has none, so encoding one anyway spent the block on syntax — a tool returning an id answered "507f…" with the quotes, which a model then has to know to strip.
-
-A prompt's plain GET route now describes what it returns in the app's OpenAPI document. Its declared return is Any, which reads as {} — a documented route whose body the document could not describe — so the fixed PromptMessage[] shape is published once as a component instead. The shape belongs to the protocol, not to the endpoint.
-
-The same log names every published entry that has no description, generated ones included — and it is the only thing that does. A source rule could not: the text a generated entry borrows is a model .desc(), which is not written as that entry's description anywhere. The boot log holds the resolved catalogue, so it can simply look.
-
-A guard's refusal reads 'You are not permitted to perform this action.' rather than the framework's own 'Access denied by guard: Admin', which names the authorization structure to the one caller barred from it — the same reason a refused tool and a nonexistent one share a message. A domain Err resolves through the dictionary first and keeps its own words.
-
-A prompt is mounted as a plain HTTP GET whether or not the app enabled MCP: that route is what lets a web UI preview one, so MCP exposure gates the catalogue rather than the surface. It is in the app's OpenAPI document like any other GET, for the same reason — a contract that left it out described fewer routes than the app serves. Guard it like any other read, and remember its payload is not field-masked.
-
-Every Msg builder takes optional annotations last: audience, priority between 0 and 1, and lastModified. A prompt this server assembles is mostly context around one instruction, and without priority a client with a full window drops blocks by position — keeping the attachment and losing the ask.
-
-A wrong argument and a missing document come back as the caller's error, naming what to fix. Only a genuine failure answers 'the server failed' and logs a stack — an agent can trigger the other two at will, so they must not be a log-spam path.
-
-An arguments field that is not an object is refused as -32602 rather than read as having none. Coerced to {}, a caller's own typo came back as 'Missing required argument', sending the model to look for a value it did send.
-
-A nullable model return publishes no outputSchema, and its empty answer ships as the text null with no structuredContent. That field is an object by definition — null cannot ride in it any more than an array can, which is why a list is wrapped as { items: … } — and a declared schema obliges every result to match it, so a client SDK throws on the first call that finds nothing. A nullable list keeps its schema.
-
-An outputSchema names no hidden or secret field. Every response has both stripped, so publishing them promises a property no answer can carry — and on a model like user the names are themselves the leak, password and accountId read as readable properties. The input schema keeps them: they are legal to send, and the same model describes a request body.
-
-A modern-era request mirrors MCP-Protocol-Version and Mcp-Method into headers, plus Mcp-Name when the body names one, and a mirror that is absent is refused just like one that contradicts the body: a gateway rule keyed on a header never fires for the request that omitted it. A legacy request is not checked.
-
-A prompt has no isError result to carry a refusal, so the JSON-RPC code is the only place left to say whose fault it was: a caller's mistake answers -32602, the same code the missing-argument check uses, and -32603 stays for a genuine failure.
-
-The catalogue is written in one language, en by default and settable with the language option. It is built once at boot and cached by clients, so there is no Accept-Language negotiation.
-
-The root slice's list and insight take their text from the model's own .of() label. That slice is generated by slice() and its dictionary entry is written by the framework, so it would otherwise read 'Slice List - Universal' with nowhere for you to write over it — a placeholder in the one field a model picks a tool by.
-
-The base CRUD tools have the same problem and the same answer: their dictionary text is written last by the framework as 'Get Banner' for both title and description, so the model's own .desc() is appended to it. 'Get Banner' names the verb and says nothing about what a Banner is, and description is the field a model picks a tool by — so write that model .desc(); it is the only text those six generated entries can carry.
-
-Three revisions are spoken: the modern 2026-07-28, which is stateless by design, and the legacy 2025-11-25 and 2025-06-18, which are wire-identical over the POST-only surface this server implements. A client whose proposed version is not listed is told to disconnect, so listing only the revision that was measured refused every other shipping client. An unknown proposal is answered at whichever end of the list it is closer to, and an unimplemented method answers 404 to a modern client but 200 to a legacy one, whose era spends 404 on 'your session is gone, start a new one'.
-
-A prompt that declares no guards at all is named in the boot log, because its plain GET route is mounted whether or not MCP is on. An explicit [Public] is a decision and stays quiet. Its payload is a separate question, and masking answers it by taking the model as an argument rather than reading it off the value: Msg.resource(uri, task, { model: cnst.LightTask }), or Msg.mask for one piece of an assembly. That is what makes a spread maskable — { ...doc }, toJSON(), and a round-trip through JSON.stringify all arrive with the class gone, so anything that read the value could only ever mask half the payloads. An undeclared value whose secret fields are populated is refused rather than sent, one level into a plain object too, because { order } is how a document usually arrives.
-
-An expired or wrongly-audienced bearer token is refused before the pipeline sees it, so an agent is told to authenticate rather than that the tool does not exist. The signature is not checked — that needs the app's own secret — so a token signed wrong still degrades to an anonymous caller, as an opaque one does.
-
-The readOnly, destructive and idempotent hints a client renders are derived from the endpoint type and key, and are not configurable. Clients are told to distrust hints; they are never a gate, so there is nothing lost in deriving them.
-
-Do not give an unknown tool a more helpful error. An endpoint that opted out has to be indistinguishable from one that does not exist, or the error itself enumerates the private surface.
-
-A pubsub subscription has no MCP equivalent. The transport carries no channel that outlives a single request, so a subscription would be accepted and never delivered.
+A guard's refusal reads You are not permitted to perform this action. — never the guard's name.
 
 ## Code Examples
 
@@ -180,18 +124,8 @@ A pubsub subscription has no MCP equivalent. The transport carries no channel th
 ```ts
 export const option = new AkanOption<ModulesOptions>().setMcp({
   instructions: "Domain tools for the akan app. Start from taskListInTodo.",
-  readOnly: false,
-  pageSize: 100,
   language: "en",
 });
-```
-
-### Code
-
-```ts
-AKAN_MCP=false   # on by default; this is the way off
-AKAN_MCP_INSTRUCTIONS="Domain tools for the akan app."
-AKAN_MCP_LANGUAGE=en
 ```
 
 ### task.signal.ts

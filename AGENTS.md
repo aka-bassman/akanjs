@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.21 -->
+<!-- akan:agent:version 3.0.0-alpha.24 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -43,8 +43,8 @@ Enforced by `biome.json` and the grit plugins in `pkgs/@akanjs/devkit/lint/`. Se
 that looks wrong; do not "fix" it back.
 
 - **Never hand-order Tailwind classes.** `nursery/useSortedClasses` is an error and also sorts the string
-  arguments to `cn()`. Sorter output such as `font-bold text-2xl text-base-content` or
-  `border-base-content/5 border-t` is correct. Write the classes in any order, run the formatter, leave the result.
+  arguments to `cn()`. Sorter output such as `font-bold text-2xl text-foreground` or
+  `border-foreground/5 border-t` is correct. Write the classes in any order, run the formatter, leave the result.
 - **Stay inside the color vocabulary.** Vocabulary closure strips the raw Tailwind palette, so these render as
   no CSS and fail lint (`no-raw-palette-class.grit`, `no-arbitrary-color.grit`, `no-daisyui-legacy-class.grit`,
   `no-inline-color.grit`): raw palette classes (`bg-blue-500`), arbitrary color values (`bg-[#3b82f6]`), daisyUI
@@ -300,7 +300,6 @@ Full version with code, the `Tab` composition example, and a review checklist: `
 - Read with `st.use.*` and write with `st.do.*`. Client components do not call `fetch.*`.
 - Static class strings stay plain strings. Reach for `cn` only for a conditional or to merge an incoming `className`, and merge the caller last: `cn("base classes", cond && "extra", className)`. `cn` comes from `akanjs/client` (token-aware tailwind-merge) and is the only class-combining function — no `clsx` (removed), no raw `twMerge` imports, no object syntax (`{ x: cond }` → `cond && "x"`).
 - Multi-slot components take extra named props (`wrapperClassName`, `bodyClassName`), never a `classNames` object.
-- Use daisyUI semantic tokens with opacity modifiers (`text-base-content/60`, `border-base-content/10`, `bg-base-100/70`, `bg-primary/10`). Never use `dark:` — theming is the daisyUI theme block in `page/*/styles.css`. Raw hex belongs only in marketing surfaces; match the neighbouring files.
 - Hoist enum→class lookups to a module-scope `as const` map typed `{ [key in cnst.XStatus["value"]]: string }`. Do not use `Record<...>`. Escalate the map to `webkit/` when a second module needs it.
 - Use `<Link>` from `akanjs/ui` for internal navigation; `<a>` only for `mailto:` and external links.
 
@@ -653,12 +652,13 @@ costs something to assemble.
 
 ## In-Page Agent
 
-Every akan app can host a component-level agent that reads the rendered screen and drives it. Tools, state, and
-context are **derived from the rendered screen, not from the bundle**: a store joins the surface only while a
-mounted component reads one of its keys (`st.use` / `st.sel` / `st.ref` all count), and only that store's
-catalogued actions and state are published. `Load` scopes, the route, and the live keys complete the context, so
-most screens publish a full surface with zero agent code. The React core is the `use-agentic` package; apps and
-libs never import it directly (`no-import-external-library`) — everything reaches them through `st.*` and
+Every akan app can host a component-level agent that reads the rendered screen and drives it. **A component
+declaration is the surface, exactly**: `st.tool` publishes one action, and `st.use` / `st.sel` / `st.ref` make one
+store key readable while the reading component is mounted. Nothing is derived from a store class — declaring a
+method on a `store(...)` gives an agent nothing at all, because a lever the screen does not offer the user is not
+one an agent may pull in their place, and a module's whole vocabulary published at once was noise the model paid
+for. `Load` scopes, the route, and the live keys complete the context. The React core is the `use-agentic` package;
+apps and libs never import it directly (`no-import-external-library`) — everything reaches them through `st.*` and
 `akanjs/ui`.
 
 - **Mount `<Agent.Chat />` once in a layout.** That is the floating chat, the approval card, and the client-side
@@ -690,22 +690,21 @@ libs never import it directly (`no-import-external-library`) — everything reac
   tree is the cascade: nested Guides concatenate outer-to-inner and navigating away withdraws them. It is a
   component, not a pageConfig field. Module `*.abstract.md` files are developer docs and are never served to the
   agent.
-- **Exposure is the store author's to trim.** `static agent = false` on a store class keeps the whole module off
-  the surface (the framework's base store declares it — its keys are plumbing and `tryJwt` is a credential);
-  `static agent = { exclude: ["setMapBounds", "mapCamera"] }` withholds named actions and state keys that are not
-  real levers (state a component writes into but never reads back). `st.use.x({ agent: false })` subscribes
-  without counting toward liveness. Generated `set<Key>` conveniences are never published — declare a typed action
-  or `st.tool` when an agent should set one. Form setters for the base document fields (`setIdOnX`,
-  `setCreatedAtOnX`, `setUpdatedAtOnX`, `setRemovedAtOnX`) are never published either: the server stamps those.
-  An action named after an endpoint is published with the endpoint's argument schema **only when it can consume
-  it** — one declaring fewer parameters than the endpoint is refused (and warned once in the console), because
-  the schema-shaped call would drop the tail and read stale form state instead; trailing extras beyond the
-  endpoint's arguments stay legal (`create<Model>(data, options?)` is the generated shape).
-- **Hooks are the escape hatch, not the norm.** `st.useState(name, initial, meta)` publishes local state
-  (read-only unless `set:` names a type), `st.expose(name, value)` a derived value, and
-  `st.tool("x", { desc }).arg("id", ID).exec(fn)` a one-off action. `.exec()` is the only hook, so the chain
-  completes in one unconditional statement; its callable carries `data-akan-action`, so pass it to `onClick` by
-  reference like a store setter. `remove*`-named tools default to a confirm gate.
+- **Declare the tool beside the control that already does it.**
+  `st.tool("x", { desc }).arg("id", ID).exec(fn)` publishes one action and returns the callable to hand to
+  `onClick` — one handler for the person and the agent, which is the point: a button wired to an inline arrow can
+  be clicked by a person and by nobody else. `.exec()` is the only hook, so the chain completes in one
+  unconditional statement, and the callable carries `data-akan-action` like a store setter does. A `remove*` name
+  defaults to a confirm gate. Reach a store action from the body — `.exec((id) => st.do.removeX(id))` — which is
+  how an agent gets CRUD; `st.do` on its own reaches nobody.
+- **Reading is per key, not per store.** `st.useState(name, initial, meta)` publishes local state (read-only
+  unless `set:` names a type) and `st.expose(name, value)` a derived value. A subscribed store key is listed in
+  the state context block by name and pulled with `readState(key)`, masked by the model that key declares — while
+  a key the screen does not read stays unreadable even when a sibling key of the same store is live. **There is no
+  store-level exposure declaration**: a store class says nothing about agents, and `st.use.x({ agent: false })` is
+  how the component that subscribes a value keeps it off the surface. Base-store plumbing does the same at the
+  call site — `st.use.path({ agent: false })`, `st.use.tryJwt({ agent: false })` — so routing and the caller's
+  credential stay off the surface unless a component opts a key in, as ThemeToggle does for `theme`.
 - **Model-facing text is English, always** — tool `desc`, `instructions`, Guide text. The `l()` rule covers
   strings a *user* reads: Chat's own buttons go through `l("base.*")`, the model's text never does.
 - A masked model never crosses the boundary: a value whose `hidden`/`secret` fields are populated is refused at
@@ -716,8 +715,8 @@ libs never import it directly (`no-import-external-library`) — everything reac
 - The framework publishes three built-ins on every store surface: `navigate` (internal paths only, the same
   router `Link` rides), `readScreen` (the rendered DOM as compact text — headings, links, control values; the
   chat's own UI is skipped via `data-agent-ui`, and a password value is never read), and `readState(key)` (one
-  masked store key). Declaring a store action or hook tool under one of those names shadows the built-in, so
-  reuse them only to mean that.
+  masked store key). Declaring a hook tool under one of those names shadows the built-in, so reuse them only to
+  mean that.
 
 ## Scalar Modeling (`**/*.constant.ts`)
 

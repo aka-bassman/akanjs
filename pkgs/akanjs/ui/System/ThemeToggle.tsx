@@ -2,51 +2,34 @@
 
 import { setCookie } from "akanjs/client";
 import { st } from "akanjs/store";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import { buttonRecipe } from "../Button";
 import { Dropdown } from "../Dropdown";
 import { Switch } from "../Switch";
 
-interface ThemeAgentSurfaceProps {
-  themes: string[];
-  current?: string;
-  onApply: (theme: string) => void;
-}
-const ThemeAgentSurface = ({ themes, current, onApply }: ThemeAgentSurfaceProps) => {
-  st.expose("theme", current ?? null);
-  st.tool("setTheme", { desc: `Switch this page's color theme. One of: ${themes.join(", ")}.` })
-    .arg("theme", String)
-    .exec((theme) => {
-      if (!themes.includes(theme)) throw new Error(`Unknown theme "${theme}". One of: ${themes.join(", ")}.`);
-      onApply(theme);
-    });
-  return null;
-};
-
 export interface ThemeToggleProps {
   themes?: string[];
 }
-
 export const ThemeToggle = ({ themes }: ThemeToggleProps) => {
-  const [theme, setTheme] = useState<string | undefined>(undefined);
-  const stTheme = st.use.theme();
+  const theme = st.use.theme();
+  const applyTheme = st
+    .tool("applyTheme", { desc: `Switch this page's color theme. One of: ${themes?.join(", ") ?? "none"}.` })
+    .arg("theme", String)
+    .exec((theme) => {
+      document.documentElement.setAttribute("data-theme", theme);
+      setCookie("theme", theme);
+      st.do.setTheme(theme);
+    });
   useEffect(() => {
     if (!themes) return;
     const currentTheme = document.documentElement.getAttribute("data-theme");
-    setTheme(currentTheme && themes.includes(currentTheme) ? currentTheme : themes[0]);
+    st.do.setTheme(currentTheme && themes.includes(currentTheme) ? currentTheme : themes[0]);
   }, [themes]);
 
-  const applyTheme = useCallback((theme: string) => {
-    document.documentElement.setAttribute("data-theme", theme);
-    setCookie("theme", theme);
-    setTheme(theme);
-  }, []);
   if (!themes || themes.length <= 1) return null;
-  const agentSurface = <ThemeAgentSurface current={theme} onApply={applyTheme} themes={themes} />;
   if (themes.length === 2)
     return (
       <div className="flex items-center gap-1 text-foreground">
-        {agentSurface}
         <svg aria-label="sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="size-4">
           <g strokeLinejoin="round" strokeLinecap="round" strokeWidth="2" fill="none" stroke="currentColor">
             <circle cx="12" cy="12" r="4"></circle>
@@ -74,40 +57,37 @@ export const ThemeToggle = ({ themes }: ThemeToggleProps) => {
       </div>
     );
   return (
-    <>
-      {agentSurface}
-      <Dropdown
-        className="mb-72"
-        buttonClassName="m-1"
-        value={
-          <>
-            Theme
-            <svg
-              width="12px"
-              height="12px"
-              className="inline-block h-2 w-2 fill-current opacity-60"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 2048 2048"
-            >
-              <path d="M1799 349l242 241-1017 1017L7 590l242-241 775 775 775-775z"></path>
-            </svg>
-          </>
-        }
-        dropdownClassName="w-52 bg-border"
-        content={themes.map((theme) => (
-          <li key={theme}>
-            <button
-              type="button"
-              className={buttonRecipe({ variant: "ghost", size: "sm" }, "w-full justify-start")}
-              onClick={() => {
-                applyTheme(theme);
-              }}
-            >
-              {theme}
-            </button>
-          </li>
-        ))}
-      />
-    </>
+    <Dropdown
+      className="mb-72"
+      buttonClassName="m-1"
+      value={
+        <>
+          Theme
+          <svg
+            width="12px"
+            height="12px"
+            className="inline-block h-2 w-2 fill-current opacity-60"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 2048 2048"
+          >
+            <path d="M1799 349l242 241-1017 1017L7 590l242-241 775 775 775-775z"></path>
+          </svg>
+        </>
+      }
+      dropdownClassName="w-52 bg-border"
+      content={themes.map((theme) => (
+        <li key={theme}>
+          <button
+            type="button"
+            className={buttonRecipe({ variant: "ghost", size: "sm" }, "w-full justify-start")}
+            onClick={() => {
+              applyTheme(theme);
+            }}
+          >
+            {theme}
+          </button>
+        </li>
+      ))}
+    />
   );
 };

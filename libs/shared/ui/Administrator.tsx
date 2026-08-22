@@ -22,7 +22,7 @@ export const Administrator = ({
   pageMenus,
   footer,
 }: AdministratorProps) => {
-  const searchParams = st.use.searchParams();
+  const searchParams = st.use.searchParams({ agent: false });
   const topMenu = Array.isArray(searchParams.topMenu) ? searchParams.topMenu[0] : searchParams.topMenu;
   const subMenu = Array.isArray(searchParams.subMenu) ? searchParams.subMenu[0] : searchParams.subMenu;
   const [menuOpen, setMenuOpen] = useState(false);

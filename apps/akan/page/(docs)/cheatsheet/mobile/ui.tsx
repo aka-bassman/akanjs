@@ -56,14 +56,14 @@ export default function Page() {
             ].map((item) => (
               <div key={item.title} className="min-w-0">
                 <div className="font-bold font-mono text-error text-sm">{item.title}</div>
-                <div className="mt-2 min-h-14 text-base-content/70 text-xs leading-5">{item.desc}</div>
+                <div className="mt-2 min-h-14 text-foreground/70 text-xs leading-5">{item.desc}</div>
                 <video
                   src={item.src}
                   autoPlay
                   muted
                   loop
                   playsInline
-                  className="mt-4 aspect-9/16 max-h-[420px] w-full rounded-xl bg-base-content/5 object-contain shadow-base-content/10 shadow-lg"
+                  className="mt-4 aspect-9/16 max-h-[420px] w-full rounded-xl bg-foreground/5 object-contain shadow-foreground/10 shadow-lg"
                 />
               </div>
             ))}
@@ -101,9 +101,9 @@ export const pageConfig = {
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className="rounded-xl border border-base-300 bg-base-100 px-4 py-0">
+              <div key={title} className="rounded-xl border border-background/30 bg-background px-4 py-0">
                 <span className="font-mono font-semibold text-primary">{title}: </span>
-                <span className="text-base-content/70 text-sm">{desc}</span>
+                <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
             ))}
           </div>
@@ -138,7 +138,7 @@ export const pageConfig = {
                 lines: ["bottom distance kept", "no pageConfig option", "opt in per BottomInset"],
               },
             ].map(({ title, lines }) => (
-              <div key={title} className="rounded-2xl border border-base-300 bg-base-100 p-4">
+              <div key={title} className="rounded-2xl border border-background/30 bg-background p-4">
                 <div className="font-semibold text-primary">{title}</div>
                 <div className="mt-3 space-y-2">
                   {lines.map((line, idx) => (
@@ -146,7 +146,7 @@ export const pageConfig = {
                       key={line}
                       className={[
                         "rounded-lg px-3 py-2 text-center text-xs",
-                        idx === lines.length - 1 ? "bg-primary/15 text-primary" : "bg-base-200 text-base-content/70",
+                        idx === lines.length - 1 ? "bg-primary/15 text-primary" : "bg-background text-foreground/70",
                       ].join(" ")}
                     >
                       {line}
@@ -159,17 +159,17 @@ export const pageConfig = {
           <div className="rounded-3xl border border-primary/40 bg-primary/5 p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <div className="font-bold text-base-content">
+                <div className="font-bold text-foreground">
                   {l.trans({ en: "Android / iOS demo", ko: "Android / iOS 데모" })}
                 </div>
-                <div className="text-base-content/60 text-sm">
+                <div className="text-foreground/60 text-sm">
                   {l.trans({
                     en: 'These recordings show keyboardSticky moving the BottomInset with the native keyboard and contentAnchor="bottom" keeping the scroll content aligned to the composer.',
                     ko: '아래 영상은 keyboardSticky가 BottomInset을 네이티브 키보드와 함께 움직이고, contentAnchor="bottom"이 스크롤 콘텐츠를 composer 기준으로 유지하는 동작을 보여줍니다.',
                   })}
                 </div>
               </div>
-              <div className="rounded-full bg-base-100 px-3 py-1 font-mono text-primary text-xs">keyboardSticky</div>
+              <div className="rounded-full bg-background px-3 py-1 font-mono text-primary text-xs">keyboardSticky</div>
             </div>
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
               <div className="grid gap-4 md:grid-cols-2">
@@ -191,12 +191,15 @@ export const pageConfig = {
                     }),
                   },
                 ].map((item) => (
-                  <div key={item.title} className="overflow-hidden rounded-2xl border border-base-300 bg-base-100">
-                    <div className="border-base-300 border-b px-4 py-3">
+                  <div
+                    key={item.title}
+                    className="overflow-hidden rounded-2xl border border-background/30 bg-background"
+                  >
+                    <div className="border-background/30 border-b px-4 py-3">
                       <div className="font-mono font-semibold text-primary text-sm">{item.title}</div>
-                      <div className="mt-1 text-base-content/60 text-xs leading-5">{item.desc}</div>
+                      <div className="mt-1 text-foreground/60 text-xs leading-5">{item.desc}</div>
                     </div>
-                    <div className="bg-base-content/5 p-3">
+                    <div className="bg-foreground/5 p-3">
                       <video
                         src={item.src}
                         autoPlay
@@ -227,7 +230,7 @@ export const pageConfig = {
                 ].map((item) => (
                   <div
                     key={item}
-                    className="rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-base-content/70"
+                    className="rounded-xl border border-background/30 bg-background px-3 py-2 text-foreground/70"
                   >
                     {item}
                   </div>
@@ -285,9 +288,9 @@ export const pageConfig = {
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className="rounded-xl border border-base-300 bg-base-100 px-4 py-0">
+              <div key={title} className="rounded-xl border border-background/30 bg-background px-4 py-0">
                 <span className="font-mono font-semibold text-primary">{title}: </span>
-                <span className="text-base-content/70 text-sm">{desc}</span>
+                <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
             ))}
           </div>

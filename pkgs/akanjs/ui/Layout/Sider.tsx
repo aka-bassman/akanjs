@@ -16,7 +16,7 @@ export interface SiderProps {
 
 export const Sider = ({ className, bgClassName, children }: SiderProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  const path = st.use.path();
+  const path = st.use.path({ agent: false });
   useEffect(() => {
     setIsOpen(false);
   }, [path]);

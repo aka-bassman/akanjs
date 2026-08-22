@@ -613,7 +613,7 @@ interface PushNotificationSwitchProps {
 
 export const PushNotificationSwitch = ({ className }: PushNotificationSwitchProps) => {
   const pushNotification = usePushNotification();
-  const deviceToken = st.use.deviceToken();
+  const deviceToken = st.use.deviceToken({ agent: false });
   //! TODO: 추후 수정필요
   // const checked = self.notiDeviceTokens?.includes(deviceToken) ?? false;
   const checked = false as boolean;

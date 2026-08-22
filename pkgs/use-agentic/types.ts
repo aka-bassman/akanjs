@@ -18,6 +18,14 @@ export interface ToolEntry {
   run: (args: Record<string, unknown>) => unknown;
 }
 
+/** One call an agent made through the surface, in the order it made them. */
+export interface AgentCall {
+  name: string;
+  args: Record<string, unknown>;
+  at: Date;
+  error?: string;
+}
+
 export interface ResourceEntry {
   name: string;
   description?: string;

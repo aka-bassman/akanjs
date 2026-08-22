@@ -67,7 +67,7 @@ interface MapProps {
   children: any;
 }
 export default function Map({ className, children, onLoad, onClick, onRightClick, onMouseMove, mapKey }: MapProps) {
-  const theme = st.use.theme();
+  const theme = st.use.theme({ agent: false });
   const mapCenter = st.use.mapCenter();
   const mapZoom = st.use.mapZoom();
   const mapBounds = st.use.mapBounds();

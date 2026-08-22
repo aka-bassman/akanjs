@@ -30,8 +30,8 @@ const DocSetting = ({
   roleTypes = ["Public", "User", "Admin", "SuperAdmin"],
   roleKeys = { me: "Admin", self: "User" },
 }: DocSettingProps) => {
-  const tryRoles = st.use.tryRoles();
-  const tryAccount = st.use.tryAccount();
+  const tryRoles = st.use.tryRoles({ agent: false });
+  const tryAccount = st.use.tryAccount({ agent: false });
   useEffect(() => {
     st.set({ tryRoles: [...roleTypes] });
   }, []);
@@ -107,7 +107,7 @@ interface DocAuthModalProps {
   children: ReactNode;
 }
 const DocAuthModal = ({ children }: DocAuthModalProps) => {
-  const tryJwt = st.use.tryJwt();
+  const tryJwt = st.use.tryJwt({ agent: false });
   const [jwt, setJwt] = useState(tryJwt);
   const [modalOpen, setModalOpen] = useState(false);
   const decodedAccount = jwt ? decodeJwtPayload<Account>(jwt) : null;

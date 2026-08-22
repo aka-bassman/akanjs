@@ -49,7 +49,7 @@ export const Phone = ({ className, inputClassName, placeholder, userId, redirect
   const { l } = usePage();
   const phone = st.use.phone();
   const inputRef = useRef<HTMLInputElement>(null);
-  const path = st.use.path();
+  const path = st.use.path({ agent: false });
   useEffect(() => {
     inputRef.current?.focus();
   }, [path]);

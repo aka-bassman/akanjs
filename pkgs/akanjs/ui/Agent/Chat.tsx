@@ -3,7 +3,7 @@ import { cn, fetch, usePage } from "akanjs/client";
 import type { PromptResult } from "akanjs/signal";
 import { AgentContext, type AgentPrompt, AgentPrompts, ensureStoreSurface } from "akanjs/store";
 import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { AiOutlineClear, AiOutlineClose, AiOutlineRobot } from "react-icons/ai";
+import { AiOutlineClear, AiOutlineClose } from "react-icons/ai";
 import { type AgentRunner, AgentSession, SessionContext } from "use-agentic";
 import { Button } from "../Button";
 import { inputRecipe } from "../recipe";
@@ -25,6 +25,8 @@ export interface ChatProps {
   /** Keeps the transcript across reloads — sessionStorage by default, `{ storage: "local" }` to outlive the tab. */
   persist?: PersistOption;
 }
+
+const isApplePlatform = () => /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
 
 /**
  * The user-facing half of the in-page agent: one floating chat wired to the same surface the dock inspects.
@@ -63,10 +65,31 @@ export const DefaultChat = ({
   );
   const [open, setOpen] = useState(defaultOpen);
   const [draft, setDraft] = useState("");
+  const [hotkey, setHotkey] = useState<{ label: string; keys: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [version, open]);
+  useEffect(() => {
+    const apple = isApplePlatform();
+    setHotkey(apple ? { label: "⌘ L", keys: "Meta+L" } : { label: "Ctrl+L", keys: "Control+L" });
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || event.key.toLowerCase() !== "l" || event.shiftKey || event.altKey) return;
+      const chord = apple ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+      if (!chord) return;
+      event.preventDefault();
+      setOpen(true);
+      inputRef.current?.focus();
+    };
+    // Cmd/Ctrl+L is the browser location bar; capture so preventDefault wins.
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    inputRef.current?.focus();
+  }, [open]);
   const runPrompt = async (prompt: AgentPrompt, args: string[]) => {
     const usage = `/${prompt.name} ${prompt.args.map((arg) => `<${arg.name}>`).join(" ")}`.trim();
     if (args.length < prompt.args.filter((arg) => arg.required).length) {
@@ -123,16 +146,33 @@ export const DefaultChat = ({
   if (!open)
     return (
       <button
+        aria-keyshortcuts={hotkey?.keys}
         aria-label={l("base.agent")}
         data-agent-ui=""
         className={cn(
-          "fixed right-4 bottom-4 z-50 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105",
+          "group/agent fixed right-4 bottom-4 z-50 flex size-12 items-center justify-center rounded-full border border-primary/20 bg-primary/90 text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-105",
           className,
         )}
         onClick={() => setOpen(true)}
         type="button"
       >
-        <AiOutlineRobot className="text-2xl" />
+        {hotkey ? (
+          <kbd className="pointer-events-none absolute right-full mr-3 hidden rounded-lg border border-border bg-background px-2 py-0.5 font-mono text-foreground/50 text-xs opacity-0 shadow-sm group-hover/agent:opacity-100 group-focus-visible/agent:opacity-100 md:block">
+            {hotkey.label}
+          </kbd>
+        ) : null}
+        <svg className="size-7" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <path
+            fill="currentColor"
+            d="M40 18 C43.6 43.6 54.4 54.4 80 58 C54.4 61.6 43.6 72.4 40 98
+       C36.4 72.4 25.6 61.6 0 58 C25.6 54.4 36.4 43.6 40 18 Z"
+          />
+          <path
+            fill="currentColor"
+            d="M80 2 C81.8 14.8 87.2 20.2 100 22 C87.2 23.8 81.8 29.2 80 42
+       C78.2 29.2 72.8 23.8 60 22 C72.8 20.2 78.2 14.8 80 2 Z"
+          />
+        </svg>
       </button>
     );
   return (
@@ -144,7 +184,7 @@ export const DefaultChat = ({
         className,
       )}
     >
-      <header className="flex items-center gap-2 border-base-content/5 border-b px-4 py-3">
+      <header className="flex items-center gap-2 border-foreground/5 border-b px-4 py-3">
         <span className="font-semibold text-sm">{title ?? l("base.agent")}</span>
         {session.isRunning ? <span className="size-2 animate-pulse rounded-full bg-primary" /> : null}
         <span className="ml-auto flex items-center gap-2">
@@ -177,7 +217,7 @@ export const DefaultChat = ({
       </div>
       {session.pendingApproval ? <Approval approval={session.pendingApproval} /> : null}
       {menu.length ? (
-        <div className="flex max-h-40 flex-col overflow-y-auto border-base-content/5 border-t py-1">
+        <div className="flex max-h-40 flex-col overflow-y-auto border-foreground/5 border-t py-1">
           {menu.map((prompt) => (
             <button
               className="flex items-baseline gap-2 px-4 py-1.5 text-left hover:bg-muted"
@@ -198,10 +238,11 @@ export const DefaultChat = ({
           ))}
         </div>
       ) : null}
-      <div className="flex items-center gap-2 border-base-content/5 border-t p-3">
+      <div className="flex items-center gap-2 border-foreground/5 border-t p-3">
         <input
           className={inputRecipe({ size: "sm" }, "flex-1")}
           onChange={(event) => setDraft(event.target.value)}
+          ref={inputRef}
           onKeyDown={(event) => {
             if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
             event.preventDefault();

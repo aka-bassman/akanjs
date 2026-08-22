@@ -63,42 +63,44 @@ beforeAll(() => {
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
   process.env.AKAN_PUBLIC_ENV = "testing";
   Translator.setActiveLocale("en");
-  class SurfaceNoteStore extends store(makeSignal(), () => ({})) {}
+  class SurfaceNoteStore extends store(makeSignal(), () => ({})) {
+    async publishNote() {
+      await Promise.resolve();
+    }
+  }
   StoreRegistry.register(SurfaceNoteStore);
   instance = new StoreInstance(StoreRegistry.merge("surfaceRoot", SurfaceNoteStore));
-  source = new StoreSurfaceSource(new AgentBridge(instance, { surfaceNote: serializedSignal }));
-  // What a mounted component's subscription does: without a live key the store publishes nothing.
+  source = new StoreSurfaceSource(new AgentBridge(instance));
   instance.retainLive("surfaceNoteForm");
 });
 
 describe("StoreSurfaceSource", () => {
-  test("maps every bridge tool with its schema and effect", () => {
-    const create = entryOf("createSurfaceNote");
-    expect(create?.effect).toBe("mutation");
-    expect(create?.parameters).toMatchObject({ type: "object" });
-    expect(entryOf("setTitleOnSurfaceNote")?.effect).toBe("state");
-  });
-
-  test("remove* keys default to a confirm gate; nothing else does", () => {
-    expect(entryOf("removeSurfaceNote")?.confirm).toBe(true);
-    expect(entryOf("createSurfaceNote")?.confirm).toBeUndefined();
-  });
-
-  test("calls dispatch through the bridge, argument checking included", async () => {
-    const surface = new AgenticSurface();
-    surface.addSource(source);
-    await surface.call("setTitleOnSurfaceNote", { title: "hello" });
-    expect((instance.get().surfaceNoteForm as { title: string }).title).toBe("hello");
-    await expect(surface.call("setTitleOnSurfaceNote", { title: 5 })).rejects.toThrow("must be a string");
+  test("contributes the three built-ins and nothing the store declared", () => {
+    // The store's own methods and generated setters are not tools: an agent gets what a component declared.
+    expect(
+      source
+        .tools()
+        .map((tool) => tool.name)
+        .sort(),
+    ).toEqual(["navigate", "readScreen", "readState"]);
+    expect(entryOf("publishNote")).toBeUndefined();
+    expect(entryOf("setTitleOnSurfaceNote")).toBeUndefined();
+    expect(entryOf("createSurfaceNote")).toBeUndefined();
   });
 
   test("readState pulls one masked state key on demand", async () => {
     const surface = new AgenticSurface();
     surface.addSource(source);
-    await surface.call("setTitleOnSurfaceNote", { title: "pulled" });
+    instance.set({ surfaceNoteForm: { ...(instance.get().surfaceNoteForm as object), title: "pulled" } });
     const value = (await surface.call("readState", { key: "surfaceNoteForm" })) as { title: string };
     expect(value.title).toBe("pulled");
     await expect(surface.call("readState", { key: "nope" })).rejects.toThrow("Unknown state key: nope");
+  });
+
+  test("readState refuses a key of the same store that nothing on screen reads", async () => {
+    const surface = new AgenticSurface();
+    surface.addSource(source);
+    await expect(surface.call("readState", { key: "pageOfSurfaceNote" })).rejects.toThrow("not read by this screen");
   });
 
   test("navigate drives the client router and refuses anything but an internal path", async () => {
@@ -114,17 +116,17 @@ describe("StoreSurfaceSource", () => {
     expect(await surface.call("navigate", { path: "/docs/intro" })).toBe("Navigating to /docs/intro.");
   });
 
-  test("a page's own hook registration shadows the store entry of the same name", async () => {
+  test("a page's own hook registration shadows a built-in of the same name", async () => {
     const surface = new AgenticSurface();
     surface.addSource(source);
     let shadowed = 0;
     surface.registerTool([], {
-      name: "setTitleOnSurfaceNote",
+      name: "readState",
       run: () => {
         shadowed += 1;
       },
     });
-    await surface.call("setTitleOnSurfaceNote", {});
+    await surface.call("readState", {});
     expect(shadowed).toBe(1);
   });
 
@@ -136,44 +138,24 @@ describe("StoreSurfaceSource", () => {
     expect(readScreen?.parameters).toEqual({ type: "object", properties: {}, additionalProperties: false });
     expect(await surface.call("readScreen", {})).toBe("No rendered document is available.");
   });
-
-  test("the tool list follows the live screen between calls", () => {
-    expect(entryOf("createSurfaceNote")).toBeTruthy();
-    instance.releaseLive("surfaceNoteForm");
-    expect(entryOf("createSurfaceNote")).toBeUndefined();
-    expect(entryOf("navigate")).toBeTruthy();
-    expect(entryOf("readScreen")).toBeTruthy();
-    instance.retainLive("surfaceNoteForm");
-    expect(entryOf("createSurfaceNote")).toBeTruthy();
-  });
 });
 
 describe("StoreSurfaceSource zone views", () => {
-  test("a zone view publishes only the stores its own subtree subscribes, built-ins included", () => {
-    instance.releaseLive("surfaceNoteForm");
-    instance.retainLive("surfaceNoteForm", "notes");
-    const zone = source.tools(["notes"]).map((tool) => tool.name);
-    expect(zone).toContain("setTitleOnSurfaceNote");
-    expect(zone).toContain("readScreen");
-    const other = source.tools(["other"]).map((tool) => tool.name);
-    expect(other).not.toContain("setTitleOnSurfaceNote");
-    expect(other).toContain("navigate");
-    const root = source.tools().map((tool) => tool.name);
-    expect(root).toContain("setTitleOnSurfaceNote");
-    instance.releaseLive("surfaceNoteForm", "notes");
-    instance.retainLive("surfaceNoteForm");
-  });
-
   test("readState is gated by the view's own liveness", async () => {
     instance.releaseLive("surfaceNoteForm");
     instance.retainLive("surfaceNoteForm", "notes");
     const surface = new AgenticSurface();
     surface.addSource(source);
     const read = surface.view(["other"]).call("readState", { key: "surfaceNoteForm" });
-    await expect(read).rejects.toThrow("not part of the current screen's surface");
+    await expect(read).rejects.toThrow("not read by this screen");
     const value = (await surface.view(["notes"]).call("readState", { key: "surfaceNoteForm" })) as { title: string };
     expect(value.title).toBeDefined();
     instance.releaseLive("surfaceNoteForm", "notes");
     instance.retainLive("surfaceNoteForm");
+  });
+
+  test("the built-ins are published to every view, zone or root", () => {
+    const zone = source.tools(["notes"]).map((tool) => tool.name);
+    expect(zone).toEqual(["navigate", "readScreen", "readState"]);
   });
 });

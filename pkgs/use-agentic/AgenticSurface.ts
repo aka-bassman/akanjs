@@ -1,4 +1,5 @@
 import type {
+  AgentCall,
   PublishedResource,
   PublishedTool,
   ResourceDiff,
@@ -44,6 +45,7 @@ export class AgenticSurface {
   #resources = new Map<string, ResourceEntry[]>();
   #scopes = new Map<string, ScopeEntry[]>();
   #guides: { scope: string; text: string }[] = [];
+  readonly #calls: AgentCall[] = [];
   #sources = new Set<SurfaceSource>();
   #listeners = new Set<() => void>();
   #warned = new Set<string>();
@@ -142,12 +144,27 @@ export class AgenticSurface {
     return null;
   }
 
+  /** Every call made through this surface, oldest first. What the dock shows the user to check against the screen. */
+  get transcript(): readonly AgentCall[] {
+    return this.#calls;
+  }
+
   async call(name: string, args: Record<string, unknown> = {}, view: string[] = []): Promise<unknown> {
     const entry = this.tool(name, view);
     if (!entry) throw new Error(`Unknown tool: ${name}`);
-    const verdict = entry.guard?.(args) ?? true;
-    if (verdict !== true) throw new Error(verdict);
-    return await entry.run(args);
+    // Recorded before the guard runs: an attempt that was refused is a thing the agent did, and leaving it out is
+    // how a transcript starts to lie. Bounded, because a long-lived chat would otherwise hold every call ever made.
+    const record: AgentCall = { name, args, at: new Date() };
+    if (this.#calls.length >= 200) this.#calls.shift();
+    this.#calls.push(record);
+    try {
+      const verdict = entry.guard?.(args) ?? true;
+      if (verdict !== true) throw new Error(verdict);
+      return await entry.run(args);
+    } catch (error) {
+      record.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
   }
 
   read(name: string, view: string[] = []): unknown {

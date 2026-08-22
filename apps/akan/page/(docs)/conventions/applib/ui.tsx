@@ -145,7 +145,7 @@ interface WebProps {
 }
 
 export const Web = ({ children }: WebProps) => {
-  const innerWidth = st.use.innerWidth();
+  const innerWidth = st.use.innerWidth({ agent: false });
   return innerWidth > 768 ? children : null;
 };`}
           />

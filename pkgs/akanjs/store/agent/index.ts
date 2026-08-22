@@ -1,7 +1,6 @@
 export * from "./AgentBridge";
 export * from "./AgentContext";
 export * from "./AgentPrompts";
-export * from "./AgentVisibility";
 export * from "./ScreenReader";
 export * from "./StoreCatalogue";
 export * from "./StoreSurfaceSource";

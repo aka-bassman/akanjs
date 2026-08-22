@@ -13,6 +13,7 @@ import { Dropdown } from "../Dropdown";
 import { ObjectId } from "../ObjectId";
 import { Popconfirm } from "../Popconfirm";
 import { RecentTime } from "../RecentTime";
+import { dictLabel, formatCell } from "./dataText";
 
 export const convToAntdColumn = (column: DataColumn<any>) => {
   if (typeof column !== "string")
@@ -89,7 +90,7 @@ export default function Item<T extends string, Full extends { id: string }, Ligh
   const { sliceName } = slice;
   const strActions = actions
     .filter((action) => typeof action === "string")
-    .map((action, idx) => <Action key={action} action={action} outline={false} model={model} slice={slice} />);
+    .map((action) => <Action key={action} action={action} outline={false} model={model} slice={slice} />);
 
   const customActions = actions
     .filter((action) => typeof action !== "string")
@@ -100,77 +101,63 @@ export default function Item<T extends string, Full extends { id: string }, Ligh
       const key = typeof column === "string" ? column : (column.key as string);
       return !["id", "status", "createdAt"].includes(key);
     })
-    .map((column, idx) => {
+    .map((column) => {
       const key = (typeof column === "string" ? column : column.key) as string;
-      const title = typeof column !== "string" && column.title ? column.title : l._(`${sliceName}.${key}`);
-      const render = convToAntdColumn(column).render ?? ((v: any, m: any, i: number) => JSON.stringify(v, null, 2));
-      const modelKeyLength = (model as unknown as { [key: string]: any[] | undefined })[key]?.length;
-      if (convToAntdColumn(column).render) {
-        return (
-          <div key={key} className="flex-wrap overflow-hidden text-xs">
-            {!!modelKeyLength && (
-              <span className="flex items-center gap-3">
-                <span className="whitespace-nowrap font-semibold">{title}</span>
-                <span className="text-sm">{render(model[key as keyof typeof model], model, idx)}</span>
-              </span>
-            )}
-          </div>
-        );
-      }
-
+      const value = model[key as keyof typeof model] as unknown;
+      // An empty array and an empty string are both "nothing to show"; a 0 or a Date is not.
+      if (value === null || value === undefined || (Array.isArray(value) && !value.length) || value === "") return null;
+      const title =
+        typeof column !== "string" && column.title ? column.title : dictLabel(l._, `${sliceName}.${key}`, key);
+      const render = convToAntdColumn(column).render;
       return (
-        <div key={key} className="flex-wrap overflow-hidden text-xs">
-          {!!modelKeyLength && (
-            <span className="flex items-center gap-3">
-              <span className="whitespace-nowrap font-semibold">{title}</span>
-              <span className="text-sm">{model[key as keyof typeof model] as string}</span>
-            </span>
-          )}
+        <div key={key} className="flex items-baseline justify-between gap-3 text-xs">
+          <span className="shrink-0 whitespace-nowrap text-muted-foreground">{title}</span>
+          <span className="truncate text-right text-foreground/90 text-sm">
+            {render ? render(value as never, model) : formatCell(value)}
+          </span>
         </div>
       );
-    });
+    })
+    .filter((col) => !!col);
 
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div className={cn("flex h-full flex-col", className)}>
       {children ? (
         <div className="flex justify-center">
           <div className="relative size-full" onClick={onClick}>
             {children}
-            <div className="absolute inset-0" />
             {/* children 클릭 방지 */}
+            <div className="absolute inset-0" />
           </div>
         </div>
       ) : title ? (
         <div className="font-bold">{title}</div>
       ) : null}
-      <div className="mt-2 h-full rounded-lg bg-primary/5 p-2">
-        <div className="mb-2 flex justify-between">
-          <div>{columns.find((c) => c === "id") && <ObjectId id={model.id} />}</div>
-
-          <div className="flex items-end justify-center gap-2">
-            {columns.find((c) => c === "createdAt") && (
-              <RecentTime date={(model as unknown as BaseObject).createdAt} className="text-xs opacity-60" />
-            )}
-            {columns.find((c) => c === "status") && (
-              <StatusTag status={(model as unknown as { status: string }).status} className="mr-0 p-2" />
-            )}
+      <div className="mt-2 flex h-full flex-col gap-2 rounded-box border border-border bg-card p-3 transition hover:border-primary/40">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">{columns.find((c) => c === "id") ? <ObjectId id={model.id} /> : null}</div>
+          <div className="flex items-center gap-2">
+            {columns.find((c) => c === "createdAt") ? (
+              <RecentTime date={(model as unknown as BaseObject).createdAt} className="text-muted-foreground text-xs" />
+            ) : null}
+            {columns.find((c) => c === "status") ? (
+              <StatusTag status={(model as unknown as { status: string }).status} />
+            ) : null}
           </div>
         </div>
-        <div className="flex flex-col gap-1">{extraCols}</div>
-        <div className="flex w-full justify-around">
-          {strActions.map((action) => (
-            <div className="" key={action.key}>
-              {action}
-            </div>
-          ))}
-          {customActions.length ? (
-            <Dropdown
-              buttonClassName={buttonRecipe({ variant: "ghost", size: "icon" }, "m-1 size-8 text-center")}
-              value={<AiOutlineMore />}
-              content={customActions.map((action) => <div key={action.key}>{action.label}</div>)}
-            />
-          ) : null}
-        </div>
+        {extraCols.length ? <div className="flex flex-col gap-1">{extraCols}</div> : null}
+        {strActions.length || customActions.length ? (
+          <div className="mt-auto flex items-center justify-end gap-1 border-border/60 border-t pt-2">
+            {strActions}
+            {customActions.length ? (
+              <Dropdown
+                buttonClassName={buttonRecipe({ variant: "ghost", size: "icon" }, "size-8")}
+                value={<AiOutlineMore />}
+                content={customActions.map((action) => <li key={action.key}>{action.label}</li>)}
+              />
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -263,8 +250,7 @@ const statusColors = {
 const StatusTag = ({ status, className }: { status: string; className?: string }) => {
   return (
     <div
-      className={badgeRecipe({ variant: "outline" }, [
-        "mr-1 p-3",
+      className={badgeRecipe({ variant: "outline", size: "sm" }, [
         statusColors[status as keyof typeof statusColors] ?? "",
         className,
       ])}

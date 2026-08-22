@@ -23,7 +23,7 @@ export interface BottomSheetRef {
 export const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
   ({ open, onCancel, type = "half", children }: BottomSheetProps, bottomSheetRef) => {
     const ref = useRef<HTMLDivElement>(null);
-    const pageState = st.use.pageState();
+    const pageState = st.use.pageState({ agent: false });
 
     const [{ y, opacity }, api] = useSpring(() => ({ y: window.innerHeight, opacity: 0 }));
 

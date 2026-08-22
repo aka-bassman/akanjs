@@ -1,25 +1,4 @@
-import type { SerializedArg } from "akanjs/signal";
-import type { SliceActionKey } from "../sliceRole";
 import type { SliceStateKey } from "../state";
-
-/** Which generated form-setter a store key is, when it is one. */
-export type FormSetterRole = "set" | "add" | "sub" | "addOrSub";
-
-/** What calling a store action reaches. `state` never leaves the browser. */
-export type StoreActionEffect = "state" | "query" | "mutation";
-
-export interface SerializedStoreAction {
-  args: SerializedArg[];
-  effect: StoreActionEffect;
-  /** The model this key belongs to, when the key identifies one. */
-  refName?: string;
-  /** The endpoint whose arguments it borrows, when it is named after one. */
-  endpoint?: string;
-  /** The generated role, absent on an action a module wrote itself. */
-  role?: SliceActionKey | FormSetterRole;
-  /** The model field it writes, on a form setter. */
-  field?: string;
-}
 
 export interface SerializedStoreState {
   /**
@@ -34,17 +13,4 @@ export interface SerializedStoreState {
   /** Materialized from a computation, the URL, or storage. Writing one throws, so it is read-only by construction. */
   derived: boolean;
   role?: SliceStateKey;
-}
-
-/**
- * One store instance described for an agent: every key it can read and every action it may call.
- *
- * Flat rather than grouped by model, because that is what the store is — `st.use.x` and `st.do.y` are one namespace,
- * so a key means the same thing to every reader and two models cannot both claim one. It is the store's answer to
- * `SerializedSignal`, and it is derived on the client from the built store rather than shipped from the server: the
- * store classes are in the bundle already, and a second copy over the wire is a second thing to keep in step.
- */
-export interface SerializedStore {
-  state: { [key: string]: SerializedStoreState };
-  action: { [key: string]: SerializedStoreAction };
 }

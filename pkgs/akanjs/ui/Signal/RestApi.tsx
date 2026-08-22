@@ -35,7 +35,7 @@ interface RestApiEndpointsProps {
   httpUri?: string;
 }
 const RestApiEndpoints = ({ refName, fetch, prefix, endpoints, openAll, httpUri }: RestApiEndpointsProps) => {
-  const tryRoles = st.use.tryRoles();
+  const tryRoles = st.use.tryRoles({ agent: false });
   const signal = fetch.serializedSignal[refName];
   const signalPrefix = prefix ?? signal.prefix;
   const baseEndpointEntries = Object.entries(FetchClient.getBaseEndpoint(refName, signal)).map(([key, endpoint]) => ({
@@ -280,7 +280,7 @@ const RestApiTry = ({ signalPrefix, refName, endpointKey, endpoint, fetch, httpU
   const paramArgs = endpoint.args.filter((arg) => arg.type === "param");
   const bodyArgs = endpoint.args.filter((arg) => arg.type === "body");
   const uploadArgs = endpoint.args.filter((arg) => arg.type === "upload");
-  const tryJwt = st.use.tryJwt();
+  const tryJwt = st.use.tryJwt({ agent: false });
   const paramExample = useMemo(() => getExampleData<string>(paramArgs, "restapi"), []);
   const queryExample = useMemo(() => getExampleData<string>(queryArgs, "restapi"), []);
   const bodyExample = useMemo(() => JSON.stringify(getExampleData(bodyArgs, "restapi"), null, 2), []);

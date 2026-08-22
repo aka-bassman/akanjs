@@ -32,7 +32,7 @@ interface MsgOption {
 let timeOuts: TimeOutType[] = [];
 
 const Message = ({ content, type = "info" as MessageType, duration, keyForMessage }: MessageProps) => {
-  const pageState = st.use.pageState();
+  const pageState = st.use.pageState({ agent: false });
   const [preBlind, setPreBlind] = useState(false);
   useEffect(() => {
     if (!content) return;
@@ -107,7 +107,7 @@ const Message = ({ content, type = "info" as MessageType, duration, keyForMessag
 };
 
 export const Messages = () => {
-  const messages = st.use.messages();
+  const messages = st.use.messages({ agent: false });
   const { l } = usePage();
   useEffect(() => {
     Object.assign(msg, {

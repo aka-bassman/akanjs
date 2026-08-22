@@ -99,12 +99,13 @@ export class StToolBuilder<Args extends unknown[] = []> {
         description: spec.meta.desc,
         effect: spec.meta.effect,
         parameters: StToolBuilder.parametersOf(spec.args),
-        ...(spec.meta.confirm === undefined
+        // A `remove*` tool confirms unless it declares otherwise — destructiveness read off the key, as MCP hints are.
+        ...(spec.meta.confirm === undefined && !spec.name.startsWith("remove")
           ? {}
           : {
               confirm: (args: Record<string, unknown>) => {
-                const confirm = live.current.meta.confirm;
-                return typeof confirm === "function" ? confirm(args) : (confirm ?? false);
+                const confirm = live.current.meta.confirm ?? spec.name.startsWith("remove");
+                return typeof confirm === "function" ? confirm(args) : confirm;
               },
             }),
         ...(spec.meta.guard === undefined

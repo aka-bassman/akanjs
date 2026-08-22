@@ -83,7 +83,7 @@ lib/option.ts is where the app configures its server. env/ holds the values, aka
 
 apiKey, model, and host for whichever adaptor holds LlmAdaptorRole. Take the key from the env object rather than writing it here — env.server.* is gitignored, this file is not.
 
-Who may spend the LLM key through the runAgentTurn relay. It defaults to everyone, because the framework has no account model to gate on, and warns at boot until an app decides.
+Who may spend the LLM key through the runAgentTurn relay. With no policy the call is refused — the same answer None gives — because the framework has no account model to gate on.
 
 MCP server settings — instructions, readOnly, path, pageSize, language, auth. Not main.ts: the gateway there only spawns children, while this file is handed to the process that mounts /mcp.
 

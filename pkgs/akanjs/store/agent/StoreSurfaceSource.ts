@@ -1,21 +1,19 @@
 import { router } from "akanjs/client";
 import type { SurfaceSource, ToolEntry } from "use-agentic";
-import { AgentBridge, type AgentTool } from "./AgentBridge";
+import { AgentBridge } from "./AgentBridge";
 import { ScreenReader } from "./ScreenReader";
 
 /**
- * The store bridge as one surface source: every catalogued action of the stores the rendered screen is reading is
- * a callable tool, executed through `AgentBridge.call` so argument checking, masking, and the transcript stay in
- * one place. Recomputed per snapshot — the bridge's live view changes as components mount and unmount — and
- * per zone view: a zone session sees the stores its own subtree subscribes, and its `readScreen` reads its own
- * `data-agent-zone` container rather than the whole document.
+ * The three tools every akan screen has whatever it declares: where it can go, what it is rendering, and what one
+ * of the store keys it reads holds. Everything else an agent may do is a component's own `st.tool` declaration —
+ * the store contributes no actions, because a method on a store class is not something the screen offers the user.
  *
- * `remove*` keys default to a confirm gate — destructiveness derived from the key, the way the MCP hints derive
- * theirs — and a page can still shadow any entry with its own hook registration.
+ * Per zone view: a zone's `readState` reaches the keys its own subtree subscribes, and its `readScreen` reads its
+ * own `data-agent-zone` container rather than the whole document. A page can shadow any of the three by
+ * registering a hook tool of the same name — hook entries win over a source's.
  */
 export class StoreSurfaceSource implements SurfaceSource {
   #bridge: AgentBridge | null;
-  readonly #wrapped = new Map<string, { source: AgentTool[]; entries: ToolEntry[] }>();
   readonly #builtins = new Map<string, ToolEntry[]>();
 
   /** Lazy by default: `AgentBridge.of()` walks the whole store, so it waits for the first enumeration. */
@@ -25,38 +23,13 @@ export class StoreSurfaceSource implements SurfaceSource {
 
   tools = (view: string[] = []): ToolEntry[] => {
     const viewKey = view.join(".");
-    this.#bridge ??= AgentBridge.of();
-    const bridge = this.#bridge;
-    const live = bridge.toolsFor(viewKey);
-    const cached = this.#wrapped.get(viewKey);
-    if (cached?.source !== live)
-      this.#wrapped.set(viewKey, {
-        source: live,
-        entries: live.map((tool) => StoreSurfaceSource.#entry(bridge, tool, viewKey)),
-      });
-    // Built-ins last, so a store that declares its own action under any of these names wins it.
     let builtins = this.#builtins.get(viewKey);
     if (!builtins) {
       builtins = [StoreSurfaceSource.#navigate(), StoreSurfaceSource.#readScreen(viewKey), this.#readState(viewKey)];
       this.#builtins.set(viewKey, builtins);
     }
-    const wrapped = this.#wrapped.get(viewKey);
-    return [...(wrapped?.entries ?? []), ...builtins];
+    return builtins;
   };
-
-  static #entry(bridge: AgentBridge, tool: AgentTool, viewKey: string): ToolEntry {
-    const description = tool.description ?? tool.title;
-    return {
-      name: tool.name,
-      ...(description ? { description } : {}),
-      parameters: tool.inputSchema as Record<string, unknown>,
-      effect: tool.effect,
-      ...(tool.name.startsWith("remove") ? { confirm: true } : {}),
-      run: async (args: Record<string, unknown>) => {
-        await bridge.call(tool.name, args, viewKey);
-      },
-    };
-  }
 
   /** Screen-driving is client navigation, so the agent gets the same router `Link` rides. */
   static #navigate(): ToolEntry {

@@ -6,7 +6,7 @@ import { recipe, tv } from "akanjs/ui";
  *
  * Geometry is daisyUI's: `--tab-height: calc(var(--size-field) * 10)` (2.5rem) and `--tab-p: .75rem`.
  * The colour axis is the one thing `.tab` did with a selector rather than a class — an item that is
- * neither active nor hovered rendered at `color-mix(base-content 50%, transparent)`. Here that is the
+ * neither active nor hovered rendered at `color-mix(foreground 50%, transparent)`. Here that is the
  * `active: false` value, and `<Tab.Menu>` appends `activeClassName` last so it wins the merge.
  *
  * `tabs-bordered` / `tabs-lifted` are deliberately absent. Those are daisyUI 4 names; 5.5.19 ships

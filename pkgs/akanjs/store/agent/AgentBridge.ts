@@ -1,147 +1,67 @@
 import { DataList } from "akanjs/base";
-import { Translator } from "akanjs/client";
-import { parseAkanI18nEnv } from "akanjs/common";
 import { ConstantRegistry, type MaskModel, mask } from "akanjs/constant";
-import { FetchClient } from "akanjs/fetch";
-import type { AgentRefusal, JsonSchema, SerializedArg, SerializedSignal } from "akanjs/signal";
-// XXX: Module, not barrel — see the note in `StoreCatalogue`. `akanjs/signal` drags `bun:sqlite` into the browser.
-import { JsonSchemaBuilder } from "../../signal/schema/JsonSchemaBuilder";
+import type { AgentRefusal } from "akanjs/signal";
 import type { StoreInstance } from "../storeInstance";
 import { StoreRegistry } from "../storeRegistry";
-import type { AgentVisibility } from "./AgentVisibility";
 import { StoreCatalogue } from "./StoreCatalogue";
-import type { SerializedStore, SerializedStoreAction, SerializedStoreState, StoreActionEffect } from "./types";
-
-export interface AgentTool {
-  name: string;
-  title?: string;
-  description?: string;
-  /** One flat named object, the shape MCP publishes. The bridge maps it onto the action's positional parameters. */
-  inputSchema: JsonSchema;
-  effect: StoreActionEffect;
-}
-
-/** One call the agent made, in the order it made them. */
-export interface AgentCall {
-  name: string;
-  args: Record<string, unknown>;
-  at: Date;
-  error?: string;
-}
-
-export interface AgentBridgeOptions {
-  /** Resolves a dictionary key to its text. Defaults to the seeded `Translator` in the active locale. */
-  resolveDescription?: (key: string) => string | undefined;
-}
+import type { SerializedStoreState } from "./types";
 
 /**
- * What an in-page agent may do to the app the user is looking at.
+ * What an in-page agent may read out of the store the user is looking at.
  *
- * Every call goes through `st.do`, which is the same single dispatch point a click goes through — so the agent
- * cannot reach past what the UI already lets this user do, the app re-renders from the write, and the user watches
- * the result rather than being told about it. That is why the exposure default here is the opposite of the MCP
- * catalogue's: an external agent's `tools/list` is an attack surface built out of names the operator never chose to
- * publish, while this one is the user's own session, under their own credential, with them watching.
+ * Reads only. Driving the app is a component's declaration to make: `st.tool` binds a name and a schema to the
+ * same handler the control on screen calls, so what an agent can do is what the screen offers the user and nothing
+ * else. A store method that no component declared is not a lever this screen has — publishing one made the surface
+ * the bundle rather than the screen, and gave the model levers whose effect it could not see.
  *
- * It is deliberately not an agent. There is no model, no provider, and no key here — an app wires whichever it uses
- * to `tools`, `call`, and `read`. The framework's half is the catalogue, the argument checking, the masking, and the
- * transcript; the conversation is the app's.
+ * A key is readable while a mounted component subscribes it through `st.use` / `st.sel` / `st.ref`, and its value
+ * is masked by the model that key declares. Masking is not optional even though the data mostly came from the
+ * server already masked: `<model>Form` holds what the *user* typed, credentials included, and an in-page agent
+ * ships what it reads to a remote model. The mask is by the declared model rather than by the value's class,
+ * because `immerify` copies a form into a plain object and the class is gone by the time anyone can ask.
  */
 export class AgentBridge {
   readonly refusals: AgentRefusal[];
 
   readonly #instance: StoreInstance;
-  readonly #store: SerializedStore;
-  readonly #options: AgentBridgeOptions;
-  readonly #schema = new JsonSchemaBuilder({ refPrefix: "#/$defs/" });
-  readonly #byName = new Map<string, SerializedStoreAction>();
-  readonly #calls: AgentCall[] = [];
-  readonly #visibility: AgentVisibility;
-  readonly #allTools: AgentTool[];
-  readonly #liveTools = new Map<string, { signature: string; tools: AgentTool[] }>();
+  readonly #state: { [key: string]: SerializedStoreState };
 
-  /**
-   * The bridge for the app running in this process: the one store every `st.do` goes through, and every signal any
-   * client has applied. An app needs no arguments to reach its own agent surface.
-   */
-  static of(options: AgentBridgeOptions = {}) {
-    return new AgentBridge(StoreRegistry.instance, FetchClient.sharedSerializedSignal, options);
+  /** The bridge for the app running in this process: the one store every `st.use` goes through. */
+  static of() {
+    return new AgentBridge(StoreRegistry.instance);
   }
 
-  constructor(
-    instance: StoreInstance,
-    serializedSignal: Record<string, SerializedSignal>,
-    options: AgentBridgeOptions = {},
-  ) {
+  constructor(instance: StoreInstance) {
     this.#instance = instance;
-    this.#options = options;
-    const catalogue = new StoreCatalogue(instance, serializedSignal);
-    this.#store = catalogue.store;
+    const catalogue = new StoreCatalogue(instance);
+    this.#state = catalogue.state;
     this.refusals = catalogue.refusals;
-    this.#visibility = catalogue.visibility;
-    for (const [name, action] of Object.entries(this.#store.action)) this.#byName.set(name, action);
-    this.#allTools = Object.entries(this.#store.action).map(([name, action]) => this.#tool(name, action));
-  }
-
-  /**
-   * The catalogued actions of the stores the rendered screen is reading right now — the live view, recomputed as
-   * components mount and unmount. Global exposure was the first cut's behavior and it published levers the screen
-   * does not respond to; the screen's own subscriptions are the honest boundary.
-   */
-  get tools(): AgentTool[] {
-    return this.toolsFor("");
-  }
-
-  /** The live view one zone session reads: owners counted from the keys that zone's own subtree subscribes. */
-  toolsFor(viewKey: string): AgentTool[] {
-    const live = this.#liveOwners(viewKey);
-    const signature = [...live].sort().join(",");
-    const cached = this.#liveTools.get(viewKey);
-    if (cached && cached.signature === signature) return cached.tools;
-    const tools = this.#allTools.filter((tool) => this.#ownerLive(tool.name, live));
-    this.#liveTools.set(viewKey, { signature, tools });
-    return tools;
-  }
-
-  get visibility(): AgentVisibility {
-    return this.#visibility;
-  }
-
-  #liveOwners(viewKey = "") {
-    return this.#visibility.liveOwners(this.#instance.liveKeysIn(viewKey));
-  }
-
-  #ownerLive(name: string, live: ReadonlySet<string>) {
-    const owner = this.#instance.actionOwners.get(name)?.refName;
-    return !owner || live.has(owner);
   }
 
   get state(): { [key: string]: SerializedStoreState } {
-    return this.#store.state;
-  }
-
-  get transcript(): readonly AgentCall[] {
-    return this.#calls;
+    return this.#state;
   }
 
   subscribe(listener: () => void) {
     return this.#instance.subscribe(listener);
   }
 
+  /** The keys one view may read right now: subscribed by a mounted component and catalogued. */
+  readableKeys(viewKey = ""): string[] {
+    return [...this.#instance.liveKeysIn(viewKey).keys()].filter((key) => !!this.#state[key]).sort();
+  }
+
   /**
    * The value behind a state key, stripped of what the model marks `hidden` or `secret`.
    *
-   * Masking is not optional here even though the data mostly came from the server already masked: `<model>Form`
-   * holds what the *user* typed, credentials included, and an in-page agent ships what it reads to a remote model.
-   * The mask is by the declared model rather than by the value's class, because `immerify` copies a form into a
-   * plain object and the class is gone by the time anyone can ask.
+   * The key itself has to be one the screen reads, not merely one its store owns: a component subscribing
+   * `userList` says the screen shows a user list, and says nothing about `userForm` sitting in the same store.
    */
   read(key: string, viewKey = ""): unknown {
-    const entry = this.#store.state[key];
+    const entry = this.#state[key];
     if (!entry) throw new Error(`Unknown state key: ${key}`);
-    const owner = this.#visibility.stateOwner(key);
-    if (owner && !this.#liveOwners(viewKey).has(owner))
-      throw new Error(`State key "${key}" is not part of the current screen's surface.`);
+    if (!this.#instance.liveKeysIn(viewKey).has(key))
+      throw new Error(`State key "${key}" is not read by this screen, so it is not part of its surface.`);
     const value = AgentBridge.#unwrap(this.#instance.get()[key]);
     if (entry.refName && entry.modelType) {
       const model = ConstantRegistry.getModelRef(entry.refName, entry.modelType) as MaskModel;
@@ -151,163 +71,6 @@ export class AgentBridge {
     throw new Error(
       `State key "${key}" holds an object that belongs to no model, so there is nothing to mask it by and it is not published. Read the model's own keys instead.`,
     );
-  }
-
-  /**
-   * Dispatches through `st.do`, so what happens is what happens when the user clicks.
-   *
-   * Arguments arrive named and are mapped onto the action's parameters in declared order. An omitted optional one
-   * becomes `null`, which is what the slice query builders already expect; an omitted required one is refused,
-   * because the alternative is a call that writes `undefined` into state and reports success.
-   */
-  async call(name: string, args: Record<string, unknown> = {}, viewKey = "") {
-    const action = this.#byName.get(name);
-    if (!action) throw new Error(`Unknown action: ${name}`);
-    // Recorded before the arguments are checked, so a call the bridge itself rejects is still in the transcript.
-    // An attempt that was refused is a thing the agent did, and leaving it out is how a transcript starts to lie.
-    const record: AgentCall = { name, args, at: new Date() };
-    this.#calls.push(record);
-    try {
-      if (!this.#ownerLive(name, this.#liveOwners(viewKey)))
-        throw new Error(`Action "${name}" is not part of the current screen's surface.`);
-      const positional = action.args.map((arg) => this.#value(name, arg, args));
-      await this.#instance.do[name]?.(...positional);
-    } catch (error) {
-      record.error = error instanceof Error ? error.message : String(error);
-      throw error;
-    }
-  }
-
-  #value(name: string, arg: SerializedArg, args: Record<string, unknown>) {
-    if (!(arg.name in args) || args[arg.name] === undefined) {
-      if (arg.nullable || arg.type === "search") return null;
-      throw new Error(`Missing argument "${arg.name}" for ${name}.`);
-    }
-    return AgentBridge.#checked(name, arg, args[arg.name]);
-  }
-
-  /**
-   * Checks a value against what the argument declared, one level of array included.
-   *
-   * `st.do` accepts anything — it is a rest wrapper — so without this a string where an `Int` belongs is written
-   * into state and rendered, and the agent is told the call succeeded. A model argument is checked only for being
-   * an object: the published schema describes its fields and the endpoint validates them server-side.
-   */
-  static #checked(name: string, arg: SerializedArg, value: unknown): unknown {
-    const depth = arg.arrDepth ?? 0;
-    if (depth) {
-      if (!Array.isArray(value)) throw new Error(`Argument "${arg.name}" of ${name} must be an array.`);
-      return value.map((item) => AgentBridge.#checked(name, { ...arg, arrDepth: depth - 1 }, item));
-    }
-    if (value === null) return null;
-    if (arg.enum) return AgentBridge.#checkedEnum(name, arg, value);
-    switch (arg.refName) {
-      case "String":
-      case "ID":
-        return AgentBridge.#assertType(name, arg, value, "string");
-      case "Int":
-        if (!Number.isInteger(value)) throw new Error(`Argument "${arg.name}" of ${name} must be a whole number.`);
-        return value;
-      case "Float":
-        if (typeof value !== "number" || !Number.isFinite(value))
-          throw new Error(`Argument "${arg.name}" of ${name} must be a finite number.`);
-        return value;
-      case "Boolean":
-        return AgentBridge.#assertType(name, arg, value, "boolean");
-      case "Date":
-        return AgentBridge.#checkedDate(name, arg, value);
-      default:
-        if (typeof value !== "object") throw new Error(`Argument "${arg.name}" of ${name} must be an object.`);
-        return value;
-    }
-  }
-
-  static #assertType(name: string, arg: SerializedArg, value: unknown, type: "string" | "boolean") {
-    if (typeof value !== type) throw new Error(`Argument "${arg.name}" of ${name} must be a ${type}.`);
-    return value;
-  }
-
-  static #checkedEnum(name: string, arg: SerializedArg, value: unknown) {
-    const values = arg.enum ? ConstantRegistry.enum.get(arg.enum)?.values : undefined;
-    if (!values) return value;
-    if (!values.includes(value as never))
-      throw new Error(`Argument "${arg.name}" of ${name} must be one of: ${[...values].join(", ")}.`);
-    return value;
-  }
-
-  /** An agent has no `Date`, so an ISO string is what it sends. Anything unparseable is refused rather than `Invalid Date`. */
-  static #checkedDate(name: string, arg: SerializedArg, value: unknown) {
-    if (value instanceof Date) return value;
-    const parsed = typeof value === "string" ? new Date(value) : null;
-    if (!parsed || Number.isNaN(parsed.getTime()))
-      throw new Error(`Argument "${arg.name}" of ${name} must be an ISO 8601 date string.`);
-    return parsed;
-  }
-
-  #tool(name: string, action: SerializedStoreAction): AgentTool {
-    const properties = Object.fromEntries(action.args.map((arg) => [arg.name, this.#argSchema(action, arg)]));
-    const required = action.args.filter((arg) => !arg.nullable && arg.type !== "search").map((arg) => arg.name);
-    const defs = this.#schema.referencedSchemas(properties);
-    return {
-      name,
-      ...this.#texts(action),
-      inputSchema: {
-        type: "object",
-        properties,
-        ...(required.length ? { required } : {}),
-        additionalProperties: false,
-        ...(Object.keys(defs).length ? { $defs: defs } : {}),
-      },
-      effect: action.effect,
-    };
-  }
-
-  /**
-   * A store action carries no argument metadata of its own, so the prose comes from wherever the argument came
-   * from: an endpoint-named action borrows `<refName>.signal.<endpoint>.arg.<name>.desc`, and a field setter's one
-   * argument is the field, described at `<refName>.<field>.desc`. A slice role's `page`/`limit`/`sort` are the
-   * framework's own and have no dictionary entry to borrow.
-   */
-  #argSchema(action: SerializedStoreAction, arg: SerializedArg) {
-    const description = this.#argText(action, arg);
-    return {
-      ...this.#schema.arg(arg),
-      ...(description ? { description } : {}),
-      ...(arg.example !== undefined ? { examples: [arg.example] } : {}),
-    };
-  }
-
-  #argText({ refName, endpoint, field }: SerializedStoreAction, arg: SerializedArg) {
-    if (!refName) return undefined;
-    if (endpoint) return this.#text(`${refName}.signal.${endpoint}.arg.${arg.name}.desc`);
-    return field && arg.name === field ? this.#text(`${refName}.${field}.desc`) : undefined;
-  }
-
-  /**
-   * The words an agent picks the action by, borrowed from what the action is named after.
-   *
-   * The endpoint comes first, and it is right rather than merely adequate: the house rule makes `st.do.X` and
-   * `fetch.X` the same verb, so an action named after an endpoint reads as that endpoint's `.desc()`. A field
-   * setter falls back to the field's own label.
-   */
-  #texts({ refName, endpoint, field }: SerializedStoreAction) {
-    const keys = refName
-      ? [...(endpoint ? [`${refName}.signal.${endpoint}`] : []), ...(field ? [`${refName}.${field}`] : [])]
-      : [];
-    for (const key of keys) {
-      const title = this.#text(key);
-      const description = this.#text(`${key}.desc`);
-      if (title || description) return { ...(title ? { title } : {}), ...(description ? { description } : {}) };
-    }
-    return {};
-  }
-
-  #text(key: string) {
-    if (this.#options.resolveDescription) return this.#options.resolveDescription(key);
-    const locale = Translator.getActiveLocale() ?? parseAkanI18nEnv().defaultLocale;
-    const text = Translator.translateByLocale(locale, key);
-    // A missing key comes back as the key itself, which is the only signal the translator gives.
-    return text === key ? undefined : text;
   }
 
   static #unwrap(value: unknown) {

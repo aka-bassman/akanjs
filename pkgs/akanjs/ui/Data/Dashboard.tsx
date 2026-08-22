@@ -1,21 +1,23 @@
 "use client";
 import { cn, usePage } from "akanjs/client";
-import { capitalize } from "akanjs/common";
 import type { SliceMeta } from "akanjs/fetch";
 import { st } from "akanjs/store";
 
-import { buttonRecipe } from "../Button";
 import { Link } from "../Link";
+import { dictLabel, formatStat } from "./dataText";
 
 export interface DashboardProps<T extends string, State> {
   className?: string;
   summary: Record<string, unknown>;
   slice: SliceMeta;
-  queryMap: Record<string, unknown>;
+  /** Columns that narrow the listing when clicked. A column absent from the map renders as a plain tile. */
+  queryMap?: Record<string, unknown>;
   columns?: string[];
   presents?: string[];
   hidePresents?: boolean;
 }
+
+const tileClassName = "flex min-w-40 flex-1 flex-col gap-1 rounded-box border px-4 py-3 text-left";
 
 export default function Dashboard<T extends string, State>({
   className,
@@ -26,56 +28,38 @@ export default function Dashboard<T extends string, State>({
   presents,
   hidePresents,
 }: DashboardProps<T, State>) {
-  const { refName, sliceName } = slice;
+  const { refName } = slice;
   const { l } = usePage();
-  const searchParams = st.use.searchParams();
+  const searchParams = st.use.searchParams({ agent: false });
   const filter = Array.isArray(searchParams.filter) ? searchParams.filter[0] : searchParams.filter;
-  const [modelName, modelClassName] = [refName, capitalize(refName)];
-  const formatSummaryValue = (value: unknown) =>
-    typeof value === "number" || typeof value === "string" ? value.toLocaleString() : "";
+  const shownColumns = (columns ?? []).filter((column) => summary[column] !== undefined);
+  const shownPresents = hidePresents ? [] : (presents ?? []).filter((column) => summary[column] !== undefined);
+  if (!shownColumns.length && !shownPresents.length) return null;
   return (
-    <div className={cn("my-2 flex w-full flex-wrap justify-center py-0 shadow-sm", className)}>
-      <div className="flex flex-wrap">
-        {columns?.map(
-          (column) =>
-            summary[column] !== undefined &&
-            queryMap[column] !== undefined && (
-              <button
-                key={column}
-                className={buttonRecipe({ variant: "ghost" }, [
-                  "mx-1 h-32 w-48 rounded-none pt-3 hover:border",
-                  filter === column ? "border" : "border-0",
-                ])}
-              >
-                <Link
-                  key={column}
-                  className="flex flex-col gap-1"
-                  href={`/admin?topMenu=data&subMenu=${modelName}&filter=${column}`}
-                >
-                  <div className="text-foreground/60 text-xs">{l(`summary.${column}` as "base.new")}</div>
-                  <div className="font-semibold text-2xl text-primary">{formatSummaryValue(summary[column])}</div>
-                </Link>
-              </button>
-            ),
-        )}
-        {!hidePresents
-          ? presents?.map(
-              (column) =>
-                summary[column] !== undefined &&
-                queryMap[column] !== undefined && (
-                  <button
-                    key={column}
-                    className={buttonRecipe({ variant: "ghost" }, "mx-1 h-32 w-48 rounded-none border-none pt-3")}
-                  >
-                    <div className="flex flex-col gap-1">
-                      <div className="text-foreground/60 text-xs">{l(`summary.${column}` as "base.new")}</div>
-                      <div className="font-semibold text-2xl text-primary">{formatSummaryValue(summary[column])}</div>
-                    </div>
-                  </button>
-                ),
-            )
-          : null}
-      </div>
+    <div className={cn("mb-4 flex flex-wrap gap-2", className)}>
+      {[...shownColumns, ...shownPresents].map((column) => {
+        const linkable = queryMap?.[column] !== undefined;
+        return (
+          <Link
+            key={column}
+            disabled={!linkable}
+            href={`/admin?topMenu=data&subMenu=${refName}&filter=${column}`}
+            className={cn(
+              tileClassName,
+              "bg-card",
+              linkable && "transition hover:border-primary/50",
+              filter === column && linkable ? "border-primary" : "border-border",
+            )}
+          >
+            <span className="truncate text-muted-foreground text-xs">
+              {dictLabel(l._, `summary.${column}`, column)}
+            </span>
+            <span className="truncate font-semibold text-2xl text-primary tabular-nums">
+              {formatStat(summary[column])}
+            </span>
+          </Link>
+        );
+      })}
     </div>
   );
 }

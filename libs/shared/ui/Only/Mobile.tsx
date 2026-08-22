@@ -7,6 +7,6 @@ interface MobileProps {
 }
 
 export const Mobile = ({ children }: MobileProps) => {
-  const innerWidth = st.use.innerWidth();
+  const innerWidth = st.use.innerWidth({ agent: false });
   return innerWidth && innerWidth < 768 ? children : null;
 };

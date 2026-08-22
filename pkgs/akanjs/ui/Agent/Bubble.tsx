@@ -1,6 +1,7 @@
 "use client";
 import { cn } from "akanjs/client";
 import type { ChatMessage, ToolCallResult } from "use-agentic";
+import Markdown from "./Markdown";
 
 interface BubbleProps {
   className?: string;
@@ -63,7 +64,7 @@ export default function Bubble({ className, message, results }: BubbleProps) {
   const isDrafting = !message.text && !message.toolCalls?.length && !message.error;
   return (
     <div className={cn("flex max-w-[85%] flex-col gap-1 self-start", className)}>
-      {message.text ? <p className="whitespace-pre-wrap text-sm">{message.text}</p> : null}
+      {message.text ? <Markdown className="text-sm">{message.text}</Markdown> : null}
       {(message.toolCalls ?? []).map((call) => (
         <Row key={call.id} args={call.args} name={call.name} result={results?.get(call.id)} />
       ))}

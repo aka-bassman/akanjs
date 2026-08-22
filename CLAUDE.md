@@ -1,4 +1,4 @@
-# Akan.js Monorepo — Claude Code Guide
+# akanjs — Claude Code Guide
 
 @AGENTS.md
 

@@ -91,6 +91,35 @@ describe("Agent.Chat", () => {
     unmount();
   });
 
+  test("opens from the platform shortcut and shows it on the launcher", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat />
+      </lib.AgentProvider>,
+    );
+    const apple = /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
+    expect(container.querySelector("kbd")?.textContent).toBe(apple ? "⌘L" : "Ctrl+L");
+    expect(container.querySelector("button")?.getAttribute("aria-keyshortcuts")).toBe(apple ? "Meta+L" : "Control+L");
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "l", bubbles: true, cancelable: true }));
+    });
+    expect(container.innerHTML).not.toContain("base.agentPlaceholder");
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "l",
+          metaKey: apple,
+          ctrlKey: !apple,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    expect(container.innerHTML).toContain("base.agentPlaceholder");
+    unmount();
+  });
+
   test("renders the transcript the session accumulates", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "All done." }));
     const { container, unmount } = mount(

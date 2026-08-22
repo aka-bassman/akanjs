@@ -7,6 +7,6 @@ interface DevProps {
 }
 
 export const Dev = ({ children }: DevProps) => {
-  const devMode = st.use.devMode();
+  const devMode = st.use.devMode({ agent: false });
   return devMode ? children : null;
 };

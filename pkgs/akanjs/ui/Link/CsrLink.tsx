@@ -18,7 +18,7 @@ export default function CsrLink({
 }: CsrLinkProps) {
   const pathCtx = usePathCtx();
   const prefix = pathCtx.prefix;
-  const currentPath = st.use.path();
+  const currentPath = st.use.path({ agent: false });
   const { lang } = usePage();
   const { path, hash } = getPathInfo(href, lang, prefix ?? "");
   return (

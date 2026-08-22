@@ -4206,31 +4206,31 @@ Headings:
 - 4. Write A Prompt
 - 5. Report Progress
 - Authorization
-- Gotchas
+- Tips
 
 MCP Server
 
-Every signal you already wrote can be served to AI agents over the Model Context Protocol. There is no second API to build: the same endpoint runs through the same guards, the same middleware, and the same service, and its dictionary entries become the text an agent reads to decide what to call.
+Every signal you already wrote is served to AI agents at POST /mcp. There is no second API and nothing to write in a signal file: the same endpoint runs through the same guards, middleware, and service. The in-page chat is a different surface.
 
-Exposure follows the guards, and there is nothing to write in a signal file. /mcp is mounted by default; an endpoint that names a real guard is published, one that names none is refused, and a mutation whose only guard is [Public] is refused. A refused endpoint answers the same 'unknown tool' as one that does not exist. The guards are already the authorization decision and are re-read per caller on every listing, so a second per-endpoint switch would say nothing they do not — while guaranteeing that every endpoint added later is invisible to agents until somebody remembers it.
+In-Page Agent
 
-query and mutation become tools; a readable query also becomes a resource.
+Become tools. A generated read also gets a resource URI.
 
-prompt becomes a slash command the user invokes.
+A slash command the user invokes, not the model.
 
-pubsub and message are never exposed — their arguments read a socket an MCP request does not have.
+Never exposed — their arguments read a socket MCP does not have.
+
+Exposure follows the guards. A real guard publishes; no guards at all is refused; a mutation whose only guard is [Public] is refused. A Public read publishes. A refused endpoint answers the same unknown tool as one that does not exist.
 
 1. Turn The Server On
 
-The server mounts at POST /mcp, at the root rather than under the API prefix: the canonical resource a client authenticates against is the endpoint's own URL.
+/mcp is mounted by default. Configure it in lib/option.ts — not main.ts — so the process that mounts the route actually receives the settings. Every lib's option is read in mount order with the app's last. A value written in code wins over the env of the same name.
 
-or by env
+What this app is for and which tool to reach for first. Handed to the model with the tool list.
 
-lib/option.ts is where this goes, not main.ts: the gateway there only spawns children, while option.ts is already handed to the process that mounts /mcp. Every lib's option is read in mount order with the app's last, so an app tightens what a library declared without restating it. Every field has an env spelling too, for a deployment configuring what the source does not — and an option written in code wins over the env of the same name.
+Drops every mutation whatever it declared. A deployment valve, not the exposure switch.
 
-instructions is the one place to say what this app is for and which tool to reach for first. It goes to the model alongside the tool list.
-
-AKAN_MCP_READONLY=true drops every mutation whatever it declared. It is the valve for a deployment that must not be able to write, not the exposure switch.
+Mount path defaults to /mcp. Catalogue language is en, built once at boot. pageSize is entries per listing page.
 
 ## Deep Links
 

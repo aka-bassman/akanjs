@@ -26,7 +26,6 @@ beforeAll(async () => {
   const DeskInput = via((f) => ({
     label: f(String),
     seats: f(Int, { default: 0 }),
-    secretCode: f.secret(String).optional(),
   }));
   const DeskObject = via(DeskInput, () => ({}));
   const DeskLight = via(DeskObject, ["label"] as const, () => ({}));
@@ -57,31 +56,33 @@ beforeAll(async () => {
     slices: [],
   } as unknown as ClientSignal<"dockDesk">;
 
-  class DeskStore extends store(signal, () => ({ deskDraft: "" })) {}
+  class DeskStore extends store(signal, () => ({ deskDraft: "" })) {
+    wipeDesk() {
+      this.set({ deskDraft: "" });
+    }
+  }
   StoreRegistry.register(DeskStore);
   const instance = new StoreInstance(StoreRegistry.merge("dockRoot", DeskStore));
-  const bridge = new AgentBridge(instance, { dockDesk: serializedSignal as never });
-  // What a mounted component's subscription does: without a live key the store publishes nothing.
+  const bridge = new AgentBridge(instance);
   instance.retainLive("deskDraft");
   html = await new Response(await renderToReadableStream(createElement(Dock, { bridge, open: true }))).text();
 });
 
 describe("Agent.Dock", () => {
-  test("renders the catalogue a page actually publishes", () => {
-    expect(html).toContain("setLabelOnDockDesk");
-    expect(html).toContain("createDockDesk");
-    expect(html).toContain("mutation");
+  test("renders the state keys a page can read", () => {
+    expect(html).toContain("deskDraft");
+    expect(html).toContain("dockDeskForm");
   });
 
-  test("shows every refusal with its reason, which is the point of having them", () => {
-    expect(html).toContain("setSecretCodeOnDockDesk");
-    expect(html).toContain("secret field");
+  test("the withheld section is empty once the catalogue refuses nothing", () => {
+    // Base keys used to land here as a catalogue refusal; opt-out is now `{ agent: false }` at each `st.use`.
+    const count = html.match(/Withheld<\/span><span[^>]*>(\d+)</)?.[1];
+    expect(count).toBe("0");
   });
 
-  test("never offers a refused action as callable", () => {
-    // The refusals section names it; the action list must not, or the dock invites the call it just refused.
-    const actions = html.slice(0, html.indexOf("Refused"));
-    expect(actions).toContain("setLabelOnDockDesk");
-    expect(actions).not.toContain("setSecretCodeOnDockDesk");
+  test("offers no tool the page did not declare", () => {
+    // Tools come from the surface, so a store method and a generated setter appear nowhere in the dock.
+    expect(html).not.toContain("wipeDesk");
+    expect(html).not.toContain("setLabelOnDockDesk");
   });
 });

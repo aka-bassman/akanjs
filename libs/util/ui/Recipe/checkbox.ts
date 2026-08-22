@@ -11,7 +11,7 @@ import { recipe, tv } from "akanjs/ui";
  * `tone` names a *palette colour*, not a semantic pair — Tailwind's `accent-<colour>` resolves against
  * the colour namespace, so `accent-foreground` is `accent-color: var(--color-foreground)` and NOT the
  * `--accent-foreground` token. `default` is daisyUI's uncoloured `.checkbox`, whose checked fill was
- * `color-mix(base-content 50%, transparent)`.
+ * `color-mix(foreground 50%, transparent)`.
  *
  * akanjs's own `Input.Checkbox` still emits the daisyUI `checkbox` class, which nothing defines once
  * the plugin is gone — that is why this exists rather than routing the call sites through it.
