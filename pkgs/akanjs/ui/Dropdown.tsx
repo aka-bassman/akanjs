@@ -68,7 +68,7 @@ export const DefaultDropdown = ({ value, content, className, buttonClassName, dr
             setOpened(false);
           }}
           className={cn(
-            "absolute right-0 z-[100] mt-1 grid max-h-52 gap-0.5 overflow-auto whitespace-nowrap rounded-md bg-popover p-1 text-popover-foreground shadow-md",
+            "scrollbar-thin absolute right-0 z-[100] mt-1 grid max-h-52 min-w-40 gap-0.5 overflow-auto whitespace-nowrap rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-lg",
             dropdownClassName,
             !opened && "hidden",
           )}

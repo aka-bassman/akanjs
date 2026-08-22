@@ -157,7 +157,7 @@ export const DefaultChat = ({
         type="button"
       >
         {hotkey ? (
-          <kbd className="pointer-events-none absolute right-full mr-3 hidden rounded-lg border border-border bg-background px-2 py-0.5 font-mono text-foreground/50 text-xs opacity-0 shadow-sm group-hover/agent:opacity-100 group-focus-visible/agent:opacity-100 md:block">
+          <kbd className="pointer-events-none absolute right-full mr-3 hidden rounded-field border border-border bg-background px-2 py-0.5 font-mono text-foreground/50 text-xs opacity-0 shadow-sm group-hover/agent:opacity-100 group-focus-visible/agent:opacity-100 md:block">
             {hotkey.label}
           </kbd>
         ) : null}
@@ -208,7 +208,7 @@ export const DefaultChat = ({
           </button>
         </span>
       </header>
-      <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-3" ref={listRef}>
+      <div className="scrollbar-thin flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-3" ref={listRef}>
         {bubbles.length ? (
           bubbles
         ) : (
@@ -217,7 +217,7 @@ export const DefaultChat = ({
       </div>
       {session.pendingApproval ? <Approval approval={session.pendingApproval} /> : null}
       {menu.length ? (
-        <div className="flex max-h-40 flex-col overflow-y-auto border-foreground/5 border-t py-1">
+        <div className="scrollbar-thin flex max-h-40 flex-col overflow-y-auto border-foreground/5 border-t py-1">
           {menu.map((prompt) => (
             <button
               className="flex items-baseline gap-2 px-4 py-1.5 text-left hover:bg-muted"

@@ -126,7 +126,7 @@ const DefaultInput = ({
         }}
         onKeyDown={handleKeyDown}
         className={cn(
-          `b-5 text-foreground outline-hidden duration-300 focus:border-primary focus:outline-hidden ${icon && ""}`,
+          "text-foreground outline-hidden duration-300 focus:border-primary focus:outline-hidden",
           inputType,
           // statusClass,
           inputClassName,
@@ -323,7 +323,9 @@ const DefaultPassword = ({
             onChange?.(e.target.value, e);
           }}
           className={cn(
-            cn(inputBase, `text-foreground duration-300 focus:border-primary focus:outline-hidden ${icon && "pl-12"}`),
+            inputBase,
+            "text-foreground duration-300 focus:border-primary focus:outline-hidden",
+            icon && "pl-12",
             statusClass,
             inputClassName,
           )}
@@ -442,7 +444,8 @@ const DefaultEmail = ({
             onChange?.(e.target.value, e);
           }}
           className={cn(
-            `text-foreground outline-hidden duration-300 focus:border-primary focus:outline-hidden ${icon && "pl-12"}`,
+            "text-foreground outline-hidden duration-300 focus:border-primary focus:outline-hidden",
+            icon && "pl-12",
             inputType,
             statusClass,
             inputClassName,
@@ -615,7 +618,9 @@ const DefaultNumber = ({
             if (cacheKey) sessionStorage.setItem(cacheKey, parsedValue);
           }}
           className={cn(
-            cn(inputBase, `text-foreground duration-300 focus:border-primary focus:outline-hidden ${icon && "pl-12"}`),
+            inputBase,
+            "text-foreground duration-300 focus:border-primary focus:outline-hidden",
+            icon && "pl-12",
             statusClass,
             inputClassName,
           )}

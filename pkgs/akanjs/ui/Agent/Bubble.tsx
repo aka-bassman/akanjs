@@ -24,7 +24,7 @@ interface RowProps {
 const Row = ({ name, args, result }: RowProps) => (
   <div className="flex items-baseline gap-2 rounded-field bg-muted px-2 py-1">
     {result ? (
-      <span className={cn("shrink-0 text-[10px]", result.error ? "text-error" : "text-success")}>
+      <span className={cn("shrink-0 text-[10px]", result.error ? "text-destructive" : "text-success")}>
         {result.error ? "✕" : "✓"}
       </span>
     ) : (
@@ -34,7 +34,7 @@ const Row = ({ name, args, result }: RowProps) => (
     {args && Object.keys(args).length ? (
       <span className="truncate font-mono text-[10px] text-foreground/50">{JSON.stringify(args)}</span>
     ) : null}
-    {result?.error ? <span className="truncate text-[10px] text-error">{result.error}</span> : null}
+    {result?.error ? <span className="truncate text-[10px] text-destructive">{result.error}</span> : null}
     {result?.changes?.length ? (
       <span className="ml-auto shrink-0 text-[10px] text-foreground/40">Δ {result.changes.length}</span>
     ) : null}
@@ -68,7 +68,7 @@ export default function Bubble({ className, message, results }: BubbleProps) {
       {(message.toolCalls ?? []).map((call) => (
         <Row key={call.id} args={call.args} name={call.name} result={results?.get(call.id)} />
       ))}
-      {message.error ? <p className="text-error text-xs">{message.error}</p> : null}
+      {message.error ? <p className="text-destructive text-xs">{message.error}</p> : null}
       {isDrafting ? <span className="size-2 animate-pulse rounded-full bg-foreground/30" /> : null}
     </div>
   );

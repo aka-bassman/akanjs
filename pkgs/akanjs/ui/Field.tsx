@@ -108,7 +108,7 @@ const List = <Item,>({
   return (
     <div className={cn("flex w-full flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
-      <div className="mb-2 flex w-full flex-col gap-2 rounded-md border border-border p-2">
+      <div className="mb-2 flex w-full flex-col gap-2 rounded-box border border-border p-2">
         {value.map((item, idx) => (
           <>
             <div key={idx} className="flex h-full w-full items-center justify-between gap-2">
@@ -545,7 +545,7 @@ const TextList = ({
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={!minlength} label={label} desc={desc} /> : null}
-      <div className="mb-5 h-full gap-2 rounded-md border border-border p-2">
+      <div className="mb-5 h-full gap-2 rounded-box border border-border p-2">
         <DraggableList
           className="h-full gap-2"
           onChange={onChange}
@@ -660,7 +660,7 @@ const Tags = ({
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={!minlength} label={label} desc={desc} /> : null}
-      <div className="flex w-full flex-wrap items-center gap-1 rounded-md border border-foreground/20 p-2">
+      <div className="flex w-full flex-wrap items-center gap-1 rounded-box border border-border p-2">
         {value.map((val, idx) => (
           <span className={badge({ variant: "outline" }, "items-center")} key={idx}>
             <div className="text-xs italic">#</div>

@@ -25,7 +25,7 @@ export default function Transcript({ className, calls }: TranscriptProps) {
             </span>
           </div>
           <span className="truncate font-mono text-[10px] text-foreground/50">{JSON.stringify(call.args)}</span>
-          {call.error ? <span className="text-[10px] text-error">{call.error}</span> : null}
+          {call.error ? <span className="text-[10px] text-destructive">{call.error}</span> : null}
         </div>
       ))}
     </div>

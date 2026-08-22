@@ -138,7 +138,7 @@ const DragList = <V,>({ className, mode = "vertical", children, onChange, onRemo
 
 interface Cursor {
   className?: string;
-  children: any;
+  children: ReactNode;
 }
 DragList.Cursor = ({ className, children }: Cursor) => {
   const { bind } = useDragList();

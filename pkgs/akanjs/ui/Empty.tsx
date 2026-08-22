@@ -1,7 +1,7 @@
 "use client";
 import { cn, usePage } from "akanjs/client";
 import type { ReactNode } from "react";
-import { AiOutlineMeh } from "react-icons/ai";
+import { AiOutlineInbox } from "react-icons/ai";
 
 import { createOverridable } from "./UiOverride";
 
@@ -24,10 +24,12 @@ export const DefaultEmpty = ({ className = "", description, children, minHeight 
           from source text, so `min-h-[${minHeight}px]` compiles to no CSS and the prop is silently ignored. */}
       <div
         style={{ minHeight }}
-        className={cn("flex flex-col items-center justify-center gap-3 pt-6 pb-3 text-foreground/30", className)}
+        className={cn("flex w-full flex-col items-center justify-center gap-3 px-6 py-8 text-center", className)}
       >
-        <AiOutlineMeh className="scale-150 text-4xl" />
-        <p>{description ?? l("base.noData")}</p>
+        <div className="flex size-14 items-center justify-center rounded-full bg-muted text-3xl text-foreground/35">
+          <AiOutlineInbox />
+        </div>
+        <p className="text-foreground/55 text-sm">{description ?? l("base.noData")}</p>
       </div>
       {children}
     </div>

@@ -178,72 +178,67 @@ export const Modal = ({ className, bodyClassName, confirmClose, children, onCanc
     <>
       <div
         {...overlayLayerProps}
-        className={cn("fixed inset-0 z-10", showBackground && "animate-fadeIn bg-black/50 backdrop-blur-md")}
+        className={cn("fixed inset-0 z-10", showBackground && "animate-fadeIn bg-black/50 backdrop-blur-sm")}
+      />
+      <div
+        {...overlayLayerProps}
+        className="fixed inset-0 z-10 flex items-center justify-center p-4"
         onClick={(event) => {
           if (event.target !== event.currentTarget) return;
           requestClose();
         }}
-      />
-      <div
-        {...overlayLayerProps}
-        className="fixed top-1/2 left-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center"
       >
-        <div className="z-10">
+        <animated.div
+          ref={ref}
+          style={{ translateY, opacity }}
+          // Focus moves here on open so the tab order starts inside the dialog, but this container is
+          // not a control — drawing a keyboard ring around the whole surface only reads as a glitch.
+          // Controls inside keep their own rings, which is where the focus indicator belongs.
+          className={cn(
+            "relative flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-box border border-border bg-card text-card-foreground shadow-2xl shadow-black/25 outline-none",
+            className,
+          )}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={title ? titleId : undefined}
+          aria-describedby={contentId}
+          tabIndex={-1}
+        >
           <animated.div
-            ref={ref}
-            style={{ translateY, opacity }}
-            // Focus moves here on open so the tab order starts inside the dialog, but this container is
-            // not a control — drawing a keyboard ring around the whole surface only reads as a glitch.
-            // Controls inside keep their own rings, which is where the focus indicator belongs.
-            className="outline-none"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={title ? titleId : undefined}
-            aria-describedby={contentId}
-            tabIndex={-1}
+            {...bind()}
+            className={cn(
+              "flex shrink-0 touch-pan-y flex-col",
+              title && "border-border/70 border-b bg-card/80 backdrop-blur-sm",
+            )}
           >
-            <button
-              type="button"
-              aria-label="Close"
-              className={buttonRecipe(
-                { variant: "secondary", size: "icon" },
-                "absolute top-[-16px] right-0 z-20 size-8 rounded-full md:top-[-40px]",
-              )}
-              onClick={() => requestClose()}
-            >
-              <BiX className="text-3xl" />
-            </button>
-            <div
-              className={cn(
-                "mx-auto mt-6 flex max-h-[75vh] w-full max-w-screen animate-fadeIn flex-col items-center justify-center overflow-x-hidden rounded-lg bg-background transition-all duration-100 sm:w-[90%] sm:px-2 sm:pb-2 md:mt-0 md:max-h-[90vh] md:pt-0",
-                className,
-              )}
-            >
-              <animated.div
-                {...bind()}
-                id={titleId}
-                className="relative z-10 flex w-full animate-fadeIn cursor-pointer touch-pan-y flex-col items-center justify-center px-4 pt-1"
-              >
-                <div className="flex w-full cursor-pointer items-center justify-center pt-1 opacity-50">
-                  <div className="h-1 w-24 rounded-full bg-muted-foreground" />
-                </div>
-                <div className="flex w-full items-center justify-start">
-                  <div className="w-full text-start font-bold text-lg">{title}</div>
-                </div>
-              </animated.div>
-              <div
-                id={contentId}
-                className={cn(
-                  "scrollbar-none relative m-2 flex size-full min-w-[90vw] overflow-x-hidden overflow-y-scroll border-foreground/30 border-t-[0.1px] p-4 sm:p-4 md:min-w-[384px] md:px-8 lg:min-w-[576px] xl:min-w-[768px]",
-                  bodyClassName,
-                )}
-              >
-                {children}
+            <div className="flex justify-center pt-2 md:hidden">
+              <div className="h-1 w-10 rounded-full bg-foreground/15" />
+            </div>
+            <div className="flex items-start gap-3 px-5 pt-4 pb-3">
+              <div className="min-w-0 flex-1 font-semibold text-lg leading-snug" id={titleId}>
+                {title}
               </div>
-              {action ? <div className="w-full">{action}</div> : null}
+              <button
+                aria-label="Close"
+                className={buttonRecipe(
+                  { variant: "ghost", size: "icon" },
+                  "-mt-1 -mr-2 size-8 shrink-0 rounded-full text-foreground/45 hover:text-foreground",
+                )}
+                onClick={() => requestClose()}
+                type="button"
+              >
+                <BiX className="text-2xl" />
+              </button>
             </div>
           </animated.div>
-        </div>
+          <div
+            className={cn("min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 pt-4 pb-5", bodyClassName)}
+            id={contentId}
+          >
+            {children}
+          </div>
+          {action ? <div className="shrink-0 border-border/70 border-t bg-muted/30 px-5 py-4">{action}</div> : null}
+        </animated.div>
       </div>
     </>,
     portalElement,

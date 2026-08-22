@@ -13,7 +13,7 @@ export default function Approval({ className, approval }: ApprovalProps) {
   return (
     <div className={cn("flex flex-col gap-2 border-warning/30 border-t bg-warning/10 px-4 py-3", className)}>
       <p className="text-sm">{approval.message}</p>
-      <pre className="max-h-24 overflow-auto rounded-field bg-background/60 p-2 font-mono text-[10px]">
+      <pre className="scrollbar-thin max-h-24 overflow-auto rounded-field bg-background/60 p-2 font-mono text-[10px]">
         {JSON.stringify(approval.args, null, 2)}
       </pre>
       <div className="flex justify-end gap-2">

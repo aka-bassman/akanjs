@@ -1,19 +1,31 @@
 "use client";
 import { fetch, usePage } from "akanjs/client";
-import { decodeJwtPayload, lowerlize } from "akanjs/common";
+import { decodeJwtPayload, lowerlize, mcpRefusalOf } from "akanjs/common";
 import { type Account, type FetchProxy, getDefaultAccount } from "akanjs/fetch";
 import { st } from "akanjs/store";
 import { type ReactNode, useEffect, useState } from "react";
-import { AiOutlineApi, AiOutlineCopy } from "react-icons/ai";
+import { AiOutlineCopy, AiOutlineSearch } from "react-icons/ai";
 import { BiLock } from "react-icons/bi";
-import { badgeRecipe } from "../Badge";
 import { buttonRecipe } from "../Button";
 import { Copy } from "../Copy";
 import { Input } from "../Input";
 import { Modal } from "../Modal";
-import { SignalCollapse } from "./Collapse";
+import {
+  Code,
+  Collapse,
+  dictText,
+  docPill,
+  docUi,
+  Section,
+  SummaryCard,
+  SummaryGrid,
+  segmentItemClass,
+  segmentTrackClass,
+  Toolbar,
+  ToolbarField,
+} from "../Reference";
+import { endpointEntriesOf, isWsEndpoint } from "./endpointEntries";
 import RestApi from "./RestApi";
-import { signalUi } from "./style";
 import WebSocket from "./WebSocket";
 
 export default function Doc() {
@@ -24,11 +36,15 @@ interface DocSettingProps {
   guardNames?: string[];
   roleTypes?: string[];
   roleKeys?: { [key: string]: string };
+  search?: string;
+  onSearch?: (search: string) => void;
 }
 const DocSetting = ({
   guardNames = ["Public"],
   roleTypes = ["Public", "User", "Admin", "SuperAdmin"],
   roleKeys = { me: "Admin", self: "User" },
+  search,
+  onSearch,
 }: DocSettingProps) => {
   const tryRoles = st.use.tryRoles({ agent: false });
   const tryAccount = st.use.tryAccount({ agent: false });
@@ -38,67 +54,68 @@ const DocSetting = ({
   const tryRoleForAll = roleTypes.every((roleType) => tryRoles.includes(roleType));
   const baseUrl = fetch.origin;
   const currentRoles = Object.entries(roleKeys)
-    .filter(([key, roleType]) => !!tryAccount[key as keyof typeof tryAccount])
-    .map(([key, roleType]) => roleType);
+    .filter(([key]) => !!tryAccount[key as keyof typeof tryAccount])
+    .map(([, roleType]) => roleType);
   return (
-    <div className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl bg-muted p-3">
-      <div className="flex flex-1 flex-wrap items-center gap-2">
-        <span className="font-semibold text-foreground/70 text-sm">BaseURL</span>
+    <Toolbar>
+      <ToolbarField label="Base URL">
         <Copy text={baseUrl}>
-          <button className={buttonRecipe({ variant: "outline", size: "sm" })}>
+          <button className={buttonRecipe({ variant: "ghost", size: "sm" }, "font-mono text-foreground/80")}>
             {baseUrl}
-            <AiOutlineCopy />
+            <AiOutlineCopy className="text-foreground/40" />
           </button>
         </Copy>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="font-semibold text-foreground/70 text-sm">Mode</span>
-        <button
-          className={buttonRecipe({ variant: "primary", size: "sm" })}
-          onClick={() => {
-            st.do.setTrySignalType("restapi");
-          }}
-        >
-          <AiOutlineApi />
-          Rest API
-        </button>
-      </div>
-      <div className="flex flex-wrap items-center gap-1">
-        <span className="font-semibold text-foreground/70 text-sm">For</span>
-        <button
-          className={buttonRecipe({ variant: tryRoleForAll ? "secondary" : "outline", size: "sm" })}
-          onClick={() => {
-            if (!tryRoleForAll) st.do.setTryRoles([...roleTypes]);
-          }}
-        >
-          All
-        </button>
-        {roleTypes.map((roleType) => (
+      </ToolbarField>
+      <ToolbarField label="Roles">
+        <div className={segmentTrackClass}>
           <button
-            key={roleType}
-            className={buttonRecipe({
-              variant: !tryRoleForAll && tryRoles.includes(roleType) ? "secondary" : "outline",
-              size: "sm",
-            })}
+            className={segmentItemClass(tryRoleForAll)}
             onClick={() => {
-              if (tryRoleForAll) st.do.setTryRoles([roleType]);
-              else if (!tryRoles.includes(roleType)) st.do.setTryRoles([...tryRoles, roleType]);
-              else if (tryRoles.length !== 1) st.do.setTryRoles(tryRoles.filter((t) => t !== roleType));
+              if (!tryRoleForAll) st.do.setTryRoles([...roleTypes]);
             }}
+            type="button"
           >
-            {roleType}
+            All
           </button>
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="font-semibold text-foreground/70 text-sm">Auth</span>
+          {roleTypes.map((roleType) => (
+            <button
+              key={roleType}
+              className={segmentItemClass(!tryRoleForAll && tryRoles.includes(roleType))}
+              onClick={() => {
+                if (tryRoleForAll) st.do.setTryRoles([roleType]);
+                else if (!tryRoles.includes(roleType)) st.do.setTryRoles([...tryRoles, roleType]);
+                else if (tryRoles.length !== 1) st.do.setTryRoles(tryRoles.filter((t) => t !== roleType));
+              }}
+              type="button"
+            >
+              {roleType}
+            </button>
+          ))}
+        </div>
+      </ToolbarField>
+      <ToolbarField label="Auth">
         <DocAuthModal>
-          <button className={buttonRecipe({ variant: currentRoles.length > 0 ? "primary" : "outline", size: "sm" })}>
-            <BiLock /> {currentRoles.length > 0 ? currentRoles.join(", ") : "Public"}
+          <button
+            className={buttonRecipe({ variant: currentRoles.length ? "primary" : "outline", size: "sm" })}
+            type="button"
+          >
+            <BiLock /> {currentRoles.length ? currentRoles.join(", ") : "Anonymous"}
           </button>
         </DocAuthModal>
-      </div>
-    </div>
+      </ToolbarField>
+      {onSearch ? (
+        <Input
+          className="ml-auto"
+          icon={<AiOutlineSearch className="text-foreground/40" />}
+          iconClassName="-mr-8 z-10 pl-3"
+          inputClassName="w-56 pl-9"
+          nullable
+          onChange={onSearch}
+          placeholder="Search endpoints"
+          value={search ?? ""}
+        />
+      ) : null}
+    </Toolbar>
   );
 };
 Doc.Setting = DocSetting;
@@ -145,31 +162,17 @@ const DocAuthModal = ({ children }: DocAuthModalProps) => {
           </button>
         }
       >
-        <div className="w-full">
-          <div className={signalUi.sectionTitle}>Current JWT</div>
-          <Input inputClassName="w-full" value={jwt ?? ""} onChange={setJwt} validate={() => true} />
+        <div className="flex w-full flex-col gap-2">
+          <div className={docUi.sectionLabel}>Bearer token</div>
+          <Input
+            inputClassName="w-full font-mono text-xs"
+            placeholder="eyJhbGciOi…"
+            value={jwt ?? ""}
+            onChange={setJwt}
+            validate={() => true}
+          />
         </div>
-        <div className="w-full">
-          <div className={signalUi.sectionTitle}>Account Decoded</div>
-          <div className="relative">
-            <Input.TextArea
-              inputClassName="w-full"
-              value={accountStr}
-              onChange={() => true}
-              validate={() => true}
-              rows={10}
-            />
-            {decodedAccount ? (
-              <div className="absolute top-4 right-4">
-                <Copy text={accountStr}>
-                  <button className={buttonRecipe({ variant: "secondary", size: "sm" })}>
-                    <AiOutlineCopy /> Copy
-                  </button>
-                </Copy>
-              </div>
-            ) : null}
-          </div>
-        </div>
+        <Code code={accountStr} label="Account decoded" />
       </Modal>
     </>
   );
@@ -180,17 +183,14 @@ interface DocSignalsProps {
   fetch: FetchProxy;
 }
 const DocSignals = ({ fetch }: DocSignalsProps) => {
-  const signal = fetch.serializedSignal;
-  const signalEntries = Object.entries(signal).sort(([keyA], [keyB]) => (lowerlize(keyA) > lowerlize(keyB) ? 1 : -1));
+  const signalEntries = Object.entries(fetch.serializedSignal).sort(([keyA], [keyB]) =>
+    lowerlize(keyA) > lowerlize(keyB) ? 1 : -1,
+  );
   return (
-    <div className="flex flex-col gap-3">
-      {signalEntries.map(([refName, signal], idx) => {
-        return (
-          <div className="font-bold text-3xl" key={idx}>
-            <DocSignal refName={refName} fetch={fetch} />
-          </div>
-        );
-      })}
+    <div className="flex flex-col gap-2">
+      {signalEntries.map(([refName], idx) => (
+        <DocSignal key={idx} refName={refName} fetch={fetch} />
+      ))}
     </div>
   );
 };
@@ -202,18 +202,22 @@ interface DocSignalProps {
   fetch: FetchProxy;
 }
 const DocSignal = ({ refName, fetch }: DocSignalProps) => {
+  const { l } = usePage();
+  const desc = dictText(l, `${refName}.modelDesc`);
   return (
-    <SignalCollapse
-      contentClassName="gap-3"
+    <Collapse
       summary={
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="font-bold text-xl">{refName}</div>
-          <div className={badgeRecipe({ variant: "primary" })}>Signal</div>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-bold text-lg">{refName}</span>
+            <span className={docPill("muted")}>Signal</span>
+          </div>
+          {desc ? <div className="text-foreground/55 text-sm">{desc}</div> : null}
         </div>
       }
     >
       <RestApi.Endpoints refName={refName} fetch={fetch} />
-    </SignalCollapse>
+    </Collapse>
   );
 };
 Doc.DocSignal = DocSignal;
@@ -225,17 +229,33 @@ interface ZoneProps {
 }
 const Zone = ({ refName, fetch, openAll }: ZoneProps) => {
   const { l } = usePage();
+  const [search, setSearch] = useState("");
+  const desc = dictText(l, `${refName}.modelDesc`);
+  const entries = endpointEntriesOf(refName, fetch);
+  const wsEntries = entries.filter(({ endpoint }) => isWsEndpoint(endpoint));
+  const mcpEntries = entries.filter(({ endpoint }) => !mcpRefusalOf(endpoint));
   return (
-    <div className="flex break-after-page flex-col gap-4">
-      <div>
-        <div className="font-bold text-3xl">{refName}</div>
-        <div className="text-foreground/70">{l._(`${refName}.modelDesc`)}</div>
+    <div className="flex break-after-page flex-col gap-6">
+      <div className="flex flex-col gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className={docUi.pageTitle}>{refName}</h1>
+          <span className={docPill("muted")}>Signal</span>
+        </div>
+        {desc ? <p className={docUi.sectionDescription}>{desc}</p> : null}
       </div>
-      <DocSetting />
-      <div className="font-bold text-2xl">APIs</div>
-      <RestApi.Endpoints refName={refName} fetch={fetch} openAll={openAll} />
-      <div className="font-bold text-2xl">Web Socket</div>
-      <WebSocket.Endpoints refName={refName} fetch={fetch} openAll={openAll} />
+      <SummaryGrid>
+        <SummaryCard label="Endpoints" value={entries.length} />
+        <SummaryCard label="REST API" value={entries.length - wsEntries.length} />
+        <SummaryCard label="Web Socket" value={wsEntries.length} />
+        <SummaryCard label="MCP Tools" value={mcpEntries.length} />
+      </SummaryGrid>
+      <DocSetting onSearch={setSearch} search={search} />
+      <Section title="REST API">
+        <RestApi.Endpoints refName={refName} fetch={fetch} openAll={openAll} search={search} />
+      </Section>
+      <Section title="Web Socket">
+        <WebSocket.Endpoints refName={refName} fetch={fetch} openAll={openAll} search={search} />
+      </Section>
     </div>
   );
 };

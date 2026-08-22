@@ -32,7 +32,7 @@ interface EditModelProps<Full> {
   edit?: ClientEdit<string, Full> | Partial<Full>;
   /** Store modal name that should activate this editor. */
   modal?: string;
-  children: any;
+  children: ReactNode;
   /** Custom loading overlay wrapper, or false to disable the default overlay. */
   loadingWrapper?: boolean | ((props: { children?: any; className?: string }) => ReactNode);
 }
@@ -297,7 +297,7 @@ export default function EditModal<Full extends { id: string }>({
               };
               return (
                 <Button
-                  className={cn("mt-4 w-full gap-2 rounded-2xl", submitClassName)}
+                  className={cn("mt-4 w-full gap-2", submitClassName)}
                   disabled={modelSubmit.disabled || !!disabled}
                   onClick={async (e, { onError }) => {
                     await handleSubmit({ onError });

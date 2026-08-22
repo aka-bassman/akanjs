@@ -35,24 +35,31 @@ export const Menu = ({
     if (currentMenu === menu) setMenu([...menuSet.current.values()].find((m) => m !== menu) ?? null);
   }, [disabled]);
 
+  const active = menu === currentMenu;
   return (
     <Tooltip content={tooltip}>
-      <div
+      <button
+        aria-selected={active}
         className={cn(
+          "rounded-field px-3 py-1.5 font-medium text-sm transition-colors",
+          !active && !disabled && "cursor-pointer text-foreground/55 hover:bg-muted/60 hover:text-foreground/80",
+          active && "bg-muted text-foreground",
+          disabled && "cursor-not-allowed opacity-50",
           className,
-          menu !== currentMenu && !disabled && "cursor-pointer",
-          disabled && "cursor-not-allowed",
-          menu === currentMenu && activeClassName,
+          active && activeClassName,
           disabled && disabledClassName,
         )}
+        disabled={disabled}
         onClick={() => {
           if (disabled) return;
           setMenu(menu);
           if (scrollToTop) window.scrollTo({ top: 0, behavior: "smooth" });
         }}
+        role="tab"
+        type="button"
       >
         {children}
-      </div>
+      </button>
     </Tooltip>
   );
 };

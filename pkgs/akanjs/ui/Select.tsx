@@ -188,7 +188,7 @@ const DefaultSelect = <
               return (
                 <div
                   key={index}
-                  className="flex items-center gap-2 rounded-lg bg-success/70 px-2 py-1 text-success-foreground text-xs"
+                  className="flex items-center gap-2 rounded-field bg-primary px-2 py-1 text-primary-foreground text-xs"
                 >
                   {renderSelected ? renderSelected(optionValue.value) : optionValue.label}
                   <button
@@ -263,7 +263,7 @@ const DefaultSelect = <
       <div
         data-open={isOpen}
         className={cn(
-          "scrollbar-thin scrollbar-thumb-foreground/20 scrollbar-track scrollbar-track-foreground/40 absolute z-20 mt-0.5 w-full overflow-y-auto rounded-md border-border bg-muted shadow-lg transition-all",
+          "scrollbar-thin scrollbar-thumb-foreground/20 scrollbar-track scrollbar-track-foreground/40 absolute z-20 mt-0.5 w-full overflow-y-auto rounded-box border border-border bg-popover text-popover-foreground shadow-lg transition-all",
           // Animated through max-height, not height: `height` cannot ease to `auto`, so a fixed open
           // height was the only way to animate — and it left a short list padded out with dead space.
           "origin-center duration-200 data-[open=false]:max-h-0 data-[open=true]:max-h-[270px] data-[open=true]:border data-[open=false]:border-none",
@@ -285,7 +285,7 @@ const DefaultSelect = <
               <div key={index} className="group">
                 <div
                   className={cn(
-                    "relative m-2 cursor-pointer rounded-sm p-2 duration-100 last:border-b-0 hover:bg-border",
+                    "relative mx-1 my-0.5 cursor-pointer rounded-field p-2 transition-colors last:border-b-0 hover:bg-muted",
                     !multiple && isSelected && selectedClassName,
                     isSelected && "bg-success/70 text-success-foreground",
                   )}

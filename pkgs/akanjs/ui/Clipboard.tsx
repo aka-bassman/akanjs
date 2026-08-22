@@ -31,18 +31,15 @@ export const Clipboard = ({ text, className }: ClipboardProps): ReactElement => 
         await handleCopy();
       }}
       className={cn(
-        "flex h-6 w-6 items-center justify-center rounded-md bg-foreground/10 text-foreground transition-all duration-300 hover:bg-foreground/20",
+        "flex size-6 items-center justify-center rounded-field bg-foreground/10 text-foreground transition-colors hover:bg-foreground/20",
         className,
       )}
     >
-      {/* 체크 아이콘 */}
       <FaCheck
-        className={`absolute h-4 w-4 transition-opacity duration-300 ${isCopied ? "opacity-100" : "opacity-0"}`}
+        className={cn("absolute size-4 transition-opacity duration-300", isCopied ? "opacity-100" : "opacity-0")}
       />
-
-      {/* 복사 아이콘 */}
       <MdContentCopy
-        className={`absolute h-4 w-4 transition-opacity duration-300 ${isCopied ? "opacity-0" : "opacity-100"}`}
+        className={cn("absolute size-4 transition-opacity duration-300", isCopied ? "opacity-0" : "opacity-100")}
       />
     </button>
   );

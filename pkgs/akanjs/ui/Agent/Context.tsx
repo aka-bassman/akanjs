@@ -29,7 +29,7 @@ export default function Context({ className }: ContextProps) {
         Assemble
       </button>
       {shown ? (
-        <pre className="mt-2 max-h-60 overflow-auto rounded-field bg-background/60 p-2 text-[10px] leading-tight">
+        <pre className="scrollbar-thin mt-2 max-h-60 overflow-auto rounded-field bg-background/60 p-2 text-[10px] leading-tight">
           {shown}
         </pre>
       ) : null}

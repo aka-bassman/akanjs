@@ -5,8 +5,8 @@ import { type ComponentType, createElement } from "react";
 import { buttonRecipe } from "./Button";
 import { createOverridable, useUiOverride, useUiRecipe } from "./UiOverride";
 
-/** Toggle-select cell: outline button (recipe slot), filled success when selected. */
-const selectedCls = "border-transparent bg-success/70 text-success-foreground hover:bg-success/70";
+/** Toggle-select cell: outline button (recipe slot), filled primary when selected. */
+const selectedCls = "border-transparent bg-primary text-primary-foreground hover:bg-primary/90";
 
 export interface ToggleSelectProps<I extends string | number | boolean | null> {
   className?: string;
@@ -31,8 +31,6 @@ const DefaultToggleSelect = <I extends string | number | boolean | null>({
   const { l } = usePage();
   const toggleBtn = (useUiRecipe("button") ?? buttonRecipe)({ variant: "outline", size: "sm" });
   const validateResult = value !== null ? validate(value) : false;
-  // const status: "error" | "warning" | "success" =
-  //   !nullable && !value?.length ? "warning" : validateResult === true ? "success" : "error";
   const invalidMessage =
     value === null || (typeof value === "string" && !value.length) || validateResult === true
       ? null
@@ -50,7 +48,7 @@ const DefaultToggleSelect = <I extends string | number | boolean | null>({
   return (
     <div
       className={cn(
-        "relative flex w-full flex-wrap items-center gap-1 rounded-md border border-foreground/20 p-2",
+        "relative flex w-full flex-wrap items-center gap-1 rounded-box border border-border p-2",
         className,
       )}
     >
@@ -100,8 +98,6 @@ const DefaultMulti = ({
   const { l } = usePage();
   const toggleBtn = (useUiRecipe("button") ?? buttonRecipe)({ variant: "outline", size: "sm" });
   const validateResult = validate(value);
-  // const status: "error" | "warning" | "success" =
-  //   !nullable && !value.length ? "warning" : validateResult === true ? "success" : "error";
   const invalidMessage =
     !value.length || validateResult === true
       ? null
@@ -119,7 +115,7 @@ const DefaultMulti = ({
   return (
     <div
       className={cn(
-        "relative flex w-full flex-wrap items-center gap-1 rounded-md border border-foreground/20 p-2",
+        "relative flex w-full flex-wrap items-center gap-1 rounded-box border border-border p-2",
         className,
       )}
     >

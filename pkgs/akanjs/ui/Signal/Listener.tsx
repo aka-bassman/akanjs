@@ -1,12 +1,20 @@
 "use client";
-
+import { cn } from "akanjs/client";
 import { capitalize } from "akanjs/common";
 import { useEffect, useRef } from "react";
-import { getStatusBadgeClassName, getStatusTextareaClassName, signalUi } from "./style";
+import { Code } from "../Reference";
+import { getStatusBadgeClassName, getStatusTone } from "./style";
 
 export default function Listener() {
   return <div></div>;
 }
+
+const dotClass: { [key: string]: string } = {
+  error: "bg-destructive",
+  listening: "animate-pulse bg-success",
+  loading: "animate-ping bg-info",
+  ready: "bg-border",
+};
 
 interface ListenerResultProps {
   status: "ready" | "loading" | "error" | "listening";
@@ -14,37 +22,25 @@ interface ListenerResultProps {
 }
 const ListenerResult = ({ status, data }: ListenerResultProps) => {
   const dataStr = typeof data === "object" ? JSON.stringify(data, null, 2) : String(data);
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const ref = useRef<HTMLPreElement>(null);
   useEffect(() => {
     if (!ref.current) return;
     ref.current.scrollTop = ref.current.scrollHeight;
   }, [dataStr]);
   return (
-    <div className="relative">
-      <textarea
-        ref={ref}
-        className={`${signalUi.codePanel} duration-300 ${
-          status === "listening" ? "animate-borderPulse-50 border-2" : ""
-        } ${getStatusTextareaClassName(status)}`}
-        value={dataStr}
-        onChange={() => true}
-      />
-
-      <div className="absolute top-4 right-4 flex items-center justify-center gap-2 rounded-lg bg-muted/80 px-2 py-1 font-bold">
-        <span className={getStatusBadgeClassName(status)}>{capitalize(status)}</span>
-        <div
-          className={`size-[10px] rounded-full ${
-            status === "error"
-              ? "bg-destructive"
-              : status === "listening"
-                ? "animate-pop-300 bg-primary"
-                : status === "loading"
-                  ? "animate-ping bg-secondary"
-                  : "bg-border"
-          }`}
-        ></div>
-      </div>
-    </div>
+    <Code
+      bodyRef={ref}
+      code={dataStr}
+      label="Stream"
+      meta={
+        <>
+          <span className={getStatusBadgeClassName(status)}>{capitalize(status)}</span>
+          <span className={cn("size-2 rounded-full", dotClass[status] ?? "bg-border")} />
+        </>
+      }
+      placeholder="Nothing received yet."
+      tone={getStatusTone(status)}
+    />
   );
 };
 Listener.Result = ListenerResult;

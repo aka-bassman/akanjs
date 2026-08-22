@@ -157,7 +157,6 @@
     "firebase": "^12.13.0",
     "happy-dom": "^20.11.2",
     "ioredis": "^5.10.1",
-    "mermaid": "^11.15.0",
     "postgres": "^3.4.9",
     "protobufjs": "^8.4.0",
     "react": "19.2.7",
@@ -258,9 +257,6 @@
       "optional": true
     },
     "ioredis": {
-      "optional": true
-    },
-    "mermaid": {
       "optional": true
     },
     "postgres": {

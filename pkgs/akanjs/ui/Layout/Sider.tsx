@@ -24,7 +24,6 @@ export const Sider = ({ className, bgClassName, children }: SiderProps) => {
     translateX: isOpen ? "0%" : "-100%",
     config: { tension: 300, friction: 30 },
   });
-
   const overlayAnimation = useSpring({
     opacity: isOpen ? 1 : 0,
     config: { tension: 300, friction: 30 },
@@ -33,10 +32,12 @@ export const Sider = ({ className, bgClassName, children }: SiderProps) => {
   return (
     <>
       <button
-        className={buttonRecipe({ variant: "ghost" })}
+        aria-label="Open menu"
+        className={buttonRecipe({ variant: "ghost", size: "icon" })}
         onClick={() => {
           setIsOpen(true);
         }}
+        type="button"
       >
         <AiOutlineMenu />
       </button>
@@ -44,7 +45,7 @@ export const Sider = ({ className, bgClassName, children }: SiderProps) => {
       {isOpen ? (
         <animated.div
           style={overlayAnimation}
-          className={cn("fixed inset-0 z-40 h-screen w-screen", bgClassName)}
+          className={cn("fixed inset-0 z-40 bg-black/50 backdrop-blur-sm", bgClassName)}
           onClick={() => {
             setIsOpen(false);
           }}
@@ -52,18 +53,28 @@ export const Sider = ({ className, bgClassName, children }: SiderProps) => {
       ) : null}
 
       <animated.div
+        // Off-screen but still mounted, so it stays out of the tab order until it is actually reachable.
+        aria-hidden={!isOpen}
+        className={cn(
+          "fixed top-0 left-0 z-50 flex h-full w-3/4 flex-col border-border border-r bg-card text-card-foreground shadow-2xl md:w-80",
+          !isOpen && "pointer-events-none",
+          className,
+        )}
         style={siderAnimation}
-        className={cn("fixed top-0 left-0 z-50 h-full w-3/4 bg-muted p-4 text-foreground md:w-80", className)}
       >
-        <button
-          className="absolute top-4 left-4 text-lg"
-          onClick={() => {
-            setIsOpen(false);
-          }}
-        >
-          <BiX />
-        </button>
-        {children}
+        <div className="flex shrink-0 items-center justify-end p-2">
+          <button
+            aria-label="Close menu"
+            className={buttonRecipe({ variant: "ghost", size: "icon" }, "rounded-full text-foreground/50")}
+            onClick={() => {
+              setIsOpen(false);
+            }}
+            type="button"
+          >
+            <BiX className="text-2xl" />
+          </button>
+        </div>
+        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
       </animated.div>
     </>
   );

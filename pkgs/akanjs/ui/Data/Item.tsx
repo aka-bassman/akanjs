@@ -152,7 +152,7 @@ export default function Item<T extends string, Full extends { id: string }, Ligh
             {customActions.length ? (
               <Dropdown
                 buttonClassName={buttonRecipe({ variant: "ghost", size: "icon" }, "size-8")}
-                value={<AiOutlineMore />}
+                value={<AiOutlineMore className="text-foreground" />}
                 content={customActions.map((action) => <li key={action.key}>{action.label}</li>)}
               />
             ) : null}

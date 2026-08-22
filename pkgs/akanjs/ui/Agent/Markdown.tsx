@@ -54,7 +54,7 @@ const Table = ({ block }: TableProps) => {
         <thead>
           <tr className="bg-muted/40">
             {block.head.map((cell, idx) => (
-              <th className={cn("border-base-content/10 border-b px-2 py-1 text-left", cellClass[idx])} key={idx}>
+              <th className={cn("border-border border-b px-2 py-1 text-left", cellClass[idx])} key={idx}>
                 {spans(cell)}
               </th>
             ))}
@@ -64,7 +64,7 @@ const Table = ({ block }: TableProps) => {
           {block.rows.map((row, rowIdx) => (
             <tr key={rowIdx}>
               {row.map((cell, idx) => (
-                <td className={cn("border-base-content/5 border-b px-2 py-1 text-left", cellClass[idx])} key={idx}>
+                <td className={cn("border-border/60 border-b px-2 py-1 text-left", cellClass[idx])} key={idx}>
                   {spans(cell)}
                 </td>
               ))}

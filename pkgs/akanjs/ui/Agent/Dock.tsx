@@ -43,7 +43,7 @@ export const Dock = ({ className, bridge, surface, open = false }: DockProps) =>
     <aside
       data-agent-ui=""
       className={cn(
-        "fixed right-4 bottom-4 z-50 flex max-h-[70vh] w-80 flex-col gap-2 overflow-y-auto rounded-box border border-foreground/10 bg-background/95 p-3 shadow-lg",
+        "scrollbar-thin fixed right-4 bottom-4 z-50 flex max-h-[70vh] w-80 flex-col gap-2 overflow-y-auto rounded-box border border-border bg-background/95 p-3 shadow-lg",
         className,
       )}
     >

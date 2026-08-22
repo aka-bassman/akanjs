@@ -66,7 +66,7 @@ export default function Tool({ className, surface, tool, onRun }: ToolProps) {
         <button className={buttonRecipe({ size: "xs" })} onClick={run} type="button">
           Run
         </button>
-        {error ? <p className="text-error text-xs">{error}</p> : null}
+        {error ? <p className="text-destructive text-xs">{error}</p> : null}
       </div>
     </details>
   );

@@ -37,7 +37,9 @@ export default function StateKey({ className, bridge, name, entry, live }: State
         </span>
       </button>
       {shown ? (
-        <pre className="max-h-40 overflow-auto rounded-field bg-muted p-2 text-[10px] leading-tight">{shown}</pre>
+        <pre className="scrollbar-thin max-h-40 overflow-auto rounded-field bg-muted p-2 text-[10px] leading-tight">
+          {shown}
+        </pre>
       ) : null}
     </div>
   );

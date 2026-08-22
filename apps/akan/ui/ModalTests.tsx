@@ -84,7 +84,7 @@ export const ModalTests = () => {
         onCancel={close}
         title="Action Modal"
         action={
-          <div className="flex justify-end gap-2 border-border border-t p-4">
+          <div className="flex justify-end gap-2">
             <button type="button" className={buttonRecipe({ variant: "ghost" })} onClick={close}>
               취소
             </button>
