@@ -32,7 +32,7 @@ export const Switch = ({
   className,
   variant = "primary",
 }: SwitchProps) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, { disabled });
   const [internal, setInternal] = useState(defaultChecked ?? false);
   const isControlled = checked !== undefined;
   const isChecked = isControlled ? checked : internal;

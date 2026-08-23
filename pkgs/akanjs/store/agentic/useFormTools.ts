@@ -17,6 +17,11 @@ import { FormFields } from "./formFields";
  * controls will render. The **guard** is where the screen gets its say: a plain field has to have published its
  * own setter, and a composite is waved through because its rows are written with `writeOn<Model>(path, value)`,
  * which no control can annotate — so this is the one place an agent can reach a field the screen may not show.
+ *
+ * Registered `shared`, because the entry is a pure function of `refName`: the schema comes from the model, the
+ * guard re-reads the live surface, and every `write` reaches the one store instance. So a form put on screen by a
+ * shell that subscribes it (`Model.EditModal`) and by the `Template` inside it registers one declaration twice,
+ * which is interchangeable in the exact sense `shared` means — not a clash an app could fix by suppressing one.
  */
 export const useFormTools = (refName: string | null, write: (action: string, value: unknown) => void) => {
   const surface = useSurface();
@@ -44,6 +49,7 @@ export const useFormTools = (refName: string | null, write: (action: string, val
         additionalProperties: false,
       },
       effect: "state",
+      shared: true,
       guard: (args) => {
         const keys = Object.keys(args);
         if (!keys.length) return "Name at least one field to fill.";
@@ -60,9 +66,16 @@ export const useFormTools = (refName: string | null, write: (action: string, val
         const patch = Object.entries(args).map(([key, value]) => {
           const entry = byKey.get(key);
           if (!entry) throw new Error(`The ${refName} form has no field "${key}".`);
-          return [entry.action, FormFields.checked(name, key, entry.field, value)] as const;
+          return { entry, value: FormFields.checked(name, key, entry.field, value) };
         });
-        for (const [action, value] of patch) live.current(action, value);
+        // Written through the control's own published tool wherever there is one, not the setter underneath it.
+        // That is what carries the control's `transform`, so a field cannot normalize one way for `set<Field>On…`
+        // and another way for this patch. A composite the guard waved through has no control, and dispatches.
+        for (const { entry, value } of patch) {
+          const control = surface.tool(AgenticSurface.fullName(scope, entry.action), scope);
+          if (control) void control.run({ value });
+          else live.current(entry.action, value);
+        }
       },
     });
   }, [surface, scopeKey, refName]);

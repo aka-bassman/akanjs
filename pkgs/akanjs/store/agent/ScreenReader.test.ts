@@ -56,6 +56,19 @@ describe("ScreenReader", () => {
     expect(text).toContain("[button: Save → submitTask]");
   });
 
+  test("says a control is disabled, so a refused write is a fact the agent could read first", () => {
+    const text = readOf(
+      '<input data-akan-state="task.title" value="Pinned" disabled />' +
+        '<input data-akan-state="task.slug" value="open" />' +
+        '<input type="checkbox" name="done" checked aria-disabled="true" />' +
+        '<button data-akan-action="submitTask" disabled>Save</button>',
+    );
+    expect(text).toContain('[input task.title (disabled): "Pinned"]');
+    expect(text).toContain('[input task.slug: "open"]');
+    expect(text).toContain("[checkbox done (disabled): on]");
+    expect(text).toContain("[button (disabled): Save → submitTask]");
+  });
+
   test("truncates past the limit and says so", () => {
     const text = readOf(`<p>${"a".repeat(ScreenReader.limit + 500)}</p>`);
     expect(text.length).toBeLessThan(ScreenReader.limit + 100);

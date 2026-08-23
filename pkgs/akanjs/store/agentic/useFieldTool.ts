@@ -89,24 +89,77 @@ const rowEntries = (ref: FormFieldRef, arraySchema: JsonSchema): ToolEntry[] => 
   ];
 };
 
+export interface FieldToolOptions {
+  /** The control's own normalizer. Applied to the agent's write exactly as it is to the person's typing. */
+  transform?: unknown;
+  /** True while the person cannot use the control. Publishes nothing, so the agent gets no lever the screen withholds. */
+  disabled?: boolean;
+  /** The person can drag entries into a new order, so `move<Field>On<Model>` is a lever the screen really has. */
+  sortable?: boolean;
+}
+
 /**
- * Publishes the setter a form control is already holding, for exactly as long as the control is on screen.
+ * Reorder-by-position for a list the person can drag, beside the whole-array setter.
+ *
+ * The drag is the lever the screen actually offers, and it changes no row's content — so an agent asked to move one
+ * row should not have to retype the nine it is leaving alone, which is the same argument that gives an embedded-row
+ * array its `add`/`sub`. There is no store action behind it: reordering *is* a whole-array write, so this splices
+ * the live rows and hands them to the setter the drag hands them to, `transform` deliberately not applied — the
+ * values are already stored, and normalizing them again is not something dragging does.
+ */
+const moveEntry = (ref: FormFieldRef, onChange: () => (value: unknown) => unknown): ToolEntry => {
+  const name = formSetterNames(capitalize(ref.refName), ref.key).moveFieldOnModel;
+  return {
+    name,
+    description: `Move one entry of ${ref.key} on the ${ref.refName} form to another position, counting from 0. Reorders only — no entry's content changes.`,
+    parameters: {
+      type: "object",
+      properties: { from: { type: "integer" }, to: { type: "integer" } },
+      required: ["from", "to"],
+      additionalProperties: false,
+    },
+    effect: "state",
+    guard: (args) => {
+      const length = rowsOf(ref).length;
+      const outside = ["from", "to"].filter((key) => {
+        const idx = args[key];
+        return typeof idx !== "number" || !Number.isInteger(idx) || idx < 0 || idx >= length;
+      });
+      if (!outside.length) return true;
+      return `${ref.key} has ${length} ${length === 1 ? "entry" : "entries"}, so ${outside.join(" and ")} is out of range.`;
+    },
+    run: (args) => {
+      const rows = [...rowsOf(ref)];
+      const [moved] = rows.splice(args.from as number, 1);
+      rows.splice(args.to as number, 0, moved);
+      return onChange()(rows);
+    },
+  };
+};
+
+/**
+ * Publishes the setter a form control is already holding, for exactly as long as the control is usable.
  *
  * The control is the declaration — the same rule the rest of the surface follows. A handler passed by reference
  * (`onChange={st.do.setTitleOnTask}`) names the field it writes, so the tool and the person press one function;
  * an inline arrow names nothing and publishes nothing, which is the existing `data-akan-action` rule with
  * consequences. Publishing from the form's subscription instead would offer every field of the model, including
  * the ones this template draws no control for.
+ *
+ * `disabled` withdraws the tool for the same reason the whole surface is declaration-only: a field the person
+ * cannot type into is not one an agent may write in their place. It also closes the field to `fill<Model>Form`,
+ * whose guard offers only what a control published — so one gate covers both writers.
  */
-export const useFieldTool = (onChange: unknown, transform?: unknown) => {
+export const useFieldTool = (onChange: unknown, { transform, disabled, sortable }: FieldToolOptions = {}) => {
   const surface = useSurface();
   const scope = useScopePath();
   const action = actionTagOf(onChange)?.action ?? null;
+  const off = !!disabled;
   const live = useRef({ onChange, transform });
   live.current = { onChange, transform };
   const scopeKey = scope.join(".");
   useEffect(() => {
-    if (!action) return;
+    if (!action || off) return;
     const ref = FormFields.ref(action);
     const schema = ref && FormFields.schema(ref.field);
     if (!ref || !schema) return;
@@ -122,10 +175,13 @@ export const useFieldTool = (onChange: unknown, transform?: unknown) => {
         },
       },
       ...rowEntries(ref, schema),
+      ...(sortable && ref.field.arrDepth > 0
+        ? [moveEntry(ref, () => live.current.onChange as (value: unknown) => unknown)]
+        : []),
     ];
     const registered = entries.map((entry) => surface.registerTool(scope, entry));
     return () => {
       for (const unregister of registered) unregister();
     };
-  }, [surface, scopeKey, action]);
+  }, [surface, scopeKey, action, off, !!sortable]);
 };

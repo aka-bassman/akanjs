@@ -14,9 +14,9 @@ language js(typescript, jsx)
 //
 //   normalize  `(v) => set(formatPhone(v))`      -> the control's own `transform` prop, which every text and
 //                                                   number `Field.*` already takes. Keep `onChange` a reference.
-//   composite  `(v) => { set(v); other(v); }`    -> a store action named `set<Field>On<Model>` writing through
-//                                                   `super.set<Field>On<Model>(v)`; `st.do` tags every action by
-//                                                   name, so the reference publishes again.
+//   composite  `(v) => { set(v); other(v); }`    -> a `_postSet<Field>` method on the store, with the generated
+//                                                   setter left on the control. A generated action cannot be
+//                                                   overridden: mapped types make them properties (TS2425).
 //   nested     `(v) => writeOnX('a.3.b', v)`     -> unannotatable by design. An agent reaches an embedded row
 //                                                   through `fill<Model>Form`, which waves composites through.
 //
@@ -35,7 +35,7 @@ JsxAttribute() as $attr where {
   $body <: r"\{?\s*(?:void\s+|await\s+)?st\.do\.[A-Za-z0-9_$]+\([A-Za-z_$][A-Za-z0-9_$]*\)\s*;?\s*\}?",
   register_diagnostic(
     span = $arrow,
-    message = "This arrow only forwards its argument, and an anonymous closure names no action — the control publishes no agent tool and emits no data-akan-action for the field. Pass the setter by reference: onChange={st.do.setTypeOnTicket}. A wrapper that does more is not reported: normalization belongs in the control's transform prop, a multi-write belongs in a store action named set<Field>On<Model>, and a nested path through writeOnX is reached by the agent through fill<Model>Form.",
+    message = "This arrow only forwards its argument, and an anonymous closure names no action — the control publishes no agent tool and emits no data-akan-action for the field. Pass the setter by reference: onChange={st.do.setTypeOnTicket}. A wrapper that does more is not reported: normalization belongs in the control's transform prop, a multi-write belongs in a _postSet<Field> hook on the store, and a nested path through writeOnX is reached by the agent through fill<Model>Form.",
     severity = "error"
   )
 }

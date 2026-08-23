@@ -316,6 +316,13 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
                 : (value as object);
           (state[names.modelForm] as { [key: string]: any })[namesOfField.field] = setValue;
         });
+        // After the write, so a hook that reads the field sees the new value. It runs for every writer — the
+        // person's control, the agent's tool, `fill<Model>Form` — because a rule that fires from only one screen is
+        // not a rule about the field.
+        const postSet = (this as unknown as { [key: string]: ((value: unknown) => unknown) | undefined })[
+          namesOfField.postSetField
+        ];
+        if (postSet) void postSet.call(this, value);
       },
       ...(field.isArray
         ? {

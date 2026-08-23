@@ -248,6 +248,15 @@ export class ScreenReader {
     if (href && href !== "#" && !href.startsWith("javascript:") && text !== href) this.#buffer += ` (${href})`;
   }
 
+  /**
+   * A control the person cannot use publishes no tool, so saying so here is what turns a silent refusal into a
+   * fact the agent could have read. It reads `aria-disabled` too: a styled-off div carries no native property.
+   */
+  static #off(el: HTMLElement) {
+    const native = (el as HTMLInputElement | HTMLButtonElement).disabled;
+    return native || el.getAttribute("aria-disabled") === "true" ? " (disabled)" : "";
+  }
+
   #button(el: HTMLElement) {
     const before = this.#buffer;
     this.#walkChildren(el);
@@ -255,7 +264,7 @@ export class ScreenReader {
     this.#buffer = before;
     const label = inner || el.getAttribute("aria-label") || "";
     const action = el.getAttribute("data-akan-action");
-    if (label || action) this.#buffer += ` [button: ${label}${action ? ` → ${action}` : ""}]`;
+    if (label || action) this.#buffer += ` [button${ScreenReader.#off(el)}: ${label}${action ? ` → ${action}` : ""}]`;
   }
 
   #control(el: HTMLElement, tag: string) {
@@ -268,12 +277,13 @@ export class ScreenReader {
       el.getAttribute("placeholder") ??
       el.getAttribute("name") ??
       type;
+    const off = ScreenReader.#off(el);
     if (type === "password") {
-      this.#buffer += ` [input ${name}]`;
+      this.#buffer += ` [input ${name}${off}]`;
       return;
     }
     if (type === "checkbox" || type === "radio") {
-      this.#buffer += ` [${type} ${name}: ${input.checked ? "on" : "off"}]`;
+      this.#buffer += ` [${type} ${name}${off}: ${input.checked ? "on" : "off"}]`;
       return;
     }
     const raw =
@@ -282,7 +292,7 @@ export class ScreenReader {
           (el as unknown as HTMLSelectElement).value)
         : input.value;
     const value = (raw ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
-    this.#buffer += ` [${tag === "SELECT" ? "select" : "input"} ${name}: ${JSON.stringify(value)}]`;
+    this.#buffer += ` [${tag === "SELECT" ? "select" : "input"} ${name}${off}: ${JSON.stringify(value)}]`;
   }
 
   #pre(el: HTMLElement) {

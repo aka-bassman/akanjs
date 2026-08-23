@@ -1,6 +1,7 @@
 import {
   ACTION_META,
   ACTION_OWNER_META,
+  FIELD_META,
   type MergeAllKeyOfObjects,
   type MergeAllKeyOfTypes,
   type MergeAllTypes,
@@ -9,7 +10,9 @@ import {
   STATE_META,
 } from "akanjs/base";
 import { applyMixins } from "akanjs/common";
+import { ConstantRegistry } from "akanjs/constant";
 import { attachAgentic } from "./agentic";
+import { formSetterNames } from "./formSetterNames";
 import type { RootStoreCls } from "./rootStore";
 import type { StoreCls } from "./store";
 import { StoreInstance } from "./storeInstance";
@@ -58,7 +61,27 @@ export class StoreRegistry {
     store[ACTION_META] = actions;
     store[ACTION_OWNER_META] = owners;
     StoreRegistry.#state.store.set(store.refName, store);
+    StoreRegistry.#warnUnknownPostSetHooks(store);
     return store;
+  }
+
+  /**
+   * A `_postSet<Field>` hook cannot be typed — the generated setters live in a mapped type, so every name the base
+   * declares is a property a subclass method may not redeclare (TS2425), and the hook only compiles because the base
+   * declares nothing under it. A misspelled field would therefore never fire and never complain, so say so here.
+   */
+  static #warnUnknownPostSetHooks(store: StoreCls) {
+    const hooks = Object.keys(Object.getOwnPropertyDescriptors(store.prototype)).filter((key) =>
+      key.startsWith("_postSet"),
+    );
+    if (!hooks.length) return;
+    const model = ConstantRegistry.getDatabase(store.refName, { allowEmpty: true });
+    if (!model) return;
+    const known = new Set(
+      Object.keys(model.full[FIELD_META] as object).map((key) => formSetterNames("", key).postSetField),
+    );
+    for (const hook of hooks.filter((key) => !known.has(key)))
+      console.warn(`[${store.refName}Store] ${hook} matches no field of ${store.refName}, so it will never run.`);
   }
   static get(refName: string) {
     return StoreRegistry.#state.store.get(refName);

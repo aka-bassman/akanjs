@@ -85,7 +85,7 @@ const DefaultSelect = <
   renderOption,
   renderSelected,
 }: SelectProps<T, Multiple, Searchable, Option>) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, { disabled });
   const { l } = usePage();
   const [isOpen, setIsOpen] = useState(false);
   const labeledOptions: { label: string | boolean | number; value: T }[] = useMemo(

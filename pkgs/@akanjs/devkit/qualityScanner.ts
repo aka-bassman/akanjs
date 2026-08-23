@@ -89,7 +89,7 @@ const SUGGESTED_RULES = [
   "Keep apps/*/lib and libs/*/lib root files limited to generated support facets such as cnst.ts, db.ts, dict.ts, sig.ts, srv.ts, st.ts, useClient.ts, and useServer.ts.",
   "Use domain module folders consistently: lib/<model> for database modules, lib/_<service> for service modules, and lib/__scalar/<scalar> for scalar modules.",
   "Keep module UI filenames predictable: database modules use <Model>.Template/Unit/Util/View/Zone.tsx, service modules use <Service>.Util/Zone.tsx, and scalar modules use <Scalar>.Template/Unit.tsx.",
-  "Hand a form control its store setter by reference so the field publishes an agent tool; put normalization in the control's transform prop and a multi-write in a store action of the same name.",
+  "Hand a form control its store setter by reference so the field publishes an agent tool; put normalization in the control's transform prop and a multi-write in a _postSet<Field> hook on the store.",
   "Move shared app utilities to apps/*/common instead of creating apps/*/base.",
   "Avoid large mixed-purpose class files; class export files should import helpers from neighboring utility files instead of declaring them inline.",
 ];
@@ -125,7 +125,7 @@ const RULE_FIXES: Record<string, string> = {
   "akan.file.prototype-mutation": "Avoid prototype mutation, or isolate it in an approved low-level integration file.",
   "akan.file.class-export-global-declaration": "Move the helper to a sibling file and import it into the class module.",
   "akan.agent.unpublished-form-setter":
-    "Pass the setter by reference where the wrapper only forwards (onChange={st.do.setTitleOnTask}); move normalization into the control's own transform prop; move a multi-write into a store action named set<Field>On<Model> that writes through super.set<Field>On<Model>(v).",
+    "Pass the setter by reference where the wrapper only forwards (onChange={st.do.setTitleOnTask}); move normalization into the control's own transform prop; move a multi-write into a _postSet<Field> hook on the store, keeping the generated setter on the control.",
   "akan.file.component-internal-declaration":
     "Move the type or helper to a type/util file in ui/, webkit/, or common/ by purpose. If it is the component's props, declare it as `interface <Component>Props`.",
   "akan.file.component-export":

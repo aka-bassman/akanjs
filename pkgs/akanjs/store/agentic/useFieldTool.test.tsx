@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
 import { store } from "../store";
 import { StoreRegistry } from "../storeRegistry";
-import { useFieldTool } from "./useFieldTool";
+import { type FieldToolOptions, useFieldTool } from "./useFieldTool";
 
 class FieldToolRole extends enumOf("fieldToolRole", ["owner", "guest"] as const) {}
 
@@ -72,9 +72,9 @@ const mount = (node: ReactNode) => {
   };
 };
 
-const control = (surface: AgenticSurface, onChange: unknown, transform?: unknown) => {
+const control = (surface: AgenticSurface, onChange: unknown, options?: FieldToolOptions) => {
   const Control = () => {
-    useFieldTool(onChange, transform);
+    useFieldTool(onChange, options);
     return null;
   };
   return (
@@ -134,7 +134,7 @@ describe("useFieldTool", () => {
     const surface = new AgenticSurface();
     written.length = 0;
     const unmount = mount(
-      control(surface, dispatch.setTitleOnFieldToolItem, (value: string) => value.trim().toUpperCase()),
+      control(surface, dispatch.setTitleOnFieldToolItem, { transform: (value: string) => value.trim().toUpperCase() }),
     );
 
     await surface.call("setTitleOnFieldToolItem", { value: "  ada  " });
@@ -145,7 +145,9 @@ describe("useFieldTool", () => {
   test("a transform normalizes one scalar, so a list control applies it per element", async () => {
     const surface = new AgenticSurface();
     written.length = 0;
-    const unmount = mount(control(surface, dispatch.setTagsOnFieldToolItem, (value: string) => value.toUpperCase()));
+    const unmount = mount(
+      control(surface, dispatch.setTagsOnFieldToolItem, { transform: (value: string) => value.toUpperCase() }),
+    );
 
     await surface.call("setTagsOnFieldToolItem", { value: ["a", "b"] });
     expect(written).toEqual([["tags", ["A", "B"]]]);
@@ -155,7 +157,9 @@ describe("useFieldTool", () => {
   test("clearing a nullable field stays null — a normalizer written for a value would invent one", async () => {
     const surface = new AgenticSurface();
     written.length = 0;
-    const unmount = mount(control(surface, dispatch.setNoteOnFieldToolItem, (value: string) => `[${value}]`));
+    const unmount = mount(
+      control(surface, dispatch.setNoteOnFieldToolItem, { transform: (value: string) => `[${value}]` }),
+    );
 
     await surface.call("setNoteOnFieldToolItem", {});
     expect(written).toEqual([["note", null]]);
@@ -231,6 +235,128 @@ describe("useFieldTool", () => {
     const unmount = mount(control(surface, dispatch.setTagsOnFieldToolItem));
 
     expect(surface.snapshot().tools.map((tool) => tool.name)).toEqual(["setTagsOnFieldToolItem"]);
+    unmount();
+  });
+
+  test("a disabled control publishes nothing — the agent gets no lever the person cannot pull", () => {
+    const surface = new AgenticSurface();
+    const unmount = mount(control(surface, dispatch.setTitleOnFieldToolItem, { disabled: true }));
+
+    expect(surface.snapshot().tools).toHaveLength(0);
+    unmount();
+  });
+
+  test("a disabled embedded-row array withholds its append and remove tools too", () => {
+    const surface = new AgenticSurface();
+    const unmount = mount(control(surface, dispatch.setRowsOnFieldToolItem, { disabled: true }));
+
+    expect(surface.snapshot().tools).toHaveLength(0);
+    unmount();
+  });
+
+  test("disabling a mounted control takes its tool back, and re-enabling gives it again", async () => {
+    const surface = new AgenticSurface();
+    written.length = 0;
+    const Control = ({ disabled }: { disabled: boolean }) => {
+      useFieldTool(dispatch.setTitleOnFieldToolItem, { disabled });
+      return null;
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const render = (disabled: boolean) =>
+      act(() =>
+        root.render(
+          <AgentProvider surface={surface}>
+            <Control disabled={disabled} />
+          </AgentProvider>,
+        ),
+      );
+
+    render(false);
+    expect(surface.snapshot().tools.map((tool) => tool.name)).toEqual(["setTitleOnFieldToolItem"]);
+    render(true);
+    expect(surface.snapshot().tools).toHaveLength(0);
+    render(false);
+    await surface.call("setTitleOnFieldToolItem", { value: "Ada" });
+    expect(written).toEqual([["title", "Ada"]]);
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  test("a sortable list adds reorder-by-position, which touches no entry's content", async () => {
+    const surface = new AgenticSurface();
+    written.length = 0;
+    instance.set({ fieldToolItemForm: { rows: [{ key: "a" }, { key: "b" }, { key: "c" }] } });
+    const unmount = mount(control(surface, dispatch.setRowsOnFieldToolItem, { sortable: true }));
+
+    expect(surface.snapshot().tools.map((tool) => tool.name)).toEqual([
+      "addRowsOnFieldToolItem",
+      "moveRowsOnFieldToolItem",
+      "setRowsOnFieldToolItem",
+      "subRowsOnFieldToolItem",
+    ]);
+    expect(surface.snapshot().tools.find((tool) => tool.name === "moveRowsOnFieldToolItem")?.parameters).toEqual({
+      type: "object",
+      properties: { from: { type: "integer" }, to: { type: "integer" } },
+      required: ["from", "to"],
+      additionalProperties: false,
+    });
+
+    await surface.call("moveRowsOnFieldToolItem", { from: 2, to: 0 });
+    expect(written).toEqual([["rows", [{ key: "c" }, { key: "a" }, { key: "b" }]]]);
+    unmount();
+  });
+
+  test("moving to a position the list does not have is refused with the count", async () => {
+    const surface = new AgenticSurface();
+    written.length = 0;
+    instance.set({ fieldToolItemForm: { rows: [{ key: "a" }, { key: "b" }] } });
+    const unmount = mount(control(surface, dispatch.setRowsOnFieldToolItem, { sortable: true }));
+
+    await expect(surface.call("moveRowsOnFieldToolItem", { from: 0, to: 5 })).rejects.toThrow(
+      "rows has 2 entries, so to is out of range.",
+    );
+    expect(written).toEqual([]);
+    unmount();
+  });
+
+  test("a sortable list of primitives reorders too — the gesture is the same", async () => {
+    const surface = new AgenticSurface();
+    written.length = 0;
+    instance.set({ fieldToolItemForm: { tags: ["x", "y", "z"] } });
+    const unmount = mount(control(surface, dispatch.setTagsOnFieldToolItem, { sortable: true }));
+
+    expect(surface.snapshot().tools.map((tool) => tool.name)).toEqual([
+      "moveTagsOnFieldToolItem",
+      "setTagsOnFieldToolItem",
+    ]);
+    await surface.call("moveTagsOnFieldToolItem", { from: 0, to: 2 });
+    expect(written).toEqual([["tags", ["y", "z", "x"]]]);
+    unmount();
+  });
+
+  test("reordering skips the transform — the values are stored already, and dragging normalizes nothing", async () => {
+    const surface = new AgenticSurface();
+    written.length = 0;
+    instance.set({ fieldToolItemForm: { tags: ["x", "y"] } });
+    const unmount = mount(
+      control(surface, dispatch.setTagsOnFieldToolItem, {
+        sortable: true,
+        transform: (value: string) => value.toUpperCase(),
+      }),
+    );
+
+    await surface.call("moveTagsOnFieldToolItem", { from: 1, to: 0 });
+    expect(written).toEqual([["tags", ["y", "x"]]]);
+    unmount();
+  });
+
+  test("a scalar field publishes no reorder tool even when the control says it sorts", () => {
+    const surface = new AgenticSurface();
+    const unmount = mount(control(surface, dispatch.setTitleOnFieldToolItem, { sortable: true }));
+
+    expect(surface.snapshot().tools.map((tool) => tool.name)).toEqual(["setTitleOnFieldToolItem"]);
     unmount();
   });
 

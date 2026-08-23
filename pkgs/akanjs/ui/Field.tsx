@@ -3,7 +3,7 @@ import { type DataList, type Dayjs, dayjs, type EnumInstance, isEnum } from "aka
 import { cn, usePage } from "akanjs/client";
 import { capitalize, formatPhone, isPhoneNumber, lowerlize } from "akanjs/common";
 import type { SliceMeta } from "akanjs/fetch";
-import { st, useFieldTool, useRelationFieldTool } from "akanjs/store";
+import { actionTagOf, st, tagAction, useFieldTool, useRelationFieldTool } from "akanjs/store";
 import { memo, type ReactNode, useState } from "react";
 import { AiOutlinePlus } from "react-icons/ai";
 import { BiHelpCircle, BiTrash, BiX } from "react-icons/bi";
@@ -182,7 +182,7 @@ const Text = ({
   inputClassName,
   inputStyleType = "bordered",
 }: TextProps) => {
-  useFieldTool(onChange, transform);
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -249,7 +249,7 @@ const Price = ({
   inputClassName,
   inputStyleType = "bordered",
 }: PriceProps) => {
-  useFieldTool(onChange, transform);
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -317,7 +317,7 @@ const TextArea = ({
   cache,
   inputClassName,
 }: TextAreaProps) => {
-  useFieldTool(onChange, transform);
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -371,7 +371,7 @@ const Switch = ({
   onDesc,
   offDesc,
 }: SwitchProps) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, { disabled });
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable label={label} desc={desc} /> : null}
@@ -420,7 +420,7 @@ const ToggleSelect = <I extends string | number | boolean | null>({
   disabled,
   btnClassName,
 }: ToggleSelectProps<I>) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, { disabled });
   const { l } = usePage();
   const isEnumValue = isEnum(items as EnumInstance<string, I>);
   return (
@@ -478,7 +478,7 @@ const MultiToggleSelect = <I extends string | number | boolean>({
   onChange,
   disabled,
 }: MultiToggleSelectProps<I>) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, { disabled });
   const { l } = usePage();
   const isEnumValue = isEnum(items as EnumInstance<string, I>);
   return (
@@ -546,7 +546,7 @@ const TextList = ({
   validate,
   inputClassName,
 }: TextListProps) => {
-  useFieldTool(onChange, transform);
+  useFieldTool(onChange, { transform, disabled, sortable: true });
   const { l } = usePage();
   const recipe = useUiRecipe("button") ?? buttonRecipe;
   return (
@@ -555,7 +555,11 @@ const TextList = ({
       <div className="mb-5 h-full gap-2 rounded-box border border-border p-2">
         <DraggableList
           className="h-full gap-2"
-          onChange={onChange}
+          // Wrapped on purpose: this component already published the field with its own `transform`, and handing
+          // the reference down would register the same names a second time from the list inside it.
+          onChange={(sorted: string[]) => {
+            onChange(sorted);
+          }}
           onRemove={(_, idx) => {
             onChange(value.filter((_, i) => i !== idx));
           }}
@@ -653,7 +657,7 @@ const Tags = ({
   validate,
   inputClassName,
 }: TagsProps) => {
-  useFieldTool(onChange, transform);
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   const badge = useUiRecipe("badge") ?? badgeRecipe;
   const [inputVisible, setInputVisible] = useState(false);
@@ -786,6 +790,7 @@ interface DateRangeProps<Nullable extends boolean> {
   showTime?: boolean;
   onChangeFrom: (value: Dayjs) => void;
   onChangeTo: (value: Dayjs) => void;
+  /** The whole range after either end moves. Fires only once both ends are set — nobody can query a half-open one. */
   onChange?: (from: Dayjs, to: Dayjs) => void;
 }
 const DateRange = <Nullable extends boolean>({
@@ -803,6 +808,24 @@ const DateRange = <Nullable extends boolean>({
   onChange,
   showTime,
 }: DateRangeProps<Nullable>) => {
+  /**
+   * Adds the pair callback to one endpoint setter, carrying that setter's own tag onto the wrapper.
+   *
+   * The wrapper really does run the setter, so the tag stays a true statement — and wiring `onChange` then costs
+   * the endpoint neither its agent tool nor its `data-akan-action`, which a plain closure would both drop.
+   */
+  const withPair = (setter: (value: Dayjs) => void, pair: (value: Dayjs) => [Dayjs | null, Dayjs | null]) => {
+    if (!onChange) return setter;
+    const wrapped = (value: Dayjs) => {
+      setter(value);
+      const [nextFrom, nextTo] = pair(value);
+      if (nextFrom && nextTo) onChange(nextFrom, nextTo);
+    };
+    const tag = actionTagOf(setter);
+    return tag ? tagAction(wrapped, tag) : wrapped;
+  };
+  const changeFrom = withPair(onChangeFrom, (value) => [value, to]);
+  const changeTo = withPair(onChangeTo, (value) => [from, value]);
   return (
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
@@ -817,7 +840,7 @@ const DateRange = <Nullable extends boolean>({
             value={from}
             max={max}
             min={min}
-            onChange={onChangeFrom}
+            onChange={changeFrom}
           />
         </div>
         <div className="relative flex w-full flex-col items-start gap-2 text-center md:flex-row md:items-center">
@@ -829,7 +852,7 @@ const DateRange = <Nullable extends boolean>({
             value={to}
             max={max}
             min={min}
-            onChange={onChangeTo}
+            onChange={changeTo}
           />
         </div>
       </div>
@@ -880,7 +903,7 @@ const Number = ({
   formatter,
   parser,
 }: NumberProps) => {
-  useFieldTool(onChange, transform);
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -952,7 +975,7 @@ const DoubleNumber = ({
   validate,
   onPressEnter,
 }: DoubleNumberProps) => {
-  useFieldTool(onChange, transform);
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
@@ -1040,7 +1063,7 @@ const Email = ({
   inputClassName,
   inputStyleType,
 }: EmailProps) => {
-  useFieldTool(onChange, transform);
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -1105,7 +1128,7 @@ const Phone = ({
   onPressEnter,
   inputClassName,
 }: PhoneProps) => {
-  useFieldTool(onChange, transform);
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
 
   return (
@@ -1177,7 +1200,7 @@ const Password = ({
   inputClassName,
   showConfirm,
 }: PasswordProps) => {
-  useFieldTool(onChange, transform);
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -1386,7 +1409,7 @@ const ParentId = <T extends string, State, Input, Full extends { id: string }, L
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
   // The id *is* the value here, so the ordinary field setter describes it — no lookup, unlike `Parent`.
-  useFieldTool(onChange);
+  useFieldTool(onChange, { disabled });
 
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
@@ -1575,7 +1598,7 @@ const ChildrenId = <T extends string, State, Input, Full extends { id: string },
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
   // The ids *are* the value here, so the ordinary field setter describes them — no lookup, unlike `Children`.
-  useFieldTool(onChange);
+  useFieldTool(onChange, { disabled });
 
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>

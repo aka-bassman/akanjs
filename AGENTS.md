@@ -790,21 +790,43 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   relation (picked or uploaded, not typed), a base document field, or a `hidden`/`secret` one at any depth —
   their reads are masked and a writer would be the door around that. `st.use.taskForm({ agent: false })`
   withholds the patch tool; an inline arrow withholds a control's own.
+  **The patch writes each plain field through that control's own published tool, not the setter underneath it** —
+  which is what carries the control's `transform`, so a field cannot normalize one way for `setPhoneOnBizAccount`
+  and another way for `fillBizAccountForm`. Only a composite, having no control, dispatches its setter directly.
+  The patch tool is registered `shared`, because the entry is a pure function of the model: a form put on screen by
+  a shell that subscribes it (`Model.EditModal`) *and* by the `Template` inside it is one declaration twice over,
+  not a clash — so neither has to suppress the other, and neither is asked to.
+- **A `disabled` control publishes nothing, so the agent never gets a lever the person cannot pull.** Every value
+  control reads it — `Field.*`, `Input.*`, `Select`, `Switch`, and the four relation pickers — and disabling a
+  mounted control withdraws its tool for as long as it stays disabled. One gate covers both writers: with no
+  control published, `fill<Model>Form`'s guard refuses that field too. `readScreen` says `(disabled)` beside the
+  control, from the native attribute or `aria-disabled`, so a refusal is something the agent could have read first
+  rather than a surprise. This is the same rule as publishing only where the screen renders the control, applied to
+  a control the screen renders but withholds.
 - **Whatever the wrapper was for, there is a place to put it that is not the wrapper.** An inline arrow is the one
   shape that publishes nothing, so each reason for writing one has its own home, and reaching for that home is what
   keeps the field reachable:
   - *normalize* — `(v) => set(formatPhone(v))` becomes the control's own `transform` prop, which every text and
     number `Field.*` already takes (`Field.Phone` defaults it to `formatPhone`). `onChange` stays a reference, and
-    **`transform` runs on the agent's write too** — otherwise a person would store `010-1234-5678` and an agent the
-    raw digits. It normalizes one scalar, so an array control applies it per element and a cleared nullable field
-    stays null.
-  - *multi-write* — `(v) => { set(v); other(v); }` becomes a store action **named `set<Field>On<Model>`**, which is
-    what the store playbook already asks for. `st.do` tags every action by its own name, so a hand-written one
-    publishes exactly like the generated one; only `data-akan-state`, which the generated setter alone knows, is
-    lost. **Write the field through `super.set<Field>On<Model>(v)`** rather than by hand: `store()` puts the
-    generated actions on the prototype, so `super` reaches the shadowed one — and it is what runs `immerify`, without
-    which a relation lands in the form as a class instance immer cannot draft. Every *other* generated action is
-    unshadowed and reached with `this.`.
+    **`transform` runs on the agent's write too**, by both paths — the field's own tool and `fill<Model>Form`,
+    which goes through the control to get it — otherwise a person would store `010-1234-5678` and an agent the raw
+    digits. It normalizes one scalar, so an array control applies it per element and a cleared nullable field stays
+    null. It is the *control's* rule, though: a rule that must hold however the field is written — including a
+    composite path or a base-document write — belongs in `_postSet<Field>` below.
+  - *multi-write* — `(v) => { set(v); other(v); }` becomes a **`_postSet<Field>` method on the store**, and the
+    control keeps handing over the generated setter by reference. It runs right after the field is written, so it
+    reads the new value, and it reaches every other generated action with `this.` —
+    `_postSetToBiz(toBiz) { if (toBiz) this.addSendEmailsOnEstSheet(toBiz.sendEmails ?? []); }`. Nothing about the
+    control changes, so `data-akan-action` **and** `data-akan-state` both survive, and the rule now fires for every
+    writer — the person, the agent, `fill<Model>Form` — which is what a rule about a field should do.
+    **A generated action cannot be overridden, so do not try.** They all come from mapped types, and a mapped type
+    produces *properties*: a subclass method of the same name is `TS2425`, optional or not, and the two shapes
+    TypeScript does allow — a class field and a getter — are both skipped by `StoreRegistry.register`, which only
+    collects prototype descriptors holding a function. There is no legal middle, which is exactly why the hook
+    carries a leading `_` and no model suffix: a name no mapped type can produce is the only name a subclass may
+    declare. It cannot be typed either, for the same reason, so a misspelled field is named on the console at
+    registration instead. Calling a generated action *from* a custom one is fine and always was — `this.setXOnY(v)`
+    typechecks anywhere.
   - *nested path* — `(v) => writeOnTask("payments.3.name", v)` has no home and needs none: an embedded row is
     unannotatable by design, and an agent reaches it through `fillTaskForm`, which waves composites through.
 
@@ -830,6 +852,17 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   values *are* the payload, so it keeps one setter and pays for no extra tools. `add` appends and publishes no
   insert position, matching the `+` a person presses; `addOrSub` is never published, since it matches by `indexOf`
   and would compare rows by reference. Editing a row in place stays `fill<Model>Form`'s job.
+- **A list the person can drag also publishes `move<Field>On<Model>(from, to)`**, and `DraggableList` is a form
+  control like any other: handed the generated setter by reference it publishes that field, so an app that renders
+  its own rows with `DraggableList` writes no `st.tool`. The reorder tool exists for the same reason `add`/`sub` do
+  — the drag is the lever the screen offers and it changes no entry's content, so moving one row should not mean
+  retyping the nine beside it. No store action answers to it: reordering *is* a whole-array write, so the tool
+  splices the live entries and hands them to the setter the drag hands them to, `transform` deliberately not
+  applied, since the values are stored already and dragging normalizes nothing. It comes from the control saying
+  it sorts, not from the field, so a plain `Field.List` publishes no reorder and a scalar field never gets one.
+  **A component that composes `DraggableList` and already published the field hands the inner list a wrapper** —
+  the two would otherwise register one name twice, and the outer one is the one holding `transform`. That is what
+  `Field.TextList` does, and the only place an inline arrow is the right answer rather than a bug.
 - **Reading is per key, not per store.** `st.useState(name, initial, meta)` publishes local state (read-only
   unless `set:` names a type) and `st.expose(name, value)` a derived value. A subscribed store key is listed in
   the state context block by name and pulled with `readState(key)`, masked by the model that key declares — while
@@ -869,8 +902,8 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
 - The framework publishes five built-ins on every store surface: `navigate` (internal paths only, the same
   router `Link` rides), `goBack` (this session's history — global, because history is not a control a page owns and
   a page that draws no back link is not one you may not leave), `readScreen` (the rendered DOM as compact text —
-  headings, links, control values; the chat's own UI is skipped via `data-agent-ui`, and a password value is never
-  read), `readState(key)` (one masked store key), and `highlight(target)`. Declaring a hook tool under one of those
+  headings, links, control values, and `(disabled)` on a control or button that has it; the chat's own UI is
+  skipped via `data-agent-ui`, and a password value is never read), `readState(key)` (one masked store key), and `highlight(target)`. Declaring a hook tool under one of those
   names shadows the built-in, so reuse them only to mean that.
 - **A tool that changes the screen waits for the screen before it answers.** `router.push` returns while the RSC
   payload is still in flight and a store action that fires `void fetch.*` commits a tick later, so `navigate`

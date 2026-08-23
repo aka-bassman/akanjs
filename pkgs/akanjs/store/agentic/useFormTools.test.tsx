@@ -62,18 +62,31 @@ const mount = (node: ReactNode) => {
   };
 };
 
-const screen = (surface: AgenticSurface, { agent, controls = [] }: { agent?: boolean; controls?: unknown[] } = {}) => {
+interface ScreenOptions {
+  agent?: boolean;
+  controls?: unknown[];
+  /** More than one component subscribing the same form — the shape `Model.EditModal` plus its `Template` makes. */
+  forms?: number;
+  transform?: unknown;
+  disabled?: boolean;
+}
+const screen = (
+  surface: AgenticSurface,
+  { agent, controls = [], forms = 1, transform, disabled }: ScreenOptions = {},
+) => {
   const Form = () => {
     instance.use.formTestItemForm?.(agent === undefined ? undefined : { agent });
     return null;
   };
   const Control = ({ onChange }: { onChange: unknown }) => {
-    useFieldTool(onChange);
+    useFieldTool(onChange, { transform, disabled });
     return null;
   };
   return (
     <AgentProvider surface={surface}>
-      <Form />
+      {Array.from({ length: forms }, (_, idx) => (
+        <Form key={idx} />
+      ))}
       {controls.map((onChange, idx) => (
         <Control key={idx} onChange={onChange} />
       ))}
@@ -147,6 +160,47 @@ describe("useFormTools", () => {
     await expect(
       surface.call("fillFormTestItemForm", { title: "Ada", payments: [{ name: "x", amount: "no" }] }),
     ).rejects.toThrow();
+    expect(written).toEqual([]);
+    unmount();
+  });
+
+  test("two components subscribing one form are one declaration, not a clash", () => {
+    const surface = new AgenticSurface();
+    const warned: string[] = [];
+    const original = console.warn;
+    console.warn = (message: string) => void warned.push(message);
+    const unmount = mount(screen(surface, { forms: 2 }));
+    console.warn = original;
+
+    expect(surface.snapshot().tools.map((tool) => tool.name)).toEqual(["fillFormTestItemForm"]);
+    expect(warned).toEqual([]);
+    unmount();
+    expect(surface.snapshot().tools).toHaveLength(0);
+  });
+
+  test("the patch goes through the control, so the control's transform applies to it too", async () => {
+    const surface = new AgenticSurface();
+    written.length = 0;
+    const unmount = mount(
+      screen(surface, {
+        controls: [dispatch.setTitleOnFormTestItem],
+        transform: (value: string) => value.trim().toUpperCase(),
+      }),
+    );
+
+    await surface.call("fillFormTestItemForm", { title: "  ada  " });
+    expect(written).toEqual([["title", "ADA"]]);
+    unmount();
+  });
+
+  test("a disabled control closes its field to the patch tool as well", async () => {
+    const surface = new AgenticSurface();
+    written.length = 0;
+    const unmount = mount(screen(surface, { controls: [dispatch.setTitleOnFormTestItem], disabled: true }));
+
+    await expect(surface.call("fillFormTestItemForm", { title: "Ada" })).rejects.toThrow(
+      "This screen offers no title on the formTestItem form.",
+    );
     expect(written).toEqual([]);
     unmount();
   });

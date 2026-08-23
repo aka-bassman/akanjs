@@ -2,10 +2,12 @@
 import { config, useSprings } from "@react-spring/web";
 import { useGesture } from "@use-gesture/react";
 import { cn } from "akanjs/client";
+import { useFieldTool } from "akanjs/store";
 import { animated } from "akanjs/ui";
 import { createContext, type ReactElement, type ReactNode, useContext, useRef } from "react";
 import { BiTrash } from "react-icons/bi";
 import { MdDragIndicator } from "react-icons/md";
+import { agentAttrs } from "./agentAttrs";
 import { buttonRecipe } from "./Button";
 import { useUiRecipe } from "./UiOverride";
 
@@ -33,6 +35,11 @@ interface DragListProps<V> {
   onRemove: (value: V, idx: number) => void;
 }
 const DragList = <V,>({ className, mode = "vertical", children, onChange, onRemove }: DragListProps<V>) => {
+  // A drag-sortable list is a form control like any other: handed the generated setter by reference it publishes
+  // that field, plus `move<Field>On<Model>` for the one gesture it adds over a plain list. The extra `onChange`
+  // arguments a drag reports are ignored by a generated setter, which takes exactly one value — and a caller that
+  // reads them wrapped this in an arrow, so nothing is published for it either way.
+  useFieldTool(onChange, { sortable: true });
   const refs = useRef<(HTMLDivElement | null)[]>([]);
   const order = useRef(children.map((_, index) => index));
   const clientLengths = useRef(children.map((_, index) => 0));
@@ -103,7 +110,7 @@ const DragList = <V,>({ className, mode = "vertical", children, onChange, onRemo
   });
 
   return (
-    <div className={cn("isolate flex gap-0", mode === "vertical" && "flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("isolate flex gap-0", mode === "vertical" && "flex-col", className)}>
       {springs.map(({ zIndex, shadow, movement, scale }, i) => (
         <animated.div
           ref={(el: HTMLDivElement | null) => {
