@@ -174,6 +174,18 @@ export class FormFields {
     return field.arrDepth > 0 || (field.modelRef as unknown) === Map || !!FormFields.#scalarModel(field);
   }
 
+  /**
+   * The embedded model an array field's rows are, or null for every other field.
+   *
+   * This is the one shape where writing the whole array is a hazard rather than an inconvenience: the agent has to
+   * echo every row it is *not* changing, `checked` validates types and not values, so one mistyped row it was never
+   * asked to touch is written silently. A relation array is excluded — its rows travel as ids, which are the payload
+   * and are refused by name when wrong — and so is an array of primitives, for the same reason.
+   */
+  static rowModelOf(field: ConstantField) {
+    return field.arrDepth > 0 ? FormFields.#scalarModel(field) : null;
+  }
+
   static #scalarModel(field: ConstantField) {
     const modelRef = field.modelRef as unknown as Cls;
     if (field.enum || PrimitiveRegistry.has(modelRef)) return null;

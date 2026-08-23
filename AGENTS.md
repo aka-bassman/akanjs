@@ -91,6 +91,14 @@ that looks wrong; do not "fix" it back.
   of a component nested inside another one. A function-typed prop (`onPick?: (t: cnst.LightTicket) => void`) is
   exempt for the same reason — a closure cannot cross the RSC boundary at all, so whoever passes it is a client
   component already holding the value.
+- **Never wrap a form setter in a pass-through arrow** (`no-unpublished-form-setter.grit`).
+  `onChange={(type) => st.do.setTypeOnTicket(type)}` runs identically to `onChange={st.do.setTypeOnTicket}` —
+  generated field setters take exactly one value — but the arrow is a fresh anonymous closure, so the control
+  emits no `data-akan-action` and publishes no agent tool for the field. The failure is silent and the two lines
+  read the same, which is why it is a lint error. A wrapper that transforms the value
+  (`st.do.setNameOnX(toCamelCase(name))`), adds a statement, or writes a nested path with `writeOnX` is doing
+  something a reference cannot and stays legal — publish that one with an explicit `st.tool`. Scoped to
+  `{apps,libs}/**/*.tsx`; a typed parameter is not matched, so it under-reports rather than misfiring.
 - **No deep imports past a barrel** (`no-deep-internal-import.grit`). Cross-module constant references such as
   `../map/map.constant` are the sanctioned exception.
 - **Never import across the client/server boundary.** Client files (`ui/`, `webkit/`, `page/`, `*.store.ts`, every
@@ -782,6 +790,46 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   relation (picked or uploaded, not typed), a base document field, or a `hidden`/`secret` one at any depth —
   their reads are masked and a writer would be the door around that. `st.use.taskForm({ agent: false })`
   withholds the patch tool; an inline arrow withholds a control's own.
+- **Whatever the wrapper was for, there is a place to put it that is not the wrapper.** An inline arrow is the one
+  shape that publishes nothing, so each reason for writing one has its own home, and reaching for that home is what
+  keeps the field reachable:
+  - *normalize* — `(v) => set(formatPhone(v))` becomes the control's own `transform` prop, which every text and
+    number `Field.*` already takes (`Field.Phone` defaults it to `formatPhone`). `onChange` stays a reference, and
+    **`transform` runs on the agent's write too** — otherwise a person would store `010-1234-5678` and an agent the
+    raw digits. It normalizes one scalar, so an array control applies it per element and a cleared nullable field
+    stays null.
+  - *multi-write* — `(v) => { set(v); other(v); }` becomes a store action **named `set<Field>On<Model>`**, which is
+    what the store playbook already asks for. `st.do` tags every action by its own name, so a hand-written one
+    publishes exactly like the generated one; only `data-akan-state`, which the generated setter alone knows, is
+    lost. **Write the field through `super.set<Field>On<Model>(v)`** rather than by hand: `store()` puts the
+    generated actions on the prototype, so `super` reaches the shadowed one — and it is what runs `immerify`, without
+    which a relation lands in the form as a class instance immer cannot draft. Every *other* generated action is
+    unshadowed and reached with `this.`.
+  - *nested path* — `(v) => writeOnTask("payments.3.name", v)` has no home and needs none: an embedded row is
+    unannotatable by design, and an agent reaches it through `fillTaskForm`, which waves composites through.
+
+  `no-unpublished-form-setter.grit` errors on the pure-forwarding shape only, because every other one has a
+  legitimate reading. **`akan quality scan` counts them all** (`akan.agent.unpublished-form-setter`, one warning per
+  file): the lint rule is the per-line enforcement, the scan is the inventory of fields this screen writes but
+  cannot be asked to write.
+- **A relation reaches an agent from its picker, not from the form patch.** `fillTaskForm` publishes no schema for
+  one and is right not to: the form holds the whole related document, so an id would need a lookup the store does
+  not do. The picker is where that lookup lives, so `Field.Parent` / `Field.Children` publish the pair themselves —
+  `load<Field>OptionsOn<Model>`, which loads the slice and returns `[{ id, label }]`, and the field's own
+  `set<Field>On<Model>` taking `<field>Id` / `<field>Ids`. Listing is its own tool because loading is its own step
+  for a person too: the options arrive when the dropdown opens, and an agent never opens it. `Field.ParentId` /
+  `Field.ChildrenId` need none of that — the id *is* the value, so the ordinary setter describes it. All four still
+  require the setter **by reference**, and a `disabled` picker publishes nothing.
+- **An array of embedded rows also publishes `add<Field>On<Model>` and `sub<Field>On<Model>`** — append, and
+  remove-by-position — beside the whole-array setter. Not new authority: the setter can already produce any array
+  those two can, so they are strictly weaker. What they add is that neither can touch a row it was not given, and
+  that is the point: writing the whole array means echoing every row the agent is *not* changing, `checked`
+  validates types and not values, so one mistyped row nobody asked about is written silently. Both take a list and
+  act atomically, because removing positions one call at a time would shift the ones not yet removed. **Only an
+  embedded-row array gets them** — an array of primitives or of relation ids has nothing to retype wrong, its
+  values *are* the payload, so it keeps one setter and pays for no extra tools. `add` appends and publishes no
+  insert position, matching the `+` a person presses; `addOrSub` is never published, since it matches by `indexOf`
+  and would compare rows by reference. Editing a row in place stays `fill<Model>Form`'s job.
 - **Reading is per key, not per store.** `st.useState(name, initial, meta)` publishes local state (read-only
   unless `set:` names a type) and `st.expose(name, value)` a derived value. A subscribed store key is listed in
   the state context block by name and pulled with `readState(key)`, masked by the model that key declares — while

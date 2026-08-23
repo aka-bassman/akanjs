@@ -4,5 +4,6 @@ export * from "./readableValue";
 export * from "./StToolBuilder";
 export * from "./useFieldTool";
 export * from "./useFormTools";
+export * from "./useRelationFieldTool";
 export * from "./useStExpose";
 export * from "./useStState";

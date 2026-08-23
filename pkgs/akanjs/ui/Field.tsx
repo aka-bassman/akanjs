@@ -3,7 +3,7 @@ import { type DataList, type Dayjs, dayjs, type EnumInstance, isEnum } from "aka
 import { cn, usePage } from "akanjs/client";
 import { capitalize, formatPhone, isPhoneNumber, lowerlize } from "akanjs/common";
 import type { SliceMeta } from "akanjs/fetch";
-import { st, useFieldTool } from "akanjs/store";
+import { st, useFieldTool, useRelationFieldTool } from "akanjs/store";
 import { memo, type ReactNode, useState } from "react";
 import { AiOutlinePlus } from "react-icons/ai";
 import { BiHelpCircle, BiTrash, BiX } from "react-icons/bi";
@@ -104,8 +104,9 @@ const List = <Item,>({
 }: ListProps<Item>) => {
   const { l } = usePage();
   const recipe = useUiRecipe("button") ?? buttonRecipe;
+  useFieldTool(onChange);
   return (
-    <div className={cn("flex w-full flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex w-full flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <div className="mb-2 flex w-full flex-col gap-2 rounded-box border border-border p-2">
         {value.map((item, idx) => (
@@ -181,7 +182,7 @@ const Text = ({
   inputClassName,
   inputStyleType = "bordered",
 }: TextProps) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, transform);
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -248,7 +249,7 @@ const Price = ({
   inputClassName,
   inputStyleType = "bordered",
 }: PriceProps) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, transform);
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -316,7 +317,7 @@ const TextArea = ({
   cache,
   inputClassName,
 }: TextAreaProps) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, transform);
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -545,7 +546,7 @@ const TextList = ({
   validate,
   inputClassName,
 }: TextListProps) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, transform);
   const { l } = usePage();
   const recipe = useUiRecipe("button") ?? buttonRecipe;
   return (
@@ -652,7 +653,7 @@ const Tags = ({
   validate,
   inputClassName,
 }: TagsProps) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, transform);
   const { l } = usePage();
   const badge = useUiRecipe("badge") ?? badgeRecipe;
   const [inputVisible, setInputVisible] = useState(false);
@@ -816,9 +817,7 @@ const DateRange = <Nullable extends boolean>({
             value={from}
             max={max}
             min={min}
-            onChange={(value: Dayjs) => {
-              onChangeFrom(value);
-            }}
+            onChange={onChangeFrom}
           />
         </div>
         <div className="relative flex w-full flex-col items-start gap-2 text-center md:flex-row md:items-center">
@@ -830,9 +829,7 @@ const DateRange = <Nullable extends boolean>({
             value={to}
             max={max}
             min={min}
-            onChange={(value: Dayjs) => {
-              onChangeTo(value);
-            }}
+            onChange={onChangeTo}
           />
         </div>
       </div>
@@ -883,7 +880,7 @@ const Number = ({
   formatter,
   parser,
 }: NumberProps) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, transform);
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -955,7 +952,7 @@ const DoubleNumber = ({
   validate,
   onPressEnter,
 }: DoubleNumberProps) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, transform);
   const { l } = usePage();
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
@@ -1043,7 +1040,7 @@ const Email = ({
   inputClassName,
   inputStyleType,
 }: EmailProps) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, transform);
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -1108,7 +1105,7 @@ const Phone = ({
   onPressEnter,
   inputClassName,
 }: PhoneProps) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, transform);
   const { l } = usePage();
 
   return (
@@ -1180,7 +1177,7 @@ const Password = ({
   inputClassName,
   showConfirm,
 }: PasswordProps) => {
-  useFieldTool(onChange);
+  useFieldTool(onChange, transform);
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
@@ -1244,6 +1241,12 @@ interface ParentProps<T extends string, State, Input, Full, Light> {
   renderOption: (model: Light) => ReactNode;
   renderSelected?: (value: Light) => ReactNode;
 }
+/** The one line an option renders as, so an agent can match an id against what it reads on screen. */
+const optionLabel = <Light extends { id: string }>(model: Light, render: (model: Light) => ReactNode) => {
+  const rendered = render(model);
+  return typeof rendered === "string" ? rendered : model.id;
+};
+
 const Parent = <T extends string, State, Input, Full extends { id: string }, Light extends { id: string }>({
   label,
   desc,
@@ -1265,6 +1268,7 @@ const Parent = <T extends string, State, Input, Full extends { id: string }, Lig
   const [modelName, ModelName] = [lowerlize(refName), capitalize(refName)];
   const storeUse = st.use as { [key: string]: () => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
+  const storeGet = st.get as unknown as <V>() => { [key: string]: V };
 
   const names = {
     model: modelName,
@@ -1281,9 +1285,15 @@ const Parent = <T extends string, State, Input, Full extends { id: string }, Lig
 
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
+  useRelationFieldTool(onChange, {
+    read: () => storeGet<DataList<Light>>()[namesOfSlice.modelList],
+    load: () => storeDo[namesOfSlice.refreshModel]({ invalidate: true, queryArgs: initArgs }),
+    label: (model) => optionLabel(model, renderOption),
+    disabled,
+  });
 
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Select<string | null, false, true>
         label={label}
@@ -1375,9 +1385,11 @@ const ParentId = <T extends string, State, Input, Full extends { id: string }, L
   };
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
+  // The id *is* the value here, so the ordinary field setter describes it — no lookup, unlike `Parent`.
+  useFieldTool(onChange);
 
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Select<string | null, false, true>
         searchable
@@ -1466,9 +1478,15 @@ const Children = <T extends string, State, Input, Full extends { id: string }, L
   };
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
+  useRelationFieldTool(onChange, {
+    read: () => storeGet<DataList<Light>>()[namesOfSlice.modelList],
+    load: () => storeDo[namesOfSlice.refreshModel]({ invalidate: true, queryArgs: initArgs }),
+    label: (model) => optionLabel(model, renderOption),
+    disabled,
+  });
 
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Select
         searchable
@@ -1556,9 +1574,11 @@ const ChildrenId = <T extends string, State, Input, Full extends { id: string },
   };
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
+  // The ids *are* the value here, so the ordinary field setter describes them — no lookup, unlike `Children`.
+  useFieldTool(onChange);
 
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Select
         searchable
