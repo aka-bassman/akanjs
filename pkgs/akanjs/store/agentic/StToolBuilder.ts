@@ -83,9 +83,12 @@ export class StToolBuilder<Args extends unknown[] = []> {
     type: T,
     option: StToolArgOption<ArgValue<T>> = {},
   ): StToolBuilder<[...Args, ArgValue<T> | null]> {
-    // Rejects an unsupported type where it is written, not on the agent's first call.
-    StToolBuilder.schemaOf(type);
-    return new StToolBuilder(this.#name, this.#meta, [
+    // An argument nothing can describe withdraws the whole tool — the same withholding a falsy name performs, so
+    // the callable still drives the click a person makes and the route still renders. Publishing the rest of the
+    // arguments would hand an agent a tool it can only call wrong; throwing would cost a page its server render
+    // over an agent-tooling concern. Reported here, where the type was written, rather than on the first call.
+    const published = this.#name && StToolBuilder.#describable(this.#name, name, type) ? this.#name : null;
+    return new StToolBuilder(published, this.#meta, [
       ...this.#args,
       { name, type, optional: !!option.optional, ...(option.oneOf ? { oneOf: option.oneOf } : {}) },
     ]);
@@ -151,6 +154,20 @@ export class StToolBuilder<Args extends unknown[] = []> {
     return arg.oneOf ? { ...schema, enum: [...arg.oneOf] } : schema;
   }
 
+  static #describable(toolName: string, argName: string, type: ParamFieldType): boolean {
+    try {
+      StToolBuilder.schemaOf(type);
+      return true;
+    } catch (error) {
+      console.error(
+        `st.tool("${toolName}") is not published: its "${argName}" argument is ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return false;
+    }
+  }
+
   /** Scalars and enums only — the value arrives as JSON from a model, so a class instance has no way in. */
   static schemaOf(type: ParamFieldType): JsonSchema {
     if (isEnum(type as Cls)) {
@@ -160,7 +177,7 @@ export class StToolBuilder<Args extends unknown[] = []> {
     }
     const scalar = type as typeof PrimitiveScalar;
     if (!PrimitiveRegistry.has(scalar as unknown as Cls))
-      throw new Error("st.tool takes scalar and enum arguments only.");
+      throw new Error(`${StToolBuilder.#typeName(type)}, and st.tool takes scalar and enum arguments only.`);
     switch (PrimitiveRegistry.getName(scalar)) {
       case "ID":
       case "String":
@@ -174,8 +191,13 @@ export class StToolBuilder<Args extends unknown[] = []> {
       case "Date":
         return { type: "string", format: "date-time" };
       default:
-        throw new Error(`st.tool cannot describe the scalar ${PrimitiveRegistry.getName(scalar)}.`);
+        throw new Error(`the scalar ${PrimitiveRegistry.getName(scalar)}, which st.tool cannot describe.`);
     }
+  }
+
+  static #typeName(type: ParamFieldType): string {
+    const named = type as { name?: string } | null | undefined;
+    return named?.name ? `the type ${named.name}` : `${String(type)}`;
   }
 
   static positionalOf(toolName: string, args: StToolArg[], named: Record<string, unknown>): unknown[] {

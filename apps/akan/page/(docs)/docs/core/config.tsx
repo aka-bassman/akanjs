@@ -234,6 +234,7 @@ export const env: ModulesOptions = {
           code={`import { AkanOption } from "akanjs/server";
 import type { LlmOption } from "akanjs/service";
 
+import { SignedIn } from "../srvkit";
 import type { LibOptions } from "./srv";
 
 export type ModulesOptions = LibOptions & {
@@ -242,7 +243,7 @@ export type ModulesOptions = LibOptions & {
 
 export const option = new AkanOption<ModulesOptions>()
   .setLlm((options) => options.llm ?? {})
-  .setAgentAccess((context) => !!context.get("account"))
+  .setAgentAccess(SignedIn)
   .setMcp({ instructions: "Domain tools for the app. Start from taskInTodo." });`}
         />
         <div className="space-y-1">
@@ -257,8 +258,8 @@ export const option = new AkanOption<ModulesOptions>()
             {
               title: "setAgentAccess",
               desc: l.trans({
-                en: "Who may spend the LLM key through the runAgentTurn relay. With no policy the call is refused — the same answer None gives — because the framework has no account model to gate on.",
-                ko: "runAgentTurn 릴레이로 LLM 키를 쓸 수 있는 caller입니다. 프레임워크에는 기준으로 삼을 계정 모델이 없어, 정책이 없으면 호출은 None 가드와 같이 거절됩니다.",
+                en: "Who may spend the LLM key through the runAgentTurn relay, named as the guards any other endpoint would name. Several are ANDed. With none the call is refused — the same answer None gives — because the framework has no account model to gate on.",
+                ko: "runAgentTurn 릴레이로 LLM 키를 쓸 수 있는 caller를, 다른 엔드포인트와 똑같이 가드로 지정합니다. 여러 개는 AND로 묶입니다. 프레임워크에는 기준으로 삼을 계정 모델이 없어, 가드가 없으면 호출은 None 가드와 같이 거절됩니다.",
               }),
             },
             {

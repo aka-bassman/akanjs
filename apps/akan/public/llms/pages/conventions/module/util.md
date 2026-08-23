@@ -145,7 +145,7 @@ export const QueryMakerInSelf = () => {
 
 ```ts
 export const BackButton = ({ id }: { id: string }) => {
-  const path = st.use.path();
+  const path = st.use.path({ agent: false });
   if (!path.startsWith(`/board/${id}/`)) return null;
   return <Link.Back>Back</Link.Back>;
 };

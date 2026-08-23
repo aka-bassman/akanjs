@@ -32,7 +32,11 @@ beforeAll(async () => {
   const { FetchClient } = await import("akanjs/fetch");
   new FetchClient("http://chattest", {}, {
     task: {
-      endpoint: { planWeek: { type: "prompt", args: [], returns: { refName: "Any", arrDepth: 1 } } },
+      endpoint: {
+        planWeek: { type: "prompt", args: [], returns: { refName: "Any", arrDepth: 1 } },
+        // Named after a built-in on purpose: the chat's own command has to win it.
+        help: { type: "prompt", args: [], returns: { refName: "Any", arrDepth: 1 } },
+      },
     },
   } as never);
   lib = await import("use-agentic");
@@ -77,6 +81,28 @@ const scripted = (...turns: Turn[]): AgentRunner => {
 const untilFlushed = async (done: () => boolean) => {
   for (let i = 0; i < 100 && !done(); i += 1) await Promise.resolve();
 };
+
+/**
+ * happy-dom dispatch never reaches React's synthetic handlers, so the composer is driven through its props — and
+ * they are re-read every time, because each keystroke renders a new closure over the draft.
+ */
+const composer = (container: HTMLElement) => {
+  const props = () => {
+    const input = container.querySelector("input");
+    const key = Object.keys(input ?? {}).find((name) => name.startsWith("__reactProps$")) ?? "";
+    return (input as unknown as Record<string, Record<string, (event: unknown) => void>>)[key];
+  };
+  return {
+    value: () => container.querySelector("input")?.value ?? "",
+    type: (value: string) => act(() => props().onChange({ target: { value } })),
+    press: (key: string) => act(() => props().onKeyDown({ key, preventDefault: () => {}, nativeEvent: {} })),
+  };
+};
+
+const menuRows = (container: HTMLElement) =>
+  [...container.querySelectorAll("button")]
+    .map((button) => button.textContent ?? "")
+    .filter((text) => text.startsWith("/"));
 
 describe("Agent.Chat", () => {
   test("opens from the launcher into the composer", () => {
@@ -453,5 +479,107 @@ describe("Agent.Chat", () => {
     );
     expect(inline.host.querySelector("aside")?.className).not.toContain("fixed");
     inline.drop();
+  });
+
+  test("the / menu offers this chat's own commands ahead of the app's prompts, once per name", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    composer(container).type("/");
+    const rows = menuRows(container);
+    expect(rows.slice(0, 5).map((row) => row.split("base.")[0])).toEqual([
+      "/new",
+      "/retry",
+      "/copy",
+      "/help",
+      "/tools",
+    ]);
+    expect(rows.some((row) => row.startsWith("/planWeek"))).toBe(true);
+    // The app's own /help prompt is shadowed, so the name is listed once rather than twice.
+    expect(rows.filter((row) => row.startsWith("/help"))).toHaveLength(1);
+    unmount();
+  });
+
+  test("a built-in wins a name collision with a prompt endpoint", async () => {
+    let called = 0;
+    runtimeFetch.help = () => {
+      called += 1;
+      return Promise.resolve("never");
+    };
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    input.type("/help");
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => session.messages.length > 0);
+    });
+    expect(called).toBe(0);
+    expect(container.innerHTML).toContain("base.agentHelpIntro");
+    // The chat answered it, so nothing of it reaches the model's history.
+    expect(session.messages.every((message) => message.local)).toBe(true);
+    unmount();
+  });
+
+  test("/new empties a transcript that is still running", async () => {
+    const session = new lib.AgentSession(
+      new lib.AgenticSurface(),
+      scripted({ toolCall: { id: "c1", name: "unknown", args: {} } }),
+    );
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    await act(async () => {
+      await session.send("do a thing");
+    });
+    expect(container.innerHTML).toContain("do a thing");
+    const input = composer(container);
+    input.type("/new");
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => session.messages.length === 0);
+    });
+    expect(session.messages).toEqual([]);
+    expect(container.innerHTML).toContain("base.agentIntro");
+    unmount();
+  });
+
+  test("the vertical arrows walk back through what was sent and forward again", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "sure" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    for (const text of ["first ask", "second ask"]) {
+      input.type(text);
+      await act(async () => {
+        input.press("Enter");
+        await untilFlushed(() => !session.isRunning);
+      });
+    }
+    input.type("half-written");
+    input.press("ArrowUp");
+    expect(input.value()).toBe("second ask");
+    input.press("ArrowUp");
+    expect(input.value()).toBe("first ask");
+    input.press("ArrowUp");
+    expect(input.value()).toBe("first ask");
+    input.press("ArrowDown");
+    expect(input.value()).toBe("second ask");
+    // Back at the bottom the draft that was walked away from is still there.
+    input.press("ArrowDown");
+    expect(input.value()).toBe("half-written");
+    unmount();
   });
 });

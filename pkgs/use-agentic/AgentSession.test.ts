@@ -525,4 +525,76 @@ describe("AgentSession history", () => {
     session.reset();
     expect(session.messages).toEqual([]);
   });
+
+  test("a note is rendered in the transcript and withheld from the model", async () => {
+    const { runner, requests } = scripted([
+      { type: "text", delta: "ok" },
+      { type: "done", stop: "end" },
+    ]);
+    const session = new AgentSession(new AgenticSurface(), runner);
+    session.note("Copied to the clipboard.");
+    await session.send("hi");
+    expect(session.messages.map((message) => message.local ?? false)).toEqual([true, false, false]);
+    expect(requests[0].messages.map((message) => message.text)).toEqual(["hi"]);
+  });
+
+  test("retry re-sends the last user message and drops what the attempt produced", async () => {
+    const { runner, requests } = scripted([
+      { type: "text", delta: "second try" },
+      { type: "done", stop: "end" },
+    ]);
+    const session = new AgentSession(new AgenticSurface(), runner);
+    await session.send("earlier");
+    session.note("a command said something");
+    expect(await session.retry()).toBe(true);
+    expect(session.messages.map((message) => message.text)).toEqual(["earlier", "second try"]);
+    // The replay is one user turn, so the model never sees the failed attempt it is replacing.
+    expect(requests[1].messages.map((message) => message.text)).toEqual(["earlier"]);
+  });
+
+  test("retry keeps what came before the last user message", async () => {
+    const { runner } = scripted([
+      { type: "text", delta: "again" },
+      { type: "done", stop: "end" },
+    ]);
+    const session = new AgentSession(new AgenticSurface(), runner);
+    await session.send([
+      { role: "user", text: "context from a prompt" },
+      { role: "assistant", text: "preamble" },
+      { role: "user", text: "the ask" },
+    ]);
+    await session.retry();
+    expect(session.messages.map((message) => message.text)).toEqual([
+      "context from a prompt",
+      "preamble",
+      "the ask",
+      "again",
+    ]);
+  });
+
+  test("retry refuses when there is nothing to send again", async () => {
+    const { runner } = scripted([{ type: "done", stop: "end" }]);
+    const session = new AgentSession(new AgenticSurface(), runner);
+    expect(await session.retry()).toBe(false);
+    session.note("only a note");
+    expect(await session.retry()).toBe(false);
+    expect(session.messages).toHaveLength(1);
+  });
+
+  test("reset ends a running turn instead of silently doing nothing", async () => {
+    const surface = new AgenticSurface();
+    surface.registerTool([], { name: "wait", confirm: true, run: () => "ran" });
+    const { runner } = scripted([
+      { type: "toolCall", id: "c1", name: "wait", args: {} },
+      { type: "done", stop: "toolUse" },
+    ]);
+    const session = new AgentSession(surface, runner);
+    const sending = session.send("do it");
+    await until(() => !!session.pendingApproval);
+    await session.reset();
+    await sending;
+    expect(session.messages).toEqual([]);
+    expect(session.isRunning).toBe(false);
+    expect(session.pendingApproval).toBeNull();
+  });
 });

@@ -168,6 +168,25 @@ describe("createOpenApiDocument", () => {
     expect(document.components.schemas.AccessToken).toBeUndefined();
   });
 
+  test("documents a mutation under the verb it declares", () => {
+    const document = createOpenApiDocument({
+      openApiItem: {
+        prefix: "openApiItem",
+        endpoint: {
+          patchOpenApiItem: {
+            type: "mutation",
+            method: "PATCH",
+            args: [{ type: "body", name: "data", refName: "openApiItem", modelType: "input" }],
+            returns: { refName: "Boolean" },
+            guards: ["User"],
+          },
+        },
+      },
+    });
+
+    expect(Object.keys(document.paths["/openApiItem/patchOpenApiItem"])).toEqual(["patch"]);
+  });
+
   test("can include base and non-standard paths explicitly", () => {
     const document = createOpenApiDocument(serializedSignal, {
       excludeSignals: [],

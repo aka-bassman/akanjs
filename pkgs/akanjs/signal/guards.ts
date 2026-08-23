@@ -1,5 +1,5 @@
 import { Logger } from "akanjs/common";
-import type { Guard, GuardScope } from "./guard";
+import { type Guard, type GuardCls, type GuardScope, guardOf } from "./guard";
 import type { SignalContext } from "./signalContext";
 
 export class Public implements Guard {
@@ -18,40 +18,45 @@ export class None implements Guard {
   }
 }
 
-export type AgentRelayPolicy = (context: SignalContext) => boolean | Promise<boolean>;
-
 /**
  * Gate for the `runAgentTurn` relay. Every tool runs in the caller's own browser session, so the LLM key is the
  * one thing this endpoint spends — ungated, any visitor can bill the app's provider through fetch alone.
  *
- * The framework has no account model to gate on, so with no policy registered it refuses every call — the same
- * answer `None` gives. An app opens it at boot, e.g.
- * `AgentRelayAccess.use((context) => !!context.get("account"))`. The policy is the app's; the framework cannot know it.
+ * The framework has no account model to gate on, so with no guard registered it refuses every call — the same
+ * answer `None` gives. An app names its own at boot, e.g. `AgentRelayAccess.use(Every)`, usually through
+ * `option.setAgentAccess(...)`. Several are ANDed, as an endpoint's own `guards` array is.
  */
 export class AgentRelayAccess implements Guard {
   // fetch serializes guard names and the API explorer filters on them; deleting this breaks that UI.
   static name = "AgentRelayAccess";
-  // Reads only the caller, never the call's arguments, so a listing may evaluate it argument-free.
-  static scope: GuardScope = "account";
-  static #policy: AgentRelayPolicy | null = null;
+  static #guards: GuardCls[] = [];
   static #logger = new Logger("AgentRelayAccess");
 
-  static use(policy: AgentRelayPolicy | null) {
-    AgentRelayAccess.#policy = policy;
+  static use(guards: GuardCls | GuardCls[] | null) {
+    AgentRelayAccess.#guards = guards ? (Array.isArray(guards) ? [...guards] : [guards]) : [];
   }
 
   static get hasPolicy() {
-    return !!AgentRelayAccess.#policy;
+    return !!AgentRelayAccess.#guards.length;
+  }
+
+  /**
+   * Whatever the registered guards need, since this one only forwards to them. With none registered it reads the
+   * caller and nothing else — the refusal is unconditional — so a listing may still evaluate it argument-free.
+   */
+  static get scope(): GuardScope {
+    return AgentRelayAccess.#guards.some((GuardCls) => GuardCls.scope === "resource") ? "resource" : "account";
   }
 
   async canPass(context: SignalContext): Promise<boolean> {
-    const policy = AgentRelayAccess.#policy;
-    if (!policy) return false;
+    const guards = AgentRelayAccess.#guards;
+    if (!guards.length) return false;
     try {
-      return await policy(context);
+      for (const GuardCls of guards) if (!(await guardOf(GuardCls).canPass(context))) return false;
+      return true;
     } catch (error) {
       AgentRelayAccess.#logger.warn(
-        `agent relay policy threw, failing closed: ${error instanceof Error ? error.message : String(error)}`,
+        `agent relay guard threw, failing closed: ${error instanceof Error ? error.message : String(error)}`,
       );
       return false;
     }

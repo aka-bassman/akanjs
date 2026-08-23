@@ -319,15 +319,22 @@ describe("AkanServer MCP config", () => {
 });
 
 describe("AkanServer agent relay access", () => {
-  test("registers the policy an app declares in its option.ts", async () => {
+  test("registers the guard an app declares in its option.ts", async () => {
     setAkanEnv();
     const { AgentRelayAccess } = await import("../signal/guards");
     const { AkanOption, AkanServer, createLib } = await loadRuntime();
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-relay-"));
+    class SignedIn {
+      static name = "SignedIn";
+      static scope = "account" as const;
+      canPass(context: { get: (key: string) => unknown }) {
+        return !!context.get("account");
+      }
+    }
     try {
       expect(AgentRelayAccess.hasPolicy).toBe(false);
       expect(await new AgentRelayAccess().canPass({ get: () => ({ id: "u1" }) } as never)).toBe(false);
-      const option = new AkanOption().setAgentAccess((context) => !!context.get("account"));
+      const option = new AkanOption().setAgentAccess(SignedIn);
       new AkanServer("serverGet", createEnv(tmp), "all", createLib(option));
       expect(AgentRelayAccess.hasPolicy).toBe(true);
 

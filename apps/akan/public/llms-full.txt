@@ -1340,7 +1340,7 @@ Gateway/orchestrator used by app `main.ts` files. It starts child server replica
 
 Constructor option type for `AkanApp`. It configures replica layout, server path, runtime directory, HTTP port, and WebSocket base port for the gateway process.
 
-App/library option builder used by `lib/option.ts`. It registers env-derived use objects, signal middleware, adaptor overrides, and web proxies, and carries the settings an app owns: `setMcp` for the MCP server, `setAgentAccess` for who may spend the LLM key through the agent relay, and `setLlm` for the model that relay speaks to. Every lib's option is read in mount order with the app's last.
+App/library option builder used by `lib/option.ts`. It registers env-derived use objects, signal middleware, adaptor overrides, and web proxies, and carries the settings an app owns: `setMcp` for the MCP server, `setAgentAccess` for the guards a caller must pass to spend the LLM key through the agent relay, and `setLlm` for the model that relay speaks to. Every lib's option is read in mount order with the app's last.
 
 Response helper for web proxy code. `next` continues the request, `rewrite` proxies to a different URL while preserving proxy metadata, and `redirect` returns a normal redirect response.
 
@@ -3589,7 +3589,7 @@ Headings:
 - API Documentation
 - Render A Zone
 - Try An Endpoint
-- Auth And Roles
+- Auth And Guards
 - Tips
 
 Documentation
@@ -3600,7 +3600,7 @@ Akan can render signal documentation from the generated fetch object. It is not 
 
 Use `Signal.Doc.Zone` for one signal namespace.
 
-Use `Doc.Setting` to choose BaseURL, role, and JWT.
+Use `Doc.Setting` to choose BaseURL, guards, and JWT.
 
 REST and WebSocket test surfaces are shown together.
 
@@ -3614,7 +3614,7 @@ Try An Endpoint
 
 Open the `base` document, find `ping`, and run it from the REST panel. It should return a simple string response.
 
-Auth And Roles
+Auth And Guards
 
 ## Kubernetes
 

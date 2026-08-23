@@ -18,7 +18,7 @@ import type { Adaptor, AdaptorCls, DatabaseService, InjectRegistry, LiveRegistry
 import type { Internal, InternalCls, InternalInfo, MiddlewareCls } from ".";
 import type { EndpointInfo, EndpointType } from "./endpointInfo";
 import { Exception } from "./exception";
-import type { Guard, GuardCls } from "./guard";
+import { guardOf } from "./guard";
 // Deliberately past the barrel: `./mcp` re-exports `McpDocument`, which would drag `akanjs/fetch` into the
 // signal graph. `Msg` itself imports nothing.
 import { Msg } from "./mcp/Msg";
@@ -129,25 +129,12 @@ export class SignalContext<
     }
     return this;
   }
-  /**
-   * Guards read everything from the context they are handed and are already required to be side-effect free and
-   * safe to re-run — `SignalResolver.revalidateWsRooms` re-runs them outside of any request — so one instance per
-   * class serves every call instead of one per guard per request.
-   */
-  static #guards = new WeakMap<GuardCls, Guard>();
-  static #getGuard(GuardCls: GuardCls): Guard {
-    const cached = SignalContext.#guards.get(GuardCls);
-    if (cached) return cached;
-    const guard = new GuardCls();
-    SignalContext.#guards.set(GuardCls, guard);
-    return guard;
-  }
   async #checkGuards() {
     const guards = this.endpointInfo.signalOption.guards ?? [];
     if (guards.length === 0) return;
     await Promise.all(
       guards.map(async (GuardCls) => {
-        const canPass = await SignalContext.#getGuard(GuardCls).canPass(this);
+        const canPass = await guardOf(GuardCls).canPass(this);
         if (!canPass) throw new Exception.Forbidden(`Access denied by guard: ${GuardCls.name}`);
       }),
     );
@@ -180,7 +167,7 @@ export class SignalContext<
       await this.#withMiddleware(
         async () => {
           for (const GuardCls of guards) {
-            if (!(await SignalContext.#getGuard(GuardCls).canPass(this)))
+            if (!(await guardOf(GuardCls).canPass(this)))
               throw new Exception.Forbidden(`Access denied by guard: ${GuardCls.name}`);
           }
         },

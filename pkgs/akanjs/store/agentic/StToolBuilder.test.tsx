@@ -52,14 +52,70 @@ describe("StToolBuilder", () => {
     expect(StToolBuilder.parametersOf([])).toBeUndefined();
   });
 
-  test("a model class or Map is rejected where it is declared", () => {
+  test("a model class or Map is rejected by name where it is declared", () => {
     class NotAScalar {}
     expect(() => StToolBuilder.schemaOf(NotAScalar as unknown as typeof ID)).toThrow(
-      "st.tool takes scalar and enum arguments only.",
+      "the type NotAScalar, and st.tool takes scalar and enum arguments only.",
     );
     expect(() => StToolBuilder.schemaOf(Map as unknown as typeof ID)).toThrow(
-      "st.tool takes scalar and enum arguments only.",
+      "the type Map, and st.tool takes scalar and enum arguments only.",
     );
+  });
+
+  test("an undescribable argument withdraws the tool instead of aborting the render", () => {
+    class PortfolioInfo {}
+    const surface = new AgenticSurface();
+    const errors: string[] = [];
+    const console_ = console.error;
+    console.error = (message: unknown) => errors.push(String(message));
+    let clicked = 0;
+    const Widget = () => {
+      const edit = new StToolBuilder("editProject")
+        .arg("projectId", ID)
+        .arg("info", PortfolioInfo as unknown as typeof ID)
+        .exec(() => {
+          clicked += 1;
+        });
+      return <button onClick={() => void edit("p1", "x")} type="button" />;
+    };
+    try {
+      const unmount = mount(<AgentProvider surface={surface}>{<Widget />}</AgentProvider>);
+      expect(surface.snapshot().tools.map((tool) => tool.name)).toEqual([]);
+      expect(errors).toEqual([
+        'st.tool("editProject") is not published: its "info" argument is the type PortfolioInfo, and st.tool takes scalar and enum arguments only.',
+      ]);
+      unmount();
+    } finally {
+      console.error = console_;
+    }
+    expect(clicked).toBe(0);
+  });
+
+  test("a withdrawn tool keeps the callable a person clicks, unannotated", async () => {
+    class PortfolioInfo {}
+    const surface = new AgenticSurface();
+    const console_ = console.error;
+    console.error = () => undefined;
+    const calls: unknown[][] = [];
+    const held: { edit?: (id: string, info: string) => Promise<void> } = {};
+    const Widget = () => {
+      held.edit = new StToolBuilder("editProject")
+        .arg("projectId", ID)
+        .arg("info", PortfolioInfo as unknown as typeof ID)
+        .exec((...args) => {
+          calls.push(args);
+        });
+      return null;
+    };
+    try {
+      const unmount = mount(<AgentProvider surface={surface}>{<Widget />}</AgentProvider>);
+      await held.edit?.("p1", "typed");
+      expect(calls).toEqual([["p1", "typed"]]);
+      expect(actionTagOf(held.edit)).toBeUndefined();
+      unmount();
+    } finally {
+      console.error = console_;
+    }
   });
 
   test("checkedValue enforces the published schema and coerces a date", () => {

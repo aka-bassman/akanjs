@@ -11,8 +11,8 @@ describe("Agent Relay (framework-embedded)", () => {
     fetch = await getOrSetupSignalTestFetch<UtilFetch>();
   });
 
-  // This lib registers no `setAgentAccess` policy, so the call never reaches the LLM adaptor.
-  test("refuses a turn when no agent access policy is registered", async () => {
+  // This lib names no `setAgentAccess` guard, so the call never reaches the LLM adaptor.
+  test("refuses a turn when no agent access guard is registered", async () => {
     await expect(
       fetch.runAgentTurn([{ role: "user", text: "hi" }], [], [{ kind: "route", path: "/" }], null),
     ).rejects.toThrow(/Access denied by guard: AgentRelayAccess/);

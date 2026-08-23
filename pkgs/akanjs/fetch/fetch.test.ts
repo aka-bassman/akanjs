@@ -721,6 +721,28 @@ describe("FetchClient HTTP generation", () => {
     });
   });
 
+  test("sends a mutation with the verb it declares", async () => {
+    setMockFetch();
+    jsonResponses.push("patched");
+    const restSignal: SerializedSignal = {
+      endpoint: {
+        patchThing: {
+          type: "mutation",
+          method: "PATCH",
+          args: [arg("body", "title")],
+          returns: { refName: "String" },
+        },
+      },
+    };
+    const client = new FetchClient("https://api.example", {}, { service: restSignal });
+
+    expect(await client.handler.patchThing("Renamed")).toBe("patched");
+    expect(fetchCalls[0]).toMatchObject({
+      url: "https://api.example/patchThing",
+      init: { method: "PATCH", body: JSON.stringify({ title: "Renamed" }) },
+    });
+  });
+
   test("supports explicit auth token, request auth, crystalize false, upload bodies, and clone", async () => {
     setMockFetch();
     jsonResponses.push({ title: "Raw", count: 1, nested: { label: "N" } }, "RequestAuth", "uploaded", "cloned");

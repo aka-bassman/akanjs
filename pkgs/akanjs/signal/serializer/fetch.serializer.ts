@@ -65,6 +65,7 @@ export class FetchSerializer {
       args: endpointInfo.args.map(FetchSerializer.#serializeArg),
       returns: FetchSerializer.#serializeReturns(endpointInfo),
       ...(endpointInfo.signalOption.path ? { path: endpointInfo.signalOption.path } : {}),
+      ...(endpointInfo.signalOption.method ? { method: endpointInfo.signalOption.method } : {}),
       ...(endpointInfo.signalOption.fileUpload ? { fileUpload: true } : {}),
       ...(guards?.length ? { guards } : {}),
     };

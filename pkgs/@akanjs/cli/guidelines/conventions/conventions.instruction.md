@@ -59,10 +59,20 @@ that looks wrong; do not "fix" it back.
 - **Never redeclare a generated CRUD endpoint name** in `*.signal.ts` (`no-redeclare-predefined-endpoint.grit`).
 - **Never type a `*.Util.tsx` / `*.Zone.tsx` prop as a `cnst` model** (`no-model-type-in-util-zone.grit`). Those two
   roles are always client components, so a `cnst.Banner` / `cnst.LightBanner` prop is a class instance the server has
-  to hand across the boundary; take `bannerId: string` and read the model from the store instead. Two shapes are
-  exempt because neither is an instance: `cnst.<Enum>["value"]`, whose indexed access resolves to a string union, and
-  a `ClientInit` / `ClientView` / `ClientEdit` type argument, which the framework maps to `GetStateObject<…>` plain
-  data. Any *other* indexed access is still flagged — `cnst.Banner["image"]` is a `File`.
+  to hand across the boundary; take `bannerId: string` and read the model from the store instead. Three shapes are
+  exempt because none of them is an instance: `cnst.<Enum>["value"]`, whose indexed access resolves to a string
+  union; a `ClientInit` / `ClientView` / `ClientEdit` type argument, which the framework maps to `GetStateObject<…>`
+  plain data; and a `ModelsProps<cnst.Setting>` type argument, whose only use of the model is the `onClickItem`
+  callback, so nothing model-shaped ever lands on a prop. `ModelProps<"setting", cnst.LightSetting>` is *not* exempt
+  — that one spreads the model onto the props themselves, and `Unit` / `View`, which take it, are server components
+  this rule does not cover. Any *other* indexed access is still flagged — `cnst.Banner["image"]` is a `File`.
+  **Only prop positions are read** — a `*Props` interface or type alias, and the inline object type on the
+  component's own parameter. A `cnst` type that never leaves the file is not a boundary crossing and stays legal: a
+  local annotation, a callback parameter the framework itself types with the model
+  (`renderItem={(ticket: cnst.LightTicket) => …}`), a module-scope helper, a non-`Props` local shape, and the props
+  of a component nested inside another one. A function-typed prop (`onPick?: (t: cnst.LightTicket) => void`) is
+  exempt for the same reason — a closure cannot cross the RSC boundary at all, so whoever passes it is a client
+  component already holding the value.
 - **No deep imports past a barrel** (`no-deep-internal-import.grit`). Cross-module constant references such as
   `../map/map.constant` are the sanctioned exception.
 - **Never import across the client/server boundary.** Client files (`ui/`, `webkit/`, `page/`, `*.store.ts`, every
@@ -390,6 +400,15 @@ workflow changes.
 - Numbers must use `Int` or `Float` — `Number` is rejected (`pkgs/akanjs/signal/endpointInfo.ts`).
 - `Upload` is valid only inside a mutation flagged for file upload: `mutation([cnst.File], { fileUpload: true }).body("files", [Upload])` (see `libs/shared/lib/file/file.signal.ts`). It is not a model field type.
 
+### Mutation HTTP Verb
+
+- A `mutation` is `POST`. `{ method: "PATCH" | "PUT" | "DELETE" }` moves it, and one path may carry several verbs
+  — a `query` GET and a `mutation` POST on the same custom `path` are mounted side by side. Two endpoints claiming
+  the same path **and** verb fail the boot rather than silently shadowing one another.
+- Reach for it only when a foreign wire protocol forces the verb (a client you cannot change that sends
+  `PATCH /rest/v1/<table>`). Akan's own `fetch.*` client, the OpenAPI document, and the API explorer all follow
+  whatever is declared, so nothing needs restating per caller.
+
 ### Reserved Endpoint Names
 
 - Auto-generated CRUD endpoints (e.g. `create<Model>`, `update<Model>`, `remove<Model>`) already exist for every model. Do not declare an `Endpoint`/`Slice` with a name that collides with them.
@@ -648,9 +667,10 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `AKAN_AGENT=false` takes it off — and negotiates streaming via `accept`, so assistant text arrives as it is
   generated with zero app code. The endpoint is a stateless relay and **never executes tools**: every tool runs in
   the caller's own browser session, gated by guards and the approval card. Its guard is `AgentRelayAccess`, which
-  **refuses every call until a policy is registered** — the same answer `None` gives, with no boot warning. A
-  product with accounts locks it in its `option.ts`, `option.setAgentAccess((ctx) => !!ctx.get("account"))`;
-  without a policy the chat cannot spend the LLM key.
+  **refuses every call until the app names a guard of its own** — the same answer `None` gives, with no boot
+  warning. A product with accounts names it in its `option.ts`, `option.setAgentAccess(SignedIn)`, taking the same
+  guard classes every endpoint takes (an array is ANDed, `null` clears what a library set); without one the chat
+  cannot spend the LLM key.
   `persist` keeps the transcript across reloads (sessionStorage; `{ storage: "local" }` to outlive the tab),
   default off. Re-skin through the `AgentChat` slot in `_overrides.tsx`.
 - **The LLM is configured in `option.ts`, never through the environment.** `option.setLlm({ apiKey, model, host })`
@@ -693,7 +713,11 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   globally and a component cannot build one per render: pass the list it has — a slice's sort keys, the options a
   prop carried — and it is published and enforced the same way. Neither reaches a set that fills in *after* the
   first render, since a declaration is mount-static; put that in the tool's `guard`, which is re-read per call and
-  can name the current values in its refusal.
+  can name the current values in its refusal. **An argument type nothing can describe — a model class, `Any`, a
+  `Map` — withdraws the whole tool and says so on the console**, naming the tool, the argument and the type; the
+  callable still drives the click a person makes. It does not throw: a tool schema is built during render, and an
+  agent-tooling mistake that aborted the render would cost the route its server rendering. `st.useState`'s `set`
+  degrades the same way, to read-only.
 - **A component that renders once per row publishes nothing.** A tool registered under one name by fifty rows is
   forty-nine collisions and one survivor. The container publishes one tool taking the id instead —
   `removeTask(taskId)`, never fifty `removeTask` — and the agent reads the ids from the `<slice>.items` resource
@@ -732,6 +756,27 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
 - **`prompt()` endpoints double as the chat's slash commands.** There is no listing endpoint — the client reads
   its own serialized signals — so a prompt's dictionary `.desc()` is what the menu shows, and its guards are
   enforced by the prompt's own GET at call time.
+- **The chat answers five slash commands of its own**, listed in the same `/` menu ahead of the prompts:
+  `/new` (`/clear`), `/retry`, `/copy`, `/help` and `/tools`. An app writes none of them and cannot add one — the
+  extension point for a product's own command is a `prompt()` endpoint, which is guarded and server-side.
+  **A built-in wins a name collision with a prompt of the same name**, the mirror image of the tool rule: a
+  component's `st.tool` shadows a built-in it means to replace, but no library's prompt may take `/new` away from
+  the user who typed it — so a shadowed prompt is dropped from the menu rather than listed twice. `/new` and
+  `/copy` are also dispatched *before* the is-a-turn-running check, because mid-turn is exactly when they are
+  reached for; `/new` therefore aborts the turn it is clearing and waits for it to wind down, since the loop
+  clears its own running flag a microtask later and a transcript emptied before that lands is one the dying turn
+  appends onto.
+- **A command's output is a `local` message: rendered in the transcript, withheld from the wire.** The transcript
+  *is* the model's history, so `/help` text appended plainly would come back next turn as something the assistant
+  believes it said. `session.note(text)` is the only way to write one, `session.report(error)` stays what a
+  host-side *failure* lands in, and `local` messages are left out of a `/copy` export too — they are the chat
+  talking to itself. Their text is user-facing, so it goes through `l("base.*")` like every other chat string.
+- **`/copy` exists because nothing else keeps the transcript.** The relay is stateless and the conversation lives
+  only in that browser, so an export is the one path a wrong answer has to whoever could fix it — which is why it
+  carries the route and the timestamp. `/retry` replays only the trailing user message, leaving anything before it
+  in place, so a prompt's own preamble is not sent twice.
+- **↑ and ↓ in the composer walk what was sent.** A single-line input has nothing of its own on the vertical
+  arrows, and the half-written draft they were walked away from comes back at the bottom of the walk.
 - The framework publishes five built-ins on every store surface: `navigate` (internal paths only, the same
   router `Link` rides), `goBack` (this session's history — global, because history is not a control a page owns and
   a page that draws no back link is not one you may not leave), `readScreen` (the rendered DOM as compact text —

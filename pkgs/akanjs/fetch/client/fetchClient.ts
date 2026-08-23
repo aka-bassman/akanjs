@@ -300,7 +300,7 @@ export class FetchClient {
           const argMap = new Map(serializerMap.entries().map(([key, serializer], idx) => [key, serializer(args[idx])]));
           const url = FetchClient.makeHttpUrl(key, endpoint, prefix, argMap);
           const body = HttpClient.makeBody(bodyArgs, uploadArgs, argMap);
-          const response = await this.http.post(url, body, {
+          const response = await this.http.send(endpoint.method ?? "POST", url, body, {
             headers: this.#makeAuthHeaders(option),
             baseUrl: option?.origin,
           });

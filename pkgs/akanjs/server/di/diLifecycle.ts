@@ -212,8 +212,11 @@ export class DiLifecycle {
       wsRoutes: endpointWsRoutes,
       routeOptions: endpointRouteOptions,
     } = await this.#initializeEndpoint();
+    const routes: SignalRoutes["routes"] = {};
+    SignalResolver.mergeHttpRoutes(routes, sliceRoutes);
+    SignalResolver.mergeHttpRoutes(routes, endpointRoutes);
     return {
-      routes: { ...sliceRoutes, ...endpointRoutes },
+      routes,
       wsRoutes: { ...sliceWsRoutes, ...endpointWsRoutes },
       routeOptions: { ...(sliceRouteOptions ?? {}), ...(endpointRouteOptions ?? {}) },
     };
@@ -554,7 +557,7 @@ export class DiLifecycle {
             live: this.live,
             middleware: this.#middleware,
           });
-          Object.assign(routes, sliceRoutes);
+          SignalResolver.mergeHttpRoutes(routes, sliceRoutes);
           Object.assign(routeOptions, sliceRouteOptions);
           Object.assign(wsRoutes, sliceWsRoutes);
           this.registry.endpointCls.set(refName, sliceEndpointCls);
@@ -591,7 +594,7 @@ export class DiLifecycle {
             live: this.live,
             middleware: this.#middleware,
           });
-          Object.assign(routes, endpointRoutes);
+          SignalResolver.mergeHttpRoutes(routes, endpointRoutes);
           Object.assign(routeOptions, endpointRouteOptions);
           Object.assign(wsRoutes, endpointWsRoutes);
           this.registry.endpointCls.set(refName, endpointCls);

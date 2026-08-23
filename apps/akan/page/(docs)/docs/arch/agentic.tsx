@@ -60,8 +60,8 @@ export default function Page() {
                 {
                   title: "Agent.Chat",
                   desc: l.trans({
-                    en: "The loop, the approval card, and slash commands from prompt() endpoints.",
-                    ko: "대화 루프, 승인 카드, prompt() 엔드포인트에서 온 slash command.",
+                    en: "The loop, the approval card, its own /new · /retry · /copy · /help · /tools, and slash commands from prompt() endpoints.",
+                    ko: "대화 루프, 승인 카드, 자체 커맨드(/new · /retry · /copy · /help · /tools), prompt() 엔드포인트에서 온 slash command.",
                   }),
                 },
                 {
@@ -116,14 +116,16 @@ export default function Page() {
 <Agent.Chat persist />
 
 // lib/option.ts — the key lives in env, which is gitignored
+import { SignedIn } from "../srvkit";
+
 export const option = new AkanOption<ModulesOptions>()
   .setLlm((options) => options.llm ?? {})
-  .setAgentAccess((context) => !!context.get("account"));`}
+  .setAgentAccess(SignedIn);`}
         />
         <Docs.Alert type="warning">
           {l.trans({
-            en: "AgentRelayAccess refuses every call until a policy is registered — the same answer None gives. Without a policy the chat cannot spend the LLM key. A product with accounts locks it in the same option.ts.",
-            ko: "AgentRelayAccess는 정책 등록 전까지 모든 호출을 None과 같이 거절합니다. 정책이 없으면 채팅이 LLM 키를 쓸 수 없습니다. 계정이 있는 제품은 같은 option.ts에서 잠급니다.",
+            en: "AgentRelayAccess refuses every call until a guard is registered — the same answer None gives. Without one the chat cannot spend the LLM key. A product with accounts names its own guard in the same option.ts, as it would on any other endpoint.",
+            ko: "AgentRelayAccess는 가드 등록 전까지 모든 호출을 None과 같이 거절합니다. 가드가 없으면 채팅이 LLM 키를 쓸 수 없습니다. 계정이 있는 제품은 다른 엔드포인트와 똑같이 같은 option.ts에서 자기 가드를 지정합니다.",
           })}
         </Docs.Alert>
         <div className="space-y-1">
@@ -226,6 +228,12 @@ export const option = new AkanOption<ModulesOptions>()
             {l.trans({
               en: "A tool that changes the screen waits for the screen before it answers: router.push returns while the payload is still in flight, so navigate — and the session, after every non-query tool — waits for the DOM to hold still before reporting. A slow tool reports its own progress with AgentProgress.report, shown on that call's row. And the turn cap is a question rather than a dead end: at maxTurns the agent asks whether to keep going, and what the user types instead rides as their own turn.",
               ko: "화면을 바꾸는 툴은 화면이 정착한 뒤에 답합니다. router.push는 페이로드가 아직 오는 중에 반환되므로, navigate는 (그리고 세션은 query가 아닌 모든 툴 뒤에서) DOM이 멈출 때까지 기다린 다음 변경을 보고합니다. 느린 툴은 AgentProgress.report로 자기 진행을 알리고, 그 호출의 행에 표시됩니다. 턴 상한도 막다른 길이 아니라 질문입니다 — maxTurns에 닿으면 계속할지 묻고, 사용자가 대신 입력한 말은 그 사용자의 턴으로 들어갑니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "The chat answers five commands of its own, listed in the same / menu ahead of the prompts: /new (/clear), /retry, /copy, /help and /tools. An app writes none of them and cannot add one — a product's own command is a prompt() endpoint, which is guarded and server-side. A built-in wins a name collision with a prompt, the mirror image of the tool rule: a component's st.tool may shadow a built-in it means to replace, but no library's prompt may take /new away from the user who typed it. /new and /copy work mid-turn, so /new ends the turn it is clearing. A command's output is a local message — rendered in the transcript, withheld from the wire, because the transcript is the model's history and text appended plainly would come back next turn as something the assistant believes it said. /copy exists because nothing else keeps the transcript: the relay is stateless, so an export is the one path a wrong answer has to whoever could fix it. And ↑ walks back through what was sent, ↓ forward.",
+              ko: "채팅은 자체 커맨드 다섯 개를 가집니다. 같은 / 메뉴에서 prompt보다 앞에 놓입니다 — /new(/clear), /retry, /copy, /help, /tools. 앱은 이 중 아무것도 작성하지 않고 추가할 수도 없습니다. 제품 고유의 커맨드는 guard가 걸린 서버 쪽 prompt() 엔드포인트입니다. 이름이 겹치면 빌트인이 이깁니다 — 툴 규칙의 반대입니다. 컴포넌트의 st.tool은 대체하려는 빌트인을 가릴 수 있지만, 어떤 라이브러리의 prompt도 사용자가 직접 입력한 /new를 빼앗을 수는 없습니다. /new와 /copy는 턴 중에도 동작하며, 그래서 /new는 비우려는 턴을 끝냅니다. 커맨드의 출력은 local 메시지입니다 — 트랜스크립트에는 렌더되고 와이어에는 실리지 않습니다. 트랜스크립트가 곧 모델의 히스토리라서, 그냥 붙이면 다음 턴에 모델이 자기가 한 말로 받아들입니다. /copy가 있는 이유는 트랜스크립트를 보관하는 곳이 달리 없기 때문입니다 — 릴레이는 stateless이므로, 잘못된 답이 고칠 수 있는 사람에게 닿는 유일한 경로가 내보내기입니다. 그리고 ↑는 보낸 것들을 거슬러 가고 ↓는 되돌아옵니다.",
             })}
           </div>
           <div>

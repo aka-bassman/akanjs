@@ -20,16 +20,31 @@ export const useStState = <T>(
   initial: T | (() => T),
   meta: StStateMeta<T> = {},
 ): [T, Dispatch<SetStateAction<T>>] => {
-  const set = meta.set;
+  // An undescribable `set` costs the write, not the read and not the render: the key stays readable and the page
+  // still renders, which is what a bad type on an agent-tooling option is worth. Same trade as `st.tool`'s `.arg`.
+  const set = name && meta.set ? writable(name, meta.set) : null;
   return useAgentState<T>(name, initial, {
     description: meta.desc,
     report: meta.report,
     serialize: meta.serialize ?? ((value) => readableValue(name ?? "", value, meta.mask)),
     ...(set
       ? {
-          set: StToolBuilder.schemaOf(set),
-          parse: (value) => StToolBuilder.checkedValue(`set${capitalize(name ?? "")}`, "value", set, value) as T,
+          set: set.schema,
+          parse: (value) => StToolBuilder.checkedValue(`set${capitalize(name ?? "")}`, "value", set.type, value) as T,
         }
       : {}),
   });
+};
+
+const writable = (name: string, type: ParamFieldType) => {
+  try {
+    return { schema: StToolBuilder.schemaOf(type), type };
+  } catch (error) {
+    console.error(
+      `st.useState("${name}") stays read-only: its "set" type is ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return null;
+  }
 };

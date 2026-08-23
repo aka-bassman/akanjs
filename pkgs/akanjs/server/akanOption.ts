@@ -1,6 +1,6 @@
 import type { BackendEnv, PromiseOrObject } from "akanjs/base";
 import type { Adaptor, AdaptorCls, LlmOption } from "akanjs/service";
-import type { AgentRelayPolicy, MiddlewareCls } from "akanjs/signal";
+import type { GuardCls, MiddlewareCls } from "akanjs/signal";
 import type { McpServerOption } from "./akanServer";
 import type { WebProxyRegistration } from "./proxy";
 import { HostBasePathWebProxy, LocaleWebProxy } from "./proxy";
@@ -12,7 +12,7 @@ export interface AdaptorOverride {
 
 /**
  * App/library server option builder: use objects, signal middleware, adaptor overrides, web proxies, and the
- * server settings an app owns — MCP, the agent relay's access policy, and the LLM the relay speaks to.
+ * server settings an app owns — MCP, the agent relay's access guards, and the LLM the relay speaks to.
  */
 export class AkanOption<Env extends BackendEnv = BackendEnv> {
   readonly #getUses: ((env: Env) => Record<string, PromiseOrObject<unknown>>)[];
@@ -21,7 +21,7 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
   readonly #webProxies: WebProxyRegistration[] = [];
   readonly #getLlms: ((env: Env) => LlmOption)[] = [];
   #mcp: boolean | McpServerOption | undefined;
-  #agentAccess: AgentRelayPolicy | null | undefined;
+  #agentAccess: GuardCls | GuardCls[] | null | undefined;
   constructor() {
     this.#getUses = [];
   }
@@ -54,11 +54,12 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
     return this;
   }
   /**
-   * Who may spend the LLM key through the `runAgentTurn` relay. With no policy the call is refused — the same
-   * answer `None` gives — because the framework has no account model to gate on. `null` clears the policy.
+   * Who may spend the LLM key through the `runAgentTurn` relay, named as the guards any other endpoint would
+   * name. With none the call is refused — the same answer `None` gives — because the framework has no account
+   * model to gate on. Several are ANDed; `null` clears what a library set.
    */
-  setAgentAccess(policy: AgentRelayPolicy | null) {
-    this.#agentAccess = policy;
+  setAgentAccess(guards: GuardCls | GuardCls[] | null) {
+    this.#agentAccess = guards;
     return this;
   }
   /** Settings for whichever adaptor fills `LlmAdaptorRole`, injected into it as the `llmOption` use. */
@@ -83,7 +84,7 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
   getMcp(): boolean | McpServerOption | undefined {
     return this.#mcp;
   }
-  getAgentAccess(): AgentRelayPolicy | null | undefined {
+  getAgentAccess(): GuardCls | GuardCls[] | null | undefined {
     return this.#agentAccess;
   }
   getLlm(env: Env): LlmOption {

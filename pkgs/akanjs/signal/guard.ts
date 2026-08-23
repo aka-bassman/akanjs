@@ -28,3 +28,18 @@ export const guard = <T extends string>(name: T): GuardCls<T> => {
     }
   };
 };
+
+/**
+ * Guards read everything from the context they are handed and are already required to be side-effect free and
+ * safe to re-run — `SignalResolver.revalidateWsRooms` re-runs them outside of any request — so one instance per
+ * class serves every call instead of one per guard per request. Built on first use, not at registration: a guard
+ * may be declared long before the container it reads from is up.
+ */
+const instances = new WeakMap<GuardCls, Guard>();
+export const guardOf = (GuardCls: GuardCls): Guard => {
+  const cached = instances.get(GuardCls);
+  if (cached) return cached;
+  const guard = new GuardCls();
+  instances.set(GuardCls, guard);
+  return guard;
+};

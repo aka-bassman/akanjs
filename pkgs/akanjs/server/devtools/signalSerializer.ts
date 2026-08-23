@@ -216,7 +216,7 @@ export class SignalSerializer {
           source: typeof source === "function" ? source(key) : source,
           type: node.type,
           transport,
-          method: node.type === "mutation" ? "POST" : transport === "http" ? "GET" : null,
+          method: node.type === "mutation" ? (info.signalOption.method ?? "POST") : transport === "http" ? "GET" : null,
           path:
             transport === "ws"
               ? SignalSerializer.#joinPath(prefix, websocketPrefix)

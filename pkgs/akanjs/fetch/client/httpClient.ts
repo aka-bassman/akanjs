@@ -1,4 +1,4 @@
-import type { SerializedArg } from "akanjs/signal";
+import type { HttpMutationMethod, SerializedArg } from "akanjs/signal";
 
 export interface ErrorResponsePayload {
   error: string;
@@ -54,31 +54,33 @@ export class HttpClient {
     if (data instanceof FormData) return { body: data, headers: {} };
     return { body: JSON.stringify(data), headers: { "Content-Type": "application/json" } };
   }
-  async put<Returns = unknown>(
+  async send<Returns = unknown>(
+    method: HttpMutationMethod,
     url: string,
     data: FormData | Record<string, unknown>,
     options: FetchOptions = {},
   ): Promise<Returns> {
     const { body, headers } = this.#makeReqContent(data);
     const res = await fetch(`${this.#resolveBaseUrl(options.baseUrl)}${url}`, {
-      method: "PUT",
+      method,
       body,
       headers: { ...headers, ...options.headers },
     });
     return await this.#readJsonResponse<Returns>(res);
+  }
+  async put<Returns = unknown>(
+    url: string,
+    data: FormData | Record<string, unknown>,
+    options: FetchOptions = {},
+  ): Promise<Returns> {
+    return await this.send<Returns>("PUT", url, data, options);
   }
   async post<Returns = unknown>(
     url: string,
     data: FormData | Record<string, unknown>,
     options: FetchOptions = {},
   ): Promise<Returns> {
-    const { body, headers } = this.#makeReqContent(data);
-    const res = await fetch(`${this.#resolveBaseUrl(options.baseUrl)}${url}`, {
-      method: "POST",
-      body,
-      headers: { ...headers, ...options.headers },
-    });
-    return await this.#readJsonResponse<Returns>(res);
+    return await this.send<Returns>("POST", url, data, options);
   }
   async delete<Returns = unknown>(url: string, options: FetchOptions = {}): Promise<Returns> {
     const res = await fetch(`${this.#resolveBaseUrl(options.baseUrl)}${url}`, {

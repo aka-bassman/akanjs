@@ -102,6 +102,7 @@ export class AgentSession {
   #question: PendingQuestion | null = null;
   #progress: (AgentProgressReport & { callId: string }) | null = null;
   #controller: AbortController | null = null;
+  #active: Promise<void> | null = null;
   #version = 0;
   #listeners = new Set<() => void>();
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -154,6 +155,12 @@ export class AgentSession {
   send = async (input: string | ChatMessage[]) => {
     if (this.#running) throw new Error("A turn is already running.");
     this.#running = true;
+    const run = this.#turn(input);
+    this.#active = run;
+    await run;
+  };
+
+  async #turn(input: string | ChatMessage[]) {
     const controller = new AbortController();
     this.#controller = controller;
     if (typeof input === "string") this.#append({ role: "user", text: input });
@@ -188,20 +195,28 @@ export class AgentSession {
     } finally {
       this.#running = false;
       this.#controller = null;
+      this.#active = null;
       this.#pending = null;
       this.#question = null;
       this.#progress = null;
       this.#notify();
     }
-  };
+  }
 
   abort = () => {
     this.#controller?.abort();
   };
 
-  /** Empties the transcript and the persisted history. A running turn keeps its transcript. */
-  reset = () => {
-    if (this.#running) return;
+  /**
+   * Empties the transcript and the persisted history, ending a turn that is still running. Awaiting the abort
+   * matters: the loop settles in its own `finally`, a microtask later, and a transcript emptied before that lands
+   * is one the winding-down turn appends onto.
+   */
+  reset = async () => {
+    if (this.#active) {
+      this.#controller?.abort();
+      await this.#active;
+    }
     this.#messages = [];
     // The pending debounced save would re-create the entry clear() just removed.
     if (this.#saveTimer) {
@@ -217,16 +232,36 @@ export class AgentSession {
     for (const listener of this.#listeners) listener();
   };
 
+  /**
+   * Re-runs the last user message, dropping what the previous attempt produced. Turns fail for reasons that have
+   * nothing to do with what was asked — a refused relay, a model that is unavailable — and retyping is otherwise the
+   * only way back. Only the trailing message is replayed, so a prompt's own preamble stays where it is.
+   */
+  retry = async (): Promise<boolean> => {
+    if (this.#active) return false;
+    const at = this.#messages.findLastIndex((message) => message.role === "user" && !!message.text);
+    if (at < 0) return false;
+    const again = this.#messages[at];
+    this.#messages = this.#messages.slice(0, at);
+    await this.send([again]);
+    return true;
+  };
+
   /** Records a host-side failure (a prompt fetch, an upload) in the transcript, where every other failure lands. */
   report = (error: string) => {
     this.#append({ role: "assistant", error });
+  };
+
+  /** A line the host wrote — a command's own output. Rendered in the transcript, withheld from the model. */
+  note = (text: string) => {
+    this.#append({ role: "assistant", text, local: true });
   };
 
   async #assistantTurn(signal: AbortSignal): Promise<{ toolCalls: ToolCallRequest[]; stop: "end" | "toolUse" }> {
     const { tools, guides } = this.#surface.snapshot();
     const instructions = [this.#options.instructions, ...guides].filter(Boolean).join("\n\n");
     const request: RunnerRequest = {
-      messages: this.#messages,
+      messages: this.#messages.filter((message) => !message.local),
       tools: tools.some((tool) => tool.name === AgentSession.askUserTool.name)
         ? tools
         : [...tools, AgentSession.askUserTool],

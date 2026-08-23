@@ -124,6 +124,11 @@ export interface ChatMessage {
   toolResults?: ToolCallResult[];
   /** A failed or capped turn, recorded in the transcript rather than thrown past it. */
   error?: string;
+  /**
+   * Host-rendered and never sent: a command's own output belongs in the transcript the user reads but not in the
+   * history the model reads, which would take it for something it had said itself.
+   */
+  local?: boolean;
 }
 
 /** One block of screen context the host assembles per turn. `kind` is the host's vocabulary; the wire forwards it verbatim. */

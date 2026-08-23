@@ -4,6 +4,7 @@ import { enumOf, Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { AgenticSurface, AgentProvider } from "use-agentic";
 import { store } from "../store";
 import { StoreInstance } from "../storeInstance";
@@ -148,6 +149,14 @@ describe("useFormTools", () => {
     ).rejects.toThrow();
     expect(written).toEqual([]);
     unmount();
+  });
+
+  // A tool schema is built from the effect, never from the render, so a field nothing can describe can never cost
+  // a route its server rendering — the surface simply has no tools until the client commits.
+  test("server rendering a form builds no schema", () => {
+    const surface = new AgenticSurface();
+    expect(() => renderToStaticMarkup(screen(surface))).not.toThrow();
+    expect(surface.snapshot().tools).toHaveLength(0);
   });
 
   test("a form read with agent:false publishes nothing", () => {

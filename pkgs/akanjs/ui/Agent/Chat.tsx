@@ -11,7 +11,9 @@ import { inputRecipe } from "../recipe";
 import { createOverridable } from "../UiOverride";
 import Approval from "./Approval";
 import Bubble from "./Bubble";
+import { type ChatCommand, ChatCommands } from "./ChatCommands";
 import { fetchRunner } from "./fetchRunner";
+import Menu from "./Menu";
 import Question from "./Question";
 import { type PersistOption, sessionHistoryOf } from "./sessionHistory";
 
@@ -78,6 +80,9 @@ export const DefaultChat = ({
   );
   const [open, setOpen] = useState(defaultOpen);
   const [draft, setDraft] = useState("");
+  const sent = useRef<string[]>([]);
+  const stashed = useRef("");
+  const [recall, setRecall] = useState(0);
   const [hotkey, setHotkey] = useState<{ label: string; keys: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -127,12 +132,31 @@ export const DefaultChat = ({
       session.report(`/${prompt.name} failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
+  const remember = (text: string) => {
+    if (sent.current[sent.current.length - 1] !== text) sent.current = [...sent.current, text].slice(-30);
+    setRecall(0);
+  };
+  /** ↑ walks back through what was sent, ↓ forward; 0 is the draft it was walked away from. */
+  const step = (delta: number) => {
+    const history = sent.current;
+    const next = Math.max(0, Math.min(recall + delta, history.length));
+    if (next === recall) return;
+    if (!recall) stashed.current = draft;
+    setRecall(next);
+    setDraft(next ? history[history.length - next] : stashed.current);
+  };
+  const runCommand = (command: ChatCommand) => {
+    setDraft("");
+    remember(`/${command.name}`);
+    void ChatCommands.run(command, { session, l });
+  };
   const pick = (prompt: AgentPrompt) => {
     if (prompt.args.some((arg) => arg.required)) {
       setDraft(`/${prompt.name} `);
       return;
     }
     setDraft("");
+    remember(`/${prompt.name}`);
     void runPrompt(prompt, []);
   };
   const send = () => {
@@ -146,18 +170,29 @@ export const DefaultChat = ({
       question.answer(question.multiple ? [text] : text);
       return;
     }
-    if (session.isRunning) return;
     const command = AgentPrompts.parseCommand(text);
+    const builtin = command ? ChatCommands.find(command.name, l) : null;
+    // Ahead of the running check on purpose: /new and /copy are exactly what a user reaches for mid-turn.
+    if (builtin) {
+      runCommand(builtin);
+      return;
+    }
+    if (session.isRunning) return;
     const prompt = command ? prompts.current?.find(command.name) : null;
     setDraft("");
+    remember(text);
     if (command && prompt) {
       void runPrompt(prompt, command.args);
       return;
     }
     void session.send(text);
   };
-  const menu = /^\/[A-Za-z0-9_-]*$/.test(draft)
-    ? (prompts.current?.list() ?? []).filter((prompt) => `/${prompt.name}`.startsWith(draft))
+  const query = /^\/[A-Za-z0-9_-]*$/.test(draft) ? draft : "";
+  const commandMenu = query ? ChatCommands.list(l).filter((command) => `/${command.name}`.startsWith(query)) : [];
+  const promptMenu = query
+    ? (prompts.current?.list() ?? []).filter(
+        (prompt) => `/${prompt.name}`.startsWith(query) && !ChatCommands.find(prompt.name, l),
+      )
     : [];
   // A call and its result are two wire messages because the model needs both, but they are one thing that
   // happened: the call's row resolves in place, and the result message renders only what no call claimed —
@@ -249,34 +284,19 @@ export const DefaultChat = ({
       {session.pendingQuestion ? (
         <Question key={session.pendingQuestion.callId} question={session.pendingQuestion} />
       ) : null}
-      {menu.length ? (
-        <div className="scrollbar-thin flex max-h-40 flex-col overflow-y-auto border-foreground/5 border-t py-1">
-          {menu.map((prompt) => (
-            <button
-              className="flex items-baseline gap-2 px-4 py-1.5 text-left hover:bg-muted"
-              key={prompt.name}
-              onClick={() => pick(prompt)}
-              type="button"
-            >
-              <span className="shrink-0 font-mono text-xs">/{prompt.name}</span>
-              {prompt.args.length ? (
-                <span className="shrink-0 font-mono text-[10px] text-foreground/40">
-                  {prompt.args.map((arg) => `<${arg.name}>`).join(" ")}
-                </span>
-              ) : null}
-              {prompt.description ? (
-                <span className="ml-auto truncate text-[10px] text-foreground/50">{prompt.description}</span>
-              ) : null}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <Menu commands={commandMenu} onCommand={runCommand} onPrompt={pick} prompts={promptMenu} />
       <div className="flex items-center gap-2 border-foreground/5 border-t p-3">
         <input
           className={inputRecipe({ size: "sm" }, "flex-1")}
           onChange={(event) => setDraft(event.target.value)}
           ref={inputRef}
           onKeyDown={(event) => {
+            // A single-line input does nothing of its own with the vertical arrows, so recall is free to take them.
+            if ((event.key === "ArrowUp" || event.key === "ArrowDown") && sent.current.length) {
+              event.preventDefault();
+              step(event.key === "ArrowUp" ? 1 : -1);
+              return;
+            }
             if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
             event.preventDefault();
             send();

@@ -61,8 +61,9 @@ export const createOpenApiDocument = (
   for (const [refName, signal] of Object.entries(serializedSignal)) {
     if (excludeSignals.has(refName)) continue;
     for (const [endpointKey, endpoint] of collectRestEndpoints(refName, signal)) {
-      const method = httpMethods[endpoint.type as keyof typeof httpMethods];
-      if (!method) continue;
+      const declaredMethod = httpMethods[endpoint.type as keyof typeof httpMethods];
+      if (!declaredMethod) continue;
+      const method = endpoint.type === "mutation" ? (endpoint.method?.toLowerCase() ?? declaredMethod) : declaredMethod;
 
       const path = toOpenApiPath(FetchClient.makeHttpUrl(endpointKey, endpoint, signal.prefix, new Map()));
       if (!options.includeNonStandardPaths && isNonStandardOpenApiPath(path)) continue;

@@ -66,8 +66,8 @@ gained three setters, each read from every lib in mount order with the app's own
 library declared without restating it. `setLlm({ apiKey, model, host })` — or `setLlm((options) => …)` to take the
 key out of the app's own gitignored env object — reaches whichever adaptor holds `LlmAdaptorRole` as the
 `llmOption` use, replacing `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` / `DEEPSEEK_HOST`; the settings belong to the role
-rather than to one provider, so they survive a swap. `setAgentAccess((ctx) => !!ctx.get("account"))` registers the
-`AgentRelayAccess` policy that `AgentRelayAccess.use` took at boot. `setMcp({ … })` carries the MCP server
+rather than to one provider, so they survive a swap. `setAgentAccess(SignedIn)` names the guards
+`AgentRelayAccess` forwards to, which `AgentRelayAccess.use` takes at boot. `setMcp({ … })` carries the MCP server
 settings that `new AkanApp("./server", { mcp })` used to spell as child environment variables — the gateway there
 only spawns children, while `option.ts` is already handed to the process that mounts `/mcp`, so `AkanAppOptions.mcp`
 is gone. Every `AKAN_MCP_*` env spelling still works for a deployment configuring what the source does not, and an
