@@ -143,11 +143,6 @@ export default function ListContainer<
     editModel: `edit${modelClassName}`,
     viewModel: `view${modelClassName}`,
     removeModel: `remove${modelClassName}`,
-    submitModel: `submit${modelClassName}`,
-    setModelModal: `set${modelClassName}Modal`,
-    resetModel: `reset${modelClassName}`,
-    cancelEditOfModel: `cancelEditOf${modelClassName}`,
-    closeViewOfModel: `closeViewOf${modelClassName}`,
   };
   const namesOfSlice = {
     modelList: sliceName.replace(names.model, names.modelList),
@@ -166,8 +161,6 @@ export default function ListContainer<
     editModel: sliceName.replace(names.model, names.editModel),
     viewModel: sliceName.replace(names.model, names.viewModel),
     removeModel: sliceName.replace(names.model, names.removeModel),
-    cancelEditOfModel: sliceName.replace(names.model, names.cancelEditOfModel),
-    closeViewOfModel: sliceName.replace(names.model, names.closeViewOfModel),
   };
   const [view, setView] = useState(type);
   const limitOfModel = storeUse[namesOfSlice.limitOfModel]() as number;
@@ -241,41 +234,34 @@ export default function ListContainer<
       downloadBlob(toJsonBlob(loadedList()), `${sliceName}.json`);
     });
 
-  // Row buttons and modal buttons, owned here because both render once per row — fifty rows would be fifty
-  // registrations of one name. The id an agent passes comes from the `items` resource opened just below.
-  // A `actions` factory decides per row, so nothing here can tell which verbs the screen actually draws: it
-  // publishes none rather than offering a button some rows do not have.
+  // Row verbs, declared once here for the buttons `Data.Item` draws. They are `shared`, so a custom Unit built
+  // from `Model.EditWrapper` and friends registers the same names alongside without clashing — every one of them
+  // takes the id as an argument, and the ids come from the `items` resource opened just below. A `actions`
+  // factory decides per row, so nothing here can tell which verbs the screen actually draws: it publishes none
+  // rather than offering a button some rows do not have. The editor's own verbs are not here — `Model.EditModal`
+  // and `Model.ViewModal` publish those while they are open, which is also the only moment they can be used.
   const rowActions = Array.isArray(actions) ? actions : [];
   st.tool(rowActions.includes("edit") && renderTemplate ? namesOfSlice.editModel : null, {
     desc: `Open one ${modelName} in the edit form.`,
     effect: "state",
+    shared: true,
   })
     .arg("modelId", ID)
     .exec((modelId) => storeDo[namesOfSlice.editModel](modelId));
   st.tool(rowActions.includes("view") && renderView ? namesOfSlice.viewModel : null, {
     desc: `Open one ${modelName} in the detail view.`,
     effect: "state",
+    shared: true,
   })
     .arg("modelId", ID)
     .exec((modelId) => storeDo[namesOfSlice.viewModel](modelId));
   st.tool(rowActions.includes("remove") ? namesOfSlice.removeModel : null, {
     desc: `Remove one ${modelName}.`,
     effect: "mutation",
+    shared: true,
   })
     .arg("modelId", ID)
     .exec((modelId) => storeDo[namesOfSlice.removeModel](modelId));
-  st.tool(renderTemplate ? names.submitModel : null, {
-    desc: `Save the ${modelName} the edit form holds.`,
-    effect: "mutation",
-  }).exec(() => storeDo[names.submitModel]({ sliceName }));
-  st.tool(renderTemplate ? namesOfSlice.cancelEditOfModel : null, {
-    desc: `Close the ${modelName} edit form without saving.`,
-    effect: "state",
-  }).exec(() => storeDo[names.setModelModal](null));
-  st.tool(renderView ? namesOfSlice.closeViewOfModel : null, {
-    desc: `Close the ${modelName} detail view.`,
-    effect: "state",
-  }).exec(() => storeDo[names.resetModel]());
   const scopePath = useScreenScope({
     id: sliceName,
     kind: refName,

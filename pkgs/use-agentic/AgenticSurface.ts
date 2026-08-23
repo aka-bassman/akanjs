@@ -57,8 +57,16 @@ export class AgenticSurface {
     };
   }
 
+  /**
+   * A row component registers the same name once per row. That is legal when the tool takes the row's id as an
+   * argument rather than closing over it, because every registration is then interchangeable and last-wins picks
+   * an equivalent one — `shared` is the registrant saying so, and it turns fifty rows from fifty collisions into
+   * one declaration. A shared name landing on top of a name nobody shared is still a real clash, and still warns.
+   */
   registerTool(scope: string[], entry: ToolEntry) {
-    return this.#stack(this.#tools, AgenticSurface.fullName(scope, entry.name), entry);
+    const key = AgenticSurface.fullName(scope, entry.name);
+    const interchangeable = !!entry.shared && (this.#tools.get(key) ?? []).every((existing) => existing.shared);
+    return this.#stack(this.#tools, key, entry, interchangeable);
   }
 
   registerResource(scope: string[], entry: ResourceEntry) {
@@ -260,9 +268,9 @@ export class AgenticSurface {
     return viewKey.startsWith(`${scopeKey}.`) || scopeKey.startsWith(`${viewKey}.`);
   }
 
-  #stack<E>(map: Map<string, E[]>, key: string, entry: E) {
+  #stack<E>(map: Map<string, E[]>, key: string, entry: E, interchangeable = false) {
     const stack = map.get(key) ?? [];
-    if (stack.length && !this.#warned.has(key)) {
+    if (stack.length && !interchangeable && !this.#warned.has(key)) {
       this.#warned.add(key);
       console.warn(`[use-agentic] "${key}" is registered more than once; the newest registration wins.`);
     }

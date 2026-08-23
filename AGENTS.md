@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.31 -->
+<!-- akan:agent:version 3.0.0-alpha.34 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -699,6 +699,10 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   providers the way middleware is applied: `option.applyAdaptor(LlmAdaptorRole, ClaudeLlm)`, where the
   implementation is an `adapt()` class in a `srvkit/` implementing `LlmAdaptor.chat(request, onDelta?)` — ignore
   `onDelta` and the chat still answers whole.
+- **A dialog's close is the dialog's own dismissal, not a state flip.** `closeDialogIn<Ns>` (and `Dialog.Close`)
+  run through whatever `Dialog.Modal` registered, so the agent takes the exact path the X button takes —
+  `confirmClose` still prompts and `onCancel` still fires. A close that only set `open` to false would skip both,
+  which is a different action wearing the same name.
 - **`<Agent.Zone id="comments">` runs a second agent over one section, in parallel with the root.** Everything
   mounted inside — `st.use` subscriptions, hook tools, Guides — belongs to that zone's own conversation *and*
   stays visible to the root agent: **zones are views, never walls**, so wrapping a section costs the root nothing.
@@ -736,17 +740,36 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   callable still drives the click a person makes. It does not throw: a tool schema is built during render, and an
   agent-tooling mistake that aborted the render would cost the route its server rendering. `st.useState`'s `set`
   degrades the same way, to read-only.
-- **A component that renders once per row publishes nothing.** A tool registered under one name by fifty rows is
-  forty-nine collisions and one survivor. The container publishes one tool taking the id instead —
-  `removeTask(taskId)`, never fifty `removeTask` — and the agent reads the ids from the `<slice>.items` resource
-  `Load.Units` and `Data.ListContainer` already expose.
+- **A component that renders once per row never closes over its row's id — it takes the id as an argument.** A
+  tool that captured its own row would be fifty registrations of one name, forty-nine of them shadowed, and the
+  survivor would remove whichever row happened to mount last. Take the id instead — `removeTask(taskId)`, never
+  fifty `removeTask` — and every row's registration is then interchangeable, so a row component may publish after
+  all: say so with `shared: true` and the repeats are one declaration rather than a warned-about clash. The ids
+  come from the `<slice>.items` resource `Load.Units` and `Data.ListContainer` already expose. `shared` is a claim
+  about the *tool*, not a way to quiet a console: two rows whose tools would do different things (a different
+  `modal`, a different redirect) are not interchangeable, and that one wants a `namespace` or nothing at all.
 - **`akanjs/ui` publishes its own controls, so an app writes nothing for them.** `Data.ListContainer` (and every
-  `Model.AdminPanel`) publishes its toolbar and its row and modal verbs; `Load.Units`, `Load.Pagination` and
-  `Data.Pagination` publish `setPageOf<Model>`; `Layout.Sider`, `System.SelectLanguage`, `Link.Back` and
-  `System.ThemeToggle` publish the shell. **A component that can render twice on one screen takes a
-  `namespace` prop and publishes nothing without it** — `Tab`, `Dialog`, `ScreenNavigator`. Pass one
-  (`<Tab namespace="detail">`) and the tool becomes `switchTabInDetail`; leave it off and that tab is invisible to
-  the agent, because two tabs answering to `switchTab` would mean the first to mount loses.
+  `Model.AdminPanel`) publishes its toolbar and its row verbs; `Model.NewWrapper` (so `Model.New` too) publishes
+  `new<Model>`; `Load.Units`, `Load.Pagination` and `Data.Pagination` publish `setPageOf<Model>`; `Layout.Sider`,
+  `System.SelectLanguage`, `Link.Back` and `System.ThemeToggle` publish the shell. **A component that can render
+  twice on one screen takes a `namespace` prop and publishes nothing without it** — `Tab`, `Dialog`,
+  `ScreenNavigator`. Pass one (`<Tab namespace="detail">`) and the tool becomes `switchTabInDetail`; leave it off
+  and that tab is invisible to the agent, because two tabs answering to `switchTab` would mean the first to mount
+  loses. `Model.NewWrapper` takes the same prop but publishes without one, because its slice already names it —
+  a second create trigger for the same slice, opening a form seeded differently, is what needs the suffix.
+- **The `Model.*` row wrappers publish their verb, taking the id.** `Model.EditWrapper`, `Model.ViewWrapper`,
+  `Model.RemoveWrapper` and `Model.Remove` publish `edit<Model>` / `view<Model>` / `remove<Model>` with a
+  `modelId` argument, so a list built from `Load.Units` and an app's own `Unit` reaches the same verbs an
+  `AdminPanel` does. `Model.SureToRemove` publishes the same — except under `typeNameToRemove`, where it
+  publishes nothing: that gate makes a person retype the model's name, an approval card is one click, and
+  offering the lever at a friction the screen does not have is not the same control.
+- **A modal publishes its verbs while it is open, and only then.** `Model.EditModal` publishes `submit<Model>`
+  and `cancelEditOf<Model>`, `Model.ViewModal` publishes `closeViewOf<Model>`, and `Model.ViewEditModal`
+  publishes `edit<Model>` / `submit<Model>` / `closeViewOf<Model>` — each from a subtree that mounts with the
+  open modal, never from the component that merely holds it. That is what makes a list legal: `Data.CardList`
+  renders one editor per row, and at most one of them is ever open, so one name is registered rather than fifty.
+  It also means the verb is absent from the catalogue while nothing is open, which is honest — and costs the
+  agent nothing, because the catalogue is re-read on the turn that follows the tool call that opened the form.
 - **A form control publishes its own setter, and reading a form publishes one tool that fills several at once.**
   Both are free: an app writes no `st.tool` for a form. A `Field.*` / `Input.*` / `Select` / `Switch` handed
   `onChange={st.do.setTitleOnTask}` **by reference** publishes `setTitleOnTask` while it is on screen — the same

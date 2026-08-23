@@ -1,9 +1,9 @@
 "use client";
-import { buttonRecipe, Dialog, Modal } from "akanjs/ui";
+import { buttonRecipe, Dialog, LegacyModal, Modal } from "akanjs/ui";
 import { useState } from "react";
 import { panelRecipe } from "./Recipe";
 
-type ModalKey = "basic" | "action" | "long" | "confirm" | "plain";
+type ModalKey = "basic" | "action" | "long" | "confirm" | "plain" | "legacy";
 
 const longItems = Array.from({ length: 28 }, (_, index) => `Scrollable content row ${index + 1}`);
 
@@ -61,6 +61,11 @@ export const ModalTests = () => {
             title="No Title"
             description="title 없이 content만 있는 Modal의 ARIA/레이아웃 확인용입니다."
             onOpen={() => open("plain")}
+          />
+          <TestCard
+            title="Legacy Modal"
+            description="spring 애니메이션과 drag-to-dismiss가 있는 이전 skin입니다."
+            onOpen={() => open("legacy")}
           />
           <CompoundDialogCard
             onSave={() => {
@@ -144,6 +149,13 @@ export const ModalTests = () => {
           <p>title prop이 없어도 body와 close 동작이 정상인지 확인합니다.</p>
         </div>
       </Modal>
+
+      <LegacyModal open={openModal === "legacy"} onCancel={close} title="Legacy Modal">
+        <div className="space-y-3">
+          <p>이전 skin입니다. 열고 닫을 때 spring 전환이 있고, 모바일에서는 헤더를 아래로 끌어 닫을 수 있습니다.</p>
+          <p className="text-foreground/60 text-sm">새 화면은 애니메이션이 없는 `Modal`을 사용합니다.</p>
+        </div>
+      </LegacyModal>
     </main>
   );
 };

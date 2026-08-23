@@ -2,7 +2,7 @@
 import { cn } from "akanjs/client";
 import { capitalize } from "akanjs/common";
 import { st } from "akanjs/store";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { DialogContext } from "./context";
 
@@ -25,6 +25,10 @@ export const Provider = ({
   children,
 }: ProviderProps) => {
   const [openState, setOpenState] = useState(defaultOpen);
+  const dismissRef = useRef<(() => void) | null>(null);
+  const registerDismiss = useCallback((dismiss: (() => void) | null) => {
+    dismissRef.current = dismiss;
+  }, []);
   const [title, setTitle] = useState<ReactNode>(null);
   const [action, setAction] = useState<ReactNode>(null);
   const suffix = namespace ? capitalize(namespace) : "";
@@ -43,11 +47,24 @@ export const Provider = ({
       effect: "state",
     })
     .exec(() => {
-      setOpenState(false);
+      // Through the surface's own dismissal so the agent and `Dialog.Close` take the exact path the X button
+      // takes. Flipping the state is the fallback for a dialog that draws no modal.
+      if (dismissRef.current) dismissRef.current();
+      else setOpenState(false);
     });
   return (
     <DialogContext.Provider
-      value={{ open: openState, setOpen: setOpenState, openDialog, closeDialog, title, setTitle, action, setAction }}
+      value={{
+        open: openState,
+        setOpen: setOpenState,
+        openDialog,
+        closeDialog,
+        registerDismiss,
+        title,
+        setTitle,
+        action,
+        setAction,
+      }}
     >
       <div data-open={openState} className={cn("group/dialog", className)}>
         {children}

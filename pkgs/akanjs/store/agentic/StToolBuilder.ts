@@ -28,6 +28,11 @@ export interface StToolMeta {
   effect?: ToolEffect;
   confirm?: ToolConfirm;
   guard?: ToolGuard;
+  /**
+   * Set by a component that renders once per row. It is only true when the row's id rides in an argument rather
+   * than in the closure, which is what makes every row's registration interchangeable.
+   */
+  shared?: boolean;
 }
 
 interface StToolArg {
@@ -119,6 +124,7 @@ export class StToolBuilder<Args extends unknown[] = []> {
         name,
         description: spec.meta.desc,
         effect: spec.meta.effect,
+        ...(spec.meta.shared ? { shared: true } : {}),
         parameters: StToolBuilder.parametersOf(spec.args),
         // A `remove*` tool confirms unless it declares otherwise — destructiveness read off the key, as MCP hints are.
         ...(spec.meta.confirm === undefined && !name.startsWith("remove")

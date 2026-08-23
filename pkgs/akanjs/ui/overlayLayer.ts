@@ -12,6 +12,15 @@ import { createContext, useContext } from "react";
  */
 export const OVERLAY_LAYER_ATTR = "data-akan-overlay";
 
+/**
+ * Stacking order for overlays that portal to `document.body`, where nesting no longer decides who is on
+ * top. A Popconfirm outranks a dropdown menu because `Model.Remove` draws one from inside a menu item,
+ * and its scrim outranks the menu so the click that answers the confirm is not also a menu selection.
+ * A Select's options stay under both: it is a field, and whatever opened over it took the click that
+ * dismisses it.
+ */
+export const overlayZ = { select: 90, dropdown: 100, popconfirmScrim: 105, popconfirm: 110 } as const;
+
 /** Scope that rendered the surrounding content — empty at page level. */
 const OverlayOwnerContext = createContext("");
 

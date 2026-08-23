@@ -25,6 +25,25 @@ describe("AgenticSurface", () => {
     expect(surface.snapshot().tools).toHaveLength(1);
   });
 
+  test("a shared name repeats without warning, and one that nobody shared still clashes", async () => {
+    const surface = new AgenticSurface();
+    const warnings: string[] = [];
+    const warn = console.warn;
+    console.warn = (message: string) => warnings.push(message);
+    try {
+      surface.registerTool([], tool("removeTask", { shared: true }));
+      surface.registerTool([], tool("removeTask", { shared: true, run: () => "newest" }));
+      expect(warnings).toEqual([]);
+      expect(await surface.call("removeTask")).toBe("newest");
+      expect(surface.snapshot().tools).toHaveLength(1);
+
+      surface.registerTool([], tool("removeTask"));
+      expect(warnings).toHaveLength(1);
+    } finally {
+      console.warn = warn;
+    }
+  });
+
   test("a guard refusal throws its reason instead of running", async () => {
     const surface = new AgenticSurface();
     let ran = false;

@@ -23,6 +23,7 @@ export { InfiniteScroll } from "./InfiniteScroll";
 export { Input } from "./Input";
 export { KeyboardAvoiding } from "./KeyboardAvoiding";
 export { Layout } from "./Layout";
+export { LegacyModal } from "./LegacyModal";
 export { Link } from "./Link";
 export { Load } from "./Load";
 export { Loading } from "./Loading";

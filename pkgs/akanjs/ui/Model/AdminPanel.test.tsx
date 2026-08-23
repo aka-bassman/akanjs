@@ -121,9 +121,10 @@ describe("Model.AdminPanel", () => {
       () => calls.adminTestItemList.mock.calls.length > 0,
     );
 
-    const text = container.textContent ?? "";
-    expect(text).toContain("Latest");
-    expect(text).toContain("Title Asc");
+    // Read off the document, not the panel: the sort Select portals its options to `document.body` so no
+    // overflow ancestor clips them, and only the field itself is left inside the container.
+    expect(container.textContent ?? "").toContain("Latest");
+    expect(document.body.textContent ?? "").toContain("Title Asc");
     unmount();
   });
 
@@ -177,14 +178,22 @@ describe("Model.AdminPanel", () => {
       () => calls.adminTestItemList.mock.calls.length > 0,
     );
 
-    const names = surface.snapshot().tools.map((tool) => tool.name);
-    expect(names).toContain("newAdminTestItem");
-    expect(names).toContain("editAdminTestItem");
-    expect(names).toContain("submitAdminTestItem");
-    expect(names).toContain("cancelEditOfAdminTestItem");
+    const names = () => surface.snapshot().tools.map((tool) => tool.name);
+    expect(names()).toContain("newAdminTestItem");
+    expect(names()).toContain("editAdminTestItem");
+    // The editor owns its own verbs, and no editor is on screen until one is opened.
+    expect(names()).not.toContain("submitAdminTestItem");
+    expect(names()).not.toContain("cancelEditOfAdminTestItem");
     // Still no View component, so the detail verbs stay unpublished.
-    expect(names).not.toContain("viewAdminTestItem");
-    expect(names).not.toContain("closeViewOfAdminTestItem");
+    expect(names()).not.toContain("viewAdminTestItem");
+    expect(names()).not.toContain("closeViewOfAdminTestItem");
+
+    await act(async () => {
+      await surface.call("newAdminTestItem", {});
+    });
+    await waitFor(() => names().includes("submitAdminTestItem"));
+    expect(names()).toContain("submitAdminTestItem");
+    expect(names()).toContain("cancelEditOfAdminTestItem");
     unmount();
   });
 

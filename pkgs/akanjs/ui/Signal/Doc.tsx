@@ -72,7 +72,8 @@ const DocSetting = ({ fetch, search, onSearch }: DocSettingProps) => {
         <ToolbarField label="Guards">
           <Dropdown
             buttonClassName={buttonRecipe({ variant: "outline", size: "sm" }, "font-normal")}
-            dropdownClassName="right-auto left-0 max-h-80 min-w-52"
+            align="start"
+            dropdownClassName="max-h-80 min-w-52"
             value={
               <>
                 <span className="max-w-40 truncate">{selectionLabel}</span>

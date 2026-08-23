@@ -15,6 +15,8 @@ export interface ToolEntry {
   effect?: ToolEffect;
   confirm?: ToolConfirm;
   guard?: ToolGuard;
+  /** Declares that repeat registrations of this name are interchangeable — see `AgenticSurface.registerTool`. */
+  shared?: boolean;
   run: (args: Record<string, unknown>) => unknown;
 }
 

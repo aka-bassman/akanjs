@@ -15,6 +15,8 @@ interface NewProps<Full = any> {
   modal?: string | null;
   partial?: Partial<Full> | (() => Partial<Full>);
   renderTitle?: ((model: { id: string }) => string | ReactNode) | string;
+  /** Suffixes the tool this button publishes. Only a second create button for the same slice needs one. */
+  namespace?: string;
 }
 
 export default function New({
@@ -26,6 +28,7 @@ export default function New({
   modal,
   partial,
   renderTitle,
+  namespace,
 }: NewProps) {
   const { l } = usePage();
   return (
@@ -35,6 +38,7 @@ export default function New({
         slice={slice}
         modal={modal}
         partial={partial}
+        namespace={namespace}
       >
         <AiOutlinePlus /> {type === "button" ? l("base.new") : null}
       </NewWrapper>

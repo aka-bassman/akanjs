@@ -7,11 +7,62 @@ import type { ReactNode } from "react";
 import { AiOutlineEdit, AiOutlineSave } from "react-icons/ai";
 import { BiDotsVertical, BiTrash } from "react-icons/bi";
 
+import { agentAttrs } from "../agentAttrs";
 import { buttonRecipe } from "../Button";
 import { Dropdown } from "../Dropdown";
 import { Modal } from "../Modal";
 import Remove from "./Remove";
 import View from "./View";
+
+/**
+ * Closing is the one verb both faces of this modal share, and exactly one face is mounted while it is open —
+ * so declaring it from whichever face is up publishes it once, and withdraws it when the modal closes.
+ */
+const useCloseViewTool = (modelName: string, closeView: () => void) =>
+  st
+    .tool(`closeViewOf${capitalize(modelName)}`, { desc: `Close the open ${modelName} modal.`, effect: "state" })
+    .exec(closeView);
+
+interface ActionProps {
+  modelName: string;
+  label: string;
+  onAct: () => void;
+  closeView: () => void;
+}
+
+const EditAction = ({ modelName, label, onAct, closeView }: ActionProps) => {
+  useCloseViewTool(modelName, closeView);
+  const editModel = st
+    .tool(`edit${capitalize(modelName)}`, {
+      desc: `Turn the open ${modelName} from its detail view into the edit form.`,
+      effect: "state",
+    })
+    .exec(onAct);
+  return (
+    <button className={buttonRecipe({ variant: "primary" }, "w-full")} onClick={editModel} {...agentAttrs(editModel)}>
+      <AiOutlineEdit /> {label}
+    </button>
+  );
+};
+
+const SaveAction = ({ modelName, label, onAct, closeView }: ActionProps) => {
+  useCloseViewTool(modelName, closeView);
+  const submitModel = st
+    .tool(`submit${capitalize(modelName)}`, {
+      desc: `Save the ${modelName} the open form holds.`,
+      effect: "mutation",
+    })
+    .exec(onAct);
+  return (
+    <button
+      className={buttonRecipe({ variant: "primary" }, "w-full")}
+      onClick={submitModel}
+      {...agentAttrs(submitModel)}
+    >
+      <AiOutlineSave /> {label}
+    </button>
+  );
+};
 
 interface ViewEditModalProps {
   modalClassName?: string;
@@ -61,13 +112,14 @@ export default function ViewEditModal({
     else return render;
   };
   const Template = renderTemplate;
+  const closeView = () => {
+    storeDo[names.resetModel]();
+  };
 
   return (
     <Modal
       open={isModalOpen}
-      onCancel={() => {
-        storeDo[names.resetModel]();
-      }}
+      onCancel={closeView}
       className={modalClassName}
       title={
         <div className="flex w-full items-center justify-between">
@@ -94,23 +146,23 @@ export default function ViewEditModal({
       }
       action={
         modelModal === "view" ? (
-          <button
-            className={buttonRecipe({ variant: "primary" }, "w-full")}
-            onClick={() => {
+          <EditAction
+            modelName={modelName}
+            label={l("base.edit")}
+            closeView={closeView}
+            onAct={() => {
               if (model) storeDo[names.editModel](model.id);
             }}
-          >
-            <AiOutlineEdit /> {l("base.edit")}
-          </button>
+          />
         ) : (
-          <button
-            className={buttonRecipe({ variant: "primary" }, "w-full")}
-            onClick={() => {
+          <SaveAction
+            modelName={modelName}
+            label={l("base.save")}
+            closeView={closeView}
+            onAct={() => {
               storeDo[names.submitModel]({ sliceName, modal: "view" });
             }}
-          >
-            <AiOutlineSave /> {l("base.save")}
-          </button>
+          />
         )
       }
     >
