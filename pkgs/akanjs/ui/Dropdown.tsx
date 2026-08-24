@@ -1,8 +1,11 @@
 "use client";
 import { cn } from "akanjs/client";
+import { capitalize } from "akanjs/common";
+import { st } from "akanjs/store";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { agentAttrs } from "./agentAttrs";
 import { buttonRecipe } from "./Button";
 import {
   isOwnOverlayClick,
@@ -32,6 +35,8 @@ export interface DropdownProps {
   dropdownClassName?: string;
   /** Trigger edge the menu lines up with. Position is computed, so a `left-0` class cannot do this. */
   align?: "start" | "end";
+  /** Names this dropdown for the in-page agent. Without it the menu publishes nothing — two on one screen would share a name. */
+  namespace?: string;
 }
 
 export const DefaultDropdown = ({
@@ -41,9 +46,12 @@ export const DefaultDropdown = ({
   buttonClassName,
   dropdownClassName,
   align = "end",
+  namespace,
 }: DropdownProps) => {
   const [opened, setOpened] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  // Resolved in an effect rather than at render: the first client pass has to match the server's, which
+  // portalled nothing.
+  const [portal, setPortal] = useState<HTMLElement | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLUListElement>(null);
   const scope = useOverlayScope(useId());
@@ -52,6 +60,29 @@ export const DefaultDropdown = ({
   // Route-scoped look swap (recipe slot) — the trigger renders from the same button vocabulary as <Button>.
   const recipe = useUiRecipe("button") ?? buttonRecipe;
   const position = useOverlayPosition({ opened, triggerRef: ref, panelRef: menuRef, align });
+  const suffix = namespace ? capitalize(namespace) : "";
+  st.expose(namespace ? `dropdownIn${suffix}` : null, opened, { desc: "Whether this dropdown menu is showing." });
+  const openDropdown = st
+    .tool(namespace ? `openDropdownIn${suffix}` : null, {
+      desc: `Open the ${namespace ?? ""} dropdown menu.`,
+      effect: "state",
+    })
+    .exec(() => {
+      setOpened(true);
+    });
+  const closeDropdown = st
+    .tool(namespace ? `closeDropdownIn${suffix}` : null, {
+      desc: `Close the ${namespace ?? ""} dropdown menu.`,
+      effect: "state",
+    })
+    .exec(() => {
+      setOpened(false);
+    });
+  // One button for both states, so it dispatches — and annotates — whichever of the two the next click performs.
+  const toggle = opened ? closeDropdown : openDropdown;
+  useEffect(() => {
+    setPortal(document.body);
+  }, []);
   useEffect(() => {
     if (!opened) return;
     const onMouseDown = (e: MouseEvent) => {
@@ -103,15 +134,15 @@ export const DefaultDropdown = ({
         aria-haspopup="menu"
         aria-expanded={opened}
         className={recipe({ variant: "ghost" }, ["flex", buttonClassName])}
-        onClick={() => {
-          setMounted(true);
-          setOpened((o) => !o);
-        }}
+        onClick={toggle}
+        {...agentAttrs(toggle)}
       >
         {value}
       </button>
-      {/* Hidden rather than unmounted once opened: unmounting takes any overlay a menu item opened down with it. */}
-      {mounted && typeof document !== "undefined" ? createPortal(menu, document.body) : null}
+      {/* Mounted from the first render and hidden while closed: a menu item declares its tool on mount, so an
+          unmounted menu publishes nothing an agent could find — and unmounting an open one takes any overlay
+          a menu item opened down with it. */}
+      {portal ? createPortal(menu, portal) : null}
     </div>
   );
 };

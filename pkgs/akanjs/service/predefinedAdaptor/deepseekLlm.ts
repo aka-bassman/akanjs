@@ -201,7 +201,19 @@ export class DeepseekLlm
             : {}),
         },
       ];
-    return [{ role: "user" as const, content: message.text ?? "" }];
+    return [{ role: "user" as const, content: DeepseekLlm.userContent(message) }];
+  }
+
+  /**
+   * `accepts` is left undeclared, so by the time an attachment reaches here `AgentService.readable` has reduced it
+   * to its text and turned everything else into a note. Each block is labelled because a model handed two
+   * unlabelled documents can no longer cite either one.
+   */
+  static userContent(message: AgentWireMessage): string {
+    const blocks = (message.attachments ?? []).flatMap((attachment) =>
+      attachment.text ? [`--- attachment: ${attachment.name} (${attachment.mimeType}) ---\n${attachment.text}`] : [],
+    );
+    return [message.text, ...blocks].filter(Boolean).join("\n\n");
   }
 
   static turnAnswer(answer: DeepseekAnswer): LlmTurnAnswer {

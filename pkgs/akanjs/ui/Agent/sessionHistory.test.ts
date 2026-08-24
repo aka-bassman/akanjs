@@ -52,6 +52,30 @@ describe("sessionHistoryOf", () => {
     history?.clear();
   });
 
+  test("attachment content is left out of storage while the name and a url stay", () => {
+    const history = sessionHistoryOf(true, "attach");
+    history?.save([
+      {
+        role: "user",
+        text: "read these",
+        attachments: [
+          { name: "shot.png", mimeType: "image/png", data: "AAAA" },
+          { name: "spec.pdf", mimeType: "application/pdf", text: "a very long extraction" },
+          { name: "hosted.png", mimeType: "image/png", url: "https://cdn/hosted.png" },
+        ],
+      },
+    ]);
+    const raw = window.sessionStorage.getItem("akan.agent.historytest.attach") ?? "";
+    expect(raw).not.toContain("AAAA");
+    expect(raw).not.toContain("a very long extraction");
+    expect(history?.load()?.[0]?.attachments).toEqual([
+      { name: "shot.png", mimeType: "image/png" },
+      { name: "spec.pdf", mimeType: "application/pdf" },
+      { name: "hosted.png", mimeType: "image/png", url: "https://cdn/hosted.png" },
+    ]);
+    history?.clear();
+  });
+
   test("persist off or no window answers undefined", () => {
     expect(sessionHistoryOf(undefined)).toBeUndefined();
     expect(sessionHistoryOf(false)).toBeUndefined();

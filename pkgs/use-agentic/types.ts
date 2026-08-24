@@ -119,9 +119,33 @@ export interface ToolCallResult {
   error?: string;
 }
 
+/**
+ * A file the user handed the conversation rather than the screen — which is why it rides a message instead of a
+ * tool, the same reason `askUser` belongs to the session and not to the surface.
+ *
+ * Three carriers, one of which every attachment must have: `data` inlines the bytes, `url` points at something the
+ * provider can fetch, and `text` is content somebody already extracted — the only form a text-only model can read.
+ * They mirror what the server's own `Msg.image` / `Msg.link` / `Msg.resource` builders produce, so a prompt's
+ * attachment and a user's are the same thing on the wire.
+ *
+ * Whether a given carrier reaches the model is the provider's answer, not this type's: a backend drops what its
+ * model cannot read and says so in the transcript, because a silently dropped file is one the model then
+ * hallucinates about.
+ */
+export interface MessageAttachment {
+  name: string;
+  mimeType: string;
+  /** Base64, with no `data:` prefix. */
+  data?: string;
+  url?: string;
+  text?: string;
+}
+
 export interface ChatMessage {
   role: ChatRole;
   text?: string;
+  /** Files the message carries. Content, not instructions — a backend frames them the way it frames context. */
+  attachments?: MessageAttachment[];
   toolCalls?: ToolCallRequest[];
   toolResults?: ToolCallResult[];
   /** A failed or capped turn, recorded in the transcript rather than thrown past it. */

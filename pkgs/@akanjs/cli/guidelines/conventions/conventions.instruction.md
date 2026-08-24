@@ -73,6 +73,14 @@ that looks wrong; do not "fix" it back.
   of a component nested inside another one. A function-typed prop (`onPick?: (t: cnst.LightTicket) => void`) is
   exempt for the same reason — a closure cannot cross the RSC boundary at all, so whoever passes it is a client
   component already holding the value.
+- **Never wrap a form setter in a pass-through arrow** (`no-unpublished-form-setter.grit`).
+  `onChange={(type) => st.do.setTypeOnTicket(type)}` runs identically to `onChange={st.do.setTypeOnTicket}` —
+  generated field setters take exactly one value — but the arrow is a fresh anonymous closure, so the control
+  emits no `data-akan-action` and publishes no agent tool for the field. The failure is silent and the two lines
+  read the same, which is why it is a lint error. A wrapper that transforms the value
+  (`st.do.setNameOnX(toCamelCase(name))`), adds a statement, or writes a nested path with `writeOnX` is doing
+  something a reference cannot and stays legal — publish that one with an explicit `st.tool`. Scoped to
+  `{apps,libs}/**/*.tsx`; a typed parameter is not matched, so it under-reports rather than misfiring.
 - **No deep imports past a barrel** (`no-deep-internal-import.grit`). Cross-module constant references such as
   `../map/map.constant` are the sanctioned exception.
 - **Never import across the client/server boundary.** Client files (`ui/`, `webkit/`, `page/`, `*.store.ts`, every
@@ -681,6 +689,19 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   providers the way middleware is applied: `option.applyAdaptor(LlmAdaptorRole, ClaudeLlm)`, where the
   implementation is an `adapt()` class in a `srvkit/` implementing `LlmAdaptor.chat(request, onDelta?)` — ignore
   `onDelta` and the chat still answers whole.
+- **A file the user attaches rides the message, and nothing is stored.** The composer takes a paperclip, a drop and
+  a paste; an image rides as bytes and a text file as text, which is all a browser reads with no dependency.
+  Everything else is the app's own reader — `<Agent.Chat attach={…} />`, one `File` in, a `MessageAttachment` or
+  `null` out — because extracting a PDF needs a parser and the framework carries attachments without depending on
+  one. It runs ahead of the built-in, so it is also where an image is downscaled before it costs a megabyte of
+  prompt. **What the provider cannot read is replaced by a note naming the file**, never dropped: an attachment the
+  model never saw is one it answers about from the filename. An adaptor declares `accepts: { image, document }` and
+  `AgentService.readable` degrades the rest, so a text-only provider needs no attachment code at all — DeepSeek
+  declares none, which is why an image against the default provider is refused out loud while an extracted PDF
+  works, `text` being readable by every model there is. **A `prompt()`'s `Msg.image` is the same wire shape** and
+  reaches the chat as an attachment rather than the literal `[image]` it used to become. Persisting keeps each
+  attachment's name and drops its content: web storage is a few megabytes, one screenshot fills a chunk of it, and
+  a save that fails is silent — so keeping the bytes would quietly stop keeping the transcript.
 - **A dialog's close is the dialog's own dismissal, not a state flip.** `closeDialogIn<Ns>` (and `Dialog.Close`)
   run through whatever `Dialog.Modal` registered, so the agent takes the exact path the X button takes —
   `confirmClose` still prompts and `onCancel` still fires. A close that only set `open` to false would skip both,
@@ -735,16 +756,25 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `new<Model>`; `Load.Units`, `Load.Pagination` and `Data.Pagination` publish `setPageOf<Model>`; `Layout.Sider`,
   `System.SelectLanguage`, `Link.Back` and `System.ThemeToggle` publish the shell. **A component that can render
   twice on one screen takes a `namespace` prop and publishes nothing without it** — `Tab`, `Dialog`,
-  `ScreenNavigator`. Pass one (`<Tab namespace="detail">`) and the tool becomes `switchTabInDetail`; leave it off
-  and that tab is invisible to the agent, because two tabs answering to `switchTab` would mean the first to mount
-  loses. `Model.NewWrapper` takes the same prop but publishes without one, because its slice already names it —
-  a second create trigger for the same slice, opening a form seeded differently, is what needs the suffix.
+  `ScreenNavigator`, `Dropdown`. Pass one (`<Tab namespace="detail">`) and the tool becomes `switchTabInDetail`;
+  leave it off and that tab is invisible to the agent, because two tabs answering to `switchTab` would mean the
+  first to mount loses. A named `Dropdown` publishes `openDropdownIn<Ns>` / `closeDropdownIn<Ns>` and the state
+  `dropdownIn<Ns>`, and its trigger annotates whichever of the two its next click performs. `Model.NewWrapper`
+  takes the same prop but publishes without one, because its slice already names it — a second create trigger for
+  the same slice, opening a form seeded differently, is what needs the suffix.
 - **The `Model.*` row wrappers publish their verb, taking the id.** `Model.EditWrapper`, `Model.ViewWrapper`,
   `Model.RemoveWrapper` and `Model.Remove` publish `edit<Model>` / `view<Model>` / `remove<Model>` with a
   `modelId` argument, so a list built from `Load.Units` and an app's own `Unit` reaches the same verbs an
   `AdminPanel` does. `Model.SureToRemove` publishes the same — except under `typeNameToRemove`, where it
   publishes nothing: that gate makes a person retype the model's name, an approval card is one click, and
   offering the lever at a friction the screen does not have is not the same control.
+- **A dropdown's menu is mounted from the first render and hidden while closed** — the deliberate opposite of the
+  modal rule below, because a menu is one click away rather than a surface of its own. A tool is declared by a
+  mount effect, so an unmounted menu is one whose row verbs and field setters do not exist yet: an agent asked for
+  one finds nothing, and no catalogue entry hints that opening the menu would help. `readScreen` still skips
+  hidden content, so the items themselves are read only after `openDropdownIn<Ns>` — what a closed menu publishes
+  is its tools, not its text. The cost is that `content` renders on page load, so a heavy panel belongs behind a
+  `Dialog` instead.
 - **A modal publishes its verbs while it is open, and only then.** `Model.EditModal` publishes `submit<Model>`
   and `cancelEditOf<Model>`, `Model.ViewModal` publishes `closeViewOf<Model>`, and `Model.ViewEditModal`
   publishes `edit<Model>` / `submit<Model>` / `closeViewOf<Model>` — each from a subtree that mounts with the
@@ -764,6 +794,79 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   relation (picked or uploaded, not typed), a base document field, or a `hidden`/`secret` one at any depth —
   their reads are masked and a writer would be the door around that. `st.use.taskForm({ agent: false })`
   withholds the patch tool; an inline arrow withholds a control's own.
+  **The patch writes each plain field through that control's own published tool, not the setter underneath it** —
+  which is what carries the control's `transform`, so a field cannot normalize one way for `setPhoneOnBizAccount`
+  and another way for `fillBizAccountForm`. Only a composite, having no control, dispatches its setter directly.
+  The patch tool is registered `shared`, because the entry is a pure function of the model: a form put on screen by
+  a shell that subscribes it (`Model.EditModal`) *and* by the `Template` inside it is one declaration twice over,
+  not a clash — so neither has to suppress the other, and neither is asked to.
+- **A `disabled` control publishes nothing, so the agent never gets a lever the person cannot pull.** Every value
+  control reads it — `Field.*`, `Input.*`, `Select`, `Switch`, and the four relation pickers — and disabling a
+  mounted control withdraws its tool for as long as it stays disabled. One gate covers both writers: with no
+  control published, `fill<Model>Form`'s guard refuses that field too. `readScreen` says `(disabled)` beside the
+  control, from the native attribute or `aria-disabled`, so a refusal is something the agent could have read first
+  rather than a surprise. This is the same rule as publishing only where the screen renders the control, applied to
+  a control the screen renders but withholds.
+- **Whatever the wrapper was for, there is a place to put it that is not the wrapper.** An inline arrow is the one
+  shape that publishes nothing, so each reason for writing one has its own home, and reaching for that home is what
+  keeps the field reachable:
+  - *normalize* — `(v) => set(formatPhone(v))` becomes the control's own `transform` prop, which every text and
+    number `Field.*` already takes (`Field.Phone` defaults it to `formatPhone`). `onChange` stays a reference, and
+    **`transform` runs on the agent's write too**, by both paths — the field's own tool and `fill<Model>Form`,
+    which goes through the control to get it — otherwise a person would store `010-1234-5678` and an agent the raw
+    digits. It normalizes one scalar, so an array control applies it per element and a cleared nullable field stays
+    null. It is the *control's* rule, though: a rule that must hold however the field is written — including a
+    composite path or a base-document write — belongs in `_postSet<Field>` below.
+  - *multi-write* — `(v) => { set(v); other(v); }` becomes a **`_postSet<Field>` method on the store**, and the
+    control keeps handing over the generated setter by reference. It runs right after the field is written, so it
+    reads the new value, and it reaches every other generated action with `this.` —
+    `_postSetToBiz(toBiz) { if (toBiz) this.addSendEmailsOnEstSheet(toBiz.sendEmails ?? []); }`. Nothing about the
+    control changes, so `data-akan-action` **and** `data-akan-state` both survive, and the rule now fires for every
+    writer — the person, the agent, `fill<Model>Form` — which is what a rule about a field should do.
+    **A generated action cannot be overridden, so do not try.** They all come from mapped types, and a mapped type
+    produces *properties*: a subclass method of the same name is `TS2425`, optional or not, and the two shapes
+    TypeScript does allow — a class field and a getter — are both skipped by `StoreRegistry.register`, which only
+    collects prototype descriptors holding a function. There is no legal middle, which is exactly why the hook
+    carries a leading `_` and no model suffix: a name no mapped type can produce is the only name a subclass may
+    declare. It cannot be typed either, for the same reason, so a misspelled field is named on the console at
+    registration instead. Calling a generated action *from* a custom one is fine and always was — `this.setXOnY(v)`
+    typechecks anywhere.
+  - *nested path* — `(v) => writeOnTask("payments.3.name", v)` has no home and needs none: an embedded row is
+    unannotatable by design, and an agent reaches it through `fillTaskForm`, which waves composites through.
+
+  `no-unpublished-form-setter.grit` errors on the pure-forwarding shape only, because every other one has a
+  legitimate reading. **`akan quality scan` counts them all** (`akan.agent.unpublished-form-setter`, one warning per
+  file): the lint rule is the per-line enforcement, the scan is the inventory of fields this screen writes but
+  cannot be asked to write.
+- **A relation reaches an agent from its picker, not from the form patch.** `fillTaskForm` publishes no schema for
+  one and is right not to: the form holds the whole related document, so an id would need a lookup the store does
+  not do. The picker is where that lookup lives, so `Field.Parent` / `Field.Children` publish the pair themselves —
+  `load<Field>OptionsOn<Model>`, which loads the slice and returns `[{ id, label }]`, and the field's own
+  `set<Field>On<Model>` taking `<field>Id` / `<field>Ids`. Listing is its own tool because loading is its own step
+  for a person too: the options arrive when the dropdown opens, and an agent never opens it. `Field.ParentId` /
+  `Field.ChildrenId` need none of that — the id *is* the value, so the ordinary setter describes it. All four still
+  require the setter **by reference**, and a `disabled` picker publishes nothing.
+- **An array of embedded rows also publishes `add<Field>On<Model>` and `sub<Field>On<Model>`** — append, and
+  remove-by-position — beside the whole-array setter. Not new authority: the setter can already produce any array
+  those two can, so they are strictly weaker. What they add is that neither can touch a row it was not given, and
+  that is the point: writing the whole array means echoing every row the agent is *not* changing, `checked`
+  validates types and not values, so one mistyped row nobody asked about is written silently. Both take a list and
+  act atomically, because removing positions one call at a time would shift the ones not yet removed. **Only an
+  embedded-row array gets them** — an array of primitives or of relation ids has nothing to retype wrong, its
+  values *are* the payload, so it keeps one setter and pays for no extra tools. `add` appends and publishes no
+  insert position, matching the `+` a person presses; `addOrSub` is never published, since it matches by `indexOf`
+  and would compare rows by reference. Editing a row in place stays `fill<Model>Form`'s job.
+- **A list the person can drag also publishes `move<Field>On<Model>(from, to)`**, and `DraggableList` is a form
+  control like any other: handed the generated setter by reference it publishes that field, so an app that renders
+  its own rows with `DraggableList` writes no `st.tool`. The reorder tool exists for the same reason `add`/`sub` do
+  — the drag is the lever the screen offers and it changes no entry's content, so moving one row should not mean
+  retyping the nine beside it. No store action answers to it: reordering *is* a whole-array write, so the tool
+  splices the live entries and hands them to the setter the drag hands them to, `transform` deliberately not
+  applied, since the values are stored already and dragging normalizes nothing. It comes from the control saying
+  it sorts, not from the field, so a plain `Field.List` publishes no reorder and a scalar field never gets one.
+  **A component that composes `DraggableList` and already published the field hands the inner list a wrapper** —
+  the two would otherwise register one name twice, and the outer one is the one holding `transform`. That is what
+  `Field.TextList` does, and the only place an inline arrow is the right answer rather than a bug.
 - **Reading is per key, not per store.** `st.useState(name, initial, meta)` publishes local state (read-only
   unless `set:` names a type) and `st.expose(name, value)` a derived value. A subscribed store key is listed in
   the state context block by name and pulled with `readState(key)`, masked by the model that key declares — while
@@ -803,9 +906,10 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
 - The framework publishes five built-ins on every store surface: `navigate` (internal paths only, the same
   router `Link` rides), `goBack` (this session's history — global, because history is not a control a page owns and
   a page that draws no back link is not one you may not leave), `readScreen` (the rendered DOM as compact text —
-  headings, links, control values; the chat's own UI is skipped via `data-agent-ui`, and a password value is never
-  read), `readState(key)` (one masked store key), and `highlight(target)`. Declaring a hook tool under one of those
-  names shadows the built-in, so reuse them only to mean that.
+  headings, links, control values, and `(disabled)` on a control or button that has it; the chat's own UI is
+  skipped via `data-agent-ui`, and a password value is never read), `readState(key)` (one masked store key), and
+  `highlight(target)`. Declaring a hook tool under one of those names shadows the built-in, so reuse them only to
+  mean that.
 - **A tool that changes the screen waits for the screen before it answers.** `router.push` returns while the RSC
   payload is still in flight and a store action that fires `void fetch.*` commits a tick later, so `navigate`
   awaits `ScreenSettle.wait()` — DOM quiescence, bounded, because the client router hands its promise to nobody —

@@ -1,6 +1,7 @@
 "use client";
 import { cn } from "akanjs/client";
 import { type AgentProgressReport, AgentSession, type ChatMessage, type ToolCallResult } from "use-agentic";
+import { Chips } from "./Attach";
 import Markdown from "./Markdown";
 
 interface BubbleProps {
@@ -90,13 +91,11 @@ export default function Bubble({ className, message, progress, results }: Bubble
     );
   if (message.role === "user")
     return (
-      <div
-        className={cn(
-          "max-w-[85%] self-end whitespace-pre-wrap rounded-box bg-primary/10 px-3 py-2 text-sm",
-          className,
-        )}
-      >
-        {message.text}
+      <div className={cn("flex max-w-[85%] flex-col items-end gap-1 self-end", className)}>
+        {message.attachments?.length ? <Chips attachments={message.attachments} className="justify-end" /> : null}
+        {message.text ? (
+          <p className="whitespace-pre-wrap rounded-box bg-primary/10 px-3 py-2 text-sm">{message.text}</p>
+        ) : null}
       </div>
     );
   const isDrafting = !message.text && !message.toolCalls?.length && !message.error;

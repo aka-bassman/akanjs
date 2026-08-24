@@ -76,7 +76,7 @@ describe("AgentPrompts", () => {
       { role: "user", text: "Review this." },
       { role: "user", text: '[resource akan://task/1]\n{"id":"1"}' },
       { role: "assistant", text: "[link next: akan://task/2]" },
-      { role: "user", text: "[image]" },
+      { role: "user", attachments: [{ name: "image.png", mimeType: "image/png", data: "abc" }] },
     ]);
   });
 });

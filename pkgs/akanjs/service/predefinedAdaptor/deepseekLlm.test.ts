@@ -55,6 +55,27 @@ describe("DeepseekLlm", () => {
     ]);
   });
 
+  test("labels each text attachment into the user turn, the only carrier this dialect has", () => {
+    const body = DeepseekLlm.requestBody("deepseek-v4-flash", {
+      ...request,
+      messages: [
+        {
+          role: "user",
+          text: "summarize these",
+          attachments: [
+            { name: "spec.pdf", mimeType: "application/pdf", text: "page one" },
+            { name: "notes.md", mimeType: "text/markdown", text: "# hi" },
+          ],
+        },
+      ],
+    });
+    expect(body.messages[1]).toEqual({
+      role: "user",
+      content:
+        "summarize these\n\n--- attachment: spec.pdf (application/pdf) ---\npage one\n\n--- attachment: notes.md (text/markdown) ---\n# hi",
+    });
+  });
+
   test("maps the provider answer back onto the wire, arguments parsed and stop derived", () => {
     expect(
       DeepseekLlm.turnAnswer({

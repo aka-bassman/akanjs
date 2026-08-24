@@ -1,7 +1,7 @@
 import { Translator } from "akanjs/client";
 import { parseAkanI18nEnv } from "akanjs/common";
 import { FetchClient } from "akanjs/fetch";
-import type { PromptContent, PromptResult, SerializedSignal } from "akanjs/signal";
+import type { PromptContent, PromptMessage, PromptResult, SerializedSignal } from "akanjs/signal";
 import type { ChatMessage } from "use-agentic";
 
 export interface AgentPrompt {
@@ -59,7 +59,25 @@ export class AgentPrompts {
   /** The messages a prompt returns become the user's turn, the way an MCP client sends a `prompts/get` result. */
   static messagesOf(result: PromptResult): ChatMessage[] {
     if (typeof result === "string") return [{ role: "user", text: result }];
-    return result.map((message) => ({ role: message.role, text: AgentPrompts.textOf(message.content) }));
+    return result.map((message) => AgentPrompts.#messageOf(message));
+  }
+
+  /**
+   * A binary block becomes an attachment. It used to become the string `[image]`, which a model reads as having
+   * been shown a picture — so a prompt built with `Msg.imageOf` produced confident answers about bytes that never
+   * left the server. The other block types are text already and stay text.
+   */
+  static #messageOf(message: PromptMessage): ChatMessage {
+    const { role, content } = message;
+    if (content.type !== "image" && content.type !== "audio") return { role, text: AgentPrompts.textOf(content) };
+    const name = AgentPrompts.#binaryName(content.mimeType);
+    return { role, attachments: [{ name, mimeType: content.mimeType, data: content.data }] };
+  }
+
+  /** `Msg.image` carries no filename — the protocol has nowhere to put one — so the type is the label. */
+  static #binaryName(mimeType: string) {
+    const [kind, subtype] = mimeType.split("/");
+    return subtype ? `${kind}.${subtype.split("+")[0]}` : mimeType;
   }
 
   static textOf(content: PromptContent): string {

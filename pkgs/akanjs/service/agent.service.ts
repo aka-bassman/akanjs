@@ -1,5 +1,10 @@
 import { Err } from "akanjs/dictionary";
-import type { LlmTurnRequest } from "./predefinedAdaptor/llm.adaptor";
+import type {
+  AgentWireAttachment,
+  AgentWireMessage,
+  LlmAccepts,
+  LlmTurnRequest,
+} from "./predefinedAdaptor/llm.adaptor";
 import { LlmAdaptorRole } from "./predefinedAdaptor/role.adaptor";
 import { serve } from "./serve";
 
@@ -7,8 +12,49 @@ export class AgentService extends serve("agent" as const, ({ plug }) => ({
   llm: plug(LlmAdaptorRole),
 })) {
   async runTurn(request: LlmTurnRequest, onDelta?: (delta: string) => void) {
-    const answer = await this.llm.chat(request, onDelta);
+    const answer = await this.llm.chat(AgentService.readable(request, this.llm.accepts), onDelta);
     if (!answer) throw new Err("agent.error.llmUnavailable");
     return { text: answer.text ?? "", toolCalls: answer.toolCalls ?? [], stop: answer.stop };
+  }
+
+  /**
+   * Replaces every attachment the provider cannot read with a note naming it, so no adaptor has to think about
+   * attachments it does not support and none can lose one quietly. The model has to be *told*, not merely spared:
+   * a file that vanishes on the way in is one it answers about from the filename, confidently and wrongly.
+   *
+   * The note rides in the message text because that is the one field every provider mapping already reads.
+   */
+  static readable(request: LlmTurnRequest, accepts: LlmAccepts | undefined): LlmTurnRequest {
+    if (!request.messages.some((message) => message.attachments?.length)) return request;
+    const messages = request.messages.map((message) => AgentService.readableMessage(message, accepts ?? {}));
+    return { ...request, messages };
+  }
+
+  private static readableMessage(message: AgentWireMessage, accepts: LlmAccepts): AgentWireMessage {
+    const { attachments = [], ...rest } = message;
+    if (!attachments.length) return message;
+    const kept = attachments.filter((attachment) => AgentService.isReadable(attachment, accepts));
+    if (kept.length === attachments.length) return message;
+    const notes = attachments.filter((attachment) => !kept.includes(attachment)).map(AgentService.note);
+    return {
+      ...rest,
+      ...(kept.length ? { attachments: kept } : {}),
+      text: [message.text, ...notes].filter(Boolean).join("\n\n"),
+    };
+  }
+
+  /** Extracted text is readable by every model there is; bytes and links need the provider to say so. */
+  private static isReadable(attachment: AgentWireAttachment, accepts: LlmAccepts): boolean {
+    if (attachment.text) return true;
+    if (!attachment.data && !attachment.url) return false;
+    return attachment.mimeType.startsWith("image/") ? !!accepts.image : !!accepts.document;
+  }
+
+  private static note(attachment: AgentWireAttachment): string {
+    const why =
+      attachment.data || attachment.url
+        ? "this model cannot read that type"
+        : "its content is no longer available, as a reloaded conversation keeps the name and not the bytes";
+    return `[Attachment not read: ${attachment.name} (${attachment.mimeType}) — ${why}. Tell the user it was not read instead of guessing what it holds, and ask for the text if the answer needs it.]`;
   }
 }

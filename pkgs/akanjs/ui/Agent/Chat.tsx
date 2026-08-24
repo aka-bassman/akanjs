@@ -5,11 +5,13 @@ import { AgentContext, type AgentPrompt, AgentPrompts, ensureStoreSurface, Scree
 import { type ReactNode, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { AiOutlineClear, AiOutlineClose } from "react-icons/ai";
-import { type AgentRunner, AgentSession, SessionContext } from "use-agentic";
+import { type AgentRunner, AgentSession, type MessageAttachment, SessionContext } from "use-agentic";
 import { Button } from "../Button";
 import { inputRecipe } from "../recipe";
 import { createOverridable } from "../UiOverride";
 import Approval from "./Approval";
+import { Attach, Chips } from "./Attach";
+import { Attachment, type AttachReader } from "./attachment";
 import Bubble from "./Bubble";
 import { type ChatCommand, ChatCommands } from "./ChatCommands";
 import { fetchRunner } from "./fetchRunner";
@@ -30,6 +32,13 @@ export interface ChatProps {
   persist?: PersistOption;
   /** Renders in the page flow instead of floating above it — a zone chat that lives inside its own section. */
   inline?: boolean;
+  /**
+   * Reads a file the user attached into an attachment, or answers `null` to leave it to the built-in reader
+   * (images as bytes, text as text). This is where an app puts what needs a parser — a PDF's text, a spreadsheet's
+   * cells — since the framework carries attachments but depends on nothing that can extract one. It runs before
+   * the built-in, so it can also replace how an image is prepared.
+   */
+  attach?: AttachReader;
 }
 
 const isApplePlatform = () => /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
@@ -56,6 +65,7 @@ export const DefaultChat = ({
   defaultOpen = false,
   persist,
   inline = false,
+  attach,
 }: ChatProps) => {
   const { l } = usePage();
   const provided = useContext(SessionContext);
@@ -80,6 +90,7 @@ export const DefaultChat = ({
   );
   const [open, setOpen] = useState(defaultOpen);
   const [draft, setDraft] = useState("");
+  const [attached, setAttached] = useState<MessageAttachment[]>([]);
   const sent = useRef<string[]>([]);
   const stashed = useRef("");
   const [recall, setRecall] = useState(0);
@@ -132,6 +143,21 @@ export const DefaultChat = ({
       session.report(`/${prompt.name} failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
+  /** Staged one at a time so one unreadable file names itself instead of failing the whole drop silently. */
+  const attachFiles = async (files: File[]) => {
+    for (const file of files) {
+      try {
+        const read = await Attachment.read(file, attach);
+        if (!Attachment.failure(read)) setAttached((current) => [...current, read]);
+        else
+          session.note(
+            l(read === "tooLarge" ? "base.agentAttachTooLarge" : "base.agentAttachUnsupported", { name: file.name }),
+          );
+      } catch (error) {
+        session.report(`${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  };
   const remember = (text: string) => {
     if (sent.current[sent.current.length - 1] !== text) sent.current = [...sent.current, text].slice(-30);
     setRecall(0);
@@ -161,11 +187,11 @@ export const DefaultChat = ({
   };
   const send = () => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text && !attached.length) return;
     // The composer is the free-text answer to a pending question: the card holds the picks, and a user who types
     // instead of picking would otherwise be typing into a dead input while the turn waits on them.
     const question = session.pendingQuestion;
-    if (question) {
+    if (question && text) {
       setDraft("");
       question.answer(question.multiple ? [text] : text);
       return;
@@ -180,12 +206,17 @@ export const DefaultChat = ({
     if (session.isRunning) return;
     const prompt = command ? prompts.current?.find(command.name) : null;
     setDraft("");
-    remember(text);
+    if (text) remember(text);
     if (command && prompt) {
       void runPrompt(prompt, command.args);
       return;
     }
-    void session.send(text);
+    if (!attached.length) {
+      void session.send(text);
+      return;
+    }
+    setAttached([]);
+    void session.send([{ role: "user", ...(text ? { text } : {}), attachments: attached }]);
   };
   const query = /^\/[A-Za-z0-9_-]*$/.test(draft) ? draft : "";
   const commandMenu = query ? ChatCommands.list(l).filter((command) => `/${command.name}`.startsWith(query)) : [];
@@ -248,6 +279,11 @@ export const DefaultChat = ({
         !inline && floatingLayer,
         className,
       )}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        event.preventDefault();
+        void attachFiles([...event.dataTransfer.files]);
+      }}
     >
       <header className="flex items-center gap-2 border-foreground/5 border-b px-4 py-3">
         <span className="font-semibold text-sm">{title ?? l("base.agent")}</span>
@@ -285,34 +321,50 @@ export const DefaultChat = ({
         <Question key={session.pendingQuestion.callId} question={session.pendingQuestion} />
       ) : null}
       <Menu commands={commandMenu} onCommand={runCommand} onPrompt={pick} prompts={promptMenu} />
-      <div className="flex items-center gap-2 border-foreground/5 border-t p-3">
-        <input
-          className={inputRecipe({ size: "sm" }, "flex-1")}
-          onChange={(event) => setDraft(event.target.value)}
-          ref={inputRef}
-          onKeyDown={(event) => {
-            // A single-line input does nothing of its own with the vertical arrows, so recall is free to take them.
-            if ((event.key === "ArrowUp" || event.key === "ArrowDown") && sent.current.length) {
+      <div className="flex flex-col gap-2 border-foreground/5 border-t p-3">
+        {attached.length ? (
+          <Chips
+            attachments={attached}
+            onRemove={(idx) => setAttached((current) => current.filter((_, at) => at !== idx))}
+            removeLabel={l("base.agentAttachRemove")}
+          />
+        ) : null}
+        <div className="flex items-center gap-2">
+          <Attach label={l("base.agentAttach")} onPick={(files) => void attachFiles(files)} />
+          <input
+            className={inputRecipe({ size: "sm" }, "flex-1")}
+            onChange={(event) => setDraft(event.target.value)}
+            ref={inputRef}
+            onKeyDown={(event) => {
+              // A single-line input does nothing of its own with the vertical arrows, so recall is free to take them.
+              if ((event.key === "ArrowUp" || event.key === "ArrowDown") && sent.current.length) {
+                event.preventDefault();
+                step(event.key === "ArrowUp" ? 1 : -1);
+                return;
+              }
+              if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
               event.preventDefault();
-              step(event.key === "ArrowUp" ? 1 : -1);
-              return;
-            }
-            if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
-            event.preventDefault();
-            send();
-          }}
-          placeholder={session.pendingQuestion ? l("base.agentAnswer") : l("base.agentPlaceholder")}
-          value={draft}
-        />
-        {session.isRunning && !session.pendingQuestion ? (
-          <Button onClick={session.abort} size="sm" variant="outline">
-            {l("base.stop")}
-          </Button>
-        ) : (
-          <Button disabled={!draft.trim()} onClick={send} size="sm">
-            {l("base.send")}
-          </Button>
-        )}
+              send();
+            }}
+            onPaste={(event) => {
+              const files = [...event.clipboardData.files];
+              if (!files.length) return;
+              event.preventDefault();
+              void attachFiles(files);
+            }}
+            placeholder={session.pendingQuestion ? l("base.agentAnswer") : l("base.agentPlaceholder")}
+            value={draft}
+          />
+          {session.isRunning && !session.pendingQuestion ? (
+            <Button onClick={session.abort} size="sm" variant="outline">
+              {l("base.stop")}
+            </Button>
+          ) : (
+            <Button disabled={!draft.trim() && !attached.length} onClick={send} size="sm">
+              {l("base.send")}
+            </Button>
+          )}
+        </div>
       </div>
     </aside>,
   );

@@ -7,12 +7,12 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.34 -->
+<!-- akan:agent:version 3.0.0-alpha.38 -->
 
 ## Workspace
 
 - Repo: akanjs
-- Apps: minimal, akan
+- Apps: akan, minimal
 - Libraries: util, shared
 - Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
 
@@ -707,6 +707,19 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   providers the way middleware is applied: `option.applyAdaptor(LlmAdaptorRole, ClaudeLlm)`, where the
   implementation is an `adapt()` class in a `srvkit/` implementing `LlmAdaptor.chat(request, onDelta?)` — ignore
   `onDelta` and the chat still answers whole.
+- **A file the user attaches rides the message, and nothing is stored.** The composer takes a paperclip, a drop and
+  a paste; an image rides as bytes and a text file as text, which is all a browser reads with no dependency.
+  Everything else is the app's own reader — `<Agent.Chat attach={…} />`, one `File` in, a `MessageAttachment` or
+  `null` out — because extracting a PDF needs a parser and the framework carries attachments without depending on
+  one. It runs ahead of the built-in, so it is also where an image is downscaled before it costs a megabyte of
+  prompt. **What the provider cannot read is replaced by a note naming the file**, never dropped: an attachment the
+  model never saw is one it answers about from the filename. An adaptor declares `accepts: { image, document }` and
+  `AgentService.readable` degrades the rest, so a text-only provider needs no attachment code at all — DeepSeek
+  declares none, which is why an image against the default provider is refused out loud while an extracted PDF
+  works, `text` being readable by every model there is. **A `prompt()`'s `Msg.image` is the same wire shape** and
+  reaches the chat as an attachment rather than the literal `[image]` it used to become. Persisting keeps each
+  attachment's name and drops its content: web storage is a few megabytes, one screenshot fills a chunk of it, and
+  a save that fails is silent — so keeping the bytes would quietly stop keeping the transcript.
 - **A dialog's close is the dialog's own dismissal, not a state flip.** `closeDialogIn<Ns>` (and `Dialog.Close`)
   run through whatever `Dialog.Modal` registered, so the agent takes the exact path the X button takes —
   `confirmClose` still prompts and `onCancel` still fires. A close that only set `open` to false would skip both,
@@ -761,16 +774,25 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `new<Model>`; `Load.Units`, `Load.Pagination` and `Data.Pagination` publish `setPageOf<Model>`; `Layout.Sider`,
   `System.SelectLanguage`, `Link.Back` and `System.ThemeToggle` publish the shell. **A component that can render
   twice on one screen takes a `namespace` prop and publishes nothing without it** — `Tab`, `Dialog`,
-  `ScreenNavigator`. Pass one (`<Tab namespace="detail">`) and the tool becomes `switchTabInDetail`; leave it off
-  and that tab is invisible to the agent, because two tabs answering to `switchTab` would mean the first to mount
-  loses. `Model.NewWrapper` takes the same prop but publishes without one, because its slice already names it —
-  a second create trigger for the same slice, opening a form seeded differently, is what needs the suffix.
+  `ScreenNavigator`, `Dropdown`. Pass one (`<Tab namespace="detail">`) and the tool becomes `switchTabInDetail`;
+  leave it off and that tab is invisible to the agent, because two tabs answering to `switchTab` would mean the
+  first to mount loses. A named `Dropdown` publishes `openDropdownIn<Ns>` / `closeDropdownIn<Ns>` and the state
+  `dropdownIn<Ns>`, and its trigger annotates whichever of the two its next click performs. `Model.NewWrapper`
+  takes the same prop but publishes without one, because its slice already names it — a second create trigger for
+  the same slice, opening a form seeded differently, is what needs the suffix.
 - **The `Model.*` row wrappers publish their verb, taking the id.** `Model.EditWrapper`, `Model.ViewWrapper`,
   `Model.RemoveWrapper` and `Model.Remove` publish `edit<Model>` / `view<Model>` / `remove<Model>` with a
   `modelId` argument, so a list built from `Load.Units` and an app's own `Unit` reaches the same verbs an
   `AdminPanel` does. `Model.SureToRemove` publishes the same — except under `typeNameToRemove`, where it
   publishes nothing: that gate makes a person retype the model's name, an approval card is one click, and
   offering the lever at a friction the screen does not have is not the same control.
+- **A dropdown's menu is mounted from the first render and hidden while closed** — the deliberate opposite of the
+  modal rule below, because a menu is one click away rather than a surface of its own. A tool is declared by a
+  mount effect, so an unmounted menu is one whose row verbs and field setters do not exist yet: an agent asked for
+  one finds nothing, and no catalogue entry hints that opening the menu would help. `readScreen` still skips
+  hidden content, so the items themselves are read only after `openDropdownIn<Ns>` — what a closed menu publishes
+  is its tools, not its text. The cost is that `content` renders on page load, so a heavy panel belongs behind a
+  `Dialog` instead.
 - **A modal publishes its verbs while it is open, and only then.** `Model.EditModal` publishes `submit<Model>`
   and `cancelEditOf<Model>`, `Model.ViewModal` publishes `closeViewOf<Model>`, and `Model.ViewEditModal`
   publishes `edit<Model>` / `submit<Model>` / `closeViewOf<Model>` — each from a subtree that mounts with the
@@ -903,8 +925,9 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   router `Link` rides), `goBack` (this session's history — global, because history is not a control a page owns and
   a page that draws no back link is not one you may not leave), `readScreen` (the rendered DOM as compact text —
   headings, links, control values, and `(disabled)` on a control or button that has it; the chat's own UI is
-  skipped via `data-agent-ui`, and a password value is never read), `readState(key)` (one masked store key), and `highlight(target)`. Declaring a hook tool under one of those
-  names shadows the built-in, so reuse them only to mean that.
+  skipped via `data-agent-ui`, and a password value is never read), `readState(key)` (one masked store key), and
+  `highlight(target)`. Declaring a hook tool under one of those names shadows the built-in, so reuse them only to
+  mean that.
 - **A tool that changes the screen waits for the screen before it answers.** `router.push` returns while the RSC
   payload is still in flight and a store action that fires `void fetch.*` commits a tick later, so `navigate`
   awaits `ScreenSettle.wait()` — DOM quiescence, bounded, because the client router hands its promise to nobody —

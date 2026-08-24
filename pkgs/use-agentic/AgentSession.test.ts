@@ -572,6 +572,19 @@ describe("AgentSession history", () => {
     ]);
   });
 
+  test("attachments ride the turn, and a message carrying only files is still retryable", async () => {
+    const { runner, requests } = scripted([
+      { type: "text", delta: "a chart" },
+      { type: "done", stop: "end" },
+    ]);
+    const session = new AgentSession(new AgenticSurface(), runner);
+    const attachments = [{ name: "q3.png", mimeType: "image/png", data: "AAAA" }];
+    await session.send([{ role: "user", attachments }]);
+    expect(requests[0].messages).toEqual([{ role: "user", attachments }]);
+    expect(await session.retry()).toBe(true);
+    expect(requests[1].messages).toEqual([{ role: "user", attachments }]);
+  });
+
   test("retry refuses when there is nothing to send again", async () => {
     const { runner } = scripted([{ type: "done", stop: "end" }]);
     const session = new AgentSession(new AgenticSurface(), runner);

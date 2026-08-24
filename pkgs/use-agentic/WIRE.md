@@ -33,6 +33,24 @@ tools, and the loop stay in the client; the server serves exactly one stateless 
 - `context` blocks are host vocabulary. The server forwards them to the model as data, framed as data.
 - Everything is JSON-serializable by contract; a tool whose `result` is not is the tool's bug.
 
+## Attachments
+
+A message may carry files in `attachments` (`MessageAttachment`, `types.ts`) — one of `data` (base64 bytes), `url`,
+or `text` (already-extracted content), plus `name` and `mimeType`:
+
+```jsonc
+{ "role": "user", "text": "What does this chart say?",
+  "attachments": [{ "name": "q3.png", "mimeType": "image/png", "data": "iVBORw0KG…" }] }
+```
+
+They are content, not instructions, and the server frames them the way it frames `context`. **A backend must not
+silently drop one its model cannot read** — a file the model never saw is a file it invents an answer about. Replace
+it with a note in the message text saying which file was not read and why, so the model can say so and ask for
+another form. `text` is readable by every provider by definition, which is what makes an extracted PDF work against
+a text-only model.
+
+Nothing here is stored: the wire carries the bytes for exactly one turn's request.
+
 ## Response
 
 `200` with a single JSON object:

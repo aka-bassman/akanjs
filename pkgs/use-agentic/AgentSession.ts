@@ -239,7 +239,9 @@ export class AgentSession {
    */
   retry = async (): Promise<boolean> => {
     if (this.#active) return false;
-    const at = this.#messages.findLastIndex((message) => message.role === "user" && !!message.text);
+    const at = this.#messages.findLastIndex(
+      (message) => message.role === "user" && (!!message.text || !!message.attachments?.length),
+    );
     if (at < 0) return false;
     const again = this.#messages[at];
     this.#messages = this.#messages.slice(0, at);

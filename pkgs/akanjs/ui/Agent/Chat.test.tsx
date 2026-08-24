@@ -87,15 +87,18 @@ const untilFlushed = async (done: () => boolean) => {
  * they are re-read every time, because each keystroke renders a new closure over the draft.
  */
 const composer = (container: HTMLElement) => {
+  // Not the first input any more: the attach control renders a hidden file input into the same composer.
+  const field = () => container.querySelector<HTMLInputElement>('input:not([type="file"])');
   const props = () => {
-    const input = container.querySelector("input");
+    const input = field();
     const key = Object.keys(input ?? {}).find((name) => name.startsWith("__reactProps$")) ?? "";
     return (input as unknown as Record<string, Record<string, (event: unknown) => void>>)[key];
   };
   return {
-    value: () => container.querySelector("input")?.value ?? "",
+    value: () => field()?.value ?? "",
     type: (value: string) => act(() => props().onChange({ target: { value } })),
     press: (key: string) => act(() => props().onKeyDown({ key, preventDefault: () => {}, nativeEvent: {} })),
+    paste: (files: File[]) => act(() => props().onPaste({ clipboardData: { files }, preventDefault: () => {} })),
   };
 };
 
@@ -259,7 +262,7 @@ describe("Agent.Chat", () => {
       await untilFlushed(() => !!session.pendingQuestion);
     });
     // One input, not two: the card holds the picks and the composer is the free-text answer.
-    expect(container.querySelectorAll("input")).toHaveLength(1);
+    expect(container.querySelectorAll('input:not([type="file"])')).toHaveLength(1);
     const input = container.querySelector('input[placeholder="base.agentAnswer"]');
     const propsKey = Object.keys(input ?? {}).find((key) => key.startsWith("__reactProps$")) ?? "";
     const props = (input as unknown as Record<string, { onChange: (event: unknown) => void }>)[propsKey];
@@ -414,11 +417,7 @@ describe("Agent.Chat", () => {
         <DefaultChat defaultOpen />
       </lib.AgentProvider>,
     );
-    const input = container.querySelector("input");
-    // happy-dom dispatch never reaches React's synthetic onChange, so type through the React props directly.
-    const propsKey = Object.keys(input ?? {}).find((key) => key.startsWith("__reactProps$")) ?? "";
-    const props = (input as unknown as Record<string, { onChange: (event: unknown) => void }>)[propsKey];
-    act(() => props.onChange({ target: { value: "/" } }));
+    composer(container).type("/");
     const entry = [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("/planWeek"));
     expect(entry).toBeTruthy();
     await act(async () => {
@@ -580,6 +579,79 @@ describe("Agent.Chat", () => {
     // Back at the bottom the draft that was walked away from is still there.
     input.press("ArrowDown");
     expect(input.value()).toBe("half-written");
+    unmount();
+  });
+  test("a pasted file is staged as a chip and rides the message it is sent with", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "a chart" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    await act(async () => {
+      input.paste([new File(["abc"], "q3.png", { type: "image/png" })]);
+      await untilFlushed(() => container.innerHTML.includes("q3.png"));
+    });
+    expect(container.innerHTML).toContain("q3.png");
+    input.type("what does this say?");
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => !session.isRunning && session.messages.length >= 2);
+    });
+    expect(session.messages[0]).toEqual({
+      role: "user",
+      text: "what does this say?",
+      attachments: [{ name: "q3.png", mimeType: "image/png", data: btoa("abc") }],
+    });
+    // Staged files leave with the draft, so the next turn cannot re-send them.
+    expect(container.querySelector('button[aria-label="base.agentAttachRemove"]')).toBeNull();
+    unmount();
+  });
+
+  test("a file no built-in reader handles is named in the transcript instead of staged", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    await act(async () => {
+      composer(container).paste([new File(["%PDF"], "spec.pdf", { type: "application/pdf" })]);
+      await untilFlushed(() => session.messages.length > 0);
+    });
+    expect(session.messages[0]).toEqual({
+      role: "assistant",
+      text: "base.agentAttachUnsupported",
+      local: true,
+    });
+    expect(container.querySelector('button[aria-label="base.agentAttachRemove"]')).toBeNull();
+    unmount();
+  });
+
+  test("the app's own reader is what makes a pdf attachable, and runs ahead of the built-in", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "read it" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat
+          attach={async (file) => ({ name: file.name, mimeType: "application/pdf", text: "page one" })}
+          defaultOpen
+        />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    await act(async () => {
+      input.paste([new File(["%PDF"], "spec.pdf", { type: "application/pdf" })]);
+      await untilFlushed(() => container.innerHTML.includes("spec.pdf"));
+    });
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => !session.isRunning && session.messages.length >= 2);
+    });
+    expect(session.messages[0]).toEqual({
+      role: "user",
+      attachments: [{ name: "spec.pdf", mimeType: "application/pdf", text: "page one" }],
+    });
     unmount();
   });
 });

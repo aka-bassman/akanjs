@@ -151,6 +151,13 @@ export const option = new AkanOption<ModulesOptions>()
                 ko: "Agent.Chat의 앱 전역 프레이밍입니다. 라우트 범위 지침은 마운트된 Agent.Guide가 겹칩니다.",
               }),
             },
+            {
+              title: "attach",
+              desc: l.trans({
+                en: "The composer attaches images and text files on its own; attach is where an app reads what needs a parser, like a PDF's text. Nothing is stored — the bytes ride one turn's request, and a reloaded transcript keeps the name without the content.",
+                ko: "작성창은 이미지와 텍스트 파일을 스스로 첨부합니다. PDF 본문처럼 파서가 필요한 것은 앱이 attach에서 읽습니다. 저장은 하지 않습니다 — 바이트는 한 턴의 요청에만 실리고, 새로고침된 대화는 내용 없이 이름만 남깁니다.",
+              }),
+            },
           ].map(({ title, desc }) => (
             <div key={title} className={panelRecipe({ padding: "row" })}>
               <span className="font-mono font-semibold text-primary">{title}: </span>

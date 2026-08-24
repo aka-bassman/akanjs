@@ -72,6 +72,8 @@ export class ChatCommands {
       if (message.local) continue;
       lines.push(`**${message.role}**`);
       if (message.text) lines.push(message.text);
+      for (const attachment of message.attachments ?? [])
+        lines.push(`- attached \`${attachment.name}\` (${attachment.mimeType})`);
       for (const call of message.toolCalls ?? []) lines.push(`- call \`${call.name}\` ${JSON.stringify(call.args)}`);
       for (const result of message.toolResults ?? [])
         lines.push(

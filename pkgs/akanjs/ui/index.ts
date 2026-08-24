@@ -1,4 +1,5 @@
 export { Agent } from "./Agent";
+export { type AttachReader, maxAttachmentBytes } from "./Agent/attachment";
 export { agentAttrs } from "./agentAttrs";
 export { animated } from "./animated";
 export { Badge } from "./Badge";
