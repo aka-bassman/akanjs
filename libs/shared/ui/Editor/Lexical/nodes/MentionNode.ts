@@ -27,7 +27,7 @@ const applyChip = (dom: HTMLElement, node: MentionNode) => {
 };
 
 /**
- * An inline reference to a domain model, rendered as `@label`.
+ * An inline reference to a domain model, rendered as the label (avatar + name).
  *
  * A `TextNode` rather than a `DecoratorNode` on purpose: `createDOM` alone paints
  * the chip, so read-only content renders it with no plugin wiring — which is the
@@ -65,11 +65,11 @@ export class MentionNode extends TextNode {
   }
 
   static override importJSON(serialized: SerializedMentionNode): MentionNode {
-    return $createMentionNode(serialized).updateFromJSON(serialized);
+    return $createMentionNode(serialized).updateFromJSON({ ...serialized, text: serialized.label });
   }
 
   constructor(payload: MentionPayload, text?: string, key?: string) {
-    super(text ?? `@${payload.label}`, key);
+    super(text ?? payload.label, key);
     this.__refName = payload.refName;
     this.__refId = payload.refId;
     this.__label = payload.label;

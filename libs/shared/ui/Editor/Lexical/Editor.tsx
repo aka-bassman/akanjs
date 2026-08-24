@@ -13,6 +13,7 @@ import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { TabIndentationPlugin } from "@lexical/react/LexicalTabIndentationPlugin";
 import { TablePlugin } from "@lexical/react/LexicalTablePlugin";
 import { type cnst, Err } from "@libs/shared/client";
+import type { EditorContent } from "@libs/shared/common";
 import { addFileUntilActive } from "@libs/shared/webkit";
 import type { Any } from "akanjs/base";
 import { cn } from "akanjs/client";
@@ -31,6 +32,7 @@ import {
   collectPluginSlashOptions,
   type EditorPlugin,
 } from "./plugin";
+import { AgentRichPlugin } from "./plugins/AgentRichPlugin";
 import { AutoLinkPlugin } from "./plugins/AutoLinkPlugin";
 import { CalloutPlugin } from "./plugins/CalloutPlugin";
 import { CodeHighlightPlugin } from "./plugins/CodeHighlightPlugin";
@@ -64,7 +66,7 @@ interface EditorProps {
   className?: string;
   value?: unknown;
   defaultValue?: unknown;
-  onChange: (value: Any) => void;
+  onChange: (value: EditorContent) => void;
   onDelete?: (nodes: Any[]) => void;
   addFilesGql?: (fileList: FileList, id?: string) => Promise<(cnst.File | ProtoFile)[]>;
   addFile?: AddFile;
@@ -76,7 +78,13 @@ interface EditorProps {
   toolbar?: boolean;
   blockActions?: boolean;
   slashMenu?: boolean;
+  /** Markdown input shortcuts (`# `, `- `, `> `, …). Turn off for documents that are plain text plus mentions. */
+  markdown?: boolean;
   plugins?: EditorPlugin[];
+  /** The `set<Field>On<Model>` an agent may write this field through. Omitted, the field is agent-invisible. */
+  agentName?: string | null;
+  /** Publish the block read/edit pair too. Turn off for a field too short to address by block. */
+  agentBlocks?: boolean;
   height?: string;
   placeholder?: string;
   debug?: boolean;
@@ -140,7 +148,10 @@ export default function Editor({
   toolbar = true,
   slashMenu = true,
   blockActions = true,
+  markdown = true,
   plugins,
+  agentName,
+  agentBlocks,
   height,
   placeholder = "Type something",
 }: EditorProps) {
@@ -183,7 +194,7 @@ export default function Editor({
     const state = latestStateRef.current;
     if (!state) return;
     const json = state.toJSON();
-    onChangeRef.current(json as Any);
+    onChangeRef.current(json as EditorContent);
     if (onAttachmentsChangeRef.current) {
       const next = reconcileAttachments(json, attachmentsRef.current);
       if (next.length !== attachmentsRef.current.length) {
@@ -193,13 +204,20 @@ export default function Editor({
     }
   }, []);
 
-  const flush = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    commit();
-  }, [commit]);
+  // `state` is for a writer that produced one without `OnChangePlugin` seeing it: Lexical drops any update whose
+  // *previous* state was empty (`prevEditorState.isEmpty()`), so the first write into an empty field never reaches
+  // `handleChange`. A person types again and the next keystroke carries the document; an agent writes once.
+  const flush = useCallback(
+    (state?: EditorState) => {
+      if (state) latestStateRef.current = state;
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      commit();
+    },
+    [commit],
+  );
 
   const handleChange = useCallback(
     (editorState: EditorState) => {
@@ -281,10 +299,11 @@ export default function Editor({
           <HorizontalRulePlugin />
           <TabIndentationPlugin />
           <CodeHighlightPlugin />
-          <MarkdownShortcutPlugin transformers={AKAN_TRANSFORMERS} />
+          {markdown ? <MarkdownShortcutPlugin transformers={AKAN_TRANSFORMERS} /> : null}
           <TablePlugin hasCellMerge hasCellBackgroundColor />
           <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
           <ExternalValuePlugin value={value} />
+          <AgentRichPlugin name={editable ? (agentName ?? null) : null} blocks={agentBlocks} flush={flush} />
           <EditableSyncPlugin editable={editable} />
           <MentionLinkPlugin />
           {editable && slashMenu ? (

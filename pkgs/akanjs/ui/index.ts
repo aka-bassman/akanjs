@@ -1,5 +1,6 @@
 export { Agent } from "./Agent";
 export { type AttachReader, maxAttachmentBytes } from "./Agent/attachment";
+export type { VoiceEngine, VoiceHandlers, VoiceListener, VoiceSpeech } from "./Agent/voice";
 export { agentAttrs } from "./agentAttrs";
 export { animated } from "./animated";
 export { Badge } from "./Badge";

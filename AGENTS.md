@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.38 -->
+<!-- akan:agent:version 3.0.0-alpha.39 -->
 
 ## Workspace
 
 - Repo: akanjs
-- Apps: akan, minimal
+- Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -720,6 +720,21 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   reaches the chat as an attachment rather than the literal `[image]` it used to become. Persisting keeps each
   attachment's name and drops its content: web storage is a few megabytes, one screenshot fills a chunk of it, and
   a save that fails is silent — so keeping the bytes would quietly stop keeping the transcript.
+- **Speech is one engine contract and the framework's own policy.** `<Agent.Chat voice={engine} />` takes a
+  `VoiceEngine` — `listen(handlers)` and `speak(sentence)`, both cancellable — and the chat decides everything
+  else: a press-to-talk microphone whose transcript lands in the composer to be corrected, one utterance per
+  press, sentence-at-a-time reading, barge-in on the next press or on Stop, and markdown stripped so `**bold**`
+  is not pronounced. **A reply is read aloud only when the ask arrived by voice**, so a typed question never turns
+  on the speakers — and it needs no wire field, because how a message was sent is the composer's own business.
+  The contract is a subscription rather than `listen(): Promise<string>` on purpose: a promise fits push-to-talk
+  and nothing else, so hands-free could then only arrive as a breaking change. `useSpeech` in
+  `libs/util/webkit` is the engine — the browser's own recognition and synthesis on the web, the Capacitor
+  plugins in a WebView, **which has neither on Android or iOS**, so `speech.plugin.ts` declares the permission and
+  the packages the native build needs. An engine answering `available()` false renders no microphone at all,
+  the same rule as publishing no tool for a control the screen does not draw.
+- **`attach` and `voice` both carry functions, so a server layout cannot pass either.** A closure does not cross
+  the RSC boundary — `non-scalar-props-restricted` says so on `page/**` — so an app that wants either mounts the
+  chat from a small client component in `ui/` that calls the hook. `apps/akan/ui/DocsAgentChat.tsx` is the shape.
 - **A dialog's close is the dialog's own dismissal, not a state flip.** `closeDialogIn<Ns>` (and `Dialog.Close`)
   run through whatever `Dialog.Modal` registered, so the agent takes the exact path the X button takes —
   `confirmClose` still prompts and `onCancel` still fires. A close that only set `open` to false would skip both,

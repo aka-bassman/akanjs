@@ -2,7 +2,7 @@ import { msg } from "@libs/shared/client";
 import { withRedirectQuery } from "@libs/shared/common";
 import { type Dayjs, dayjs } from "akanjs/base";
 import { getCookie, router, setAuth, setCookie } from "akanjs/client";
-import { isPhoneNumber } from "akanjs/common";
+import { formatPhone, isPhoneNumber } from "akanjs/common";
 import { store } from "akanjs/store";
 
 import * as cnst from "../cnst";
@@ -101,11 +101,11 @@ export class UserStore extends store(sig.user, () => ({
     const userId = await fetch.getUserIdHasNickname(nickname);
     this.set({ sameNicknameExists: !!userId });
   }
-  async activateUser(userId: string, { redirect }: { redirect: string }) {
+  async activateUser(userId: string, { redirect }: { redirect?: string }) {
     const accessToken = await fetch.activateUser(userId);
     setAuth(accessToken);
     await this.getSelf(accessToken);
-    router.push(redirect);
+    if (redirect) router.push(redirect);
   }
   async setNicknameOfSelf({ redirect }: { redirect: string }) {
     const { self, userForm } = this.get();
@@ -164,6 +164,9 @@ export class UserStore extends store(sig.user, () => ({
     msg.loading("user.changePasswordLoading", { key: "changePasswordByAdmin" });
     await fetch.setPasswordByAdmin(user.id, password);
     msg.success("user.changePasswordSuccess", { key: "changePasswordByAdmin" });
+  }
+  setPhone(phone: string) {
+    this.set({ phone: formatPhone(phone) });
   }
   async setPhoneByAdmin(phone: string) {
     const { user } = this.pick("user");

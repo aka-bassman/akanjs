@@ -1,3 +1,15 @@
+type SharpFactory = typeof import("sharp");
+
+let sharpLoad: Promise<SharpFactory> | null = null;
+
+function loadSharp(): Promise<SharpFactory> {
+  sharpLoad ??= import("sharp").then((mod) => {
+    const loaded = mod as unknown as { default?: SharpFactory } & SharpFactory;
+    return loaded.default ?? loaded;
+  });
+  return sharpLoad;
+}
+
 async function readImageBuffer(source: string | Buffer): Promise<Buffer> {
   if (Buffer.isBuffer(source)) return source;
   if (source.startsWith("file://")) return Buffer.from(await Bun.file(source.replace("file://", "")).arrayBuffer());
@@ -17,16 +29,20 @@ export const getImageAbstract = async (
   const abstract: { abstractData?: string; imageSize?: [number, number] } = {};
   try {
     const buffer = await readImageBuffer(source);
+    const sharp = await loadSharp();
+    const image = sharp(buffer);
 
     try {
-      const { width, height } = await new Bun.Image(buffer).metadata();
+      const { width, height } = await image.metadata();
       if (width && height) abstract.imageSize = [width, height];
     } catch (_) {}
 
     try {
-      // A Bun.Image chain mutates its own instance and there is no `clone()`, so the thumbnail needs
-      // its own. Blur is not available either — at 10px the upscale in the browser supplies it.
-      abstract.abstractData = await new Bun.Image(buffer).resize(10).png().dataurl();
+      const { data, info } = await image
+        .resize(10, 10, { fit: "inside" })
+        .blur(1)
+        .toBuffer({ resolveWithObject: true });
+      abstract.abstractData = `data:image/${info.format};base64,${data.toString("base64")}`;
     } catch (_) {}
   } catch (_) {}
   return abstract;

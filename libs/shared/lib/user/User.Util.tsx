@@ -5,17 +5,21 @@ import { AreYouRobot, buttonRecipe, Icon } from "@libs/util/ui";
 import { usePushNotification } from "@libs/util/webkit";
 import { dayjs } from "akanjs/base";
 import { cn, getCookie, router, setCookie } from "akanjs/client";
-import { isEmail, isPhoneNumber } from "akanjs/common";
+import { formatPhone, isEmail, isPhoneNumber } from "akanjs/common";
 import { Input, Link, Loading, Modal, Switch } from "akanjs/ui";
 import { useInterval } from "akanjs/webkit";
 import { type ReactNode, useEffect, useState } from "react";
-import { AiFillCheckCircle, AiFillGithub } from "react-icons/ai";
+import { AiFillCheckCircle, AiFillGithub, AiOutlineClose, AiOutlineEdit, AiOutlineSave } from "react-icons/ai";
 
 interface SetPasswordWithPhoneProps {
   disabled?: boolean;
   hash?: string;
 }
 export const SetPasswordWithPhone = ({ disabled, hash = "verify" }: SetPasswordWithPhoneProps) => {
+  // XXX: the two sign-in paths stay unpublished on purpose. `signinWithPassword` and `ssoSigninUser` are the
+  // credential gate, and the field setters that `Input.Password` publishes already let a caller write the
+  // password state — pressing sign in as well would turn "fill a form" into "sign in as someone".
+
   const { l } = usePage();
   const self = st.use.self();
   const phoneCode = st.use.phoneCode();
@@ -198,6 +202,21 @@ export const ChangePassword = ({ siteKey }: { siteKey: string }) => {
   const userModal = st.use.userModal();
   const passwordConfirm = st.use.passwordConfirm();
   const turnstileToken = st.use.turnstileToken();
+  st.tool("changePassword", {
+    desc: "Save the new password the change-password form holds.",
+    effect: "mutation",
+    confirm: true,
+    guard: () =>
+      userModal !== "changePassword"
+        ? "The change-password form is not open."
+        : password.length < 7
+          ? "The new password needs at least seven characters."
+          : password !== passwordConfirm
+            ? "The two new passwords do not match."
+            : !turnstileToken
+              ? "The are-you-a-robot check has to be solved by a person first."
+              : true,
+  }).exec(() => st.do.changePassword());
   return (
     <>
       <button
@@ -407,6 +426,23 @@ export const ForgotPassword = () => {
   const { l } = usePage();
   const [finished, setFinished] = useState(false);
   const [accountId, setAccountId] = useState("");
+  st.tool("resetPassword", {
+    desc: "Email a password-reset link to one account address.",
+    effect: "mutation",
+    confirm: ({ accountId }) => `Send a password reset email to ${String(accountId)}?`,
+    guard: ({ accountId }) =>
+      finished
+        ? "A reset email has already been sent from this screen."
+        : isEmail(String(accountId ?? ""))
+          ? true
+          : "That is not an email address.",
+  })
+    .arg("accountId", String)
+    .exec(async (address) => {
+      setAccountId(address);
+      await st.do.resetPassword(address);
+      setFinished(true);
+    });
   return (
     <div className="flex w-full flex-col gap-2">
       <div className="mb-4 text-center font-bold text-3xl">{l("user.forgotPassword")}</div>
@@ -448,6 +484,9 @@ interface SignoutProps {
   children: ReactNode;
 }
 export const Signout = ({ className, href, children }: SignoutProps) => {
+  st.tool("signout", { desc: "Sign out of this account.", effect: "mutation", confirm: true }).exec(() =>
+    st.do.logout(),
+  );
   return (
     <Link className={className} href={href} onClick={() => void st.do.logout()}>
       {children}
@@ -462,6 +501,11 @@ interface ResendPhoneCodeForSigninProps {
   hash: string;
 }
 export const ResendPhoneCodeForSignin = ({ className, userId, phone, hash }: ResendPhoneCodeForSigninProps) => {
+  st.tool("resendPhoneCode", {
+    desc: "Send the sign-in code to this phone number again by SMS.",
+    effect: "mutation",
+    confirm: true,
+  }).exec(() => st.do.requestPhoneCodeForSignin(userId, phone, hash));
   return (
     <div className={cn("mt-2 flex justify-center", className)}>
       <button
@@ -505,9 +549,14 @@ export const ResendPhoneCodeForSetPhoneInPrepareUser = ({
 interface ActivateProps {
   className?: string;
   userId: string;
-  redirect: string;
+  redirect?: string;
 }
 export const Activate = ({ className, userId, redirect }: ActivateProps) => {
+  st.tool("activateUser", {
+    desc: "Finish signing up and open the account.",
+    effect: "mutation",
+    confirm: true,
+  }).exec(() => st.do.activateUser(userId, { redirect }));
   return (
     <button
       className={cn(buttonRecipe({ variant: "primary" }), className)}
@@ -570,6 +619,11 @@ export const SigninWithPhoneCode = ({ redirect, userId, className = "" }: Signin
   const handleClick = async () => {
     await st.do.signinWithPhoneCode(userId, { redirect });
   };
+  st.tool("signinWithPhoneCode", {
+    desc: "Sign in with the six-digit code that was texted to this number, once it is typed in.",
+    effect: "mutation",
+    guard: () => (phoneCode.length === 6 ? true : "The six-digit code from the text goes in first."),
+  }).exec(handleClick);
   useEffect(() => {
     if (phoneCode.length === 6) void handleClick();
   }, [phoneCode]);
@@ -593,6 +647,11 @@ export const VerifyPhoneInPrepareUser = ({ userId, redirect, className = "" }: V
   const handleClick = async () => {
     await st.do.verifyPhoneInPrepareUser(userId, { redirect });
   };
+  st.tool("verifyPhoneCode", {
+    desc: "Confirm the phone number with the six-digit code that was texted to it, once it is typed in.",
+    effect: "mutation",
+    guard: () => (phoneCode.length === 6 ? true : "The six-digit code from the text goes in first."),
+  }).exec(handleClick);
   useEffect(() => {
     if (phoneCode.length === 6) void handleClick();
   }, [phoneCode]);
@@ -613,7 +672,7 @@ interface PushNotificationSwitchProps {
 
 export const PushNotificationSwitch = ({ className }: PushNotificationSwitchProps) => {
   const pushNotification = usePushNotification();
-  const deviceToken = st.use.deviceToken({ agent: false });
+  const deviceToken = st.use.deviceToken();
   //! TODO: 추후 수정필요
   // const checked = self.notiDeviceTokens?.includes(deviceToken) ?? false;
   const checked = false as boolean;
@@ -626,6 +685,14 @@ export const PushNotificationSwitch = ({ className }: PushNotificationSwitchProp
     void getToken();
   }, []);
 
+  st.tool("setPushNotification", {
+    desc: "Turn push notifications on or off for this device.",
+    effect: "mutation",
+    guard: ({ on }) =>
+      !deviceToken ? "This device has no push token yet." : on === checked ? `Already ${on ? "on" : "off"}.` : true,
+  })
+    .arg("on", Boolean)
+    .exec((on) => (on ? st.do.addNotiDeviceTokenOfSelf(deviceToken) : st.do.subNotiDeviceTokenOfSelf(deviceToken)));
   return (
     <div>
       <Switch
@@ -635,6 +702,217 @@ export const PushNotificationSwitch = ({ className }: PushNotificationSwitchProp
           else void st.do.addNotiDeviceTokenOfSelf(deviceToken);
         }}
       />
+    </div>
+  );
+};
+
+interface SetAccountIdByAdminProps {
+  className?: string;
+  accountId: string | null;
+}
+export const SetAccountIdByAdmin = ({ className, accountId }: SetAccountIdByAdminProps) => {
+  const { l } = usePage();
+  const [changeId, setChangeId] = useState(accountId ?? "empty");
+  const [editState, setEditState] = useState<"edit" | "saving" | null>(null);
+  const invalid =
+    changeId === accountId || changeId.length < 4 || (isEmail(accountId) && !isEmail(changeId))
+      ? l("user.setAccountIdByAdminInvalid")
+      : null;
+  st.tool("setAccountIdByAdmin", {
+    desc: "Change the account id this user signs in with.",
+    effect: "mutation",
+    confirm: "Change the sign-in id of this account?",
+    guard: ({ accountId: next }) =>
+      typeof next !== "string" || next.length < 4
+        ? "An account id is at least four characters."
+        : isEmail(accountId) && !isEmail(next)
+          ? "This account signs in with an email, so the new id has to be an email too."
+          : true,
+  })
+    .arg("accountId", String)
+    .exec(async (next) => {
+      await st.do.setAccountIdByAdmin(next);
+      setChangeId(next);
+    });
+  return (
+    <div className={cn("flex items-center gap-2", className)}>
+      <span className="w-24">{l("user.accountId")}</span>
+      <Input
+        value={changeId}
+        onChange={setChangeId}
+        disabled={!editState}
+        validate={() => invalid ?? true}
+        onPressEnter={() => {
+          if (invalid || editState !== "edit") return;
+          void st.do.setAccountIdByAdmin(changeId);
+          setEditState(null);
+        }}
+      />
+      {editState ? (
+        <>
+          <button
+            className={buttonRecipe({ variant: "primary" })}
+            disabled={editState === "saving" || !!invalid}
+            onClick={async () => {
+              setEditState("saving");
+              await st.do.setAccountIdByAdmin(changeId);
+              setEditState(null);
+            }}
+          >
+            <AiOutlineSave />
+          </button>
+          <button
+            className={buttonRecipe({ variant: "outline" })}
+            disabled={editState === "saving"}
+            onClick={() => {
+              setChangeId(accountId ?? "");
+              setEditState(null);
+            }}
+          >
+            <AiOutlineClose />
+          </button>
+        </>
+      ) : (
+        <button
+          className={buttonRecipe({ variant: "default" })}
+          onClick={() => {
+            setEditState("edit");
+          }}
+        >
+          <AiOutlineEdit />
+        </button>
+      )}
+    </div>
+  );
+};
+
+interface SetPasswordByAdminProps {
+  className?: string;
+}
+// XXX: no tool here. Every other admin edit on this screen changes what an account *is*; overwriting its
+// password changes who can *be* it, with no notice to the person who owns it. That is account takeover, so it
+// stays a thing an operator does by hand.
+export const SetPasswordByAdmin = ({ className }: SetPasswordByAdminProps) => {
+  const { l } = usePage();
+  const [password, setPassword] = useState("********");
+  const [editState, setEditState] = useState<"edit" | "saving" | null>(null);
+  return (
+    <div className={cn("flex items-center gap-2", className)}>
+      <span className="w-24">{l("user.password")}</span>
+      <Input.Password
+        value={password}
+        onChange={setPassword}
+        disabled={!editState}
+        validate={(value: string) =>
+          value.length < 8 || value.length > 20 ? l("user.setPasswordByAdminInvalid") : true
+        }
+      />
+      {editState ? (
+        <>
+          <button
+            className={buttonRecipe({ variant: "primary" })}
+            disabled={editState === "saving" || password.length < 8 || password.length > 20}
+            onClick={async () => {
+              setEditState("saving");
+              await st.do.setPasswordByAdmin(password);
+              setEditState(null);
+            }}
+          >
+            <AiOutlineSave />
+          </button>
+          <button
+            className={buttonRecipe({ variant: "outline" })}
+            disabled={editState === "saving"}
+            onClick={() => {
+              setPassword("********");
+              setEditState(null);
+            }}
+          >
+            <AiOutlineClose />
+          </button>
+        </>
+      ) : (
+        <button
+          className={buttonRecipe({ variant: "default" })}
+          onClick={() => {
+            setEditState("edit");
+          }}
+        >
+          <AiOutlineEdit />
+        </button>
+      )}
+    </div>
+  );
+};
+
+interface SetPhoneByAdminProps {
+  className?: string;
+  phone: string | null;
+}
+export const SetPhoneByAdmin = ({ className, phone }: SetPhoneByAdminProps) => {
+  const { l } = usePage();
+  const [changePhone, setChangePhone] = useState(phone ?? "empty");
+  const [editState, setEditState] = useState<"edit" | "saving" | null>(null);
+  st.tool("setPhoneByAdmin", {
+    desc: "Change the phone number this user verifies with.",
+    effect: "mutation",
+    confirm: "Change the verified phone number of this account?",
+    guard: ({ phone: next }) =>
+      typeof next !== "string" || !isPhoneNumber(formatPhone(next))
+        ? "That is not a phone number this account can verify with."
+        : true,
+  })
+    .arg("phone", String)
+    .exec(async (next) => {
+      const formatted = formatPhone(next);
+      await st.do.setPhoneByAdmin(formatted);
+      setChangePhone(formatted);
+    });
+  return (
+    <div className={cn("flex items-center gap-2", className)}>
+      <span className="w-24">{l("user.phone")}</span>
+      <Input
+        value={changePhone}
+        onChange={(value) => {
+          setChangePhone(formatPhone(value));
+        }}
+        disabled={!editState}
+        validate={(value: string) => isPhoneNumber(value) || l("user.setPhoneByAdminInvalid")}
+      />
+      {editState ? (
+        <>
+          <button
+            className={buttonRecipe({ variant: "primary" })}
+            disabled={editState === "saving" || !isPhoneNumber(changePhone) || changePhone === phone}
+            onClick={async () => {
+              setEditState("saving");
+              await st.do.setPhoneByAdmin(changePhone);
+              setEditState(null);
+            }}
+          >
+            <AiOutlineSave />
+          </button>
+          <button
+            className={buttonRecipe({ variant: "outline" })}
+            disabled={editState === "saving"}
+            onClick={() => {
+              setChangePhone(phone ?? "");
+              setEditState(null);
+            }}
+          >
+            <AiOutlineClose />
+          </button>
+        </>
+      ) : (
+        <button
+          className={buttonRecipe({ variant: "default" })}
+          onClick={() => {
+            setEditState("edit");
+          }}
+        >
+          <AiOutlineEdit />
+        </button>
+      )}
     </div>
   );
 };

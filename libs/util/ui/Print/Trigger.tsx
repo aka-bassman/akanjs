@@ -1,5 +1,6 @@
 "use client";
 import { cn } from "akanjs/client";
+import { st } from "akanjs/store";
 import { useContext } from "react";
 import { useReactToPrint } from "react-to-print";
 
@@ -16,6 +17,9 @@ interface TriggerProps {
 export const Trigger = ({ children, className, pageStyle }: TriggerProps) => {
   const { ref } = useContext(PrintContext);
   const print = useReactToPrint({ contentRef: ref, pageStyle });
+  st.tool("printPage", { desc: "Open the print dialog for the document on screen.", effect: "query" }).exec(() => {
+    print();
+  });
   return (
     <div
       className={cn("cursor-pointer", className)}

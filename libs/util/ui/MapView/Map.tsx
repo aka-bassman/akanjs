@@ -63,18 +63,17 @@ interface MapProps {
   onClick?: (coordinate: cnst.Coordinate) => void;
   onRightClick?: (coordinate: cnst.Coordinate) => void;
   onMouseMove?: (coordinate: cnst.Coordinate) => void;
-  mapKey: string;
   children: any;
 }
-export default function Map({ className, children, onLoad, onClick, onRightClick, onMouseMove, mapKey }: MapProps) {
-  const theme = st.use.theme({ agent: false });
+export default function Map({ className, children, onLoad, onClick, onRightClick, onMouseMove }: MapProps) {
+  const theme = st.use.theme();
   const mapCenter = st.use.mapCenter();
   const mapZoom = st.use.mapZoom();
   const mapBounds = st.use.mapBounds();
   const mapPanControl = st.use.mapPanControl();
   return (
     <Google
-      mapKey={mapKey}
+      mapKey="AIzaSyCrOEDjjMR2AsCUfmv0y7pEe-YPNlXcMpk"
       className={cn("w-full", className)}
       options={{ styles: theme === "dark" ? darkStyle : lightStyle, gestureHandling: mapPanControl ? "auto" : "none" }}
       center={mapCenter}

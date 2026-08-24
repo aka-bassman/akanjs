@@ -97,31 +97,33 @@ export const Download = ({ className, onClick, url, filename, children }: Downlo
 export const ExportPDF = () => {
   const [loading, setLoading] = useState<boolean | null>(null);
   const jwt = getCookie("jwt");
+  const exportPdf = async () => {
+    if (loading) return;
+    setLoading(true);
+    const fullPath =
+      window.location.href +
+      (window.location.href.includes("jwt") ? "" : window.location.href.includes("?") ? `&jwt=${jwt}` : `?jwt=${jwt}`);
+
+    const file = await fetch.generatePdf(fullPath);
+    const arrayBuffer = new Uint8Array(file as unknown as ArrayBuffer);
+    const blob = new Blob([arrayBuffer], { type: "application/pdf" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "example.pdf";
+    link.click();
+    setLoading(false);
+    // 메모리 정리
+    URL.revokeObjectURL(url);
+  };
+  st.tool("exportPdf", {
+    desc: "Render the page on screen to a PDF and save it.",
+    effect: "query",
+    guard: () => (loading === true ? "The PDF is already being made." : true),
+  }).exec(exportPdf);
   return (
     <button
-      onClick={async () => {
-        if (loading) return;
-        setLoading(true);
-        const fullPath =
-          window.location.href +
-          (window.location.href.includes("jwt")
-            ? ""
-            : window.location.href.includes("?")
-              ? `&jwt=${jwt}`
-              : `?jwt=${jwt}`);
-
-        const file = await fetch.generatePdf(fullPath);
-        const arrayBuffer = new Uint8Array(file as unknown as ArrayBuffer);
-        const blob = new Blob([arrayBuffer], { type: "application/pdf" });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "example.pdf";
-        link.click();
-        setLoading(false);
-        // 메모리 정리
-        URL.revokeObjectURL(url);
-      }}
+      onClick={() => void exportPdf()}
       className={cn(buttonRecipe({ variant: "primary" }), loading === true && "bg-primary/80")}
       disabled={loading === true}
     >

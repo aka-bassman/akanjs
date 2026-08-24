@@ -5,8 +5,9 @@
   "dependencies": {
     "react": "19.2.7",
     "react-icons": "^5.6.0",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "bcryptjs": "^2.4.3",
     "file-saver": "^2.0.5",
     "lexical": "0.48.0",
     "@lexical/clipboard": "0.48.0",
@@ -48,5 +49,7 @@
     "@excalidraw/excalidraw": "^0.18.1",
     "mermaid": "^11.15.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "tsconfig-paths": "^4.2.0"
+  }
 }

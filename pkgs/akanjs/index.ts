@@ -26,7 +26,7 @@ export interface AkanRouteConfig {
 
 export type DatabaseMode = "single" | "multiple" | "cluster";
 export type MobileEnv = "local" | "debug" | "develop" | "main";
-export type MobilePermission = "camera" | "contacts" | "location" | "push";
+export type MobilePermission = "camera" | "contacts" | "location" | "push" | "speech";
 
 export interface AkanMobileTargetAssets {
   icon?: string;

@@ -54,6 +54,8 @@ export const baseDictionary = serviceDictionary(["en", "ko"])
     agentClear: ["Clear conversation", "대화 비우기"],
     agentQuestion: ["The agent needs your decision", "에이전트가 결정을 요청합니다"],
     agentAnswer: ["Type your answer...", "답변을 입력하세요..."],
+    agentListen: ["Speak to the agent", "에이전트에게 말하기"],
+    agentVoiceFailed: ["The microphone could not be used.", "마이크를 사용할 수 없습니다."],
     agentAttach: ["Attach a file", "파일 첨부"],
     agentAttachRemove: ["Remove attachment", "첨부 제거"],
     agentAttachTooLarge: ["{name} is too large to attach.", "{name}은(는) 용량이 너무 커서 첨부할 수 없습니다."],

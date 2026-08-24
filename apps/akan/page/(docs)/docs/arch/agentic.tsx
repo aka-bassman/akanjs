@@ -158,6 +158,20 @@ export const option = new AkanOption<ModulesOptions>()
                 ko: "작성창은 이미지와 텍스트 파일을 스스로 첨부합니다. PDF 본문처럼 파서가 필요한 것은 앱이 attach에서 읽습니다. 저장은 하지 않습니다 — 바이트는 한 턴의 요청에만 실리고, 새로고침된 대화는 내용 없이 이름만 남깁니다.",
               }),
             },
+            {
+              title: "voice",
+              desc: l.trans({
+                en: "A press-to-talk microphone whose transcript lands in the composer to be corrected, and a reply read aloud one sentence at a time — but only when the ask itself came in by voice, so a typed question never turns the speakers on. useSpeech from @libs/util/webkit is the engine: the browser's own recognition on the web, Capacitor plugins in a WebView, which has neither.",
+                ko: "눌러서 말하는 마이크입니다. 전사는 작성창에 들어가 고칠 수 있고, 응답은 문장 단위로 읽어줍니다. 단 음성으로 물었을 때만 읽으므로 타이핑한 질문이 스피커를 켜는 일은 없습니다. 엔진은 @libs/util/webkit의 useSpeech — 웹은 브라우저 내장 인식, WebView는 둘 다 없으므로 Capacitor 플러그인입니다.",
+              }),
+            },
+            {
+              title: "a client wrapper",
+              desc: l.trans({
+                en: "attach and voice carry functions, and a function cannot cross the RSC boundary — so a server layout cannot pass either. Mount the chat from a small client component in ui/ that calls the hook, the way apps/akan/ui/DocsAgentChat.tsx does.",
+                ko: "attach와 voice는 함수를 담고 있고 함수는 RSC 경계를 넘지 못합니다. 그래서 서버 레이아웃에서는 둘 다 넘길 수 없습니다. ui/에 훅을 호출하는 작은 클라이언트 컴포넌트를 두고 거기서 채팅을 마운트하세요 — apps/akan/ui/DocsAgentChat.tsx가 그 예입니다.",
+              }),
+            },
           ].map(({ title, desc }) => (
             <div key={title} className={panelRecipe({ padding: "row" })}>
               <span className="font-mono font-semibold text-primary">{title}: </span>

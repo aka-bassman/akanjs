@@ -102,6 +102,37 @@ const composer = (container: HTMLElement) => {
   };
 };
 
+/** A voice engine the test drives: `partial`/`say` are what a real engine's recognition callbacks do. */
+const voiceOf = () => {
+  const spoken: string[] = [];
+  let handlers: {
+    onInterim?: (text: string) => void;
+    onFinal: (text: string) => void;
+    onError: (message: string) => void;
+  } | null = null;
+  return {
+    spoken,
+    listening: () => !!handlers,
+    partial: (text: string) => handlers?.onInterim?.(text),
+    say: (text: string) => handlers?.onFinal(text),
+    fail: (message: string) => handlers?.onError(message),
+    engine: {
+      listen: (given: NonNullable<typeof handlers>) => {
+        handlers = given;
+        return {
+          stop: () => {
+            handlers = null;
+          },
+        };
+      },
+      speak: (text: string) => {
+        spoken.push(text);
+        return { cancel: () => {}, done: Promise.resolve() };
+      },
+    },
+  };
+};
+
 const menuRows = (container: HTMLElement) =>
   [...container.querySelectorAll("button")]
     .map((button) => button.textContent ?? "")
@@ -653,5 +684,87 @@ describe("Agent.Chat", () => {
       attachments: [{ name: "spec.pdf", mimeType: "application/pdf", text: "page one" }],
     });
     unmount();
+  });
+  test("the microphone fills the composer, and a spoken ask is answered out loud", async () => {
+    const voice = voiceOf();
+    const session = new lib.AgentSession(
+      new lib.AgenticSurface(),
+      scripted({ text: "Two sentences. Here is the second." }),
+    );
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen voice={voice.engine} />
+      </lib.AgentProvider>,
+    );
+    const mic = container.querySelector<HTMLButtonElement>('button[aria-label="base.agentListen"]');
+    expect(mic).toBeTruthy();
+    act(() => mic?.click());
+    expect(voice.listening()).toBe(true);
+    act(() => voice.partial("show me"));
+    expect(composer(container).value()).toBe("show me");
+    act(() => voice.say("show me the tasks"));
+    expect(composer(container).value()).toBe("show me the tasks");
+    // Recognition ended with the final result, so the button is offering to listen again.
+    expect(voice.listening()).toBe(false);
+    await act(async () => {
+      composer(container).press("Enter");
+      await untilFlushed(() => !session.isRunning && voice.spoken.length >= 2);
+    });
+    // One utterance per sentence, never per delta and never the whole answer at once.
+    expect(voice.spoken).toEqual(["Two sentences.", "Here is the second."]);
+    unmount();
+  });
+
+  test("a typed ask is never read aloud", async () => {
+    const voice = voiceOf();
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "Answered." }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen voice={voice.engine} />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    input.type("show me the tasks");
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => !session.isRunning);
+    });
+    expect(container.innerHTML).toContain("Answered.");
+    expect(voice.spoken).toEqual([]);
+    unmount();
+  });
+
+  test("a failed microphone says so in the transcript and stops listening", () => {
+    const voice = voiceOf();
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen voice={voice.engine} />
+      </lib.AgentProvider>,
+    );
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="base.agentListen"]')?.click());
+    act(() => voice.fail("not-allowed"));
+    expect(session.messages[0]).toEqual({ role: "assistant", text: "base.agentVoiceFailed", local: true });
+    expect(voice.listening()).toBe(false);
+    unmount();
+  });
+
+  test("no engine, or one that answers unavailable, renders no microphone", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const silent = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    expect(silent.container.querySelector('button[aria-label="base.agentListen"]')).toBeNull();
+    silent.unmount();
+    const voice = voiceOf();
+    const unavailable = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen voice={{ ...voice.engine, available: () => false }} />
+      </lib.AgentProvider>,
+    );
+    expect(unavailable.container.querySelector('button[aria-label="base.agentListen"]')).toBeNull();
+    unavailable.unmount();
   });
 });

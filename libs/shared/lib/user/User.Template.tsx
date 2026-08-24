@@ -1,13 +1,13 @@
 "use client";
-import { st, usePage } from "@libs/shared/client";
+import { fetch, st, User, usePage } from "@libs/shared/client";
 import { Field, Only } from "@libs/shared/ui";
-import { buttonRecipe, CodeInput, inputRecipe, Upload } from "@libs/util/ui";
+import { buttonRecipe, CodeInput, Upload } from "@libs/util/ui";
 import { cn } from "akanjs/client";
-import { formatPhone, isEmail, isPhoneNumber } from "akanjs/common";
+import { isEmail, isPhoneNumber } from "akanjs/common";
 import type { ProtoFile } from "akanjs/constant";
 import { Button, Image, Input, Layout } from "akanjs/ui";
-import { useEffect, useRef, useState } from "react";
-import { AiOutlineClose, AiOutlineEdit, AiOutlinePlus, AiOutlineSave } from "react-icons/ai";
+import { useEffect, useRef } from "react";
+import { AiOutlinePlus } from "react-icons/ai";
 
 export * from "../../ui/UserLeave";
 
@@ -29,9 +29,9 @@ export const General = ({ className }: GeneralProps) => {
       />
       {user ? (
         <Only.Admin>
-          <SetAccountIdByAdmin accountId={user.accountId} />
-          <SetPasswordByAdmin />
-          <SetPhoneByAdmin phone={user.phone} />
+          <User.Util.SetAccountIdByAdmin accountId={user.accountId} />
+          <User.Util.SetPasswordByAdmin />
+          <User.Util.SetPhoneByAdmin phone={user.phone} />
         </Only.Admin>
       ) : null}
     </Layout.Template>
@@ -49,7 +49,7 @@ export const Phone = ({ className, inputClassName, placeholder, userId, redirect
   const { l } = usePage();
   const phone = st.use.phone();
   const inputRef = useRef<HTMLInputElement>(null);
-  const path = st.use.path({ agent: false });
+  const path = st.use.path();
   useEffect(() => {
     inputRef.current?.focus();
   }, [path]);
@@ -62,9 +62,7 @@ export const Phone = ({ className, inputClassName, placeholder, userId, redirect
       inputClassName={inputClassName}
       placeholder={placeholder ?? l("user.phonePlaceholder")}
       value={phone}
-      onChange={(value) => {
-        st.do.setPhone(formatPhone(value));
-      }}
+      onChange={st.do.setPhone}
       onPressEnter={() => {
         if (!userId || !isPhoneNumber(phone)) return;
         void st.do.setPhoneInPrepareUser(userId, phone, { redirect });
@@ -186,9 +184,7 @@ export const AccountId = ({
       inputClassName={inputClassName}
       placeholder={placeholder ?? "이메일을 입력해주세요"}
       value={accountId}
-      onChange={(value) => {
-        st.do.setAccountId(value);
-      }}
+      onChange={st.do.setAccountId}
       onPressEnter={() => {
         if (!accountId || !isEmail(accountId)) return;
         void st.do.generatePrepareUserWithAccountId({ redirect });
@@ -252,14 +248,10 @@ export const PasswordWithConfirm = ({ className, userId, redirect }: PasswordWit
         label={l("user.password")}
         desc={l("user.password.desc")}
         value={password}
-        onChange={(password) => {
-          st.do.setPassword(password);
-        }}
+        onChange={st.do.setPassword}
         showConfirm
         confirmValue={passwordConfirm}
-        onChangeConfirm={(passwordConfirm) => {
-          st.do.setPasswordConfirm(passwordConfirm);
-        }}
+        onChangeConfirm={st.do.setPasswordConfirm}
         onPressEnter={() => {
           if (!password || !passwordConfirm || password !== passwordConfirm) return;
           void st.do.setPasswordInPrepareUser(userId, { redirect });
@@ -377,8 +369,9 @@ export const SubmitNickname = ({ redirect, className }: SubmitNicknameProps) => 
 
 export const AppliedImages = () => {
   const userForm = st.use.userForm();
+  const { l } = usePage();
   const onRemove = (index: number) => {
-    if (!window.confirm("사진을 삭제하시겠습니까?")) return;
+    if (!window.confirm(l("user.removeAppliedImageConfirm"))) return;
     st.do.subAppliedImagesOnUser(index);
   };
   return (
@@ -398,17 +391,21 @@ export const AppliedImages = () => {
               <div
                 className={cn(
                   "flex aspect-1 w-full items-center justify-center rounded-2xl bg-muted duration-300 hover:opacity-50",
-                  i === 0 && "border-4 border-primary",
+                  i === 0 ? "border-4 border-primary" : "",
                 )}
               >
                 <AiOutlinePlus className="font-bold text-6xl text-primary opacity-60" />
-                {i === 0 && (
-                  <div className="absolute top-2 left-2 rounded-md bg-primary px-1 text-white text-xs">대표 사진</div>
-                )}
+                {i === 0 ? (
+                  <div className="absolute top-2 left-2 rounded-md bg-primary px-1 text-white text-xs">
+                    {l("user.mainAppliedImage")}
+                  </div>
+                ) : null}
               </div>
             )}
             renderComplete={(file) => (
-              <div className={cn("aspect-1 w-full overflow-hidden rounded-2xl", i === 0 && "border-4 border-primary")}>
+              <div
+                className={cn("aspect-1 w-full overflow-hidden rounded-2xl", i === 0 ? "border-4 border-primary" : "")}
+              >
                 <Image file={file} className="size-full object-cover" />
               </div>
             )}
@@ -444,14 +441,6 @@ export const AppliedImages = () => {
           />
         ))}
       </div>
-      {/* <BottomSheet onCancel={() => {}} open={false}>
-        <CropImage src={""} download ref={cropRef} />
-        <div className="relative  flex w-full items-center justify-center gap-2">
-          <button onClick={() => {}} className={buttonRecipe({ variant: "primary" }, "flex-1 rounded-2xl")}>
-            저장
-          </button>
-        </div>
-      </BottomSheet> */}
     </>
   );
 };
@@ -474,174 +463,20 @@ export const SubmitAppliedImages = ({ redirect }: SubmitAppliedImagesProps) => {
   );
 };
 
-interface SetAccountIdByAdminProps {
-  className?: string;
-  accountId: string | null;
-}
-export const SetAccountIdByAdmin = ({ className, accountId }: SetAccountIdByAdminProps) => {
-  const [changeId, setChangeId] = useState(accountId ?? "empty");
-  const [editState, setEditState] = useState<"edit" | "saving" | null>(null);
-  return (
-    <div className={cn("flex items-center gap-2", className)}>
-      <label className="w-24">AccountId: </label>
-      <input
-        className={inputRecipe()}
-        value={changeId}
-        onChange={(e) => {
-          setChangeId(e.target.value);
-        }}
-        disabled={!editState}
-      />
-      {editState ? (
-        <>
-          <button
-            className={buttonRecipe({ variant: "primary" })}
-            disabled={
-              editState === "saving" ||
-              changeId === accountId ||
-              changeId.length < 4 ||
-              (isEmail(accountId) && !isEmail(changeId))
-            }
-            onClick={async () => {
-              setEditState("saving");
-              await st.do.setAccountIdByAdmin(changeId);
-              setEditState(null);
-            }}
-          >
-            <AiOutlineSave />
-          </button>
-          <button
-            className={buttonRecipe({ variant: "outline" })}
-            disabled={editState === "saving"}
-            onClick={() => {
-              setChangeId(accountId ?? "");
-              setEditState(null);
-            }}
-          >
-            <AiOutlineClose />
-          </button>
-        </>
-      ) : (
-        <button
-          className={buttonRecipe({ variant: "default" })}
-          onClick={() => {
-            setEditState("edit");
-          }}
-        >
-          <AiOutlineEdit />
-        </button>
-      )}
-    </div>
-  );
-};
-interface SetPasswordByAdminProps {
+interface ActivateByAdminProps {
+  userId: string;
   className?: string;
 }
-export const SetPasswordByAdmin = ({ className }: SetPasswordByAdminProps) => {
-  const [password, setPassword] = useState("********");
-  const [editState, setEditState] = useState<"edit" | "saving" | null>(null);
+export const ActivateByAdmin = ({ userId, className }: ActivateByAdminProps) => {
+  const { l } = usePage();
   return (
-    <div className={cn("flex items-center gap-2", className)}>
-      <label className="w-24">Password: </label>
-      <input
-        className={inputRecipe()}
-        type="password"
-        value={password}
-        onChange={(e) => {
-          setPassword(e.target.value);
-        }}
-        disabled={!editState}
-      />
-      {editState ? (
-        <>
-          <button
-            className={buttonRecipe({ variant: "primary" })}
-            disabled={editState === "saving" || password.length < 8 || password.length > 20}
-            onClick={async () => {
-              setEditState("saving");
-              await st.do.setPasswordByAdmin(password);
-              setEditState(null);
-            }}
-          >
-            <AiOutlineSave />
-          </button>
-          <button
-            className={buttonRecipe({ variant: "outline" })}
-            disabled={editState === "saving"}
-            onClick={() => {
-              setPassword("********");
-              setEditState(null);
-            }}
-          >
-            <AiOutlineClose />
-          </button>
-        </>
-      ) : (
-        <button
-          className={buttonRecipe({ variant: "default" })}
-          onClick={() => {
-            setEditState("edit");
-          }}
-        >
-          <AiOutlineEdit />
-        </button>
-      )}
-    </div>
-  );
-};
-
-interface SetPhoneByAdminProps {
-  className?: string;
-  phone: string | null;
-}
-export const SetPhoneByAdmin = ({ className, phone }: SetPhoneByAdminProps) => {
-  const [changePhone, setChangePhone] = useState(phone ?? "empty");
-  const [editState, setEditState] = useState<"edit" | "saving" | null>(null);
-  return (
-    <div className={cn("flex items-center gap-2", className)}>
-      <label className="w-24">Phone: </label>
-      <input
-        className={inputRecipe()}
-        value={changePhone}
-        onChange={(e) => {
-          setChangePhone(formatPhone(e.target.value));
-        }}
-        disabled={!editState}
-      />
-      {editState ? (
-        <>
-          <button
-            className={buttonRecipe({ variant: "primary" })}
-            disabled={editState === "saving" || !isPhoneNumber(changePhone) || changePhone === phone}
-            onClick={async () => {
-              setEditState("saving");
-              await st.do.setPhoneByAdmin(changePhone);
-              setEditState(null);
-            }}
-          >
-            <AiOutlineSave />
-          </button>
-          <button
-            className={buttonRecipe({ variant: "outline" })}
-            disabled={editState === "saving"}
-            onClick={() => {
-              setChangePhone(phone ?? "");
-              setEditState(null);
-            }}
-          >
-            <AiOutlineClose />
-          </button>
-        </>
-      ) : (
-        <button
-          className={buttonRecipe({ variant: "default" })}
-          onClick={() => {
-            setEditState("edit");
-          }}
-        >
-          <AiOutlineEdit />
-        </button>
-      )}
-    </div>
+    <button
+      className={buttonRecipe({ variant: "primary" }, className)}
+      onClick={() => {
+        void fetch.activateUser(userId);
+      }}
+    >
+      {l("user.signal.activateUser")}
+    </button>
   );
 };

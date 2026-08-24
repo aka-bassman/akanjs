@@ -16,8 +16,10 @@ import Bubble from "./Bubble";
 import { type ChatCommand, ChatCommands } from "./ChatCommands";
 import { fetchRunner } from "./fetchRunner";
 import Menu from "./Menu";
+import { Mic } from "./Mic";
 import Question from "./Question";
 import { type PersistOption, sessionHistoryOf } from "./sessionHistory";
+import { type VoiceEngine, type VoiceListener, VoiceReader } from "./voice";
 
 export interface ChatProps {
   className?: string;
@@ -39,6 +41,12 @@ export interface ChatProps {
    * the built-in, so it can also replace how an image is prepared.
    */
   attach?: AttachReader;
+  /**
+   * Speech in and out. The engine listens and speaks; this component decides when — a press-to-talk microphone
+   * whose transcript lands in the composer for the user to correct, and a reply read aloud **only when the ask
+   * itself came in by voice**, so a typed question never turns the speakers on.
+   */
+  voice?: VoiceEngine;
 }
 
 const isApplePlatform = () => /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
@@ -66,6 +74,7 @@ export const DefaultChat = ({
   persist,
   inline = false,
   attach,
+  voice,
 }: ChatProps) => {
   const { l } = usePage();
   const provided = useContext(SessionContext);
@@ -91,6 +100,18 @@ export const DefaultChat = ({
   const [open, setOpen] = useState(defaultOpen);
   const [draft, setDraft] = useState("");
   const [attached, setAttached] = useState<MessageAttachment[]>([]);
+  const [listening, setListening] = useState(false);
+  // Always-latest: the engine a hook returns may be a new object each render, and the reader outlives them all.
+  const engine = useRef<VoiceEngine | undefined>(voice);
+  engine.current = voice;
+  const listener = useRef<VoiceListener | null>(null);
+  const reader = useRef<VoiceReader | null>(null);
+  reader.current ??= new VoiceReader(() => engine.current);
+  /** Set while the draft came from the microphone, consumed by the send that carries it. */
+  const byVoice = useRef(false);
+  /** The assistant message being read aloud. Null means this turn is not one to read. */
+  const spoken = useRef<{ at: number } | null>(null);
+  const seen = useRef(0);
   const sent = useRef<string[]>([]);
   const stashed = useRef("");
   const [recall, setRecall] = useState(0);
@@ -123,6 +144,39 @@ export const DefaultChat = ({
     if (!open) return;
     inputRef.current?.focus();
   }, [open, session.pendingQuestion?.callId]);
+  useEffect(() => {
+    const speaker = reader.current;
+    // A shorter transcript is a cleared or retried one — /new must not leave the last answer still being read.
+    if (session.messages.length < seen.current) {
+      speaker?.reset();
+      spoken.current = null;
+    }
+    seen.current = session.messages.length;
+    const reading = spoken.current;
+    if (!reading || !speaker) return;
+    const at = session.messages.findLastIndex(
+      (message) => message.role === "assistant" && !message.local && !!message.text,
+    );
+    if (at < 0) return;
+    // A later answer in the same turn is a new one to read from the start; a tool row between them is skipped.
+    if (at !== reading.at) {
+      speaker.reset();
+      reading.at = at;
+    }
+    const text = session.messages[at].text ?? "";
+    if (session.isRunning) speaker.feed(text);
+    else {
+      speaker.flush(text);
+      spoken.current = null;
+    }
+  }, [version]);
+  useEffect(
+    () => () => {
+      listener.current?.stop();
+      reader.current?.cancel();
+    },
+    [],
+  );
   const runPrompt = async (prompt: AgentPrompt, args: string[]) => {
     const usage = `/${prompt.name} ${prompt.args.map((arg) => `<${arg.name}>`).join(" ")}`.trim();
     if (args.length < prompt.args.filter((arg) => arg.required).length) {
@@ -157,6 +211,39 @@ export const DefaultChat = ({
         session.report(`${file.name}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
+  };
+  /** One press is one utterance, so the engine is told to stop even when it reported a final result itself. */
+  const endListening = () => {
+    const held = listener.current;
+    listener.current = null;
+    held?.stop();
+    setListening(false);
+  };
+  const toggleMic = () => {
+    if (listener.current) {
+      endListening();
+      return;
+    }
+    const voiceEngine = engine.current;
+    if (!voiceEngine) return;
+    // Pressing the microphone is barge-in: what is being read stops, so the two are never heard at once.
+    reader.current?.cancel();
+    spoken.current = null;
+    listener.current = voiceEngine.listen({
+      onInterim: setDraft,
+      onFinal: (text) => {
+        setDraft(text);
+        byVoice.current = true;
+        endListening();
+      },
+      onError: (message) => {
+        // The reason is for whoever is debugging a permission prompt; the user gets one sentence they can act on.
+        console.warn(`[akan] voice input failed: ${message}`);
+        session.note(l("base.agentVoiceFailed"));
+        endListening();
+      },
+    });
+    setListening(true);
   };
   const remember = (text: string) => {
     if (sent.current[sent.current.length - 1] !== text) sent.current = [...sent.current, text].slice(-30);
@@ -193,6 +280,7 @@ export const DefaultChat = ({
     const question = session.pendingQuestion;
     if (question && text) {
       setDraft("");
+      byVoice.current = false;
       question.answer(question.multiple ? [text] : text);
       return;
     }
@@ -207,6 +295,9 @@ export const DefaultChat = ({
     const prompt = command ? prompts.current?.find(command.name) : null;
     setDraft("");
     if (text) remember(text);
+    // Only an ask that arrived by voice is answered out loud; a typed one never turns the speakers on.
+    spoken.current = byVoice.current ? { at: -1 } : null;
+    byVoice.current = false;
     if (command && prompt) {
       void runPrompt(prompt, command.args);
       return;
@@ -218,6 +309,8 @@ export const DefaultChat = ({
     setAttached([]);
     void session.send([{ role: "user", ...(text ? { text } : {}), attachments: attached }]);
   };
+  // A screen that cannot listen renders no microphone — the same rule as publishing no tool for a missing control.
+  const canListen = !!voice && (voice.available?.() ?? true);
   const query = /^\/[A-Za-z0-9_-]*$/.test(draft) ? draft : "";
   const commandMenu = query ? ChatCommands.list(l).filter((command) => `/${command.name}`.startsWith(query)) : [];
   const promptMenu = query
@@ -330,6 +423,7 @@ export const DefaultChat = ({
           />
         ) : null}
         <div className="flex items-center gap-2">
+          {canListen ? <Mic label={l("base.agentListen")} listening={listening} onToggle={toggleMic} /> : null}
           <Attach label={l("base.agentAttach")} onPick={(files) => void attachFiles(files)} />
           <input
             className={inputRecipe({ size: "sm" }, "flex-1")}
@@ -356,7 +450,15 @@ export const DefaultChat = ({
             value={draft}
           />
           {session.isRunning && !session.pendingQuestion ? (
-            <Button onClick={session.abort} size="sm" variant="outline">
+            <Button
+              onClick={() => {
+                reader.current?.cancel();
+                spoken.current = null;
+                session.abort();
+              }}
+              size="sm"
+              variant="outline"
+            >
               {l("base.stop")}
             </Button>
           ) : (

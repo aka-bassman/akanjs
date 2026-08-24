@@ -137,14 +137,49 @@ describe("mention node", () => {
       href: "/admin/a1",
       imageUrl: "https://cdn.akan.io/a1.png",
       mode: "token",
-      text: "@kangmin",
+      text: "kangmin",
     });
   });
 
-  it("reads back as plain `@label` text so previews and search keep working", async () => {
+  it("reads back as the bare label so previews and search stay in sync with the chip", async () => {
     const editor = await insertMention();
     const text = editor.getEditorState().read(() => $getRoot().getTextContent());
-    expect(text).toBe("cc @kangmin");
+    expect(text).toBe("cc kangmin");
+  });
+
+  it("strips a legacy `@label` text field on import", async () => {
+    const { MentionNode } = await import("./nodes/MentionNode");
+    const editor = makeEditor([MentionNode]);
+    const legacy = {
+      root: {
+        type: "root",
+        version: 1,
+        children: [
+          {
+            type: "paragraph",
+            version: 1,
+            children: [
+              {
+                type: "akan-mention",
+                version: 1,
+                text: "@kangmin",
+                refName: "admin",
+                refId: "a1",
+                label: "kangmin",
+                href: "/admin/a1",
+                imageUrl: null,
+                format: 0,
+                detail: 0,
+                mode: "token",
+                style: "",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const restored = editor.parseEditorState(legacy);
+    expect(restored.read(() => $getRoot().getTextContent())).toBe("kangmin");
   });
 });
 
