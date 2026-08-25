@@ -918,13 +918,13 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   in place, so a prompt's own preamble is not sent twice.
 - **↑ and ↓ in the composer walk what was sent.** A single-line input has nothing of its own on the vertical
   arrows, and the half-written draft they were walked away from comes back at the bottom of the walk.
-- The framework publishes five built-ins on every store surface: `navigate` (internal paths only, the same
+- The framework publishes six built-ins on every store surface: `navigate` (internal paths only, the same
   router `Link` rides), `goBack` (this session's history — global, because history is not a control a page owns and
   a page that draws no back link is not one you may not leave), `readScreen` (the rendered DOM as compact text —
   headings, links, control values, and `(disabled)` on a control or button that has it; the chat's own UI is
-  skipped via `data-agent-ui`, and a password value is never read), `readState(key)` (one masked store key), and
-  `highlight(target)`. Declaring a hook tool under one of those names shadows the built-in, so reuse them only to
-  mean that.
+  skipped via `data-agent-ui`, and a password value is never read), `readState(key)` (one masked store key),
+  `waitFor(key)` (park until that key moves), and `highlight(target)`. Declaring a hook tool under one of those
+  names shadows the built-in, so reuse them only to mean that.
 - **A tool that changes the screen waits for the screen before it answers.** `router.push` returns while the RSC
   payload is still in flight and a store action that fires `void fetch.*` commits a tick later, so `navigate`
   awaits `ScreenSettle.wait()` — DOM quiescence, bounded, because the client router hands its promise to nobody —
@@ -932,6 +932,26 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   describes the moment before the change landed and the `readScreen` that follows reads the page the user left.
   New tools and state from a fresh route are still only listed from the next turn: the catalogue is snapshotted
   when the turn starts.
+- **A tool that waits for its own work costs no model turns; one that returns early costs one round trip per
+  look.** The session awaits `run`, so a `.exec` that awaits the store action finishing the job simply makes the
+  turn take that long — and the change report that follows carries whatever landed, so the model needs no second
+  call to read the result. A fire-and-forget tool leaves the agent to poll instead, which burns the whole
+  `maxTurns` budget in seconds on a job measured in minutes. Say so in the `desc` ("takes about two minutes; do
+  not poll while it runs") and, for a route full of slow work, in an `Agent.Guide`.
+- **`waitFor(key, equals?, timeoutSeconds?)` is for the job the *tool* cannot await** — started in an earlier turn,
+  or by a person clicking the button. It parks on a **store state key a mounted component subscribes**, exactly the
+  set `readState` reads, and resumes the moment the key moves; `equals` waits for one value, omitted it waits for
+  any change. **Not a resource**: `st.expose` and `st.useState` register on the surface, whose values already ride
+  inline in the screen context block, and `waitFor` refuses one of those names like any other. Deliberately not a
+  bare sleep either — a sleep only makes the polling slower, and a value worth waiting minutes for is server-derived
+  state, which lives in the store already. Running out is not a failure, it answers with what the key holds now
+  (default 120s, clamped to 600), and a key this screen does not read is refused by name with the ones it does.
+- **Stop reaches a tool that is still running.** The session races every call against its abort signal, so a
+  two-minute tool does not hold the loop for two minutes after the user presses Stop. The signal itself arrives
+  through `AgentAbort.current` — the same module slot `AgentProgress` is — and honouring it is optional, since the
+  race lands whatever the tool does; what it buys is the tool's own cleanup, a timer or a poll loop that would
+  otherwise run out with nobody left to answer. A tool that ignores it is left running rather than cancelled: the
+  work is usually a job a server is already doing.
 - **`readScreen` takes a `section`, and `highlight` a `target`.** Both resolve a name the agent has already seen —
   a `data-akan-action` / `data-akan-state` annotation, an `Agent.Zone` or `useScreenScope` container
   (`data-agent-scope`, which `Load.Units` / `Load.View` / `Data.ListContainer` put on the container they render),
@@ -950,7 +970,8 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
 - **A slow tool reports its own progress with `AgentProgress.report(message, { done, total })`** from wherever the
   work is — a store action, an upload loop, an adapter — reached through a module slot rather than a parameter, and
   a no-op when nobody is rendering it. The chat shows it on that call's row until the row resolves. It is the
-  browser twin of `McpProgress.report`.
+  browser twin of `McpProgress.report`. Import it and `AgentAbort` from `akanjs/store`: an app may not reach
+  `use-agentic` directly (`no-import-external-library`), and those two are the channels a long tool body needs.
 - **The turn cap is a question, not a dead end.** At `maxTurns` the session asks whether to keep going through the
   same card `askUser` uses, and the answer rides as the user's own turn — so a steer typed instead of the
   keep-going choice reaches the model as guidance. A host that renders no `pendingQuestion` passes no

@@ -193,8 +193,8 @@ export const option = new AkanOption<ModulesOptions>()
           </div>
           <div>
             {l.trans({
-              en: "Six tools are on every screen whatever it declares:",
-              ko: "화면이 무엇을 선언하든 항상 실리는 툴이 여섯 있습니다.",
+              en: "Seven tools are on every screen whatever it declares:",
+              ko: "화면이 무엇을 선언하든 항상 실리는 툴이 일곱 있습니다.",
             })}
           </div>
           <div className="space-y-1">
@@ -225,6 +225,13 @@ export const option = new AkanOption<ModulesOptions>()
                 desc: l.trans({ en: "One masked store key.", ko: "마스킹된 스토어 키 하나." }),
               },
               {
+                title: "waitFor(key, equals?)",
+                desc: l.trans({
+                  en: "Parks the turn until that store state key moves, so a job measured in minutes costs no model round trips. The same keys readState reads, so a component has to be subscribing it — a surface resource from st.expose is not one. Deliberately not a sleep: a sleep only makes polling slower. Running out is not a failure — it answers with what the key holds now.",
+                  ko: "그 스토어 상태 키가 움직일 때까지 턴을 세워 둡니다. 분 단위 작업이 모델 왕복을 한 번도 쓰지 않습니다. readState가 읽는 것과 같은 키라서 컴포넌트가 구독하고 있어야 합니다 — st.expose가 만드는 surface 리소스는 해당하지 않습니다. 일부러 sleep이 아닙니다 — sleep은 폴링을 느리게 할 뿐입니다. 시간이 다 되는 것은 실패가 아니라, 키의 현재 값을 담은 답입니다.",
+                }),
+              },
+              {
                 title: "highlight(target)",
                 desc: l.trans({
                   en: "Scrolls one thing into view and flashes it once the scroll lands, so the agent can show the user where a thing is instead of describing where it is. The target is a tool name, a state key, a scope path, an anchor, or a heading's text. Nothing hidden ever resolves.",
@@ -247,8 +254,14 @@ export const option = new AkanOption<ModulesOptions>()
           </div>
           <div>
             {l.trans({
-              en: "A tool that changes the screen waits for the screen before it answers: router.push returns while the payload is still in flight, so navigate — and the session, after every non-query tool — waits for the DOM to hold still before reporting. A slow tool reports its own progress with AgentProgress.report, shown on that call's row. And the turn cap is a question rather than a dead end: at maxTurns the agent asks whether to keep going, and what the user types instead rides as their own turn.",
-              ko: "화면을 바꾸는 툴은 화면이 정착한 뒤에 답합니다. router.push는 페이로드가 아직 오는 중에 반환되므로, navigate는 (그리고 세션은 query가 아닌 모든 툴 뒤에서) DOM이 멈출 때까지 기다린 다음 변경을 보고합니다. 느린 툴은 AgentProgress.report로 자기 진행을 알리고, 그 호출의 행에 표시됩니다. 턴 상한도 막다른 길이 아니라 질문입니다 — maxTurns에 닿으면 계속할지 묻고, 사용자가 대신 입력한 말은 그 사용자의 턴으로 들어갑니다.",
+              en: "A tool that changes the screen waits for the screen before it answers: router.push returns while the payload is still in flight, so navigate — and the session, after every non-query tool — waits for the DOM to hold still before reporting. And the turn cap is a question rather than a dead end: at maxTurns the agent asks whether to keep going, and what the user types instead rides as their own turn.",
+              ko: "화면을 바꾸는 툴은 화면이 정착한 뒤에 답합니다. router.push는 페이로드가 아직 오는 중에 반환되므로, navigate는 (그리고 세션은 query가 아닌 모든 툴 뒤에서) DOM이 멈출 때까지 기다린 다음 변경을 보고합니다. 턴 상한도 막다른 길이 아니라 질문입니다 — maxTurns에 닿으면 계속할지 묻고, 사용자가 대신 입력한 말은 그 사용자의 턴으로 들어갑니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "Long work is awaited, not polled. The session awaits a tool's own promise, so a .exec that awaits the store action finishing the job simply makes the turn take that long — and the change report that follows carries whatever landed, so the model needs no second call to read it. A tool that returns early leaves the agent to ask again and again, one round trip per look, which burns the whole maxTurns budget in seconds on a job measured in minutes. Say so in the desc. waitFor is for the job the tool cannot await — one started in an earlier turn, or by a person clicking the button. Stop reaches a tool that is still running: the session races every call against its abort signal, and the signal itself arrives through AgentAbort.current, the same module slot AgentProgress is. Honouring it is optional, since the race lands whatever the tool does; what it buys is the tool's own cleanup. Import both from akanjs/store — an app may not reach use-agentic directly.",
+              ko: "긴 작업은 폴링이 아니라 await 합니다. 세션은 툴의 promise를 기다리므로, 작업을 끝내는 스토어 액션을 await 하는 .exec은 그냥 턴이 그만큼 걸리게 만듭니다. 그리고 뒤따르는 변경 보고가 그 사이 도착한 것을 실어 나르므로, 모델은 결과를 읽기 위해 두 번째 호출을 할 필요가 없습니다. 일찍 반환하는 툴은 에이전트에게 계속 되묻게 만들고, 한 번 볼 때마다 모델 왕복이 한 번이라, 분 단위 작업에서 maxTurns 예산을 몇 초 만에 태웁니다. 그 사실을 desc에 적으세요. waitFor는 툴이 기다릴 수 없는 작업 — 이전 턴에서, 또는 사용자가 버튼을 눌러 시작된 작업 — 을 위한 것입니다. Stop은 아직 돌고 있는 툴에도 닿습니다. 세션이 모든 호출을 abort 시그널과 레이스시키고, 시그널 자체는 AgentProgress와 같은 모듈 슬롯인 AgentAbort.current로 옵니다. 레이스가 어떤 툴이든 멈춰 세우므로 시그널을 존중하는 것은 선택입니다. 존중해서 얻는 것은 툴 자신의 정리입니다. 둘 다 akanjs/store에서 가져오세요 — 앱은 use-agentic에 직접 닿을 수 없습니다.",
             })}
           </div>
           <div>

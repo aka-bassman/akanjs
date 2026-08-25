@@ -182,6 +182,17 @@ describe("StoreSurfaceSource", () => {
     await expect(surface.call("waitFor", { key: "  " })).rejects.toThrow("waitFor needs a key to watch.");
   });
 
+  test("waitFor watches a store state key, never a surface resource", async () => {
+    const surface = new AgenticSurface();
+    surface.addSource(source);
+    // `st.expose` and `st.useState` register resources, whose values ride inline in the screen context block on
+    // every turn. They are a different registry from the store keys `readState` and `waitFor` read.
+    surface.registerResource([], { name: "exposedStatus", read: () => "generating" });
+    await expect(surface.call("waitFor", { key: "exposedStatus" })).rejects.toThrow(
+      "No state key named exposedStatus is read by this screen",
+    );
+  });
+
   test("highlight is published as a screen-driving tool and answers honestly with no document", async () => {
     const surface = new AgenticSurface();
     surface.addSource(source);
