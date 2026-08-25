@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { AgentAbort } from "./AgentAbort";
 import { AgenticSurface } from "./AgenticSurface";
 import { AgentProgress } from "./AgentProgress";
 import { AgentSession } from "./AgentSession";
@@ -609,5 +610,119 @@ describe("AgentSession history", () => {
     expect(session.messages).toEqual([]);
     expect(session.isRunning).toBe(false);
     expect(session.pendingApproval).toBeNull();
+  });
+});
+
+describe("AgentSession long tools", () => {
+  test("a tool that waits holds the turn without a model round trip", async () => {
+    const surface = new AgenticSurface();
+    let status = "generating";
+    surface.registerResource([], { name: "status", read: () => status });
+    // The shape an app writes: the tool does not return until the work it started is done.
+    surface.registerTool([], {
+      name: "generate",
+      effect: "mutation",
+      run: async () => {
+        for (let at = 0; at < 5; at += 1) await tick();
+        status = "ready";
+      },
+    });
+    const { runner, requests } = scripted(
+      [
+        { type: "toolCall", id: "c1", name: "generate", args: {} },
+        { type: "done", stop: "toolUse" },
+      ],
+      [{ type: "done", stop: "end" }],
+    );
+    const session = new AgentSession(surface, runner);
+    await session.send("generate it");
+    const results = session.messages.find((message) => message.role === "tool")?.toolResults;
+    // The model was asked twice: the turn that called the tool, and the one that read its result. Never in between.
+    expect(requests).toHaveLength(2);
+    expect(results?.[0].changes).toEqual([{ name: "status", value: "ready" }]);
+  });
+
+  test("stop ends a turn parked in a long tool instead of waiting the tool out", async () => {
+    const surface = new AgenticSurface();
+    let started = false;
+    surface.registerTool([], {
+      name: "forever",
+      run: () => {
+        started = true;
+        return new Promise(() => {});
+      },
+    });
+    const { runner } = scripted([
+      { type: "toolCall", id: "c1", name: "forever", args: {} },
+      { type: "done", stop: "toolUse" },
+    ]);
+    const session = new AgentSession(surface, runner);
+    const turn = session.send("wait for it");
+    await until(() => started);
+    session.abort();
+    await turn;
+    expect(session.isRunning).toBe(false);
+    const results = session.messages.find((message) => message.role === "tool")?.toolResults;
+    expect(results?.[0].error).toBe("The user aborted the turn.");
+  });
+
+  test("a tool reads the signal through AgentAbort, so it can stop its own work", async () => {
+    const surface = new AgenticSurface();
+    let stopped = false;
+    let watching = false;
+    surface.registerTool([], {
+      name: "poll",
+      run: () =>
+        new Promise((resolve) => {
+          const timer = setInterval(() => {}, 10);
+          AgentAbort.current?.addEventListener("abort", () => {
+            clearInterval(timer);
+            stopped = true;
+            resolve("stopped");
+          });
+          watching = true;
+        }),
+    });
+    const { runner } = scripted([
+      { type: "toolCall", id: "c1", name: "poll", args: {} },
+      { type: "done", stop: "toolUse" },
+    ]);
+    const session = new AgentSession(surface, runner);
+    const turn = session.send("poll it");
+    await until(() => watching);
+    session.abort();
+    await turn;
+    expect(stopped).toBe(true);
+    // The slot is per call, so nothing outside one can reach a signal that is no longer live.
+    expect(AgentAbort.current).toBeNull();
+  });
+
+  test("a tool that ignores the signal is left running rather than having its result thrown away", async () => {
+    const surface = new AgenticSurface();
+    let finished = false;
+    let release: (() => void) | null = null;
+    surface.registerTool([], {
+      name: "stubborn",
+      run: () =>
+        new Promise<string>((resolve) => {
+          release = () => {
+            finished = true;
+            resolve("done anyway");
+          };
+        }),
+    });
+    const { runner } = scripted([
+      { type: "toolCall", id: "c1", name: "stubborn", args: {} },
+      { type: "done", stop: "toolUse" },
+    ]);
+    const session = new AgentSession(surface, runner);
+    const turn = session.send("go");
+    await until(() => !!release);
+    session.abort();
+    await turn;
+    expect(finished).toBe(false);
+    release?.();
+    await tick();
+    expect(finished).toBe(true);
   });
 });

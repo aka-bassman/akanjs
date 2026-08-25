@@ -1,3 +1,4 @@
+import { AgentAbort } from "./AgentAbort";
 import { AgentProgress, type AgentProgressReport } from "./AgentProgress";
 import type {
   AgentRunner,
@@ -302,12 +303,14 @@ export class AgentSession {
     }
     const before = this.#surface.snapshot();
     try {
-      const result = await AgentProgress.run(
-        (report) => {
-          this.#progress = { ...report, callId: call.id };
-          this.#notify();
-        },
-        () => this.#surface.call(call.name, call.args),
+      const result = await AgentAbort.run(signal, () =>
+        AgentProgress.run(
+          (report) => {
+            this.#progress = { ...report, callId: call.id };
+            this.#notify();
+          },
+          () => AgentSession.#raced(this.#surface.call(call.name, call.args), signal),
+        ),
       );
       // A query reads and returns; anything else may still be landing, and a report taken now would describe the
       // screen as it was one tick before the call.
@@ -402,6 +405,35 @@ export class AgentSession {
         reject: (reason) => settle(reason ?? "The user declined."),
       };
       this.#notify();
+    });
+  }
+
+  /**
+   * The call, or the abort — whichever lands first.
+   *
+   * A tool is handed the signal through `AgentAbort` and may stop itself, but nothing obliges it to, and a tool
+   * that waits on a two-minute job is exactly the one a user reaches for Stop during. Without this race the loop
+   * stays parked inside the call for those two minutes with the chat still showing a turn in flight.
+   *
+   * The losing promise is left running rather than cancelled: the work is usually a job a server is already
+   * doing, and throwing away a result that is about to land helps nobody. Both of its outcomes are handled here,
+   * so a late failure settles nothing instead of surfacing as an unhandled rejection.
+   */
+  static #raced<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = () => reject(new Error("The user aborted the turn."));
+      work.then(
+        (value) => {
+          signal.removeEventListener("abort", onAbort);
+          resolve(value);
+        },
+        (error: unknown) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(error instanceof Error ? error : new Error(String(error)));
+        },
+      );
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
     });
   }
 

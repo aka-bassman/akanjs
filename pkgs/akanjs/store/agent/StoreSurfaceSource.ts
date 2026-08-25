@@ -4,6 +4,7 @@ import { AgentBridge } from "./AgentBridge";
 import { ScreenReader } from "./ScreenReader";
 import { ScreenSettle } from "./ScreenSettle";
 import { ScreenTarget } from "./ScreenTarget";
+import { StateWait } from "./StateWait";
 
 /**
  * The tools every akan screen has whatever it declares: where it can go, what it is rendering, what one of the
@@ -38,6 +39,7 @@ export class StoreSurfaceSource implements SurfaceSource {
         StoreSurfaceSource.#goBack(),
         StoreSurfaceSource.#readScreen(viewKey),
         this.#readState(viewKey),
+        this.#waitFor(viewKey),
         StoreSurfaceSource.#highlight(viewKey),
       ];
       this.#builtins.set(viewKey, builtins);
@@ -187,6 +189,66 @@ export class StoreSurfaceSource implements SurfaceSource {
       run: (args: Record<string, unknown>) => {
         this.#bridge ??= AgentBridge.of();
         return this.#bridge.read(String(args.key), viewKey);
+      },
+    };
+  }
+
+  /**
+   * The wait that costs no model turns.
+   *
+   * An agent that started something slow has one way to learn it finished: ask again, and again, a full round trip
+   * per look. That burns the turn budget in seconds and reads to the user as a loop. This parks the call instead —
+   * the session already awaits `run`, so the turn simply takes as long as the work does, and the change report
+   * that follows carries whatever landed while it waited.
+   *
+   * It watches a published state key rather than sleeping for a fixed span. A bare sleep would only make the
+   * polling slower, and a screen that can report progress at all reports it into the store; a screen that reports
+   * none publishes a key with `st.expose`, which is worth doing anyway, since the key is then readable too.
+   */
+  #waitFor(viewKey: string): ToolEntry {
+    return {
+      name: "waitFor",
+      description:
+        "Wait here until one of this page's state keys settles, instead of asking again and again. Use it after starting something slow — a generation, an upload, a long job — whenever a state key reports how it is going: the turn pauses with no model round trip and resumes the moment the key moves. Keys are listed in the state context block. Returns what the key holds when the wait ends.",
+      parameters: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: "The state key to watch, spelled as the state context block lists it." },
+          equals: {
+            type: "string",
+            description:
+              "Wait until the key reads exactly this, compared as text. Omit to wait until it changes from whatever it holds now.",
+          },
+          timeoutSeconds: {
+            type: "number",
+            description: `How long to wait before answering with the key's current value. Default ${StateWait.defaultSeconds}, maximum ${StateWait.maxSeconds}. Running out is not a failure — call waitFor again to keep waiting.`,
+          },
+        },
+        required: ["key"],
+        additionalProperties: false,
+      },
+      // Not a query: the point of waiting is that something changed, so the session settles the screen afterwards
+      // and takes the diff — which is how the result of the work arrives without a second call to read it.
+      effect: "state",
+      run: async (args) => {
+        this.#bridge ??= AgentBridge.of();
+        const key = typeof args.key === "string" ? args.key.trim() : "";
+        if (!key) throw new Error("waitFor needs a key to watch.");
+        const live = this.#bridge.readableKeys(viewKey);
+        if (!live.includes(key))
+          throw new Error(
+            `No state key named ${key} is read by this screen. ${
+              live.length
+                ? `Keys here: ${live.join(", ")}.`
+                : "This screen reads no state keys, so there is nothing to wait for."
+            }`,
+          );
+        return await new StateWait(this.#bridge, {
+          key,
+          viewKey,
+          equals: typeof args.equals === "string" ? args.equals : null,
+          seconds: args.timeoutSeconds,
+        }).run();
       },
     };
   }
