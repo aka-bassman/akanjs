@@ -58,6 +58,12 @@ The same endpoint answers text/event-stream. Assistant text arrives as it is gen
 
 App-global framing on Agent.Chat. Route-scoped guidance layers on through mounted Agent.Guide.
 
+The composer attaches images and text files on its own; attach is where an app reads what needs a parser, like a PDF's text. Nothing is stored — the bytes ride one turn's request, and a reloaded transcript keeps the name without the content.
+
+A press-to-talk microphone whose transcript lands in the composer to be corrected, and a reply read aloud one sentence at a time — but only when the ask itself came in by voice, so a typed question never turns the speakers on. useSpeech from @libs/util/webkit is the engine: the browser's own recognition on the web, Capacitor plugins in a WebView, which has neither.
+
+attach and voice carry functions, and a function cannot cross the RSC boundary — so a server layout cannot pass either. Mount the chat from a small client component in ui/ that calls the hook, the way apps/akan/ui/DocsAgentChat.tsx does.
+
 The Declared Surface
 
 st.tool publishes one action and hands back the callable you wire to onClick, so the agent and the user press the same handler. st.use, st.sel, and st.ref make one store key readable while the component reading it is mounted. Unmount and both withdraw on the next turn.

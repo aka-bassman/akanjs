@@ -23,14 +23,15 @@ await app.start();`,
     {
       name: "AkanAppOptions",
       desc: l.trans({
-        en: "Constructor option type for `AkanApp`. It configures replica layout, server path, runtime directory, HTTP port, and WebSocket base port for the gateway process.",
-        ko: "`AkanApp` constructor option type입니다. gateway process를 위한 replica layout, server path, runtime directory, HTTP port, WebSocket base port를 설정합니다.",
+        en: "Constructor option type for `AkanApp`. It configures replica layout, server path, runtime directory, HTTP port, and WebSocket base port for the gateway process, plus `openapi` and `modules`. `modules` boots only the named modules and the ones they depend on, in every child; omitted or empty mounts every enabled module.",
+        ko: "`AkanApp` constructor option type입니다. gateway process를 위한 replica layout, server path, runtime directory, HTTP port, WebSocket base port와 함께 `openapi`, `modules`를 설정합니다. `modules`는 지정한 모듈과 그 의존 모듈만 모든 child에서 부팅하며, 비워두면 활성화된 모든 모듈을 마운트합니다.",
       }),
       code: `import type { AkanAppOptions } from "akanjs/server";
 
 const options: AkanAppOptions = {
   replica: "1,0,2",
   runtimeDir: "./runtime",
+  modules: ["article"],
 };`,
     },
     {

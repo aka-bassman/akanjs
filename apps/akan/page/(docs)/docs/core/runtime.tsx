@@ -497,6 +497,82 @@ void run();`}
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
+      <Scroll.Slide id="module-selection" title={l.trans({ en: "Selective Module Boot", ko: "모듈 선택 실행" })}>
+        <Docs.Title>{l.trans({ en: "Selective Module Boot", ko: "모듈 선택 실행" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "An app mounts every module its libraries declare. The modules option narrows that: name the modules a process should serve and Akan boots those plus the ones they depend on, leaving the rest out of the container entirely. A module left out has no service, no signal, no route, and no scheduled job. This is how one codebase runs as several small processes, such as a batch worker that only needs its own domain.",
+              ko: "앱은 라이브러리가 선언한 모든 모듈을 마운트합니다. modules 옵션은 그 범위를 좁힙니다. 이 프로세스가 담당할 모듈을 지정하면 Akan은 그 모듈과 의존하는 모듈만 부팅하고 나머지는 컨테이너에 아예 올리지 않습니다. 빠진 모듈은 service, signal, route, 예약 작업이 모두 존재하지 않습니다. 하나의 코드베이스를 여러 개의 작은 프로세스로 나눠 실행하는 방법이며, 자기 도메인만 필요한 batch worker 같은 경우에 씁니다.",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/myapp/main.ts"
+            code={`import { AkanApp } from "akanjs/server";
+
+const run = async () => {
+  await new AkanApp("./server", { modules: ["article"] }).start();
+};
+void run();`}
+          />
+          <div>
+            {l.trans({
+              en: "Dependencies are followed for you, so you list entry points instead of the whole graph. A named module pulls in every service and signal it injects, and every model its cascade removes. The boot log prints what was mounted.",
+              ko: "의존성은 프레임워크가 따라가므로 전체 그래프가 아니라 진입점만 적으면 됩니다. 지정한 모듈은 자신이 주입하는 service와 signal, 그리고 cascade로 삭제하는 model을 함께 끌어옵니다. 무엇이 마운트되었는지는 부팅 로그에 표시됩니다.",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title={l.trans({ en: "Boot log", ko: "부팅 로그" })}
+            language="bash"
+            code={`[DiLifecycle] INFO  Mounting 3 of 12 module(s): article, file, user`}
+          />
+          <div className="space-y-1">
+            {[
+              {
+                title: l.trans({ en: "App option", ko: "앱 옵션" }),
+                desc: l.trans({
+                  en: "Use this when the entry point itself decides which modules the process serves. Every replica it spawns gets the same selection.",
+                  ko: "이 엔트리 포인트가 담당할 모듈을 코드에서 정할 때 사용합니다. 여기서 생성되는 모든 replica가 같은 선택을 받습니다.",
+                }),
+                value: `new AkanApp("./server", { modules: ["article"] })`,
+              },
+              {
+                title: l.trans({ en: "Environment variable", ko: "환경변수" }),
+                desc: l.trans({
+                  en: "Use this when deployment decides the split, so one image can run as different processes without a second entry point.",
+                  ko: "배포 환경에서 분리 방식을 정할 때 사용합니다. 엔트리 포인트를 새로 만들지 않고 같은 이미지를 다른 프로세스로 실행할 수 있습니다.",
+                }),
+                value: "AKAN_MODULES=article,file",
+              },
+              {
+                title: l.trans({ en: "Server option", ko: "서버 옵션" }),
+                desc: l.trans({
+                  en: "Use this when you start AkanServer directly instead of going through AkanApp.",
+                  ko: "AkanApp을 거치지 않고 AkanServer를 직접 시작할 때 사용합니다.",
+                }),
+                value: `new AkanServer("myapp", env, "all", lib, { modules: ["article"] })`,
+              },
+            ].map(({ title, desc, value }) => (
+              <div key={title} className={panelRecipe()}>
+                <div className="font-bold text-foreground">{title}</div>
+                <div className="mt-2 text-foreground/70 text-sm leading-relaxed">{desc}</div>
+                <div className="mt-3 break-all rounded bg-muted px-2 py-1 font-mono text-foreground/80 text-xs">
+                  {value}
+                </div>
+              </div>
+            ))}
+          </div>
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: "A name no module registered fails the boot instead of being ignored, so a typo cannot quietly drop a module. Selection narrows the enabled set rather than replacing it, so it never turns on a module whose service is disabled. Endpoints of a module left out do not exist, so a client that calls one gets a 404.",
+              ko: "등록되지 않은 이름은 무시되지 않고 부팅을 실패시키므로, 오타 때문에 모듈이 조용히 빠지는 일은 없습니다. 선택은 활성화된 모듈 집합을 좁힐 뿐이라 service가 비활성화된 모듈을 켜지는 않습니다. 빠진 모듈의 endpoint는 존재하지 않으므로 클라이언트가 호출하면 404가 됩니다.",
+            })}
+          </Docs.Alert>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
       <Scroll.Slide
         id="health-metrics-logs"
         title={l.trans({ en: "Health, Metrics, Logs", ko: "상태 확인, 메트릭, 로그" })}

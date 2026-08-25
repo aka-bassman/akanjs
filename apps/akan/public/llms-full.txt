@@ -894,6 +894,7 @@ Headings:
 - Root-level Env Variables
 - getEnv()
 - OpenAPI JSON
+- Selective Module Boot
 - Health, Metrics, Logs
 
 Akan Runtime
@@ -1338,7 +1339,7 @@ akanjs/server
 
 Gateway/orchestrator used by app `main.ts` files. It starts child server replicas, proxies HTTP and WebSocket traffic, reports metrics, and handles shutdown for local and production runs.
 
-Constructor option type for `AkanApp`. It configures replica layout, server path, runtime directory, HTTP port, and WebSocket base port for the gateway process.
+Constructor option type for `AkanApp`. It configures replica layout, server path, runtime directory, HTTP port, and WebSocket base port for the gateway process, plus `openapi` and `modules`. `modules` boots only the named modules and the ones they depend on, in every child; omitted or empty mounts every enabled module.
 
 App/library option builder used by `lib/option.ts`. It registers env-derived use objects, signal middleware, adaptor overrides, and web proxies, and carries the settings an app owns: `setMcp` for the MCP server, `setAgentAccess` for the guards a caller must pass to spend the LLM key through the agent relay, and `setLlm` for the model that relay speaks to. Every lib's option is read in mount order with the app's last.
 
@@ -3389,7 +3390,7 @@ Headings:
 
 Overlays
 
-Controlled modal wrapper built on Akan's headless `Dialog` state. Use it for common app overlays where you want title/content/action slots without composing the full dialog namespace.
+Controlled modal wrapper built on Akan's headless `Dialog` state. Use it for common app overlays where you want title/content/action slots without composing the full dialog namespace. The surface is deliberately plain — no transition, no gesture — so it never animates content the user is reading. `LegacyModal` keeps the previous animated skin.
 
 Controlled open state.
 
@@ -3409,7 +3410,7 @@ Opens the dialog from custom trigger content.
 
 Modal surface and close behavior.
 
-Named modal slots.
+Previous surface: spring open/close and drag-to-dismiss on touch.
 
 ## Overview
 
@@ -4374,6 +4375,7 @@ Headings:
 - Adapt And Plug
 - Inject Services
 - Read Environment
+- One Key, One Owner
 - Tips
 
 Dependency Injection

@@ -68,6 +68,11 @@ export interface AkanAppOptions {
   port?: number;
   wsBasePort?: number;
   openapi?: boolean;
+  /**
+   * Boot only these modules and the ones they reach, in every child. Omitted or empty mounts every enabled
+   * module. Handed down as `AKAN_MODULES`, since each replica builds its own container.
+   */
+  modules?: string[];
 }
 
 interface AkanReplicaConfig {
@@ -100,6 +105,7 @@ export class AkanApp {
   readonly #port: number;
   readonly #wsBasePort: number;
   readonly #openapi?: boolean;
+  readonly #modules: string[];
   readonly #children = new Map<number, ChildState>();
   readonly #roomChildren = new Map<string, Set<number>>();
   readonly #childRooms = new Map<number, Set<string>>();
@@ -141,6 +147,7 @@ export class AkanApp {
     this.#port = Number(resolvedOptions.port ?? process.env.PORT ?? 8282);
     this.#wsBasePort = Number(resolvedOptions.wsBasePort ?? process.env.AKAN_WS_BASE_PORT ?? this.#port + 10_000);
     this.#openapi = resolvedOptions.openapi;
+    this.#modules = resolvedOptions.modules ?? [];
   }
 
   static #resolveServerPath(serverPath: string) {
@@ -312,6 +319,7 @@ export class AkanApp {
         AKAN_CHILD_SOCKET: upstream.http.socketPath,
         AKAN_CHILD_WS_PORT: upstream.ws ? String(upstream.ws.port) : "",
         ...(this.#openapi === undefined ? {} : { AKAN_OPENAPI: this.#openapi ? "true" : "false" }),
+        ...(this.#modules.length ? { AKAN_MODULES: this.#modules.join(",") } : {}),
       },
       ipc: (message) => this.#handleMessage(idx, message as AkanIpcMessage, proc),
       stdout: "pipe",

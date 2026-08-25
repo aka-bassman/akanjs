@@ -68,9 +68,9 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
     else this.#getLlms.push(() => llmOrFn);
     return this;
   }
-  getUses(env: Env): Record<string, PromiseOrObject<unknown>> {
-    const uses = this.#getUses.map((fn) => fn(env));
-    return Object.assign({}, ...uses);
+  /** Every entry in declaration order, duplicates kept: the boot stage rejects a key claimed twice. */
+  getUses(env: Env): [string, PromiseOrObject<unknown>][] {
+    return this.#getUses.flatMap((fn) => Object.entries(fn(env)));
   }
   getMiddlewares(): MiddlewareCls[] {
     return this.#middlewares;

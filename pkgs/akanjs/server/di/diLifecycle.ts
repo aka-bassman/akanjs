@@ -29,16 +29,28 @@ import { getPredefinedAdaptor, predefinedAdaptorRole } from "./predefinedAdaptor
 import { collectAdaptors, resolveAdaptorHierarchy } from "./resolveAdaptorHierarchy";
 import { resolveServiceHierarchy } from "./resolveServiceHierarchy";
 import {
+  assertUniqueRegistrations,
   type DiModuleCandidate,
+  getModuleCascadeRefNames,
   getModuleDependencyRefNames,
   isDestroyableUse,
   normalizeAdaptorRefName,
   normalizeServiceRefName,
   normalizeSignalRefName,
+  type Registration,
   reasonMessage,
   runStage,
   toError,
 } from "./utils";
+
+export interface DiLifecycleProps {
+  env: BackendEnv;
+  /**
+   * Boot only these modules and the ones they reach, leaving every other module out of the container. Omitted or
+   * empty mounts every module whose service is enabled.
+   */
+  modules?: string[];
+}
 
 /**
  * Owns the app's DI container state (registry + live maps + init order) and
@@ -88,7 +100,7 @@ export class DiLifecycle {
     return !names.some((name) => process.env[name] === "false" || process.env[name] === "0");
   }
 
-  constructor(env: BackendEnv, serverMode: "federation" | "batch" | "all", ...libs: AkanLib[]) {
+  constructor({ env, modules = [] }: DiLifecycleProps, ...libs: AkanLib[]) {
     this.#env = env;
     // Copied: "single" mode hands back the shared module-scope object, and applyAdaptor overrides mutate per app.
     this.#predefinedAdaptor = { ...getPredefinedAdaptor(getEnv().databaseMode ?? "single") };
@@ -134,7 +146,7 @@ export class DiLifecycle {
         this.#scalar.set(mod.constant.refName, mod);
       });
     });
-    const disabledModules = this.#resolveDisabledModules(databaseCandidates, serviceCandidates);
+    const disabledModules = this.#resolveDisabledModules(databaseCandidates, serviceCandidates, modules);
     databaseCandidates.forEach(({ refName, module }) => {
       if (disabledModules.has(refName)) return;
       this.#database.set(refName, module as DatabaseModule);
@@ -147,23 +159,40 @@ export class DiLifecycle {
       this.logger.info("agent relay is provided by a lib module — the framework's is skipped");
     if (!this.#scalar.has("agentTurn"))
       this.#scalar.set("agentTurn", { constant: agentTurnConstant, database: agentTurnDocument });
+    const adaptorClaims = new Map<string, AdaptorCls>();
+    const adaptorRegistrations: Registration[] = [];
+    // A class reached twice is one adaptor, not two claimants; only a rival class under the same refName is recorded.
+    const claimAdaptor = (adaptorCls: AdaptorCls, owner: string) => {
+      const claimed = adaptorClaims.get(adaptorCls.refName);
+      if (claimed === adaptorCls) return;
+      if (!claimed) adaptorClaims.set(adaptorCls.refName, adaptorCls);
+      adaptorRegistrations.push({ key: adaptorCls.refName, owner });
+    };
+    for (const [role, adaptorCls] of Object.entries(this.#predefinedAdaptor))
+      claimAdaptor(adaptorCls, `predefined adaptor "${role}"`);
     this.#database.forEach((mod) => {
       const { adaptor, schema } = DatabaseResolver.resolveDatabase(mod.constant, mod.database);
       this.#adaptor.set(adaptor.refName, adaptor);
+      claimAdaptor(adaptor, `database module "${mod.constant.refName}"`);
       this.#cascade.register(mod.constant, schema, mod.service.srv);
     });
     const services = [
       ...[...this.#service.values()].map((mod) => mod.service.srv),
       ...[...this.#database.values()].map((mod) => mod.service.srv),
     ];
-    for (const adaptor of collectAdaptors(services)) {
-      this.#adaptor.set(adaptor.refName, adaptor);
+    for (const service of services) {
+      for (const adaptor of collectAdaptors([service])) {
+        this.#adaptor.set(adaptor.refName, adaptor);
+        claimAdaptor(adaptor, `service "${service.refName}"`);
+      }
     }
+    assertUniqueRegistrations("adaptor", adaptorRegistrations);
   }
 
   #resolveDisabledModules(
     databaseCandidates: Map<string, DiModuleCandidate>,
     serviceCandidates: Map<string, DiModuleCandidate>,
+    modules: string[],
   ) {
     const candidates = new Map<string, DiModuleCandidate>([...databaseCandidates, ...serviceCandidates]);
     const disabledReasons = new Map<string, string>();
@@ -171,6 +200,15 @@ export class DiLifecycle {
     candidates.forEach(({ refName, module }) => {
       if (!module.service.srv.enabled) disabledReasons.set(refName, "service disabled");
     });
+
+    // Applied over the enabled set rather than beside it: naming a module the workspace disabled does not enable it.
+    const selected = this.#resolveSelectedModules(candidates, modules);
+    if (selected) {
+      candidates.forEach(({ refName }) => {
+        if (!selected.has(refName) && !disabledReasons.has(refName))
+          disabledReasons.set(refName, 'not named by the "modules" option');
+      });
+    }
 
     let changed = true;
     while (changed) {
@@ -193,6 +231,42 @@ export class DiLifecycle {
       this.logger.verbose(`Skipping disabled module "${refName}": ${reason}`);
     });
     return new Set(disabledReasons.keys());
+  }
+
+  /**
+   * The named modules closed over everything they reach: the services and signals they inject, and the cascade
+   * edges whose absence fails `CascadeRunner.seal`. `null` means no selection was asked for.
+   *
+   * An unknown name is refused rather than ignored, because a typo would otherwise boot an app with the module
+   * silently missing — the one failure this option exists to make impossible.
+   */
+  #resolveSelectedModules(candidates: Map<string, DiModuleCandidate>, modules: string[]) {
+    if (!modules.length) return null;
+    const known = new Set([...candidates.keys(), ...this.#service.keys()]);
+    const unknown = modules.filter((refName) => !known.has(refName));
+    if (unknown.length) {
+      const registered = [...known].sort((a, b) => a.localeCompare(b)).join(", ");
+      throw new Error(
+        `[DI:modules] unknown module ${unknown.map((refName) => `"${refName}"`).join(", ")}. Registered: ${registered}`,
+      );
+    }
+    const selected = new Set<string>();
+    const pending = modules.filter((refName) => candidates.has(refName));
+    while (pending.length) {
+      const refName = pending.pop();
+      if (!refName || selected.has(refName)) continue;
+      selected.add(refName);
+      const candidate = candidates.get(refName);
+      if (!candidate) continue;
+      const dependencies = [
+        ...getModuleDependencyRefNames(candidate.module),
+        ...getModuleCascadeRefNames(candidate.module),
+      ];
+      for (const dependency of dependencies) if (candidates.has(dependency)) pending.push(dependency);
+    }
+    const mounted = [...selected].sort((a, b) => a.localeCompare(b)).join(", ");
+    this.logger.info(`Mounting ${selected.size} of ${candidates.size} module(s): ${mounted}`);
+    return selected;
   }
 
   /** Run every init stage in dependency order and collect the generated routes. */
@@ -397,14 +471,20 @@ export class DiLifecycle {
 
   async #initializeUses() {
     // `llmOption` is seeded first so the predefined LLM adaptor always resolves its `use`, with or without an app.
-    const uses = Object.assign(
-      { llmOption: Object.assign({}, ...this.#libs.map((lib) => lib.option.getLlm(this.#env))) },
-      ...this.#libs.map((lib) => lib.option.getUses(this.#env)),
-    );
-    const entries = Object.entries(uses);
+    const entries = [
+      {
+        key: "llmOption",
+        owner: "the framework",
+        value: Object.assign({}, ...this.#libs.map((lib) => lib.option.getLlm(this.#env))) as unknown,
+      },
+      ...this.#libs.flatMap((lib) =>
+        lib.option.getUses(this.#env).map(([key, value]) => ({ key, owner: `lib "${lib.name}"`, value })),
+      ),
+    ];
+    assertUniqueRegistrations("use", entries);
     await runStage(
       "uses",
-      entries.map(([key, value]) => ({
+      entries.map(({ key, value }) => ({
         label: `uses:${key}`,
         run: async () => {
           const useValue = value instanceof Promise ? await value : value;

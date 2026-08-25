@@ -171,7 +171,7 @@ beforeAll(async () => {
     scalars: [],
     option: new AkanOption(),
   });
-  di = new DiLifecycle(env, "all", lib);
+  di = new DiLifecycle({ env }, lib);
   httpRoutes = (await di.initializeAll()).routes ?? {};
   mcpRouter = (props: Partial<McpRouterProps> = {}) =>
     new McpRouter({ registry: di.registry, live: di.live, middleware: new Map(di.modules.middleware), env, ...props });

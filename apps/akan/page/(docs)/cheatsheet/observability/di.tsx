@@ -170,6 +170,36 @@ export default function Page() {
       </Scroll.Slide>
       <Divider />
 
+      <Scroll.Slide id="duplicate" title={l.trans({ en: "One Key, One Owner", ko: "키는 하나의 주인만" })}>
+        <Docs.Title>{l.trans({ en: "One Key, One Owner", ko: "키는 하나의 주인만" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "A `use` key and an adaptor `refName` may be claimed once. Claiming either twice is last-write-wins everywhere downstream: the second registration replaces the first, and the replaced adaptor's `onInit` never runs. Akan refuses the boot instead, naming both claimants.",
+              ko: "`use` 키와 adaptor `refName`은 한 번만 등록할 수 있습니다. 두 번 등록하면 뒤에 온 것이 앞의 것을 덮어쓰고, 밀려난 adaptor의 `onInit`은 실행되지 않습니다. Akan은 그런 상태로 뜨는 대신 부팅을 실패시키고 두 등록자를 모두 알려줍니다.",
+            })}
+          </div>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title={l.trans({ en: "Boot fails with both owners named", ko: "두 등록자를 표시하며 부팅 실패" })}
+          language="bash"
+          code={`[DI:use] 1 duplicate registration(s):
+  • "storageApi" is registered by lib "util" and by lib "shared"
+[DI:adaptor] 1 duplicate registration(s):
+  • "imageStorage" is registered by service "article" and by service "gallery"`}
+        />
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "The check is per key, not per registration. One adaptor class reached from two services is one adaptor and passes; two different classes under the same name do not. Fix it by renaming one of them, or by declaring it once in a lib both sides plug.",
+              ko: "검사 기준은 등록 횟수가 아니라 키입니다. 같은 adaptor class를 두 service가 plug하는 것은 하나의 adaptor이므로 통과하고, 이름만 같은 서로 다른 class는 통과하지 못합니다. 둘 중 하나의 이름을 바꾸거나, 양쪽이 함께 plug할 수 있도록 lib에 한 번만 선언하세요.",
+            })}
+          </div>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
       <Scroll.Slide id="tips" title={l.trans({ en: "Tips", ko: "꿀팁" })}>
         <Docs.Title>{l.trans({ en: "Tips", ko: "꿀팁" })}</Docs.Title>
         <Docs.Description>

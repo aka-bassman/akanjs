@@ -68,7 +68,7 @@ export class DevtoolsFixture {
       scalars: [],
       option: new AkanOption(),
     });
-    const lifecycle = new DiLifecycle(env, serverMode, lib);
+    const lifecycle = new DiLifecycle({ env }, lib);
     await lifecycle.initializeAll();
     return new DevtoolsFixture(lifecycle, env, serverMode, workspaceRoot);
   }

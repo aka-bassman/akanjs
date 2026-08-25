@@ -41,6 +41,11 @@ export interface AkanServerOptions {
   openapi?: boolean;
   /** `/mcp` is mounted by default; `false` takes it off, and the object form carries the rest of its settings. */
   mcp?: boolean | McpServerOption;
+  /**
+   * Boot only these modules and the ones they reach; every other module stays out of the container, so its
+   * services, signals, routes and schedules do not exist. Omitted or empty mounts every enabled module.
+   */
+  modules?: string[];
 }
 
 export interface McpServerOption {
@@ -123,6 +128,7 @@ export class AkanServer {
   mcpAuth: McpAuthOption = AkanServer.#mcpAuthFromEnv();
   mcpOption: Omit<McpServerOption, "enabled" | "readOnly" | "auth"> = AkanServer.#mcpOptionFromEnv();
   serverMode: "federation" | "batch" | "all";
+  modules: string[];
   shutdownTimeoutMs = AkanServer.#defaultShutdownTimeoutMs();
 
   #di: DiLifecycle;
@@ -153,7 +159,9 @@ export class AkanServer {
     });
     this.setMcp(options?.mcp ?? this.mcp);
     this.serverMode = serverMode;
-    this.#di = new DiLifecycle(this.env, serverMode, ...libs);
+    // `AKAN_MODULES` is how a gateway hands its own `modules` option to the child that mounts the container.
+    this.modules = options?.modules ?? AkanServer.#envList("AKAN_MODULES") ?? [];
+    this.#di = new DiLifecycle({ env: this.env, modules: this.modules }, ...libs);
   }
   setPrefix(prefix: string) {
     this.prefix = prefix;
@@ -596,7 +604,7 @@ export class AkanServer {
         !("database" in value) &&
         !("service" in value) &&
         !("scalar" in value) &&
-        ("openapi" in value || "mcp" in value),
+        ("openapi" in value || "mcp" in value || "modules" in value),
     );
   }
 
