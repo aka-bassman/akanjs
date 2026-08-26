@@ -54,8 +54,11 @@ export class DeepseekLlm
       const body = await this.#apiStream("/chat/completions", DeepseekLlm.requestBody(this.#model, request, true));
       return await DeepseekLlm.consumeStream(body, onDelta);
     } catch (error) {
+      // Logged here and rethrown rather than answered as `null`: a refusal the provider explained — a transcript
+      // past the context window is the common one — is the whole of what the user needs to read in the chat, and
+      // `null` would reach them as the one sentence that says a model is not configured.
       this.logger.error(`DeepSeek turn failed: ${error instanceof Error ? error.message : String(error)}`);
-      return null;
+      throw error;
     }
   }
 
@@ -67,7 +70,7 @@ export class DeepseekLlm
       // A model turn regularly outlives the usual 20s adapter budget; long tool turns finish well within this.
       signal: AbortSignal.timeout(120_000),
     });
-    if (!response.ok) throw new Err("agent.error.deepseekRequestFailed", { status: String(response.status) });
+    if (!response.ok) throw await DeepseekLlm.refusal(response);
     return (await response.json()) as T;
   }
 
@@ -78,9 +81,30 @@ export class DeepseekLlm
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(120_000),
     });
-    if (!response.ok || !response.body)
-      throw new Err("agent.error.deepseekRequestFailed", { status: String(response.status) });
+    if (!response.ok || !response.body) throw await DeepseekLlm.refusal(response);
     return response.body;
+  }
+
+  /**
+   * The dialect answers a refusal as `{ error: { message } }`, and that sentence is the useful half — a request
+   * past the context window says exactly which limit it passed. Carried on the `Err` so the chat can print it.
+   */
+  static async refusal(response: Response): Promise<Error> {
+    return new Err("agent.error.deepseekRequestFailed", {
+      status: String(response.status),
+      reason: await DeepseekLlm.reasonOf(response),
+    });
+  }
+
+  static async reasonOf(response: Response): Promise<string> {
+    try {
+      const body = (await response.json()) as { error?: { message?: unknown } | string };
+      const message = typeof body.error === "string" ? body.error : body.error?.message;
+      if (typeof message === "string" && message) return message;
+    } catch {
+      // A body that is not the dialect's JSON says nothing more than the status line already did.
+    }
+    return response.statusText || "no reason given";
   }
 
   /**
@@ -175,6 +199,15 @@ export class DeepseekLlm
   }
 
   static providerMessages(message: AgentWireMessage): DeepseekMessage[] {
+    // A compaction summary is what the model now remembers, not what the user just asked for — as a user turn it
+    // would read as the newest instruction and be answered instead of used.
+    if (message.summary)
+      return [
+        {
+          role: "system" as const,
+          content: `Summary of the earlier conversation, standing in for the messages it replaced:\n\n${message.text ?? ""}`,
+        },
+      ];
     if (message.role === "tool")
       return (message.toolResults ?? []).map((result) => ({
         role: "tool" as const,

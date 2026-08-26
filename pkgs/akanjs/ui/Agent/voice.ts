@@ -113,6 +113,15 @@ export class VoiceReader {
     this.#chunk(source, true);
   }
 
+  /**
+   * A line that is not part of the answer being tracked — the question or approval the loop parked on. It joins
+   * the same queue, so it is spoken after the sentence in flight rather than over it, and Stop still cancels it.
+   */
+  say(text: string) {
+    this.#enqueue(speechText(text));
+    this.#pump();
+  }
+
   cancel() {
     this.#queue = [];
     this.#current?.cancel();

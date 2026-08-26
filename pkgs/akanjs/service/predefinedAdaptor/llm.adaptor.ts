@@ -37,6 +37,11 @@ export interface AgentWireMessage {
   toolCalls?: AgentWireToolCall[];
   toolResults?: AgentWireToolResult[];
   error?: string;
+  /**
+   * Stands in for the messages the client's own compaction replaced. It arrives with the user's role because the
+   * wire has no other, but it is history rather than an ask, so a provider mapping frames it as one.
+   */
+  summary?: boolean;
 }
 
 export interface AgentWireTool {
@@ -68,8 +73,12 @@ export interface LlmTurnAnswer {
 /**
  * The provider seam for one stateless agent turn: the whole transcript in, one assistant answer out. The server
  * relays — it never executes a client tool — so this is the only surface a provider integration fills. An
- * implementation is an `adapt()` class in a lib's `srvkit/` and follows the adapter convention: failures are
- * logged and answered as `null`, and the calling service decides what that means.
+ * implementation is an `adapt()` class in a lib's `srvkit/`.
+ *
+ * `null` means this provider is not configured, and the caller turns it into the one sentence that says so. A
+ * failure the provider explained is logged and **thrown** instead, as an `Err` whose text the chat prints: a
+ * refused turn and an unconfigured app are different things to be told, and collapsing both into `null` left a
+ * user reading "no model is configured" about a conversation that had merely outgrown the context window.
  */
 export interface LlmAdaptor {
   /**

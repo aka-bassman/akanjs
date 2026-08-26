@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.41 -->
+<!-- akan:agent:version 3.0.0-alpha.43 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -698,7 +698,11 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   guard classes every endpoint takes (an array is ANDed, `null` clears what a library set); without one the chat
   cannot spend the LLM key.
   `persist` keeps the transcript across reloads (sessionStorage; `{ storage: "local" }` to outlive the tab),
-  default off. Re-skin through the `AgentChat` slot in `_overrides.tsx`.
+  default off, and `shortcut={false}` gives the browser back the Cmd/Ctrl+L the launcher otherwise captures.
+  **A session the chat made ends when the chat unmounts** — nothing renders its approvals once it is gone, so a
+  turn left running would drive a screen the user has navigated away from; a session handed down by an
+  `AgentProvider` or an `Agent.Zone` belongs to whoever provided it. Re-skin through the `AgentChat` slot in
+  `_overrides.tsx`.
 - **The LLM is configured in `option.ts`, never through the environment.** `option.setLlm({ apiKey, model, host })`
   — or `setLlm((options) => …)` to read the key out of the app's own env object, which is where a secret belongs —
   fills whichever adaptor holds `LlmAdaptorRole`, reaching it as the `llmOption` use. The settings are the role's
@@ -707,6 +711,13 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   providers the way middleware is applied: `option.applyAdaptor(LlmAdaptorRole, ClaudeLlm)`, where the
   implementation is an `adapt()` class in a `srvkit/` implementing `LlmAdaptor.chat(request, onDelta?)` — ignore
   `onDelta` and the chat still answers whole.
+- **An adaptor answers `null` for "not configured" and *throws* for a refusal it can explain.** The two are
+  different things to be told: collapsing both into `null`, the way the adapter convention otherwise reads, left a
+  user reading `llmUnavailable` — "no model is configured" — about a conversation that had merely outgrown the
+  context window. A thrown `Err` reaches the chat as its own text, so the reason the provider gave is what the
+  user sees. It travels as the dictionary key plus the values that key interpolates, on both the JSON and the SSE
+  path, and **`fetchRunner` resolves it against the dictionary one step before the transcript** — the endpoint has
+  no language to resolve it in and the browser does, which is why the key was reaching the screen raw.
 - **A file the user attaches rides the message, and nothing is stored.** The composer takes a paperclip, a drop and
   a paste; an image rides as bytes and a text file as text, which is all a browser reads with no dependency.
   Everything else is the app's own reader — `<Agent.Chat attach={…} />`, one `File` in, a `MessageAttachment` or
@@ -720,12 +731,18 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   reaches the chat as an attachment rather than the literal `[image]` it used to become. Persisting keeps each
   attachment's name and drops its content: web storage is a few megabytes, one screenshot fills a chunk of it, and
   a save that fails is silent — so keeping the bytes would quietly stop keeping the transcript.
+  **The ceilings are the message's, not the file's**: 4 MB per file, 8 MB and five files per message, and the same
+  file twice is refused by name. The bytes ride inside one turn's JSON, so what a provider refuses is the sum —
+  and a request that cannot be sent is one the user has to empty the composer to escape, which is why the refusal
+  happens at the paperclip and names the file it dropped.
 - **Speech is one engine contract and the framework's own policy.** `<Agent.Chat voice={engine} />` takes a
   `VoiceEngine` — `listen(handlers)` and `speak(sentence)`, both cancellable — and the chat decides everything
   else: a press-to-talk microphone whose transcript lands in the composer to be corrected, one utterance per
   press, sentence-at-a-time reading, barge-in on the next press or on Stop, and markdown stripped so `**bold**`
   is not pronounced. **A reply is read aloud only when the ask arrived by voice**, so a typed question never turns
   on the speakers — and it needs no wire field, because how a message was sent is the composer's own business.
+  A question or an approval the loop parked on is read aloud under that same condition, because the loop stops
+  there: a voice user who is never told about the card is a conversation that simply ends.
   The contract is a subscription rather than `listen(): Promise<string>` on purpose: a promise fits push-to-talk
   and nothing else, so hands-free could then only arrive as a breaking change. `useSpeech` in
   `libs/util/webkit` is the engine — the browser's own recognition and synthesis on the web, the Capacitor
@@ -914,17 +931,20 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   read unless a `mask:` model is named — the same rule and wording as `AgentBridge.read`.
 - **`prompt()` endpoints double as the chat's slash commands.** There is no listing endpoint — the client reads
   its own serialized signals — so a prompt's dictionary `.desc()` is what the menu shows, and its guards are
-  enforced by the prompt's own GET at call time.
-- **The chat answers five slash commands of its own**, listed in the same `/` menu ahead of the prompts:
-  `/new` (`/clear`), `/retry`, `/copy`, `/help` and `/tools`. An app writes none of them and cannot add one — the
-  extension point for a product's own command is a `prompt()` endpoint, which is guarded and server-side.
+  enforced by the prompt's own GET at call time. Arguments are positional and whitespace-separated, and quoting
+  is how a sentence stays one of them (`/reviewTask t1 "look at the totals"`) — a prompt taking a single `String`
+  is the common case, and an unquoted sentence would fill its second parameter with the second word.
+- **The chat answers six slash commands of its own**, listed in the same `/` menu ahead of the prompts:
+  `/new` (`/clear`), `/retry`, `/compact`, `/copy`, `/help` and `/tools`. An app writes none of them and cannot add
+  one — the extension point for a product's own command is a `prompt()` endpoint, which is guarded and server-side.
   **A built-in wins a name collision with a prompt of the same name**, the mirror image of the tool rule: a
   component's `st.tool` shadows a built-in it means to replace, but no library's prompt may take `/new` away from
   the user who typed it — so a shadowed prompt is dropped from the menu rather than listed twice. `/new` and
-  `/copy` are also dispatched *before* the is-a-turn-running check, because mid-turn is exactly when they are
-  reached for; `/new` therefore aborts the turn it is clearing and waits for it to wind down, since the loop
-  clears its own running flag a microtask later and a transcript emptied before that lands is one the dying turn
-  appends onto.
+  `/copy` are also dispatched *before* the is-a-turn-running check **and before the question card takes the
+  composer**, because mid-turn is exactly when they are reached for and a question the agent asked is the middle
+  of a turn like any other — answered as text, `/new` would have reached the model as the user's decision.
+  `/new` therefore aborts the turn it is clearing and waits for it to wind down, since the loop clears its own
+  running flag a microtask later and a transcript emptied before that lands is one the dying turn appends onto.
 - **A command's output is a `local` message: rendered in the transcript, withheld from the wire.** The transcript
   *is* the model's history, so `/help` text appended plainly would come back next turn as something the assistant
   believes it said. `session.note(text)` is the only way to write one, `session.report(error)` stays what a
@@ -934,15 +954,47 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   only in that browser, so an export is the one path a wrong answer has to whoever could fix it — which is why it
   carries the route and the timestamp. `/retry` replays only the trailing user message, leaving anything before it
   in place, so a prompt's own preamble is not sent twice.
-- **↑ and ↓ in the composer walk what was sent.** A single-line input has nothing of its own on the vertical
-  arrows, and the half-written draft they were walked away from comes back at the bottom of the walk.
-- The framework publishes six built-ins on every store surface: `navigate` (internal paths only, the same
+- **A long conversation summarizes itself, because nothing else is keeping it inside the model's window.** The
+  loop runs in the browser and the relay holds no session, so an uncompacted chat grows until the provider
+  refuses the whole request — a refusal, never a shorter answer, which is why compaction runs *before* the turn
+  that would have overflowed rather than as a recovery after it. Past `compact.at` estimated tokens (four
+  characters to a token, over the JSON the turn posts; 24k by default, well under the smallest window a provider
+  is likely to have, since the tools and the screen context ride on top of it and neither compacts) the history above the last `keep` messages
+  becomes one message standing in for it, flagged `summary` on the wire — `<Agent.Chat compact={{ at, keep }} />`
+  tunes it per provider and `{ at: 0 }` turns it off, and `/compact` does the same on demand keeping nothing.
+  **The cut only ever lands on a user message**: everything above one is settled, so the kept half can never open
+  with a `tool` result whose call was summarized away, a shape every provider dialect rejects. The summarizing
+  turn carries no tools and no screen context — it summarizes the conversation, it does not act on it — and it is
+  fed a *bounded* digest rather than the transcript itself, since the transcript being summarized is the one that
+  no longer fits. A summary that cannot be produced leaves the transcript alone and the turn goes out as it would
+  have; one that fails to shrink anything is not retried until another threshold's worth has been added. On the
+  wire a summary wears the user's role because the wire has no other, so a provider mapping frames it as a system
+  message and `/retry` steps over it — replaying it would send the notes back as a question.
+- **A stopped turn answers the calls it never ran, because an unanswered call ends the conversation.** Every
+  provider dialect refuses an assistant message whose `tool_calls` have no results — on that turn and on every
+  later one — so Stop landing between a call and its result would leave a transcript nothing can be sent from,
+  with no way out but `/new`. `Transcript.sanitize` holds the invariant in one place and runs where a transcript
+  is assembled rather than where each hole is made: the turn's own request, a transcript restored from storage,
+  and a stored transcript capped to its newest messages, whose window can start mid-pair. A call the loop never
+  reached is *answered* rather than erased — a model told the call was stopped asks again, where one shown no
+  call at all answers as if it had the result.
+- **A turn that failed says so on the wire.** `error` is a field only this wire has, so a provider mapping reads
+  `text` and drops it; `AgentService.explained` folds it into the text before any adaptor sees it, because an
+  assistant turn that says nothing is one the model repeats.
+- **↑ and ↓ in the composer walk what was sent**, seeded from the transcript so a persisted chat does not lose
+  only what was just typed. A single-line input has nothing of its own on the vertical arrows, and the
+  half-written draft they were walked away from comes back at the bottom of the walk. **The `/` menu takes those
+  keys while it is open** — it is the thing on screen the arrows point at — with Enter picking the highlighted
+  row, Tab completing its name, and Escape closing the menu and then, pressed again, the panel.
+- The framework publishes five built-ins on every store surface: `navigate` (internal paths only, the same
   router `Link` rides), `goBack` (this session's history — global, because history is not a control a page owns and
   a page that draws no back link is not one you may not leave), `readScreen` (the rendered DOM as compact text —
   headings, links, control values, and `(disabled)` on a control or button that has it; the chat's own UI is
-  skipped via `data-agent-ui`, and a password value is never read), `readState(key)` (one masked store key),
-  `waitFor(key)` (park until that key moves), and `highlight(target)`. Declaring a hook tool under one of those
-  names shadows the built-in, so reuse them only to mean that.
+  skipped via `data-agent-ui`, and a password value is never read), `readState(key)` (one masked store key), and
+  `highlight(target)`. Declaring a hook tool under one of those names shadows the built-in, so reuse them only to
+  mean that. **There is no general-purpose wait**: a built-in one was reachable on every screen and a model spent
+  it on whatever key it liked, parking turns nobody asked to park. Waiting belongs to the screen that knows what
+  is worth waiting for — publish an `st.tool` beside the control that starts the work, and let it await the work.
 - **A tool that changes the screen waits for the screen before it answers.** `router.push` returns while the RSC
   payload is still in flight and a store action that fires `void fetch.*` commits a tick later, so `navigate`
   awaits `ScreenSettle.wait()` — DOM quiescence, bounded, because the client router hands its promise to nobody —
@@ -956,14 +1008,14 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   call to read the result. A fire-and-forget tool leaves the agent to poll instead, which burns the whole
   `maxTurns` budget in seconds on a job measured in minutes. Say so in the `desc` ("takes about two minutes; do
   not poll while it runs") and, for a route full of slow work, in an `Agent.Guide`.
-- **`waitFor(key, equals?, timeoutSeconds?)` is for the job the *tool* cannot await** — started in an earlier turn,
-  or by a person clicking the button. It parks on a **store state key a mounted component subscribes**, exactly the
-  set `readState` reads, and resumes the moment the key moves; `equals` waits for one value, omitted it waits for
-  any change. **Not a resource**: `st.expose` and `st.useState` register on the surface, whose values already ride
-  inline in the screen context block, and `waitFor` refuses one of those names like any other. Deliberately not a
-  bare sleep either — a sleep only makes the polling slower, and a value worth waiting minutes for is server-derived
-  state, which lives in the store already. Running out is not a failure, it answers with what the key holds now
-  (default 120s, clamped to 600), and a key this screen does not read is refused by name with the ones it does.
+- **A wait is a screen's own tool, declared where the slow work is.** For the job a tool cannot await — one
+  started in an earlier turn, or by a person clicking the button — publish an `st.tool` that parks on the thing
+  *that* screen knows about, and say in its `desc` what it waits for and roughly how long. A general built-in was
+  tried and removed: reachable on every screen with no idea what any key means, a model spent it on whatever key
+  looked promising and parked turns nobody asked to park. The screen that starts the work is the only place that
+  knows what finishing looks like, and a tool declared there is also one the agent cannot reach on a screen where
+  waiting makes no sense. Honour `AgentAbort.current` in the body and report with `AgentProgress.report`, so Stop
+  ends the wait and the row says how it is going.
 - **Stop reaches a tool that is still running.** The session races every call against its abort signal, so a
   two-minute tool does not hold the loop for two minutes after the user presses Stop. The signal itself arrives
   through `AgentAbort.current` — the same module slot `AgentProgress` is — and honouring it is optional, since the

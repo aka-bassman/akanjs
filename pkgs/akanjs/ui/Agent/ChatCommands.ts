@@ -42,6 +42,17 @@ export class ChatCommands {
           else if (!(await session.retry())) session.note(t("base.agentNothingToRetry"));
         },
       },
+      {
+        name: "compact",
+        description: l("base.agentCmdCompact"),
+        run: async ({ session, l: t }) => {
+          if (session.isRunning) session.note(t("base.agentBusy"));
+          // Keeps nothing verbatim: a user who asks for a summary is asking about the whole conversation, and the
+          // turn that follows reads it in place of everything above it.
+          else if (await session.compact()) session.note(t("base.agentCompacted"));
+          else session.note(t("base.agentNothingToCompact"));
+        },
+      },
       { name: "copy", description: l("base.agentCmdCopy"), run: (context) => ChatCommands.#copy(context) },
       { name: "help", description: l("base.agentCmdHelp"), run: (context) => ChatCommands.#help(context) },
       { name: "tools", description: l("base.agentCmdTools"), run: (context) => ChatCommands.#tools(context) },
@@ -70,7 +81,9 @@ export class ChatCommands {
     const lines = [`# Agent conversation`, [where, new Date().toISOString()].filter(Boolean).join(" · "), ""];
     for (const message of messages) {
       if (message.local) continue;
-      lines.push(`**${message.role}**`);
+      // A summary wears the user's role on the wire, and an export that repeated that would read as the user
+      // pasting notes they never wrote.
+      lines.push(`**${message.summary ? "summary" : message.role}**`);
       if (message.text) lines.push(message.text);
       for (const attachment of message.attachments ?? [])
         lines.push(`- attached \`${attachment.name}\` (${attachment.mimeType})`);

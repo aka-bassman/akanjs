@@ -30,6 +30,15 @@ tools, and the loop stay in the client; the server serves exactly one stateless 
 
 - `messages` is the whole transcript in `ChatMessage` shape (`types.ts`). The server maps it to its provider's
   format and maps the answer back; it never executes a tool — `tools` is a schema catalogue, not an offer.
+- A message flagged `"summary": true` stands in for the earlier messages a client-side compaction replaced. It is
+  history, not something the user said, so a backend that can frame it as one — a system message — should.
+- **Every `toolCalls` entry is answered by a `toolResults` entry of the same `id`, and every result answers a call
+  the request carries.** The client holds that invariant (`Transcript.sanitize`) because provider dialects refuse
+  a transcript that breaks it; a backend can map calls to results by id without checking for holes. A call the
+  client stopped before running arrives answered with an `error`, not missing.
+- A message may carry `error` — a turn that failed, recorded where every other failure is recorded. No provider
+  format has a field for it, so **fold it into the text you send**: an assistant turn that reaches the model
+  saying nothing is one the model repeats.
 - `context` blocks are host vocabulary. The server forwards them to the model as data, framed as data.
 - Everything is JSON-serializable by contract; a tool whose `result` is not is the tool's bug.
 
@@ -64,7 +73,10 @@ Nothing here is stored: the wire carries the bytes for exactly one turn's reques
 ```
 
 Any non-2xx status is surfaced to the session as one error event and ends the turn; a string `message` or
-`error` field in a JSON body is quoted in that event, and any other body is not interpreted.
+`error` field in a JSON body becomes that event's message verbatim, and any other body is not interpreted. A
+message that is a code rather than a sentence may be accompanied by a flat `data` object of strings and numbers —
+the values whoever resolves the code interpolates into its text; a host that does not know the code shows the
+message as it stands.
 
 ## Streaming
 

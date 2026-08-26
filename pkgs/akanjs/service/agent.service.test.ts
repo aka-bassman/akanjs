@@ -50,3 +50,35 @@ describe("AgentService.readable", () => {
     expect(AgentService.readable(request, undefined)).toBe(request);
   });
 });
+
+describe("AgentService.explained", () => {
+  test("a failed turn reaches the model as text, since no provider mapping reads `error`", () => {
+    const request: LlmTurnRequest = {
+      tools: [],
+      context: [],
+      messages: [
+        { role: "user", text: "do it" },
+        { role: "assistant", error: "the relay refused the call" },
+        { role: "user", text: "again?" },
+      ],
+    };
+    const messages = AgentService.explained(request).messages;
+    expect(messages[1]).toEqual({ role: "assistant", text: "[The turn failed: the relay refused the call]" });
+    expect(messages[1].error).toBeUndefined();
+    expect(messages[0]).toEqual({ role: "user", text: "do it" });
+  });
+
+  test("an answer that failed halfway keeps what it did say", () => {
+    const request: LlmTurnRequest = {
+      tools: [],
+      context: [],
+      messages: [{ role: "assistant", text: "Looking...", error: "stream ended" }],
+    };
+    expect(AgentService.explained(request).messages[0].text).toBe("Looking...\n\n[The turn failed: stream ended]");
+  });
+
+  test("a transcript with nothing failed is handed on untouched", () => {
+    const request = turn();
+    expect(AgentService.explained(request)).toBe(request);
+  });
+});

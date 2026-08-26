@@ -16,6 +16,18 @@ export class AgentTurnStream {
     return !!request.headers.get("accept")?.includes("text/event-stream");
   }
 
+  /**
+   * A domain `Err` carries its dictionary key as the message and the values its text interpolates as `data`, so
+   * both travel: the key alone would reach the chat as `agent.error.…` with its placeholders unfilled.
+   */
+  static failure(error: unknown): { message: string; data?: Record<string, string | number> } {
+    const message = error instanceof Error ? error.message : String(error);
+    const data = (error as { data?: unknown } | null)?.data;
+    return data && typeof data === "object" && !Array.isArray(data)
+      ? { message, data: data as Record<string, string | number> }
+      : { message };
+  }
+
   static response(run: (onDelta: (delta: string) => void) => Promise<StreamedTurn>): Response {
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
@@ -35,7 +47,7 @@ export class AgentTurnStream {
           send({ type: "done", stop: turn.stop === "toolUse" || toolCalls.length ? "toolUse" : "end" });
         } catch (error) {
           // The status line is long gone once the stream is open, so a failure travels as the wire's error event.
-          send({ type: "error", message: error instanceof Error ? error.message : String(error) });
+          send({ type: "error", ...AgentTurnStream.failure(error) });
         } finally {
           controller.close();
         }

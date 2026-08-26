@@ -21,11 +21,11 @@ export const agentDictionary = serviceDictionary(["en", "ko"])
   }))
   .error({
     llmUnavailable: [
-      "The agent model is unavailable — no LLM adaptor answered this turn",
-      "에이전트 모델을 사용할 수 없습니다. 이번 턴에 응답한 LLM 어댑터가 없습니다",
+      "The agent is unavailable — this app has no language model configured",
+      "에이전트를 사용할 수 없습니다. 이 앱에 언어 모델이 설정되어 있지 않습니다",
     ],
     deepseekRequestFailed: [
-      "DeepSeek request failed with status {status}",
-      "DeepSeek 요청이 실패했습니다 (status {status})",
+      "DeepSeek refused this turn with status {status}. Reason: {reason}",
+      "DeepSeek가 이번 턴을 거절했습니다 (status {status}). 사유: {reason}",
     ],
   });

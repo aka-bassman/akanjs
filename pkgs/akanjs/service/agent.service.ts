@@ -12,9 +12,27 @@ export class AgentService extends serve("agent" as const, ({ plug }) => ({
   llm: plug(LlmAdaptorRole),
 })) {
   async runTurn(request: LlmTurnRequest, onDelta?: (delta: string) => void) {
-    const answer = await this.llm.chat(AgentService.readable(request, this.llm.accepts), onDelta);
+    const prepared = AgentService.readable(AgentService.explained(request), this.llm.accepts);
+    const answer = await this.llm.chat(prepared, onDelta);
     if (!answer) throw new Err("agent.error.llmUnavailable");
     return { text: answer.text ?? "", toolCalls: answer.toolCalls ?? [], stop: answer.stop };
+  }
+
+  /**
+   * Folds a failed turn into the message text. `error` is a field only this wire has, so a provider mapping reads
+   * `text` and drops it — leaving the model an assistant turn that says nothing, with no hint that the attempt
+   * failed, and every reason to make the same one again. Done here rather than per adaptor because every adaptor
+   * would otherwise have to remember, and forgetting is silent.
+   */
+  static explained(request: LlmTurnRequest): LlmTurnRequest {
+    if (!request.messages.some((message) => message.error)) return request;
+    return { ...request, messages: request.messages.map((message) => AgentService.explainedMessage(message)) };
+  }
+
+  private static explainedMessage(message: AgentWireMessage): AgentWireMessage {
+    const { error, ...rest } = message;
+    if (!error) return message;
+    return { ...rest, text: [message.text, `[The turn failed: ${error}]`].filter(Boolean).join("\n\n") };
   }
 
   /**

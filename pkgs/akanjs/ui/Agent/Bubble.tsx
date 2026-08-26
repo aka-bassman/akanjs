@@ -1,5 +1,6 @@
 "use client";
-import { cn } from "akanjs/client";
+import { cn, usePage } from "akanjs/client";
+import { memo } from "react";
 import { type AgentProgressReport, AgentSession, type ChatMessage, type ToolCallResult } from "use-agentic";
 import { Chips } from "./Attach";
 import Markdown from "./Markdown";
@@ -25,31 +26,43 @@ interface RowProps {
 }
 
 /** The arguments ride along because two calls of one tool are the same row otherwise — two searches, one name. */
-const Row = ({ name, args, result, progress }: RowProps) => (
-  <div className="flex items-baseline gap-2 rounded-field bg-muted px-2 py-1">
-    {result ? (
-      <span className={cn("shrink-0 text-[10px]", result.error ? "text-destructive" : "text-success")}>
-        {result.error ? "✕" : "✓"}
-      </span>
-    ) : (
-      <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-warning" />
-    )}
-    <span className="shrink-0 font-mono text-xs">{name}</span>
-    {progress ? (
-      <span className="truncate text-[10px] text-foreground/60">
-        {progress.message}
-        {progress.total ? ` ${progress.done ?? 0}/${progress.total}` : ""}
-      </span>
-    ) : null}
-    {!progress && args && Object.keys(args).length ? (
-      <span className="truncate font-mono text-[10px] text-foreground/50">{JSON.stringify(args)}</span>
-    ) : null}
-    {result?.error ? <span className="truncate text-[10px] text-destructive">{result.error}</span> : null}
-    {result?.changes?.length ? (
-      <span className="ml-auto shrink-0 text-[10px] text-foreground/40">Δ {result.changes.length}</span>
-    ) : null}
-  </div>
-);
+const Row = ({ name, args, result, progress }: RowProps) => {
+  const { l } = usePage();
+  return (
+    <div className="flex items-baseline gap-2 rounded-field bg-muted px-2 py-1">
+      {result ? (
+        // A glyph is the whole status, so it carries the word a screen reader reads in its place.
+        <span
+          aria-label={l(result.error ? "base.agentToolFailed" : "base.agentToolDone")}
+          className={cn("shrink-0 text-[10px]", result.error ? "text-destructive" : "text-success")}
+          role="img"
+        >
+          {result.error ? "✕" : "✓"}
+        </span>
+      ) : (
+        <span
+          aria-label={l("base.agentToolRunning")}
+          className="size-1.5 shrink-0 animate-pulse rounded-full bg-warning"
+          role="img"
+        />
+      )}
+      <span className="shrink-0 font-mono text-xs">{name}</span>
+      {progress ? (
+        <span className="truncate text-[10px] text-foreground/60">
+          {progress.message}
+          {progress.total ? ` ${progress.done ?? 0}/${progress.total}` : ""}
+        </span>
+      ) : null}
+      {!progress && args && Object.keys(args).length ? (
+        <span className="truncate font-mono text-[10px] text-foreground/50">{JSON.stringify(args)}</span>
+      ) : null}
+      {result?.error ? <span className="truncate text-[10px] text-destructive">{result.error}</span> : null}
+      {result?.changes?.length ? (
+        <span className="ml-auto shrink-0 text-[10px] text-foreground/40">Δ {result.changes.length}</span>
+      ) : null}
+    </div>
+  );
+};
 
 interface AskProps {
   args?: Record<string, unknown>;
@@ -80,7 +93,17 @@ const Ask = ({ args, result }: AskProps) => {
   );
 };
 
-export default function Bubble({ className, message, progress, results }: BubbleProps) {
+const Content = ({ className, message, progress, results }: BubbleProps) => {
+  const { l } = usePage();
+  // Collapsed through `details` rather than state: both halves stay rendered, and what compaction replaced is
+  // there to read without being the loudest thing in the transcript.
+  if (message.summary)
+    return (
+      <details className={cn("rounded-box border border-border bg-muted/60 px-3 py-2", className)}>
+        <summary className="cursor-pointer text-foreground/50 text-xs">{l("base.agentSummary")}</summary>
+        <p className="mt-2 whitespace-pre-wrap text-foreground/70 text-xs">{message.text}</p>
+      </details>
+    );
   if (message.role === "tool")
     return (
       <div className={cn("flex flex-col gap-1", className)}>
@@ -120,4 +143,12 @@ export default function Bubble({ className, message, progress, results }: Bubble
       {isDrafting ? <span className="size-2 animate-pulse rounded-full bg-foreground/30" /> : null}
     </div>
   );
-}
+};
+
+/**
+ * Memoized because the transcript re-renders on every streamed delta and on every keystroke in the composer, and
+ * a settled bubble re-parses its markdown for nothing each time. The props are compared by identity, so the caller
+ * hands the same `results` map and `progress` value to every row — which is why only the rows that actually
+ * changed re-render.
+ */
+export default memo(Content);

@@ -155,6 +155,12 @@ export interface ChatMessage {
    * history the model reads, which would take it for something it had said itself.
    */
   local?: boolean;
+  /**
+   * Stands in for the messages compaction replaced. It rides the wire like any other message — it is what the
+   * model now remembers of them — but it is not something the user said, so a backend frames it as a summary and
+   * a host renders it as one.
+   */
+  summary?: boolean;
 }
 
 /** One block of screen context the host assembles per turn. `kind` is the host's vocabulary; the wire forwards it verbatim. */
@@ -167,7 +173,11 @@ export type RunnerEvent =
   | { type: "text"; delta: string }
   | { type: "toolCall"; id: string; name: string; args: Record<string, unknown> }
   | { type: "done"; stop: "end" | "toolUse" }
-  | { type: "error"; message: string };
+  /**
+   * `data` accompanies a message that is a code rather than a sentence — the values whoever resolves the code
+   * interpolates into its text. A host that does not know the code shows the message as it stands.
+   */
+  | { type: "error"; message: string; data?: Record<string, string | number> };
 
 export interface RunnerRequest {
   messages: ChatMessage[];

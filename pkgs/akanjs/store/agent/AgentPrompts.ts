@@ -49,11 +49,22 @@ export class AgentPrompts {
     return this.list().find((prompt) => prompt.name === name) ?? null;
   }
 
-  /** `/name arg1 arg2` — positional because a prompt's arguments are flat strings by protocol. */
+  /** `/name arg1 "an arg with spaces"` — positional because a prompt's arguments are flat strings by protocol. */
   static parseCommand(draft: string): { name: string; args: string[] } | null {
-    const match = /^\/([A-Za-z0-9_-]+)(?:\s+(.*))?$/.exec(draft.trim());
+    const match = /^\/([A-Za-z0-9_-]+)(?:\s+([\s\S]*))?$/.exec(draft.trim());
     if (!match) return null;
-    return { name: match[1], args: match[2]?.split(/\s+/).filter(Boolean) ?? [] };
+    return { name: match[1], args: AgentPrompts.#args(match[2] ?? "") };
+  }
+
+  /**
+   * Whitespace separates arguments, and quotes are how a sentence stays one of them — a prompt taking a single
+   * `String` is the common case, and splitting "plan the week" into three arguments fills the second parameter
+   * with the second word.
+   */
+  static #args(rest: string): string[] {
+    const args: string[] = [];
+    for (const token of rest.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)) args.push(token[1] ?? token[2] ?? token[3]);
+    return args;
   }
 
   /** The messages a prompt returns become the user's turn, the way an MCP client sends a `prompts/get` result. */

@@ -60,8 +60,8 @@ export default function Page() {
                 {
                   title: "Agent.Chat",
                   desc: l.trans({
-                    en: "The loop, the approval card, its own /new · /retry · /copy · /help · /tools, and slash commands from prompt() endpoints.",
-                    ko: "대화 루프, 승인 카드, 자체 커맨드(/new · /retry · /copy · /help · /tools), prompt() 엔드포인트에서 온 slash command.",
+                    en: "The loop, the approval card, its own /new · /retry · /compact · /copy · /help · /tools, and slash commands from prompt() endpoints.",
+                    ko: "대화 루프, 승인 카드, 자체 커맨드(/new · /retry · /compact · /copy · /help · /tools), prompt() 엔드포인트에서 온 slash command.",
                   }),
                 },
                 {
@@ -154,8 +154,8 @@ export const option = new AkanOption<ModulesOptions>()
             {
               title: "attach",
               desc: l.trans({
-                en: "The composer attaches images and text files on its own; attach is where an app reads what needs a parser, like a PDF's text. Nothing is stored — the bytes ride one turn's request, and a reloaded transcript keeps the name without the content.",
-                ko: "작성창은 이미지와 텍스트 파일을 스스로 첨부합니다. PDF 본문처럼 파서가 필요한 것은 앱이 attach에서 읽습니다. 저장은 하지 않습니다 — 바이트는 한 턴의 요청에만 실리고, 새로고침된 대화는 내용 없이 이름만 남깁니다.",
+                en: "The composer attaches images and text files on its own; attach is where an app reads what needs a parser, like a PDF's text. Nothing is stored — the bytes ride one turn's request, and a reloaded transcript keeps the name without the content. The ceilings are the message's rather than the file's — 4 MB per file, 8 MB and five files per message, and the same file twice refused by name — because what a provider refuses is the sum, and a request that cannot be sent is one the user has to empty the composer to escape.",
+                ko: "작성창은 이미지와 텍스트 파일을 스스로 첨부합니다. PDF 본문처럼 파서가 필요한 것은 앱이 attach에서 읽습니다. 저장은 하지 않습니다 — 바이트는 한 턴의 요청에만 실리고, 새로고침된 대화는 내용 없이 이름만 남깁니다. 상한은 파일 하나가 아니라 메시지 단위입니다 — 파일당 4MB, 메시지당 8MB와 5개, 같은 파일은 이름을 밝히며 거절합니다. 프로바이더가 거절하는 것은 합계이고, 보낼 수 없는 요청에서 빠져나오려면 작성창을 비우는 수밖에 없기 때문입니다.",
               }),
             },
             {
@@ -193,8 +193,8 @@ export const option = new AkanOption<ModulesOptions>()
           </div>
           <div>
             {l.trans({
-              en: "Seven tools are on every screen whatever it declares:",
-              ko: "화면이 무엇을 선언하든 항상 실리는 툴이 일곱 있습니다.",
+              en: "Six tools are on every screen whatever it declares:",
+              ko: "화면이 무엇을 선언하든 항상 실리는 툴이 여섯 있습니다.",
             })}
           </div>
           <div className="space-y-1">
@@ -225,13 +225,6 @@ export const option = new AkanOption<ModulesOptions>()
                 desc: l.trans({ en: "One masked store key.", ko: "마스킹된 스토어 키 하나." }),
               },
               {
-                title: "waitFor(key, equals?)",
-                desc: l.trans({
-                  en: "Parks the turn until that store state key moves, so a job measured in minutes costs no model round trips. The same keys readState reads, so a component has to be subscribing it — a surface resource from st.expose is not one. Deliberately not a sleep: a sleep only makes polling slower. Running out is not a failure — it answers with what the key holds now.",
-                  ko: "그 스토어 상태 키가 움직일 때까지 턴을 세워 둡니다. 분 단위 작업이 모델 왕복을 한 번도 쓰지 않습니다. readState가 읽는 것과 같은 키라서 컴포넌트가 구독하고 있어야 합니다 — st.expose가 만드는 surface 리소스는 해당하지 않습니다. 일부러 sleep이 아닙니다 — sleep은 폴링을 느리게 할 뿐입니다. 시간이 다 되는 것은 실패가 아니라, 키의 현재 값을 담은 답입니다.",
-                }),
-              },
-              {
                 title: "highlight(target)",
                 desc: l.trans({
                   en: "Scrolls one thing into view and flashes it once the scroll lands, so the agent can show the user where a thing is instead of describing where it is. The target is a tool name, a state key, a scope path, an anchor, or a heading's text. Nothing hidden ever resolves.",
@@ -260,14 +253,20 @@ export const option = new AkanOption<ModulesOptions>()
           </div>
           <div>
             {l.trans({
-              en: "Long work is awaited, not polled. The session awaits a tool's own promise, so a .exec that awaits the store action finishing the job simply makes the turn take that long — and the change report that follows carries whatever landed, so the model needs no second call to read it. A tool that returns early leaves the agent to ask again and again, one round trip per look, which burns the whole maxTurns budget in seconds on a job measured in minutes. Say so in the desc. waitFor is for the job the tool cannot await — one started in an earlier turn, or by a person clicking the button. Stop reaches a tool that is still running: the session races every call against its abort signal, and the signal itself arrives through AgentAbort.current, the same module slot AgentProgress is. Honouring it is optional, since the race lands whatever the tool does; what it buys is the tool's own cleanup. Import both from akanjs/store — an app may not reach use-agentic directly.",
-              ko: "긴 작업은 폴링이 아니라 await 합니다. 세션은 툴의 promise를 기다리므로, 작업을 끝내는 스토어 액션을 await 하는 .exec은 그냥 턴이 그만큼 걸리게 만듭니다. 그리고 뒤따르는 변경 보고가 그 사이 도착한 것을 실어 나르므로, 모델은 결과를 읽기 위해 두 번째 호출을 할 필요가 없습니다. 일찍 반환하는 툴은 에이전트에게 계속 되묻게 만들고, 한 번 볼 때마다 모델 왕복이 한 번이라, 분 단위 작업에서 maxTurns 예산을 몇 초 만에 태웁니다. 그 사실을 desc에 적으세요. waitFor는 툴이 기다릴 수 없는 작업 — 이전 턴에서, 또는 사용자가 버튼을 눌러 시작된 작업 — 을 위한 것입니다. Stop은 아직 돌고 있는 툴에도 닿습니다. 세션이 모든 호출을 abort 시그널과 레이스시키고, 시그널 자체는 AgentProgress와 같은 모듈 슬롯인 AgentAbort.current로 옵니다. 레이스가 어떤 툴이든 멈춰 세우므로 시그널을 존중하는 것은 선택입니다. 존중해서 얻는 것은 툴 자신의 정리입니다. 둘 다 akanjs/store에서 가져오세요 — 앱은 use-agentic에 직접 닿을 수 없습니다.",
+              en: "Long work is awaited, not polled. The session awaits a tool's own promise, so a .exec that awaits the store action finishing the job simply makes the turn take that long — and the change report that follows carries whatever landed, so the model needs no second call to read it. A tool that returns early leaves the agent to ask again and again, one round trip per look, which burns the whole maxTurns budget in seconds on a job measured in minutes. Say so in the desc. For the job a tool cannot await — one started in an earlier turn, or by a person clicking the button — declare a waiting tool of your own beside the control that starts the work: a general built-in wait was tried and removed, because a tool reachable on every screen with no idea what any key means gets spent on whatever key looks promising, parking turns nobody asked to park. Stop reaches a tool that is still running: the session races every call against its abort signal, and the signal itself arrives through AgentAbort.current, the same module slot AgentProgress is. Honouring it is optional, since the race lands whatever the tool does; what it buys is the tool's own cleanup. Import both from akanjs/store — an app may not reach use-agentic directly. A stopped turn answers the calls it never ran: every provider dialect refuses an assistant message whose tool_calls have no results, on that turn and on every later one, so Stop landing between a call and its result would otherwise leave a transcript nothing can be sent from.",
+              ko: "긴 작업은 폴링이 아니라 await 합니다. 세션은 툴의 promise를 기다리므로, 작업을 끝내는 스토어 액션을 await 하는 .exec은 그냥 턴이 그만큼 걸리게 만듭니다. 그리고 뒤따르는 변경 보고가 그 사이 도착한 것을 실어 나르므로, 모델은 결과를 읽기 위해 두 번째 호출을 할 필요가 없습니다. 일찍 반환하는 툴은 에이전트에게 계속 되묻게 만들고, 한 번 볼 때마다 모델 왕복이 한 번이라, 분 단위 작업에서 maxTurns 예산을 몇 초 만에 태웁니다. 그 사실을 desc에 적으세요. 툴이 기다릴 수 없는 작업 — 이전 턴에서, 또는 사용자가 버튼을 눌러 시작된 작업 — 은 그 작업을 시작하는 컨트롤 옆에 기다리는 툴을 직접 선언하세요. 범용 대기 빌트인은 만들었다가 제거했습니다. 모든 화면에서 닿을 수 있으면서 어떤 키가 무슨 뜻인지는 모르는 툴은 그럴듯해 보이는 키에 아무렇게나 쓰이고, 아무도 부탁하지 않은 대기로 턴을 세워 둡니다. Stop은 아직 돌고 있는 툴에도 닿습니다. 세션이 모든 호출을 abort 시그널과 레이스시키고, 시그널 자체는 AgentProgress와 같은 모듈 슬롯인 AgentAbort.current로 옵니다. 레이스가 어떤 툴이든 멈춰 세우므로 시그널을 존중하는 것은 선택입니다. 존중해서 얻는 것은 툴 자신의 정리입니다. 둘 다 akanjs/store에서 가져오세요 — 앱은 use-agentic에 직접 닿을 수 없습니다. 중지된 턴은 실행하지 못한 호출에 대신 답을 채웁니다. 모든 프로바이더 방언은 결과 없는 tool_calls를 가진 assistant 메시지를 거절하며, 그 턴뿐 아니라 이후 모든 턴에서 거절합니다. 그래서 호출과 결과 사이에 Stop이 떨어지면 아무것도 보낼 수 없는 트랜스크립트가 남게 됩니다.",
             })}
           </div>
           <div>
             {l.trans({
-              en: "The chat answers five commands of its own, listed in the same / menu ahead of the prompts: /new (/clear), /retry, /copy, /help and /tools. An app writes none of them and cannot add one — a product's own command is a prompt() endpoint, which is guarded and server-side. A built-in wins a name collision with a prompt, the mirror image of the tool rule: a component's st.tool may shadow a built-in it means to replace, but no library's prompt may take /new away from the user who typed it. /new and /copy work mid-turn, so /new ends the turn it is clearing. A command's output is a local message — rendered in the transcript, withheld from the wire, because the transcript is the model's history and text appended plainly would come back next turn as something the assistant believes it said. /copy exists because nothing else keeps the transcript: the relay is stateless, so an export is the one path a wrong answer has to whoever could fix it. And ↑ walks back through what was sent, ↓ forward.",
-              ko: "채팅은 자체 커맨드 다섯 개를 가집니다. 같은 / 메뉴에서 prompt보다 앞에 놓입니다 — /new(/clear), /retry, /copy, /help, /tools. 앱은 이 중 아무것도 작성하지 않고 추가할 수도 없습니다. 제품 고유의 커맨드는 guard가 걸린 서버 쪽 prompt() 엔드포인트입니다. 이름이 겹치면 빌트인이 이깁니다 — 툴 규칙의 반대입니다. 컴포넌트의 st.tool은 대체하려는 빌트인을 가릴 수 있지만, 어떤 라이브러리의 prompt도 사용자가 직접 입력한 /new를 빼앗을 수는 없습니다. /new와 /copy는 턴 중에도 동작하며, 그래서 /new는 비우려는 턴을 끝냅니다. 커맨드의 출력은 local 메시지입니다 — 트랜스크립트에는 렌더되고 와이어에는 실리지 않습니다. 트랜스크립트가 곧 모델의 히스토리라서, 그냥 붙이면 다음 턴에 모델이 자기가 한 말로 받아들입니다. /copy가 있는 이유는 트랜스크립트를 보관하는 곳이 달리 없기 때문입니다 — 릴레이는 stateless이므로, 잘못된 답이 고칠 수 있는 사람에게 닿는 유일한 경로가 내보내기입니다. 그리고 ↑는 보낸 것들을 거슬러 가고 ↓는 되돌아옵니다.",
+              en: "The chat answers six commands of its own, listed in the same / menu ahead of the prompts: /new (/clear), /retry, /compact, /copy, /help and /tools. An app writes none of them and cannot add one — a product's own command is a prompt() endpoint, which is guarded and server-side. A built-in wins a name collision with a prompt, the mirror image of the tool rule: a component's st.tool may shadow a built-in it means to replace, but no library's prompt may take /new away from the user who typed it. /new and /copy work mid-turn and ahead of the question card, so /new ends the turn it is clearing instead of being answered into it as text. A command's output is a local message — rendered in the transcript, withheld from the wire, because the transcript is the model's history and text appended plainly would come back next turn as something the assistant believes it said. /copy exists because nothing else keeps the transcript: the relay is stateless, so an export is the one path a wrong answer has to whoever could fix it. And ↑ walks back through what was sent, ↓ forward — seeded from the transcript, so a persisted chat does not lose only what was just typed — while the / menu takes those keys whenever it is open: Enter picks the highlighted row, Tab completes its name, and Escape closes the menu and then the panel.",
+              ko: "채팅은 자체 커맨드 여섯 개를 가집니다. 같은 / 메뉴에서 prompt보다 앞에 놓입니다 — /new(/clear), /retry, /compact, /copy, /help, /tools. 앱은 이 중 아무것도 작성하지 않고 추가할 수도 없습니다. 제품 고유의 커맨드는 guard가 걸린 서버 쪽 prompt() 엔드포인트입니다. 이름이 겹치면 빌트인이 이깁니다 — 툴 규칙의 반대입니다. 컴포넌트의 st.tool은 대체하려는 빌트인을 가릴 수 있지만, 어떤 라이브러리의 prompt도 사용자가 직접 입력한 /new를 빼앗을 수는 없습니다. /new와 /copy는 턴 중에도, 그리고 질문 카드보다 앞서 동작합니다. 그래서 /new는 질문에 대한 답변 텍스트로 삼켜지는 대신 비우려는 턴을 끝냅니다. 커맨드의 출력은 local 메시지입니다 — 트랜스크립트에는 렌더되고 와이어에는 실리지 않습니다. 트랜스크립트가 곧 모델의 히스토리라서, 그냥 붙이면 다음 턴에 모델이 자기가 한 말로 받아들입니다. /copy가 있는 이유는 트랜스크립트를 보관하는 곳이 달리 없기 때문입니다 — 릴레이는 stateless이므로, 잘못된 답이 고칠 수 있는 사람에게 닿는 유일한 경로가 내보내기입니다. 그리고 ↑는 보낸 것들을 거슬러 가고 ↓는 되돌아옵니다 — 트랜스크립트에서 시작되므로 persist된 대화가 방금 입력한 것만 잃는 일은 없습니다. / 메뉴가 열려 있는 동안에는 그 키들을 메뉴가 가져갑니다. Enter는 선택된 줄을 실행하고, Tab은 이름을 완성하며, Escape는 메뉴를 닫고 한 번 더 누르면 패널을 닫습니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "A long conversation summarizes itself, because nothing else keeps it inside the model's window: the loop runs in the browser and the relay holds no session, so an uncompacted chat grows until the provider refuses the whole request. Past compact.at estimated tokens the history above the last keep messages becomes one message standing in for it — before the turn that would have overflowed, since a provider answers an over-long request with a refusal rather than a shorter answer. The cut only ever lands on a user message, so the kept half never opens with a tool result whose call was summarized away. The summarizing turn carries no tools and no screen context, and is fed a bounded digest rather than the transcript itself, which is the one thing already known not to fit. compact={{ at, keep }} on Agent.Chat tunes it per provider, { at: 0 } turns it off, and /compact does the same on demand keeping nothing.",
+              ko: "긴 대화는 스스로를 요약합니다. 루프는 브라우저에서 돌고 릴레이는 세션을 갖지 않으므로, 대화를 모델의 컨텍스트 창 안에 붙잡아 두는 것이 달리 없습니다 — 압축하지 않으면 프로바이더가 요청 전체를 거절할 때까지 자랍니다. 추정 토큰이 compact.at을 넘으면 마지막 keep개 위의 히스토리가 그것을 대신하는 메시지 하나가 됩니다. 넘칠 턴이 나가기 전에 그렇게 합니다. 프로바이더는 너무 긴 요청에 짧은 답이 아니라 거절로 답하기 때문입니다. 자르는 지점은 언제나 user 메시지입니다. 그래서 남는 쪽이 호출은 요약돼 사라지고 결과만 남은 tool 메시지로 시작하는 일이 없습니다. 요약 턴은 툴도 화면 컨텍스트도 싣지 않고, 트랜스크립트 자체가 아니라 길이가 제한된 요약본을 받습니다. 트랜스크립트는 이미 들어가지 않는다고 알려진 바로 그것이니까요. Agent.Chat의 compact={{ at, keep }}로 프로바이더에 맞게 조절하고, { at: 0 }으로 끄고, /compact로 언제든 남기는 것 없이 같은 일을 시킵니다.",
             })}
           </div>
           <div>
@@ -364,8 +363,8 @@ st.expose("selectedWaypointId", selected?.id ?? null);
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Everything the model needs is declared in option.ts, never in the environment. setLlm fills apiKey, model, and host for whichever adaptor holds LlmAdaptorRole, so the settings survive a provider swap. DeepSeek is the built-in default — deepseek-v4-flash at https://api.deepseek.com. With no apiKey the app still boots and the chat answers llmUnavailable.",
-              ko: "모델에 필요한 설정은 환경변수가 아니라 option.ts에 선언합니다. setLlm은 LlmAdaptorRole을 차지한 어댑터에 apiKey·model·host를 채우므로, 프로바이더를 바꿔도 설정은 그대로입니다. 기본값은 DeepSeek입니다. deepseek-v4-flash, https://api.deepseek.com. apiKey가 없어도 앱은 기동하고 채팅은 llmUnavailable로 답합니다.",
+              en: "Everything the model needs is declared in option.ts, never in the environment. setLlm fills apiKey, model, and host for whichever adaptor holds LlmAdaptorRole, so the settings survive a provider swap. DeepSeek is the built-in default — deepseek-v4-flash at https://api.deepseek.com. With no apiKey the app still boots and the chat says no model is configured; a refusal the provider explained is thrown instead of swallowed, so the chat prints that reason in the user's language.",
+              ko: "모델에 필요한 설정은 환경변수가 아니라 option.ts에 선언합니다. setLlm은 LlmAdaptorRole을 차지한 어댑터에 apiKey·model·host를 채우므로, 프로바이더를 바꿔도 설정은 그대로입니다. 기본값은 DeepSeek입니다. deepseek-v4-flash, https://api.deepseek.com. apiKey가 없어도 앱은 기동하고, 채팅은 모델이 설정되지 않았다고 답합니다. 프로바이더가 이유를 밝힌 거절은 삼키지 않고 던지므로, 채팅이 그 이유를 사용자의 언어로 보여줍니다.",
             })}
           </div>
         </Docs.Description>

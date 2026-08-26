@@ -35,7 +35,14 @@ beforeEach(() => {
 
 describe("ChatCommands", () => {
   test("lists one row per command and resolves an alias", () => {
-    expect(ChatCommands.list(l).map((command) => command.name)).toEqual(["new", "retry", "copy", "help", "tools"]);
+    expect(ChatCommands.list(l).map((command) => command.name)).toEqual([
+      "new",
+      "retry",
+      "compact",
+      "copy",
+      "help",
+      "tools",
+    ]);
     expect(ChatCommands.find("clear", l)?.name).toBe("new");
     expect(ChatCommands.find("new", l)?.name).toBe("new");
     expect(ChatCommands.find("planWeek", l)).toBeNull();
@@ -69,6 +76,26 @@ describe("ChatCommands", () => {
     expect(noteOf(session)).toBe("base.agentBusy");
     await session.reset();
     await sending;
+  });
+
+  test("/compact summarizes the whole conversation and says so", async () => {
+    const session = new AgentSession(new AgenticSurface(), {
+      async *run() {
+        yield { type: "text", delta: "notes about it all" };
+        yield { type: "done", stop: "end" };
+      },
+    });
+    await session.send("do a thing");
+    await ChatCommands.run(commandOf("compact"), { session, l });
+    expect(session.messages.map((message) => message.text)).toEqual(["notes about it all", "base.agentCompacted"]);
+    expect(session.messages[0].summary).toBe(true);
+    expect(session.messages[1].local).toBe(true);
+  });
+
+  test("/compact says there is nothing to summarize on an empty transcript", async () => {
+    const session = sessionOf();
+    await ChatCommands.run(commandOf("compact"), { session, l });
+    expect(noteOf(session)).toBe("base.agentNothingToCompact");
   });
 
   test("/help names every command it offers", async () => {

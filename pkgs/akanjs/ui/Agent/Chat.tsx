@@ -1,25 +1,36 @@
 "use client";
 import { cn, fetch, usePage } from "akanjs/client";
 import type { PromptResult } from "akanjs/signal";
-import { AgentContext, type AgentPrompt, AgentPrompts, ensureStoreSurface, ScreenSettle } from "akanjs/store";
-import { type ReactNode, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type AgentPrompt, AgentPrompts } from "akanjs/store";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { createPortal } from "react-dom";
 import { AiOutlineClear, AiOutlineClose } from "react-icons/ai";
-import { type AgentRunner, AgentSession, type MessageAttachment, SessionContext } from "use-agentic";
-import { Button } from "../Button";
-import { inputRecipe } from "../recipe";
+import { type AgentRunner, type AgentSession, type CompactOptions, SessionContext } from "use-agentic";
 import { createOverridable } from "../UiOverride";
 import Approval from "./Approval";
-import { Attach, Chips } from "./Attach";
-import { Attachment, type AttachReader } from "./attachment";
+import { agentSessionOf } from "./agentSessionOf";
+import type { AttachReader } from "./attachment";
 import Bubble from "./Bubble";
 import { type ChatCommand, ChatCommands } from "./ChatCommands";
-import { fetchRunner } from "./fetchRunner";
+import { Composer } from "./Composer";
+import { Launcher } from "./Launcher";
 import Menu from "./Menu";
-import { Mic } from "./Mic";
 import Question from "./Question";
-import { type PersistOption, sessionHistoryOf } from "./sessionHistory";
-import { type VoiceEngine, type VoiceListener, VoiceReader } from "./voice";
+import type { PersistOption } from "./sessionHistory";
+import { useChatAttachments } from "./useChatAttachments";
+import { useChatVoice } from "./useChatVoice";
+import { useDraftRecall } from "./useDraftRecall";
+import { useSlashMenu } from "./useSlashMenu";
+import type { VoiceEngine } from "./voice";
 
 export interface ChatProps {
   className?: string;
@@ -29,11 +40,18 @@ export interface ChatProps {
   /** Swap the transport; the default drives the app's `runAgentTurn` endpoint. */
   runner?: AgentRunner;
   maxTurns?: number;
+  /**
+   * When the conversation summarizes itself to stay inside the model's window — `at` estimated tokens, `keep`
+   * messages left verbatim below the summary. Tune it per provider; `{ at: 0 }` turns it off.
+   */
+  compact?: CompactOptions;
   defaultOpen?: boolean;
   /** Keeps the transcript across reloads — sessionStorage by default, `{ storage: "local" }` to outlive the tab. */
   persist?: PersistOption;
   /** Renders in the page flow instead of floating above it — a zone chat that lives inside its own section. */
   inline?: boolean;
+  /** `false` gives the browser its own Cmd/Ctrl+L back, for an app whose shell already spends that chord. */
+  shortcut?: boolean;
   /**
    * Reads a file the user attached into an attachment, or answers `null` to leave it to the built-in reader
    * (images as bytes, text as text). This is where an app puts what needs a parser — a PDF's text, a spreadsheet's
@@ -49,7 +67,12 @@ export interface ChatProps {
   voice?: VoiceEngine;
 }
 
-const isApplePlatform = () => /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
+// `userAgentData` is the supported spelling and `platform` the deprecated one that is still the only answer in
+// Safari and in a WebView; the user agent string is the last resort.
+const isApplePlatform = () => {
+  const data = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+  return /Mac|iPhone|iPad|iPod/i.test(data?.platform || navigator.platform || navigator.userAgent);
+};
 
 // Portalled to the body like Dialog's modal and the toast layer: the page tree sits under `#pageContainers`,
 // which is `isolation: isolate`, so a z-index declared inside it can never rise above a body-level overlay.
@@ -57,12 +80,15 @@ const isApplePlatform = () => /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
 // still drive a form inside an open modal, and below Reconnect (200), which blocks the app on purpose.
 const floatingLayer = "fixed right-4 bottom-4 z-[150]";
 
+/** Distance from the bottom within which the transcript keeps following new messages. */
+const stickyEdge = 80;
+
 /**
  * The user-facing half of the in-page agent: one floating chat wired to the same surface the dock inspects.
  * The conversation loop runs in this browser session — every tool call executes here, gated by the approval
- * card — and the session lives in a ref, so it survives reopening the panel and dies with the page (v1 keeps
- * no history). An enclosing AgentProvider's session wins, which is how an app isolates a surface or swaps the
- * loop while keeping this UI.
+ * card — and the session lives in a ref, so it survives reopening the panel and dies with the page unless
+ * `persist` keeps it. An enclosing AgentProvider's session wins, which is how an app isolates a surface or swaps
+ * the loop while keeping this UI.
  */
 export const DefaultChat = ({
   className,
@@ -70,24 +96,29 @@ export const DefaultChat = ({
   instructions,
   runner,
   maxTurns,
+  compact,
   defaultOpen = false,
   persist,
   inline = false,
+  shortcut = true,
   attach,
   voice,
 }: ChatProps) => {
   const { l } = usePage();
   const provided = useContext(SessionContext);
+  // Read through a ref so the session's own text follows a language switched mid-conversation.
+  const translate = useRef(l);
+  translate.current = l;
   const held = useRef<AgentSession | null>(null);
   held.current ??=
     provided ??
-    new AgentSession(ensureStoreSurface().surface, runner ?? fetchRunner(), {
-      buildContext: (surface) => AgentContext.of().blocks(surface),
-      settle: () => ScreenSettle.wait(),
-      continueAsk: { question: l("base.agentContinue"), keep: l("base.agentKeepGoing") },
-      ...(instructions ? { instructions } : {}),
-      ...(maxTurns ? { maxTurns } : {}),
-      ...(persist ? { history: sessionHistoryOf(persist) } : {}),
+    agentSessionOf({
+      l: (key) => translate.current(key),
+      runner,
+      instructions,
+      maxTurns,
+      compact,
+      persist,
     });
   const session = held.current;
   const prompts = useRef<AgentPrompts | null>(null);
@@ -99,33 +130,33 @@ export const DefaultChat = ({
   );
   const [open, setOpen] = useState(defaultOpen);
   const [draft, setDraft] = useState("");
-  const [attached, setAttached] = useState<MessageAttachment[]>([]);
-  const [listening, setListening] = useState(false);
-  // Always-latest: the engine a hook returns may be a new object each render, and the reader outlives them all.
-  const engine = useRef<VoiceEngine | undefined>(voice);
-  engine.current = voice;
-  const listener = useRef<VoiceListener | null>(null);
-  const reader = useRef<VoiceReader | null>(null);
-  reader.current ??= new VoiceReader(() => engine.current);
-  /** Set while the draft came from the microphone, consumed by the send that carries it. */
-  const byVoice = useRef(false);
-  /** The assistant message being read aloud. Null means this turn is not one to read. */
-  const spoken = useRef<{ at: number } | null>(null);
-  const seen = useRef(0);
-  const sent = useRef<string[]>([]);
-  const stashed = useRef("");
-  const [recall, setRecall] = useState(0);
+  const files = useChatAttachments({ session, attach, l });
+  const speech = useChatVoice({
+    session,
+    engine: voice,
+    version,
+    onTranscript: setDraft,
+    onFailed: () => session.note(l("base.agentVoiceFailed")),
+  });
+  const recall = useDraftRecall(session.messages);
   const [hotkey, setHotkey] = useState<{ label: string; keys: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  // Only what the panel is following: a user who scrolled up to read is not dragged back down by the next delta.
+  const sticky = useRef(true);
+  const returning = useRef(false);
+  const read = useRef(session.messages.length);
   const [overlay, setOverlay] = useState<HTMLElement | null>(null);
   useEffect(() => {
     setOverlay(document.body);
   }, []);
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
+    if (open) read.current = session.messages.length;
+    if (sticky.current) listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [version, open]);
   useEffect(() => {
+    if (!shortcut) return;
     const apple = isApplePlatform();
     setHotkey(apple ? { label: "⌘ L", keys: "Meta+L" } : { label: "Ctrl+L", keys: "Control+L" });
     const onKeyDown = (event: KeyboardEvent) => {
@@ -133,47 +164,28 @@ export const DefaultChat = ({
       const chord = apple ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
       if (!chord) return;
       event.preventDefault();
+      sticky.current = true;
       setOpen(true);
       inputRef.current?.focus();
     };
     // Cmd/Ctrl+L is the browser location bar; capture so preventDefault wins.
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, []);
+  }, [shortcut]);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      // Focus goes back to the launcher only when the user dismissed the panel, never when it opened closed.
+      if (returning.current) launcherRef.current?.focus();
+      returning.current = false;
+      return;
+    }
     inputRef.current?.focus();
   }, [open, session.pendingQuestion?.callId]);
-  useEffect(() => {
-    const speaker = reader.current;
-    // A shorter transcript is a cleared or retried one — /new must not leave the last answer still being read.
-    if (session.messages.length < seen.current) {
-      speaker?.reset();
-      spoken.current = null;
-    }
-    seen.current = session.messages.length;
-    const reading = spoken.current;
-    if (!reading || !speaker) return;
-    const at = session.messages.findLastIndex(
-      (message) => message.role === "assistant" && !message.local && !!message.text,
-    );
-    if (at < 0) return;
-    // A later answer in the same turn is a new one to read from the start; a tool row between them is skipped.
-    if (at !== reading.at) {
-      speaker.reset();
-      reading.at = at;
-    }
-    const text = session.messages[at].text ?? "";
-    if (session.isRunning) speaker.feed(text);
-    else {
-      speaker.flush(text);
-      spoken.current = null;
-    }
-  }, [version]);
   useEffect(
     () => () => {
-      listener.current?.stop();
-      reader.current?.cancel();
+      // A session this chat made dies with it: unmounted, nothing renders its approvals, and a turn left running
+      // would go on driving a screen the user has navigated away from. A provided one belongs to its provider.
+      if (!provided) session.abort();
     },
     [],
   );
@@ -197,196 +209,173 @@ export const DefaultChat = ({
       session.report(`/${prompt.name} failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
-  /** Staged one at a time so one unreadable file names itself instead of failing the whole drop silently. */
-  const attachFiles = async (files: File[]) => {
-    for (const file of files) {
-      try {
-        const read = await Attachment.read(file, attach);
-        if (!Attachment.failure(read)) setAttached((current) => [...current, read]);
-        else
-          session.note(
-            l(read === "tooLarge" ? "base.agentAttachTooLarge" : "base.agentAttachUnsupported", { name: file.name }),
-          );
-      } catch (error) {
-        session.report(`${file.name}: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
+  const write = (text: string) => {
+    setDraft(text);
+    menu.reopen();
   };
-  /** One press is one utterance, so the engine is told to stop even when it reported a final result itself. */
-  const endListening = () => {
-    const held = listener.current;
-    listener.current = null;
-    held?.stop();
-    setListening(false);
-  };
-  const toggleMic = () => {
-    if (listener.current) {
-      endListening();
-      return;
-    }
-    const voiceEngine = engine.current;
-    if (!voiceEngine) return;
-    // Pressing the microphone is barge-in: what is being read stops, so the two are never heard at once.
-    reader.current?.cancel();
-    spoken.current = null;
-    listener.current = voiceEngine.listen({
-      onInterim: setDraft,
-      onFinal: (text) => {
-        setDraft(text);
-        byVoice.current = true;
-        endListening();
-      },
-      onError: (message) => {
-        // The reason is for whoever is debugging a permission prompt; the user gets one sentence they can act on.
-        console.warn(`[akan] voice input failed: ${message}`);
-        session.note(l("base.agentVoiceFailed"));
-        endListening();
-      },
-    });
-    setListening(true);
-  };
-  const remember = (text: string) => {
-    if (sent.current[sent.current.length - 1] !== text) sent.current = [...sent.current, text].slice(-30);
-    setRecall(0);
-  };
-  /** ↑ walks back through what was sent, ↓ forward; 0 is the draft it was walked away from. */
-  const step = (delta: number) => {
-    const history = sent.current;
-    const next = Math.max(0, Math.min(recall + delta, history.length));
-    if (next === recall) return;
-    if (!recall) stashed.current = draft;
-    setRecall(next);
-    setDraft(next ? history[history.length - next] : stashed.current);
+  const dismiss = () => {
+    returning.current = true;
+    setOpen(false);
   };
   const runCommand = (command: ChatCommand) => {
-    setDraft("");
-    remember(`/${command.name}`);
+    write("");
+    recall.remember(`/${command.name}`);
+    // A staged file belongs to the conversation being cleared, so it leaves with it.
+    if (command.name === "new") files.clear();
     void ChatCommands.run(command, { session, l });
   };
   const pick = (prompt: AgentPrompt) => {
     if (prompt.args.some((arg) => arg.required)) {
-      setDraft(`/${prompt.name} `);
+      write(`/${prompt.name} `);
       return;
     }
-    setDraft("");
-    remember(`/${prompt.name}`);
+    if (session.isRunning) {
+      session.note(l("base.agentBusy"));
+      return;
+    }
+    write("");
+    recall.remember(`/${prompt.name}`);
     void runPrompt(prompt, []);
   };
+  const menu = useSlashMenu({ draft, prompts: prompts.current, l, onCommand: runCommand, onPrompt: pick });
   const send = () => {
     const text = draft.trim();
-    if (!text && !attached.length) return;
-    // The composer is the free-text answer to a pending question: the card holds the picks, and a user who types
-    // instead of picking would otherwise be typing into a dead input while the turn waits on them.
-    const question = session.pendingQuestion;
-    if (question && text) {
-      setDraft("");
-      byVoice.current = false;
-      question.answer(question.multiple ? [text] : text);
-      return;
-    }
+    if (!text && !files.attached.length) return;
     const command = AgentPrompts.parseCommand(text);
     const builtin = command ? ChatCommands.find(command.name, l) : null;
-    // Ahead of the running check on purpose: /new and /copy are exactly what a user reaches for mid-turn.
+    // Ahead of both the question card and the running check: /new and /copy are exactly what a user reaches for
+    // while a turn is in flight, and a question the agent asked is the middle of a turn like any other.
     if (builtin) {
       runCommand(builtin);
       return;
     }
+    // The composer is the free-text answer to a pending question: the card holds the picks, and a user who types
+    // instead of picking would otherwise be typing into a dead input while the turn waits on them.
+    const question = session.pendingQuestion;
+    if (question) {
+      if (!text) {
+        session.note(l("base.agentAnswerNeeded"));
+        return;
+      }
+      write("");
+      speech.drop();
+      question.answer(question.multiple ? [text] : text);
+      return;
+    }
     if (session.isRunning) return;
     const prompt = command ? prompts.current?.find(command.name) : null;
-    setDraft("");
-    if (text) remember(text);
-    // Only an ask that arrived by voice is answered out loud; a typed one never turns the speakers on.
-    spoken.current = byVoice.current ? { at: -1 } : null;
-    byVoice.current = false;
+    write("");
+    if (text) recall.remember(text);
+    sticky.current = true;
+    speech.take();
     if (command && prompt) {
       void runPrompt(prompt, command.args);
       return;
     }
-    if (!attached.length) {
+    if (!files.attached.length) {
       void session.send(text);
       return;
     }
-    setAttached([]);
-    void session.send([{ role: "user", ...(text ? { text } : {}), attachments: attached }]);
+    const attachments = files.attached;
+    files.clear();
+    void session.send([{ role: "user", ...(text ? { text } : {}), attachments }]);
   };
-  // A screen that cannot listen renders no microphone — the same rule as publishing no tool for a missing control.
-  const canListen = !!voice && (voice.available?.() ?? true);
-  const query = /^\/[A-Za-z0-9_-]*$/.test(draft) ? draft : "";
-  const commandMenu = query ? ChatCommands.list(l).filter((command) => `/${command.name}`.startsWith(query)) : [];
-  const promptMenu = query
-    ? (prompts.current?.list() ?? []).filter(
-        (prompt) => `/${prompt.name}`.startsWith(query) && !ChatCommands.find(prompt.name, l),
-      )
-    : [];
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    const row = menu.at();
+    if (row) {
+      // The menu takes the keys the recall would otherwise walk: it is the thing on screen the arrows point at.
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        menu.move(event.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        write(`/${row.name} `);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        menu.hide();
+        return;
+      }
+      if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+        event.preventDefault();
+        row.pick();
+        return;
+      }
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      dismiss();
+      return;
+    }
+    // A single-line input does nothing of its own with the vertical arrows, so recall is free to take them.
+    if ((event.key === "ArrowUp" || event.key === "ArrowDown") && recall.has) {
+      event.preventDefault();
+      const walked = recall.step(event.key === "ArrowUp" ? 1 : -1, draft);
+      if (walked !== null) setDraft(walked);
+      return;
+    }
+    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    send();
+  };
+  // Rebuilt per transcript change rather than per render — a keystroke in the composer changes no message, and
+  // the bubbles are memoized on identity, so the maps handed to them have to be the same ones.
+  //
   // A call and its result are two wire messages because the model needs both, but they are one thing that
   // happened: the call's row resolves in place, and the result message renders only what no call claimed —
   // a persisted transcript is capped, so a result can outlive the assistant message that made it.
-  const resultOf = new Map(session.messages.flatMap((message) => message.toolResults ?? []).map((r) => [r.id, r]));
-  const claimed = new Set(session.messages.flatMap((message) => message.toolCalls?.map((call) => call.id) ?? []));
-  const bubbles = session.messages.flatMap((message, idx) => {
-    if (message.role !== "tool")
-      return [<Bubble key={idx} message={message} progress={session.progress} results={resultOf} />];
-    const orphans = (message.toolResults ?? []).filter((result) => !claimed.has(result.id));
-    return orphans.length ? [<Bubble key={idx} message={{ ...message, toolResults: orphans }} />] : [];
-  });
+  const bubbles = useMemo(() => {
+    const resultOf = new Map(session.messages.flatMap((message) => message.toolResults ?? []).map((r) => [r.id, r]));
+    const claimed = new Set(session.messages.flatMap((message) => message.toolCalls?.map((call) => call.id) ?? []));
+    return session.messages.flatMap((message, idx) => {
+      if (message.role !== "tool")
+        return [<Bubble key={idx} message={message} progress={session.progress} results={resultOf} />];
+      const orphans = (message.toolResults ?? []).filter((result) => !claimed.has(result.id));
+      return orphans.length ? [<Bubble key={idx} message={{ ...message, toolResults: orphans }} />] : [];
+    });
+  }, [version]);
+  const unread = open ? 0 : Math.max(0, session.messages.length - read.current);
   const layer = (surface: ReactNode) => (inline ? surface : overlay ? createPortal(surface, overlay) : null);
   if (!open)
     return layer(
-      <button
-        aria-keyshortcuts={hotkey?.keys}
-        aria-label={l("base.agent")}
-        data-agent-ui=""
-        className={cn(
-          "group/agent flex size-12 items-center justify-center rounded-full border border-primary/20 bg-primary/90 text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-105",
-          !inline && floatingLayer,
-          className,
-        )}
-        onClick={() => setOpen(true)}
-        type="button"
-      >
-        {hotkey ? (
-          <kbd className="pointer-events-none absolute right-full mr-3 hidden rounded-field border border-border bg-background px-2 py-0.5 font-mono text-foreground/50 text-xs opacity-0 shadow-sm group-hover/agent:opacity-100 group-focus-visible/agent:opacity-100 md:block">
-            {hotkey.label}
-          </kbd>
-        ) : null}
-        <svg className="size-7" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-          <path
-            fill="currentColor"
-            d="M40 18 C43.6 43.6 54.4 54.4 80 58 C54.4 61.6 43.6 72.4 40 98
-       C36.4 72.4 25.6 61.6 0 58 C25.6 54.4 36.4 43.6 40 18 Z"
-          />
-          <path
-            fill="currentColor"
-            d="M80 2 C81.8 14.8 87.2 20.2 100 22 C87.2 23.8 81.8 29.2 80 42
-       C78.2 29.2 72.8 23.8 60 22 C72.8 20.2 78.2 14.8 80 2 Z"
-          />
-        </svg>
-      </button>,
+      <Launcher
+        className={cn(!inline && floatingLayer, className)}
+        hotkey={hotkey}
+        label={l("base.agent")}
+        buttonRef={launcherRef}
+        onOpen={() => setOpen(true)}
+        unread={unread}
+      />,
     );
   // data-agent-ui keeps the chat out of readScreen, so a turn never re-reads its own transcript.
   return layer(
     <aside
+      aria-label={title ?? l("base.agent")}
       data-agent-ui=""
       className={cn(
         "flex h-[min(600px,calc(100dvh-2rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-box border border-border bg-background shadow-xl",
+        files.dragging && "border-primary ring-2 ring-primary/40",
         !inline && floatingLayer,
         className,
       )}
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        event.preventDefault();
-        void attachFiles([...event.dataTransfer.files]);
-      }}
+      role="dialog"
+      {...files.dropProps}
     >
       <header className="flex items-center gap-2 border-foreground/5 border-b px-4 py-3">
         <span className="font-semibold text-sm">{title ?? l("base.agent")}</span>
         {session.isRunning ? <span className="size-2 animate-pulse rounded-full bg-primary" /> : null}
         <span className="ml-auto flex items-center gap-2">
-          {session.messages.length && !session.isRunning ? (
+          {session.messages.length ? (
             <button
               aria-label={l("base.agentClear")}
               className="text-foreground/50 hover:text-foreground"
-              onClick={() => session.reset()}
+              onClick={() => {
+                files.clear();
+                void session.reset();
+              }}
               type="button"
             >
               <AiOutlineClear />
@@ -395,14 +384,24 @@ export const DefaultChat = ({
           <button
             aria-label={l("base.cancel")}
             className="text-foreground/50 hover:text-foreground"
-            onClick={() => setOpen(false)}
+            onClick={dismiss}
             type="button"
           >
             <AiOutlineClose />
           </button>
         </span>
       </header>
-      <div className="scrollbar-thin flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-3" ref={listRef}>
+      <div
+        aria-busy={session.isRunning}
+        aria-live="polite"
+        className="scrollbar-thin flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-3"
+        onScroll={() => {
+          const list = listRef.current;
+          if (list) sticky.current = list.scrollHeight - list.scrollTop - list.clientHeight < stickyEdge;
+        }}
+        ref={listRef}
+        role="log"
+      >
         {bubbles.length ? (
           bubbles
         ) : (
@@ -413,61 +412,23 @@ export const DefaultChat = ({
       {session.pendingQuestion ? (
         <Question key={session.pendingQuestion.callId} question={session.pendingQuestion} />
       ) : null}
-      <Menu commands={commandMenu} onCommand={runCommand} onPrompt={pick} prompts={promptMenu} />
-      <div className="flex flex-col gap-2 border-foreground/5 border-t p-3">
-        {attached.length ? (
-          <Chips
-            attachments={attached}
-            onRemove={(idx) => setAttached((current) => current.filter((_, at) => at !== idx))}
-            removeLabel={l("base.agentAttachRemove")}
-          />
-        ) : null}
-        <div className="flex items-center gap-2">
-          {canListen ? <Mic label={l("base.agentListen")} listening={listening} onToggle={toggleMic} /> : null}
-          <Attach label={l("base.agentAttach")} onPick={(files) => void attachFiles(files)} />
-          <input
-            className={inputRecipe({ size: "sm" }, "flex-1")}
-            onChange={(event) => setDraft(event.target.value)}
-            ref={inputRef}
-            onKeyDown={(event) => {
-              // A single-line input does nothing of its own with the vertical arrows, so recall is free to take them.
-              if ((event.key === "ArrowUp" || event.key === "ArrowDown") && sent.current.length) {
-                event.preventDefault();
-                step(event.key === "ArrowUp" ? 1 : -1);
-                return;
-              }
-              if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
-              event.preventDefault();
-              send();
-            }}
-            onPaste={(event) => {
-              const files = [...event.clipboardData.files];
-              if (!files.length) return;
-              event.preventDefault();
-              void attachFiles(files);
-            }}
-            placeholder={session.pendingQuestion ? l("base.agentAnswer") : l("base.agentPlaceholder")}
-            value={draft}
-          />
-          {session.isRunning && !session.pendingQuestion ? (
-            <Button
-              onClick={() => {
-                reader.current?.cancel();
-                spoken.current = null;
-                session.abort();
-              }}
-              size="sm"
-              variant="outline"
-            >
-              {l("base.stop")}
-            </Button>
-          ) : (
-            <Button disabled={!draft.trim() && !attached.length} onClick={send} size="sm">
-              {l("base.send")}
-            </Button>
-          )}
-        </div>
-      </div>
+      <Menu onPick={(row) => row.pick()} rows={menu.rows} selected={menu.selected} />
+      <Composer
+        attached={files.attached}
+        draft={draft}
+        inputRef={inputRef}
+        {...(speech.canListen ? { mic: { listening: speech.listening, onToggle: speech.toggle } } : {})}
+        onDraft={write}
+        onFiles={(picked) => void files.add(picked)}
+        onKeyDown={onKeyDown}
+        onRemoveFile={files.remove}
+        onSend={send}
+        onStop={() => {
+          speech.silence();
+          session.abort();
+        }}
+        session={session}
+      />
     </aside>,
   );
 };

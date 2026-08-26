@@ -111,12 +111,21 @@ describe("httpRunner streaming", () => {
     expect(events[events.length - 1]).toMatchObject({ type: "error" });
   });
 
-  test("a non-2xx JSON body's message is quoted in the error event", async () => {
+  test("a non-2xx JSON body's message is the error event, verbatim and with what it interpolates", async () => {
     const fetcher = (async () =>
-      new Response(JSON.stringify({ message: "agent.error.llmUnavailable" }), {
-        status: 500,
+      new Response(JSON.stringify({ error: "agent.error.deepseekRequestFailed", data: { status: "400" } }), {
+        status: 400,
       })) as unknown as typeof fetch;
     const events = await collect(httpRunner({ url: "/x", fetcher }).run(request()));
-    expect(events).toEqual([{ type: "error", message: "Agent turn failed: agent.error.llmUnavailable" }]);
+    expect(events).toEqual([{ type: "error", message: "agent.error.deepseekRequestFailed", data: { status: "400" } }]);
+  });
+
+  test("a body with no message falls back to the status, and a nested data is not forwarded", async () => {
+    const fetcher = (async () =>
+      new Response(JSON.stringify({ statusCode: 502, data: { nested: { deep: true } } }), {
+        status: 502,
+      })) as unknown as typeof fetch;
+    const events = await collect(httpRunner({ url: "/x", fetcher }).run(request()));
+    expect(events).toEqual([{ type: "error", message: "Agent turn failed: 502" }]);
   });
 });

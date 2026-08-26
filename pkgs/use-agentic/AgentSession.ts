@@ -1,5 +1,7 @@
 import { AgentAbort } from "./AgentAbort";
 import { AgentProgress, type AgentProgressReport } from "./AgentProgress";
+import { Compaction, type CompactOptions } from "./Compaction";
+import { Transcript } from "./Transcript";
 import type {
   AgentRunner,
   ChatMessage,
@@ -56,9 +58,15 @@ export interface AgentSessionOptions {
   settle?: () => Promise<void> | void;
   /**
    * Turns the turn cap into a question instead of a dead end. Omitted, the cap fails as before — a host that
-   * renders no `pendingQuestion` would otherwise wait forever for an answer nobody can give.
+   * renders no `pendingQuestion` would otherwise wait forever for an answer nobody can give. Read per ask rather
+   * than at construction, so the text follows a language switched mid-conversation.
    */
-  continueAsk?: { question: string; keep: string };
+  continueAsk?: () => { question: string; keep: string };
+  /**
+   * Keeps a long conversation inside the model's window: past `at` estimated tokens the history above the last
+   * few messages is replaced by one summary of itself, before the turn that would have overflowed is sent.
+   */
+  compact?: CompactOptions;
 }
 
 /**
@@ -107,6 +115,8 @@ export class AgentSession {
   #version = 0;
   #listeners = new Set<() => void>();
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Size below which auto-compaction stays out of the way, raised when a summary failed to shrink anything. */
+  #compactFloor = 0;
 
   constructor(surface: SurfaceView, runner: AgentRunner, options: AgentSessionOptions = {}) {
     this.#surface = surface;
@@ -182,13 +192,23 @@ export class AgentSession {
           this.#append({ role: "user", text: answer });
           budget = turn + maxTurns;
         }
+        await this.#autoCompact(controller.signal);
         const { toolCalls, stop } = await this.#assistantTurn(controller.signal);
-        if (controller.signal.aborted || stop !== "toolUse" || !toolCalls.length) return;
-        const toolResults: ToolCallResult[] = [];
-        for (const call of toolCalls) {
-          if (controller.signal.aborted) break;
-          toolResults.push(await this.#execute(call, controller.signal));
+        // Stop can land after the calls were recorded and before any of them ran. They are answered rather than
+        // dropped: an unanswered call is the one shape every provider dialect refuses, and the transcript this
+        // turn leaves behind is what the next one posts.
+        if (controller.signal.aborted) {
+          this.#unanswered(toolCalls);
+          return;
         }
+        if (stop !== "toolUse" || !toolCalls.length) return;
+        const toolResults: ToolCallResult[] = [];
+        for (const call of toolCalls)
+          toolResults.push(
+            controller.signal.aborted
+              ? { id: call.id, name: call.name, error: Transcript.unanswered }
+              : await this.#execute(call, controller.signal),
+          );
         this.#append({ role: "tool", toolResults });
       }
     } catch (error) {
@@ -219,6 +239,7 @@ export class AgentSession {
       await this.#active;
     }
     this.#messages = [];
+    this.#compactFloor = 0;
     // The pending debounced save would re-create the entry clear() just removed.
     if (this.#saveTimer) {
       clearTimeout(this.#saveTimer);
@@ -241,7 +262,8 @@ export class AgentSession {
   retry = async (): Promise<boolean> => {
     if (this.#active) return false;
     const at = this.#messages.findLastIndex(
-      (message) => message.role === "user" && (!!message.text || !!message.attachments?.length),
+      // A summary wears the user's role but is history, not an ask: replaying it would send the notes as a question.
+      (message) => message.role === "user" && !message.summary && (!!message.text || !!message.attachments?.length),
     );
     if (at < 0) return false;
     const again = this.#messages[at];
@@ -249,6 +271,44 @@ export class AgentSession {
     await this.send([again]);
     return true;
   };
+
+  /**
+   * Replaces the history with one summary of itself and returns whether anything was replaced. `keep` leaves that
+   * many trailing messages verbatim; the command that a user types keeps none, because a summary of everything is
+   * what they asked for. A turn in flight refuses — the transcript it is appending to is not one to rewrite.
+   */
+  compact = async ({ keep = 0 }: { keep?: number } = {}): Promise<boolean> => {
+    if (this.#running) return false;
+    const controller = new AbortController();
+    this.#controller = controller;
+    this.#running = true;
+    // Summarizing is a model turn like any other, so the chat shows it as one — and Stop reaches it.
+    this.#notify();
+    const run = this.#compact(keep, controller.signal);
+    // Swallowed on this branch only: `reset` awaits `#active` to let a dying run finish, and a rejection there
+    // would come out of `/new` instead of out of the caller below, which is the one that reports it.
+    this.#active = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    try {
+      return await run;
+    } catch (error) {
+      // Stop is not a failure — the loop records nothing for an aborted turn either.
+      if (controller.signal.aborted) return false;
+      throw error;
+    } finally {
+      this.#running = false;
+      this.#controller = null;
+      this.#active = null;
+      this.#notify();
+    }
+  };
+
+  /** What the transcript is estimated to cost the next turn, in tokens — the number auto-compaction watches. */
+  get tokens() {
+    return Compaction.tokensOf(this.#messages);
+  }
 
   /** Records a host-side failure (a prompt fetch, an upload) in the transcript, where every other failure lands. */
   report = (error: string) => {
@@ -260,11 +320,60 @@ export class AgentSession {
     this.#append({ role: "assistant", text, local: true });
   };
 
+  async #compact(keep: number, signal: AbortSignal): Promise<boolean> {
+    const at = Compaction.cutAt(this.#messages, keep);
+    if (at <= 0) return false;
+    const summary = (await this.#summarize(Compaction.digest(this.#messages.slice(0, at)), signal)).trim();
+    if (!summary || signal.aborted) return false;
+    this.#messages = [Compaction.message(summary), ...this.#messages.slice(at)];
+    this.#notify();
+    return true;
+  }
+
+  /**
+   * Runs before the turn that would have overflowed rather than after it fails: the provider answers a request
+   * that is too long with a refusal, not with a shorter answer, so there is nothing to recover from afterwards.
+   * Best effort — a summary that cannot be produced leaves the transcript as it stands and the turn goes out as
+   * it would have, since it may well still fit.
+   */
+  async #autoCompact(signal: AbortSignal) {
+    const { at = Compaction.defaults.at, keep = Compaction.defaults.keep } = this.#options.compact ?? {};
+    if (!at || Compaction.tokensOf(this.#messages) < Math.max(at, this.#compactFloor)) return;
+    try {
+      await this.#compact(keep, signal);
+    } catch (error) {
+      console.warn(`[use-agentic] compaction failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const after = Compaction.tokensOf(this.#messages);
+    // A transcript still over the threshold after summarizing itself cannot shrink — one kept message is that
+    // large, or there was no safe cut — so the next attempt waits for another threshold's worth of growth rather
+    // than re-summarizing on every turn.
+    this.#compactFloor = after < at ? 0 : after + at;
+  }
+
+  /** No tools and no screen context: this turn summarizes the conversation, and must not act on it. */
+  async #summarize(digest: string, signal: AbortSignal): Promise<string> {
+    const custom = this.#options.compact?.summarize;
+    if (custom) return await custom(digest, signal);
+    let text = "";
+    for await (const event of this.#runner.run({
+      messages: [{ role: "user", text: digest }],
+      tools: [],
+      context: [],
+      instructions: Compaction.instruction,
+      signal,
+    })) {
+      if (event.type === "text") text += event.delta;
+      else if (event.type === "error") throw new Error(event.message);
+    }
+    return text;
+  }
+
   async #assistantTurn(signal: AbortSignal): Promise<{ toolCalls: ToolCallRequest[]; stop: "end" | "toolUse" }> {
     const { tools, guides } = this.#surface.snapshot();
     const instructions = [this.#options.instructions, ...guides].filter(Boolean).join("\n\n");
     const request: RunnerRequest = {
-      messages: this.#messages.filter((message) => !message.local),
+      messages: Transcript.wire(this.#messages),
       tools: tools.some((tool) => tool.name === AgentSession.askUserTool.name)
         ? tools
         : [...tools, AgentSession.askUserTool],
@@ -333,7 +442,7 @@ export class AgentSession {
 
   /** `null` when the user declined or no ask is configured: both mean stop and record why. */
   async #askToContinue(turns: number, signal: AbortSignal): Promise<string | null> {
-    const ask = this.#options.continueAsk;
+    const ask = this.#options.continueAsk?.();
     if (!ask) return null;
     const settled = await this.#awaitAnswer(`continue-${turns}`, ask.question, [ask.keep], false, signal);
     if ("error" in settled) return null;
@@ -454,6 +563,15 @@ export class AgentSession {
     ];
   }
 
+  /** Closes the calls a stopped turn never ran, so the pairing every provider dialect requires still holds. */
+  #unanswered(calls: ToolCallRequest[]) {
+    if (!calls.length) return;
+    this.#append({
+      role: "tool",
+      toolResults: calls.map((call) => ({ id: call.id, name: call.name, error: Transcript.unanswered })),
+    });
+  }
+
   /** Recorded on the open assistant draft when there is one, so a failed turn reads as that turn failing. */
   #fail(message: string) {
     const last = this.#messages[this.#messages.length - 1];
@@ -499,10 +617,8 @@ export class AgentSession {
     try {
       const messages = history.load();
       if (!Array.isArray(messages)) return [];
-      // An assistant draft that never settled (a reload mid-turn) carries nothing worth replaying.
-      return messages.filter(
-        (message) => message.role !== "assistant" || !!message.text || !!message.toolCalls?.length || !!message.error,
-      );
+      // A reload mid-turn leaves both an assistant draft that never settled and calls nothing answered.
+      return Transcript.sanitize(messages);
     } catch {
       return [];
     }

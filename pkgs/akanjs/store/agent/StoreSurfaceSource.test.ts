@@ -82,7 +82,7 @@ describe("StoreSurfaceSource", () => {
         .tools()
         .map((tool) => tool.name)
         .sort(),
-    ).toEqual(["goBack", "highlight", "navigate", "readScreen", "readState", "waitFor"]);
+    ).toEqual(["goBack", "highlight", "navigate", "readScreen", "readState"]);
     expect(entryOf("publishNote")).toBeUndefined();
     expect(entryOf("setTitleOnSurfaceNote")).toBeUndefined();
     expect(entryOf("createSurfaceNote")).toBeUndefined();
@@ -161,38 +161,6 @@ describe("StoreSurfaceSource", () => {
     await expect(surface.call("readScreen", { section: "taskList" })).rejects.toThrow("This screen names no sections");
   });
 
-  test("waitFor parks on a live key and answers when it moves", async () => {
-    const surface = new AgenticSurface();
-    surface.addSource(source);
-    // Not a query: waiting means something changed, so the session settles the screen and reports the diff after.
-    expect(entryOf("waitFor")?.effect).toBe("state");
-    const waiting = surface.call("waitFor", { key: "surfaceNoteForm" });
-    await Promise.resolve();
-    instance.set({ surfaceNoteForm: { ...(instance.get().surfaceNoteForm as object), title: "generated" } });
-    expect(await waiting).toContain("surfaceNoteForm is now ");
-    expect(await waiting).toContain("generated");
-  });
-
-  test("waitFor refuses a key this screen does not read, and names the ones it does", async () => {
-    const surface = new AgenticSurface();
-    surface.addSource(source);
-    const refused = surface.call("waitFor", { key: "pageOfSurfaceNote" });
-    await expect(refused).rejects.toThrow("No state key named pageOfSurfaceNote is read by this screen");
-    await expect(surface.call("waitFor", { key: "pageOfSurfaceNote" })).rejects.toThrow("surfaceNoteForm");
-    await expect(surface.call("waitFor", { key: "  " })).rejects.toThrow("waitFor needs a key to watch.");
-  });
-
-  test("waitFor watches a store state key, never a surface resource", async () => {
-    const surface = new AgenticSurface();
-    surface.addSource(source);
-    // `st.expose` and `st.useState` register resources, whose values ride inline in the screen context block on
-    // every turn. They are a different registry from the store keys `readState` and `waitFor` read.
-    surface.registerResource([], { name: "exposedStatus", read: () => "generating" });
-    await expect(surface.call("waitFor", { key: "exposedStatus" })).rejects.toThrow(
-      "No state key named exposedStatus is read by this screen",
-    );
-  });
-
   test("highlight is published as a screen-driving tool and answers honestly with no document", async () => {
     const surface = new AgenticSurface();
     surface.addSource(source);
@@ -218,6 +186,6 @@ describe("StoreSurfaceSource zone views", () => {
 
   test("the built-ins are published to every view, zone or root", () => {
     const zone = source.tools(["notes"]).map((tool) => tool.name);
-    expect(zone).toEqual(["navigate", "goBack", "readScreen", "readState", "waitFor", "highlight"]);
+    expect(zone).toEqual(["navigate", "goBack", "readScreen", "readState", "highlight"]);
   });
 });

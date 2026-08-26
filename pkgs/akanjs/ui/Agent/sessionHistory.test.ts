@@ -80,4 +80,24 @@ describe("sessionHistoryOf", () => {
     expect(sessionHistoryOf(undefined)).toBeUndefined();
     expect(sessionHistoryOf(false)).toBeUndefined();
   });
+
+  test("the cap can cut a call from its result, so what is stored is repaired before it is stored", () => {
+    const history = sessionHistoryOf(true, "capped");
+    if (!history) throw new Error("expected a history");
+    const long: ChatMessage[] = [];
+    for (let at = 0; at < 60; at += 1)
+      long.push(
+        at % 2
+          ? { role: "tool", toolResults: [{ id: `c${at}`, name: "bump", result: at }] }
+          : { role: "assistant", toolCalls: [{ id: `c${at + 1}`, name: "bump", args: {} }] },
+      );
+    history.save(long);
+    const kept = history.load() ?? [];
+    const calls = kept.flatMap((message) => message.toolCalls ?? []).map((call) => call.id);
+    const answers = kept.flatMap((message) => message.toolResults ?? []).map((result) => result.id);
+    // Nothing restored answers a call the window cut away, and nothing restored is left unanswered.
+    expect(answers.every((id) => calls.includes(id))).toBe(true);
+    expect(calls.every((id) => answers.includes(id))).toBe(true);
+    history.clear();
+  });
 });

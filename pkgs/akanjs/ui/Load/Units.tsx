@@ -113,7 +113,6 @@ function Render<RefName extends string, Light extends { id: string }>({
   const initModelObjInsight = (init as any)[names.modelObjInsight] as BaseInsight;
   const initLimitOfModel = (init as any)[names.limitOfModel] as number;
   const initPageOfModel = (init as any)[names.pageOfModel] as number;
-  const modelStaleAt = storeUse[namesOfSlice.modelStaleAt]() as Date;
 
   const useCache =
     !modelListLoading &&
@@ -152,11 +151,12 @@ function Render<RefName extends string, Light extends { id: string }>({
   }, []);
 
   useEffect(() => {
+    const modelStaleAt = storeGet<Date>()[namesOfSlice.modelStaleAt];
     const staleThreshold = Math.max(modelStaleAt.getTime(), staleTime === undefined ? 0 : Date.now() - staleTime);
     if (storeGet<Date>()[namesOfSlice.modelInitAt].getTime() >= staleThreshold) return;
     if (storeGet<boolean>()[namesOfSlice.modelListLoading]) return;
     void storeDo[namesOfSlice.refreshModel]({ invalidate: true });
-  }, [modelStaleAt]);
+  }, []);
 
   const modelInsight = storeUse[namesOfSlice.modelInsight]() as BaseInsight;
   const limitOfModel = storeUse[namesOfSlice.limitOfModel]() as number;

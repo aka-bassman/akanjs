@@ -1,5 +1,5 @@
 import { getEnv } from "akanjs/base";
-import type { ChatMessage, SessionHistory } from "use-agentic";
+import { type ChatMessage, type SessionHistory, Transcript } from "use-agentic";
 
 export type PersistOption = boolean | { storage?: "session" | "local"; key?: string };
 
@@ -26,7 +26,9 @@ const withoutContent = (message: ChatMessage): ChatMessage =>
  * Maps the `persist` prop onto a `SessionHistory` over web storage. Session storage is the default on purpose:
  * surviving a refresh is the whole ask, and a transcript that dies with the tab never lingers on a shared machine
  * or collides across tabs. `"local"` is the explicit opt-up. The envelope is versioned so a wire change discards
- * stale transcripts instead of replaying them, and only the newest messages are kept under the cap.
+ * stale transcripts instead of replaying them, and only the newest messages are kept under the cap — which is
+ * why the cap is applied *before* the pairing repair: the window it keeps can start between a tool call and the
+ * result answering it, and a transcript restored in that state is refused by the provider on its first turn.
  */
 export const sessionHistoryOf = (persist: PersistOption | undefined, pathKey = ""): SessionHistory | undefined => {
   if (!persist || typeof window === "undefined") return undefined;
@@ -43,7 +45,8 @@ export const sessionHistoryOf = (persist: PersistOption | undefined, pathKey = "
       return parsed.v === version && Array.isArray(parsed.messages) ? parsed.messages : null;
     },
     save: (messages) => {
-      storage.setItem(key, JSON.stringify({ v: version, messages: messages.slice(-cap).map(withoutContent) }));
+      const kept = Transcript.sanitize(messages.slice(-cap)).map(withoutContent);
+      storage.setItem(key, JSON.stringify({ v: version, messages: kept }));
     },
     clear: () => {
       storage.removeItem(key);

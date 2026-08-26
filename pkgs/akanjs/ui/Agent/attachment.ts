@@ -10,6 +10,14 @@ export type AttachReader = (file: File) => Promise<MessageAttachment | null>;
  */
 export const maxAttachmentBytes = 4 * 1024 * 1024;
 
+/**
+ * Ceilings for one message rather than one file. The bytes ride inside a single turn's JSON, so what a provider
+ * refuses is the sum — and a count cap keeps a whole folder dropped onto the panel from becoming one request that
+ * cannot be sent and cannot be edited down without starting over.
+ */
+export const maxMessageAttachmentBytes = 8 * 1024 * 1024;
+export const maxMessageAttachments = 5;
+
 export type AttachFailure = "tooLarge" | "unsupported";
 
 const textMimes = new Set(["application/json", "application/xml", "application/x-yaml", "application/yaml"]);
@@ -37,6 +45,18 @@ export class Attachment {
 
   static failure(value: MessageAttachment | AttachFailure): value is AttachFailure {
     return typeof value === "string";
+  }
+
+  /** What this attachment costs the request: base64 carries three bytes per four characters, less its padding. */
+  static bytesOf(attachment: MessageAttachment): number {
+    const data = attachment.data ?? "";
+    const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+    return Math.max(0, Math.floor((data.length * 3) / 4) - padding) + (attachment.text?.length ?? 0);
+  }
+
+  /** Same name and same size is the same file picked twice — the shape a re-drop or a double paste produces. */
+  static same(one: MessageAttachment, other: MessageAttachment): boolean {
+    return one.name === other.name && Attachment.bytesOf(one) === Attachment.bytesOf(other);
   }
 
   /**

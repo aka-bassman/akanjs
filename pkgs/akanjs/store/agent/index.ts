@@ -8,7 +8,6 @@ export * from "./AgentPrompts";
 export * from "./ScreenReader";
 export * from "./ScreenSettle";
 export * from "./ScreenTarget";
-export * from "./StateWait";
 export * from "./StoreCatalogue";
 export * from "./StoreSurfaceSource";
 export * from "./storeSurface";

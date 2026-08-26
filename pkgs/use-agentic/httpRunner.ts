@@ -64,12 +64,28 @@ async function* streamedEvents(body: ReadableStream<Uint8Array>, signal: AbortSi
   if (!ended) yield { type: "error", message: "The turn stream ended without a done event." };
 }
 
-const turnErrorMessage = async (response: Response): Promise<string> => {
-  const fallback = `Agent turn failed: ${response.status}`;
+/** Only a flat record of scalars is forwarded: what a coded message interpolates, never a nested payload. */
+const interpolations = (value: unknown): Record<string, string | number> | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value).filter(
+    (entry): entry is [string, string | number] => typeof entry[1] === "string" || typeof entry[1] === "number",
+  );
+  return entries.length ? Object.fromEntries(entries) : undefined;
+};
+
+/**
+ * The server's own message travels verbatim — it was written for whoever is reading the chat, and a prefix in
+ * front of it both reads as two sentences and hides a coded message from the host that would have resolved it.
+ * The status stands in only when the body says nothing.
+ */
+const turnError = async (response: Response): Promise<RunnerEvent> => {
+  const fallback = { type: "error", message: `Agent turn failed: ${response.status}` } as const;
   try {
-    const body = (await response.json()) as { message?: unknown; error?: unknown };
+    const body = (await response.json()) as { message?: unknown; error?: unknown; data?: unknown };
     const message = typeof body.message === "string" ? body.message : typeof body.error === "string" ? body.error : "";
-    return message ? `Agent turn failed: ${message}` : fallback;
+    if (!message) return fallback;
+    const data = interpolations(body.data);
+    return { type: "error", message, ...(data ? { data } : {}) };
   } catch {
     return fallback;
   }
@@ -100,7 +116,7 @@ export const httpRunner = ({ url, headers, fetcher }: HttpRunnerOptions): AgentR
       signal: request.signal,
     });
     if (!response.ok) {
-      yield { type: "error", message: await turnErrorMessage(response) };
+      yield await turnError(response);
       return;
     }
     if (response.headers.get("content-type")?.includes("text/event-stream") && response.body) {

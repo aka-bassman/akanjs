@@ -80,3 +80,23 @@ describe("AgentPrompts", () => {
     ]);
   });
 });
+
+describe("AgentPrompts.parseCommand", () => {
+  test("splits on whitespace and keeps a quoted argument whole", () => {
+    expect(AgentPrompts.parseCommand("/reviewTask t1 urgent")).toEqual({ name: "reviewTask", args: ["t1", "urgent"] });
+    expect(AgentPrompts.parseCommand('/reviewTask t1 "the whole sentence"')).toEqual({
+      name: "reviewTask",
+      args: ["t1", "the whole sentence"],
+    });
+    expect(AgentPrompts.parseCommand("/reviewTask 'single quoted'")).toEqual({
+      name: "reviewTask",
+      args: ["single quoted"],
+    });
+    expect(AgentPrompts.parseCommand("/planWeek")).toEqual({ name: "planWeek", args: [] });
+    expect(AgentPrompts.parseCommand("not a command")).toBeNull();
+  });
+
+  test("an explicitly empty argument is an argument", () => {
+    expect(AgentPrompts.parseCommand('/reviewTask t1 ""')).toEqual({ name: "reviewTask", args: ["t1", ""] });
+  });
+});

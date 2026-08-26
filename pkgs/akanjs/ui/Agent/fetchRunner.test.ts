@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { registerClientRuntime } from "akanjs/client";
+import { registerClientRuntime, Translator } from "akanjs/client";
 import type { RunnerEvent, RunnerRequest } from "use-agentic";
 import { fetchRunner } from "./fetchRunner";
 
@@ -85,10 +85,35 @@ describe("fetchRunner", () => {
   test("a server error's message lands in the transcript's error event", async () => {
     handlerHolder.runAgentTurn = () => undefined;
     const fetcher = (async () =>
-      new Response(JSON.stringify({ message: "agent.error.llmUnavailable" }), {
+      new Response(JSON.stringify({ message: "the relay is down" }), {
         status: 500,
       })) as unknown as typeof fetch;
     const events = await collect(request(), fetcher);
-    expect(events).toEqual([{ type: "error", message: "Agent turn failed: agent.error.llmUnavailable" }]);
+    expect(events).toEqual([{ type: "error", message: "the relay is down" }]);
+  });
+
+  test("a domain Err arrives as its key and is resolved against the dictionary, values interpolated", async () => {
+    Translator.seed("ko", {
+      agent: { error: { deepseekRequestFailed: { t: "DeepSeek가 거절했습니다 (status {status})." } } },
+    });
+    Translator.setActiveLocale("ko");
+    handlerHolder.runAgentTurn = () => undefined;
+    const fetcher = (async () =>
+      new Response(JSON.stringify({ error: "agent.error.deepseekRequestFailed", data: { status: "400" } }), {
+        status: 400,
+      })) as unknown as typeof fetch;
+    expect(await collect(request(), fetcher)).toEqual([
+      { type: "error", message: "DeepSeek가 거절했습니다 (status 400)." },
+    ]);
+  });
+
+  test("a key with no entry is left as it is rather than becoming a worse sentence", async () => {
+    Translator.setActiveLocale("ko");
+    handlerHolder.runAgentTurn = () => undefined;
+    const fetcher = (async () =>
+      new Response(JSON.stringify({ error: "agent.error.notInAnyDictionary" }), {
+        status: 400,
+      })) as unknown as typeof fetch;
+    expect(await collect(request(), fetcher)).toEqual([{ type: "error", message: "agent.error.notInAnyDictionary" }]);
   });
 });

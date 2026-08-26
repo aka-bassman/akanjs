@@ -1,6 +1,20 @@
 import { getEnv } from "akanjs/base";
-import { fetch } from "akanjs/client";
-import { type AgentRunner, httpRunner } from "use-agentic";
+import { fetch, Translator } from "akanjs/client";
+import { type AgentRunner, httpRunner, type RunnerEvent } from "use-agentic";
+
+/** `<refName>.error.<key>` — the shape a domain `Err` puts on the wire, its dictionary text being the message. */
+const errorKey = /^[a-zA-Z][A-Za-z0-9]*\.error\.[A-Za-z0-9_]+$/;
+
+/**
+ * A server `Err` travels as its key, because the endpoint has no language to resolve it in — the chat does, so
+ * the resolving happens here, one step before the transcript. Anything else is already a sentence somebody wrote,
+ * and a key with no entry stays as it is rather than becoming a worse sentence.
+ */
+const readable = (event: RunnerEvent): RunnerEvent => {
+  if (event.type !== "error" || !errorKey.test(event.message)) return event;
+  const text = Translator.translateByLocale(Translator.getActiveLocale() ?? "en", event.message, event.data);
+  return text === event.message ? event : { type: "error", message: text };
+};
 
 /**
  * Runs each assistant turn against the app's own `runAgentTurn` route — service signals mount unprefixed, so the
@@ -25,6 +39,6 @@ export const fetchRunner = (options: { fetcher?: typeof globalThis.fetch } = {})
       },
       ...(options.fetcher ? { fetcher: options.fetcher } : {}),
     });
-    yield* runner.run(request);
+    for await (const event of runner.run(request)) yield readable(event);
   },
 });

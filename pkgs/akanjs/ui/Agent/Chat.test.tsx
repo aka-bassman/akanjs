@@ -520,9 +520,10 @@ describe("Agent.Chat", () => {
     );
     composer(container).type("/");
     const rows = menuRows(container);
-    expect(rows.slice(0, 5).map((row) => row.split("base.")[0])).toEqual([
+    expect(rows.slice(0, 6).map((row) => row.split("base.")[0])).toEqual([
       "/new",
       "/retry",
+      "/compact",
       "/copy",
       "/help",
       "/tools",
@@ -612,6 +613,31 @@ describe("Agent.Chat", () => {
     expect(input.value()).toBe("half-written");
     unmount();
   });
+  test("/compact folds the transcript into one summary the transcript renders as its own block", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "notes about it all" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    input.type("summarize this");
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => !session.isRunning);
+    });
+    input.type("/compact");
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => session.messages.some((message) => message.summary));
+    });
+    expect(container.innerHTML).toContain("base.agentSummary");
+    expect(container.innerHTML).toContain("base.agentCompacted");
+    // The summary is not a user bubble: it stands in for the exchange above it, which is gone.
+    expect(container.innerHTML).not.toContain("summarize this");
+    unmount();
+  });
+
   test("a pasted file is staged as a chip and rides the message it is sent with", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "a chart" }));
     const { container, unmount } = mount(
@@ -766,5 +792,193 @@ describe("Agent.Chat", () => {
     );
     expect(unavailable.container.querySelector('button[aria-label="base.agentListen"]')).toBeNull();
     unavailable.unmount();
+  });
+
+  test("a slash command typed while the agent is asking a question is the command, not the answer", async () => {
+    const surface = new lib.AgenticSurface();
+    const session = new lib.AgentSession(surface, {
+      async *run() {
+        yield { type: "toolCall", id: "q1", name: "askUser", args: { question: "Which one?" } };
+        yield { type: "done", stop: "toolUse" };
+      },
+    });
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    await act(async () => {
+      void session.send("pick something");
+      await untilFlushed(() => !!session.pendingQuestion);
+    });
+    const input = composer(container);
+    input.type("/new");
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => session.messages.length === 0);
+    });
+    // Answered as text, "/new" would have gone to the model as the user's decision instead of clearing the chat.
+    expect(session.messages).toEqual([]);
+    expect(session.pendingQuestion).toBeNull();
+    unmount();
+  });
+
+  test("the / menu takes the arrows, Tab completes a name, and Enter picks what is highlighted", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    input.type("/");
+    const selected = () => container.querySelector('[aria-selected="true"]')?.textContent ?? "";
+    expect(selected().startsWith("/new")).toBe(true);
+    input.press("ArrowDown");
+    expect(selected().startsWith("/retry")).toBe(true);
+    input.press("ArrowUp");
+    expect(selected().startsWith("/new")).toBe(true);
+    input.press("Tab");
+    expect(input.value()).toBe("/new ");
+    input.type("/help");
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => session.messages.length > 0);
+    });
+    expect(container.innerHTML).toContain("base.agentHelpIntro");
+    unmount();
+  });
+
+  test("Escape closes the menu first and the panel second", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    input.type("/");
+    expect(container.querySelector('[role="option"]')).toBeTruthy();
+    input.press("Escape");
+    expect(container.querySelector('[role="option"]')).toBeNull();
+    // The draft is untouched: dismissing the menu is not dismissing what was being typed.
+    expect(input.value()).toBe("/");
+    input.press("Escape");
+    expect(container.querySelector("aside")).toBeNull();
+    expect(container.querySelector('button[aria-label="base.agent"]')).toBeTruthy();
+    unmount();
+  });
+
+  test("the same file is not staged twice, and a message holds no more than the ceiling", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    const shot = (name: string) => new File(["abc"], name, { type: "image/png" });
+    const chips = () => container.querySelectorAll('button[aria-label="base.agentAttachRemove"]').length;
+    await act(async () => {
+      input.paste([shot("a.png"), shot("b.png")]);
+      await untilFlushed(() => chips() === 2);
+    });
+    await act(async () => {
+      input.paste([shot("a.png")]);
+      await untilFlushed(() => session.messages.length > 0);
+    });
+    expect(session.messages[0]?.text).toBe("base.agentAttachDuplicate");
+    expect(chips()).toBe(2);
+    await act(async () => {
+      input.paste([shot("c.png"), shot("d.png"), shot("e.png"), shot("f.png")]);
+      await untilFlushed(() => session.messages.length > 1);
+    });
+    // The cap is the message's, so the fifth file is staged and the sixth is refused by name.
+    expect(chips()).toBe(5);
+    expect(session.messages[1]?.text).toBe("base.agentAttachTooMany");
+    unmount();
+  });
+
+  test("attachments cannot answer a question on their own, and the ask says so", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), {
+      async *run() {
+        yield { type: "toolCall", id: "q1", name: "askUser", args: { question: "Which one?" } };
+        yield { type: "done", stop: "toolUse" };
+      },
+    });
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    await act(async () => {
+      input.paste([new File(["abc"], "q3.png", { type: "image/png" })]);
+      await untilFlushed(() => container.innerHTML.includes("q3.png"));
+    });
+    await act(async () => {
+      void session.send("pick something");
+      await untilFlushed(() => !!session.pendingQuestion);
+    });
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => session.messages.some((message) => message.text === "base.agentAnswerNeeded"));
+    });
+    expect(session.pendingQuestion).toBeTruthy();
+    await act(async () => {
+      session.pendingQuestion?.dismiss();
+      await untilFlushed(() => !session.isRunning);
+    });
+    unmount();
+  });
+
+  test("a closed panel counts what arrived while it was closed", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "answered" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat />
+      </lib.AgentProvider>,
+    );
+    await act(async () => {
+      await session.send("while I look elsewhere");
+    });
+    const launcher = container.querySelector('button[aria-haspopup="dialog"]');
+    expect(launcher?.getAttribute("aria-label")).toBe("base.agent (2)");
+    act(() => (launcher as HTMLButtonElement | null)?.click());
+    expect(container.querySelector('button[aria-haspopup="dialog"]')).toBeNull();
+    unmount();
+  });
+
+  test("a session this chat made ends with it, so no turn drives a screen that is gone", async () => {
+    const turn: { signal?: AbortSignal } = {};
+    let finishTurn: () => void = () => undefined;
+    const { container, unmount } = mount(
+      <DefaultChat
+        defaultOpen
+        runner={{
+          async *run(request) {
+            turn.signal = request.signal;
+            await new Promise<void>((resolve) => {
+              finishTurn = resolve;
+            });
+            yield { type: "done", stop: "end" };
+          },
+        }}
+      />,
+    );
+    const input = composer(container);
+    input.type("go");
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => !!turn.signal);
+    });
+    expect(turn.signal?.aborted).toBe(false);
+    unmount();
+    // Aborted by the unmount rather than left running against a screen whose approvals nobody renders.
+    expect(turn.signal?.aborted).toBe(true);
+    await act(async () => {
+      finishTurn();
+      await untilFlushed(() => false);
+    });
   });
 });

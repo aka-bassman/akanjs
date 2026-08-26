@@ -3,7 +3,8 @@ import { AgentAbort } from "./AgentAbort";
 import { AgenticSurface } from "./AgenticSurface";
 import { AgentProgress } from "./AgentProgress";
 import { AgentSession } from "./AgentSession";
-import type { AgentRunner, RunnerEvent, RunnerRequest } from "./types";
+import { Transcript } from "./Transcript";
+import type { AgentRunner, ChatMessage, RunnerEvent, RunnerRequest } from "./types";
 
 const scripted = (...turns: RunnerEvent[][]): { runner: AgentRunner; requests: RunnerRequest[] } => {
   const requests: RunnerRequest[] = [];
@@ -339,7 +340,7 @@ describe("AgentSession settle and progress", () => {
     ]);
     const session = new AgentSession(surface, runner, {
       maxTurns: 1,
-      continueAsk: { question: "Still working. Keep going?", keep: "Keep going" },
+      continueAsk: () => ({ question: "Still working. Keep going?", keep: "Keep going" }),
     });
     const turn = session.send("go");
     await until(() => session.pendingQuestion !== null);
@@ -613,6 +614,139 @@ describe("AgentSession history", () => {
   });
 });
 
+describe("AgentSession compaction", () => {
+  const bulky = (mark: string): ChatMessage[] => [
+    { role: "user", text: `${mark} ${"x".repeat(30_000)}` },
+    { role: "assistant", text: "noted" },
+  ];
+  const restored = (messages: ChatMessage[]) => ({
+    load: () => messages,
+    save: () => undefined,
+    clear: () => undefined,
+  });
+
+  test("a transcript past the threshold is summarized before the turn that would have overflowed", async () => {
+    const { runner, requests } = scripted([
+      { type: "text", delta: "answered" },
+      { type: "done", stop: "end" },
+    ]);
+    const session = new AgentSession(new AgenticSurface(), runner, {
+      history: restored([...bulky("first"), { role: "user", text: "second" }, { role: "assistant", text: "ok" }]),
+      compact: { at: 1_000, keep: 2, summarize: async (digest) => `notes: ${digest.slice(0, 20)}` },
+    });
+    await session.send("third");
+    // The cut lands on the newest user message, so the summary covers everything the turn was carrying until now.
+    expect(session.messages.map((message) => message.summary === true)).toEqual([true, false, false]);
+    expect(session.messages[0].text).toStartWith("notes: user: first");
+    expect(session.messages.map((message) => message.role)).toEqual(["user", "user", "assistant"]);
+    // The summary rides as history, and the messages it replaced are gone from the request as well as the screen.
+    expect(requests[0].messages[0]).toMatchObject({ role: "user", summary: true });
+    expect(requests[0].messages.map((message) => message.text)).toEqual([session.messages[0].text, "third"]);
+  });
+
+  test("the summarizing turn carries no tools and no screen context", async () => {
+    const surface = new AgenticSurface();
+    surface.registerTool([], { name: "bump", run: () => 1 });
+    const { runner, requests } = scripted([
+      { type: "text", delta: "summary" },
+      { type: "done", stop: "end" },
+    ]);
+    const session = new AgentSession(surface, runner, {
+      history: restored(bulky("first")),
+      compact: { at: 1_000, keep: 0 },
+    });
+    expect(await session.compact()).toBe(true);
+    expect(requests[0].tools).toEqual([]);
+    expect(requests[0].context).toEqual([]);
+    expect(requests[0].instructions).toContain("Summarize the conversation");
+    expect(session.messages).toEqual([{ role: "user", text: "summary", summary: true }]);
+  });
+
+  test("a transcript under the threshold is left alone", async () => {
+    const { runner, requests } = scripted([
+      { type: "text", delta: "hi" },
+      { type: "done", stop: "end" },
+    ]);
+    const session = new AgentSession(new AgenticSurface(), runner, {
+      history: restored([{ role: "user", text: "short" }]),
+      compact: { at: 1_000, keep: 1, summarize: async () => "never" },
+    });
+    await session.send("also short");
+    expect(session.messages.some((message) => message.summary)).toBe(false);
+    expect(requests).toHaveLength(1);
+  });
+
+  test("a summary that cannot be produced leaves the transcript alone and the turn still goes out", async () => {
+    const { runner, requests } = scripted([
+      { type: "text", delta: "answered anyway" },
+      { type: "done", stop: "end" },
+    ]);
+    const session = new AgentSession(new AgenticSurface(), runner, {
+      history: restored(bulky("first")),
+      compact: {
+        at: 1_000,
+        keep: 2,
+        summarize: () => Promise.reject(new Error("the summarizer is down too")),
+      },
+    });
+    await session.send("carry on");
+    expect(session.messages.some((message) => message.summary)).toBe(false);
+    expect(session.messages.at(-1)?.text).toBe("answered anyway");
+    expect(requests).toHaveLength(1);
+  });
+
+  test("a transcript that cannot shrink is not re-summarized on every turn", async () => {
+    let summaries = 0;
+    const { runner } = scripted([
+      { type: "text", delta: "ok" },
+      { type: "done", stop: "end" },
+    ]);
+    const session = new AgentSession(new AgenticSurface(), runner, {
+      history: restored(bulky("first")),
+      compact: {
+        at: 1_000,
+        keep: 2,
+        summarize: async () => {
+          summaries += 1;
+          // Still over the threshold afterwards, which is what a single enormous kept message looks like.
+          return "y".repeat(30_000);
+        },
+      },
+    });
+    await session.send("one");
+    await session.send("two");
+    expect(summaries).toBe(1);
+  });
+
+  test("retry never replays a summary, which is history rather than the ask it stands in for", async () => {
+    const { runner } = scripted([
+      { type: "text", delta: "notes" },
+      { type: "done", stop: "end" },
+    ]);
+    const session = new AgentSession(new AgenticSurface(), runner, { history: restored(bulky("first")) });
+    expect(await session.compact()).toBe(true);
+    expect(session.messages).toEqual([{ role: "user", text: "notes", summary: true }]);
+    expect(await session.retry()).toBe(false);
+  });
+
+  test("compact refuses while a turn is running, and reports nothing to do on an empty transcript", async () => {
+    const surface = new AgenticSurface();
+    surface.registerTool([], { name: "hold", confirm: true, run: () => 1 });
+    const session = new AgentSession(surface, {
+      async *run() {
+        yield { type: "toolCall", id: "c1", name: "hold", args: {} };
+        yield { type: "done", stop: "toolUse" };
+      },
+    });
+    expect(await session.compact()).toBe(false);
+    const sending = session.send("hold on");
+    await until(() => !!session.pendingApproval);
+    expect(await session.compact()).toBe(false);
+    await session.reset();
+    await sending;
+  });
+});
+
 describe("AgentSession long tools", () => {
   test("a tool that waits holds the turn without a model round trip", async () => {
     const surface = new AgenticSurface();
@@ -724,5 +858,72 @@ describe("AgentSession long tools", () => {
     release?.();
     await tick();
     expect(finished).toBe(true);
+  });
+
+  test("Stop between two calls answers the one that never ran, so the next turn is still sendable", async () => {
+    const surface = new AgenticSurface();
+    let running = false;
+    let finishFirst: () => void = () => undefined;
+    surface.registerTool([], {
+      name: "first",
+      run: () =>
+        new Promise<string>((resolve) => {
+          finishFirst = () => resolve("first done");
+          running = true;
+        }),
+    });
+    surface.registerTool([], { name: "second", run: () => "second done" });
+    const { runner, requests } = scripted(
+      [
+        { type: "toolCall", id: "c1", name: "first", args: {} },
+        { type: "toolCall", id: "c2", name: "second", args: {} },
+        { type: "done", stop: "toolUse" },
+      ],
+      [
+        { type: "text", delta: "ok" },
+        { type: "done", stop: "end" },
+      ],
+    );
+    const session = new AgentSession(surface, runner);
+    const turn = session.send("do both");
+    await until(() => running);
+    session.abort();
+    finishFirst();
+    await turn;
+    const results = session.messages.find((message) => message.role === "tool")?.toolResults;
+    expect(results?.map((result) => result.id)).toEqual(["c1", "c2"]);
+    expect(results?.[1].error).toBe(Transcript.unanswered);
+    // Every dialect refuses an assistant message whose calls have no results, on this turn and on every later one.
+    await session.send("carry on");
+    const posted = requests[requests.length - 1].messages;
+    const calls = posted.flatMap((message) => message.toolCalls ?? []).map((call) => call.id);
+    const answers = posted.flatMap((message) => message.toolResults ?? []).map((result) => result.id);
+    expect(calls.every((id) => answers.includes(id))).toBe(true);
+  });
+
+  test("Stop while the calls are still arriving leaves none of them unanswered", async () => {
+    const surface = new AgenticSurface();
+    surface.registerTool([], { name: "slow", run: () => "never reached" });
+    let streaming = false;
+    let finishTurn: () => void = () => undefined;
+    const runner: AgentRunner = {
+      async *run() {
+        yield { type: "toolCall", id: "c1", name: "slow", args: {} };
+        await new Promise<void>((resolve) => {
+          finishTurn = resolve;
+          streaming = true;
+        });
+        yield { type: "done", stop: "toolUse" };
+      },
+    };
+    const session = new AgentSession(surface, runner);
+    const turn = session.send("go");
+    await until(() => streaming);
+    session.abort();
+    finishTurn();
+    await turn;
+    const answered = session.messages.flatMap((message) => message.toolResults ?? []);
+    expect(session.messages.flatMap((message) => message.toolCalls ?? [])).toHaveLength(1);
+    expect(answered).toEqual([{ id: "c1", name: "slow", error: Transcript.unanswered }]);
   });
 });
