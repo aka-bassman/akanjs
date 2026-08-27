@@ -23,6 +23,7 @@ import { pathToFileURL } from "node:url";
 import type { AkanPlugin, AkanSyncContext, PluginRuntimeContext } from "akanjs";
 import {
   capitalize,
+  getPageSourceFileViolation,
   isRouteSourceFile,
   Logger,
   parseRouteModuleKey,
@@ -1006,6 +1007,16 @@ export class SysExecutor extends Executor {
   async getModules() {
     const path = this.type === "app" ? `apps/${this.name}/lib` : `libs/${this.name}/lib`;
     return await this.workspace.getDirInModule(path, this.name);
+  }
+  async getPageConventionViolations(): Promise<{ relativePath: string; reason: string }[]> {
+    if (!(await this.exists("page"))) return [];
+    const violations: { relativePath: string; reason: string }[] = [];
+    for (const entry of await this.getAllFiles("**/*", { cwd: this.getPath("page") })) {
+      const relativePath = entry.split(path.sep).join("/");
+      const reason = getPageSourceFileViolation(relativePath);
+      if (reason) violations.push({ relativePath: `page/${relativePath}`, reason });
+    }
+    return violations;
   }
 
   #scanInfo: AppInfo | LibInfo | null = null;

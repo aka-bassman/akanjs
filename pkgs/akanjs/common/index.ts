@@ -45,6 +45,7 @@ export { randomPicks } from "./randomPicks";
 export {
   assertUniqueRoutePatterns,
   compareRouteSpecificity,
+  getPageSourceFileViolation,
   getRouteExports,
   isRouteSourceFile,
   isSpecialRouteLeaf,

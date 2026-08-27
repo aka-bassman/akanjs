@@ -15,7 +15,7 @@ import {
   workflowRunArtifactPath,
   workflowSyncDir,
 } from "./workflow";
-import { appRootAllowedDirs, appRootAllowedFiles, isScannedAppRootEntry } from "./workspaceLayout";
+import { isScannedRootEntry, rootAllowedDirs, rootAllowedFiles } from "./workspaceLayout";
 
 export type AkanContextFormat = "json" | "markdown";
 export type AkanModuleKind = "domain" | "service" | "scalar";
@@ -666,23 +666,25 @@ export class AkanContextAnalyzer {
       ),
     ];
 
-    for (const app of context.apps) {
-      const appPath = path.join(workspace.workspaceRoot, app.path);
-      for (const entry of await safeReadDir(appPath)) {
-        if (!isScannedAppRootEntry(entry.name)) continue;
-        const allowed = entry.isDirectory() ? appRootAllowedDirs.has(entry.name) : appRootAllowedFiles.has(entry.name);
+    for (const sys of [...context.apps, ...context.libs]) {
+      const sysPath = path.join(workspace.workspaceRoot, sys.path);
+      for (const entry of await safeReadDir(sysPath)) {
+        if (!isScannedRootEntry(sys.type, entry.name)) continue;
+        const allowed = entry.isDirectory()
+          ? rootAllowedDirs[sys.type].has(entry.name)
+          : rootAllowedFiles[sys.type].has(entry.name);
         if (!allowed) {
           const action = repairAction(
             "module-shape",
-            `akan repair module-shape --app ${app.name}`,
-            "Review app root shape and remove or move the unknown entry.",
+            `akan repair module-shape --app ${sys.name}`,
+            `Review ${sys.type} root shape and remove or move the unknown entry.`,
             false,
           );
           diagnostics.push({
             severity: "error",
-            code: "app-root-unknown-entry",
-            path: `${app.path}/${entry.name}`,
-            message: `Unexpected ${entry.isDirectory() ? "folder" : "file"} in app root: ${app.path}/${entry.name}`,
+            code: `${sys.type}-root-unknown-entry`,
+            path: `${sys.path}/${entry.name}`,
+            message: `Unexpected ${entry.isDirectory() ? "folder" : "file"} in ${sys.type} root: ${sys.path}/${entry.name}`,
             repairActions: [action],
           });
           repairActions.push(action);
