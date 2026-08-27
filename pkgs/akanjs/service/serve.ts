@@ -43,9 +43,9 @@ const avoidKeys = new Set([
 export interface Service {
   readonly logger: Logger;
   // readonly connection: Connection;
-  onInit(): Promise<void>;
+  onInit(): Promise<void> | void;
   _libsOnInit(): Promise<void>;
-  onDestroy(): Promise<void>;
+  onDestroy(): Promise<void> | void;
   _libsOnDestroy(): Promise<void>;
 }
 
@@ -123,10 +123,10 @@ export function serve(
     }
     static [INJECT_META] = {};
     readonly logger = new Logger(this.constructor.name);
-    async onInit() {
+    onInit(): Promise<void> | void {
       //
     }
-    async onDestroy() {
+    onDestroy(): Promise<void> | void {
       //
     }
   };
@@ -136,10 +136,11 @@ export function serve(
   const onDestroyFns = extSrvs.map((srv) => srv.prototype.onDestroy);
   Object.assign(srvRef.prototype, {
     async _libsOnInit(this: Service) {
-      await Promise.all([...onInitFns.map((onInit) => onInit?.call(this)), this.onInit()]);
+      // Wrapped so a sync hook's throw rejects instead of stranding the promises earlier hooks already started.
+      await Promise.all([...onInitFns, this.onInit].map(async (onInit) => await onInit?.call(this)));
     },
     async _libsOnDestroy(this: Service) {
-      await Promise.all([...onDestroyFns.map((onDestroy) => onDestroy?.call(this)), this.onDestroy()]);
+      await Promise.all([...onDestroyFns, this.onDestroy].map(async (onDestroy) => await onDestroy?.call(this)));
     },
   });
 
