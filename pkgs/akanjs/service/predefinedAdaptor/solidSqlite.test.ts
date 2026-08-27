@@ -348,6 +348,36 @@ describe("solid sqlite utilities", () => {
     }
   });
 
+  test("keeps a valid caller-supplied id and rejects anything else", async () => {
+    const db = new Database(":memory:", { strict: true, create: true });
+    const client = new TestSqliteClient(db);
+    const store = new SqlDocumentStore(
+      new TestDatabaseOwner(client),
+      ticketTestConstant,
+      ticketTestDatabase,
+      new DocumentSchema(),
+    );
+
+    try {
+      await client.execute(
+        `CREATE TABLE IF NOT EXISTS "_akan_meta" ("key" TEXT PRIMARY KEY NOT NULL, "value" TEXT NOT NULL, "updatedAt" INTEGER NOT NULL)`,
+      );
+      await store.ensure();
+
+      await expect(store.create({ id: "not-an-id", title: "Ticket", histories: [] })).rejects.toThrow(
+        "Invalid ID value: not-an-id",
+      );
+      await expect(store.create({ id: "", title: "Ticket", histories: [] })).rejects.toThrow("Invalid ID value: ");
+
+      const pinned = "aaaaaaaaaaaaaaaaaaaaaaaa";
+      const created = await store.create({ id: pinned, title: "Ticket", histories: [] });
+      expect(created.id).toBe(pinned);
+      expect((await store.pickById(pinned)).id).toBe(pinned);
+    } finally {
+      await client.close();
+    }
+  });
+
   test("runs save hooks on document persistence but bypasses them on query-based writes", async () => {
     const db = new Database(":memory:", { strict: true, create: true });
     const client = new TestSqliteClient(db);
@@ -408,7 +438,11 @@ describe("solid sqlite utilities", () => {
 
       // upsert insert via updateOne query: still a document create -> create hooks only, save hooks bypassed
       calls.length = 0;
-      await store.updateOneByQuery({ id: "upsert-1", title: "Upserted" }, { histories: set([]) }, { upsert: true });
+      await store.updateOneByQuery(
+        { id: "111111111111111111111111", title: "Upserted" },
+        { histories: set([]) },
+        { upsert: true },
+      );
       expect(calls).toEqual(["pre:create", "post:create"]);
 
       // remove(id): document soft delete -> remove hooks only, no save/update
@@ -418,7 +452,7 @@ describe("solid sqlite utilities", () => {
 
       // removeMany query: atomic soft delete fires NO document hooks
       calls.length = 0;
-      await store.removeManyByQuery({ id: "upsert-1" });
+      await store.removeManyByQuery({ id: "111111111111111111111111" });
       expect(calls).toEqual([]);
     } finally {
       await client.close();
@@ -481,12 +515,17 @@ describe("solid sqlite utilities", () => {
 
       // upsert insert applies inc from 0 and setOnInsert (functional builder form)
       const rUp = await store.updateOneByQuery(
-        { id: "new-1", title: "New" },
+        { id: "222222222222222222222222", title: "New" },
         ({ inc, setOnInsert }) => ({ score: inc(3), status: setOnInsert("fresh") }),
         { upsert: true },
       );
-      expect(rUp).toEqual({ acknowledged: true, matchedCount: 0, modifiedCount: 1, upsertedId: "new-1" });
-      const up = await store.pickById("new-1");
+      expect(rUp).toEqual({
+        acknowledged: true,
+        matchedCount: 0,
+        modifiedCount: 1,
+        upsertedId: "222222222222222222222222",
+      });
+      const up = await store.pickById("222222222222222222222222");
       expect(up.score).toBe(3);
       expect(up.status).toBe("fresh");
 

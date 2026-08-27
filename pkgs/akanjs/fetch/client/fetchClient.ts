@@ -81,6 +81,7 @@ export class FetchClient {
   readonly handler: Record<string, FetchHandler>;
   readonly slice: Record<string, SliceMeta> = {};
   readonly sortKeyMap = new Map<string, string[]>();
+  readonly #originWs = new Map<string, WsClient>();
   readonly #handlerStore: Record<string, FetchHandler> = {};
   readonly #handlerFactory = new Map<string, FetchHandlerFactory>();
   #sharedRegistryAppliedVersion = 0;
@@ -95,8 +96,7 @@ export class FetchClient {
   ) {
     this.origin = origin;
     this.http = new HttpClient(origin, ErrorCls);
-    const wsUri = `${origin.replace("http://", "ws://").replace("https://", "wss://")}/ws`;
-    this.ws = new WsClient(wsUri, ErrorCls);
+    this.ws = new WsClient(FetchClient.#makeWsUri(origin), ErrorCls);
     Object.assign(this.#handlerStore, handler);
     this.handler = this.#makeHandlerProxy();
     this.applySignal(serializedSignal);
@@ -158,6 +158,7 @@ export class FetchClient {
     this.ErrorCls = ErrorCls;
     this.http.setErrorConstructor(ErrorCls);
     this.ws.setErrorConstructor(ErrorCls);
+    for (const ws of this.#originWs.values()) ws.setErrorConstructor(ErrorCls);
   }
   applySignal(serializedSignal: { [key: string]: SerializedSignal }, { share = true }: { share?: boolean } = {}) {
     if (share && Object.keys(serializedSignal).length > 0) {
@@ -232,6 +233,8 @@ export class FetchClient {
   }
   disconnect() {
     this.ws.destroy();
+    for (const ws of this.#originWs.values()) ws.destroy();
+    this.#originWs.clear();
   }
   clone({ origin, connect = true, jwt }: { origin?: string; connect?: boolean; jwt?: string } = {}) {
     const instance = new FetchClient(origin ?? this.origin, {}, this.serializedSignal, this.ErrorCls);
@@ -245,6 +248,21 @@ export class FetchClient {
   setJwt(jwt: string | null) {
     this.jwt = jwt;
     this.ws.setJwt(jwt);
+    for (const ws of this.#originWs.values()) ws.setJwt(jwt);
+  }
+  // A socket's URL is fixed for its lifetime, so `FetchPolicy.origin` cannot redirect the shared one:
+  // it resolves a second socket per origin, connected on first use and torn down by `disconnect()`.
+  #resolveWs(origin?: string) {
+    if (!origin) return this.ws;
+    const target = origin.replace(/\/+$/, "");
+    if (target === this.origin.replace(/\/+$/, "")) return this.ws;
+    const cached = this.#originWs.get(target);
+    if (cached) return cached;
+    const ws = new WsClient(FetchClient.#makeWsUri(target), this.ErrorCls);
+    this.#originWs.set(target, ws);
+    ws.setJwt(this.jwt);
+    ws.connect();
+    return ws;
   }
   #makeAuthHeaders(option?: FetchPolicy): Record<string, string> {
     if (option?.token) return { Authorization: `Bearer ${option.token}` };
@@ -341,13 +359,13 @@ export class FetchClient {
               handleEvent(parsedReturn);
             };
             wrappedListeners.set(handleEvent, wrapped);
-            this.ws.subscribe({
+            const ws = this.#resolveWs(fetchPolicy?.origin);
+            ws.subscribe({
               key,
               data,
               handleEvent: wrapped,
             });
-            return () =>
-              this.ws.unsubscribe({ key, data, handleEvent: wrappedListeners.get(handleEvent) ?? handleEvent });
+            return () => ws.unsubscribe({ key, data, handleEvent: wrappedListeners.get(handleEvent) ?? handleEvent });
           };
         });
         return;
@@ -359,8 +377,9 @@ export class FetchClient {
           const serializerMap = this.#makeArgSerializer(endpoint.args);
           return (...argData: unknown[]) => {
             const args = argData.slice(0, msgArgLength);
+            const fetchPolicy = argData[msgArgLength] as FetchPolicy | undefined;
             const data = msgArgs.map((arg, idx) => serializerMap.get(arg.name)?.(args[idx]) ?? null);
-            this.ws.emit(key, data);
+            this.#resolveWs(fetchPolicy?.origin).emit(key, data);
           };
         });
         this.#setHandlerFactory(`listen${capitalize(key)}`, () => {
@@ -372,8 +391,9 @@ export class FetchClient {
               handleEvent(parsedReturn);
             };
             wrappedListeners.set(handleEvent, wrapped);
-            this.ws.on(key, wrapped);
-            return () => this.ws.off(key, wrappedListeners.get(handleEvent) ?? handleEvent);
+            const ws = this.#resolveWs(fetchPolicy.origin);
+            ws.on(key, wrapped);
+            return () => ws.off(key, wrappedListeners.get(handleEvent) ?? handleEvent);
           }) as FetchHandler;
         });
         return;
@@ -383,6 +403,10 @@ export class FetchClient {
         break;
     }
   }
+  static #makeWsUri(origin: string) {
+    return `${origin.replace("http://", "ws://").replace("https://", "wss://")}/ws`;
+  }
+
   static paginationArgs: SerializedArg[] = [
     { type: "search", name: "skip", refName: "Int" },
     { type: "search", name: "limit", refName: "Int" },

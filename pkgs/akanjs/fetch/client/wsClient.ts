@@ -41,6 +41,7 @@ export class WsClient {
   #listenerMap = new Map<string, Set<Listener>>();
   #destroyed = false;
   #connectRequested = false;
+  #outbox: string[] = [];
   #unconnectedWarnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   #jwt: string | null = null;
   connected = false;
@@ -95,6 +96,9 @@ export class WsClient {
         const data: WebsocketReqData = { key: option.key, data: option.data, subscribe: true };
         this.#ws?.send(JSON.stringify(data));
       });
+      const queued = this.#outbox;
+      this.#outbox = [];
+      for (const frame of queued) this.#ws?.send(frame);
     };
     this.#ws.onmessage = (e) => {
       try {
@@ -198,6 +202,7 @@ export class WsClient {
     }
     for (const timer of this.#unconnectedWarnTimers.values()) clearTimeout(timer);
     this.#unconnectedWarnTimers.clear();
+    this.#outbox = [];
     this.#ws?.close();
     this.#ws = null;
   }
@@ -241,28 +246,32 @@ export class WsClient {
       `[akanjs] WebSocket is not connected. Call fetch.instance.connect(), or drop the root layout "wsConnect = false", before ${action} "${key}".`,
     );
   }
-  #warnUnconnectedSubscribe(key: string) {
-    if (this.#connectRequested || this.#unconnectedWarnTimers.has(key)) return;
+  #warnUnconnected(action: "emit" | "subscribe", key: string) {
+    const timerKey = `${action}:${key}`;
+    if (this.#connectRequested || this.#unconnectedWarnTimers.has(timerKey)) return;
     const timer = setTimeout(() => {
-      this.#unconnectedWarnTimers.delete(key);
+      this.#unconnectedWarnTimers.delete(timerKey);
       if (this.#connectRequested || this.#destroyed) return;
-      this.#warnNotConnected("subscribe", key);
+      this.#warnNotConnected(action, key);
     }, 0);
-    this.#unconnectedWarnTimers.set(key, timer);
+    this.#unconnectedWarnTimers.set(timerKey, timer);
   }
   emit(key: string, data: WsRequestPayload) {
+    const payload: WebsocketReqData = { key, data: Array.isArray(data) ? data : [data] };
+    const frame = JSON.stringify(payload);
+    // Queued rather than dropped: a socket opened on demand is still handshaking when the call that
+    // opened it emits, so the caller's first message would otherwise never reach the server.
     if (this.#ws?.readyState !== WebSocket.OPEN) {
-      this.logger.warn("WebSocket not connected");
-      this.#warnNotConnected("emit", key);
+      this.#outbox.push(frame);
+      this.#warnUnconnected("emit", key);
       return this;
     }
-    const payload: WebsocketReqData = { key, data: Array.isArray(data) ? data : [data] };
-    this.#ws.send(JSON.stringify(payload));
+    this.#ws.send(frame);
     return this;
   }
   subscribe(option: { key: string; data: unknown[]; handleEvent: (data: unknown) => void }) {
     const roomId = WsClient.makeRoomId(option.key, option.data);
-    if (!this.#ws) this.#warnUnconnectedSubscribe(option.key);
+    if (!this.#ws) this.#warnUnconnected("subscribe", option.key);
     if (!this.#roomSubscribeMap.has(roomId)) {
       this.#roomSubscribeMap.set(roomId, { key: option.key, data: option.data, listener: new Set() });
       if (this.#ws?.readyState === WebSocket.OPEN) {

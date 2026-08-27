@@ -44,7 +44,7 @@ type QueryOrMutationFetchFn<E, SlceCls extends SliceCls | never> = (
 /** Typed off `PromptResult` rather than the endpoint's return ref, which is the `Any` carrier a prompt rides on. */
 type PromptFetchFn<E> = (...args: [...EndpInfoArgs<E>, fetchPolicy?: FetchPolicy]) => Promise<PromptMessage[]>;
 
-type MessageEmitFn<E> = (...args: EndpInfoArgs<E>) => void;
+type MessageEmitFn<E> = (...args: [...EndpInfoArgs<E>, fetchPolicy?: FetchPolicy]) => void;
 
 type MessageListenFn<E, SlceCls extends SliceCls | never> = (
   handleEvent: (data: EndpInfoReturns<E, SlceCls>) => PromiseOrObject<void>,

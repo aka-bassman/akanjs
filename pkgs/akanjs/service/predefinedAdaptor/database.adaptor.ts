@@ -18,6 +18,7 @@ import {
   type DocumentUpdateOptions,
   documentQueryHelper,
   encodeDocumentValue,
+  isDocumentId,
   isDocumentUpdateNode,
   NoDocumentError,
   resolveDocumentUpdate,
@@ -1054,6 +1055,7 @@ export class SqlDocumentStore {
   async create(data: DocumentRecord, { runSaveHooks = true }: WriteHookOptions = {}) {
     const now = Date.now();
     const id = data.id ?? createDocumentId(now);
+    if (!isDocumentId(id)) throw new Error(`Invalid ID value: ${id}`);
     const doc = this.hydrate(
       this.prepareDocument({
         ...data,
