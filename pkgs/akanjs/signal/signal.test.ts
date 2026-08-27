@@ -601,6 +601,23 @@ describe("SignalContext execution", () => {
     );
   });
 
+  test("parses boolean search args sent as query text", async () => {
+    const endpointInfo = buildEndpoint
+      .query(String)
+      .search("archived", Boolean)
+      .exec((archived) => `archived:${String(archived)}`);
+    const context = makeSignalContext({
+      endpointInfo,
+      request: makeHttpRequest({ url: "http://localhost/items?archived=true" }),
+    });
+
+    await context.init();
+    const response = (await context.exec()) as Response;
+
+    expect(context.args).toEqual([true]);
+    expect(await response.json()).toBe("archived:true");
+  });
+
   test("parses websocket message and pubsub room args", async () => {
     const messageInfo = buildEndpoint
       .message(String)
