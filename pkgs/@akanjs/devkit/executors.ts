@@ -1720,7 +1720,7 @@ export class LibExecutor extends SysExecutor {
   #akanConfig: AkanLibConfig | null = null;
   override async getConfig({ refresh }: { refresh?: boolean } = {}) {
     if (this.#akanConfig && !refresh) return this.#akanConfig;
-    this.#akanConfig = await AkanLibConfig.from(this);
+    this.#akanConfig = await AkanLibConfig.from(this, { bustImportCache: refresh });
     return this.#akanConfig;
   }
 }

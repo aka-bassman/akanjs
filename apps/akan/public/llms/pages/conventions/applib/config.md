@@ -142,7 +142,7 @@ Library Config Fields
 
 LibConfig uses the same partial object or function shape, but its current practical surface is externalLibs. Use it when a shared library wraps a dependency that must be available in production runtime packaging.
 
-Akan resolves missing values to an empty list and stores the result with the library scan result.
+Akan resolves missing values to an empty list and merges every workspace library's externalLibs into each app's own list, so an app that uses the library does not repeat the declaration.
 
 ## Code Examples
 
