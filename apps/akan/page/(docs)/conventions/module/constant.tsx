@@ -278,7 +278,7 @@ type TicketStatusValue = TicketStatus["value"];`}
 })) {}`}
         />
         <Docs.Description>
-          <div className="rounded-xl border border-error/30 bg-error/5 p-4">
+          <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
             {l.trans({
               en: "A secret, hidden, or resolved field with a text role throws while the class is being built, not at query time. The same throw covers a role declared underneath one of them: field.secret(Noti) is rejected when Noti carries a role of its own, because the stored document holds that subtree in plaintext too. The search mirror stores plaintext, so indexing a secret would leak it through search. Treat the error as the rule working, not as something to route around.",
               ko: "secret, hidden, resolve field에 text 역할을 붙이면 query 시점이 아니라 class를 만드는 시점에 에러가 납니다. 그 아래에 선언된 역할도 같이 막습니다. Noti 자체가 역할을 들고 있으면 field.secret(Noti)도 거부되는데, 저장된 document는 그 하위 트리도 평문으로 담기 때문입니다. 검색 미러는 평문을 저장하므로 secret을 색인하면 검색을 통해 새어나갑니다. 우회할 대상이 아니라 규칙이 동작하는 것으로 보세요.",

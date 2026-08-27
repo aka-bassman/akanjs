@@ -401,6 +401,35 @@ describe("adapt and serve factories", () => {
     expect(calls).toEqual(["parentOne:init", "parentTwo:init", "child:init", "parentOne:destroy", "child:destroy"]);
   });
 
+  test("resolves a thunk enabled option once, on first read", () => {
+    let evaluations = 0;
+    let allowed = false;
+    class LazyService extends serve(
+      "serviceTestLazyEnabled" as const,
+      {
+        enabled: () => {
+          evaluations += 1;
+          return allowed;
+        },
+      },
+      () => ({}),
+    ) {}
+
+    expect(evaluations).toBe(0);
+    allowed = true;
+    expect(LazyService.enabled).toBe(true);
+    allowed = false;
+    expect(LazyService.enabled).toBe(true);
+    expect(evaluations).toBe(1);
+  });
+
+  test("keeps a falsy thunk result cached", () => {
+    class DisabledService extends serve("serviceTestLazyDisabled" as const, { enabled: () => false }, () => ({})) {}
+
+    expect(DisabledService.enabled).toBe(false);
+    expect(DisabledService.enabled).toBe(false);
+  });
+
   test("creates database services with database injection metadata", () => {
     class DbService extends serve(testItemDatabase, () => ({})) {}
     const injectMeta = DbService[INJECT_META] as Record<string, InjectInfo>;

@@ -12,7 +12,7 @@ import {
 import type { DatabaseService, DatabaseServiceForModel } from "./types";
 
 interface ServiceOptions {
-  enabled?: boolean;
+  enabled?: boolean | (() => boolean);
   serverMode?: "batch" | "federation";
 }
 export type ServiceType = "database" | "plain";
@@ -104,9 +104,10 @@ export function serve(
     ...(typeof optionOrInjectBuilder === "function" && injectBuilderOrExtendSrv ? [injectBuilderOrExtendSrv] : []),
     ...extendSrvs,
   ] as ServiceCls[];
-  const isEnabled =
+  const enabledOption =
     option.enabled ??
     (!option.serverMode || process.env.SERVER_MODE === option.serverMode || process.env.SERVER_MODE === "all");
+  let enabledCache: boolean | undefined;
   const serviceType = typeof refNameOrDb === "string" ? "plain" : "database";
   const injectInfoMap = injectBuilder(injectionBuilder(refName));
   if (serviceType === "database")
@@ -117,7 +118,12 @@ export function serve(
   const srvRef = class Service {
     static readonly type = serviceType;
     static readonly refName = refName;
-    static enabled = isEnabled;
+    static get enabled() {
+      // A thunk resolves on first read instead of at module load, so it may consult config the boot fills in later.
+      if (enabledCache === undefined)
+        enabledCache = typeof enabledOption === "function" ? enabledOption() : enabledOption;
+      return enabledCache;
+    }
     static get name() {
       return `${capitalize(refName)}Service`;
     }

@@ -224,6 +224,23 @@ describe("via and ConstantField", () => {
     expect(UserFull.text.filter.has("role")).toBe(true);
   });
 
+  test("defers a default thunk to the first getDefault call and memoizes it", () => {
+    let calls = 0;
+    const LazyInput = via((f) => ({
+      token: f(String, {
+        default: () => {
+          calls += 1;
+          return `token-${calls}`;
+        },
+      }),
+    }));
+
+    expect(calls).toBe(0);
+    expect(LazyInput.getDefault().token).toBe("token-1");
+    expect(LazyInput.getDefault().token).toBe("token-1");
+    expect(calls).toBe(1);
+  });
+
   test("crystalizes constructor input into typed runtime values", () => {
     const user = createUser();
 

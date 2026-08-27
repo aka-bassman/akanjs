@@ -21,15 +21,20 @@ export class Res implements InternalArg {
   }
 }
 
-/** Injects websocket state and subscription hooks into message/pubsub handlers. */
+/**
+ * Injects websocket state, this connection's id, and subscription hooks into message/pubsub handlers.
+ * `socketId` is the one `AppWsData` minted at the handshake, so a handler never reads `ws.data` to
+ * tell two callers apart — and never mints an id of its own, which would not match the room bookkeeping.
+ */
 export class Ws implements InternalArg {
   onDisconnect?: () => void;
   onUnsubscribe?: () => void;
   getArg(context: SignalContext) {
-    const webSocketContext = context.getWebSocketContext();
+    const webSocketContext = context.getWebSocketContext<{ socketId: string }>();
     const ws = webSocketContext.ws;
     return {
       ws,
+      socketId: ws.data.socketId,
       subscribe: webSocketContext.eventType === "subscribe",
       on: webSocketContext.on,
       off: webSocketContext.off,

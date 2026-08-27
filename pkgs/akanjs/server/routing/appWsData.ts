@@ -41,10 +41,17 @@ export class AppWsData {
   account?: unknown;
   /** The `authorization` value `account` was resolved from, so each frame need not re-verify it. */
   resolvedAuthorization?: string;
-  socketId?: string;
+  /**
+   * Identity of this connection, minted here so every app socket carries one from its first frame and
+   * adaptors and endpoints only ever read it. Per-connection and process-local — a reconnect gets a new
+   * one, and the federation gateway's own socket is a different one — so it is never a caller identity.
+   * It outlives a credential swap on purpose: the socket is still the same socket.
+   */
+  socketId: string;
   constructor(headers: Headers) {
     this.createdAt = Date.now();
     this.headers = headers;
     this.cookies = new Bun.CookieMap(headers.get("cookie") ?? "");
+    this.socketId = Bun.randomUUIDv7();
   }
 }

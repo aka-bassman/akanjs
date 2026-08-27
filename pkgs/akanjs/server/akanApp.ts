@@ -38,7 +38,6 @@ interface ChildState {
 
 interface GatewayWsData {
   childIdx: number;
-  socketId: string;
   upstream: WebSocket;
 }
 
@@ -600,8 +599,9 @@ export class AkanApp {
     const upstreamWs = new WebSocket(`ws://${upstream.host}:${upstream.port}${url.pathname}${url.search}`, {
       headers: this.#makeProxyHeaders(req, child.idx),
     } as unknown as string[]);
-    const socketId = crypto.randomUUID();
-    const upgraded = server.upgrade(req, { data: { childIdx: child.idx, socketId, upstream: upstreamWs } });
+    // No socket id here: the child mints its own on the socket it accepts from us, and that is the one
+    // the room bookkeeping and every endpoint see. A second id on this hop would only look authoritative.
+    const upgraded = server.upgrade(req, { data: { childIdx: child.idx, upstream: upstreamWs } });
     if (!upgraded) {
       upstreamWs.close();
       return new Response("WebSocket upgrade failed", { status: 500 });

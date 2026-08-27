@@ -90,6 +90,13 @@ const DAISYUI_LEGACY_RE = new RegExp(
   "g",
 );
 
+// daisyUI 색 슬롯. 어휘 폐쇄가 이 이름들을 지웠으므로 CSS 가 생성되지 않는다 — 컴포넌트 클래스와 같은
+// 무증상 실패다. 시맨틱 어휘에 살아남은 슬롯(primary·secondary·accent·neutral·info·success·warning)은
+// 정상이므로 제외하고, 사라진 것(base-*, *-content, error)만 잡는다.
+const DAISYUI_TOKEN =
+  "(?:base-(?:100|200|300|content)|(?:primary|secondary|accent|neutral|info|success|warning|error)-content|error)";
+const DAISYUI_TOKEN_RE = new RegExp(`${LEAD}(?:${PREFIX})-${DAISYUI_TOKEN}${TAIL}`, "g");
+
 const ALL_RULES: StyleGuardRule[] = [
   "raw-palette",
   "arbitrary-color",
@@ -244,6 +251,16 @@ export class StyleGuard {
           severity: "error",
           suggestion:
             "daisyUI 클래스는 제거됐습니다. akanjs/ui 프리미티브(Button/Badge 등)나 buttonRecipe()/badgeRecipe() + 시맨틱 토큰으로 교체하세요.",
+        }),
+      );
+    }
+    for (const m of scan.matchAll(DAISYUI_TOKEN_RE)) {
+      out.push(
+        this.#violation(file, m.index ?? 0, {
+          rule: "daisyui-legacy",
+          severity: "error",
+          suggestion:
+            "daisyUI 색 슬롯은 어휘에서 제거됐습니다 — base-100/200/300→background/muted/border, base-content→foreground, *-content→*-foreground, error→destructive.",
         }),
       );
     }

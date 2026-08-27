@@ -55,7 +55,7 @@ export default function Page() {
               },
             ].map((item) => (
               <div key={item.title} className="min-w-0">
-                <div className="font-bold font-mono text-error text-sm">{item.title}</div>
+                <div className="font-bold font-mono text-destructive text-sm">{item.title}</div>
                 <div className="mt-2 min-h-14 text-foreground/70 text-xs leading-5">{item.desc}</div>
                 <video
                   src={item.src}

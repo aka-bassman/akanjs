@@ -21,6 +21,20 @@ describe("AppWsData", () => {
     expect(data.createdAt).toBeGreaterThan(0);
   });
 
+  test("mints one socketId per connection and keeps it across a credential swap", () => {
+    const data = AppWsData.fromRequest(new Request("http://localhost/api/ws"));
+    const other = AppWsData.fromRequest(new Request("http://localhost/api/ws"));
+    const { socketId } = data;
+
+    expect(socketId).toBeTruthy();
+    expect(other.socketId).not.toBe(socketId);
+
+    AppWsData.applyCredential(data, "next-token");
+    AppWsData.applyCredential(data, null);
+
+    expect(data.socketId).toBe(socketId);
+  });
+
   test("replaces the credential and drops the cached account", () => {
     const data = AppWsData.fromRequest(new Request("http://localhost/api/ws"));
     data.account = { role: "user" };
