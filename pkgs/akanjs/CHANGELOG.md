@@ -1,5 +1,108 @@
 # akanjs
 
+## 2.4.2
+
+### Minor Changes
+
+- 11aa655: feat(constant): remove a relation's target with its owner via `cascade: "remove"`
+
+  A relation field can now take its target down with it: `image: field(File, { cascade: "remove" })`, arrays
+  included. The removal runs through the **target's service**, so the target's own `_postRemove` runs with it —
+  that is how removing a model also deletes the file's stored blob or object, with no extra wiring in the owning
+  module.
+
+  Only a relation accepts the option. A `String`, an `ID`, a scalar, and a nested array each fail while the class
+  is being built, naming the field: none of them points at a document the framework could remove.
+
+  Target services resolve lazily, at removal time, so a cascade adds no boot-order edge between two services and a
+  cascade cycle cannot fail the boot. They resolve _before_ the parent is touched, so a model cascading into a
+  module the app never mounted fails with nothing half-removed.
+
+  Two limits worth knowing. Nothing checks whether another document still references the same target, so declaring
+  `cascade` asserts that the field owns its target exclusively. And query-level removal (`deleteManyByQuery` /
+  `updateManyByQuery`) stamps `removedAt` in one atomic update that fires no hooks and therefore no cascade —
+  remove documents one at a time when they cascade.
+
+- 11aa655: feat(store): invalidate sibling slices on create and refetch them in `Load.Units`
+
+  A model with more than one parent is listed by more than one slice, and a create could only ever be spliced
+  into the slice it was issued from. Creating a `bizDoc` from `bizDocInOrg` left `bizDocListInProject` without
+  it, and an RSC navigation back to that page replayed a cached payload whose server-stamped
+  `bizDocInitAtInProject` still satisfied `Load.Units`' cache check — so the new document stayed invisible until
+  a full reload.
+
+  `create<Model>` and `create<Model>InForm` now stamp a new per-slice `<model>StaleAt<Suffix>` on every slice
+  _except_ the one named by `sliceName`. Whether the new document belongs to a sibling slice is a server-side
+  filter decision, so the siblings are marked for revalidation rather than patched optimistically. `Load.Units`
+  refetches through `refresh<Model><Suffix>` when its slice's `StaleAt` is newer than its `InitAt`, and a
+  completed refresh restamps `InitAt` past `StaleAt` to end the stale state. The refetch is skipped while the
+  list is already loading, which also dedups several `Load.Units` mounted on one slice.
+
+  `Load.Units` also takes a `staleTime` prop, in milliseconds, for age-based revalidation independent of any
+  create: `staleTime={0}` always refetches on mount, `staleTime={30_000}` refetches only when the cached data is
+  older than 30s. Omitting it leaves the component purely invalidation-driven.
+
+  Update and remove are unchanged — they already walk every slice, because a document they touch is one the
+  cached lists can be searched for by id.
+
+- 11aa655: feat(server): add subRoute hosts at runtime with `AKAN_SUB_ROUTE_HOSTS`
+
+  An app resolved a request Host to a basePath through a map fixed at build time — the domains written into
+  `akan.config.ts` plus the generated `<basePath>-<branch>.<serveDomain>`. A platform that mints its hostnames when
+  a project is created cannot write either one into the repo, so its subRoute hosts fell through to the root app.
+
+  `AKAN_SUB_ROUTE_HOSTS` adds to that map at boot, in the same spirit as `AKAN_PUBLIC_BASE_PATHS`:
+
+  ```
+  AKAN_SUB_ROUTE_HOSTS="soft=soft-abc.try.akanjs.com,soft.acme.com;office=office-abc.try.akanjs.com"
+  ```
+
+  Hosts are matched lowercased and without a port, exactly as the built-in ones are. The env mapping is a union with
+  the built one, never a replacement, so a tenant's own domains keep working and removing the env restores the
+  previous behaviour byte for byte.
+
+  A basePath the build does not serve is dropped with a warning rather than honoured — the route tree is a build
+  output, so accepting one would answer every request under it with a 404 and nothing to explain why. A malformed
+  entry is skipped the same way: the value is rendered by a deployment platform, and one bad character must not turn
+  into a boot loop across every pod.
+
+  `x-base-path` is now checked against the basePaths the build serves before it is trusted, matching the check
+  `getBasePathFromPathname` already applied to it. An unrecognised value falls through to host matching instead of
+  selecting a basePath that resolves to nothing.
+
+- 25d5b15: feat(devkit): sync lib `page` trees into apps and honor `pageConfig.devOnly`
+
+  Apps can opt in with `syncPageLibs` (`true` / lib list) so `akan sync` links each lib's routes under
+  `page/(libs)/(<lib>)` — once per basePath when the app has subRoutes. The link is generated and
+  gitignored; the lib source stays the edit target. Collision on the resolved route pattern is a
+  sync-time error.
+
+  `pageConfig.devOnly: true` (literal only) keeps a route out of `akan build` while `akan start` still
+  serves it. On a `_layout` it excludes the whole subtree. Symlink-aware file ops avoid wiping a synced
+  lib when cleaning an app link, and dangling lib links no longer break `getApps`.
+
+- 25d5b15: feat(signal): refresh websocket credentials in-session and re-check pubsub rooms
+
+  Handshake credentials now live on `AppWsData` (headers/cookies only). Clients that hold the token in
+  memory send it with `fetch.setJwt(...)`, which forwards an `__auth` frame; the server swaps the
+  snapshot synchronously and re-runs each subscribed room's guards, unsubscribing the ones that fail.
+
+  Guards should read the caller with `context.get("account")` instead of branching on HTTP vs websocket
+  transport. Slice-level guards still only wrap generated query/mutation endpoints — a pubsub endpoint
+  needs its own `guards` if the room itself must be protected.
+
+### Patch Changes
+
+- 6d58c7e: add search feature for sqlit database with fts5
+- 25d5b15: fix(ui): refresh EditModal when the hydrated edit payload is stale
+
+  RSC navigation can replay a cached page tree, and an edit shell hydrated from that payload can show
+  arbitrarily old form data. EditModal now treats a cache replay (or a `modelViewAt` older than 60s) as
+  stale and refetches via `edit<Model>` while keeping the modal open on the last known id.
+
+- 42cf7a2: Normalize unsendable relayed WebSocket close codes to 1001 so Bun's global client WebSocket.close no longer throws InvalidAccessError at the gateway's client-to-upstream relay when a peer disappears without a close frame (code 1006). The upstream-to-client relay applies the same normalization defensively.
+- 04cb46d: Allow the documented wsConnect export during source validation for root layouts, including base-path and grouped root boundaries, while continuing to reject it on nested layouts.
+
 ## 2.4.1
 
 ### Patch Changes
