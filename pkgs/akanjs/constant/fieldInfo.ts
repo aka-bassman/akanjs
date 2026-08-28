@@ -510,6 +510,14 @@ export interface FieldObject {
   [key: string]: ConstantField;
 }
 
+/**
+ * `text` names a column in the plaintext search mirror, so a masked field carrying one would publish what it
+ * masks through search — the class build refuses it (`TextFieldPaths`). Removing the key from the option type
+ * moves that refusal to the call site, where the fix is obvious. Distributive because `FieldOption` is a union:
+ * a plain `Omit` over it would collapse to the keys the members share.
+ */
+type WithoutTextRole<Option> = Option extends unknown ? Omit<Option, "text"> : never;
+
 type FieldOption<
   Value extends ConstantFieldTypeInput,
   MapValue = Value extends MapConstructor ? typeof PrimitiveScalar : never,
@@ -573,7 +581,7 @@ field.hidden = <
   MapValue = Value extends MapConstructor ? typeof PrimitiveScalar : never,
 >(
   value: Value,
-  option: FieldOption<Value, MapValue> = {},
+  option: WithoutTextRole<FieldOption<Value, MapValue>> = {},
 ) =>
   new FieldInfo<"hidden", Value, ExplicitType, MapValue>(value, {
     ...option,
@@ -586,7 +594,7 @@ field.secret = <
   MapValue = Value extends MapConstructor ? typeof PrimitiveScalar : never,
 >(
   value: Value,
-  option: FieldOption<Value, MapValue> = {},
+  option: WithoutTextRole<FieldOption<Value, MapValue>> = {},
 ) =>
   new FieldInfo<"secret", Value | null, ExplicitType | null, MapValue>(value, {
     ...option,
@@ -601,7 +609,7 @@ export const resolve = <
   MapValue = Value extends MapConstructor ? typeof PrimitiveScalar : never,
 >(
   value: Value,
-  option: FieldOption<Value, MapValue> = {},
+  option: WithoutTextRole<FieldOption<Value, MapValue>> = {},
 ) =>
   new FieldInfo<"resolve", Value, ExplicitType, MapValue>(value, {
     ...option,

@@ -2,6 +2,7 @@
 
 import type { cnst } from "@libs/util";
 import { st } from "@libs/util/client";
+import { Float, Int } from "akanjs/base";
 import type { CSSProperties } from "react";
 
 import Pigeon from "./Pigeon";
@@ -41,10 +42,28 @@ export default function PigeonMap({
   center,
   zoom,
 }: PigeonMapProps) {
-  const theme = st.use.theme();
+  const theme = st.use.theme({ agent: false });
   const mapCenter = st.use.mapCenter();
   const mapZoom = st.use.mapZoom();
-  const mapBounds = st.use.mapBounds();
+  const mapBounds = st.use.mapBounds({ agent: false });
+  st.tool(center === undefined ? "setMapView" : null)
+    .desc(
+      "Move the map to a latitude and longitude, optionally at a zoom level (higher is closer; the map starts at 8).",
+    )
+    .arg("latitude", Float)
+    .arg("longitude", Float)
+    .opt("zoom", Int)
+    .exec((latitude, longitude, zoom) => {
+      st.do.setMapCenter({ type: "Point", coordinates: [longitude, latitude] } as cnst.Coordinate);
+      if (zoom !== null) st.do.setMapZoom(zoom);
+    });
+  st.tool(center === undefined ? "readMapView" : null, { settle: false })
+    .desc("Read where the map is currently centred and how far it is zoomed in.")
+    .exec(() => ({
+      latitude: mapCenter.coordinates[1],
+      longitude: mapCenter.coordinates[0],
+      zoom: zoom ?? mapZoom,
+    }));
   return (
     <Pigeon
       className={className}

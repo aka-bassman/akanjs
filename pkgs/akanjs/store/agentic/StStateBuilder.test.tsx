@@ -58,6 +58,34 @@ describe("StStateDraft", () => {
     unmount();
   });
 
+  // `via.ts` augments the global String and Boolean constructors with model field metadata, so these two are the
+  // declarations that can silently hand back a model state object instead of the scalar.
+  test("a String or Boolean state hands back the scalar, and its setter takes one", async () => {
+    const surface = new AgenticSurface();
+    const seen: [string, boolean][] = [];
+    const Panel = () => {
+      const [tab] = new StStateDraft("tab", String, { set: true }).desc("Which tab is showing.").init("all");
+      const [open] = new StStateDraft("open", Boolean, { set: true }).desc("Whether the panel is open.").init(false);
+      seen.push([tab, open]);
+      return null;
+    };
+    const unmount = mount(
+      <AgentProvider surface={surface}>
+        <Panel />
+      </AgentProvider>,
+    );
+    expect(seen.at(-1)).toEqual(["all", false]);
+    expect(surface.snapshot().tools.map((entry) => entry.parameters)).toEqual([
+      { type: "object", properties: { value: { type: "boolean" } }, required: ["value"], additionalProperties: false },
+      { type: "object", properties: { value: { type: "string" } }, required: ["value"], additionalProperties: false },
+    ]);
+    await act(async () => {
+      await surface.call("setTab", { value: "archive" });
+    });
+    expect(seen.at(-1)).toEqual(["archive", false]);
+    unmount();
+  });
+
   test("without set the key is readable and no setter is published", () => {
     const surface = new AgenticSurface();
     const Panel = () => {

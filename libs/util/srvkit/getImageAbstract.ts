@@ -1,15 +1,3 @@
-type SharpFactory = typeof import("sharp");
-
-let sharpLoad: Promise<SharpFactory> | null = null;
-
-function loadSharp(): Promise<SharpFactory> {
-  sharpLoad ??= import("sharp").then((mod) => {
-    const loaded = mod as unknown as { default?: SharpFactory } & SharpFactory;
-    return loaded.default ?? loaded;
-  });
-  return sharpLoad;
-}
-
 async function readImageBuffer(source: string | Buffer): Promise<Buffer> {
   if (Buffer.isBuffer(source)) return source;
   if (source.startsWith("file://")) return Buffer.from(await Bun.file(source.replace("file://", "")).arrayBuffer());
@@ -28,9 +16,7 @@ export const getImageAbstract = async (
 ): Promise<{ abstractData?: string; imageSize?: [number, number] }> => {
   const abstract: { abstractData?: string; imageSize?: [number, number] } = {};
   try {
-    const buffer = await readImageBuffer(source);
-    const sharp = await loadSharp();
-    const image = sharp(buffer);
+    const image = new Bun.Image(await readImageBuffer(source));
 
     try {
       const { width, height } = await image.metadata();
@@ -38,11 +24,7 @@ export const getImageAbstract = async (
     } catch (_) {}
 
     try {
-      const { data, info } = await image
-        .resize(10, 10, { fit: "inside" })
-        .blur(1)
-        .toBuffer({ resolveWithObject: true });
-      abstract.abstractData = `data:image/${info.format};base64,${data.toString("base64")}`;
+      abstract.abstractData = await image.placeholder();
     } catch (_) {}
   } catch (_) {}
   return abstract;

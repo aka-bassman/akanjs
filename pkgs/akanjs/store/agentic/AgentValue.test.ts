@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { Any, dayjs, enumOf, ID, Int, Upload } from "akanjs/base";
+import { Any, type Dayjs, dayjs, enumOf, type Float, type GetStateObject, ID, Int, Upload } from "akanjs/base";
 import { via } from "akanjs/constant";
-import { AgentValue } from "./AgentValue";
+import { AgentValue, type AgentValueOf } from "./AgentValue";
 
 const ReadableNote = via((f) => ({
   title: f(String),
@@ -57,5 +57,44 @@ describe("AgentValue.publishable", () => {
     expect(errors[1]).toBe(
       'st.expose("file") is not published: its type is the scalar Upload, which an agent cannot read.',
     );
+  });
+});
+
+/** Invariant in both directions — a one-way check would pass a branch that narrowed to a literal union. */
+type Equals<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+const pinned = <_Assertion extends true>() => true;
+
+describe("AgentValueOf", () => {
+  // `via.ts` augments the global String, Boolean, Date and Map constructors with model field metadata, so these
+  // four are the ones a `FIELD_META`-first mapping silently reads as models. Nothing else here can regress alone.
+  test("an augmented global constructor is its scalar, not the model its field metadata makes it look like", () => {
+    expect(pinned<Equals<AgentValueOf<StringConstructor>, string>>()).toBe(true);
+    expect(pinned<Equals<AgentValueOf<BooleanConstructor>, boolean>>()).toBe(true);
+    expect(pinned<Equals<AgentValueOf<DateConstructor>, Dayjs | Date | string>>()).toBe(true);
+  });
+
+  test("declared scalars, enums, and Any", () => {
+    expect(pinned<Equals<AgentValueOf<typeof Int>, number>>()).toBe(true);
+    expect(pinned<Equals<AgentValueOf<typeof Float>, number>>()).toBe(true);
+    expect(pinned<Equals<AgentValueOf<typeof ID>, string>>()).toBe(true);
+    expect(pinned<Equals<AgentValueOf<typeof Any>, unknown>>()).toBe(true);
+    expect(pinned<Equals<AgentValueOf<typeof ReadableMode>, "fit" | "fill">>()).toBe(true);
+  });
+
+  test("a model is its state object, so a hydrated document and a plain copy of one both fit", () => {
+    expect(pinned<Equals<AgentValueOf<typeof ReadableNote>, GetStateObject<InstanceType<typeof ReadableNote>>>>()).toBe(
+      true,
+    );
+    const hydrated: AgentValueOf<typeof ReadableNote> = new ReadableNote();
+    const copied: AgentValueOf<typeof ReadableNote> = { ...hydrated };
+    expect(copied).toEqual(hydrated);
+  });
+
+  test("an array declares an array of whatever its element declares", () => {
+    expect(pinned<Equals<AgentValueOf<[StringConstructor]>, string[]>>()).toBe(true);
+    expect(pinned<Equals<AgentValueOf<[typeof Int]>, number[]>>()).toBe(true);
+    expect(
+      pinned<Equals<AgentValueOf<[typeof ReadableNote]>, GetStateObject<InstanceType<typeof ReadableNote>>[]>>(),
+    ).toBe(true);
   });
 });

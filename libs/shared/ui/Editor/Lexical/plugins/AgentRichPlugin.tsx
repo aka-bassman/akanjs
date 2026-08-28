@@ -1,12 +1,11 @@
 "use client";
 import { $convertFromMarkdownString, $generateNodesFromMarkdownString } from "@lexical/markdown";
-import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { st } from "@libs/shared/client";
 import { Int } from "akanjs/base";
-import { capitalize } from "akanjs/common";
-import { FormFields } from "akanjs/store";
-import { $createParagraphNode, $isDecoratorNode, $isElementNode, type EditorState, type LexicalNode } from "lexical";
+import { $createParagraphNode, $isDecoratorNode, $isElementNode, type LexicalNode } from "lexical";
 
+import { useAgentField } from "../agentField";
+import { lossesOf, syntaxOf } from "../feature";
 import { AKAN_TRANSFORMERS } from "../markdown";
 import { $spliceRichBlocks, type RichBlockOp, richBlockOps } from "./agentRichPlugin.command";
 import { isEmptyRichContent, lossSentence, lossyNodesOf, richBlockListing, richBlocksOf } from "./agentRichPlugin.util";
@@ -19,21 +18,9 @@ const $blocksFromMarkdown = (markdown: string) =>
     isBlockNode(node) ? node : $createParagraphNode().append(node),
   );
 
-interface AgentRichPluginProps {
-  /** The `set<Field>On<Model>` this editor writes, or null to publish nothing. Frozen at mount. */
-  name: string | null;
-  /** Whether to also publish the block read/edit pair. Off for a field too short to address by block. */
-  blocks?: boolean;
-  /**
-   * Commits the pending change immediately — the 300ms debounce would leave the form stale, and on an empty field
-   * there is no pending change at all, because `OnChangePlugin` drops the update that fills one.
-   */
-  flush: (state?: EditorState) => void;
-}
-
 /**
- * Publishes this editor's field to the agent: one markdown write for the whole field, and a read/edit pair
- * that addresses its top-level blocks.
+ * Publishes this editor's field to the agent: one markdown write for the whole field, and a read/edit
+ * pair that addresses its top-level blocks.
  *
  * Markdown, not the stored JSON: `st.tool` arguments are scalars, and a model authoring Lexical's tree
  * directly would trip `parseEditorState`, which `resolveEditorState` and `ExternalValuePlugin` both
@@ -41,35 +28,25 @@ interface AgentRichPluginProps {
  * through `AKAN_TRANSFORMERS`, the curated node set the person's own typing goes through.
  *
  * The whole-field write refuses a document that already holds content, because markdown export is lossy
- * for thirteen of the editor's node classes; the block ops are the way in after that, since they convert
- * only the fragment the caller wrote and leave every other block untouched.
+ * for every node class outside `AKAN_FEATURES`' transformer set; the block ops are the way in after that,
+ * since they convert only the fragment the caller wrote and leave every other block untouched.
  *
  * Every conversion runs against the live editor rather than against the stored value, which buys three
  * things: `HistoryPlugin` picks it up so ⌘Z undoes an agent edit, `OnChangePlugin` carries it to the store
  * through the same path a keystroke takes, and it is not subject to `ExternalValuePlugin`'s
  * skip-while-focused guard — so a write lands even with the caret in the box.
  */
-export const AgentRichPlugin = ({ name, blocks = true, flush }: AgentRichPluginProps) => {
-  const [editor] = useLexicalComposerContext();
-  // Forward through the setter index, never by taking the name apart: `set(.+)On(.+)` has more than one
-  // reading whenever a field or a model name contains "On" — `setContentOnAppOnProjectReport` has three.
-  const ref = name ? FormFields.ref(name) : null;
-  const blockBase = blocks && ref ? `${capitalize(ref.key)}BlocksOn${capitalize(ref.refName)}` : null;
-  const content = () => editor.getEditorState().toJSON();
-  const commit = async (mutate: () => void) => {
-    await new Promise<void>((resolve) => {
-      editor.update(mutate, { onUpdate: resolve });
-    });
-    flush(editor.getEditorState());
-  };
+export const AgentRichPlugin = () => {
+  const { name, blockBase, features, content, commit } = useAgentField();
+  const losses = lossesOf(features);
 
   st.tool(name, {
     guard: (args) => {
-      if (isEmptyRichContent(content()) || args.replaceAll === true) return true;
-      const losses = lossyNodesOf(content());
-      return losses.length
+      if (isEmptyRichContent(content(), losses) || args.replaceAll === true) return true;
+      const found = lossyNodesOf(content(), losses);
+      return found.length
         ? `This field already holds content, including ${lossSentence(
-            losses,
+            found,
           )} that markdown cannot carry. Edit it by block instead, or pass replaceAll: true to lose them.`
         : "This field already holds text. Edit it by block instead, or pass replaceAll: true to overwrite it.";
     },
@@ -77,8 +54,10 @@ export const AgentRichPlugin = ({ name, blocks = true, flush }: AgentRichPluginP
     .desc(
       [
         "Replace this rich-text field with markdown.",
-        "Headings, lists, checklists, quotes, code fences, ```mermaid diagrams, links, bold/italic/strikethrough,",
-        "`inline code` and ==highlight== are understood; tables, images and mentions are not.",
+        `Understood: ${syntaxOf(features)}.`,
+        `Not carried: ${Object.values(losses)
+          .map(({ label }) => `${label}s`)
+          .join(", ")}.`,
       ].join(" "),
     )
     .arg("markdown", String)
@@ -112,7 +91,7 @@ export const AgentRichPlugin = ({ name, blocks = true, flush }: AgentRichPluginP
     .desc(
       [
         "Change one top-level block of this field, leaving the rest of the document exactly as it is —",
-        "the only way to edit a field that holds images, tables, callouts or mentions.",
+        "the only way to edit a field holding anything the whole-field write cannot carry.",
         "`markdown` may span several blocks. Returns the fresh listing, so the indices it reports are current.",
       ].join(" "),
     )

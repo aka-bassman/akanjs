@@ -1,55 +1,39 @@
 import { extractTextFromContent } from "@libs/shared/common";
 
-/**
- * Node types a markdown round-trip cannot carry, against the word to name each one by.
- *
- * `AKAN_TRANSFORMERS` covers ten of the editor's node classes. For the rest `$exportTopLevelElements`
- * (`@lexical/markdown`) falls back to `$exportChildren` for an element and `getTextContent()` for a
- * decorator — so a decorator vanishes outright, a container keeps only its text, and a mention keeps its
- * text but loses the `refId` that `collectMentions` reads. `akan-mermaid` carries its own transformer and
- * is deliberately absent. `tablerow` / `tablecell` and the collapsible title/content are absent too: they
- * only ever appear under a parent that is already counted.
- */
-const lossyLabels = {
-  "akan-image": "image",
-  "akan-video": "video",
-  "akan-file": "file",
-  "akan-embed": "embed",
-  "akan-excalidraw": "drawing",
-  "akan-callout": "callout",
-  "akan-collapsible": "toggle",
-  "akan-mention": "mention",
-  table: "table",
-} as const;
+import type { EditorLosses, EditorNodeLike } from "../feature";
 
-interface ContentNode {
-  type?: string;
-  children?: ContentNode[];
-}
+type ContentNode = EditorNodeLike;
 
 export interface RichLoss {
   label: string;
   count: number;
 }
 
-const tally = (node: ContentNode, counts: Map<string, number>) => {
-  const label = node.type ? lossyLabels[node.type as keyof typeof lossyLabels] : undefined;
-  if (label) counts.set(label, (counts.get(label) ?? 0) + 1);
-  for (const child of Array.isArray(node.children) ? node.children : []) tally(child, counts);
+const tally = (node: ContentNode, losses: EditorLosses, counts: Map<string, number>) => {
+  const loss = node.type ? losses[node.type] : undefined;
+  if (loss && (loss.when?.(node) ?? true)) counts.set(loss.label, (counts.get(loss.label) ?? 0) + 1);
+  for (const child of Array.isArray(node.children) ? node.children : []) tally(child, losses, counts);
 };
 
-/** What overwriting this content from markdown would destroy, most numerous first. */
-export const lossyNodesOf = (content: unknown): RichLoss[] => {
+/**
+ * What overwriting this content from markdown would destroy, most numerous first.
+ *
+ * A node outside the transformer set is not merely unconverted: `$exportTopLevelElements`
+ * (`@lexical/markdown`) falls back to `$exportChildren` for an element and `getTextContent()` for a
+ * decorator — so a decorator vanishes outright, a container keeps only its text, and a mention keeps
+ * its text but loses the `refId` that `collectMentions` reads.
+ */
+export const lossyNodesOf = (content: unknown, losses: EditorLosses): RichLoss[] => {
   if (!content || typeof content !== "object") return [];
   const counts = new Map<string, number>();
   const roots = Array.isArray(content) ? (content as ContentNode[]) : [(content as { root?: ContentNode }).root];
-  for (const root of roots) if (root) tally(root, counts);
+  for (const root of roots) if (root) tally(root, losses, counts);
   return [...counts].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count);
 };
 
 /** Nothing a person would miss: no text, and none of the blocks that carry meaning without text. */
-export const isEmptyRichContent = (content: unknown) =>
-  !extractTextFromContent(content).trim() && !lossyNodesOf(content).length;
+export const isEmptyRichContent = (content: unknown, losses: EditorLosses) =>
+  !extractTextFromContent(content).trim() && !lossyNodesOf(content, losses).length;
 
 export const lossSentence = (losses: RichLoss[]) =>
   losses.map(({ label, count }) => `${count} ${label}${count > 1 ? "s" : ""}`).join(", ");

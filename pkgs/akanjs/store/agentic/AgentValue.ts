@@ -23,6 +23,11 @@ export type AgentFieldType = AgentSingleType | AgentSingleType[];
  * A model class resolves to its state object rather than its instance type, so a component may hand over either
  * the hydrated document or the plain data copied out of one — masking reads the model that was named, not the
  * class the value still carries.
+ *
+ * A scalar is recognised by `refName` and has to be matched before `FIELD_META`: `via.ts` augments the global
+ * `String`, `Boolean`, `Date` and `Map` constructors with `DatabaseConstantStatics`, so those four carry field
+ * metadata and would otherwise read as models. A model carries no `refName`, and `Map` — carrying neither — falls
+ * through to the model branch and is refused at declaration time instead.
  */
 export type AgentValueOf<T> = T extends readonly (infer F)[]
   ? AgentValueOf<F>[]
@@ -32,11 +37,13 @@ export type AgentValueOf<T> = T extends readonly (infer F)[]
       ? V
       : T extends DateConstructor
         ? Dayjs | Date | string
-        : T extends { [FIELD_META]: unknown }
-          ? GetStateObject<UnCls<T>>
-          : T extends { [CLIENT_VALUE]: infer V }
-            ? V
-            : unknown;
+        : T extends { refName: string; [CLIENT_VALUE]: infer V }
+          ? V
+          : T extends { [FIELD_META]: unknown }
+            ? GetStateObject<UnCls<T>>
+            : T extends { [CLIENT_VALUE]: infer V }
+              ? V
+              : unknown;
 
 type ValueKind = "any" | "date" | "scalar" | "enum" | "model";
 

@@ -52,14 +52,16 @@ export class FileService extends serve(db.file, ({ use, plug }) => ({
     uri: string,
     purpose: string,
     group: string,
-    { header, rename }: { header?: { [key: string]: string }; rename?: string } = {},
+    { header, rename, fileId }: { header?: { [key: string]: string }; rename?: string; fileId?: string } = {},
   ): Promise<db.File | null> {
     try {
+      const requestedFile = fileId ? await this.loadFile(fileId) : null;
+      if (requestedFile) return requestedFile;
       const isDataUri = uri.startsWith("data:");
       const file = isDataUri ? null : await this.fileModel.findByOrigin(uri);
-      if (file) return file;
+      if (file && (!fileId || file.id === fileId)) return file;
       const localFile = await this.saveImageFromUri(uri, { header, rename });
-      return await this.addFileFromLocal(localFile, purpose, group, { origin: uri });
+      return await this.addFileFromLocal(localFile, purpose, group, { origin: uri, fileId });
     } catch (_err) {
       this.logger.warn(`Failed to add file from URI - ${uri}`);
       return null;
@@ -75,6 +77,9 @@ export class FileService extends serve(db.file, ({ use, plug }) => ({
       this.logger.warn(`Failed to get json from URI - ${uri}`);
       return undefined;
     }
+  }
+  async readFileBuffer(file: db.File): Promise<Buffer> {
+    return await this._readFileBuffer(file);
   }
   async readFileAsBase64(file: db.File): Promise<string> {
     return (await this._readFileBuffer(file)).toString("base64");
@@ -125,17 +130,16 @@ export class FileService extends serve(db.file, ({ use, plug }) => ({
     localFile: LocalFile,
     purpose: string,
     group = "default",
-    { origin }: { origin?: string } = {},
+    { origin, fileId }: { origin?: string; fileId?: string } = {},
   ): Promise<db.File> {
     const { size } = await FileManager.getFileStat(localFile);
     const imageSize = localFile.mimetype.startsWith("image/") ? await getImageSize(localFile.localPath) : [0, 0];
-    const file = await this.fileModel.createFile({
-      ...localFile,
-      url: "",
-      imageSize,
-      origin,
-      size,
-    });
+    const data = { ...localFile, url: "", imageSize, origin, size };
+    // An edge or station copying a file down from the cloud keeps the source's id so both sides
+    // resolve the same reference; generateFile is the only path that accepts one.
+    const file = fileId
+      ? await this.fileModel.generateFile({ id: fileId, ...data })
+      : await this.fileModel.createFile(data);
     const path = `${purpose.length ? purpose : "default"}/${group?.length ? group : "default"}/${this._convertFileName(file)}`;
     const url = await this.storageApi.uploadDataFromLocal({
       path,

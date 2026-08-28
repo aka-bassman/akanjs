@@ -607,10 +607,13 @@ commands, transcript compaction, and the built-in tool semantics: `get_guideline
   `filter` 0): `title` is the one line a human scans for, `desc` is prose, `tag` is a keyword list, `filter` is a
   scoping value (status, owner, role) that must be matchable but must never outrank a real title hit.
 - `thumb` is mirrored for rendering a hit and is **not** indexed — never expect it to match.
-- **A `secret`, `hidden`, or `resolve()` field with `text` throws at class-build time**, not at query time. That is
-  deliberate: the mirror is plaintext, so an indexed secret would leak through search. Do not work around it. The
-  same throw covers a `text` field *underneath* one of those — a scalar's own field is reachable through its parent,
-  so `f.secret(Noti)` where `Noti.label` carries a role is rejected at the parent, not silently indexed.
+- **`field.secret`, `field.hidden` and `resolve()` take no `text` role — it is a compile error**, because the
+  mirror is plaintext and an indexed secret would leak through search. The class build throws the same refusal as
+  a backstop, for an option object the excess-property check cannot see through, and names the way out: drop the
+  role, or leave the field unmasked. Do not work around either. The throw also covers a `text` field *underneath*
+  one of those — a scalar's own field is reachable through its parent, so `f.secret(Noti)` where `Noti.label`
+  carries a role is rejected at the parent, not silently indexed; that one is only reachable at runtime, since the
+  pairing spans two files.
 - The role works on a relation too (`image: field(File, { text: "thumb" })`) and on an array (`playing: field([String],
   { text: "tag" })`); an array of objects indexes by leaf key, including an array leaf (`works[*].tags`). A field
   inside a `Map` indexes nothing: there is no fixed path to extract it from.
