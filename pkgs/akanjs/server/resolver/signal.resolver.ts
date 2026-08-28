@@ -43,7 +43,7 @@ export class SignalResolver {
     return `${key}${args.length ? "-" : ""}${args.join("-")}`;
   }
   static #localPublish: (roomId: string, data: object | object[]) => void = () => {
-    SignalResolver.logger.warn(`Local publish is not initialized yet`);
+    SignalResolver.logger.verbose(`Local publish is not initialized yet`);
   };
   static setLocalPublish(localPublish: (roomId: string, data: object | object[]) => void, websocket: WebsocketAdaptor) {
     SignalResolver.#localPublish = localPublish;

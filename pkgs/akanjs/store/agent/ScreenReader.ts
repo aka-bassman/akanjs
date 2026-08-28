@@ -51,6 +51,11 @@ const blockTags = new Set([
  * agent's own UI is marked `data-agent-ui` and skipped, so a turn never re-reads its own transcript, and a
  * password value is never read — the screen shows dots, so the DOM holds more than the user sees.
  *
+ * A region the app marks `data-agent-skip` — what `Agent.Skip` renders — costs a `[skipped: <name>]` line instead
+ * of its text. It stands in the output rather than vanishing because a deleted region reads as an absent one, and
+ * an agent asked about a footer it never saw answers that the page has none. Naming the region as `section` reads
+ * it: the marker is what the default read leaves out, not a wall.
+ *
  * A heading carries `(#anchor)` whenever it opens a container that has an id or a scope path, because that is the
  * name `readScreen({ section })` and `highlight` take: printing the text without the name leaves an agent
  * guessing at a slug. For the same reason a truncated read ends with the headings below the cut instead of only
@@ -64,7 +69,7 @@ export class ScreenReader {
     const reader = new ScreenReader();
     const title = document.title.trim();
     if (title) reader.#lines.push(`Page: ${title}`);
-    reader.#walk(root ?? document.body);
+    reader.#walk(root ?? document.body, true);
     reader.#flush();
     return reader.#text() || "The page is rendering nothing readable.";
   }
@@ -78,10 +83,10 @@ export class ScreenReader {
     if (typeof document === "undefined") return "No rendered document is available.";
     const reader = new ScreenReader();
     const container = ScreenReader.#sectionOf(heading, root);
-    if (container) reader.#walk(container);
+    if (container) reader.#walk(container, true);
     else {
       const level = headingLevels[heading.tagName.toUpperCase() as keyof typeof headingLevels] ?? 1;
-      reader.#walk(heading);
+      reader.#walk(heading, true);
       let next = heading.nextElementSibling;
       while (next && !ScreenReader.#stops(next, level)) {
         reader.#walk(next);
@@ -123,6 +128,17 @@ export class ScreenReader {
     return "";
   }
 
+  /**
+   * `checkVisibility()` reports whether the element has a layout box, and a `display: contents` wrapper has none
+   * while its children do — so Chrome answers false for a wrapper the user is looking straight at, and skipping it
+   * would drop that whole subtree (happy-dom answers true, so no DOM test sees the difference). Reading through it
+   * is safe only because the walk is top-down: a `display: none` ancestor bails on its own computed display first.
+   */
+  static #rendered(el: HTMLElement) {
+    if (typeof el.checkVisibility !== "function" || el.checkVisibility()) return true;
+    return getComputedStyle(el).display === "contents";
+  }
+
   static #stops(el: Element, level: number) {
     const found = headingLevels[el.tagName.toUpperCase() as keyof typeof headingLevels];
     return !!found && found <= level;
@@ -141,7 +157,7 @@ export class ScreenReader {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const el = node as HTMLElement;
     const tag = el.tagName.toUpperCase();
-    if (skipTags.has(tag) || el.hasAttribute("data-agent-ui")) return;
+    if (skipTags.has(tag) || el.hasAttribute("data-agent-ui") || el.hasAttribute("data-agent-skip")) return;
     const level = headingLevels[tag as keyof typeof headingLevels];
     if (level) {
       const anchor = ScreenReader.anchorOf(el);
@@ -163,7 +179,15 @@ export class ScreenReader {
       : `${kept}${note}`;
   }
 
-  #walk(node: Node): void {
+  /** What stands where a skipped region was: its own name, and the anchor `section` takes to read it on request. */
+  #mark(el: HTMLElement, label: string) {
+    const anchor = el.getAttribute("data-agent-scope") ?? el.getAttribute("data-agent-zone") ?? el.id;
+    this.#flush();
+    this.#buffer = `[skipped: ${label || el.tagName.toLowerCase()}${anchor ? ` (#${anchor})` : ""}]`;
+    this.#flush();
+  }
+
+  #walk(node: Node, isRoot = false): void {
     if (this.#length > ScreenReader.limit * 2) {
       this.#outline(node);
       return;
@@ -179,7 +203,13 @@ export class ScreenReader {
     if (skipTags.has(tag)) return;
     if (el.hasAttribute("data-agent-ui") || el.hasAttribute("hidden") || el.getAttribute("aria-hidden") === "true")
       return;
-    if (typeof el.checkVisibility === "function" && !el.checkVisibility()) return;
+    if (!ScreenReader.#rendered(el)) return;
+    // Read past the marker only when the region is what was asked for: `section` naming it is that ask.
+    const skipped = isRoot ? null : el.getAttribute("data-agent-skip");
+    if (skipped !== null) {
+      this.#mark(el, skipped);
+      return;
+    }
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
       this.#control(el, tag);
       return;

@@ -2,9 +2,11 @@ import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 
 let ScreenReader: typeof import("./ScreenReader").ScreenReader;
+let ScreenTarget: typeof import("./ScreenTarget").ScreenTarget;
 
 beforeAll(async () => {
   ({ ScreenReader } = await import("./ScreenReader"));
+  ({ ScreenTarget } = await import("./ScreenTarget"));
 });
 
 const readOf = (html: string) => {
@@ -41,6 +43,39 @@ describe("ScreenReader", () => {
     expect(text).not.toContain("gone");
     expect(text).not.toContain("styled away");
     expect(text).not.toContain("transcript");
+  });
+
+  // Chrome answers `false` for a `display: contents` element — it has no layout box — while happy-dom answers
+  // `true`, so the browser's verdict is stubbed in to reproduce the case that dropped the whole subtree.
+  test("reads through a display:contents wrapper, which has no box of its own", () => {
+    document.body.innerHTML = '<div id="wrap" style="display:contents"><p>wrapped body</p></div>';
+    const wrap = document.getElementById("wrap") as HTMLElement;
+    wrap.checkVisibility = () => false;
+    expect(ScreenReader.read()).toContain("wrapped body");
+  });
+
+  test("leaves a named marker where a skipped region was, and reads it when it is asked for by name", () => {
+    const text = readOf(
+      '<p>plain body</p><footer data-agent-skip="site footer"><h2>Legal</h2><p>terms body</p></footer>',
+    );
+    expect(text).toContain("plain body");
+    expect(text).toContain("[skipped: site footer]");
+    expect(text).not.toContain("terms body");
+    // Naming it is the explicit ask that reads it: the marker is what the default read leaves out, not a wall.
+    const region = ScreenTarget.container("site footer");
+    expect(ScreenReader.read(region)).toContain("terms body");
+  });
+
+  test("a skipped region with an anchor prints it, and one with no label falls back to its tag", () => {
+    const text = readOf('<footer id="footer" data-agent-skip="site footer">a</footer><nav data-agent-skip="">b</nav>');
+    expect(text).toContain("[skipped: site footer (#footer)]");
+    expect(text).toContain("[skipped: nav]");
+  });
+
+  test("a region that is both skipped and unrendered leaves no marker claiming it is there", () => {
+    const text = readOf('<p>plain body</p><footer data-agent-skip="site footer" hidden>terms body</footer>');
+    expect(text).toContain("plain body");
+    expect(text).not.toContain("skipped");
   });
 
   test("reads controls by their akan annotation and never a password's value", () => {

@@ -1,5 +1,6 @@
 import { type BackendEnv, ENDPOINT_META } from "akanjs/base";
 import { Logger } from "akanjs/common";
+import { ConstantRegistry, mask } from "akanjs/constant";
 import { DictionaryLookup } from "akanjs/dictionary";
 import { NoDocumentError } from "akanjs/document";
 import type { InjectRegistry, LiveRegistry } from "akanjs/service";
@@ -42,11 +43,19 @@ interface McpDispatcherProps {
   middleware: Map<string, MiddlewareCls>;
   /** The one language error text is resolved in, matching the catalogue the client was handed. */
   language?: string;
+  /**
+   * Whether a structured result also ships as serialized JSON in the text block. `true` by default, which is what
+   * the spec asks for; `false` halves what every model-returning tool costs.
+   */
+  legacyTextBlock?: boolean;
 }
 
 /** Executes one MCP tool call or resource read through the ordinary signal pipeline. */
 export class McpDispatcher {
   static readonly logger = new Logger("McpDispatcher");
+
+  /** What the text block says when the serialized duplicate is off. Read by a model, so English. */
+  static readonly structuredNote = "The result is in this call's structuredContent.";
 
   readonly #props: McpDispatcherProps;
   #endpoints: Map<string, { endpointInfo: EndpointInfo; endpoint: Endpoint }> | null = null;
@@ -68,10 +77,10 @@ export class McpDispatcher {
     const found = this.#index().get(exposed.key);
     if (!found) return McpDispatcher.#failure(`Tool "${exposed.key}" is declared but not mounted on this server.`);
     try {
-      const value = await this.#exec(exposed.key, found, args, req);
+      const value = McpDispatcher.#readable(exposed, await this.#exec(exposed.key, found, args, req));
       const structuredContent = McpDocument.structuredContent(exposed.endpoint, value);
       return {
-        content: [{ type: "text", text: McpDispatcher.#text(structuredContent, value) }],
+        content: this.#content(structuredContent, value),
         ...(structuredContent === undefined ? {} : { structuredContent }),
         isError: false,
       };
@@ -237,6 +246,19 @@ export class McpDispatcher {
   }
 
   /**
+   * A structured result rides twice by default: once as `structuredContent`, once as the same JSON here, which is
+   * what the spec asks of a server for clients that predate the structured field. Every model return therefore
+   * costs the model twice what it carries, and `legacyTextBlock: false` is the deployment that has decided its
+   * clients read the structured half — the pointer keeps `content` non-empty, since a client that renders
+   * `content[0].text` and finds nothing shows an empty answer rather than a missing one.
+   */
+  #content(structuredContent: unknown, value: unknown): McpToolResult["content"] {
+    if (structuredContent !== undefined && this.#props.legacyTextBlock === false)
+      return [{ type: "text", text: McpDispatcher.structuredNote }];
+    return [{ type: "text", text: McpDispatcher.#text(structuredContent, value) }];
+  }
+
+  /**
    * The text block every result carries, whether or not a structured one goes with it.
    *
    * A structured result is mirrored as its JSON, which is what the spec asks for so a client with no structured
@@ -250,6 +272,25 @@ export class McpDispatcher {
   static #text(structuredContent: unknown, value: unknown) {
     if (structuredContent === undefined && typeof value === "string") return value;
     return JSON.stringify(structuredContent ?? value) ?? "null";
+  }
+
+  /**
+   * Strips what the return model marks `visual` — a field the page renders and no question is answered from.
+   *
+   * Done here rather than in `resolveReturn`, which every ordinary HTTP response also passes through: the point of
+   * a `visual` field is that a browser still receives it. MCP results reach an agent and nothing else, so this is
+   * where the model's own declaration is honoured, and it is the same `mask` the in-page agent's reads use.
+   */
+  static #readable(exposed: McpExposedEndpoint, value: unknown): unknown {
+    const { refName, modelType } = exposed.endpoint.returns;
+    if (!modelType) return value;
+    try {
+      return mask(ConstantRegistry.getModelRef(refName, modelType), value);
+    } catch {
+      // A return naming a model this process did not mount is a catalogue that should not have listed it; the
+      // value goes out unmasked rather than the call failing, and the boot log is where that belongs.
+      return value;
+    }
   }
 
   static #failure(message: string): McpToolResult {

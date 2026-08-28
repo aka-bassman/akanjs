@@ -1,6 +1,7 @@
 import { AgentAbort } from "./AgentAbort";
 import { AgentProgress, type AgentProgressReport } from "./AgentProgress";
 import { Compaction, type CompactOptions } from "./Compaction";
+import { ToolOutput } from "./ToolOutput";
 import { Transcript } from "./Transcript";
 import type {
   AgentRunner,
@@ -115,6 +116,7 @@ export class AgentSession {
   #version = 0;
   #listeners = new Set<() => void>();
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
+  #compacting = false;
   /** Size below which auto-compaction stays out of the way, raised when a summary failed to shrink anything. */
   #compactFloor = 0;
 
@@ -135,6 +137,15 @@ export class AgentSession {
 
   get isRunning() {
     return this.#running;
+  }
+
+  /**
+   * True while the conversation is summarizing itself. Distinct from `isRunning`, which an auto-compaction runs
+   * inside: the summarizing turn answers nothing the user asked for and takes as long as a model turn, so a chat
+   * that only says "running" reads as a question being ignored.
+   */
+  get isCompacting() {
+    return this.#compacting;
   }
 
   get pendingApproval(): PendingApproval | null {
@@ -207,7 +218,9 @@ export class AgentSession {
           toolResults.push(
             controller.signal.aborted
               ? { id: call.id, name: call.name, error: Transcript.unanswered }
-              : await this.#execute(call, controller.signal),
+              : // Bounded here, at the one place every tool's answer enters the transcript, because from here on it
+                // rides every later turn as well.
+                ToolOutput.clipped(await this.#execute(call, controller.signal)),
           );
         this.#append({ role: "tool", toolResults });
       }
@@ -323,11 +336,17 @@ export class AgentSession {
   async #compact(keep: number, signal: AbortSignal): Promise<boolean> {
     const at = Compaction.cutAt(this.#messages, keep);
     if (at <= 0) return false;
-    const summary = (await this.#summarize(Compaction.digest(this.#messages.slice(0, at)), signal)).trim();
-    if (!summary || signal.aborted) return false;
-    this.#messages = [Compaction.message(summary), ...this.#messages.slice(at)];
+    this.#compacting = true;
     this.#notify();
-    return true;
+    try {
+      const summary = (await this.#summarize(Compaction.digest(this.#messages.slice(0, at)), signal)).trim();
+      if (!summary || signal.aborted) return false;
+      this.#messages = [Compaction.message(summary), ...this.#messages.slice(at)];
+      return true;
+    } finally {
+      this.#compacting = false;
+      this.#notify();
+    }
   }
 
   /**
@@ -339,16 +358,22 @@ export class AgentSession {
   async #autoCompact(signal: AbortSignal) {
     const { at = Compaction.defaults.at, keep = Compaction.defaults.keep } = this.#options.compact ?? {};
     if (!at || Compaction.tokensOf(this.#messages) < Math.max(at, this.#compactFloor)) return;
+    let compacted = false;
     try {
-      await this.#compact(keep, signal);
+      compacted = await this.#compact(keep, signal);
     } catch (error) {
+      // The floor is left where it is: a summarizer that was momentarily unreachable says nothing about whether
+      // this transcript can shrink, and raising it would push the next attempt a whole threshold further out for
+      // a turn that never ran.
       console.warn(`[use-agentic] compaction failed: ${error instanceof Error ? error.message : String(error)}`);
+      return;
     }
     const after = Compaction.tokensOf(this.#messages);
     // A transcript still over the threshold after summarizing itself cannot shrink — one kept message is that
-    // large, or there was no safe cut — so the next attempt waits for another threshold's worth of growth rather
-    // than re-summarizing on every turn.
-    this.#compactFloor = after < at ? 0 : after + at;
+    // large — so the next attempt waits for another threshold's worth of growth rather than re-summarizing on
+    // every turn. A summary that never landed is not that: retrying it costs one call, and never retrying it
+    // costs the conversation.
+    this.#compactFloor = compacted && after >= at ? after + at : 0;
   }
 
   /** No tools and no screen context: this turn summarizes the conversation, and must not act on it. */

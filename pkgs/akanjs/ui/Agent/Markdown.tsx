@@ -1,6 +1,7 @@
 "use client";
 import { cn } from "akanjs/client";
 import type { ReactNode } from "react";
+import { createOverridable } from "../UiOverride";
 import { type MarkdownBlock, MarkdownBlocks, type MarkdownItem } from "./markdownBlocks";
 import { spans } from "./markdownSpans";
 import type { Align, TableBlock } from "./markdownTable";
@@ -76,6 +77,25 @@ const Table = ({ block }: TableProps) => {
   );
 };
 
+export interface CodeProps {
+  className?: string;
+  /** The fence's info word, kept so a highlighter bound to this slot knows what it was handed. */
+  lang?: string;
+  text: string;
+}
+
+export const DefaultCode = ({ className, lang, text }: CodeProps) => (
+  <pre
+    className={cn("overflow-x-auto rounded-field bg-muted p-2 font-mono text-[11px] leading-tight", className)}
+    data-lang={lang}
+  >
+    {text}
+  </pre>
+);
+
+/** The one place a fenced block is drawn, so an app binds its highlighter here instead of replacing the renderer. */
+const Code = createOverridable("AgentCode", DefaultCode);
+
 interface BlockProps {
   block: MarkdownBlock;
 }
@@ -83,11 +103,7 @@ interface BlockProps {
 const Block = ({ block }: BlockProps) => {
   switch (block.kind) {
     case "code":
-      return (
-        <pre className="overflow-x-auto rounded-field bg-muted p-2 font-mono text-[11px] leading-tight">
-          {block.text}
-        </pre>
-      );
+      return <Code lang={block.lang} text={block.text} />;
     // A heading renders as weighted text, not as `h1`-`h6`: model output would otherwise write its own outline
     // into the host page's heading structure, which assistive technology reads as the page's own.
     case "heading":
@@ -107,7 +123,7 @@ const Block = ({ block }: BlockProps) => {
   }
 };
 
-interface MarkdownProps {
+export interface MarkdownProps {
   className?: string;
   children: string;
 }
@@ -117,12 +133,12 @@ interface MarkdownProps {
  * `Bun.markdown` is the obvious candidate and cannot serve this — it is a runtime API the bundler passes through
  * verbatim, so it is undefined in the browser, and assistant text arrives here as SSE deltas the client accrues.
  */
-export default function Markdown({ className, children }: MarkdownProps) {
-  return (
-    <div className={cn("flex flex-col gap-2 break-words", className)}>
-      {MarkdownBlocks.of(children).map((block, idx) => (
-        <Block block={block} key={idx} />
-      ))}
-    </div>
-  );
-}
+export const DefaultMarkdown = ({ className, children }: MarkdownProps) => (
+  <div className={cn("flex flex-col gap-2 break-words", className)}>
+    {MarkdownBlocks.of(children).map((block, idx) => (
+      <Block block={block} key={idx} />
+    ))}
+  </div>
+);
+
+export default createOverridable("AgentMarkdown", DefaultMarkdown);

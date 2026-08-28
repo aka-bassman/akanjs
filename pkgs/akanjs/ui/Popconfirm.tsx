@@ -1,7 +1,7 @@
 "use client";
 import { cn, usePage } from "akanjs/client";
 import { useEscapeKey } from "akanjs/webkit";
-import { type ButtonHTMLAttributes, type ReactNode, useRef, useState } from "react";
+import { type ButtonHTMLAttributes, type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BiMessageRoundedError } from "react-icons/bi";
 import { buttonRecipe } from "./Button";
@@ -55,6 +55,8 @@ export const DefaultPopconfirm = ({
   const { l } = usePage();
   const recipe = useUiRecipe("button") ?? buttonRecipe;
   const [isConfirming, setIsConfirming] = useState(false);
+  // Resolved in an effect rather than at render, so the first client pass portals exactly what the server did.
+  const [portal, setPortal] = useState<HTMLElement | null>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   // Read through the portal-to-be: whichever dismissable scope rendered this popover owns it.
@@ -75,6 +77,9 @@ export const DefaultPopconfirm = ({
     setIsConfirming(false);
   };
   useEscapeKey(isConfirming, handleCancel);
+  useEffect(() => {
+    setPortal(document.body);
+  }, []);
 
   const panel = (
     <>
@@ -146,7 +151,7 @@ export const DefaultPopconfirm = ({
       >
         {children}
       </div>
-      {isConfirming && typeof document !== "undefined" ? createPortal(panel, document.body) : null}
+      {isConfirming && portal ? createPortal(panel, portal) : null}
     </div>
   );
 };

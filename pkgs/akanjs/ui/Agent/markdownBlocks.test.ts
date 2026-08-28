@@ -20,13 +20,18 @@ describe("MarkdownBlocks", () => {
   test("keeps a fenced block verbatim and ignores block syntax inside it", () => {
     const blocks = MarkdownBlocks.of("```ts\n# not a heading\n- not a list\n```\nafter");
     expect(blocks).toEqual([
-      { kind: "code", text: "# not a heading\n- not a list" },
+      { kind: "code", lang: "ts", text: "# not a heading\n- not a list" },
       { kind: "para", text: "after" },
     ]);
   });
 
   test("closes an unclosed fence at the end of the text, as a mid-stream delta leaves it", () => {
-    expect(MarkdownBlocks.of("```ts\nconst x = 1;")).toEqual([{ kind: "code", text: "const x = 1;" }]);
+    expect(MarkdownBlocks.of("```ts\nconst x = 1;")).toEqual([{ kind: "code", lang: "ts", text: "const x = 1;" }]);
+  });
+
+  test("keeps the fence's language and drops the rest of the info string", () => {
+    expect(MarkdownBlocks.of("```tsx title=Chat.tsx\nx\n```")).toEqual([{ kind: "code", lang: "tsx", text: "x" }]);
+    expect(MarkdownBlocks.of("```\nx\n```")).toEqual([{ kind: "code", text: "x" }]);
   });
 
   test("closes a fence only on its own marker", () => {

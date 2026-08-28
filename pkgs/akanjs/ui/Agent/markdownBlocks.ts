@@ -8,7 +8,7 @@ export interface MarkdownItem {
 }
 
 export type MarkdownBlock =
-  | { kind: "code"; text: string }
+  | { kind: "code"; lang?: string; text: string }
   | { kind: "heading"; level: number; text: string }
   | { kind: "list"; items: MarkdownItem[] }
   | { kind: "quote"; text: string }
@@ -16,7 +16,7 @@ export type MarkdownBlock =
   | { kind: "para"; text: string }
   | TableBlock;
 
-const fence = /^ {0,3}(```|~~~)/;
+const fence = /^ {0,3}(```|~~~)(.*)$/;
 const heading = /^ {0,3}(#{1,6})\s+(.*)$/;
 const rule = /^ {0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/;
 const quote = /^ {0,3}> ?(.*)$/;
@@ -47,7 +47,7 @@ export class MarkdownBlocks {
       const fenced = fence.exec(line);
       const table = MarkdownTable.at(this.#lines, this.#at);
       if (!line.trim()) this.#at += 1;
-      else if (fenced) this.#code(fenced[1]);
+      else if (fenced) this.#code(fenced[1], fenced[2]);
       else if (rule.test(line)) this.#take({ kind: "rule" });
       else if (head) this.#take({ kind: "heading", level: head[1].length, text: head[2] });
       else if (quote.test(line)) this.#quote();
@@ -68,7 +68,9 @@ export class MarkdownBlocks {
 
   // An unclosed fence is the normal mid-stream state, so it runs to the end of the text: falling back to a
   // paragraph would flip the whole block from code to prose and back on the delta that closes it.
-  #code(marker: string) {
+  #code(marker: string, info: string) {
+    // The info string's first word is the language by CommonMark; the rest is metadata no renderer here reads.
+    const lang = info.trim().split(/\s+/)[0];
     this.#at += 1;
     const body: string[] = [];
     while (this.#at < this.#lines.length) {
@@ -77,7 +79,7 @@ export class MarkdownBlocks {
       if (line.trimStart().startsWith(marker)) break;
       body.push(line);
     }
-    this.#blocks.push({ kind: "code", text: body.join("\n") });
+    this.#blocks.push({ kind: "code", ...(lang ? { lang } : {}), text: body.join("\n") });
   }
 
   #quote() {

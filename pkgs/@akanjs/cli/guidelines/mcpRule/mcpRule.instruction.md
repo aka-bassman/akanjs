@@ -16,13 +16,13 @@ until somebody remembers it.
 
 ## Configuration
 Settings live in the app's `lib/option.ts` — `option.setMcp({ … })`, taking `enabled`, `readOnly`, `path`,
-`version`, `instructions`, `allowedOrigins`, `pageSize`, `language`, and `auth`. **Not `main.ts`**: the gateway
+`version`, `instructions`, `allowedOrigins`, `pageSize`, `language`, `legacyTextBlock`, and `auth`. **Not `main.ts`**: the gateway
 there only spawns children, and `option.ts` is the app-authored file `server.ts` already hands to the process that
 mounts `/mcp`. Every lib's option is read in mount order with the app's last, so an app tightens what a library
 declared without restating it. Each field also has an env spelling (`AKAN_MCP`, `AKAN_MCP_READONLY`,
 `AKAN_MCP_PATH`, `AKAN_MCP_VERSION`, `AKAN_MCP_INSTRUCTIONS`, `AKAN_MCP_ALLOWED_ORIGINS`, `AKAN_MCP_PAGE_SIZE`,
-`AKAN_MCP_LANGUAGE`, `AKAN_MCP_AUTH_SERVERS`, `AKAN_MCP_SCOPES`, `AKAN_MCP_RESOURCE`) for a deployment that
-configures what the source does not, which the option overrides.
+`AKAN_MCP_LANGUAGE`, `AKAN_MCP_LEGACY_TEXT`, `AKAN_MCP_AUTH_SERVERS`, `AKAN_MCP_SCOPES`, `AKAN_MCP_RESOURCE`) for a
+deployment that configures what the source does not, which the option overrides.
 The two booleans answer to `AKAN_PUBLIC_MCP` / `AKAN_PUBLIC_MCP_READONLY` too, the same pairing `AKAN_OPENAPI`
 has, and a value written in code wins over the env of the same name — an explicit `undefined` is not a value.
 `AKAN_MCP_PATH` is normalized to a leading `/`, because the route key and the OAuth metadata path are both built by
@@ -87,9 +87,21 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
   can — a list is wrapped as `{ items: … }` for the same reason — and a declared schema obliges every result to
   match it, so a client SDK throws on the first call that finds nothing. A nullable *list* keeps its schema, and a
   scalar return has no structured half at all: it ships as the value itself, not as JSON.
-- **An `outputSchema` names no `hidden` or `secret` field.** Every response has both stripped, so publishing them
-  promises a property no answer can carry — and on a model like `user` the names are the leak. Your *input* schema
-  keeps them: they are legal to send, and the same model describes a request body.
+- **An `outputSchema` names no `hidden`, `secret`, or `visual` field.** Every response has the first two stripped,
+  so publishing them promises a property no answer can carry — and on a model like `user` the names are the leak.
+  Your *input* schema keeps all three: they are legal to send, and the same model describes a request body.
+- **A `field.visual` is stripped from every MCP result.** It is the marker for a field the page renders and no
+  question is answered from — a blur placeholder, a rendered HTML body — and it is cost rather than secrecy, so
+  nothing is refused over one. The strip happens in the MCP dispatcher rather than in `resolveReturn`, which every
+  ordinary HTTP response also passes through: the whole point is that a browser still receives it. That is also why
+  the readable schema drops it — a non-optional visual field would otherwise be listed `required` and a validating
+  client would refuse a result that correctly omits it.
+- **A structured result ships twice by default**, once as `structuredContent` and once as the same JSON in the text
+  block, which is what the spec asks of a server for clients predating the structured field. It is also a flat
+  doubling of what every model-returning tool costs a model. `option.setMcp({ legacyTextBlock: false })` — or
+  `AKAN_MCP_LEGACY_TEXT=false` — leaves a one-line pointer in the text block instead, for a deployment whose
+  clients read the structured half. A scalar return is unaffected: it has no structured half to point at, so it
+  ships as the value itself either way.
 - A refused endpoint answers the *same* "unknown tool" as one that does not exist. Never make that
   message more helpful — the difference is what enumerates your private surface. A guard's refusal is generalized
   the same way: the caller reads `You are not permitted to perform this action.`, never `Access denied by guard:

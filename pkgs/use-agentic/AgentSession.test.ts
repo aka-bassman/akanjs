@@ -3,6 +3,8 @@ import { AgentAbort } from "./AgentAbort";
 import { AgenticSurface } from "./AgenticSurface";
 import { AgentProgress } from "./AgentProgress";
 import { AgentSession } from "./AgentSession";
+import { Compaction } from "./Compaction";
+import { ToolOutput } from "./ToolOutput";
 import { Transcript } from "./Transcript";
 import type { AgentRunner, ChatMessage, RunnerEvent, RunnerRequest } from "./types";
 
@@ -716,6 +718,99 @@ describe("AgentSession compaction", () => {
     await session.send("one");
     await session.send("two");
     expect(summaries).toBe(1);
+  });
+
+  test("a turn that grows past the threshold on its own tool calls is compacted mid-turn", async () => {
+    const surface = new AgenticSurface();
+    surface.registerTool([], { name: "read", run: () => "y".repeat(4_000) });
+    const { runner, requests } = scripted(
+      ...Array.from({ length: 8 }, (_, at) => [
+        { type: "toolCall" as const, id: `c${at}`, name: "read", args: {} },
+        { type: "done" as const, stop: "toolUse" as const },
+      ]),
+      [
+        { type: "text", delta: "done" },
+        { type: "done", stop: "end" },
+      ],
+    );
+    const session = new AgentSession(surface, runner, {
+      maxTurns: 20,
+      compact: { at: 4_000, keep: 4, summarize: async () => "notes" },
+    });
+    await session.send("read it repeatedly");
+    // Nothing but the one user message opens this transcript, so a cut that insists on a user boundary never finds
+    // one and the request grows until the provider refuses it.
+    expect(session.messages.some((message) => message.summary)).toBe(true);
+    expect(Compaction.tokensOf(session.messages)).toBeLessThan(4_000);
+    expect(requests.at(-1)?.messages[0]).toMatchObject({ text: "notes", summary: true });
+  });
+
+  test("a tool result too large for the window is bounded before it enters the transcript", async () => {
+    const surface = new AgenticSurface();
+    // What a `readState` of one record with inlined bytes looks like: small on screen, megabytes on the wire.
+    surface.registerTool([], { name: "readState", run: () => ({ video: "x".repeat(2_000_000) }) });
+    const { runner, requests } = scripted(
+      [
+        { type: "toolCall", id: "c1", name: "readState", args: { key: "videoSliceList" } },
+        { type: "done", stop: "toolUse" },
+      ],
+      [
+        { type: "text", delta: "too big to read whole" },
+        { type: "done", stop: "end" },
+      ],
+    );
+    const session = new AgentSession(surface, runner, { compact: { at: 0 } });
+    await session.send("read the slice list");
+    const returned = session.messages.find((message) => message.role === "tool")?.toolResults?.[0].result;
+    expect(String(returned)).toContain("Truncated");
+    expect(Compaction.tokensOf(session.messages)).toBeLessThan(6_000);
+    // The bound holds on the wire too, which is the half that would have been refused.
+    expect(JSON.stringify(requests[1].messages).length).toBeLessThan(ToolOutput.limit * 2);
+  });
+
+  test("the session says when it is summarizing, since that turn answers nothing the user asked", async () => {
+    const { runner } = scripted([
+      { type: "text", delta: "answered" },
+      { type: "done", stop: "end" },
+    ]);
+    const seen: boolean[] = [];
+    const session = new AgentSession(new AgenticSurface(), runner, {
+      history: restored(bulky("first")),
+      compact: {
+        at: 1_000,
+        keep: 2,
+        summarize: async () => {
+          seen.push(session.isCompacting);
+          return "notes";
+        },
+      },
+    });
+    session.subscribe(() => seen.push(session.isCompacting));
+    await session.send("carry on");
+    expect(seen).toContain(true);
+    expect(session.isCompacting).toBe(false);
+  });
+
+  test("a summarizer that failed once is asked again on the next turn", async () => {
+    let summaries = 0;
+    const { runner } = scripted([
+      { type: "text", delta: "ok" },
+      { type: "done", stop: "end" },
+    ]);
+    const session = new AgentSession(new AgenticSurface(), runner, {
+      history: restored(bulky("first")),
+      compact: {
+        at: 1_000,
+        keep: 2,
+        summarize: () => {
+          summaries += 1;
+          return Promise.reject(new Error("the summarizer is down"));
+        },
+      },
+    });
+    await session.send("one");
+    await session.send("two");
+    expect(summaries).toBe(2);
   });
 
   test("retry never replays a summary, which is history rather than the ask it stands in for", async () => {

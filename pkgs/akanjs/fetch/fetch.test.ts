@@ -1019,6 +1019,25 @@ describe("FetchClient HTTP generation", () => {
 
     expect(lib.fetch).not.toBe(app.fetch);
   });
+
+  test("runs a method called on the proxy against the instance, so its private fields stay reachable", async () => {
+    setMockFetch();
+    jsonResponses.push("ok");
+    const { fetch: built } = FetchClient.build<{ fetch: unknown }>(
+      {},
+      { service: serviceSignal },
+      { origin: "https://api.example" },
+    );
+    const proxy = built as FetchProxy & {
+      setJwt: (jwt: string | null) => void;
+      getThing: (id: string, tags: string[], empty: null) => Promise<unknown>;
+    };
+
+    expect(() => proxy.setJwt("proxy-jwt")).not.toThrow();
+    expect(proxy.instance.jwt).toBe("proxy-jwt");
+    await proxy.getThing("1234567890abcdef12345678", [], null);
+    expect(fetchCalls[0]).toMatchObject({ init: { headers: { Authorization: "Bearer proxy-jwt" } } });
+  });
 });
 
 describe("FetchClient database signal helpers", () => {

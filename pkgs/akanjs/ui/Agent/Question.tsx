@@ -3,8 +3,9 @@ import { cn, usePage } from "akanjs/client";
 import { useState } from "react";
 import type { PendingQuestion } from "use-agentic";
 import { Button } from "../Button";
+import { createOverridable } from "../UiOverride";
 
-interface QuestionProps {
+export interface QuestionProps {
   className?: string;
   question: PendingQuestion;
 }
@@ -15,7 +16,7 @@ interface QuestionProps {
  * always that way out of the options: the model wrote them, and only the user knows whether the answer is among
  * them. Mounted keyed by call id, so a second ask starts with nothing picked.
  */
-export default function Question({ className, question }: QuestionProps) {
+export const DefaultQuestion = ({ className, question }: QuestionProps) => {
   const { l } = usePage();
   const [picked, setPicked] = useState<string[]>([]);
   const toggle = (choice: string) =>
@@ -57,4 +58,6 @@ export default function Question({ className, question }: QuestionProps) {
       </div>
     </div>
   );
-}
+};
+
+export default createOverridable("AgentQuestion", DefaultQuestion);

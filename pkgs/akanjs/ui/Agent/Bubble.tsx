@@ -1,11 +1,13 @@
 "use client";
 import { cn, usePage } from "akanjs/client";
 import { memo } from "react";
-import { type AgentProgressReport, AgentSession, type ChatMessage, type ToolCallResult } from "use-agentic";
+import { type AgentProgressReport, AgentSession, type ChatMessage, type ToolCallResult, ToolOutput } from "use-agentic";
+import { createOverridable } from "../UiOverride";
 import { Chips } from "./Attach";
 import Markdown from "./Markdown";
+import { tokenCount } from "./tokenCount";
 
-interface BubbleProps {
+export interface BubbleProps {
   className?: string;
   message: ChatMessage;
   /** What the call still running last reported about itself, so a slow tool says what it is doing. */
@@ -25,11 +27,26 @@ interface RowProps {
   progress?: AgentProgressReport | null;
 }
 
-/** The arguments ride along because two calls of one tool are the same row otherwise — two searches, one name. */
+/** What the row shows when it is opened: everything the model was handed that the one line could not fit. */
+const payloadOf = ({ result, changes, error }: ToolCallResult) => ({
+  ...(result !== undefined ? { result } : {}),
+  ...(changes?.length ? { changes } : {}),
+  ...(error ? { error } : {}),
+});
+
+/**
+ * The arguments ride along because two calls of one tool are the same row otherwise — two searches, one name.
+ *
+ * A settled row opens: the estimated token cost is on the line, and the value itself is one click below it. Both
+ * are there because a tool result is the one part of a transcript neither the user nor the app author sees — it is
+ * the app's own return value, sized for a screen and not for a model's window, and a conversation that fills up
+ * after four messages is answered by *which* row cost a million tokens and nothing else.
+ */
 const Row = ({ name, args, result, progress }: RowProps) => {
   const { l } = usePage();
-  return (
-    <div className="flex items-baseline gap-2 rounded-field bg-muted px-2 py-1">
+  const payload = result ? payloadOf(result) : null;
+  const head = (
+    <>
       {result ? (
         // A glyph is the whole status, so it carries the word a screen reader reads in its place.
         <span
@@ -57,10 +74,28 @@ const Row = ({ name, args, result, progress }: RowProps) => {
         <span className="truncate font-mono text-[10px] text-foreground/50">{JSON.stringify(args)}</span>
       ) : null}
       {result?.error ? <span className="truncate text-[10px] text-destructive">{result.error}</span> : null}
-      {result?.changes?.length ? (
-        <span className="ml-auto shrink-0 text-[10px] text-foreground/40">Δ {result.changes.length}</span>
-      ) : null}
-    </div>
+      <span className="ml-auto flex shrink-0 items-baseline gap-2 text-[10px] text-foreground/40">
+        {result?.changes?.length ? <span>Δ {result.changes.length}</span> : null}
+        {result ? <span>{l("base.agentTokens", { count: tokenCount(ToolOutput.tokensOf(result)) })}</span> : null}
+      </span>
+    </>
+  );
+  if (!payload || !Object.keys(payload).length)
+    return <div className="flex items-baseline gap-2 rounded-field bg-muted px-2 py-1">{head}</div>;
+  return (
+    <details className="group rounded-field bg-muted">
+      <summary
+        aria-label={l("base.agentToolResult")}
+        className="flex cursor-pointer items-baseline gap-2 px-2 py-1"
+        title={l("base.agentToolResult")}
+      >
+        <span className="shrink-0 text-[8px] text-foreground/40 transition-transform group-open:rotate-90">▶</span>
+        {head}
+      </summary>
+      <pre className="scrollbar-thin max-h-64 overflow-auto whitespace-pre-wrap break-all border-foreground/5 border-t px-2 py-1.5 font-mono text-[10px] text-foreground/70">
+        {JSON.stringify(payload, null, 2)}
+      </pre>
+    </details>
   );
 };
 
@@ -150,5 +185,9 @@ const Content = ({ className, message, progress, results }: BubbleProps) => {
  * a settled bubble re-parses its markdown for nothing each time. The props are compared by identity, so the caller
  * hands the same `results` map and `progress` value to every row — which is why only the rows that actually
  * changed re-render.
+ *
+ * A component bound to the `AgentBubble` slot replaces the memoized default, so it carries its own `memo`.
  */
-export default memo(Content);
+export const DefaultBubble = memo(Content);
+
+export default createOverridable("AgentBubble", DefaultBubble);

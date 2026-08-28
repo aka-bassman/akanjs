@@ -108,7 +108,7 @@ export class StoreSurfaceSource implements SurfaceSource {
           section: {
             type: "string",
             description:
-              "One region of the screen: a heading's anchor as readScreen prints it, the heading's own text, or a scope path from the screen context. Omit to read all of it.",
+              "One region of the screen: a heading's anchor as readScreen prints it, the heading's own text, a scope path from the screen context, or the name in a `[skipped: name]` marker. Omit to read all of it.",
           },
         },
         additionalProperties: false,

@@ -26,13 +26,16 @@ import { Launcher } from "./Launcher";
 import Menu from "./Menu";
 import Question from "./Question";
 import type { PersistOption } from "./sessionHistory";
+import { tokenCount } from "./tokenCount";
 import { useChatAttachments } from "./useChatAttachments";
 import { useChatVoice } from "./useChatVoice";
 import { useDraftRecall } from "./useDraftRecall";
+import { useKeyboardInset } from "./useKeyboardInset";
 import { useSlashMenu } from "./useSlashMenu";
 import type { VoiceEngine } from "./voice";
 
 export interface ChatProps {
+  /** Reaches whichever surface is showing — the launcher while closed, the panel while open. */
   className?: string;
   title?: string;
   /** App-global framing. Route-scoped guidance layers on it through mounted `Agent.Guide`s. */
@@ -46,12 +49,27 @@ export interface ChatProps {
    */
   compact?: CompactOptions;
   defaultOpen?: boolean;
+  /**
+   * Controlled open state. Pass it with `onOpenChange` to drive the panel from the app's own control — a header
+   * button, a menu item — instead of the built-in launcher. Left off, the panel owns the state as before.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** `false` draws no launcher, for an app that opens the panel from a control of its own. */
+  launcher?: boolean;
   /** Keeps the transcript across reloads — sessionStorage by default, `{ storage: "local" }` to outlive the tab. */
   persist?: PersistOption;
   /** Renders in the page flow instead of floating above it — a zone chat that lives inside its own section. */
   inline?: boolean;
   /** `false` gives the browser its own Cmd/Ctrl+L back, for an app whose shell already spends that chord. */
   shortcut?: boolean;
+  /** One surface each, where `className` reaches both. */
+  launcherClassName?: string;
+  panelClassName?: string;
+  /** Shown in place of the intro line while the transcript is empty — where starter questions go. */
+  intro?: ReactNode;
+  /** Extra header controls, left of the built-in clear and close buttons. */
+  header?: ReactNode;
   /**
    * Reads a file the user attached into an attachment, or answers `null` to leave it to the built-in reader
    * (images as bytes, text as text). This is where an app puts what needs a parser — a PDF's text, a spreadsheet's
@@ -78,7 +96,13 @@ const isApplePlatform = () => {
 // which is `isolation: isolate`, so a z-index declared inside it can never rise above a body-level overlay.
 // The layer sits above every dismissable surface (modal 10, dropdown/toast 100, sheet 101) so the agent can
 // still drive a form inside an open modal, and below Reconnect (200), which blocks the app on purpose.
-const floatingLayer = "fixed right-4 bottom-4 z-[150]";
+const launcherLayer = "fixed right-4 bottom-4 z-[150]";
+
+// A phone gets the whole screen: a 24rem card inset by a rem on a 360px viewport is the same full screen with
+// the corners cut off, and the composer would sit on the edge either way.
+const panelLayer = "fixed inset-0 z-[150] sm:inset-auto sm:right-4 sm:bottom-4";
+const panelSize =
+  "h-dvh w-screen rounded-none sm:h-[min(600px,calc(100dvh-2rem))] sm:w-[min(24rem,calc(100vw-2rem))] sm:rounded-box";
 
 /** Distance from the bottom within which the transcript keeps following new messages. */
 const stickyEdge = 80;
@@ -98,9 +122,16 @@ export const DefaultChat = ({
   maxTurns,
   compact,
   defaultOpen = false,
+  open: openProp,
+  onOpenChange,
+  launcher = true,
   persist,
   inline = false,
   shortcut = true,
+  launcherClassName,
+  panelClassName,
+  intro,
+  header,
   attach,
   voice,
 }: ChatProps) => {
@@ -128,7 +159,14 @@ export const DefaultChat = ({
     () => session.version,
     () => session.version,
   );
-  const [open, setOpen] = useState(defaultOpen);
+  const [ownOpen, setOwnOpen] = useState(defaultOpen);
+  // Controlled when the prop is given, uncontrolled otherwise — the same pair `Dialog` takes, so an app can drive
+  // the panel from its own control without giving up the launcher's behaviour.
+  const open = openProp ?? ownOpen;
+  const setOpen = (next: boolean) => {
+    if (openProp === undefined) setOwnOpen(next);
+    onOpenChange?.(next);
+  };
   const [draft, setDraft] = useState("");
   const files = useChatAttachments({ session, attach, l });
   const speech = useChatVoice({
@@ -141,12 +179,13 @@ export const DefaultChat = ({
   const recall = useDraftRecall(session.messages);
   const [hotkey, setHotkey] = useState<{ label: string; keys: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   // Only what the panel is following: a user who scrolled up to read is not dragged back down by the next delta.
   const sticky = useRef(true);
   const returning = useRef(false);
   const read = useRef(session.messages.length);
+  const keyboardInset = useKeyboardInset();
   const [overlay, setOverlay] = useState<HTMLElement | null>(null);
   useEffect(() => {
     setOverlay(document.body);
@@ -280,7 +319,13 @@ export const DefaultChat = ({
     files.clear();
     void session.send([{ role: "user", ...(text ? { text } : {}), attachments }]);
   };
-  const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    const area = event.currentTarget;
+    // A caret with a line above it (or below it) is one the arrow belongs to: the composer is multi-line now, so
+    // recall may only take the key where the textarea itself would do nothing with it.
+    const onEdgeLine = (up: boolean) =>
+      area.selectionStart === area.selectionEnd &&
+      !(up ? area.value.slice(0, area.selectionStart) : area.value.slice(area.selectionEnd)).includes("\n");
     const row = menu.at();
     if (row) {
       // The menu takes the keys the recall would otherwise walk: it is the thing on screen the arrows point at.
@@ -299,7 +344,7 @@ export const DefaultChat = ({
         menu.hide();
         return;
       }
-      if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
         event.preventDefault();
         row.pick();
         return;
@@ -310,14 +355,14 @@ export const DefaultChat = ({
       dismiss();
       return;
     }
-    // A single-line input does nothing of its own with the vertical arrows, so recall is free to take them.
-    if ((event.key === "ArrowUp" || event.key === "ArrowDown") && recall.has) {
+    const up = event.key === "ArrowUp";
+    if ((up || event.key === "ArrowDown") && recall.has && onEdgeLine(up)) {
       event.preventDefault();
-      const walked = recall.step(event.key === "ArrowUp" ? 1 : -1, draft);
+      const walked = recall.step(up ? 1 : -1, draft);
       if (walked !== null) setDraft(walked);
       return;
     }
-    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
     send();
   };
@@ -337,37 +382,51 @@ export const DefaultChat = ({
       return orphans.length ? [<Bubble key={idx} message={{ ...message, toolResults: orphans }} />] : [];
     });
   }, [version]);
+  // Recomputed per transcript change, never per render: the estimate walks every message, and the composer
+  // re-renders on every keystroke.
+  const tokens = useMemo(() => session.tokens, [version]);
   const unread = open ? 0 : Math.max(0, session.messages.length - read.current);
   const layer = (surface: ReactNode) => (inline ? surface : overlay ? createPortal(surface, overlay) : null);
   if (!open)
-    return layer(
-      <Launcher
-        className={cn(!inline && floatingLayer, className)}
-        hotkey={hotkey}
-        label={l("base.agent")}
-        buttonRef={launcherRef}
-        onOpen={() => setOpen(true)}
-        unread={unread}
-      />,
-    );
+    return launcher
+      ? layer(
+          <Launcher
+            className={cn(!inline && launcherLayer, className, launcherClassName)}
+            hotkey={hotkey}
+            label={l("base.agent")}
+            buttonRef={launcherRef}
+            onOpen={() => setOpen(true)}
+            unread={unread}
+          />,
+        )
+      : null;
   // data-agent-ui keeps the chat out of readScreen, so a turn never re-reads its own transcript.
   return layer(
     <aside
       aria-label={title ?? l("base.agent")}
       data-agent-ui=""
       className={cn(
-        "flex h-[min(600px,calc(100dvh-2rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-box border border-border bg-background shadow-xl",
+        "flex flex-col overflow-hidden border border-border bg-background",
+        inline ? "h-full w-full rounded-box" : [panelLayer, panelSize, "shadow-xl"],
         files.dragging && "border-primary ring-2 ring-primary/40",
-        !inline && floatingLayer,
         className,
+        panelClassName,
       )}
       role="dialog"
+      // The keyboard covers a full-screen panel's composer, and only `visualViewport` reports by how much.
+      style={inline ? undefined : { paddingBottom: keyboardInset || undefined }}
       {...files.dropProps}
     >
       <header className="flex items-center gap-2 border-foreground/5 border-b px-4 py-3">
         <span className="font-semibold text-sm">{title ?? l("base.agent")}</span>
         {session.isRunning ? <span className="size-2 animate-pulse rounded-full bg-primary" /> : null}
+        {tokens ? (
+          <span className="shrink-0 whitespace-nowrap text-[10px] text-foreground/40">
+            {l("base.agentTokens", { count: tokenCount(tokens) })}
+          </span>
+        ) : null}
         <span className="ml-auto flex items-center gap-2">
+          {header}
           {session.messages.length ? (
             <button
               aria-label={l("base.agentClear")}
@@ -402,11 +461,15 @@ export const DefaultChat = ({
         ref={listRef}
         role="log"
       >
-        {bubbles.length ? (
-          bubbles
-        ) : (
-          <p className="py-6 text-center text-foreground/40 text-sm">{l("base.agentIntro")}</p>
-        )}
+        {bubbles.length
+          ? bubbles
+          : (intro ?? <p className="py-6 text-center text-foreground/40 text-sm">{l("base.agentIntro")}</p>)}
+        {session.isCompacting ? (
+          <p className="flex items-center gap-2 text-foreground/50 text-xs">
+            <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+            {l("base.agentSummarizing")}
+          </p>
+        ) : null}
       </div>
       {session.pendingApproval ? <Approval approval={session.pendingApproval} /> : null}
       {session.pendingQuestion ? (

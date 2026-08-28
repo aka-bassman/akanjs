@@ -33,6 +33,11 @@ describe("ScreenTarget", () => {
     expect(ScreenTarget.container("tasks")?.tagName).toBe("SECTION");
   });
 
+  test("finds a skipped region by the name its marker prints, so a skipped read is recoverable", () => {
+    render('<footer data-agent-skip="site footer"><p>terms body</p></footer>');
+    expect(ScreenTarget.container("site footer")?.tagName).toBe("FOOTER");
+  });
+
   test("a zone root scopes the search to its own subtree, itself included", () => {
     const zone = ScreenTarget.container("comments");
     expect(ScreenTarget.find("approveComment", zone)?.textContent).toBe("Approve");

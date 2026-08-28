@@ -45,6 +45,8 @@ export interface McpRouterProps {
    * rarely sees. Defaults to `en`, falling back to the first registered language when the app has no `en`.
    */
   language?: string;
+  /** Whether a structured result also ships as serialized JSON in the text block. Default `true`. */
+  legacyTextBlock?: boolean;
   auth?: McpAuthOption;
 }
 

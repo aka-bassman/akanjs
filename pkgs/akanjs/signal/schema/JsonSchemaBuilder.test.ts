@@ -47,6 +47,7 @@ class SchemaVaultInput extends via((field) => ({
   label: field(String),
   password: field.secret(String).optional(),
   internalPath: field.hidden(String).optional(),
+  preview: field.visual(String).optional(),
 })) {}
 class SchemaVaultObject extends via(SchemaVaultInput, () => ({})) {}
 class LightSchemaVault extends via(SchemaVaultObject, ["label"] as const, () => ({})) {}
@@ -109,15 +110,23 @@ describe("JsonSchemaBuilder", () => {
     });
   });
 
-  test("drops hidden and secret fields only where the schema describes a response", () => {
-    // `SignalContext.resolveReturn` strips both from every response, so naming them describes a property no answer
-    // carries — and on a real model the names are the leak. A request body carries them legitimately, so the
-    // default keeps them and only the caller that publishes a *return* shape asks for this.
+  test("drops hidden, secret and visual fields only where the schema describes a response", () => {
+    // `SignalContext.resolveReturn` strips the first two from every response, so naming them describes a property
+    // no answer carries — and on a real model the names are the leak. A request body carries all three
+    // legitimately, so the default keeps them and only the caller that publishes a *return* shape asks for this.
     const keys = (value: unknown) => Object.keys((value as { properties: object }).properties);
-    expect(keys(schema.model(SchemaVaultInput))).toEqual(["label", "password", "internalPath"]);
+    expect(keys(schema.model(SchemaVaultInput))).toEqual(["label", "password", "internalPath", "preview"]);
     expect(keys(schema.model(SchemaVaultInput, { readable: true }))).toEqual(["label"]);
     expect(keys(schema.allModelSchemas({ readable: true }).SchemaVault)).not.toContain("password");
     expect(keys(schema.allModelSchemas().SchemaVault)).toContain("password");
+  });
+
+  test("a visual field is absent from the readable schema, since it is absent from the value", () => {
+    // A schema that promises a field the payload omits is worse than one that never named it: a non-optional
+    // visual field would be listed `required` and a validating client would refuse the whole result.
+    const readable = schema.model(SchemaVaultInput, { readable: true }) as { properties: object };
+    expect("preview" in readable.properties).toBe(false);
+    expect("preview" in (schema.model(SchemaVaultInput) as { properties: object }).properties).toBe(true);
   });
 
   test("collects referenced models transitively and sorts them by name", () => {

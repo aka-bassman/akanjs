@@ -9,6 +9,7 @@ export * from "./AgentSession";
 export * from "./Compaction";
 export * from "./httpRunner";
 export * from "./surfaceContext";
+export * from "./ToolOutput";
 export * from "./Transcript";
 export * from "./types";
 export * from "./useAgent";

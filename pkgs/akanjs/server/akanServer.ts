@@ -80,6 +80,13 @@ export interface McpServerOption {
    * the document is built once at boot and cached by clients, and it is read by a model rather than by a person.
    */
   language?: string;
+  /**
+   * Whether a structured result also ships as serialized JSON in the text block, `true` by default because that
+   * is what the spec asks of a server for clients that predate `structuredContent`. It is also a flat doubling:
+   * every model-returning tool sends its whole payload twice, so a deployment whose clients read the structured
+   * half turns this off and halves what each of those calls costs the model. `AKAN_MCP_LEGACY_TEXT=false`.
+   */
+  legacyTextBlock?: boolean;
   /** OAuth resource-server identity: which issuers a client may authenticate with, and the scopes to demand. */
   auth?: McpAuthOption;
 }
@@ -627,6 +634,11 @@ export class AkanServer {
     return !names.some((name) => process.env[name] === "false" || process.env[name] === "0");
   }
 
+  /** Named rather than defaulted: an absent env must leave the option unset so a value written in code still wins. */
+  static #isEnvOff(...names: string[]) {
+    return names.some((name) => process.env[name] === "false" || process.env[name] === "0");
+  }
+
   /** Both differ per environment, so they belong in env rather than in the app's source alongside the switch. */
   static #mcpAuthFromEnv(): McpAuthOption {
     const authorizationServers = AkanServer.#envList("AKAN_MCP_AUTH_SERVERS");
@@ -662,6 +674,7 @@ export class AkanServer {
       ...(allowedOrigins?.length ? { allowedOrigins } : {}),
       ...(Number.isInteger(pageSize) && pageSize > 0 ? { pageSize } : {}),
       ...(process.env.AKAN_MCP_LANGUAGE ? { language: process.env.AKAN_MCP_LANGUAGE } : {}),
+      ...(AkanServer.#isEnvOff("AKAN_MCP_LEGACY_TEXT") ? { legacyTextBlock: false } : {}),
     };
   }
 

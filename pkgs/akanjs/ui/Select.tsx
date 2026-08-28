@@ -107,6 +107,10 @@ const DefaultSelect = <
 
   const [selectedValues, setSelectedValues] = useState<T[]>(multiple ? (value as T[]) : [value as T]);
   const [searchText, setSearchText] = useState("");
+  // Resolved in an effect rather than at render: the first client pass has to match the server's, which
+  // portalled nothing. The panel is mounted while closed, so a render-time `typeof document` branch would
+  // hand hydration an extra node on every SSR page that renders a Select.
+  const [portal, setPortal] = useState<HTMLElement | null>(null);
   const [searchOptions, setSearchOptions] = useState<{ label: ReactNode; value: T }[]>(labeledOptions);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const optionsRef = useRef<HTMLDivElement>(null);
@@ -166,6 +170,10 @@ const DefaultSelect = <
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    setPortal(document.body);
+  }, []);
 
   useEffect(() => {
     setSearchOptions(labeledOptions);
@@ -276,7 +284,7 @@ const DefaultSelect = <
           className={cn("absolute top-1/2 right-2 -translate-y-1/2 text-lg duration-100", isOpen && "rotate-180")}
         />
       </div>
-      {typeof document !== "undefined"
+      {portal
         ? createPortal(
             <div
               ref={optionsRef}
@@ -352,7 +360,7 @@ const DefaultSelect = <
                 </div>
               )}
             </div>,
-            document.body,
+            portal,
           )
         : null}
     </div>

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type BackendEnv, ID } from "akanjs/base";
 import { Logger } from "akanjs/common";
+import { ConstantRegistry, via } from "akanjs/constant";
 import { endpoint } from "../../signal/endpoint";
 import type { Guard, GuardScope } from "../../signal/guard";
 import { None, Public } from "../../signal/guards";
@@ -40,6 +41,28 @@ class SignedIn implements Guard {
     return true;
   }
 }
+
+/**
+ * A model whose Light carries a `visual` field. Declared here rather than in the shared resolver fixture for the
+ * same reason the signals are: a field added there changes what every other test sees serialized.
+ */
+const McpVisualInput = via((f) => ({
+  title: f(String),
+  preview: f.visual(String),
+}));
+const McpVisualObject = via(McpVisualInput, () => ({}));
+const McpVisualLight = via(McpVisualObject, ["title", "preview"] as const, () => ({}));
+const McpVisualFull = via(McpVisualObject, McpVisualLight, () => ({}));
+const McpVisualInsight = via(McpVisualFull, () => ({}));
+ConstantRegistry.buildModel(
+  "mcpVisualItem",
+  McpVisualInput,
+  McpVisualObject,
+  McpVisualFull,
+  McpVisualLight,
+  McpVisualInsight,
+  {},
+);
 
 class McpItemSlice extends slice(
   serverResolverTestServiceModel,
@@ -84,6 +107,14 @@ class McpItemEndpoint extends endpoint(serverResolverTestServiceModel, (builder)
           }
         : null,
     ),
+  visualItem: builder.query(McpVisualLight, { guards: [Public] }).exec(() => ({
+    id: "507f1f77bcf86cd799439011",
+    title: "shot",
+    preview: "data:image/png;base64,AAAA",
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+    removedAt: null,
+  })),
   failingTitle: builder.query(String, { guards: [Public] }).exec(() => {
     throw new Error("boom: internal detail that must not travel");
   }),
@@ -139,6 +170,7 @@ let di: DiLifecycle;
 let httpRoutes: NonNullable<SignalRoutes["routes"]>;
 let post: (body: object) => Promise<{ res: Response; json: any }>;
 let postPaged: (body: object, pageSize: number) => Promise<{ res: Response; json: any }>;
+let postWith: (body: object, props: Partial<McpRouterProps>) => Promise<{ res: Response; json: any }>;
 let postRaw: (body: object, headers: Record<string, string>) => Promise<Response>;
 let mcpRouter: (props?: Partial<McpRouterProps>) => McpRouter;
 let mcpRoutes: (props?: Partial<McpRouterProps>) => Record<string, Record<string, (req: Request) => Promise<Response>>>;
@@ -177,8 +209,8 @@ beforeAll(async () => {
     new McpRouter({ registry: di.registry, live: di.live, middleware: new Map(di.modules.middleware), env, ...props });
   mcpRoutes = (props: Partial<McpRouterProps> = {}) =>
     mcpRouter(props).createRoutes() as Record<string, Record<string, (req: Request) => Promise<Response>>>;
-  const send = async (body: object, headers: Record<string, string> = {}, pageSize?: number) => {
-    const routes = mcpRoutes(pageSize ? { pageSize } : {});
+  const send = async (body: object, headers: Record<string, string> = {}, props: Partial<McpRouterProps> = {}) => {
+    const routes = mcpRoutes(props);
     return await routes["/mcp"].POST(
       new Request("http://127.0.0.1:8080/mcp", {
         method: "POST",
@@ -189,7 +221,8 @@ beforeAll(async () => {
   };
   const withJson = async (res: Response) => ({ res, json: await res.json() });
   post = async (body: object) => await withJson(await send(body));
-  postPaged = async (body: object, pageSize: number) => await withJson(await send(body, {}, pageSize));
+  postPaged = async (body: object, pageSize: number) => await withJson(await send(body, {}, { pageSize }));
+  postWith = async (body: object, props: Partial<McpRouterProps>) => await withJson(await send(body, {}, props));
   postRaw = async (body: object, headers: Record<string, string>) => await send(body, headers);
 });
 
@@ -217,6 +250,7 @@ describe("MCP over a booted container", () => {
       "serverResolverTestItemList",
       "serverResolverTestItemListInCategory",
       "slowTitle",
+      "visualItem",
     ]);
   });
 
@@ -353,11 +387,11 @@ describe("MCP over a booted container", () => {
     const log = lines.join("\n");
     // The whole build, not one caller's view: `deniedTitle` and `deniedItem` are in the catalogue and are hidden
     // per credential at listing time, so these counts run ahead of what `tools/list` returned above.
-    expect(log).toContain("MCP catalogue: tools=13 prompts=4 resourceTemplates=4");
+    expect(log).toContain("MCP catalogue: tools=14 prompts=4 resourceTemplates=4");
     expect(lines.find((line) => line.includes('"publicRenameTitle"'))).toContain("`[Public]` is having none");
     // The read-only valve reports itself the same way, rather than leaving an author to wonder where a guarded,
     // deliberately exposed mutation went.
-    expect(log).toContain("MCP catalogue: tools=12 prompts=4 resourceTemplates=4 (read-only deployment)");
+    expect(log).toContain("MCP catalogue: tools=13 prompts=4 resourceTemplates=4 (read-only deployment)");
     expect(lines.find((line) => line.includes('did not expose "renameTitle"'))).toContain("read-only");
     // Published with nothing an agent can pick it by, which is a broken tool rather than an untidy one. These
     // signals carry no dictionary at all, so every entry is named — including the generated ones, whose only
@@ -512,6 +546,42 @@ describe("MCP over a booted container", () => {
     expect(json.result.messages).toEqual([
       { role: "user", content: { type: "text", text: "Answer in three sentences." } },
     ]);
+  });
+
+  test("leaves a visual field out of what an agent is handed, and in what the page is", async () => {
+    const json = await call("visualItem");
+    expect(json.result.structuredContent).toMatchObject({ id: "507f1f77bcf86cd799439011", title: "shot" });
+    expect("preview" in json.result.structuredContent).toBe(false);
+    expect(json.result.content[0].text).not.toContain("base64");
+    // The point of a `visual` field is that a browser still receives it — stripping it in `resolveReturn` would
+    // have taken it off the page too, which is why the strip lives in the MCP dispatcher instead.
+    const routes = httpRoutes as Record<string, { GET: (req: Request) => Promise<Response> }>;
+    const response = await routes["/serverResolverTestItem/visualItem"].GET(
+      new Request("http://127.0.0.1:8080/api/serverResolverTestItem/visualItem"),
+    );
+    expect(await response.json()).toMatchObject({ title: "shot", preview: "data:image/png;base64,AAAA" });
+  });
+
+  test("stops sending the structured result twice when the legacy text block is turned off", async () => {
+    const body = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "visualItem", arguments: {} } };
+    // The default duplicates on purpose — that is what the spec asks of a server for clients predating
+    // `structuredContent` — and it is also a flat doubling of what every model-returning tool costs.
+    const { json: both } = await postWith(body, {});
+    expect(JSON.parse(both.result.content[0].text)).toEqual(both.result.structuredContent);
+    const { json: once } = await postWith(body, { legacyTextBlock: false });
+    expect(once.result.structuredContent).toMatchObject({ id: "507f1f77bcf86cd799439011", title: "shot" });
+    expect(once.result.content[0].text).toBe("The result is in this call's structuredContent.");
+  });
+
+  test("keeps the text block whole for a scalar return, which has no structured half to point at", async () => {
+    const body = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "echoTitle", arguments: { id: "507f1f77bcf86cd799439011", suffix: "tail" } },
+    };
+    const { json } = await postWith(body, { legacyTextBlock: false });
+    expect(json.result.content[0].text).toBe("507f1f77bcf86cd799439011:tail");
   });
 
   test("returns the same messages over the plain HTTP route", async () => {

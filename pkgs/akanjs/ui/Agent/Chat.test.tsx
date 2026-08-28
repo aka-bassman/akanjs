@@ -87,8 +87,7 @@ const untilFlushed = async (done: () => boolean) => {
  * they are re-read every time, because each keystroke renders a new closure over the draft.
  */
 const composer = (container: HTMLElement) => {
-  // Not the first input any more: the attach control renders a hidden file input into the same composer.
-  const field = () => container.querySelector<HTMLInputElement>('input:not([type="file"])');
+  const field = () => container.querySelector<HTMLTextAreaElement>("textarea");
   const props = () => {
     const input = field();
     const key = Object.keys(input ?? {}).find((name) => name.startsWith("__reactProps$")) ?? "";
@@ -97,7 +96,20 @@ const composer = (container: HTMLElement) => {
   return {
     value: () => field()?.value ?? "",
     type: (value: string) => act(() => props().onChange({ target: { value } })),
-    press: (key: string) => act(() => props().onKeyDown({ key, preventDefault: () => {}, nativeEvent: {} })),
+    // The caret is stated rather than read: the handler reads it to decide whether a vertical arrow belongs to
+    // recall or to the textarea, and happy-dom does not track a selection through a props-driven keystroke.
+    press: (key: string, options: { shiftKey?: boolean; caret?: number } = {}) =>
+      act(() => {
+        const value = field()?.value ?? "";
+        const at = options.caret ?? value.length;
+        props().onKeyDown({
+          key,
+          shiftKey: !!options.shiftKey,
+          preventDefault: () => {},
+          nativeEvent: {},
+          currentTarget: { value, selectionStart: at, selectionEnd: at },
+        });
+      }),
     paste: (files: File[]) => act(() => props().onPaste({ clipboardData: { files }, preventDefault: () => {} })),
   };
 };
@@ -293,8 +305,8 @@ describe("Agent.Chat", () => {
       await untilFlushed(() => !!session.pendingQuestion);
     });
     // One input, not two: the card holds the picks and the composer is the free-text answer.
-    expect(container.querySelectorAll('input:not([type="file"])')).toHaveLength(1);
-    const input = container.querySelector('input[placeholder="base.agentAnswer"]');
+    expect(container.querySelectorAll("textarea")).toHaveLength(1);
+    const input = container.querySelector('textarea[placeholder="base.agentAnswer"]');
     const propsKey = Object.keys(input ?? {}).find((key) => key.startsWith("__reactProps$")) ?? "";
     const props = (input as unknown as Record<string, { onChange: (event: unknown) => void }>)[propsKey];
     act(() => props.onChange({ target: { value: "Spring plan" } }));
@@ -476,6 +488,112 @@ describe("Agent.Chat", () => {
     unmount();
   });
 
+  test("takes the open state from the props when the app drives it, and asks before changing it", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const asked: boolean[] = [];
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat onOpenChange={(next) => asked.push(next)} open={false} />
+      </lib.AgentProvider>,
+    );
+    const launcher = document.body.querySelector<HTMLButtonElement>('button[aria-label="base.agent"]');
+    act(() => launcher?.click());
+    // The panel stays closed because the prop still says closed: the app owns the state, and only heard the ask.
+    expect(asked).toEqual([true]);
+    expect(document.body.querySelector("aside")).toBeNull();
+    unmount();
+    expect(container).toBeDefined();
+  });
+
+  test("draws no launcher when the app says it has its own", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat launcher={false} />
+      </lib.AgentProvider>,
+    );
+    expect(document.body.querySelector('button[aria-label="base.agent"]')).toBeNull();
+    expect(document.body.querySelector("aside")).toBeNull();
+    unmount();
+  });
+
+  test("renders the app's own intro and header controls in place of, and beside, the built-in ones", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen header={<span>HEADER</span>} intro={<span>STARTERS</span>} />
+      </lib.AgentProvider>,
+    );
+    expect(container.innerHTML).toContain("STARTERS");
+    expect(container.innerHTML).not.toContain("base.agentIntro");
+    expect(container.querySelector("header")?.textContent).toContain("HEADER");
+    unmount();
+  });
+
+  test("Shift+Enter writes a newline instead of sending, and the arrows then belong to the textarea", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    input.type("first ask");
+    await act(async () => {
+      input.press("Enter");
+    });
+    input.type("line one");
+    input.press("Enter", { shiftKey: true });
+    // Nothing was sent, and the draft is still the user's to finish.
+    expect(input.value()).toBe("line one");
+    input.type("line one\nline two");
+    // A caret on the second line: the arrow moves within the text, so recall may not take it.
+    input.press("ArrowUp");
+    expect(input.value()).toBe("line one\nline two");
+    // On the first line it is recall's again.
+    input.press("ArrowUp", { caret: 3 });
+    expect(input.value()).toBe("first ask");
+    unmount();
+  });
+
+  test("resolves a part slot, so a skin replaces the transcript without replacing the loop", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "done" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <UiOverrideProvider value={{ AgentBubble: ({ message }) => <p data-skin="bubble">{message.text}</p> }}>
+          <DefaultChat defaultOpen />
+        </UiOverrideProvider>
+      </lib.AgentProvider>,
+    );
+    await act(async () => {
+      await session.send("ask");
+    });
+    expect(container.innerHTML).toContain('data-skin="bubble"');
+    expect(container.innerHTML).toContain("ask");
+    // The composer, the launcher and the loop are the default's still: one slot replaced one part.
+    expect(container.innerHTML).toContain("base.agentPlaceholder");
+    unmount();
+  });
+
+  test("hands a fenced block to the AgentCode slot with the language the fence named", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "```ts\nconst x = 1;\n```" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <UiOverrideProvider
+          value={{ AgentCode: ({ lang, text }) => <pre data-skin={`code-${lang ?? "none"}`}>{text}</pre> }}
+        >
+          <DefaultChat defaultOpen />
+        </UiOverrideProvider>
+      </lib.AgentProvider>,
+    );
+    await act(async () => {
+      await session.send("show me");
+    });
+    expect(container.innerHTML).toContain('data-skin="code-ts"');
+    expect(container.innerHTML).toContain("const x = 1;");
+    unmount();
+  });
+
   test("leaves the page subtree for the overlay layer, and stays in flow when inline", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
     const render = (node: ReactNode) => {
@@ -635,6 +753,59 @@ describe("Agent.Chat", () => {
     expect(container.innerHTML).toContain("base.agentCompacted");
     // The summary is not a user bubble: it stands in for the exchange above it, which is gone.
     expect(container.innerHTML).not.toContain("summarize this");
+    unmount();
+  });
+
+  test("a settled tool row opens onto what the tool returned, with its token cost on the line", async () => {
+    const surface = new lib.AgenticSurface();
+    surface.registerTool([], { name: "readState", run: () => ({ rows: ["alpha", "beta"] }) });
+    const session = new lib.AgentSession(
+      surface,
+      scripted({ toolCall: { id: "c1", name: "readState", args: { key: "rowsInList" } } }, { text: "Two rows." }),
+    );
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    await act(async () => {
+      await session.send("read the rows");
+    });
+    const row = [...container.querySelectorAll("details")].find((one) => one.textContent?.includes("readState"));
+    // The value the model was handed is the one thing a transcript never showed, and it is what fills a window.
+    expect(row?.querySelector("pre")?.textContent).toContain("alpha");
+    expect(row?.textContent).toContain("base.agentTokens");
+    expect(container.querySelector("header")?.textContent).toContain("base.agentTokens");
+    unmount();
+  });
+
+  test("the transcript says it is summarizing while the summary is being written", async () => {
+    let release: ((summary: string) => void) | null = null;
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }), {
+      compact: { summarize: () => new Promise<string>((resolve) => (release = resolve)) },
+    });
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    input.type("something to summarize");
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => !session.isRunning);
+    });
+    input.type("/compact");
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => session.isCompacting);
+    });
+    expect(container.innerHTML).toContain("base.agentSummarizing");
+    await act(async () => {
+      release?.("notes");
+      await untilFlushed(() => !session.isCompacting);
+    });
+    expect(container.innerHTML).not.toContain("base.agentSummarizing");
     unmount();
   });
 

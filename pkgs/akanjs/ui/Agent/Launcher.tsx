@@ -1,8 +1,9 @@
 "use client";
 import { cn } from "akanjs/client";
 import type { Ref } from "react";
+import { createOverridable } from "../UiOverride";
 
-interface LauncherProps {
+export interface LauncherProps {
   className?: string;
   label: string;
   /** The chord that opens the chat, shown on hover. Null until the platform is known, which needs the client. */
@@ -13,7 +14,7 @@ interface LauncherProps {
   buttonRef?: Ref<HTMLButtonElement>;
 }
 
-export const Launcher = ({ className, label, hotkey, unread, onOpen, buttonRef }: LauncherProps) => (
+export const DefaultLauncher = ({ className, label, hotkey, unread, onOpen, buttonRef }: LauncherProps) => (
   <button
     aria-expanded={false}
     aria-haspopup="dialog"
@@ -55,3 +56,5 @@ export const Launcher = ({ className, label, hotkey, unread, onOpen, buttonRef }
     </svg>
   </button>
 );
+
+export const Launcher = createOverridable("AgentLauncher", DefaultLauncher);

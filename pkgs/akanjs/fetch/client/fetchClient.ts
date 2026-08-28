@@ -818,7 +818,10 @@ export class FetchClient {
           const handler = instance.#getOrCreateHandler(prop);
           if (handler) return handler;
         }
-        return (instance as unknown as Record<PropertyKey, unknown>)[prop];
+        const value = (instance as unknown as Record<PropertyKey, unknown>)[prop];
+        // A method read off the proxy runs with `this` bound to the proxy, and `#private` fields are
+        // unreachable from anything but the instance itself — `fetch.setJwt()` would throw on `#originWs`.
+        return typeof value === "function" ? value.bind(instance) : value;
       },
     }) as FetchProxy<FetchType, SliceMetaObj>;
   }

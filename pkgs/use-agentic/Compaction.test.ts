@@ -16,8 +16,24 @@ describe("Compaction.cutAt", () => {
 
   test("never leaves a tool result whose call was summarized away", () => {
     const messages = [user("a"), call("c1", "bump"), result("c1", "bump"), assistant("done")];
-    // Two messages back is the result, and cutting there would send a tool response with no call above it.
-    expect(Compaction.cutAt(messages, 2)).toBe(-1);
+    // Two messages back is the result, and cutting there would send a tool response with no call above it, so the
+    // cut slides past it to the message below.
+    expect(Compaction.cutAt(messages, 2)).toBe(3);
+  });
+
+  test("cuts a tool-driven turn that has no user message anywhere near its tail", () => {
+    const messages = [
+      user("go"),
+      ...Array.from({ length: 5 }, (_, at) => [call(`c${at}`, "read"), result(`c${at}`, "read")]).flat(),
+    ];
+    // The kept half opens on the call, not on the result answering it — the pairing is what the cut protects.
+    expect(Compaction.cutAt(messages, 6)).toBe(5);
+    expect(messages[5]).toEqual(call("c2", "read"));
+  });
+
+  test("a tail that is only a trailing result keeps the call it answers with it", () => {
+    const messages = [user("go"), call("c1", "read"), result("c1", "read")];
+    expect(Compaction.cutAt(messages, 1)).toBe(1);
   });
 
   test("keeping nothing summarizes the whole transcript, and an empty one has nothing to cut", () => {

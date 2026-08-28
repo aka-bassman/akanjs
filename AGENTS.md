@@ -7,7 +7,7 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.46 -->
+<!-- akan:agent:version 3.0.0-alpha.50 -->
 
 ## Workspace
 
@@ -107,6 +107,13 @@ back.
   implements the boundary and is where the two graphs legitimately meet.
 - **Server-component discipline** is enforced on `page/**`, `*.Unit.tsx`, and `*.View.tsx`
   (`no-import-client-functions.grit`, `no-use-client-in-server.grit`, `non-scalar-props-restricted.grit`).
+- **Never write an async component outside `page/`** (`no-async-component-in-ui.grit`, scoped to
+  `{apps,libs}/**/ui/**/*.tsx`). React has no async client component, so a `ui/` component that awaits breaks as
+  soon as a client parent renders it, and the load drops below the route, which could have started it before the
+  first byte. Await in the page — or hand an unawaited `fetch.*` to a `Zone` as an `init` / `view` prop — and take
+  the resolved data as a prop. A component is a PascalCase binding whose own initializer is `async`, so an async
+  handler declared inside a synchronous component, an inline `onClick={async () => …}`, and
+  `lazy(async () => import(…))` are all untouched.
 - `noArrayIndexKey` and `useExhaustiveDependencies` are **off** on purpose: `key={idx}` for embedded scalars and
   short dependency arrays are intentional, not oversights.
 - **A grit plugin diagnostic is suppressed as `lint/plugin`, not `plugin`** — `// biome-ignore lint/plugin: <reason>`
@@ -508,6 +515,12 @@ while guaranteeing that every endpoint added later is invisible to agents until 
 - A refused endpoint answers the *same* "unknown tool" as one that does not exist, and a guard's refusal is
   generalized to `You are not permitted to perform this action.` Never make either message more helpful — the
   difference is what enumerates your private surface.
+- **A `field.visual` field is stripped from every MCP result**, and from the readable schema so the two agree — the
+  model-level answer to a field the page needs and an agent does not. `resolveReturn` leaves it alone, so the
+  browser still receives it.
+- **A structured result ships twice by default** — once as `structuredContent`, once as the same JSON in the text
+  block, which is what the spec asks for clients predating the structured field and is also a flat doubling of what
+  every model-returning tool costs. `option.setMcp({ legacyTextBlock: false })` leaves a pointer there instead.
 - `AKAN_MCP_READONLY=true` is the read-only-deployment valve, not the exposure switch; `AKAN_MCP=false` takes the
   whole surface off.
 - **`prompt()`** is invoked by the *user* as a slash command, never chosen by the model. `exec` returns
@@ -549,6 +562,19 @@ package; apps and libs never import it directly (`no-import-external-library`) �
   nothing — normalize with the control's `transform` prop, and multi-write with a `_postSet<Field>` store method.
 - **Reading is per key, not per store.** `st.use.x({ agent: false })` keeps a subscribed key off the surface;
   a key no component reads is unreadable. A value with populated `hidden`/`secret` fields is refused at read.
+- **Return what answers the question, not the record.** A tool's value is capped at 20,000 characters before it
+  enters the transcript and clipped with a note the model reads (`ToolOutput.limit`), because a store key is sized
+  for a screen and not for a model's window: one `readState` of a list whose rows carry inlined bytes is megabytes,
+  and from there it rides *every* later turn. Each tool row in the chat carries its own estimated token cost and
+  opens onto the value the model was handed — that row is where a conversation that filled up in four messages
+  explains itself. A field that is bulky and useless to a model is fixed once at the model instead:
+  `field.visual(String)` keeps it on the page and out of every agent-facing read and MCP result.
+- **`<Agent.Skip label="site footer">` leaves a region out of the default `readScreen`** — a footer, a cookie
+  banner, a nav that repeats on every route. `[skipped: site footer]` stands in its place rather than nothing, since
+  a deleted region reads as an absent one, and the marker's name is a `section` that reads the region on request.
+  Put `data-agent-skip="<name>"` on the element the page already renders where a wrapper div would move the layout.
+  It hides **text, not behaviour**: an `st.tool` inside is published as before. Narrowing from the other side —
+  `Agent.Zone`, `readScreen({ section })` — is the better move on a screen that is mostly chrome.
 - **Route guidance is `<Agent.Guide instructions="..." />`** rendered from a `_layout.tsx` or page — the render
   tree is the cascade. It is a component, not a `pageConfig` field, and `*.abstract.md` is never served to agents.
 - The framework publishes five built-ins on every store surface — `navigate`, `goBack`, `readScreen`,
@@ -570,6 +596,7 @@ commands, transcript compaction, and the built-in tool semantics: `get_guideline
 - Follow the established model layering pattern in this order: `Input`, `Object`, `Light<Model>`, full `<Model>`, and `<Model>Insight`. Write all five, and write `<Model>Insight` even when it is empty.
 - Put display and predicate logic on the `Light<Model>` class rather than in a util module — see Module File Playbook.
 - Defaults are a literal for scalars and a thunk for anything constructed. Arrays are `field([T])`; optional is the postfix `.optional()`.
+- **`field.visual(T)` is a field the page renders and an agent never sees** — a blur placeholder, a rendered HTML body, a serialized geometry. It stays an ordinary stored `property` (persistence, search, forms and the page response untouched) and is stripped wherever a value is masked for an AI caller: every in-page-agent read and every MCP result, along with the MCP readable schema. Unlike `hidden`/`secret` it is cost, not secrecy — nothing is refused over one. Reach for it whenever a field is bulky and useless to a model; that is cheaper than every tool learning to avoid it.
 
 ### Scalar & Field Type Reference
 

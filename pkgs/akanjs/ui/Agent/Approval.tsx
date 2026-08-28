@@ -2,13 +2,14 @@
 import { cn, usePage } from "akanjs/client";
 import type { PendingApproval } from "use-agentic";
 import { Button } from "../Button";
+import { createOverridable } from "../UiOverride";
 
-interface ApprovalProps {
+export interface ApprovalProps {
   className?: string;
   approval: PendingApproval;
 }
 
-export default function Approval({ className, approval }: ApprovalProps) {
+export const DefaultApproval = ({ className, approval }: ApprovalProps) => {
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col gap-2 border-warning/30 border-t bg-warning/10 px-4 py-3", className)}>
@@ -26,4 +27,6 @@ export default function Approval({ className, approval }: ApprovalProps) {
       </div>
     </div>
   );
-}
+};
+
+export default createOverridable("AgentApproval", DefaultApproval);

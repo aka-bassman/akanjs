@@ -20,7 +20,7 @@ export const resolveJwt = async <Resolved extends ResolvedToken>(
     return resolved;
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    Logger.warn(`failed to verify token for ${authorization}: ${message}`);
+    Logger.verbose(`failed to verify token for ${authorization}: ${message}`);
     return defaultResolved;
   }
 };

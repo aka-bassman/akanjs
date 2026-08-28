@@ -29,8 +29,22 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   default off, and `shortcut={false}` gives the browser back the Cmd/Ctrl+L the launcher otherwise captures.
   **A session the chat made ends when the chat unmounts** — nothing renders its approvals once it is gone, so a
   turn left running would drive a screen the user has navigated away from; a session handed down by an
-  `AgentProvider` or an `Agent.Zone` belongs to whoever provided it. Re-skin through the `AgentChat` slot in
-  `_overrides.tsx`.
+  `AgentProvider` or an `Agent.Zone` belongs to whoever provided it.
+- **The panel is customized in three widening steps, and most designs stop at the first.** Props first:
+  `open` / `onOpenChange` drive it from the app's own control (`launcher={false}` then draws no launcher of its
+  own), `launcherClassName` / `panelClassName` reach one surface each where `className` reaches both, `intro`
+  replaces the empty-state line — where starter questions go — and `header` adds controls beside the built-in
+  clear and close. Then the slots: `AgentLauncher`, `AgentBubble`, `AgentComposer`, `AgentApproval`,
+  `AgentQuestion`, `AgentMenu`, `AgentMarkdown` and `AgentCode` each replace one part in `_overrides.tsx`, and
+  `akanjs/ui` exports every default beside them (`DefaultBubble`, `DefaultComposer`, …) so a skin composes the
+  one it is replacing. `AgentCode` is where a highlighter binds — the fence's language reaches it — and a
+  replacement for `AgentBubble` carries its own `memo`, since the transcript re-renders on every delta. Only then
+  `AgentChat`, which replaces the panel whole: it also replaces the slash commands, the compaction notice and the
+  approval gate, so reach for it when the *layout* differs, not when the look does.
+- **The composer is a textarea**: Enter sends, Shift+Enter writes a newline, and it grows to a few lines before
+  it scrolls. The vertical arrows still walk what was sent, but only from the first or last line — anywhere else
+  the caret is the textarea's own. On a phone the panel is the whole screen (it is a card from `sm:` up) and it
+  lifts above the on-screen keyboard, which only `visualViewport` reports.
 - **The LLM is configured in `option.ts`, never through the environment.** `option.setLlm({ apiKey, model, host })`
   — or `setLlm((options) => …)` to read the key out of the app's own env object, which is where a secret belongs —
   fills whichever adaptor holds `LlmAdaptorRole`, reaching it as the `llmOption` use. The settings are the role's
@@ -269,6 +283,13 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   strings a *user* reads: Chat's own buttons go through `l("base.*")`, the model's text never does.
 - A masked model never crosses the boundary: a value whose `hidden`/`secret` fields are populated is refused at
   read unless a `mask:` model is named — the same rule and wording as `AgentBridge.read`.
+- **A field the page needs and an agent does not is `field.visual`.** `abstractData: field.visual(String)` — a blur
+  placeholder, a rendered HTML body, a serialized geometry: real data the screen renders, and hundreds of tokens per
+  record no question is answered from. It is stripped by `mask`, so it leaves every agent-facing read and every MCP
+  result, and it is left alone by `resolveReturn`, so the browser still receives it. Unlike `hidden`/`secret` it is
+  cost rather than secrecy: nothing is *refused* over one, and it stays an ordinary stored `property`, so
+  persistence, search, forms and the page response are untouched. Reach for it whenever a field is bulky and
+  useless to a model — that is cheaper than every tool learning to avoid it.
 
 ## Slash Commands And The Transcript
 - **`prompt()` endpoints double as the chat's slash commands.** There is no listing endpoint — the client reads
@@ -304,14 +325,26 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   is likely to have, since the tools and the screen context ride on top of it and neither compacts) the history above the last `keep` messages
   becomes one message standing in for it, flagged `summary` on the wire — `<Agent.Chat compact={{ at, keep }} />`
   tunes it per provider and `{ at: 0 }` turns it off, and `/compact` does the same on demand keeping nothing.
-  **The cut only ever lands on a user message**: everything above one is settled, so the kept half can never open
-  with a `tool` result whose call was summarized away, a shape every provider dialect rejects. The summarizing
+  **The cut never lands on a `tool` message**: the kept half may not open with a result whose call was summarized
+  away, a shape every provider dialect rejects. A user message is preferred where the tail holds one — everything
+  above it is settled — but one assistant turn that ran ten tools has none, and that is the transcript that
+  outgrows the window, so a cut there opens on the assistant message instead. The summarizing
   turn carries no tools and no screen context — it summarizes the conversation, it does not act on it — and it is
   fed a *bounded* digest rather than the transcript itself, since the transcript being summarized is the one that
-  no longer fits. A summary that cannot be produced leaves the transcript alone and the turn goes out as it would
-  have; one that fails to shrink anything is not retried until another threshold's worth has been added. On the
+  no longer fits. A summary that cannot be produced leaves the transcript alone, the turn goes out as it would
+  have, and the next one asks again — a summarizer that was momentarily unreachable says nothing about whether
+  this transcript can shrink. One that *landed* and shrank nothing does, so that one is not retried until another
+  threshold's worth has been added. On the
   wire a summary wears the user's role because the wire has no other, so a provider mapping frames it as a system
-  message and `/retry` steps over it — replaying it would send the notes back as a question.
+  message and `/retry` steps over it — replaying it would send the notes back as a question. **While a summary is
+  being written the transcript says so** (`session.isCompacting`, distinct from `isRunning`, which an
+  auto-compaction runs inside): that turn takes as long as any other and answers nothing the user asked, so a chat
+  that only shows the running dot reads as a question being ignored.
+- **The transcript shows what each turn costs, because nothing else can.** The header carries the whole
+  conversation's estimated tokens (`session.tokens`), and every settled tool row carries its own and **opens onto
+  the value the model was handed** — a tool result is the one part of a transcript neither the user nor the app
+  author ever sees, being the app's own return value. A window that filled after four messages is explained by
+  *which* row cost a million tokens and by nothing else, so that is the question the row answers in one click.
 - **A stopped turn answers the calls it never ran, because an unanswered call ends the conversation.** Every
   provider dialect refuses an assistant message whose `tool_calls` have no results — on that turn and on every
   later one — so Stop landing between a call and its result would leave a transcript nothing can be sent from,
@@ -381,6 +414,30 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `highlight` scrolls its target into view and flashes it **once the scroll lands**, since a smooth scroll across a
   long page outlasts the flash; it is the one built-in that exists for the *user's* benefit, because showing where
   a control is beats writing directions to it.
+- **`<Agent.Skip label="site footer">` leaves a region out of the default read** — chrome that costs tokens and
+  answers nothing: a footer, a cookie banner, a nav that repeats on every route. What stands in its place is
+  `[skipped: site footer]`, never nothing, because a deleted region reads as an absent one and an agent asked about
+  the footer would answer that the page has none. The marker's name **is** a `section`, so naming it reads the
+  region after all: what the marker withholds is the *default* read, not the region. It renders a wrapper div, so
+  where that would move a flex or grid layout put `data-agent-skip="<name>"` on the element the page already
+  renders — an unlabelled attribute falls back to the tag name, which is why the raw form belongs on a `<footer>`
+  or `<nav>` and the component insists on a label. A region that is hidden anyway leaves no marker claiming it is
+  there. **It hides text, not behaviour**: tools and state keys are declarations rather than markup, so an
+  `st.tool` inside is published exactly as before and `highlight` still reaches a control in there. This is
+  `field.visual` one layer up — cost, not secrecy.
+- **Reach for it second.** A read narrows from the other side too: `Agent.Zone` and `readScreen({ section })` scope
+  to one container, which beats blocklisting five regions on a screen that is mostly chrome. And a footer is last
+  in the document, so on a page long enough to truncate it was already past the cut — the regions worth marking are
+  the ones *above* the content.
+- **Every tool's return value is bounded at 20,000 characters before it enters the transcript** (`ToolOutput.limit`,
+  clipped with a note that gives the real size and tells the model to read a narrower part). `readScreen` caps
+  itself; nothing else did, and a store key is sized for a screen rather than for a model's window — one
+  `readState` of a list whose rows carry inlined bytes is megabytes, which the loop then posts on this turn *and on
+  every turn after it*, so the window fills after four messages. Compaction cannot save that: it summarizes what is
+  above the cut and a result this large arrives below it. Clipped rather than dropped, because a model handed a
+  value it cannot see the end of asks a narrower question, where one handed nothing answers from the field names.
+  The cap is a safety rail, not the design: a tool should return what answers the question — an id, a count, the
+  three fields the agent asked about — and `AgentContext` inlines only small primitives for the same reason.
 - **A slow tool reports its own progress with `AgentProgress.report(message, { done, total })`** from wherever the
   work is — a store action, an upload loop, an adapter — reached through a module slot rather than a parameter, and
   a no-op when nobody is rendering it. The chat shows it on that call's row until the row resolves. It is the

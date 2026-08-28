@@ -14,11 +14,15 @@ export interface JsonSchemaBuilderOptions {
 
 export interface JsonSchemaModelOptions {
   /**
-   * Drops `hidden` and `secret` fields. `SignalContext.resolveReturn` strips both from every response, so naming
-   * them describes a value the caller can never read — and on a model like `user` the names are themselves the
-   * leak: `password`, `accountId`, `phone` published as readable properties of the model. This is the one place a
-   * field the framework blocks on every value path is still visible, so it is scoped to schemas that describe a
-   * *response*. A request body is a different shape and legitimately carries both.
+   * Drops `hidden`, `secret`, and `visual` fields. `SignalContext.resolveReturn` strips the first two from every
+   * response, so naming them describes a value the caller can never read — and on a model like `user` the names
+   * are themselves the leak: `password`, `accountId`, `phone` published as readable properties of the model. This
+   * is the one place a field the framework blocks on every value path is still visible, so it is scoped to schemas
+   * that describe a *response*. A request body is a different shape and legitimately carries all three.
+   *
+   * `visual` is dropped here because it is dropped from the payload an AI caller receives, and a schema that
+   * promises a field the value omits is worse than one that never named it: a non-optional visual field would be
+   * listed `required` and a validating client would refuse the whole result.
    */
   readable?: boolean;
 }
@@ -56,7 +60,7 @@ export class JsonSchemaBuilder {
     const required: string[] = [];
     for (const [key, field] of Object.entries(fields)) {
       const props = field.getProps();
-      if (readable && (props.fieldType === "hidden" || props.fieldType === "secret")) continue;
+      if (readable && (props.fieldType === "hidden" || props.fieldType === "secret" || props.visual)) continue;
       properties[key] = this.#field(field);
       if (!props.nullable) required.push(key);
     }

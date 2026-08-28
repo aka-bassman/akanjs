@@ -1,6 +1,6 @@
 import { ScreenReader } from "./ScreenReader";
 
-const containerAttrs = ["data-agent-zone", "data-agent-scope"] as const;
+const containerAttrs = ["data-agent-zone", "data-agent-scope", "data-agent-skip"] as const;
 const controlAttrs = ["data-akan-action", "data-akan-state"] as const;
 const headingSelector = "h1, h2, h3, h4, h5, h6";
 const nameCap = 40;
@@ -9,9 +9,9 @@ const nameCap = 40;
  * Resolves a name the agent read on screen to the element it names.
  *
  * Four vocabularies, every one of them something already on the screen rather than a selector the model invented:
- * the `data-akan-action` / `data-akan-state` annotation a control carries and `readScreen` prints beside it, an
- * `Agent.Zone` or `useScreenScope` container, a plain element id — what a docs slide is addressed by — and, last, a
- * **heading by its own text**.
+ * the `data-akan-action` / `data-akan-state` annotation a control carries and `readScreen` prints beside it, a
+ * container — an `Agent.Zone`, a `useScreenScope` scope, or an `Agent.Skip` region named by the marker left in its
+ * place — a plain element id, what a docs slide is addressed by, and, last, a **heading by its own text**.
  *
  * A heading is matched on letters and digits alone, so the slug an agent naturally writes for a heading it read
  * ("images-and-public-env") finds "Images And Public Env". That tolerance is for headings only: a heading is a
@@ -20,7 +20,8 @@ const nameCap = 40;
  *
  * Nothing hidden ever resolves, by the same rule `readScreen` skips it. A collapsed panel or an off-variant
  * duplicate is not what the user is looking at, and scrolling to one flashes a ring nobody can see — which reads
- * as the tool being broken rather than as a miss.
+ * as the tool being broken rather than as a miss. A `display: contents` wrapper does not resolve either, even
+ * though the reader now reads through it: it has no box, so `scrollIntoView` has nothing to scroll to.
  */
 export class ScreenTarget {
   static container(name: string, root?: HTMLElement | null): HTMLElement | null {
@@ -28,8 +29,15 @@ export class ScreenTarget {
     if (!scope || !name) return null;
     if (ScreenTarget.#named(scope, containerAttrs, name)) return scope;
     const escaped = CSS.escape(name);
-    const selector = [...containerAttrs.map((attr) => `[${attr}="${escaped}"]`), `#${escaped}`].join(", ");
-    return ScreenTarget.#first(scope, selector);
+    const selector = containerAttrs.map((attr) => `[${attr}="${escaped}"]`).join(", ");
+    // The id is compared rather than selected: `section` carries whatever the agent read on screen, and a name
+    // holding a space escapes to a `#site\ footer` selector that some engines reject outright — a throw where a
+    // miss belongs, since `readScreen` owes the model the list of sections that do exist.
+    return (
+      ScreenTarget.#first(scope, selector) ??
+      [...scope.querySelectorAll<HTMLElement>("[id]")].find((el) => el.id === name && ScreenTarget.#visible(el)) ??
+      null
+    );
   }
 
   static control(name: string, root?: HTMLElement | null): HTMLElement | null {

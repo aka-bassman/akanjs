@@ -3,7 +3,7 @@ import type { ChatMessage } from "./types";
 export interface CompactOptions {
   /** Estimated transcript tokens above which a turn summarizes its own history first. `0` never compacts. */
   at?: number;
-  /** Messages left verbatim below the summary. The cut rises to the nearest user message above them. */
+  /** Messages left verbatim below the summary. The cut slides down to the first message that can safely open one. */
   keep?: number;
   /** Produces the summary from the digest. Default: one tool-less turn through the session's own runner. */
   summarize?: (digest: string, signal: AbortSignal) => Promise<string>;
@@ -40,16 +40,26 @@ export class Compaction {
   }
 
   /**
-   * Where the kept half starts, or `-1` when nothing can be cut. Only a user message opens one: everything before
-   * it is settled, so the kept half never begins with a `tool` result whose call was summarized away — a shape
-   * every provider dialect rejects. `keep: 0` summarizes the whole transcript, which is what the command does.
+   * Where the kept half starts, or `-1` when nothing can be cut. A user message is the boundary to prefer —
+   * everything above it is settled — but one assistant turn that ran ten tools leaves no user message anywhere
+   * near the tail, and that is exactly the transcript that outgrows the window. What the pairing every provider
+   * dialect enforces actually requires is only that the kept half not open with a `tool` result whose call was
+   * summarized away, so any non-`tool` message opens one too. `keep: 0` summarizes the whole transcript, which is
+   * what the command does.
    */
   static cutAt(messages: readonly ChatMessage[], keep: number): number {
     if (!messages.length) return -1;
     if (keep <= 0) return messages.length;
     const target = messages.length - keep;
     if (target <= 0) return -1;
-    for (let at = target; at < messages.length; at += 1) if (messages[at].role === "user") return at;
+    let boundary = -1;
+    for (let at = target; at < messages.length; at += 1) {
+      if (messages[at].role === "user") return at;
+      if (boundary < 0 && messages[at].role !== "tool") boundary = at;
+    }
+    if (boundary >= 0) return boundary;
+    // The whole tail is one trailing result: cut above the call it answers rather than between the two.
+    for (let at = target - 1; at > 0; at -= 1) if (messages[at].role !== "tool") return at;
     return -1;
   }
 

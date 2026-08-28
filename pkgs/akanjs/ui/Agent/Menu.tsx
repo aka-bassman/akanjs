@@ -1,5 +1,6 @@
 "use client";
 import { cn } from "akanjs/client";
+import { createOverridable } from "../UiOverride";
 
 export interface MenuRow {
   name: string;
@@ -9,7 +10,7 @@ export interface MenuRow {
   pick: () => void;
 }
 
-interface MenuProps {
+export interface MenuProps {
   className?: string;
   rows: MenuRow[];
   /** Index the arrows are on. Enter picks it and Tab completes its name, so it has to be visible. */
@@ -18,7 +19,7 @@ interface MenuProps {
 }
 
 /** The `/` menu: this chat's own commands first, then the app's `prompt()` endpoints. */
-export default function Menu({ className, rows, selected, onPick }: MenuProps) {
+export const DefaultMenu = ({ className, rows, selected, onPick }: MenuProps) => {
   if (!rows.length) return null;
   return (
     <div
@@ -49,4 +50,6 @@ export default function Menu({ className, rows, selected, onPick }: MenuProps) {
       ))}
     </div>
   );
-}
+};
+
+export default createOverridable("AgentMenu", DefaultMenu);

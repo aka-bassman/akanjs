@@ -9,9 +9,9 @@ export class FileInput extends via((field) => ({
   encoding: field(String),
   imageSize: field<[number, number]>([Int], { default: [0, 0] }),
   url: field(String, { default: "" }),
-  abstractData: field(String).optional(),
+  abstractData: field.visual(String).optional(),
   size: field(Int, { default: 0 }),
-  origin: field(String).optional(),
+  origin: field.hidden(String).optional(),
 })) {}
 
 export class FileObject

@@ -358,6 +358,52 @@ st.expose("selectedWaypointId", selected?.id ?? null);
       </Scroll.Slide>
       <Divider />
 
+      <Scroll.Slide id="agent-skip" title={l.trans({ en: "Skipping A Region", ko: "읽지 않을 영역" })}>
+        <Docs.Title>{l.trans({ en: "Skipping A Region", ko: "읽지 않을 영역" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "readScreen reads the whole rendered screen, and a footer, a cookie banner, or a nav that repeats on every route costs the same tokens as the content — on that read and on every later turn, since the read stays in the transcript. Agent.Skip leaves a region out of the default read.",
+              ko: "readScreen은 렌더된 화면 전체를 읽고, 푸터·쿠키 배너·모든 라우트에 반복되는 내비게이션도 본문과 같은 토큰을 씁니다. 그 읽기에서 한 번, 그리고 이후 모든 턴에서 다시 — 읽은 결과가 트랜스크립트에 남기 때문입니다. Agent.Skip은 그 영역을 기본 읽기에서 빼냅니다.",
+            })}
+          </div>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title="a region marked, and what the read prints instead"
+          code={`<Agent.Skip label="site footer">
+  <Footer />
+</Agent.Skip>
+
+// Or on the element the page already renders, where a wrapper div would move a flex or grid layout:
+<footer id="footer" data-agent-skip="site footer">…</footer>
+
+// readScreen then prints this in place of the whole region:
+// [skipped: site footer (#footer)]`}
+        />
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "What stands in its place is a named marker, never nothing. A deleted region reads as an absent one — an agent asked about the footer would answer that the page has none. The name in the marker is a section, so naming it reads the region after all: the marker is what the default read leaves out, not a wall.",
+              ko: "그 자리에는 이름 붙은 표시가 남습니다. 아무것도 남기지 않으면 지워진 영역이 없는 영역으로 읽힙니다 — 푸터에 대해 물으면 에이전트는 이 페이지에 푸터가 없다고 답하게 됩니다. 표시의 이름은 그대로 section이므로, 이름을 넘기면 결국 읽을 수 있습니다. 표시는 기본 읽기가 빼놓은 것이지 벽이 아닙니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "It hides text, not behaviour. Tools and state keys are declarations rather than markup, so an st.tool declared inside is published exactly as before and highlight still reaches a control in there. This is field.visual one layer up: cost, not secrecy.",
+              ko: "감추는 것은 텍스트이지 동작이 아닙니다. 툴과 상태 키는 마크업이 아니라 선언이므로, 안에서 선언한 st.tool은 그대로 발행되고 highlight도 그 안의 컨트롤에 여전히 닿습니다. field.visual과 같은 이야기를 한 층 위에서 하는 것입니다 — 비밀이 아니라 비용입니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "Reach for it second. A read is scoped from the other side too: Agent.Zone and readScreen({ section }) narrow to one container, which beats blocklisting five regions on a screen that is mostly chrome. And a footer is last in the document, so on a page long enough to truncate it was already past the cut — the regions worth marking are the ones above the content.",
+              ko: "먼저 꺼낼 도구는 아닙니다. 읽기는 반대쪽에서도 좁힐 수 있습니다. Agent.Zone과 readScreen({ section })은 컨테이너 하나로 범위를 줄이고, 화면 대부분이 크롬인 경우엔 영역 다섯 개를 하나씩 빼는 것보다 그 편이 낫습니다. 그리고 푸터는 문서의 마지막이므로, 잘릴 만큼 긴 페이지에서는 이미 컷 뒤에 있었습니다 — 표시할 값이 있는 영역은 본문 위쪽에 있는 것들입니다.",
+            })}
+          </div>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
       <Scroll.Slide id="agent-llm" title={l.trans({ en: "Swapping the Model", ko: "모델 교체" })}>
         <Docs.Title>{l.trans({ en: "Swapping the Model", ko: "모델 교체" })}</Docs.Title>
         <Docs.Description>
