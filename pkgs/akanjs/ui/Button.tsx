@@ -4,12 +4,13 @@ import { isThenable } from "akanjs/common";
 import type React from "react";
 import { type ButtonHTMLAttributes, type ComponentType, createElement, useState } from "react";
 import { AiFillCheckCircle, AiOutlineLoading3Quarters } from "react-icons/ai";
+import { agentAttrs } from "./agentAttrs";
 import { type ButtonVariants, buttonRecipe } from "./recipe";
 import { useUiOverride, useUiRecipe } from "./UiOverride";
 
 // buttonRecipe/ButtonVariants live in the server-safe ./recipe layer (no "use client") so server
 // components can compose classNames. Re-exported here so `from "./Button"` relative importers keep resolving.
-export { buttonRecipe, type ButtonVariants };
+export { type ButtonVariants, buttonRecipe };
 
 export type ButtonProps<Result> = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onClick"> &
   ButtonVariants & {
@@ -102,6 +103,7 @@ const DefaultButton = <Result = unknown>({
           cn(loadingMode === "hold" && "relative", busy && !rest.disabled && "disabled:opacity-100", className),
         )}
         {...rest}
+        {...agentAttrs(onClick)}
         disabled={!!rest.disabled || busy}
         onClick={(e) => {
           if (!onClick) return;

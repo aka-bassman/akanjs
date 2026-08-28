@@ -1,6 +1,6 @@
 "use client";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import { buttonRecipe } from "akanjs/ui";
+import { buttonRecipe, inputRecipe } from "@libs/util/ui";
 import type { NodeKey } from "lexical";
 import { useState } from "react";
 import type { EmbedProviderType } from "../embed";
@@ -94,7 +94,7 @@ export const EmbedUrlForm = ({ nodeKey }: { nodeKey: NodeKey }) => {
             autoFocus
             value={value}
             placeholder="https://www.youtube.com/watch?v=…"
-            className="h-8 w-full rounded-field border border-input bg-background px-3 text-xs focus:border-primary focus:outline-none"
+            className={inputRecipe({ size: "sm" }, "w-full")}
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -103,7 +103,7 @@ export const EmbedUrlForm = ({ nodeKey }: { nodeKey: NodeKey }) => {
               }
             }}
           />
-          <button type="button" className={buttonRecipe({ variant: "primary", size: "sm" })} onClick={submit}>
+          <button type="button" className={buttonRecipe({ size: "sm", variant: "primary" })} onClick={submit}>
             Embed
           </button>
         </div>

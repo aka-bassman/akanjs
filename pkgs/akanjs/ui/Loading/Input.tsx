@@ -6,12 +6,10 @@ export interface LoadingProps {
   active?: boolean;
   style?: CSSProperties;
 }
-export const Input = ({ className = "", active, style }: LoadingProps) => {
-  const activeClassName = active ? "animate-pulse" : "";
-  return (
-    <div
-      className={cn("inline-block h-8 w-44 rounded-md bg-muted align-bottom", activeClassName, className)}
-      style={style}
-    />
-  );
-};
+
+export const Input = ({ className = "", active = true, style }: LoadingProps) => (
+  <div
+    className={cn("inline-block h-9 w-44 rounded-field bg-muted align-bottom", active && "animate-pulse", className)}
+    style={style}
+  />
+);

@@ -1,9 +1,9 @@
-import { Any, type Assign, type Cls, type MergeAllKeyOfObjects, SLICE_DICT_SHAPE, SLICE_META } from "akanjs/base";
+import { Any, type Assign, type MergeAllKeyOfObjects, SLICE_DICT_SHAPE, SLICE_META } from "akanjs/base";
 import { applyMixins } from "akanjs/common";
 import type { DocumentModel, QueryOf } from "akanjs/constant";
 import type { FilterInstance } from "akanjs/document";
 import { type Adaptor, type AdaptorCls, dangerouslyAdapt, type ServiceModel } from "akanjs/service";
-import type { Guard, GuardCls } from "./guard";
+import type { GuardCls } from "./guard";
 import {
   buildSlice,
   type SliceBuilder,
@@ -42,12 +42,12 @@ export type SliceCls<
 
 interface RootSliceOption {
   guards?: {
-    root?: Cls<Guard> | Cls<Guard>[];
-    get?: Cls<Guard> | Cls<Guard>[];
-    cru?: Cls<Guard> | Cls<Guard>[];
-    create?: Cls<Guard> | Cls<Guard>[];
-    update?: Cls<Guard> | Cls<Guard>[];
-    remove?: Cls<Guard> | Cls<Guard>[];
+    root?: GuardCls | GuardCls[];
+    get?: GuardCls | GuardCls[];
+    cru?: GuardCls | GuardCls[];
+    create?: GuardCls | GuardCls[];
+    update?: GuardCls | GuardCls[];
+    remove?: GuardCls | GuardCls[];
   };
   prefix?: string;
 }
@@ -129,7 +129,7 @@ export function slice<
     srv.cnst.insight,
     srv.db.filter,
   );
-  const toGuards = (guard?: Cls<Guard> | Cls<Guard>[]) => (guard ? (Array.isArray(guard) ? guard : [guard]) : []);
+  const toGuards = (guard?: GuardCls | GuardCls[]) => (guard ? (Array.isArray(guard) ? guard : [guard]) : []);
   const rootGuards = toGuards(option.guards?.root);
   const getGuards = toGuards(option.guards?.get);
   const cruGuards = toGuards(option.guards?.cru);

@@ -1,8 +1,8 @@
 "use client";
 
 import { setCookie } from "akanjs/client";
-import { useCallback, useEffect, useState } from "react";
-
+import { st } from "akanjs/store";
+import { useEffect } from "react";
 import { buttonRecipe } from "../Button";
 import { Dropdown } from "../Dropdown";
 import { Switch } from "../Switch";
@@ -10,20 +10,22 @@ import { Switch } from "../Switch";
 export interface ThemeToggleProps {
   themes?: string[];
 }
-
 export const ThemeToggle = ({ themes }: ThemeToggleProps) => {
-  const [theme, setTheme] = useState<string | undefined>(undefined);
+  const theme = st.use.theme();
+  const applyTheme = st
+    .tool("applyTheme", { desc: `Switch this page's color theme. One of: ${themes?.join(", ") ?? "none"}.` })
+    .arg("theme", String)
+    .exec((theme) => {
+      document.documentElement.setAttribute("data-theme", theme);
+      setCookie("theme", theme);
+      st.do.setTheme(theme);
+    });
   useEffect(() => {
     if (!themes) return;
     const currentTheme = document.documentElement.getAttribute("data-theme");
-    setTheme(currentTheme && themes.includes(currentTheme) ? currentTheme : themes[0]);
+    st.do.setTheme(currentTheme && themes.includes(currentTheme) ? currentTheme : themes[0]);
   }, [themes]);
 
-  const applyTheme = useCallback((theme: string) => {
-    document.documentElement.setAttribute("data-theme", theme);
-    setCookie("theme", theme);
-    setTheme(theme);
-  }, []);
   if (!themes || themes.length <= 1) return null;
   if (themes.length === 2)
     return (

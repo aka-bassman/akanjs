@@ -421,8 +421,8 @@ export default config;`}
           </div>
           <div>
             {l.trans({
-              en: "Akan includes externalLibs in the production package dependencies together with required SSR and native runtime packages.",
-              ko: "Akan은 externalLibs를 필수 SSR/native runtime package와 함께 production package dependencies에 포함합니다.",
+              en: "Akan includes externalLibs in the production package dependencies together with the required SSR runtime packages.",
+              ko: "Akan은 externalLibs를 필수 SSR runtime package와 함께 production package dependencies에 포함합니다.",
             })}
           </div>
         </Docs.Description>
@@ -432,7 +432,7 @@ export default config;`}
           code={`import type { AppConfig } from "akanjs";
 
 const config: AppConfig = {
-  externalLibs: ["sharp"],
+  externalLibs: ["puppeteer"],
 };
 
 export default config;`}
@@ -607,8 +607,8 @@ export default config;`}
           </div>
           <div>
             {l.trans({
-              en: "Akan resolves missing values to an empty list and stores the result with the library scan result.",
-              ko: "Akan은 빠진 값을 빈 목록으로 resolve하고, 그 결과를 library scan result에 저장합니다.",
+              en: "Akan resolves missing values to an empty list and merges every workspace library's externalLibs into each app's own list, so an app that uses the library does not repeat the declaration.",
+              ko: "Akan은 빠진 값을 빈 목록으로 resolve하고, workspace의 모든 library externalLibs를 각 app의 목록에 합칩니다. 따라서 해당 library를 쓰는 app이 같은 선언을 반복하지 않아도 됩니다.",
             })}
           </div>
         </Docs.Description>
@@ -618,7 +618,7 @@ export default config;`}
           code={`import type { LibConfig } from "akanjs";
 
 const config: LibConfig = {
-  externalLibs: ["sharp"],
+  externalLibs: ["puppeteer"],
 };
 
 export default config;`}

@@ -81,6 +81,14 @@ export default function Page() {
       }),
       example: "chatAdded: pubsub(Chat).room(...).exec(...)",
     },
+    {
+      name: "prompt(options?)",
+      desc: l.trans({
+        en: "Prompt an MCP client renders as a slash command. exec returns PromptMessage[] or a bare string. Takes .param(...) and .search(...) only.",
+        ko: "MCP client가 slash command로 렌더링하는 prompt입니다. exec은 PromptMessage[] 또는 문자열 하나를 반환합니다. .param(...)과 .search(...)만 받습니다.",
+      }),
+      example: "reviewStory: prompt().param(...).exec(...)",
+    },
   ];
 
   const paramBuilders: IntroItem[] = [
@@ -477,7 +485,7 @@ const unsubscribe = fetch.subscribeChatAdded(rootId, (chat) => {
           {[
             {
               title: "Endpoint builders",
-              desc: "query(Return), mutation(Return), message(Return), pubsub(Return)",
+              desc: "query(Return), mutation(Return), message(Return), pubsub(Return), prompt()",
             },
             {
               title: "Slice builder",
@@ -525,6 +533,10 @@ const unsubscribe = fetch.subscribeChatAdded(rootId, (chat) => {
               l.trans({
                 en: "Put nullable arguments near the end because required arguments cannot follow nullable ones.",
                 ko: "required argument가 nullable argument 뒤에 올 수 없으므로 nullable argument는 뒤쪽에 둡니다.",
+              }),
+              l.trans({
+                en: "An endpoint that names a real guard is reachable by an AI agent; one that names none is not. There is no mcp option to write. See the MCP Server cheatsheet.",
+                ko: "실질 guard를 적은 endpoint는 AI agent가 닿고, 아무 guard도 적지 않은 endpoint는 닿지 않습니다. 적어야 할 mcp 옵션은 없습니다. MCP Server cheatsheet을 참고하세요.",
               }),
             ].map((rule) => (
               <div key={rule} className={panelRecipe({ padding: "row" }, "text-foreground/70")}>

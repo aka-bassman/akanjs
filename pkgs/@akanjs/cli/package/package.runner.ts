@@ -71,7 +71,13 @@ export class PackageRunner extends runner("package") {
         "tailwind-scrollbar",
       ].filter((dep) => dep !== "akanjs" && dep !== "@akanjs/devkit");
     }
-    const bundledRuntimeDeps = new Set(pkg.name === "@akanjs/cli" ? ["@akanjs/devkit"] : []);
+    // Workspace packages each build embeds into its own dist, so naming them as dependencies would point a
+    // consumer at a registry entry that does not exist.
+    const packageBundledRuntimeDependencies: Record<string, string[]> = {
+      "@akanjs/cli": ["@akanjs/devkit"],
+      akanjs: ["use-agentic"],
+    };
+    const bundledRuntimeDeps = new Set(packageBundledRuntimeDependencies[pkg.name] ?? []);
     const forcedRuntimeDeps = packageRuntimeDependencies[pkg.name] ?? [];
     const forcedRuntimeDevDeps = packageRuntimeDevDependencies[pkg.name] ?? [];
     const [rootPackageJson, pkgJson] = await Promise.all([pkg.workspace.getPackageJson(), pkg.getPackageJson()]);
@@ -84,7 +90,7 @@ export class PackageRunner extends runner("package") {
       (dep) => !optionalPeerDeps.has(dep) && !bundledRuntimeDeps.has(dep),
     );
     const packageRuntimeDevDeps = [...new Set([...npmDevDeps, ...forcedRuntimeDevDeps])].filter(
-      (dep) => !optionalPeerDeps.has(dep),
+      (dep) => !optionalPeerDeps.has(dep) && !bundledRuntimeDeps.has(dep),
     );
     const rootDeps = { ...rootPackageJson.dependencies, ...rootPackageJson.devDependencies };
     const missingForcedDeps = forcedRuntimeDeps.filter((dep) => !rootDeps[dep]);

@@ -1,5 +1,5 @@
 import {
-  type BaseEnv,
+  type BackendEnv,
   type Cls,
   ENDPOINT_META,
   FIELD_META,
@@ -33,6 +33,9 @@ import type { SliceInfo } from "../../signal/sliceInfo";
 import type { WebsocketMessageData, WebsocketSubscribeAck } from "../../signal/types";
 import type { HttpRoutes, SignalRoutes, WebsocketRoutes } from "../types";
 
+type HttpRouteHandler = (req: Bun.BunRequest) => Response | Promise<Response | undefined> | undefined;
+type HttpMethodRoutes = Record<string, HttpRouteHandler>;
+
 export class SignalResolver {
   static logger = new Logger("SignalResolver");
 
@@ -40,7 +43,7 @@ export class SignalResolver {
     return `${key}${args.length ? "-" : ""}${args.join("-")}`;
   }
   static #localPublish: (roomId: string, data: object | object[]) => void = () => {
-    SignalResolver.logger.warn(`Local publish is not initialized yet`);
+    SignalResolver.logger.verbose(`Local publish is not initialized yet`);
   };
   static setLocalPublish(localPublish: (roomId: string, data: object | object[]) => void, websocket: WebsocketAdaptor) {
     SignalResolver.#localPublish = localPublish;
@@ -319,6 +322,28 @@ export class SignalResolver {
     Bun.ServerWebSocket<unknown>,
     Map<string, SignalContext<WebSocketExecutionContext>>
   >();
+  /**
+   * A path may legitimately carry several methods — a `query` GET and a `mutation` POST sharing a custom `path` —
+   * so methods merge rather than replace. The same method twice leaves one of the two endpoints unreachable with
+   * nothing said about it, and the shadowed half is as easily the guarded one, so it fails the boot instead.
+   */
+  static #mountHttpRoute(routes: HttpRoutes, path: string, handlers: HttpMethodRoutes, owner?: string) {
+    const table = routes as Record<string, HttpMethodRoutes | undefined>;
+    const existing = table[path];
+    const conflict = Object.keys(handlers).find((method) => !!existing?.[method]);
+    if (conflict)
+      throw new Error(
+        `Route conflict: ${conflict} ${path} is declared more than once${owner ? ` (by "${owner}")` : ""}.`,
+      );
+    table[path] = { ...existing, ...handlers };
+  }
+
+  /** Same rule across endpoint classes, which are resolved one at a time and then folded into one table. */
+  static mergeHttpRoutes(target: HttpRoutes, source: HttpRoutes) {
+    for (const [path, handlers] of Object.entries((source ?? {}) as Record<string, HttpMethodRoutes>))
+      SignalResolver.#mountHttpRoute(target, path, handlers);
+  }
+
   static resolveEndpoint(
     endpointCls: EndpointCls,
     endpoint: Endpoint,
@@ -327,7 +352,7 @@ export class SignalResolver {
       env,
       live,
       middleware,
-    }: { registry: InjectRegistry; env: BaseEnv; live: LiveRegistry; middleware: Map<string, MiddlewareCls> },
+    }: { registry: InjectRegistry; env: BackendEnv; live: LiveRegistry; middleware: Map<string, MiddlewareCls> },
   ): SignalRoutes {
     const endpointMeta = endpointCls[ENDPOINT_META] as { [key: string]: EndpointInfo };
     const routes: HttpRoutes = {};
@@ -352,26 +377,55 @@ export class SignalResolver {
           }).init();
           return await context.exec();
         });
+      if (endpointInfo.signalOption.method && endpointInfo.type !== "mutation")
+        SignalResolver.logger.warn(
+          `"${key}" declares method ${endpointInfo.signalOption.method} on a ${endpointInfo.type}, which is ignored.`,
+        );
       switch (endpointInfo.type) {
         case "query":
-          routes[path] = SignalResolver.#canUsePrimitiveQueryFastPath(endpointInfo, middleware)
-            ? {
-                GET: async (req) => {
-                  if (SignalResolver.#hasAuthCredential(req)) return await normalHttpHandler(req);
-                  return await SignalContext.try(endpoint, endpointInfo, key, async () => {
-                    const result = await endpointInfo.execFn?.call(endpoint);
-                    return result instanceof Response ? result : Response.json(result);
-                  });
+          SignalResolver.#mountHttpRoute(
+            routes,
+            path,
+            SignalResolver.#canUsePrimitiveQueryFastPath(endpointInfo, middleware)
+              ? {
+                  GET: async (req) => {
+                    if (SignalResolver.#hasAuthCredential(req)) return await normalHttpHandler(req);
+                    return await SignalContext.try(endpoint, endpointInfo, key, async () => {
+                      const result = await endpointInfo.execFn?.call(endpoint);
+                      return result instanceof Response ? result : Response.json(result);
+                    });
+                  },
+                }
+              : {
+                  GET: normalHttpHandler,
                 },
-              }
-            : {
-                GET: normalHttpHandler,
-              };
+            key,
+          );
           break;
         case "mutation":
-          routes[path] = {
-            POST: normalHttpHandler,
-          };
+          SignalResolver.#mountHttpRoute(
+            routes,
+            path,
+            { [endpointInfo.signalOption.method ?? "POST"]: normalHttpHandler },
+            key,
+          );
+          break;
+        case "prompt":
+          // Served as a plain GET beside the queries, so the same prompt a client renders as a slash command can
+          // be previewed from the web UI. The query fast path is deliberately not shared: it skips guards.
+          //
+          // XXX: this route exists whether or not the app enabled MCP, and whatever the prompt opted into — MCP
+          // exposure gates the catalogue, not the HTTP surface. So guard it like any other read rather than
+          // assuming the MCP switch is what stands in front of it. Field masking is not the gap it once was
+          // (`Msg.mask` takes the model), but masking answers *what* goes out and never *who* may ask.
+          //
+          // Which is why the unguarded case is said out loud rather than left to a reader of the comment above.
+          // An explicit `[Public]` is a decision and stays quiet; an absent `guards` decided nothing.
+          if (!(endpointInfo.signalOption.guards ?? []).length)
+            SignalResolver.logger.warn(
+              `Prompt "${key}" declares no guards, and its GET route is mounted whether or not this app enables MCP.`,
+            );
+          SignalResolver.#mountHttpRoute(routes, path, { GET: normalHttpHandler }, key);
           break;
         case "pubsub":
           wsRoutes[key] = async (ws, message, event) => {

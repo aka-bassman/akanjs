@@ -5,11 +5,12 @@ import { RESERVED_ROUTE_CONFIG_EXPORTS } from "akanjs/common";
 import ignore from "ignore";
 import ts from "typescript";
 import { AbstractDoc } from "./abstractDoc";
+import { FormSetterScanner } from "./formSetterScanner";
 import { formatSsrBalance, type SsrBalanceEntry, SsrScanner } from "./ssrScanner";
-import { appRootAllowedFiles, libFacetRootAllowedFiles } from "./workspaceLayout";
+import { isAllowedLibFacetRootFile, rootAllowedDirs, rootAllowedFiles } from "./workspaceLayout";
 
 type QualitySeverity = "warning";
-type QualityScope = "global" | "file" | "convention" | "layout" | "ssr";
+type QualityScope = "global" | "file" | "convention" | "layout" | "ssr" | "agent";
 
 export interface QualityWarning {
   rule: string;
@@ -88,7 +89,8 @@ const SUGGESTED_RULES = [
   "Keep apps/*/lib and libs/*/lib root files limited to generated support facets such as cnst.ts, db.ts, dict.ts, sig.ts, srv.ts, st.ts, useClient.ts, and useServer.ts.",
   "Use domain module folders consistently: lib/<model> for database modules, lib/_<service> for service modules, and lib/__scalar/<scalar> for scalar modules.",
   "Keep module UI filenames predictable: database modules use <Model>.Template/Unit/Util/View/Zone.tsx, service modules use <Service>.Util/Zone.tsx, and scalar modules use <Scalar>.Template/Unit.tsx.",
-  "Move shared app utilities to apps/*/common instead of creating apps/*/base.",
+  "Hand a form control its store setter by reference so the field publishes an agent tool; put normalization in the control's transform prop and a multi-write in a _postSet<Field> hook on the store.",
+  "Move shared app and lib utilities to common/ instead of creating apps/*/base or libs/*/base.",
   "Avoid large mixed-purpose class files; class export files should import helpers from neighboring utility files instead of declaring them inline.",
 ];
 
@@ -122,14 +124,22 @@ const RULE_FIXES: Record<string, string> = {
     "Move the Window augmentation into an approved browser integration file and keep it isolated.",
   "akan.file.prototype-mutation": "Avoid prototype mutation, or isolate it in an approved low-level integration file.",
   "akan.file.class-export-global-declaration": "Move the helper to a sibling file and import it into the class module.",
+  "akan.agent.unpublished-form-setter":
+    "Pass the setter by reference where the wrapper only forwards (onChange={st.do.setTitleOnTask}); move normalization into the control's own transform prop; move a multi-write into a _postSet<Field> hook on the store, keeping the generated setter on the control.",
   "akan.file.component-internal-declaration":
     "Move the type or helper to a type/util file in ui/, webkit/, or common/ by purpose. If it is the component's props, declare it as `interface <Component>Props`.",
   "akan.file.component-export":
     "Move the value or type to a util/constant/type file in ui/, webkit/, or common/ and import it. Adding `export` is not a valid fix — only PascalCase components and their `<Component>Props` interface belong here.",
   "akan.layout.app-root-file":
     "Move the file into a conventional app folder (common, env, lib, page, private, public, script, srvkit, ui, or webkit).",
+  "akan.layout.app-root-folder":
+    "Move the folder's contents into a conventional app folder (common, env, lib, page, private, public, script, srvkit, ui, or webkit) and delete it.",
   "akan.layout.lib-root-file":
-    "Move the file into a domain module folder under lib/; keep lib root limited to generated support facets.",
+    "Move the file into a conventional lib folder (common, env, lib, page, private, public, srvkit, ui, or webkit).",
+  "akan.layout.lib-root-folder":
+    "Move the folder's contents into a conventional lib folder (common, env, lib, page, private, public, srvkit, ui, or webkit) and delete it.",
+  "akan.layout.lib-facet-file":
+    "Move the file into a domain module folder under lib/; keep the lib facet root limited to generated support facets.",
   "akan.layout.module-ui-file":
     "Rename the file to an allowed module UI name, or move it to ui/ if it is not a module component.",
   "akan.ssr.unnecessary-use-client":
@@ -173,6 +183,7 @@ export class AkanQualityScanner {
       ...sourceFiles.flatMap((sourceFile) => this.#scanConventionQuality(sourceFile)),
       ...sourceFiles.flatMap((sourceFile) => this.#scanLayoutQuality(sourceFile)),
       ...abstractFiles.flatMap((abstractFile) => this.#scanAbstractQuality(abstractFile)),
+      ...new FormSetterScanner().scan(sourceFiles),
       ...ssr.warnings,
     ];
 
@@ -408,26 +419,31 @@ export class AkanQualityScanner {
   }
 
   #scanLayoutQuality(sourceFile: SourceFileInfo): QualityWarning[] {
-    const segments = sourceFile.file.split("/");
     const warnings: QualityWarning[] = [];
-    if (segments[0] === "apps" && segments.length === 3 && !appRootAllowedFiles.has(segments[2])) {
-      warnings.push({
-        rule: "akan.layout.app-root-file",
-        scope: "layout",
-        severity: "warning",
-        file: sourceFile.file,
-        message: `Unexpected app root file "${segments[2]}". Keep application code in conventional app folders.`,
-      });
+    const rootEntry = getSysRootEntry(sourceFile.file);
+    if (rootEntry) {
+      const { type, name, isDir } = rootEntry;
+      const allowed = isDir ? rootAllowedDirs[type].has(name) : rootAllowedFiles[type].has(name);
+      const kind = isDir ? "folder" : "file";
+      if (!allowed) {
+        warnings.push({
+          rule: `akan.layout.${type}-root-${kind}`,
+          scope: "layout",
+          severity: "warning",
+          file: sourceFile.file,
+          message: `Unexpected ${type} root ${kind} "${name}". Keep ${type} code in conventional ${type} folders.`,
+        });
+      }
     }
 
-    const libRootFile = getLibRootFile(sourceFile.file);
-    if (libRootFile && !libFacetRootAllowedFiles.has(libRootFile)) {
+    const libFacetFile = getLibFacetRootFile(sourceFile.file);
+    if (libFacetFile && !isAllowedLibFacetRootFile(libFacetFile)) {
       warnings.push({
-        rule: "akan.layout.lib-root-file",
+        rule: "akan.layout.lib-facet-file",
         scope: "layout",
         severity: "warning",
         file: sourceFile.file,
-        message: `Unexpected lib root file "${libRootFile}". Keep direct lib root files limited to generated support facets.`,
+        message: `Unexpected lib facet root file "${libFacetFile}". Keep direct lib/ root files limited to generated support facets.`,
       });
     }
 
@@ -821,7 +837,19 @@ function getConventionDescription(suffix: (typeof CONVENTION_SUFFIXES)[number], 
   return `${modelName}Store`;
 }
 
-function getLibRootFile(file: string) {
+const sysRootTypes = { apps: "app", libs: "lib" } as const;
+
+function getSysRootEntry(file: string) {
+  const segments = file.split("/");
+  const root = segments[0];
+  const name = segments[2];
+  if (!root || !name || segments.length < 3) return null;
+  const type = sysRootTypes[root as keyof typeof sysRootTypes];
+  if (!type) return null;
+  return { type, name, isDir: segments.length > 3 };
+}
+
+function getLibFacetRootFile(file: string) {
   const segments = file.split("/");
   if ((segments[0] === "libs" || segments[0] === "apps") && segments.length === 4 && segments[2] === "lib")
     return segments[3];

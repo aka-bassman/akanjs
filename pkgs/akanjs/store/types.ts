@@ -11,6 +11,11 @@ export interface Submit {
   times: number;
 }
 
+/** `agent: false` subscribes without joining the agent surface — the key stays out of what the screen publishes. */
+export interface StoreUseOptions {
+  agent?: boolean;
+}
+
 type IsAny<T> = 0 extends 1 & T ? true : false;
 type PickFunc<
   State,

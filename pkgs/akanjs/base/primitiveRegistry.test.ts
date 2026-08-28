@@ -114,6 +114,17 @@ describe("primitive scalars", () => {
     expect(() => Date._parse("invalid-date" as never)).toThrow("Invalid Date value: Invalid Date");
   });
 
+  test("parses boolean wire spellings sent as text", () => {
+    expect(Boolean._parse("true")).toBe(true);
+    expect(Boolean._parse("false")).toBe(false);
+    expect(Boolean._parse("1")).toBe(true);
+    expect(Boolean._parse("0")).toBe(false);
+    expect(Boolean._parse("True")).toBe(true);
+    expect(Boolean._serialize("true")).toBe(true);
+    expect(() => Boolean._parse("")).toThrow("Invalid Boolean value: ");
+    expect(() => Boolean._parse("yes")).toThrow("Invalid Boolean value: yes");
+  });
+
   test("exposes default metadata for object-like primitives", () => {
     expect(Any.refName).toBe("Any");
     expect(Any[DEFAULT_VALUE]).toBeNull();

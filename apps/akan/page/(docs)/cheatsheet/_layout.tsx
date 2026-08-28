@@ -24,6 +24,7 @@ export default function Layout({ children }: LayoutProps) {
       subMenus: [
         { name: l.trans({ en: "CRUD", ko: "CRUD" }), href: "/cheatsheet/interface/crud" },
         { name: l.trans({ en: "Endpoint", ko: "Endpoint" }), href: "/cheatsheet/interface/endpoint" },
+        { name: l.trans({ en: "MCP Server", ko: "MCP 서버" }), href: "/cheatsheet/interface/mcp" },
         { name: l.trans({ en: "Form", ko: "Form" }), href: "/cheatsheet/interface/form" },
       ],
     },

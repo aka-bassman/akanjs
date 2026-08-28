@@ -69,7 +69,7 @@ Recipe Override
 
 Recipe Override — Re-skin Without Rebuilding
 
-A route's _overrides.tsx can swap a recipe slot. Every framework component that consumes that recipe (Button, Badge …) re-skins across the whole route subtree — while its behavior (async states, focus trap, a11y) stays exactly as the framework ships it. Only the className factory changes.
+A route's _overrides.tsx can swap a recipe slot (button, badge, input). Every framework client component that consumes that recipe (Button, Badge, Input, Dropdown, Pagination …) re-skins across the whole route subtree — while its behavior (async states, focus trap, a11y) stays exactly as the framework ships it. Only the className factory changes. Server components (Unit/View) and raw xRecipe(...) calls in your own JSX keep the canonical recipe.
 
 The swap recipe must accept the framework recipe's full variant surface so every call site keeps working. It reaches framework components (which read the slot); a raw buttonRecipe(...) call in your own JSX is not affected — import your own recipe there instead.
 

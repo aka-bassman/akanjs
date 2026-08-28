@@ -23,28 +23,34 @@ await app.start();`,
     {
       name: "AkanAppOptions",
       desc: l.trans({
-        en: "Constructor option type for `AkanApp`. It configures replica layout, server path, runtime directory, HTTP port, and WebSocket base port for the gateway process.",
-        ko: "`AkanApp` constructor option type입니다. gateway process를 위한 replica layout, server path, runtime directory, HTTP port, WebSocket base port를 설정합니다.",
+        en: "Constructor option type for `AkanApp`. It configures replica layout, server path, runtime directory, HTTP port, and WebSocket base port for the gateway process, plus `openapi` and `modules`. `modules` boots only the named modules and the ones they depend on, in every child; omitted or empty mounts every enabled module.",
+        ko: "`AkanApp` constructor option type입니다. gateway process를 위한 replica layout, server path, runtime directory, HTTP port, WebSocket base port와 함께 `openapi`, `modules`를 설정합니다. `modules`는 지정한 모듈과 그 의존 모듈만 모든 child에서 부팅하며, 비워두면 활성화된 모든 모듈을 마운트합니다.",
       }),
       code: `import type { AkanAppOptions } from "akanjs/server";
 
 const options: AkanAppOptions = {
   replica: "1,0,2",
   runtimeDir: "./runtime",
+  modules: ["article"],
 };`,
     },
     {
       name: "AkanOption",
       desc: l.trans({
-        en: "App/library option builder used by `lib/option.ts`. It registers env-derived use objects, signal middleware, and web proxies consumed by the server runtime.",
-        ko: "`lib/option.ts`에서 사용하는 app/library option builder입니다. server runtime이 사용하는 env-derived use object, signal middleware, web proxy를 등록합니다.",
+        en: "App/library option builder used by `lib/option.ts`. It registers env-derived use objects, signal middleware, adaptor overrides, and web proxies, and carries the settings an app owns: `setMcp` for the MCP server, `setAgentAccess` for the guards a caller must pass to spend the LLM key through the agent relay, and `setLlm` for the model that relay speaks to. Every lib's option is read in mount order with the app's last.",
+        ko: "`lib/option.ts`에서 사용하는 app/library option builder입니다. env-derived use object, signal middleware, adaptor override, web proxy를 등록하고, 앱이 소유하는 설정을 함께 담습니다. `setMcp`는 MCP 서버, `setAgentAccess`는 agent relay로 LLM 키를 쓰려면 통과해야 하는 guard, `setLlm`은 그 relay가 말을 거는 모델입니다. 모든 lib의 option을 마운트 순서대로 읽고 앱의 것을 마지막에 얹습니다.",
       }),
       code: `import { AkanOption } from "akanjs/server";
 
-export const option = new AkanOption()
+import { SignedIn } from "../srvkit";
+
+export const option = new AkanOption<ModulesOptions>()
   .use((env) => ({ appName: env.appName }))
   .applyMiddleware(Logging)
-  .applyWebProxy(localeWebProxy);`,
+  .applyWebProxy(localeWebProxy)
+  .setMcp({ instructions: "Domain tools for the akan app." })
+  .setLlm((options) => options.llm ?? {})
+  .setAgentAccess(SignedIn);`,
     },
     {
       name: "AkanResponse",

@@ -110,7 +110,7 @@ externalLibs
 
 externalLibs marks dependencies that should not be bundled into app code. When declared here, Akan installs them as separate packages during the production build.
 
-Akan includes externalLibs in the production package dependencies together with required SSR and native runtime packages.
+Akan includes externalLibs in the production package dependencies together with the required SSR runtime packages.
 
 Use this for native or runtime-sensitive packages. Normal TypeScript helpers usually do not need externalLibs.
 
@@ -142,7 +142,7 @@ Library Config Fields
 
 LibConfig uses the same partial object or function shape, but its current practical surface is externalLibs. Use it when a shared library wraps a dependency that must be available in production runtime packaging.
 
-Akan resolves missing values to an empty list and stores the result with the library scan result.
+Akan resolves missing values to an empty list and merges every workspace library's externalLibs into each app's own list, so an app that uses the library does not repeat the declaration.
 
 ## Code Examples
 
@@ -324,7 +324,7 @@ export default config;
 import type { AppConfig } from "akanjs";
 
 const config: AppConfig = {
-  externalLibs: ["sharp"],
+  externalLibs: ["puppeteer"],
 };
 
 export default config;
@@ -412,7 +412,7 @@ export default config;
 import type { LibConfig } from "akanjs";
 
 const config: LibConfig = {
-  externalLibs: ["sharp"],
+  externalLibs: ["puppeteer"],
 };
 
 export default config;

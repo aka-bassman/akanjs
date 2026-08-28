@@ -24,7 +24,7 @@ const withSuspense = { suspense: true } as const;
  */
 const bodyFallback = {
   suspense: true,
-  loading: () => <div className="min-h-40 w-full animate-pulse rounded-md bg-muted" />,
+  loading: () => <div className="min-h-40 w-full animate-pulse rounded-box bg-muted" />,
 } as const;
 
 export const ViewModal = lazy(() => import("./ViewModal"), withSuspense);

@@ -8,6 +8,7 @@ import { useDebounce } from "akanjs/webkit";
 import { type ReactNode, type Usable, use, useCallback, useEffect, useMemo, useRef } from "react";
 import { AiOutlinePlus, AiOutlineSave } from "react-icons/ai";
 
+import { agentAttrs } from "../agentAttrs";
 import { Button } from "../Button";
 import { Modal } from "../Modal";
 
@@ -32,10 +33,16 @@ interface EditModelProps<Full> {
   edit?: ClientEdit<string, Full> | Partial<Full>;
   /** Store modal name that should activate this editor. */
   modal?: string;
-  children: any;
+  children: ReactNode;
   /** Custom loading overlay wrapper, or false to disable the default overlay. */
   loadingWrapper?: boolean | ((props: { children?: any; className?: string }) => ReactNode);
 }
+
+interface OpenEditorProps<Full> extends EditModelProps<Full> {
+  /** The shell's own dismissal. Absent when the shell draws none, and then nothing is published. */
+  cancelEdit?: () => void;
+}
+
 const EditModel = <Full,>({
   type = "modal",
   slice,
@@ -45,7 +52,8 @@ const EditModel = <Full,>({
   modal,
   children,
   loadingWrapper,
-}: EditModelProps<Full>) => {
+  cancelEdit,
+}: OpenEditorProps<Full>) => {
   const storeUse = st.use as { [key: string]: () => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => void };
   const { refName, sliceName } = slice;
@@ -63,6 +71,13 @@ const EditModel = <Full,>({
   );
   const modelModal = storeUse[names.modelModal]() as string | null;
   const modelForm = storeUse[names.modelForm]() as { id: string | null; [key: string]: any };
+
+  // This component mounts only while the editor is open, which is what keeps one registration on a list that
+  // renders an editor per row: at most one of them is ever open.
+  st.tool(cancelEdit ? `cancelEditOf${ModelName}` : null, {
+    desc: `Close the ${modelName} form without saving.`,
+    effect: "state",
+  }).exec(() => cancelEdit?.());
 
   const checkSubmitable = useDebounce(() => {
     storeDo[names.checkModelSubmitable]();
@@ -137,7 +152,7 @@ export default function EditModal<Full extends { id: string }>({
   onCancel,
 }: EditModalProps<Full>) {
   const { l } = usePage();
-  const storeUse = st.use as { [key: string]: () => unknown };
+  const storeUse = st.use as { [key: string]: (option?: { agent?: boolean }) => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
   const storeSel = st.sel as <Ret>(selector: (state: unknown) => Ret) => Ret;
   const modelEdit = ((edit as Promise<any> | { then?: any } | undefined)?.then
@@ -260,7 +275,9 @@ export default function EditModal<Full extends { id: string }>({
 
   const Title: () => ReactNode = () => {
     const modelFormLoading = storeUse[names.modelFormLoading]() as string | boolean;
-    const modelForm = storeUse[names.modelForm]() as Full;
+    // `fill<Model>Form` belongs to the editor body below, which subscribes the same key — reading it here to
+    // label the modal would register that tool a second time.
+    const modelForm = storeUse[names.modelForm]({ agent: false }) as Full;
     return modelFormLoading
       ? null
       : renderTitle
@@ -295,9 +312,18 @@ export default function EditModal<Full extends { id: string }>({
                   },
                 });
               };
+              const submitModel = st
+                .tool(names.submitModel, {
+                  desc: `Save the ${names.model} the open form holds.`,
+                  effect: "mutation",
+                  guard: () =>
+                    modelSubmit.disabled || disabled ? `The ${names.model} form is not ready to submit.` : true,
+                })
+                .exec(() => handleSubmit());
               return (
                 <Button
-                  className={cn("mt-4 w-full gap-2 rounded-2xl", submitClassName)}
+                  {...agentAttrs(submitModel)}
+                  className={cn("mt-4 w-full gap-2", submitClassName)}
                   disabled={modelSubmit.disabled || !!disabled}
                   onClick={async (e, { onError }) => {
                     await handleSubmit({ onError });
@@ -336,6 +362,7 @@ export default function EditModal<Full extends { id: string }>({
             edit={edit}
             modal={modal}
             loadingWrapper={loadingWrapper}
+            cancelEdit={handleCancel}
           >
             {children}
           </EditModel>

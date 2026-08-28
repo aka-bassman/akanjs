@@ -379,7 +379,7 @@ export function useKeyboardFrame({
   platformProfile: FramePlatformProfile;
   freeze?: boolean;
 }) {
-  const keyboardHeight = st.use.keyboardHeight();
+  const keyboardHeight = st.use.keyboardHeight({ agent: false });
   const androidViewportKeyboardHeight =
     platformProfile === "android" ? Math.max(0, Math.round(viewport.height - window.innerHeight)) : 0;
   const visualViewportKeyboardHeight = Math.max(

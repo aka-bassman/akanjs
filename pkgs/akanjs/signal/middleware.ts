@@ -1,11 +1,11 @@
-import type { BaseEnv, Cls, PromiseOrObject } from "akanjs/base";
+import type { BackendEnv, Cls, PromiseOrObject } from "akanjs/base";
 import { Logger } from "akanjs/common";
 import { type CacheAdaptor, CacheAdaptorRole } from "akanjs/service";
 import dayjs from "dayjs";
 import type { SignalContext } from "./signalContext";
 import { traceCache } from "./trace";
 
-export interface Middleware<Env extends BaseEnv = BaseEnv> {
+export interface Middleware<Env extends BackendEnv = BackendEnv> {
   use(env: Env): PromiseOrObject<(context: SignalContext, next: () => Promise<unknown>) => PromiseOrObject<unknown>>;
 }
 
@@ -14,7 +14,7 @@ export type MiddlewareCls = Cls<Middleware, { readonly refName: string }>;
 export const middleware = (refName: string) => {
   return class Middleware {
     static refName = refName;
-    async use(env: BaseEnv) {
+    async use(env: BackendEnv) {
       return async (context: SignalContext, next: () => Promise<unknown>) => {
         return await next();
       };

@@ -121,6 +121,7 @@ async function withFullSsrCacheHarness<T>(
     artifact?: BaseBuildArtifact;
     worker?: FakeRscWorker;
     nodeEnv?: string;
+    commandType?: string;
     htmlCacheEnabled?: string;
     htmlCachePaths?: string;
     htmlCacheMaxBodyBytes?: string;
@@ -130,6 +131,7 @@ async function withFullSsrCacheHarness<T>(
 ): Promise<T> {
   const envSnapshot = {
     NODE_ENV: process.env.NODE_ENV,
+    AKAN_COMMAND_TYPE: process.env.AKAN_COMMAND_TYPE,
     AKAN_PUBLIC_APP_NAME: process.env.AKAN_PUBLIC_APP_NAME,
     AKAN_PUBLIC_REPO_NAME: process.env.AKAN_PUBLIC_REPO_NAME,
     AKAN_PUBLIC_SERVE_DOMAIN: process.env.AKAN_PUBLIC_SERVE_DOMAIN,
@@ -142,6 +144,8 @@ async function withFullSsrCacheHarness<T>(
     AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES: process.env.AKAN_HTML_RESULT_CACHE_MAX_BODY_BYTES,
   };
   process.env.NODE_ENV = options.nodeEnv ?? "production";
+  if (options.commandType === undefined) delete process.env.AKAN_COMMAND_TYPE;
+  else process.env.AKAN_COMMAND_TYPE = options.commandType;
   process.env.AKAN_PUBLIC_APP_NAME = "akan-test";
   process.env.AKAN_PUBLIC_REPO_NAME = "akan";
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.test";
@@ -303,6 +307,88 @@ describe("WebRouter sub route host resolution", () => {
   test("ignores an x-base-path header naming an unknown basePath", async () => {
     await expect(rscBasePathFor({ host: "soft.example.test", "x-base-path": "nonsense" })).resolves.toBe("soft");
     await expect(rscBasePathFor({ host: "akanjs.example.test", "x-base-path": "soft" })).resolves.toBe("soft");
+  });
+});
+
+describe("WebRouter local sub route index", () => {
+  const artifactWithSubRoutes = (): BaseBuildArtifact => ({
+    ...createTestArtifact(),
+    subRoutes: { soft: ["soft.example.test"] },
+    basePaths: ["soft", "office"],
+  });
+
+  async function requestRoot(
+    pathname: string,
+    { env, artifact }: { env?: string; artifact?: BaseBuildArtifact } = {},
+  ): Promise<{ response: Response; renderCount: number }> {
+    const previous = process.env.AKAN_PUBLIC_ENV;
+    if (env === undefined) delete process.env.AKAN_PUBLIC_ENV;
+    else process.env.AKAN_PUBLIC_ENV = env;
+    try {
+      return await withFullSsrCacheHarness(
+        async ({ fullSsr, fakeWorker }) => {
+          const response = await fullSsr(new Request(`https://akan.example.test${pathname}`));
+          return { response, renderCount: fakeWorker.renderCalls.length };
+        },
+        { artifact: artifact ?? artifactWithSubRoutes() },
+      );
+    } finally {
+      if (previous === undefined) delete process.env.AKAN_PUBLIC_ENV;
+      else process.env.AKAN_PUBLIC_ENV = previous;
+    }
+  }
+
+  test("serves a basePath picker at the site root instead of a 404", async () => {
+    const { response, renderCount } = await requestRoot("/en/", { env: "local" });
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(renderCount).toBe(0);
+    expect(html).toContain('href="/en/soft"');
+    expect(html).toContain('href="/en/office"');
+    expect(html).toContain("soft.example.test");
+  });
+
+  test("keeps the picker on the bare root and on every configured locale", async () => {
+    await expect(requestRoot("/", { env: "local" }).then((r) => r.response.status)).resolves.toBe(200);
+    const { response } = await requestRoot("/ko", { env: "local" });
+    await expect(response.text()).resolves.toContain('href="/ko/soft"');
+  });
+
+  test("leaves non-root paths to the renderer", async () => {
+    const { renderCount } = await requestRoot("/en/soft", { env: "local" });
+    expect(renderCount).toBe(1);
+  });
+
+  test("stays local-only and sub-route-only", async () => {
+    await expect(requestRoot("/en/", { env: "debug" }).then((r) => r.renderCount)).resolves.toBe(1);
+    await expect(
+      requestRoot("/en/", { env: "local", artifact: createTestArtifact() }).then((r) => r.renderCount),
+    ).resolves.toBe(1);
+  });
+});
+
+describe("WebRouter dev mode selection", () => {
+  const devRoutes = async (commandType?: string) => {
+    // A dev router opens the builder IPC channel, which exists only in a process the CLI spawned.
+    const originalSend = process.send;
+    process.send = ((): boolean => true) as typeof process.send;
+    try {
+      return await withFullSsrCacheHarness(async ({ renderEnvRoutes }) => Object.keys(renderEnvRoutes), {
+        nodeEnv: "production",
+        commandType,
+      });
+    } finally {
+      process.send = originalSend;
+    }
+  };
+
+  test("keeps dev mode under `akan start` even when NODE_ENV claims production", async () => {
+    await expect(devRoutes("start")).resolves.toContain("/_akan/hmr");
+  });
+
+  test("stays in production mode when no command claims otherwise", async () => {
+    await expect(devRoutes()).resolves.not.toContain("/_akan/hmr");
   });
 });
 

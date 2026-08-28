@@ -10,7 +10,7 @@ import {
   writeText,
 } from "../testHelpers";
 import { WorkspaceCommand } from "./workspace.command";
-import { WorkspaceRunner } from "./workspace.runner";
+import { defaultMaxDiagnostics, WorkspaceRunner } from "./workspace.runner";
 import { WorkspaceScript } from "./workspace.script";
 
 const tempRoots: string[] = [];
@@ -289,7 +289,6 @@ describe("WorkspaceRunner", () => {
       "@react-spring/web": expect.any(String),
       "@use-gesture/react": expect.any(String),
       chance: expect.any(String),
-      croner: expect.any(String),
       react: expect.any(String),
       "react-dom": expect.any(String),
       "react-icons": expect.any(String),
@@ -327,6 +326,8 @@ describe("WorkspaceRunner", () => {
     const cursorRules = await Bun.file(`${root}/.cursor/rules/akan.mdc`).text();
     const claudeGuide = await Bun.file(`${root}/CLAUDE.md`).text();
     expect(claudeGuide).toContain("@AGENTS.md");
+    // The template carries the comment rule too, so a workspace scaffolded without `agent install` still has it.
+    expect(claudeGuide).toContain("## Comments — Overrides Your Default");
     expect(agentsGuide).toContain("repo Agent Guide");
     // The runner lays down the hand-editable preamble and an empty managed block; the conventions and framework
     // guide inside it are rendered from the installed package by `akan agent install`, which the script composes.
@@ -373,14 +374,38 @@ describe("WorkspaceRunner", () => {
       "check",
       "--write",
       "--no-errors-on-unmatched",
+      `--max-diagnostics=${defaultMaxDiagnostics}`,
       "/workspace/apps/demo",
     ]);
 
-    await runner.lint(exec as never, workspace as never, { fix: false });
+    await runner.lint(exec as never, workspace as never, { fix: false, maxDiagnostics: 0 });
     expect(spawn).toHaveBeenLastCalledWith("./node_modules/.bin/biome", [
       "check",
       "--no-errors-on-unmatched",
+      "--max-diagnostics=none",
       "/workspace/apps/demo",
+    ]);
+  });
+
+  test("pins the biome config so a malformed one is reported at its own line", async () => {
+    const runner = new WorkspaceRunner();
+    const { root } = await createTempApp("demo");
+    tempRoots.push(root);
+    const workspace = createFakeExecutor("workspace");
+    workspace.workspaceRoot = root;
+    const spawn = mock(async () => "");
+    workspace.spawn = spawn;
+    await Bun.write(`${root}/biome.jsonc`, "{}\n");
+
+    await runner.lint({ cwdPath: `${root}/apps/demo` } as never, workspace as never, { fix: false });
+
+    expect(spawn).toHaveBeenCalledWith("./node_modules/.bin/biome", [
+      "check",
+      "--no-errors-on-unmatched",
+      `--max-diagnostics=${defaultMaxDiagnostics}`,
+      "--config-path",
+      `${root}/biome.jsonc`,
+      `${root}/apps/demo`,
     ]);
   });
 

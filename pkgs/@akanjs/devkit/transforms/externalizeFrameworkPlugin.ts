@@ -65,7 +65,6 @@ const DEFAULT_EXCLUDE_PREFIX = ["@akanjs/cli/", "@akanjs/devkit/"];
 const OPTIONAL_BACKEND_EXTERNAL_EXACT = new Set<string>([
   "@libsql/client",
   "bullmq",
-  "croner",
   "ioredis",
   "postgres",
   "protobufjs",

@@ -20,6 +20,7 @@ import {
   getLoaderInfos,
   type ListQueryOption,
   type Mdl,
+  NoDocumentError,
   type SaveEventType,
   type UpdateChain,
 } from "akanjs/document";
@@ -224,9 +225,9 @@ export class DatabaseResolver {
           refName: modelName,
           pickOne: (query: QueryOf<any>, projection?: any) => store.pickOne(query, { select: projection }),
           pickById: (id: string | undefined, projection?: any) => {
-            if (!id) throw new Error("No Document ID");
+            if (!id) throw new NoDocumentError("No Document ID");
             return store.findOne({ id }, { select: projection }).then((doc) => {
-              if (!doc) throw new Error(`No Document (${modelName}): ${id}`);
+              if (!doc) throw new NoDocumentError(`No Document (${modelName}): ${id}`);
               return doc;
             });
           },
@@ -284,7 +285,7 @@ export class DatabaseResolver {
       async __pickId(query?: QueryOf<any>, queryOption?: FindQueryOption): Promise<string> {
         const { find, sort, skip, sample } = getFindQuery(query, queryOption);
         const id = await this.__store.findId(find, { sort, skip, sample });
-        if (!id) throw new Error(`No Document (${database.refName}): ${JSON.stringify(query)}`);
+        if (!id) throw new NoDocumentError(`No Document (${database.refName}): ${JSON.stringify(query)}`);
         return id;
       }
       async __exists(query?: QueryOf<any>): Promise<string | null> {
@@ -310,7 +311,7 @@ export class DatabaseResolver {
       }
       async __get(id: string) {
         const doc = await this.__loader.load(id);
-        if (!doc) throw new Error(`No Document (${database.refName}): ${id}`);
+        if (!doc) throw new NoDocumentError(`No Document (${database.refName}): ${id}`);
         return doc;
       }
       async [`get${className}`](id: string) {

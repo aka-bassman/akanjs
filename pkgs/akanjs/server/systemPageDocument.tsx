@@ -38,8 +38,8 @@ export const SYSTEM_PAGE_STATUS_COPY = {
   },
 } as const;
 
-const FALLBACK_STYLE = `
-:root { color-scheme: dark; --akan-primary: #ff493b; --akan-secondary: #2b2e33; --akan-accent: #d1a23b; --akan-foreground: #ffffff; --akan-background: #1a1a1a; --akan-base-200: #2a2a2a; --akan-error: #f02020; }
+export const SYSTEM_PAGE_STYLE = `
+:root { color-scheme: dark; --akan-primary: #ff493b; --akan-secondary: #2b2e33; --akan-accent: #d1a23b; --akan-foreground: #ffffff; --akan-background: #1a1a1a; --akan-error: #f02020; }
 body { margin: 0; min-height: 100vh; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--akan-background); color: var(--akan-foreground); }
 a { color: inherit; }
 .akan-system-page { min-height: 100vh; display: grid; place-items: center; padding: 32px 18px; box-sizing: border-box; background: radial-gradient(circle at top left, rgba(255, 73, 59, 0.16), transparent 34%), linear-gradient(135deg, var(--akan-background), #111); }
@@ -70,7 +70,7 @@ export function createSystemPageDocument(options: SystemPageOptions): ReactNode 
         {options.stylesheetHref ? (
           <link rel="stylesheet" href={options.stylesheetHref} precedence="default" data-akan-css="active" />
         ) : null}
-        <style data-akan-system-page>{FALLBACK_STYLE}</style>
+        <style data-akan-system-page>{SYSTEM_PAGE_STYLE}</style>
       </head>
       <body>
         <main className="akan-system-page min-h-screen bg-background text-foreground">

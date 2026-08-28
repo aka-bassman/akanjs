@@ -17,4 +17,14 @@ and verified by `akan lint akan`.
 Import from `@apps/akan/ui`:
 - `cardGridRecipe`(cols: two*|three|mdTwo) — 카드/셀 그리드 — `grid gap-3` 위에 cols 브레이크포인트를 얹는다.
 - `panelRecipe`(tone: solid*|glass · radius: none|lg|xl*|2xl · padding: none|sm|md*|lg|xl|row · shadow?) — 콘텐츠 표면 패널 — `rounded-* border bg-background p-*` 계열 통합. row 는 리스트/행 표면(px만).
+
+Import from `@libs/util/ui`:
+- `alertRecipe`(variant: default*|info|success|warning|error) — Alert bar. Mirrors daisyUI's grid-flow-col layout and padding; the tinted variants replace
+- `badgeRecipe`(variant: default*|primary|secondary|accent|neutral|success|warning|info|error|outline · size: xs|sm|md*|lg · outline: true|false*) — Workspace badge look. Same variants as akanjs's `badgeRecipe` plus the size axis daisyUI had
+- `buttonRecipe`(variant: default*|primary|secondary|accent|neutral|outline|ghost|destructive|success|warning|info|link · size: xs|sm|md*|lg|xl|icon · shape: default*|square|circle · outline: true|false*) — Workspace button look. Extends akanjs's `buttonRecipe` vocabulary with the two axes daisyUI had and
+- `cardRecipe`(surface: none*|bordered|filled · size: sm|md*|lg) — Card shell. daisyUI's `.card` was `border-radius: var(--radius-box)` plus `relative; display:flex;
+- `checkboxRecipe`(size: xs|sm|md*|lg · tone: default*|primary|secondary|accent|success|warning|error) — Checkbox. daisyUI drew its own box with `appearance: none` plus a clip-path tick; this keeps the
+- `inputRecipe`(kind: field*|area · size: xs|sm|md*|lg|xl · tone: default*|primary) — Input surface — the shell shared by `<input>`, `<textarea>` and `<select>`.
+- `tableRecipe`(size: sm|md*) — Table. daisyUI styled cells through descendant selectors, which a utility recipe can only reach with
+- `tabRecipe`(active: true|false*)
 <!-- akan:agent:end -->

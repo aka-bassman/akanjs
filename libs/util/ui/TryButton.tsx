@@ -1,10 +1,11 @@
 "use client";
 import { cn } from "akanjs/client";
-import { Button, Loading } from "akanjs/ui";
+import { Button, type ButtonVariants, Loading } from "akanjs/ui";
 import type { MouseEvent, ReactNode } from "react";
 import { useState } from "react";
+import { AiFillCheckSquare } from "react-icons/ai";
 
-interface TryButtonProps {
+interface TryButtonProps extends ButtonVariants {
   children: ReactNode;
   wrapperClassName?: string;
   className?: string;
@@ -17,7 +18,9 @@ interface TryButtonProps {
 export const TryButton = ({
   children,
   wrapperClassName,
-  className = "",
+  className,
+  variant = "primary",
+  size,
   disabled,
   completeOnSuccess,
   footer,
@@ -29,6 +32,8 @@ export const TryButton = ({
   return (
     <div className={cn("flex flex-col gap-2", wrapperClassName)}>
       <Button
+        variant={variant}
+        size={size}
         className={cn("w-full", className)}
         disabled={disabled || loading || completed}
         onClick={async (e) => {
@@ -48,7 +53,7 @@ export const TryButton = ({
           <Loading.Spin />
         ) : completed ? (
           <>
-            <input type="checkbox" className="size-3.5 rounded border border-input accent-success" checked readOnly />
+            <AiFillCheckSquare className="text-success" />
             {children}
           </>
         ) : (

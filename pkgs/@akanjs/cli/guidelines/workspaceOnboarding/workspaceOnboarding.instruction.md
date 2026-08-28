@@ -2,56 +2,13 @@
 
 - `apps/<app>` contains application pages, app UI, app domain modules, env files, and `akan.config.ts`.
 - `libs/<lib>` contains shared domain and utility code reused by apps.
-- `apps/<app>/page` contains server-side file-routed pages. Index pages use `_index.tsx`; nested layouts use `_layout.tsx`. routeName.tsx becomes /routeName and [modelId].tsx becomes /[modelId].
-- `apps/<app>/lib/<model>` contains database-backed domain modules.
-- `apps/<app>/lib/_<service>` contains service modules that are not database document models.
-- `apps/<app>/lib/__scalar/<scalar>` contains reusable scalar/value types.
-- Module abstracts live beside module code as `<model>.abstract.md`, `<service>.abstract.md`, or
-  `<scalar>.abstract.md`.
+- `apps/<app>/lib/<model>` holds database-backed domain modules, `lib/_<service>` service modules, and
+  `lib/__scalar/<scalar>` reusable value types. Module abstracts sit beside the code as `<name>.abstract.md`.
+- `apps/<app>/page` holds server-side file-routed pages: `<routeName>.tsx` serves `/routeName`, a directory's
+  `_index.tsx` serves that directory, `_layout.tsx` nests a layout, and `[modelId]` is a dynamic segment.
 
-## Generated Files
-
-Do not hand-edit generated Akan files. Regenerate them through Akan sync, lint, start, build, or the matching
-CLI command instead.
-
-Common generated files include:
-- `apps/*/client.ts`
-- `apps/*/server.ts`
-- `*/lib/cnst.ts`
-- `*/lib/db.ts`
-- `*/lib/dict.ts`
-- `*/lib/sig.ts`
-- `*/lib/srv.ts`
-- `*/lib/st.ts`
-- `*/lib/useClient.ts`
-- `*/lib/useServer.ts`
-- `*/lib/**/index.ts`
-- `*/ui/index.ts`
-- `*/webkit/index.ts`
-- `*/srvkit/index.ts`
-- `*/common/index.ts`
-
-Only **layer-root** barrels are generated. A nested `ui/<Folder>/index.tsx` that builds a namespace is
-hand-written source and must be edited by hand. The distinguishing test: a generated barrel contains nothing
-but `export * from "./X";` lines.
-
-## Domain Module Responsibilities
-
-Use the local module shape before adding a new abstraction.
-
-- `<model>.constant.ts` defines model, enum, scalar, and schema intent.
-- `<model>.abstract.md` defines business intent, domain rules, workflows, and agent notes that are not obvious
-  from code.
-- `<model>.dictionary.ts` defines labels, descriptions, messages, and i18n metadata.
-- `<model>.signal.ts` defines typed endpoint contracts.
-- `<model>.document.ts` owns persistence and document queries.
-- `<model>.service.ts` owns business logic.
-- `<model>.store.ts` owns reusable workflow state and actions that span loading, selections, messages, or multi-step client actions. Consume stores through generated `st.use.*` state and `st.do.*` actions.
-- `<Model>.Template.tsx` owns form-oriented UI, including local form inputs and submit/import interactions. Client components, with 'use client'.
-- `<Model>.Unit.tsx` owns list/item UI. Server components, no 'use client'.
-- `<Model>.View.tsx` owns detail UI. Server components, no 'use client'.
-- `<Model>.Zone.tsx` owns page/container integration and interactive loading or action flows that need client state. Client components, with 'use client'.
-- `<Model>.Util.tsx` owns small module UI helpers, including buttons, import actions, and client-side navigation such as `router.push`. Client components, with 'use client'.
+The file roles inside a module — which file owns persistence, business logic, state, and each UI shape — are in
+the convention set above under **Domain Module Conventions**.
 
 ## Agent Workflow
 
@@ -63,15 +20,14 @@ Use the local module shape before adding a new abstraction.
 6. After `apply_workflow`, run `run_validation` with `validationTarget` when present; otherwise use `applyReportPath`.
 7. Direct source edits are denied when an allowlisted Akan workflow or repair tool can perform the change.
 8. If no workflow exists, or apply reports unsupported/no-op/failed diagnostics that require manual action, edit only the owning source files and never patch generated files directly.
-9. Keep page and layout files server-oriented: route-level `usePage`, headers, static layout, and `akanjs/ui` `Tab` composition belong there.
-10. Put interactive loading, submit/import actions, local form state, and `router.push` in client `Util`, `Template`, or `Zone` components.
-11. Prefer `Tab` for static mode selection instead of extra `useState`; render one focused client component inside each `Tab.Panel`.
-12. Default to server rendering. Add `"use client"` only for a real client-only capability, and keep markup out of the component that carries it — see **SSR First** below.
-13. Keep server-only logic out of client surfaces and client-only code out of server imports.
-14. Treat `AKAN_PUBLIC_*` env vars as public. Never put secrets in them.
-15. Add or update tests when behavior, contracts, or CLI output changes.
-16. Update `*.abstract.md` when business invariants, workflows, or public behavior change.
-17. Run the smallest relevant verification command after changes. After touching any `.tsx`, that includes `akan quality ssr`.
+9. Treat `AKAN_PUBLIC_*` env vars as public. Never put secrets in them.
+10. Add or update tests when behavior, contracts, or CLI output changes.
+11. Update `*.abstract.md` when business invariants, workflows, or public behavior change.
+12. Run the smallest relevant verification command after changes. After touching any `.tsx`, that includes
+    `akan quality ssr`.
+
+The rules for where code goes, the client/server boundary, and SSR discipline are in the convention set above;
+this section covers only the order of operations.
 
 ## Common Commands
 
@@ -244,274 +200,6 @@ final fallback when no CLI command covers the change.
 | Add a server-only guard, middleware, or adaptor | `srvkit/` → PascalCase `.ts` | `akan sync <name>` |
 | Add a pure helper (no DOM, no server API) | `common/` → camelCase `.ts` | `akan sync <name>` |
 
-## Anti-patterns: Never Do These
-
-| Don't | Why | Do Instead |
-|-------|-----|------------|
-| Edit `cnst.ts`, `db.ts`, `srv.ts`, `sig.ts`, `st.ts`, `dict.ts`, `useClient.ts`, `useServer.ts`, or any `index.ts` | These are **generated by `akan sync`**. Your changes will be overwritten. | Edit the source files in `lib/<model>/` directories and run `akan sync <name>` |
-| Create a file without running sync | New files won't appear in barrel exports. Imports like `import * as cnst from "../cnst"` will fail. | Always run `akan sync <name>` after creating, renaming, or deleting any module file |
-| Use JS `#private` in `*.constant.ts`, `*.document.ts`, `*.service.ts`, or `*.store.ts` | `no-js-private-class-method.grit` bans `#private` in exactly those four file suffixes. The rule is scoped by file path, not class shape — `#private` stays the house style under `srvkit/`, including `adapt()` classes. | `private _methodName()` in those four files; `#methodName()` in `srvkit/` |
-| Use `console.log()` | Biome lint forbids `console.log`. Only `console.error`, `console.info`, `console.warn` are allowed. | Use one of the three allowed console methods, or `this.logger.*` / `new Logger("ClassName")` on the server |
-| Write a `//!` marker in `ui/`, `webkit/`, `common/`, `page/**/*.tsx`, `*.constant.ts`, `*.store.ts`, or a module component file | `no-bang-comment-in-client.grit` bans it. Bun classifies `//!` and `/*!` as legal comments and keeps them through minification, so the note ships to every visitor. | `// FIXME:` in browser-reachable code; `//!` stays legal in server, `srvkit/`, and CLI files |
-| `return` a value from a store action | `no-return-in-store-action.grit` bans it. Every method of a `store(...)` class dispatches through `st.do.<action>()`, which is typed `void` / `Promise<void>`, so the value never reaches the caller. | `this.set({ ... })` with the result; a bare `return;` guard, a `return` inside a nested callback, a getter, and a `static` helper all stay legal |
-| `throw new Error("...")` | `no-throw-raw-error.grit` bans raw errors outside tests, `*.constant.ts`, `common/`, and `apps/akan/env/`. Raw errors carry no dictionary key, so they cannot be localized or toasted. | `throw new Err("task.error.<key>")` plus an `[en, ko]` entry in the module dictionary's `.error({})` |
-| Hand-order Tailwind classes, or reorder them to "fix" a diff | `useSortedClasses` is an error and also sorts the string arguments to `cn()`. Sorter output like `font-bold text-2xl` looks wrong but is correct. | Write classes in any order and let `akan lint` sort them |
-| A colour outside the semantic vocabulary — `bg-red-500`, `bg-[#3b82f6]`, `btn-primary`, `text-base-content`, `style={{ color: "#fff" }}` | The theme closes the vocabulary, so these produce **no CSS at all** — the element renders unstyled, and without the lint rules there is no error and no warning either. Raw-palette, arbitrary-colour, daisyUI-legacy and inline-colour rules all catch this. | Semantic tokens: `bg-primary`, `text-foreground/70`, `border-border`. A genuinely fixed colour takes a `// biome-ignore lint/plugin: <reason>` |
-| `import` a third-party package inside a page, a barrel, or a module file | `no-import-external-library.grit` covers `page/**`, all barrels, and every `*.{constant,dictionary,document,service,signal,store}.ts` and `*.{Template,Unit,Util,View,Zone}.tsx`. | Re-export the symbol from a one-line shim in `base/`, `webkit/`, or `ui/` first, then import that |
-| Import server APIs (`fs`, `Bun`, `process.env`) in `ui/`, `webkit/`, or `common/` | Server-only imports in client code cause build failures. | Keep server dependencies in `lib/`, `srvkit/`, or `private/` only |
-| Import across the client/server boundary — a `*.service.ts` or `../db` from a `.tsx`, `@libs/<lib>/client` or `../st` from a `*.signal.ts` | `no-import-server-in-client.grit` and `no-import-client-in-server.grit` ban it in both directions, and hold `common/` and `*.constant.ts` to both at once. One value import drags the whole other-side graph into the bundle or the server process. | Client code goes through the package client entrypoint and `cnst`; server code goes through `cnst`, `db`, and `srv`. `import type` is erased and stays legal both ways |
-| Skip running `akan sync` after deleting a file | Deleted files remain referenced in barrel exports, causing import errors everywhere. | Run `akan sync <name>` after every file add, remove, or rename |
-| Use "use client" or `useState`/`useEffect` in pages/*.tsx, *.Unit.tsx, and *.View.tsx files | Server code cannot use React hooks. Wrap in a separate `"use client"` component. | Move hook logic to `webkit/` or a `"use client"` UI component |
-| Use `<a>` tag for internal navigation between pages | Akan.js uses `<Link>` from `akanjs/ui` for client-side navigation — avoids full page reloads. | `import { Link } from "akanjs/ui"` and use `<Link href="/task">...</Link>` |
-| Name a custom `Endpoint`/`Slice` like a generated CRUD op — `create<Model>`, `update<Model>`, `remove<Model>`, `view<Model>`, `edit<Model>`, `merge<Model>` | These names are already auto-generated. A collision can pass sync/typecheck/build and only fail at runtime. | Pick a distinct verb, e.g. `startTask`/`archiveTask`, never `createTask` for a custom endpoint |
-| Add `"use client"` to a file that renders markup but uses no hook, event handler, store, or browser API | The directive is a cost, not a formality: everything behind it ships twice, as HTML and as JS that re-runs in the browser. | Delete the directive. `akan quality ssr` flags this as `akan.ssr.unnecessary-use-client` |
-| Put a large static subtree inside a client component that only needs one `onClick` | The whole subtree lands in the bundle for the sake of one handler. | Keep the handler in a small client shell and pass the static markup in as `children`, or move it to a `Unit`/`View` |
-| Load server data with `useEffect(() => { void st.do.initTaskInTodo(); }, [])` | The page renders an empty shell, hydrates, then round-trips for data the server already had. | `await fetch.initTaskInTodo()` in the page and pass `init` to the `Zone` |
-
-## SSR First — Server Rendering Is The Default
-
-Akan is SSR-first. Every JSX element that renders on the server ships as HTML and costs nothing to hydrate; every
-element behind `"use client"` ships twice — as markup and as bundled JS that must re-run in the browser. The
-boundary question is not which file *may* be client, it is **how little** ends up on the client side.
-
-**The default is server. `"use client"` is a cost you justify per component, not a habit.** A component earns the
-directive only by using a client-only capability: a React hook, a JSX event handler, the store (`st.use.*` /
-`st.do.*`), a browser global, or a client-only third-party package. Rendering markup, mapping over data, reading a
-route param, and calling `l()` are all server work — `usePage()` and `l()` are legal in server components and never
-force a boundary.
-
-The file role decides *where* the boundary sits (`Template`/`Zone`/`Util` are client, `Unit`/`View` are server); it
-does not decide how much markup sits behind it. A `Zone` that hoards markup is still an SSR regression.
-
-Measure with `akan quality ssr` (`--format json` for tooling). It reports the server render share per app and lib —
-server-rendered JSX elements over total — plus the warnings below. Treat **50% server share as the floor** and a
-falling share as a regression to justify or revert.
-
-| Rule | Means |
-|---|---|
-| `akan.ssr.unnecessary-use-client` | The directive is there but nothing in the file needs it. Delete it. |
-| `akan.ssr.client-static-component` | A component in a client file renders real markup with zero client-only capability — pure server work sitting in the bundle. |
-| `akan.ssr.client-static-markup` | A large subtree wraps one or two interactive touches. Split it: interaction stays client, markup goes server. |
-| `akan.ssr.client-mount-load` | A `useEffect(…, [])` loads server data. The page can fetch it before the first byte. |
-| `akan.ssr.module-missing-server-view` | A module renders only from `Template`/`Zone`/`Util` and has no `Unit`/`View` at all. |
-| `akan.ssr.template-client-state` | A `Template` holds form state in `useState` instead of the store. |
-
-A third-party client package and the `ui/<Folder>/index_.tsx` + `lazy()` boundary both justify the directive and are
-not flagged. Interaction-driven `fetch.*` inside an `onClick` is not flagged either — only mount-time loads are,
-because those are the ones the server could have performed.
-
-### Server-Side Implementation Playbook
-
-**① Wrap the interaction, not the UI.** The smallest useful client component adds one behaviour and renders
-`children` untouched, so the markup inside never reaches the bundle.
-
-```tsx
-// apps/<%= appName %>/ui/ClickWrapper.tsx
-"use client";
-export const ClickWrapper = ({ children, onPick }: ClickWrapperProps) => <div onClick={onPick}>{children}</div>;
-
-// in a server page — Task.Unit.Card stays server-rendered
-<ClickWrapper onPick={…}>
-  <Task.Unit.Card task={task} />
-</ClickWrapper>
-```
-
-**② Split compound components so panels stay on the server.** A tab, accordion, or disclosure needs client state
-only for *which* part is visible — never for what the parts contain. `Tab` / `Tab.Menus` / `Tab.Menu` / `Tab.Panel`
-from `akanjs/ui` is the reference shape: only the provider and menu hold state, and `<Tab.Panel>` renders its
-children as-is, so a server `Unit`/`View` passed in stays server-rendered.
-
-```tsx
-<Tab defaultMenu="detail">
-  <Tab.Menus>
-    <Tab.Menu menu="detail">{l("task.detail")}</Tab.Menu>
-    <Tab.Menu menu="history">{l("task.history")}</Tab.Menu>
-  </Tab.Menus>
-  <Tab.Panel menu="detail">
-    <Task.View.General task={task} />
-  </Tab.Panel>
-</Tab>
-```
-
-Never collapse this into one `"use client"` file with a mode `useState` and every panel body inlined.
-
-**③ Sync state instead of fetching it.** A server component cannot hold state, so render the initial data on the
-server and hand it across the boundary as a serializable object. That is what `init` / `view` props are: the page
-calls `fetch.initTaskInTodo()` / `fetch.viewTask(id)`, passes the result into a `Zone`, and `Load.Units` /
-`Load.View` hydrate the store from it.
-
-```tsx
-export default async function Page() {
-  const [{ taskInitInTodo }] = await Promise.all([fetch.initTaskInTodo()]);
-  return <Task.Zone.Card init={taskInitInTodo} sliceName="taskInTodo" />;
-}
-```
-
-**④ Push the boundary down to the leaf that needs it.** When a `Zone` reads the store, it should hold *zero* markup
-and delegate to a server `View`, so the whole detail surface renders server-side wherever a page uses the `View`
-directly.
-
-```tsx
-"use client";
-export const Self = () => <Task.View.General task={st.use.task()} />;
-```
-
-**⑤ Hand the promise across, not the awaited value.** `ClientInit` / `ClientView` are `PromiseOrObject<T>`, so a
-page may pass an unawaited `fetch.initTaskInTodo()` and `Load.*` resolves it behind a skeleton. `await` blocks the
-shell for data the page needs immediately; passing the promise streams the rest. Independent fetches still go
-through one `Promise.all`.
-
-**⑥ Use named `ReactNode` slots, not just `children`.** A client shell can take several server-rendered subtrees:
-`Layout.Navbar` accepts `title`, `back`, `left`, `right`, and `children`, so it composes server content in five
-places instead of absorbing it.
-
-**⑦ Let the server do the derived work.** Display and predicate logic belongs on `LightTask` (`isNew()`,
-`canWrite(user?)`, `formatTimes()`), and enum→class lookups belong in a module-scope `as const` map. Both sides call
-the same method, so a client component that exists only to compute a label is markup in the wrong place.
-
-**⑧ Gate auth on the server.** Check the session in `_layout.tsx` and redirect there, before any HTML is sent. A
-client-side auth check costs a hydration round-trip and flashes the wrong UI first.
-
-**⑨ Prefer CSS over client state for pure visibility.** A `data-*` attribute plus `group-data-[…]` variants, or
-`<details>`/`<summary>`, keeps both branches server-rendered. Reach for `useState` when the state is real, not when
-a Tailwind variant would do.
-
-**⑩ Keep the heavy island out of the first load.** A large client-only widget goes behind the
-`ui/<Folder>/index_.tsx` + `lazy()` pair so the server renders the page around it.
-
-## Code Style
-
-House style for `apps/**` and `libs/**`. `akan lint` enforces the rules in the anti-pattern table above; the rest
-is convention that keeps hand-written code reading like generated code.
-
-### Files And Types
-
-- Keep files small. Split a component before it reaches ~150 lines instead of adding section comments.
-- Ship every scaffold file even when it is empty — `export class TaskInternal extends internal(srv.task, () => ({})) {}`,
-  empty dictionary stages, the `// state` / `// action` markers in an empty store. They mark where things go.
-- Never add a sibling helper file inside `lib/<model>/`. Helpers go to `common/`, `webkit/`, `srvkit/`, or `ui/`.
-- Prefer duplication to premature abstraction at the leaf: copy the near-identical file and change the literals.
-- `interface` for object shapes, `type` only for unions and aliases.
-- Never use a non-null assertion (`!`). Narrow with `?.`, an early return, or a type predicate.
-- Escape with `as unknown as T`, never `as any`.
-- `as const` on every `enumOf(...)` array, every Light field tuple, and every module-scope lookup map. Never the
-  TypeScript `enum` keyword.
-- Never annotate a component's return type. Async functions carry no `Async` suffix.
-
-### Components
-
-- `export const X = ({ … }: XProps) => { return (…); };` — arrow const with a block body. `export default` is only
-  for pages, layouts, and `lazy()` targets.
-- Declare `interface <ComponentName>Props` immediately above the component with no blank line, `className?: string`
-  first. Name it for the component (`CardProps`), never for the model.
-- Never `React.FC`, never `defaultProps`, never `PropsWithChildren`. Defaults go in the destructuring; children are
-  typed `children: ReactNode`.
-- `"use client"` on line 1 is mechanical by file role: every `.Zone.tsx`, `.Template.tsx`, and `.Util.tsx` has it;
-  no `.Unit.tsx` or `.View.tsx` ever does.
-- Conditional render is `cond ? <X/> : null`, never `{cond && <X/>}` — in a `className` context the latter renders
-  the literal string `"false"`.
-- Never hand-roll loading, empty, or list states. Use `Load.Units` / `Load.View` / `Load.Edit` with `renderItem`,
-  `renderList`, and `renderEmpty`, and `Model.New` / `Model.Edit` / `Model.SureToRemove` for CRUD modals.
-- Avoid hooks. `useState` is for modal-open, tab, draft-input, and drag state only — never for server data.
-  `.Template.tsx` files contain zero `useState`: forms are store-driven with `Field.*`, `value={taskForm.x}`, and
-  `onChange={st.do.setXOnTask}` passed by reference.
-- Read with `st.use.*` and write with `st.do.*`. Client components do not call `fetch.*`.
-- Reach for a recipe before writing a look by hand: `buttonRecipe`, `badgeRecipe` and `inputRecipe` from
-  `akanjs/ui` carry the button, badge and field surfaces. Call them as `buttonRecipe(variants?, className?)` —
-  the second argument merges internally and takes an array, so never wrap it in `cn()`.
-- Static class strings stay plain strings. Reach for `cn` only for a conditional or to merge an incoming
-  `className`, and merge the caller last: `cn("base", conditional, className)`. `cn` comes from `akanjs/client`
-  and is the only class-combining function — no `clsx`, no raw `twMerge`.
-- Use semantic tokens with opacity modifiers (`text-foreground/60`, `bg-background/70`, `border-border`). Never
-  `dark:` — theming is the token block in `page/*/styles.css`, where each token has a `-foreground` pair.
-- Hoist enum→class lookups to a module-scope `as const` map typed `{ [key in cnst.TaskStatus["value"]]: string }`,
-  not `Record<...>`.
-
-### Naming
-
-- Component exports are role names (`Card`, `General`, `Preview`, `Remove`). The model comes from the namespace, so
-  write `Card`, not `TaskCard`.
-- Layer the verbs: the document chain method drops the model (`start()`) and the signal, store, and dictionary
-  re-add it (`startTask`). This keeps custom endpoints clear of generated CRUD and makes `st.do.X` read the same as
-  `fetch.X`.
-- Slice and filter names are prepositional: `inTodo`, `byStatuses`, `ofProject`. Never `getXInY`, never `listX`.
-- Handlers are `onX` props with inline arrows. Do not extract a `handleX`.
-- Booleans are `is*` / `has*` / `can*` / `show*`. Counters are `*Num`, indices are `idx`, collections are `*List`.
-- Identifiers, type names, endpoint names, and log messages are English. Everything a user reads goes through
-  `l("task.title")` or `l.trans({ … })` — never a hard-coded string in JSX, never `window.alert`.
-
-### Backend
-
-- **`constant.ts`** — five classes in order, `TaskInput → TaskObject → LightTask → Task → TaskInsight`, and write
-  `TaskInsight` even when empty. Put display and predicate logic on `LightTask` (`isNew()`, `canWrite(user?)`): it is
-  the class both server and client hold, so shared logic belongs there rather than in a util module. Collection
-  helpers go `static` on the full model.
-- **`document.ts`** — `TaskFilter extends from(...)` → `Task extends by(...)` → `TaskModel extends into(...)`, with
-  `sort: {}` always present. Chain methods validate → mutate → `return this` and never `save()`; the caller saves, so
-  chains compose. Indexes and derived totals go in `static override _onSchema`.
-- **`service.ts`** — keep methods to a few lines: load → chain → `return await ….save()`. Side effects go in
-  `override async _preUpdate` / `_postCreate`, not inline. Fire-and-forget is explicitly `void`-ed. Return `null` or
-  `false` for "not allowed" and let the signal decide whether that is an error.
-- **`signal.ts`** — `TaskInternal` → `TaskSlice` → `TaskEndpoint`, all three declared even when empty, and `exec` is a
-  one-liner delegating to the service. Every `slice()` takes an explicit `{ guards: { root: Admin, … } }`, and every
-  custom mutation, query, and message names its own `guards: [...]`.
-- **`store.ts`** — write a custom action only for a toast, an optimistic update, or a multi-field write; the rest is
-  generated. Never `import type { RootStore } from "../st"` — it crashes `akan build` with a Bun SSR segfault.
-- **`dictionary.ts`** — fixed chain with empty stages still written:
-  `.of() → .model() → .insight() → .query() → .sort() → .enum() → .slice() → .endpoint() → .error() → .translate()`.
-  Every label is `t(["English", "한국어"])`, and nearly every one also carries `.desc([en, ko])`.
-- **`srvkit/` adapters** — an injected singleton is an `adapt("name" as const, ({ use, env, plug, memory }) => ({…}))`
-  class, injected with `plug(TheClass)`. It self-registers, so do not add it to `lib/option.ts`. `this.logger` is
-  provided; lifecycle work goes in `override async onInit()`. A per-use value object stays a plain class you `new` at
-  the call site. Route remote calls through one private `#api<T>(path, init?)` with `AbortSignal.timeout(20_000)`, and
-  resolve secrets inside a function, never at module scope.
-- **Errors** — state-machine preconditions throw in `document.ts`, cross-document rules in `service.ts`, and
-  request-level policy lives in signal guards. `try/catch` always converts an exception into a decision, never
-  swallows one. Store actions do not `try/catch`; let the framework toast the `Err`.
-
-### Comments
-
-Do not narrate code. Do document the thing the code cannot say. Both halves are the rule.
-
-- Never add a comment that restates the identifier, the signature, or the control flow.
-- Do not add JSDoc, section banners, or "why/how" comments for ordinary logic.
-- Density tracks the layer: pages carry none, product code stays under 1 %, and `srvkit/` adapters and `guards.ts`
-  carry as much as the external constraints require.
-- A comment is warranted for a vendor spec or protocol quirk, an infrastructure constraint, a third-party library
-  gotcha, security reasoning, a math derivation, a domain field's business meaning, a state transition above a
-  document chain method, or why an obvious alternative was rejected.
-- Markers: `TODO` unfinished work · `FIXME` known broken behavior · `XXX` hazard a reader must not miss · `//!`
-  disabled or must-fix code · `//?` an explanatory aside · `//*` a design note · deletion caution, warning why
-  removing a line would break something non-obvious.
-- `//!` is for server, `srvkit/`, and CLI files only. Bun's bundler treats `//!` and `/*!` as legal comments and
-  keeps them through minification, so in browser-reachable code the note ships verbatim to every visitor. Use
-  `// FIXME:` there — `no-bang-comment-in-client.grit` enforces it.
-- Keep allowed comments to one short line, and give every suppression a reason:
-  `// biome-ignore lint/<rule>: <why>`. Never a bare disable block.
-- Match nearby file style: if the surrounding code has few comments, keep it that way.
-
-## Generated File Tracker (Quick Reference)
-
-These files are regenerated by `akan sync` and overwritten on every sync. **Do not hand-edit them.**
-
-| File | Generated From | Purpose |
-|------|---------------|---------|
-| `*/lib/cnst.ts` | All `*/lib/*/**.constant.ts` | Barrel for all constants |
-| `*/lib/db.ts` | All `*/lib/<model>/*.document.ts` | Barrel for all document models |
-| `*/lib/dict.ts` | All `*/lib/*/**.dictionary.ts` | Barrel for all dictionaries |
-| `*/lib/sig.ts` | All `*/lib/**/**.signal.ts` | Barrel for all signals |
-| `*/lib/srv.ts` | All `*/lib/**/**.service.ts` | Barrel for all services |
-| `*/lib/st.ts` | All `*/lib/**/**.store.ts` | Barrel for all stores |
-| `*/lib/useClient.ts` | Client-safe module re-exports | Client-side import entry |
-| `*/lib/useServer.ts` | Server-only module re-exports | Server-side import entry |
-| `apps/*/client.ts` | App-wide client barrel | The `fetch` and `st` instances |
-| `apps/*/server.ts` | App-wide server barrel | Server-side service resolution |
-| `*/lib/**/index.ts` | Per-module barrel | Module-level re-exports |
-| `*/ui/index.ts` | All 1-depth UI files/folders | UI layer-root barrel (nested `ui/<Folder>/index.tsx` is **not** generated) |
-| `*/webkit/index.ts` | All webkit files | Webkit barrel |
-| `*/srvkit/index.ts` | All srvkit files | Srvkit barrel |
-| `*/common/index.ts` | All common files | Common barrel |
-
 ## Workflow Recipes
 
 Concrete step-by-step recipes for the most frequent Akan.js changes. Each recipe shows which files to edit
@@ -649,8 +337,8 @@ export class TaskService extends serve(db.task, ({ plug }) => ({
 }
 ```
 
-For a custom adapter class (not a predefined role), pass the class itself, e.g. `ipfsApi: plug(IpfsApi)`
-(see `libs/shared/lib/file/file.service.ts`). Injecting a file/image field is usually simpler than calling
+For a custom adapter class (not a predefined role), pass the class itself, e.g. `ipfsApi: plug(IpfsApi)`.
+Injecting a file/image field is usually simpler than calling
 storage directly: declare `image: field(File).optional()` (or `images: field([File])`) on the model and let the
 store's generated `upload<Field>On<Model>(fileList)` action handle the upload. Add `{ cascade: "removeRef" }` to that
 field when the file belongs to the model alone, and removing the model removes the file and its stored object.
@@ -669,8 +357,8 @@ A Slice is a named, filtered data view. Add file entries and connect from a page
 
 ```typescript
 // 1. apps/<app>/lib/<model>/<model>.signal.ts — Define the slice
-export class TaskSlice extends slice(srv.task, (init) => ({
-  inTodo: init()
+export class TaskSlice extends slice(srv.task, { guards: { root: Admin, get: SignedIn, cru: SignedIn } }, (init) => ({
+  inTodo: init({ guards: [SignedIn] })
     .search("statuses", [cnst.TaskStatus])
     .exec(function (statuses?) {
       // ✅ query<Filter> — a query descriptor.  ❌ listByStatuses(...) returns an array and fails at runtime.
@@ -727,8 +415,8 @@ async startTask(taskId: string) {
 
 // 3. <model>.signal.ts — Mutation endpoint
 export class TaskEndpoint extends endpoint(srv.task, ({ mutation }) => ({
-  startTask: mutation(cnst.Task)
-    .param("taskId", String)
+  startTask: mutation(cnst.Task, { guards: [SignedIn] })
+    .param("taskId", ID)
     .exec(async function (taskId) {
       return await this.taskService.startTask(taskId);
     }),
@@ -851,61 +539,39 @@ For each business question, follow this chain:
 
 ## Modeling & Query Gotchas
 
-A short list of things the type system does not always catch:
+A short list of things the type system does not always catch. The full rules for text search, `cascade`, and the
+query-level writes are in the convention set above; these are the shapes that build green and fail later.
 
 - **Slices return a query, not a list.** A slice `exec` must return `this.<model>Service.query<Filter>(...)`, never
   a `list<Filter>(...)` / `listBy...(...)` array. Returning an array type-checks but fails at runtime with
   `Unknown document field path: 0`. (See Recipe 3.)
 - **Custom endpoint names must not collide with generated CRUD.** `create/update/remove/view/edit/merge<Model>`
   already exist. A collision can build green and fail only at runtime — pick a distinct verb.
-- **Numbers are `Int` or `Float`, never `Number`.** `field(Number)` / `.body("x", Number)` fail to typecheck. Use
-  `Int` for counts, `Float` for decimals.
-- **Array fields use `field([T])`.** e.g. `tags: field([String])`, `images: field([File])` — not `field(String)` with
-  a suffix.
-- **Reading a secret field needs an explicit select.** `field(...).secret()` values (e.g. `passwordHash`) are stripped
-  from query results by default. Fetch them with `{ select: { <field>: true } }`, e.g.
-  `this.userModel.pickById(id, { select: { passwordHash: true } })`.
-- **Text search fields use the `text` role.** Opt a field into the full-text index with
-  `field(String, { text: "title" })` (or `"desc"` / `"tag"` / `"thumb"` / `"filter"`). Nothing else opts a field in.
-  `secret` / `hidden` / `resolve()` fields with `text` throw at class-build time — the mirror is plaintext. Search
-  runs on sqlite/libsql only; `q.search()` against Postgres throws. `thumb` is mirrored for rendering and is not
-  indexed.
-- **`cascade` names a direction, and the wrong one is a data loss.** Both actions can sit on the same field shape,
-  so the value has to say which end goes away. `cascade: "removeRef"` on the relation an owner holds
-  (`image: field(File, { cascade: "removeRef" })`, arrays included) removes the target when the owner is removed;
-  only a relation accepts it. `cascade: "removeWith"` on a child's own reference to its owner
-  (`field(ID, { ref: "agentSession", cascade: "removeWith" })`, or a relation, or `refPath` for a polymorphic
-  owner whose type field must be an `enumOf`) removes the child when the owner is — the owner never learns its
-  children exist. The removal runs through the **target's service** so its `_postRemove` runs too, unless the
-  target provably has no removal side effect, in which case the boot-time plan collapses it into one query. A
-  `removeWith` field gets its index automatically. Nothing checks for other references to the same target, so
-  `removeRef` asserts exclusive ownership. Removal is soft but a storage delete is not, and a query-level removal
-  fires no hooks and therefore no cascade.
-- **Removal is always soft, and `delete` is reserved.** `remove(id)`, the facade's `removeMany(query)`, and the
-  store's `removeManyByQuery` all stamp `removedAt`; the framework has no hard delete for a model table.
-- **The model facade spells out `Many`/`One` on its writes** — `updateOne`, `updateMany`, `removeOne`, `removeMany`
-  — because a bare `update`/`remove` would read like the document-path `update(id)` / `doc.remove()` while hitting
-  every match. Reads keep the short `find`/`findOne` pair, and counting is `count(query)` (`countDocuments` is
-  `@deprecated`).
-- **`q.search()` is a filter node, not a slice requirement.** Prefer
-  `bySearch: filter().arg("text", String).query((text, q) => q.search(text, { prefix: true }))` — the generated
-  `listBySearch` / `countBySearch` / `queryBySearch` / `insightBySearch` come for free. Only add a search slice when
-  the model's data is safe to enumerate. It must sit at an AND position (not under `q.any()` / `q.not()`), blank
-  input matches nothing, and score order needs the built-in `relevance` sort key — a slice endpoint that leaves
-  `sort` off gets `latest`, not relevance.
+- **Numbers are `Int` or `Float`, never `Number`.** `field(Number)` / `.body("x", Number)` fail to typecheck.
+- **Array fields use `field([T])`** — `tags: field([String])`, `images: field([File])`.
+- **Reading a secret field needs an explicit select.** `field(...).secret()` values are stripped from query results
+  by default: `this.userModel.pickById(id, { select: { passwordHash: true } })`.
+- **`cascade` names a direction, and the wrong one is a data loss** — `removeRef` on the relation the owner holds,
+  `removeWith` on the child's reference to its owner. A query-level removal fires no hooks and therefore no cascade.
+- **`q.search()` is a filter node, not a slice requirement.** `bySearch: filter().arg("text", String).query((text,
+  q) => q.search(text, { prefix: true }))` generates `listBySearch` / `countBySearch` / `queryBySearch` /
+  `insightBySearch` for free. Only add a search *slice* when the model's data is safe to enumerate.
 
 ## Current User, Guards & Auth-Gated Pages
 
 Built-in user authentication (session / JWT / password hashing) ships as a separate Akan auth library, not in the
 core framework. The core framework gives you the composition points below; wire the auth library through them.
 
-- **Guards** attach at the signal declaration, not per-method:
-  `endpoint(srv.task, { guards: { root: SignedIn } }, ({ mutation }) => ({...}))` or
-  `slice(srv.task, { guards: { root: SignedIn, get: Public, cru: Public } }, ...)`. `Public` always allows; other
-  guards implement the `Guard` interface in `srvkit/` (server-only) and read the request context.
+- **A `slice()` takes its guard map as a second argument**, `slice(srv.task, { guards: { root: Admin, get: SignedIn,
+  cru: SignedIn } }, (init) => ({...}))`. An `endpoint()` takes no guard argument at all —
+  `endpoint(srv.task, ({ mutation }) => ({...}))` — so **every custom `mutation` / `query` / `message` names its own
+  `guards: [...]` array**: `mutation(cnst.Task, { guards: [SignedIn] })`. `Public` always allows; other guards
+  implement the `Guard` interface in `srvkit/` (server-only).
+- **Read the caller inside a guard** with `context.get<T>("account")`, which works on HTTP and websocket calls
+  alike — never branch on `getHttpContext()` / `getWebSocketContext()`. Every guard class also declares
+  `static scope: GuardScope`, `"account"` or `"resource"`, with no default.
 - **Read the current user inside a custom endpoint** by injecting an `InternalArg` with `.with(...)`:
-  `mutation(cnst.Task).with(CurrentUserId).exec(async function (currentUserId) { ... })`. The `Guard` /
-  `InternalArg` helpers live in `srvkit/` and read `context.getHttpContext().req.user`.
+  `mutation(cnst.Task, { guards: [SignedIn] }).with(CurrentUserId).exec(async function (currentUserId) { ... })`.
 - **Auto-generated CRUD and `serve()` service methods / lifecycle hooks do not receive session context.** If an
   operation needs the acting user, expose a custom endpoint that takes it via `.with(CurrentUserId)` — never trust a
   client-supplied user id.

@@ -16,7 +16,7 @@ export const buttonRecipe = recipe(
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         accent: "bg-accent text-accent-foreground hover:bg-accent/90",
         neutral: "bg-neutral text-neutral-foreground hover:bg-neutral/90",
-        outline: "border border-input bg-background hover:bg-muted hover:text-foreground",
+        outline: "border border-input bg-background text-foreground hover:bg-muted hover:text-foreground",
         ghost: "hover:bg-muted hover:text-foreground",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         success: "bg-success text-success-foreground hover:bg-success/90",
@@ -29,7 +29,7 @@ export const buttonRecipe = recipe(
         sm: "h-8 px-3 text-sm",
         md: "h-10 px-4",
         lg: "h-12 px-6 text-lg",
-        icon: "h-10 w-10",
+        icon: "h-10 w-10 px-0",
       },
       // `size` already sets h-*, so squaring the aspect is enough and keeps xs/sm/lg square buttons
       // correct without a shape×size matrix.

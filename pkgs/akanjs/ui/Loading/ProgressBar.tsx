@@ -8,15 +8,23 @@ export interface ProgressBarProps {
   value: number;
   max: number;
 }
+
+/**
+ * A div track rather than a native `<progress>`. `accent-color` themes only the fill; the track keeps the UA
+ * grey, which reads as a light bar on a dark theme, and no browser applies the element's radius to the fill.
+ */
 export const ProgressBar = ({ className, value, max }: ProgressBarProps) => {
-  const progress = useSpring({ value: 0, to: { value: value } });
-  // Same reasoning as the checkbox: a native <progress> honours `accent-color`, so the bar is themed
-  // without an appearance-none rebuild of the track and fill.
+  const percent = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+  const spring = useSpring({ from: { percent: 0 }, to: { percent } });
   return (
-    <animated.progress
-      className={cn("h-2 w-full rounded-box accent-primary", className)}
-      value={progress.value}
-      max={max}
-    />
+    <div
+      aria-valuemax={max}
+      aria-valuemin={0}
+      aria-valuenow={value}
+      className={cn("h-2 w-full overflow-hidden rounded-full bg-muted", className)}
+      role="progressbar"
+    >
+      <animated.div className="h-full rounded-full bg-primary" style={{ width: spring.percent.to((p) => `${p}%`) }} />
+    </div>
   );
 };

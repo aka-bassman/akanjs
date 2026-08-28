@@ -38,7 +38,7 @@ Persists text to sessionStorage.
 
 Specialized input variants.
 
-Controlled selector that accepts primitive arrays, label/value options, or Akan enum instances. It supports single, multiple, and searchable selection modes.
+Controlled selector that accepts primitive arrays, label/value options, or Akan enum instances. It supports single, multiple, and searchable selection modes. The option list portals to document.body and is placed against the field, matching its width, so a Select inside a scrolling modal body or a table is not clipped by it.
 
 Selected value, or selected values when multiple is true.
 

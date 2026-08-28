@@ -11,7 +11,7 @@ export default function Page() {
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="ml-1 inline-flex size-5 -translate-y-px items-center justify-center rounded-full bg-base-content/50 align-baseline text-white transition-colors hover:bg-base-content/70"
+      className="ml-1 inline-flex size-5 -translate-y-px items-center justify-center rounded-full bg-foreground/50 align-baseline text-white transition-colors hover:bg-foreground/70"
       aria-label={label}
       title={label}
     >
@@ -60,9 +60,9 @@ export default function Page() {
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className="rounded-xl border border-base-300 bg-base-100 px-4 py-3">
+              <div key={title} className="rounded-xl border border-background/30 bg-background px-4 py-3">
                 <div className="font-mono font-semibold text-primary">{title}</div>
-                <div className="mt-1 text-base-content/70 text-sm">{desc}</div>
+                <div className="mt-1 text-foreground/70 text-sm">{desc}</div>
               </div>
             ))}
           </div>
@@ -145,9 +145,9 @@ export default config;`}
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className="rounded-xl border border-base-300 bg-base-100 px-4 py-0">
+              <div key={title} className="rounded-xl border border-background/30 bg-background px-4 py-0">
                 <span className="font-mono font-semibold text-primary">{title}: </span>
-                <span className="text-base-content/70 text-sm">{desc}</span>
+                <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
             ))}
           </div>
@@ -228,9 +228,9 @@ export default config;`}
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className="rounded-xl border border-base-300 bg-base-100 px-4 py-0">
+              <div key={title} className="rounded-xl border border-background/30 bg-background px-4 py-0">
                 <span className="font-mono font-semibold text-primary">{title}: </span>
-                <span className="text-base-content/70 text-sm">{desc}</span>
+                <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
             ))}
           </div>
@@ -247,9 +247,9 @@ export default config;`}
               ko: "Android 설정은 에뮬레이터나 실기기에서 빌드/실행 가능한 Android 프로젝트를 준비하는 과정입니다. 핵심은 package name 일치입니다. mobile.appId와 생성된 Android applicationId가 같아야 합니다.",
             })}
           </div>
-          <div className="rounded-xl border border-base-300 bg-base-100 p-4">
-            <div className="font-bold text-base-content">{l.trans({ en: "Prerequisites", ko: "준비물" })}</div>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-base-content/70 text-sm">
+          <div className="rounded-xl border border-background/30 bg-background p-4">
+            <div className="font-bold text-foreground">{l.trans({ en: "Prerequisites", ko: "준비물" })}</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-foreground/70 text-sm">
               <li>
                 {l.trans({
                   en: "Android Studio with Android SDK installed.",
@@ -328,15 +328,15 @@ akan release-android myapp --target default --env main --assembleType aab`}
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className="rounded-xl border border-base-300 bg-base-100 px-4 py-0">
+              <div key={title} className="rounded-xl border border-background/30 bg-background px-4 py-0">
                 <span className="font-mono font-semibold text-primary">{title}: </span>
-                <span className="text-base-content/70 text-sm">{desc}</span>
+                <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
             ))}
           </div>
-          <div className="rounded-xl border border-base-300 bg-base-100 p-4">
-            <div className="font-bold text-base-content">{l.trans({ en: "Success check", ko: "성공 확인" })}</div>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-base-content/70 text-sm">
+          <div className="rounded-xl border border-background/30 bg-background p-4">
+            <div className="font-bold text-foreground">{l.trans({ en: "Success check", ko: "성공 확인" })}</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-foreground/70 text-sm">
               <li>
                 {l.trans({
                   en: "Generated applicationId matches mobile.appId.",
@@ -370,9 +370,9 @@ akan release-android myapp --target default --env main --assembleType aab`}
               ko: "iOS 설정은 Xcode 프로젝트, bundle identity, signing, 시뮬레이터 실행, 스토어 빌드를 준비하는 과정입니다. Push 알림은 Push Setup에서 다룹니다.",
             })}
           </div>
-          <div className="rounded-xl border border-base-300 bg-base-100 p-4">
-            <div className="font-bold text-base-content">{l.trans({ en: "Prerequisites", ko: "준비물" })}</div>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-base-content/70 text-sm">
+          <div className="rounded-xl border border-background/30 bg-background p-4">
+            <div className="font-bold text-foreground">{l.trans({ en: "Prerequisites", ko: "준비물" })}</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-foreground/70 text-sm">
               <li>
                 {l.trans({ en: "Xcode installed.", ko: "설치된 Xcode." })}
                 <ExternalLink href="https://developer.apple.com/xcode/" label="Open Xcode download" />
@@ -399,9 +399,9 @@ akan release-android myapp --target default --env main --assembleType aab`}
               </li>
             </ul>
           </div>
-          <div className="rounded-xl border border-base-300 bg-base-100 p-4">
-            <div className="font-bold text-base-content">{l.trans({ en: "Xcode checks", ko: "Xcode 확인" })}</div>
-            <ol className="mt-2 list-decimal space-y-1 pl-5 text-base-content/70">
+          <div className="rounded-xl border border-background/30 bg-background p-4">
+            <div className="font-bold text-foreground">{l.trans({ en: "Xcode checks", ko: "Xcode 확인" })}</div>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-foreground/70">
               <li>
                 {l.trans({
                   en: "Open the generated iOS project after sync.",
@@ -484,9 +484,9 @@ akan release-ios myapp --target default --env main`}
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className="rounded-xl border border-base-300 bg-base-100 px-4 py-0">
+              <div key={title} className="rounded-xl border border-background/30 bg-background px-4 py-0">
                 <span className="font-mono font-semibold text-primary">{title}: </span>
-                <span className="text-base-content/70 text-sm">{desc}</span>
+                <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
             ))}
           </div>

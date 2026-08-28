@@ -218,10 +218,10 @@ interface ClientBridgeProps {
 
 export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId, wsConnect = true }: ClientBridgeProps) => {
   (globalThis as typeof globalThis & { __AKAN_CLIENT_ENV__?: ClientEnv }).__AKAN_CLIENT_ENV__ = env;
-  const uiOperation = st.use.uiOperation();
-  const pathname = st.use.pathname();
-  const params = st.use.params();
-  const searchParams = st.use.searchParams();
+  const uiOperation = st.use.uiOperation({ agent: false });
+  const pathname = st.use.pathname({ agent: false });
+  const params = st.use.params({ agent: false });
+  const searchParams = st.use.searchParams({ agent: false });
   const language = (params.lang as string | undefined) ?? lang;
   const path = `/${pathname.split("/").slice(2).join("/")}`;
   // const { setTheme, themes, theme: nextTheme } = useTheme();
@@ -328,7 +328,7 @@ function buildSearchParams(entries: Iterable<[string, string]>): Record<string, 
 }
 
 export const ClientInner = () => {
-  const uiOperation = st.use.uiOperation();
+  const uiOperation = st.use.uiOperation({ agent: false });
   return (
     <>
       <div key="modal-root" id="modal-root" />

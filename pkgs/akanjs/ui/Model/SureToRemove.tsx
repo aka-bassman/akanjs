@@ -1,4 +1,5 @@
 "use client";
+import { ID } from "akanjs/base";
 import { cn, msg, router, usePage } from "akanjs/client";
 import { capitalize } from "akanjs/common";
 import type { SliceMeta } from "akanjs/fetch";
@@ -6,6 +7,7 @@ import { st } from "akanjs/store";
 import { useMemo, useState } from "react";
 import { AiOutlineDelete } from "react-icons/ai";
 
+import { agentAttrs } from "../agentAttrs";
 import { buttonRecipe } from "../Button";
 import { Modal } from "../Modal";
 import { inputRecipe } from "../recipe";
@@ -39,9 +41,28 @@ export default function SureToRemove({
     [],
   );
 
+  const removeModel = async (id: string) => {
+    await storeDo[names.removeModel](id);
+    msg.success("base.removeSuccess", { data: { model: l(`${modelName}.modelName` as "base.new") } });
+    setModalOpen(false);
+    if (!redirect) return;
+    if (redirect === "back") router.back();
+    else router.push(redirect);
+  };
+  // `typeNameToRemove` makes a person retype the name before the button unlocks. An approval card is one click,
+  // so it is not that gate — the lever is withheld rather than offered at a friction the screen does not have.
+  const removeTool = st
+    .tool(typeNameToRemove ? null : names.removeModel, {
+      desc: `Remove one ${modelName}.`,
+      effect: "mutation",
+      shared: true,
+    })
+    .arg("modelId", ID)
+    .exec((id) => removeModel(id));
   return (
     <div
       className="inline size-full"
+      {...agentAttrs(removeTool)}
       onClick={(e) => {
         e.stopPropagation();
         setModalOpen(true);
@@ -71,12 +92,7 @@ export default function SureToRemove({
             className={buttonRecipe({ variant: "destructive" }, "w-full")}
             disabled={typeNameToRemove && repeatName !== name}
             onClick={async () => {
-              await storeDo[names.removeModel](modelId);
-              msg.success("base.removeSuccess", { data: { model: l(`${modelName}.modelName` as "base.new") } });
-              setModalOpen(false);
-              if (!redirect) return;
-              if (redirect === "back") router.back();
-              else router.push(redirect);
+              await removeModel(modelId);
             }}
           >
             {l("base.removeModel", { model: l(`${modelName}.modelName` as "base.new") })}

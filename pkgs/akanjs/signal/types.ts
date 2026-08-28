@@ -68,6 +68,8 @@ interface TimerOption {
   enabled?: boolean;
 }
 
+export type HttpMutationMethod = "POST" | "PATCH" | "PUT" | "DELETE";
+
 export interface SignalOption<Response = any, Nullable extends boolean = false, _Key = keyof UnCls<Response>>
   extends InitOption,
     TimerOption {
@@ -83,6 +85,11 @@ export interface SignalOption<Response = any, Nullable extends boolean = false, 
   middlewares?: MiddlewareCls[];
   prefix?: false | string;
   globalPrefix?: false;
+  /**
+   * HTTP verb for a `mutation`, `POST` unless named. Only a foreign wire protocol needs the others — a client
+   * that cannot be changed and sends `PATCH /rest/v1/<table>`. Every other endpoint type ignores it.
+   */
+  method?: HttpMutationMethod;
   /** Marks this mutation as the framework file-upload endpoint (see resolveFileUploadCapability). */
   fileUpload?: boolean;
 
@@ -101,6 +108,7 @@ interface SerializedSignalOption {
   prefix?: false | string;
   globalPrefix?: false;
   guards?: string[];
+  method?: HttpMutationMethod;
   fileUpload?: boolean;
 }
 export interface SerializedSlice extends SerializedSignalOption {}
@@ -123,7 +131,7 @@ export interface SerializedArg {
   enum?: string;
 }
 export interface SerializedEndpoint extends SerializedSignalOption {
-  type: "query" | "mutation" | "pubsub" | "message";
+  type: "query" | "mutation" | "pubsub" | "message" | "prompt";
   returns: SerializedReturns;
 }
 export interface SerializedFilter {

@@ -15,7 +15,7 @@ import {
   TableCellHeaderStates,
 } from "@lexical/table";
 import { mergeRegister } from "@lexical/utils";
-import { buttonRecipe } from "akanjs/ui";
+import { buttonRecipe } from "@libs/util/ui";
 import {
   $getNodeByKey,
   $getSelection,
@@ -33,7 +33,6 @@ import {
   AiOutlineInsertRowRight,
 } from "react-icons/ai";
 import { RiDeleteColumn, RiDeleteRow, RiLayoutColumnLine, RiLayoutRowLine } from "react-icons/ri";
-
 import type { CellAnchor } from "./tableActionsPlugin.type";
 
 /**
@@ -186,7 +185,7 @@ export const TableActionButton = ({ children, title, onClick }: TableActionButto
   <button
     type="button"
     title={title}
-    className={buttonRecipe({ variant: "ghost", size: "xs" }, "min-h-7 px-1.5")}
+    className={buttonRecipe({ size: "xs", variant: "ghost" }, "min-h-7 px-1.5")}
     onClick={onClick}
   >
     {children}

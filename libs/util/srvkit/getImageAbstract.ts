@@ -10,13 +10,25 @@ function loadSharp(): Promise<SharpFactory> {
   return sharpLoad;
 }
 
+async function readImageBuffer(source: string | Buffer): Promise<Buffer> {
+  if (Buffer.isBuffer(source)) return source;
+  if (source.startsWith("file://")) return Buffer.from(await Bun.file(source.replace("file://", "")).arrayBuffer());
+  if (source.startsWith("/") && !source.startsWith("/api/") && (await Bun.file(source).exists())) {
+    return Buffer.from(await Bun.file(source).arrayBuffer());
+  }
+  if (!source.includes("://") && !source.startsWith("/") && (await Bun.file(source).exists())) {
+    return Buffer.from(await Bun.file(source).arrayBuffer());
+  }
+  const response = await fetch(encodeURI(source), { signal: AbortSignal.timeout(15_000) });
+  return Buffer.from(await response.arrayBuffer());
+}
+
 export const getImageAbstract = async (
-  url: string,
+  source: string | Buffer,
 ): Promise<{ abstractData?: string; imageSize?: [number, number] }> => {
   const abstract: { abstractData?: string; imageSize?: [number, number] } = {};
   try {
-    const response = await fetch(encodeURI(url));
-    const buffer = Buffer.from(await response.arrayBuffer());
+    const buffer = await readImageBuffer(source);
     const sharp = await loadSharp();
     const image = sharp(buffer);
 

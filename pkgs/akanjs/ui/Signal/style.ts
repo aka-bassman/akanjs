@@ -1,36 +1,41 @@
-"use client";
-import { badgeRecipe } from "../Badge";
+import { docPill, type Tone } from "../Reference";
 
 export const signalUi = {
-  sectionTitle: "font-extrabold text-lg",
-  sectionDescription: "text-foreground/70 text-sm",
-  sectionPanel: "rounded-xl bg-background p-3",
-  tablePanel: "overflow-x-auto rounded-xl bg-background p-3",
-  // daisyui `.table` 대체: 시맨틱 토큰 표 스타일.
-  tableClass:
-    "w-full text-left text-sm [&_th]:px-3 [&_th]:py-2 [&_th]:font-medium [&_th]:text-foreground/60 [&_td]:px-3 [&_td]:py-2 [&_tbody_tr]:border-border [&_tbody_tr]:border-t",
   inputRow: "flex w-full flex-col gap-2 py-2 md:flex-row md:items-center",
-  inputLabel: "w-full font-semibold text-foreground/70 text-sm md:w-36",
-  codePanel:
-    "min-h-[300px] w-full rounded-xl border border-border bg-background p-4 font-normal text-foreground text-sm",
+  inputLabel: "w-full shrink-0 font-mono text-foreground/70 text-sm md:w-40",
 };
 
-export const getEndpointBadgeClassName = (type: string) =>
-  badgeRecipe({ variant: type === "query" || type === "pubsub" ? "primary" : "secondary" });
+/** The REST convention rather than a palette choice: reads are blue, writes are green. */
+const methodTone: { [key: string]: Tone } = {
+  query: "info",
+  prompt: "info",
+  message: "info",
+  mutation: "success",
+  pubsub: "warning",
+};
+
+/** Only a mutation is a POST — enumerating that side leaves a `prompt` a GET beside the queries, and lets a
+ *  read-shaped type added later inherit the right verb rather than be mislabelled. */
+export const getMethodLabel = (type: string) => (type === "mutation" ? "POST" : type === "query" ? "GET" : type);
+
+export const getMethodBadgeClassName = (type: string) =>
+  docPill(methodTone[type] ?? "muted", "w-16 justify-center uppercase");
+
+export const getWsBadgeClassName = (type: string) => docPill(methodTone[type] ?? "muted", "uppercase");
 
 export const getGuardBadgeClassName = (guard: string) =>
-  badgeRecipe({ variant: guard === "Public" ? "primary" : guard === "None" ? "default" : "secondary" });
+  docPill(guard === "Public" ? "warning" : guard === "None" ? "muted" : "info");
 
-export const getStatusBadgeClassName = (status: string) =>
-  badgeRecipe({
-    variant: status === "error" ? "error" : status === "success" || status === "listening" ? "primary" : "outline",
-  });
+/** Published to agents is quiet; refused is amber, because it is a thing to go fix. */
+export const getMcpBadgeClassName = (exposed: boolean) => docPill(exposed ? "success" : "warning");
 
-export const getStatusTextareaClassName = (status: string) =>
-  status === "error"
-    ? "border-destructive text-destructive"
-    : status === "success" || status === "listening"
-      ? "border-primary"
-      : status === "loading"
-        ? "pointer-events-none opacity-50"
-        : "";
+const statusTone: { [key: string]: Tone } = {
+  error: "error",
+  success: "success",
+  listening: "success",
+  loading: "info",
+};
+
+export const getStatusTone = (status: string): Tone => statusTone[status] ?? "muted";
+
+export const getStatusBadgeClassName = (status: string) => docPill(getStatusTone(status), "uppercase");

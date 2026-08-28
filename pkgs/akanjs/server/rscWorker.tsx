@@ -13,6 +13,7 @@ import {
   getRequestFrameState,
   getRequestPolicy,
   getRequestTheme,
+  pushRequestFallback,
   requestStorage,
   setRequestFrameState,
   untrackedCookies,
@@ -1190,8 +1191,14 @@ export class RscRenderer {
   }
 
   #runWithRequest<T>(request: Request, fn: () => Promise<T>): Promise<T> {
-    if (requestStorage) return Promise.resolve(requestStorage.run(request, fn));
-    return fn();
+    // The flight render executes components while its stream pumps, where Bun's ALS arrives empty even though
+    // run() wraps the whole handler — so keep a request fallback pushed until the render settles, the same
+    // discipline ssrFromRscRenderer's runPump uses. The stack is global and last-push-wins, so concurrent
+    // renders can shadow each other; the real fix is pumping the flight render inside the ALS scope itself.
+    const cleanup = pushRequestFallback(request);
+    const run = () => Promise.resolve(fn()).finally(() => cleanup());
+    if (requestStorage) return Promise.resolve(requestStorage.run(request, run));
+    return run();
   }
 
   async #renderFallbackDocument({

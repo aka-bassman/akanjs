@@ -342,6 +342,33 @@ body.akan-mobile-document {
   }
 }
 
+/*
+ * The in-page agent's `highlight` tool: a ring that draws the eye, holds, and fades, on the app's own primary
+ * token. It holds through the middle because a person has to find it after the scroll — a symmetric fade reads as
+ * a flicker. `StoreSurfaceSource.highlightMs` mirrors this duration.
+ */
+@keyframes akanAgentHighlight {
+  0% {
+    outline-color: color-mix(in oklab, var(--color-primary) 0%, transparent);
+  }
+  8% {
+    outline-color: var(--color-primary);
+  }
+  65% {
+    outline-color: var(--color-primary);
+  }
+  100% {
+    outline-color: color-mix(in oklab, var(--color-primary) 0%, transparent);
+  }
+}
+
+.akan-agent-highlight {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-field, 0.25rem);
+  animation: akanAgentHighlight 2.4s ease-in-out;
+}
+
 @keyframes spin {
   0% {
     transform: rotate(0deg);

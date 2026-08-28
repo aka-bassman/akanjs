@@ -210,12 +210,12 @@ declare global {
     [DEFAULT_VALUE]: boolean;
     [PURIFIED_VALUE]: boolean;
     [EXAMPLE_VALUE]: boolean;
-    validate(value: boolean | number): boolean;
-    parseValue(input: boolean | number): boolean | number;
-    serializeValue(value: boolean | number): boolean | number;
-    _parse(input: boolean | number): boolean;
-    _serialize(value: boolean | number): boolean;
-    _checkValue(value: boolean | number): void;
+    validate(value: boolean | number | string): boolean;
+    parseValue(input: boolean | number | string): boolean | number | string;
+    serializeValue(value: boolean | number | string): boolean | number | string;
+    _parse(input: boolean | number | string): boolean;
+    _serialize(value: boolean | number | string): boolean;
+    _checkValue(value: boolean | number | string): void;
   }
   interface DateConstructor {
     refName: "Date";
@@ -308,10 +308,15 @@ Object.assign(String, scalarPrimitiveStatics, {
 PrimitiveRegistry.register(String);
 
 // Boolean
-const normalizeBooleanPrimitiveValue = (value: boolean | number): boolean | null => {
+// Query strings, path params, and FormData fields arrive as text, so the wire spellings normalize here.
+const normalizeBooleanPrimitiveValue = (value: boolean | number | string): boolean | null => {
   if (typeof value === "boolean") return value;
   if (value === 1) return true;
   if (value === 0) return false;
+  if (typeof value !== "string") return null;
+  const text = value.trim().toLowerCase();
+  if (text === "true" || text === "1") return true;
+  if (text === "false" || text === "0") return false;
   return null;
 };
 
@@ -320,13 +325,13 @@ Object.assign(Boolean, {
   refName: "Boolean",
   [DEFAULT_VALUE]: false,
   [EXAMPLE_VALUE]: true,
-  validate(value: boolean | number) {
+  validate(value: boolean | number | string) {
     return normalizeBooleanPrimitiveValue(value) !== null;
   },
-  parseValue(input: boolean | number) {
+  parseValue(input: boolean | number | string) {
     return normalizeBooleanPrimitiveValue(input) ?? input;
   },
-  serializeValue(value: boolean | number) {
+  serializeValue(value: boolean | number | string) {
     return normalizeBooleanPrimitiveValue(value) ?? value;
   },
 });

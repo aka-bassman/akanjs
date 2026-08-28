@@ -15,6 +15,8 @@ import {
   SolidQueue,
   type WebsocketAdaptor,
 } from "akanjs/service";
+import { endpoint } from "../../signal/endpoint";
+import { Public } from "../../signal/guards";
 import { internal } from "../../signal/internal";
 import { CascadeRunner } from "./CascadeRunner";
 import { DatabaseResolver } from "./database.resolver";
@@ -698,6 +700,61 @@ describe("SignalResolver declaration contracts", () => {
     expect(message).toEqual({ type: "msg", key: "echoMessage", data: "echo:hello" });
   });
 
+  test("mounts a query and a mutation that share a custom path, and refuses a duplicated method", () => {
+    class SharedPathEndpoint extends endpoint(serverResolverTestServiceModel, (builder) => ({
+      readRow: builder.query(String, { guards: [Public], prefix: false, path: "rest/v1/item" }).exec(() => "read"),
+      writeRow: builder.mutation(String, { guards: [Public], prefix: false, path: "rest/v1/item" }).exec(() => "write"),
+    })) {}
+    const resolved = SignalResolver.resolveEndpoint(SharedPathEndpoint, new SharedPathEndpoint(), {
+      registry: getDefaultInjectRegistry(),
+      env: makeEnv(),
+      live: getDefaultLiveRegistry(),
+      middleware: new Map(),
+    });
+    expect(Object.keys(resolved.routes?.["/rest/v1/item"] ?? {}).sort()).toEqual(["GET", "POST"]);
+
+    class DoubledPathEndpoint extends endpoint(serverResolverTestServiceModel, (builder) => ({
+      readRow: builder.query(String, { guards: [Public], prefix: false, path: "rest/v1/item" }).exec(() => "read"),
+      readRowAgain: builder.query(String, { guards: [Public], prefix: false, path: "rest/v1/item" }).exec(() => "read"),
+    })) {}
+    expect(() =>
+      SignalResolver.resolveEndpoint(DoubledPathEndpoint, new DoubledPathEndpoint(), {
+        registry: getDefaultInjectRegistry(),
+        env: makeEnv(),
+        live: getDefaultLiveRegistry(),
+        middleware: new Map(),
+      }),
+    ).toThrow("Route conflict: GET /rest/v1/item is declared more than once");
+  });
+
+  test("mounts a mutation under the verb it declares", () => {
+    class VerbEndpoint extends endpoint(serverResolverTestServiceModel, (builder) => ({
+      createRow: builder
+        .mutation(String, { guards: [Public], prefix: false, path: "rest/v1/item" })
+        .exec(() => "create"),
+      patchRow: builder
+        .mutation(String, { guards: [Public], prefix: false, path: "rest/v1/item", method: "PATCH" })
+        .exec(() => "patch"),
+    })) {}
+    const resolved = SignalResolver.resolveEndpoint(VerbEndpoint, new VerbEndpoint(), {
+      registry: getDefaultInjectRegistry(),
+      env: makeEnv(),
+      live: getDefaultLiveRegistry(),
+      middleware: new Map(),
+    });
+    expect(Object.keys(resolved.routes?.["/rest/v1/item"] ?? {}).sort()).toEqual(["PATCH", "POST"]);
+  });
+
+  test("folds two endpoint classes into one table and refuses a path both of them serve", () => {
+    const table = {} as NonNullable<ReturnType<typeof SignalResolver.resolveEndpoint>["routes"]>;
+    SignalResolver.mergeHttpRoutes(table, { "/rest/v1/item": { GET: () => new Response("read") } });
+    SignalResolver.mergeHttpRoutes(table, { "/rest/v1/item": { POST: () => new Response("write") } });
+    expect(Object.keys(table["/rest/v1/item"] ?? {}).sort()).toEqual(["GET", "POST"]);
+    expect(() =>
+      SignalResolver.mergeHttpRoutes(table, { "/rest/v1/item": { POST: () => new Response("write") } }),
+    ).toThrow("Route conflict: POST /rest/v1/item is declared more than once");
+  });
+
   test("guards a pubsub subscribe and revokes the room once the socket loses access", async () => {
     resetResolverOrder();
     const registry = getDefaultInjectRegistry();
@@ -938,7 +995,7 @@ describe("SignalResolver declaration contracts", () => {
     resetResolverOrder();
     const filePath = path.join(tmpdir(), `solid-queue-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
     const queue = Object.assign(new SolidQueue(), {
-      config: getSolidConfig({ appName: "test", environment: "test", solid: { filePath, queuePollIntervalMs: 20 } }),
+      config: getSolidConfig({ solid: { filePath, queuePollIntervalMs: 20 } }),
       queueName: "queue-test",
       workerId: "worker-test",
     });
@@ -965,8 +1022,9 @@ describe("SignalResolver declaration contracts", () => {
     while (!ran.length && Date.now() - startedAt < 2000) await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(ran).toHaveLength(1);
-    expect(ran[0]?.[0]).toBe(validId);
-    expect((ran[0]?.[1] as AkanJob).name).toBe("archiveItem");
+    const [itemId, job] = ran[0] as [string, AkanJob];
+    expect(itemId).toBe(validId);
+    expect(job.name).toBe("archiveItem");
 
     await queue.onDestroy();
     for (const suffix of ["", "-wal", "-shm"]) {

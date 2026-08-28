@@ -67,6 +67,21 @@ describe("StyleGuard daisyui-legacy", () => {
   test("does not flag bare ambiguous names that collide with Tailwind", () => {
     expect(scan('<div className="card input badge btn" />')).toHaveLength(0);
   });
+
+  test("flags daisyUI colour slots the vocabulary dropped", () => {
+    expect(rules('<div className="bg-base-100" />')).toEqual(["daisyui-legacy"]);
+    expect(rules('<div className="text-base-content/70" />')).toEqual(["daisyui-legacy"]);
+    expect(rules('<div className="border-t-base-300" />')).toEqual(["daisyui-legacy"]);
+    expect(rules('<div className="text-primary-content" />')).toEqual(["daisyui-legacy"]);
+    expect(rules('<div className="border-error/30 bg-error/5" />')).toEqual(["daisyui-legacy", "daisyui-legacy"]);
+  });
+
+  test("does not flag colour slots that survived into the semantic vocabulary", () => {
+    expect(scan('<div className="bg-primary text-primary-foreground" />')).toHaveLength(0);
+    expect(scan('<div className="bg-neutral text-info border-warning" />')).toHaveLength(0);
+    expect(scan('<div className="bg-destructive/10 text-destructive" />')).toHaveLength(0);
+    expect(scan('<div className="content-center justify-content" />')).toHaveLength(0);
+  });
 });
 
 // The fixtures below must contain a literal `${`. Writing it inside a plain string trips biome's

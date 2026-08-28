@@ -253,6 +253,12 @@ https://admin.example.com  -> admin
 https://partner-main.example.com -> partner`}
           />
         </div>
+        <Docs.Alert type="info">
+          {l.trans({
+            en: "Locally the site root has no page of its own, so Akan answers it with a list of every basePath in the build instead of a 404. Deployed hosts never see that list; the matching domain opens its client directly.",
+            ko: "로컬에서는 사이트 루트에 해당하는 페이지가 없으므로, Akan이 404 대신 빌드에 포함된 모든 basePath 목록을 보여줍니다. 배포 환경에서는 이 목록이 나타나지 않고 매칭된 도메인이 해당 클라이언트를 바로 엽니다.",
+          })}
+        </Docs.Alert>
       </Scroll.Slide>
       <Divider />
 

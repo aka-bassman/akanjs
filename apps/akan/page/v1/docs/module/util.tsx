@@ -203,7 +203,7 @@ export const ApproveButton = ({ product }: { product: LightProduct }) => {
 import { Link } from "@akanjs/ui";
 
 export const ContextBackButton = ({ sectionId }: { sectionId: string }) => {
-  const path = st.use.path();
+  const path = st.use.path({ agent: false });
   
   // Only render if we are deep inside the specific section
   if (!path.startsWith(\`/section/\${sectionId}/\`)) return null;

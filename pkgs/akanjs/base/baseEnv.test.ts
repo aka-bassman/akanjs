@@ -42,7 +42,9 @@ describe("getEnv", () => {
 
     const { getEnv } = await loadBaseEnv();
 
-    expect(() => getEnv()).toThrow("environment variable AKAN_PUBLIC_APP_NAME is required");
+    expect(() => getEnv()).toThrow(
+      "getEnv() cannot run at build time: akan build does not inject AKAN_PUBLIC_APP_NAME. Call it from a runtime function instead of at module scope (e.g. env(() => getEnv()) in adapt(), a method body, or a default thunk).",
+    );
   });
 
   test("builds default server-side cloud client environment", async () => {

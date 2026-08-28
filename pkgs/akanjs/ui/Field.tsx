@@ -3,12 +3,12 @@ import { type DataList, type Dayjs, dayjs, type EnumInstance, isEnum } from "aka
 import { cn, usePage } from "akanjs/client";
 import { capitalize, formatPhone, isPhoneNumber, lowerlize } from "akanjs/common";
 import type { SliceMeta } from "akanjs/fetch";
-import { st } from "akanjs/store";
+import { actionTagOf, st, tagAction, useFieldTool, useRelationFieldTool } from "akanjs/store";
 import { memo, type ReactNode, useState } from "react";
 import { AiOutlinePlus } from "react-icons/ai";
 import { BiHelpCircle, BiTrash, BiX } from "react-icons/bi";
 import { MdDragIndicator } from "react-icons/md";
-
+import { agentAttrs } from "./agentAttrs";
 import { badgeRecipe } from "./Badge";
 import { buttonRecipe } from "./Button";
 import { DraggableList } from "./DraggableList";
@@ -104,10 +104,11 @@ const List = <Item,>({
 }: ListProps<Item>) => {
   const { l } = usePage();
   const recipe = useUiRecipe("button") ?? buttonRecipe;
+  useFieldTool(onChange);
   return (
-    <div className={cn("flex w-full flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex w-full flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
-      <div className="mb-2 flex w-full flex-col gap-2 rounded-md border border-border p-2">
+      <div className="mb-2 flex w-full flex-col gap-2 rounded-box border border-border p-2">
         {value.map((item, idx) => (
           <>
             <div key={idx} className="flex h-full w-full items-center justify-between gap-2">
@@ -181,11 +182,13 @@ const Text = ({
   inputClassName,
   inputStyleType = "bordered",
 }: TextProps) => {
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Input
+        {...agentAttrs(onChange)}
         cacheKey={cache ? `${label}-${desc}-text` : undefined}
         inputStyleType={inputStyleType}
         value={value ?? ""}
@@ -246,11 +249,13 @@ const Price = ({
   inputClassName,
   inputStyleType = "bordered",
 }: PriceProps) => {
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Input
+        {...agentAttrs(onChange)}
         inputStyleType={inputStyleType}
         value={value ?? ""}
         nullable={nullable}
@@ -312,11 +317,13 @@ const TextArea = ({
   cache,
   inputClassName,
 }: TextAreaProps) => {
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Input.TextArea
+        {...agentAttrs(onChange)}
         value={value ?? ""}
         cacheKey={cache ? `${label}-${desc}-textArea` : undefined}
         nullable={nullable}
@@ -364,8 +371,9 @@ const Switch = ({
   onDesc,
   offDesc,
 }: SwitchProps) => {
+  useFieldTool(onChange, { disabled });
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable label={label} desc={desc} /> : null}
       <div className="flex items-center gap-2">
         <UiSwitch
@@ -412,10 +420,11 @@ const ToggleSelect = <I extends string | number | boolean | null>({
   disabled,
   btnClassName,
 }: ToggleSelectProps<I>) => {
+  useFieldTool(onChange, { disabled });
   const { l } = usePage();
   const isEnumValue = isEnum(items as EnumInstance<string, I>);
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <UtilToggleSelect
         className="mt-2"
@@ -469,10 +478,11 @@ const MultiToggleSelect = <I extends string | number | boolean>({
   onChange,
   disabled,
 }: MultiToggleSelectProps<I>) => {
+  useFieldTool(onChange, { disabled });
   const { l } = usePage();
   const isEnumValue = isEnum(items as EnumInstance<string, I>);
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={!!minlength} label={label} desc={desc} /> : null}
       <UtilToggleSelect.Multi
         nullable={!minlength}
@@ -536,15 +546,20 @@ const TextList = ({
   validate,
   inputClassName,
 }: TextListProps) => {
+  useFieldTool(onChange, { transform, disabled, sortable: true });
   const { l } = usePage();
   const recipe = useUiRecipe("button") ?? buttonRecipe;
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={!minlength} label={label} desc={desc} /> : null}
-      <div className="mb-5 h-full gap-2 rounded-md border border-border p-2">
+      <div className="mb-5 h-full gap-2 rounded-box border border-border p-2">
         <DraggableList
           className="h-full gap-2"
-          onChange={onChange}
+          // Wrapped on purpose: this component already published the field with its own `transform`, and handing
+          // the reference down would register the same names a second time from the list inside it.
+          onChange={(sorted: string[]) => {
+            onChange(sorted);
+          }}
           onRemove={(_, idx) => {
             onChange(value.filter((_, i) => i !== idx));
           }}
@@ -642,6 +657,7 @@ const Tags = ({
   validate,
   inputClassName,
 }: TagsProps) => {
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   const badge = useUiRecipe("badge") ?? badgeRecipe;
   const [inputVisible, setInputVisible] = useState(false);
@@ -654,9 +670,9 @@ const Tags = ({
   };
 
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={!minlength} label={label} desc={desc} /> : null}
-      <div className="flex w-full flex-wrap items-center gap-1 rounded-md border border-foreground/20 p-2">
+      <div className="flex w-full flex-wrap items-center gap-1 rounded-box border border-border p-2">
         {value.map((val, idx) => (
           <span className={badge({ variant: "outline" }, "items-center")} key={idx}>
             <div className="text-xs italic">#</div>
@@ -736,8 +752,9 @@ const Date = <Nullable extends boolean>({
   showTime,
   dateClassName,
 }: DateProps<Nullable>) => {
+  useFieldTool(onChange);
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       {/* FIXME: daysi UI datetime-local 컴포넌트에 max 값 넣으면 오른쪽 끝 짤리는 버그 있음.*/}
       <input
@@ -773,6 +790,7 @@ interface DateRangeProps<Nullable extends boolean> {
   showTime?: boolean;
   onChangeFrom: (value: Dayjs) => void;
   onChangeTo: (value: Dayjs) => void;
+  /** The whole range after either end moves. Fires only once both ends are set — nobody can query a half-open one. */
   onChange?: (from: Dayjs, to: Dayjs) => void;
 }
 const DateRange = <Nullable extends boolean>({
@@ -790,6 +808,24 @@ const DateRange = <Nullable extends boolean>({
   onChange,
   showTime,
 }: DateRangeProps<Nullable>) => {
+  /**
+   * Adds the pair callback to one endpoint setter, carrying that setter's own tag onto the wrapper.
+   *
+   * The wrapper really does run the setter, so the tag stays a true statement — and wiring `onChange` then costs
+   * the endpoint neither its agent tool nor its `data-akan-action`, which a plain closure would both drop.
+   */
+  const withPair = (setter: (value: Dayjs) => void, pair: (value: Dayjs) => [Dayjs | null, Dayjs | null]) => {
+    if (!onChange) return setter;
+    const wrapped = (value: Dayjs) => {
+      setter(value);
+      const [nextFrom, nextTo] = pair(value);
+      if (nextFrom && nextTo) onChange(nextFrom, nextTo);
+    };
+    const tag = actionTagOf(setter);
+    return tag ? tagAction(wrapped, tag) : wrapped;
+  };
+  const changeFrom = withPair(onChangeFrom, (value) => [value, to]);
+  const changeTo = withPair(onChangeTo, (value) => [from, value]);
   return (
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
@@ -804,9 +840,7 @@ const DateRange = <Nullable extends boolean>({
             value={from}
             max={max}
             min={min}
-            onChange={(value: Dayjs) => {
-              onChangeFrom(value);
-            }}
+            onChange={changeFrom}
           />
         </div>
         <div className="relative flex w-full flex-col items-start gap-2 text-center md:flex-row md:items-center">
@@ -818,9 +852,7 @@ const DateRange = <Nullable extends boolean>({
             value={to}
             max={max}
             min={min}
-            onChange={(value: Dayjs) => {
-              onChangeTo(value);
-            }}
+            onChange={changeTo}
           />
         </div>
       </div>
@@ -871,11 +903,13 @@ const Number = ({
   formatter,
   parser,
 }: NumberProps) => {
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} unit={unit} /> : null}
       <Input.Number
+        {...agentAttrs(onChange)}
         min={min}
         max={max}
         cacheKey={cache ? `${label}-${desc}-number` : undefined}
@@ -941,9 +975,10 @@ const DoubleNumber = ({
   validate,
   onPressEnter,
 }: DoubleNumberProps) => {
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <div className="flex items-center gap-2">
         <Input.Number
@@ -1028,11 +1063,13 @@ const Email = ({
   inputClassName,
   inputStyleType,
 }: EmailProps) => {
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Input.Email
+        {...agentAttrs(onChange)}
         value={value ?? ""}
         cacheKey={cache ? `${label}-${desc}-email` : undefined}
         nullable={nullable}
@@ -1091,12 +1128,14 @@ const Phone = ({
   onPressEnter,
   inputClassName,
 }: PhoneProps) => {
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
 
   return (
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Input
+        {...agentAttrs(onChange)}
         value={value ?? ""}
         cacheKey={cache ? `${label}-${desc}-phone` : undefined}
         nullable={nullable}
@@ -1161,12 +1200,14 @@ const Password = ({
   inputClassName,
   showConfirm,
 }: PasswordProps) => {
+  useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   return (
     <div className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <div className="flex flex-col gap-2">
         <Input.Password
+          {...agentAttrs(onChange)}
           cacheKey={cache ? `${label}-${desc}-password` : undefined}
           value={value ?? ""}
           nullable={nullable}
@@ -1223,6 +1264,12 @@ interface ParentProps<T extends string, State, Input, Full, Light> {
   renderOption: (model: Light) => ReactNode;
   renderSelected?: (value: Light) => ReactNode;
 }
+/** The one line an option renders as, so an agent can match an id against what it reads on screen. */
+const optionLabel = <Light extends { id: string }>(model: Light, render: (model: Light) => ReactNode) => {
+  const rendered = render(model);
+  return typeof rendered === "string" ? rendered : model.id;
+};
+
 const Parent = <T extends string, State, Input, Full extends { id: string }, Light extends { id: string }>({
   label,
   desc,
@@ -1244,6 +1291,7 @@ const Parent = <T extends string, State, Input, Full extends { id: string }, Lig
   const [modelName, ModelName] = [lowerlize(refName), capitalize(refName)];
   const storeUse = st.use as { [key: string]: () => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
+  const storeGet = st.get as unknown as <V>() => { [key: string]: V };
 
   const names = {
     model: modelName,
@@ -1260,9 +1308,15 @@ const Parent = <T extends string, State, Input, Full extends { id: string }, Lig
 
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
+  useRelationFieldTool(onChange, {
+    read: () => storeGet<DataList<Light>>()[namesOfSlice.modelList],
+    load: () => storeDo[namesOfSlice.refreshModel]({ invalidate: true, queryArgs: initArgs }),
+    label: (model) => optionLabel(model, renderOption),
+    disabled,
+  });
 
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Select<string | null, false, true>
         label={label}
@@ -1354,9 +1408,11 @@ const ParentId = <T extends string, State, Input, Full extends { id: string }, L
   };
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
+  // The id *is* the value here, so the ordinary field setter describes it — no lookup, unlike `Parent`.
+  useFieldTool(onChange, { disabled });
 
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Select<string | null, false, true>
         searchable
@@ -1445,9 +1501,15 @@ const Children = <T extends string, State, Input, Full extends { id: string }, L
   };
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
+  useRelationFieldTool(onChange, {
+    read: () => storeGet<DataList<Light>>()[namesOfSlice.modelList],
+    load: () => storeDo[namesOfSlice.refreshModel]({ invalidate: true, queryArgs: initArgs }),
+    label: (model) => optionLabel(model, renderOption),
+    disabled,
+  });
 
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Select
         searchable
@@ -1535,9 +1597,11 @@ const ChildrenId = <T extends string, State, Input, Full extends { id: string },
   };
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
+  // The ids *are* the value here, so the ordinary field setter describes them — no lookup, unlike `Children`.
+  useFieldTool(onChange, { disabled });
 
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Select
         searchable

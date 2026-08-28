@@ -55,6 +55,13 @@ Screen code is invariant — a plain `<Button variant="primary">` never changes.
 - Switching themes is toggling the `data-theme` attribute. Keep every token defined in both the dark and light blocks.
 - Radius uses `rounded-box` (cards/modals), `rounded-field` (buttons/inputs), `rounded-selector` (toggles/checkboxes).
 
+## Lib-Owned Tokens (`libs/<lib>/ui/tokens.css`)
+- A lib that needs colors of its own — vendor brand colors pinned by someone else's guide (Kakao `#fee500`, Naver `#1ec800`), fixed in-game surfaces — declares them **once** in `libs/<lib>/ui/tokens.css`. Never copy the block into each app's stylesheet.
+- The file is collected automatically: every app whose page graph reaches that lib compiles it, ordered **ahead of** the app's own stylesheets, so the app wins on any variable both declare. There is nothing to import and no sync step to remember; two libs both declaring one variable resolve in lib-name order, so do not rely on that.
+- Declare plain custom properties under `:root`, not a Tailwind `@theme` extension: the color vocabulary is closed per stylesheet, so `bg-kakao` would generate no CSS. Reference them as `bg-[var(--kakao)]` / `text-[var(--kakao-foreground)]`, which `no-arbitrary-color` allows by design (a `var()` reference is not an arbitrary color literal).
+- Theme-following colors still belong to the app: a lib token is for a color that must **not** change with `data-theme`.
+- An `@import` the CSS pipeline cannot resolve fails the build; it is never dropped. A stylesheet under `page/` that no route imports is compiled by nothing and warns at build time.
+
 ## Codegen Rules
 - Do not hardcode hex or raw-palette colors (`bg-red-500`, `#ff0000`); use semantic tokens.
 - Do not put inline color literals in `style={{ }}`; use token classes.

@@ -1,5 +1,5 @@
 "use client";
-import { usePage } from "@apps/akan/client";
+import { Err, usePage } from "@apps/akan/client";
 import { Link } from "akanjs/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -13,10 +13,12 @@ interface DocsSearchHeading {
   title: LocalizedText;
 }
 
-interface DocsSearchItem {
+export interface DocsSearchItem {
   href: string;
   section: string;
   category: string;
+  /** Sidebar position from the layout's menuMap; ties break on it so "the first tutorial" wins its section. */
+  order?: number;
   title: LocalizedText;
   headings: DocsSearchHeading[];
   body: LocalizedText;
@@ -62,7 +64,7 @@ const isDocsSearchItem = (value: unknown): value is DocsSearchItem => {
   );
 };
 
-const isDocsSearchIndex = (value: unknown): value is DocsSearchIndex => {
+export const isDocsSearchIndex = (value: unknown): value is DocsSearchIndex => {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   return typeof record.generatedAt === "string" && Array.isArray(record.items) && record.items.every(isDocsSearchItem);
@@ -95,6 +97,25 @@ const getScore = (item: DocsSearchItem, tokens: string[], lang: Lang) => {
   return { score, headings: matchedHeadings };
 };
 
+export const scoreDocs = (items: DocsSearchItem[], query: string, lang: Lang): SearchResult[] => {
+  const tokens = normalize(query).split(" ").filter(Boolean);
+  if (tokens.join("").length < 2) return [];
+
+  return items
+    .map((item) => {
+      const { score, headings } = getScore(item, tokens, lang);
+      return { item, score, headings };
+    })
+    .filter((result) => result.score > 0)
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        (a.item.order ?? Number.MAX_SAFE_INTEGER) - (b.item.order ?? Number.MAX_SAFE_INTEGER) ||
+        a.item.href.localeCompare(b.item.href),
+    )
+    .slice(0, 8);
+};
+
 export const Search = ({ className, onNavigate }: SearchProps) => {
   const { l, lang, path } = usePage();
   const activeLang: Lang = lang === "ko" ? "ko" : "en";
@@ -120,9 +141,9 @@ export const Search = ({ className, onNavigate }: SearchProps) => {
     const loadIndex = async () => {
       try {
         const response = await fetch("/docs-search-index.json", { signal: controller.signal });
-        if (!response.ok) throw new Error(`Failed to load docs search index: ${response.status}`);
+        if (!response.ok) throw new Err("doc.error.searchIndexLoadFailed", { status: String(response.status) });
         const json: unknown = await response.json();
-        if (!isDocsSearchIndex(json)) throw new Error("Invalid docs search index");
+        if (!isDocsSearchIndex(json)) throw new Err("doc.error.searchIndexInvalid");
         setItems(json.items);
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -180,19 +201,7 @@ export const Search = ({ className, onNavigate }: SearchProps) => {
     };
   }, []);
 
-  const results = useMemo<SearchResult[]>(() => {
-    const tokens = normalize(query).split(" ").filter(Boolean);
-    if (tokens.join("").length < 2) return [];
-
-    return items
-      .map((item) => {
-        const { score, headings } = getScore(item, tokens, activeLang);
-        return { item, score, headings };
-      })
-      .filter((result) => result.score > 0)
-      .sort((a, b) => b.score - a.score || a.item.href.localeCompare(b.item.href))
-      .slice(0, 8);
-  }, [activeLang, items, query]);
+  const results = useMemo<SearchResult[]>(() => scoreDocs(items, query, activeLang), [activeLang, items, query]);
 
   const hasQuery = normalize(query).length >= 2;
   const close = () => setIsOpen(false);

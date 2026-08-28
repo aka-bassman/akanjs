@@ -12,7 +12,6 @@ export const HamburgerMenu = ({ isOpen, setIsOpen, className, color }: Hamburger
   const toggleMenu = () => {
     setIsOpen(!isOpen);
   };
-
   return (
     <button
       className={cn(
@@ -26,7 +25,7 @@ export const HamburgerMenu = ({ isOpen, setIsOpen, className, color }: Hamburger
         <span
           style={{ backgroundColor: color }}
           className={cn(
-            "absolute left-0 h-1 w-full rounded-md transition-all ease-in-out",
+            "absolute left-0 h-1 w-full rounded-md bg-black transition-all ease-in-out",
             isOpen && "top-2.5 rotate-45",
             !isOpen && "top-0",
           )}
@@ -36,7 +35,7 @@ export const HamburgerMenu = ({ isOpen, setIsOpen, className, color }: Hamburger
         <span
           style={{ backgroundColor: color }}
           className={cn(
-            "absolute left-0 h-1 w-full rounded-md transition-all ease-in-out",
+            "absolute left-0 h-1 w-full rounded-md bg-black transition-all ease-in-out",
             !isOpen && "top-2.5 opacity-100",
             isOpen && "top-0 opacity-0",
           )}
@@ -46,7 +45,7 @@ export const HamburgerMenu = ({ isOpen, setIsOpen, className, color }: Hamburger
         <span
           style={{ backgroundColor: color }}
           className={cn(
-            "absolute left-0 h-1 w-full rounded-md transition-all ease-in-out",
+            "absolute left-0 h-1 w-full rounded-md bg-black transition-all ease-in-out",
             isOpen && "top-2.5 -rotate-45",
             !isOpen && "top-5",
           )}

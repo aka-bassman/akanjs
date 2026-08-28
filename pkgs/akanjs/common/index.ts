@@ -27,6 +27,15 @@ export {
   resolveAkanI18nConfig,
 } from "./localeConfig";
 export { lowerlize } from "./lowerlize";
+export {
+  isMcpDescribableArg,
+  type McpExposureEndpoint,
+  type McpExposureOption,
+  mcpBaseVerbOf,
+  mcpHintsOf,
+  mcpPromptRefusalOf,
+  mcpRefusalOf,
+} from "./mcpExposure";
 export { mergeVersion } from "./mergeVersion";
 export { objectify } from "./objectify";
 export { pathGet } from "./pathGet";
@@ -36,6 +45,7 @@ export { randomPicks } from "./randomPicks";
 export {
   assertUniqueRoutePatterns,
   compareRouteSpecificity,
+  getPageSourceFileViolation,
   getRouteExports,
   isRouteSourceFile,
   isSpecialRouteLeaf,

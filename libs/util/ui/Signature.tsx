@@ -1,9 +1,9 @@
 "use client";
 import { cn } from "akanjs/client";
-import { buttonRecipe } from "akanjs/ui";
 import { type ChangeEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { AiOutlineDelete, AiOutlineUpload } from "react-icons/ai";
 import { BiEditAlt } from "react-icons/bi";
+import { buttonRecipe, inputRecipe } from "./Recipe";
 
 export interface SignatureProps {
   className?: string;
@@ -109,7 +109,7 @@ export const Signature = ({
       <div className="flex gap-1">
         <button
           type="button"
-          className={buttonRecipe({ variant: mode === "draw" ? "primary" : "ghost", size: "sm" })}
+          className={buttonRecipe({ size: "sm", variant: mode === "draw" ? "primary" : "ghost" })}
           onClick={() => {
             setMode("draw");
           }}
@@ -118,7 +118,7 @@ export const Signature = ({
         </button>
         <button
           type="button"
-          className={buttonRecipe({ variant: mode === "upload" ? "primary" : "ghost", size: "sm" })}
+          className={buttonRecipe({ size: "sm", variant: mode === "upload" ? "primary" : "ghost" })}
           onClick={() => {
             setMode("upload");
           }}
@@ -149,7 +149,10 @@ export const Signature = ({
           <input
             type="file"
             accept="image/*"
-            className="w-full rounded-field border border-input text-sm file:mr-3 file:border-0 file:bg-muted file:px-3 file:py-2 file:text-foreground"
+            className={inputRecipe(
+              {},
+              "py-1 file:mr-3 file:rounded-field file:border-0 file:bg-muted file:px-3 file:py-1 file:font-medium file:text-foreground file:text-sm",
+            )}
             onChange={onUpload}
           />
           {value ? <img src={value} alt="signature" className="max-h-40 object-contain" /> : null}

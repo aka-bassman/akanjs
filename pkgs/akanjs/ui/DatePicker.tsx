@@ -139,7 +139,7 @@ const DefaultRangePicker = ({
         showTimeSelect={showTime}
         timeIntervals={timeIntervals}
         filterDate={(date: Date) =>
-          !disabledDate?.(dayjs(date)) && !!value[0] && !dayjs(date).add(1, "day").isBefore(value[0]) ? true : false
+          !disabledDate?.(dayjs(date)) && value[0] && !dayjs(date).add(1, "day").isBefore(value[0]) ? true : false
         }
         filterTime={(time: Date) => !!value[0] && dayjs(time).isAfter(value[0])}
         dateFormat={format}

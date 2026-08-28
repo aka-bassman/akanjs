@@ -5,7 +5,7 @@ import type { AkanPlugin } from "akanjs";
 import { type AkanI18nConfig, resolveAkanI18nConfig } from "akanjs/common";
 import type { AkanImageConfig } from "akanjs/server";
 import type { App, Lib } from "../commandDecorators";
-import { WorkspaceExecutor } from "../executors";
+import { LibExecutor, WorkspaceExecutor } from "../executors";
 import type { BaseDevEnv, PackageJson } from "../types";
 import {
   type AkanMobileConfig,
@@ -50,8 +50,6 @@ const DEFAULT_OPTIMIZE_IMPORTS = [
 ];
 const WORKSPACE_BARREL_FACETS = ["ui", "webkit", "common", "client", "server"] as const;
 const SSR_RUNTIME_PACKAGES = ["react", "react-dom", "react-server-dom-webpack"] as const;
-const NATIVE_RUNTIME_PACKAGES = ["sharp"] as const;
-const DEFAULT_BACKEND_RUNTIME_PACKAGES = ["croner"] as const;
 // The firebase client (push tokens) and the Capacitor toolchain — `@capacitor/cli` (`npx cap`),
 // `@capacitor/assets` (`npx @capacitor/assets`) plus the `@capacitor/core`/`ios`/`android` runtime
 // and native-platform packages that `npx cap add`/`sync` resolve from the workspace node_modules.
@@ -92,8 +90,6 @@ const DATABASE_MODE_RUNTIME_PACKAGES = {
 } satisfies Record<DatabaseMode, readonly string[]>;
 const AKAN_RUNTIME_PACKAGES = new Set<string>([
   ...SSR_RUNTIME_PACKAGES,
-  ...NATIVE_RUNTIME_PACKAGES,
-  ...DEFAULT_BACKEND_RUNTIME_PACKAGES,
   ...MOBILE_RUNTIME_PACKAGES,
   ...Object.values(DATABASE_MODE_RUNTIME_PACKAGES).flat(),
 ]);
@@ -199,6 +195,7 @@ export class AkanAppConfig implements AppConfigResult {
     config: DeepPartial<AppConfigResult>,
     baseDevEnv: BaseDevEnv,
     plugins: AkanPlugin[] = [],
+    libExternalLibs: readonly string[] = [],
   ) {
     this.app = app;
     this.rootPackageJson = rootPackageJson;
@@ -207,7 +204,7 @@ export class AkanAppConfig implements AppConfigResult {
     this.plugins = plugins;
     this.#applyRoutes(config?.routes);
     this.defaultDatabaseMode = config?.defaultDatabaseMode ?? "single";
-    this.externalLibs = config?.externalLibs ?? [];
+    this.externalLibs = [...new Set([...(config?.externalLibs ?? []), ...libExternalLibs])];
     this.barrelImports = [
       ...DEFAULT_BARREL_IMPORTS,
       ...WORKSPACE_BARREL_FACETS.map((facet) => `@apps/${app.name}/${facet}`),
@@ -416,7 +413,23 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
     ]);
     const resolved = typeof configImp === "function" ? configImp(app) : configImp;
     const { plugins, ...config } = (resolved ?? {}) as DeepPartial<AppConfigResult> & { plugins?: AkanPlugin[] };
-    return new AkanAppConfig(app, libs, rootPackageJson, config, baseDevEnv, plugins ?? []);
+    const libExternalLibs = await AkanAppConfig.#collectLibExternalLibs(app, libs, bustImportCache);
+    return new AkanAppConfig(app, libs, rootPackageJson, config, baseDevEnv, plugins ?? [], libExternalLibs);
+  }
+  //* Every workspace lib is read, not just this app's lib deps: narrowing the set needs the dependency
+  //* scan, and the incremental page rebundle re-reads this config on every file change.
+  static async #collectLibExternalLibs(app: App, libs: string[], bustImportCache: boolean): Promise<string[]> {
+    const libConfigs = await Promise.all(
+      libs.map(async (libName) =>
+        LibExecutor.from(app, libName)
+          .getConfig({ refresh: bustImportCache })
+          .catch((error: unknown) => {
+            app.logger.warn(`Skipped libs/${libName}/akan.config.ts externalLibs: ${String(error)}`);
+            return null;
+          }),
+      ),
+    );
+    return libConfigs.flatMap((libConfig) => libConfig?.externalLibs ?? []);
   }
   #resolveProductionDependencyVersion(lib: string) {
     const rootVersion = this.rootPackageJson.dependencies?.[lib] ?? this.rootPackageJson.devDependencies?.[lib];
@@ -428,13 +441,7 @@ CMD [${command.map((c) => `"${c}"`).join(",")}]`;
     return akanPackageJson.dependencies?.[lib] ?? akanPackageJson.peerDependencies?.[lib];
   }
   #getProductionRuntimePackages() {
-    return [
-      ...this.externalLibs,
-      ...SSR_RUNTIME_PACKAGES,
-      ...NATIVE_RUNTIME_PACKAGES,
-      ...DEFAULT_BACKEND_RUNTIME_PACKAGES,
-      ...this.getDatabaseModeRuntimePackages(),
-    ];
+    return [...this.externalLibs, ...SSR_RUNTIME_PACKAGES, ...this.getDatabaseModeRuntimePackages()];
   }
   getDatabaseModeRuntimePackages(databaseMode: DatabaseMode = this.defaultDatabaseMode) {
     return [...DATABASE_MODE_RUNTIME_PACKAGES[databaseMode]];
@@ -539,8 +546,8 @@ export class AkanLibConfig implements LibConfigResult {
     this.externalLibs = config?.externalLibs ?? [];
     this.plugins = plugins;
   }
-  static async from(lib: Lib) {
-    const [configImp] = await Promise.all([import(`${lib.cwdPath}/akan.config.ts`).then((mod) => mod.default)]);
+  static async from(lib: Lib, { bustImportCache = false }: { bustImportCache?: boolean } = {}) {
+    const configImp = await AkanAppConfig.importConfigModule(lib.cwdPath, { bustImportCache });
     const resolved = typeof configImp === "function" ? configImp(lib) : configImp;
     const { plugins, ...config } = (resolved ?? {}) as DeepPartial<LibConfigResult> & { plugins?: AkanPlugin[] };
     return new AkanLibConfig(lib, config, plugins ?? []);

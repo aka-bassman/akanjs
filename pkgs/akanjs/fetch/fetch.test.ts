@@ -721,6 +721,28 @@ describe("FetchClient HTTP generation", () => {
     });
   });
 
+  test("sends a mutation with the verb it declares", async () => {
+    setMockFetch();
+    jsonResponses.push("patched");
+    const restSignal: SerializedSignal = {
+      endpoint: {
+        patchThing: {
+          type: "mutation",
+          method: "PATCH",
+          args: [arg("body", "title")],
+          returns: { refName: "String" },
+        },
+      },
+    };
+    const client = new FetchClient("https://api.example", {}, { service: restSignal });
+
+    expect(await client.handler.patchThing("Renamed")).toBe("patched");
+    expect(fetchCalls[0]).toMatchObject({
+      url: "https://api.example/patchThing",
+      init: { method: "PATCH", body: JSON.stringify({ title: "Renamed" }) },
+    });
+  });
+
   test("supports explicit auth token, request auth, crystalize false, upload bodies, and clone", async () => {
     setMockFetch();
     jsonResponses.push({ title: "Raw", count: 1, nested: { label: "N" } }, "RequestAuth", "uploaded", "cloned");
@@ -997,6 +1019,25 @@ describe("FetchClient HTTP generation", () => {
 
     expect(lib.fetch).not.toBe(app.fetch);
   });
+
+  test("runs a method called on the proxy against the instance, so its private fields stay reachable", async () => {
+    setMockFetch();
+    jsonResponses.push("ok");
+    const { fetch: built } = FetchClient.build<{ fetch: unknown }>(
+      {},
+      { service: serviceSignal },
+      { origin: "https://api.example" },
+    );
+    const proxy = built as FetchProxy & {
+      setJwt: (jwt: string | null) => void;
+      getThing: (id: string, tags: string[], empty: null) => Promise<unknown>;
+    };
+
+    expect(() => proxy.setJwt("proxy-jwt")).not.toThrow();
+    expect(proxy.instance.jwt).toBe("proxy-jwt");
+    await proxy.getThing("1234567890abcdef12345678", [], null);
+    expect(fetchCalls[0]).toMatchObject({ init: { headers: { Authorization: "Bearer proxy-jwt" } } });
+  });
 });
 
 describe("FetchClient database signal helpers", () => {
@@ -1130,7 +1171,7 @@ describe("WsClient", () => {
       client.emit("send", ["hello"]);
       client.subscribe({ key: "roomKey", data: ["r1"], handleEvent: () => undefined });
 
-      expect(warnings).toEqual([expect.stringContaining('before emit "send"')]);
+      expect(warnings).toEqual([]);
       await new Promise((resolve) => originalSetTimeout(resolve, 5));
       expect(warnings).toEqual([
         expect.stringContaining('before emit "send"'),
@@ -1159,6 +1200,30 @@ describe("WsClient", () => {
       expect(JSON.parse(ws.sent.at(-1) ?? "{}")).toEqual({ key: "roomKey", data: ["r1"], subscribe: true });
       ws.receive({ type: "pub", roomId: "roomKey-r1", data: { title: "event" } });
       expect(events).toEqual([{ title: "event" }]);
+      await new Promise((resolve) => originalSetTimeout(resolve, 5));
+      expect(warnings).toEqual([]);
+    } finally {
+      console.warn = originalConsoleWarn;
+    }
+  });
+
+  test("queues an emit issued before connect and replays it on open without warning", async () => {
+    setFakeWebSocket();
+    const originalConsoleWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = ((message: string) => {
+      warnings.push(message);
+    }) as typeof console.warn;
+    try {
+      const client = new WsClient("ws://example/ws");
+      client.emit("send", ["hello"]);
+      client.connect();
+      const ws = FakeWebSocket.instances[0];
+      ws.open();
+
+      expect(JSON.parse(ws.sent.at(-1) ?? "{}")).toEqual({ key: "send", data: ["hello"] });
+      client.emit("send", ["again"]);
+      expect(JSON.parse(ws.sent.at(-1) ?? "{}")).toEqual({ key: "send", data: ["again"] });
       await new Promise((resolve) => originalSetTimeout(resolve, 5));
       expect(warnings).toEqual([]);
     } finally {
@@ -1265,6 +1330,52 @@ describe("WsClient", () => {
 });
 
 describe("FetchClient websocket generation", () => {
+  test("routes a realtime call with a FetchPolicy origin to a socket for that origin", async () => {
+    setFakeWebSocket();
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+    client.connect();
+    const own = FakeWebSocket.instances[0];
+    own.open();
+
+    await client.handler.sendThing("hello", { origin: "http://localhost:8282" });
+    const remote = FakeWebSocket.instances[1];
+    expect(remote.url).toBe("ws://localhost:8282/ws");
+    remote.open();
+    expect(JSON.parse(remote.sent.at(-1) ?? "{}")).toEqual({ key: "sendThing", data: ["hello"] });
+    expect(own.sent).toEqual([]);
+
+    const listened: unknown[] = [];
+    const cleanupMessage = client.handler.listenSendThing((data: unknown) => listened.push(data), {
+      origin: "http://localhost:8282",
+    }) as () => void;
+    own.receive({ type: "msg", key: "sendThing", data: "own-message" });
+    remote.receive({ type: "msg", key: "sendThing", data: "remote-message" });
+    cleanupMessage();
+    remote.receive({ type: "msg", key: "sendThing", data: "after-cleanup" });
+    expect(listened).toEqual(["remote-message"]);
+
+    const published: unknown[] = [];
+    const cleanupPubsub = (await client.handler.subscribeRoomThing("room-1", (data: unknown) => published.push(data), {
+      origin: "http://localhost:8282",
+    })) as () => void;
+    expect(JSON.parse(remote.sent.at(-1) ?? "{}")).toEqual({ key: "roomThing", data: ["room-1"], subscribe: true });
+    remote.receive({ type: "pub", roomId: "roomThing-room-1", data: { title: "Published" } });
+    expect((published[0] as InstanceType<typeof FetchTestLight>).title).toBe("Published");
+    cleanupPubsub();
+    expect(JSON.parse(remote.sent.at(-1) ?? "{}")).toEqual({ key: "roomThing", data: ["room-1"], subscribe: false });
+
+    const instanceCount = FakeWebSocket.instances.length;
+    await client.handler.sendThing("second", { origin: "http://localhost:8282/" });
+    expect(FakeWebSocket.instances).toHaveLength(instanceCount);
+    expect(JSON.parse(remote.sent.at(-1) ?? "{}")).toEqual({ key: "sendThing", data: ["second"] });
+
+    await client.handler.sendThing("mine", { origin: "https://api.example" });
+    expect(FakeWebSocket.instances).toHaveLength(instanceCount);
+    expect(JSON.parse(own.sent.at(-1) ?? "{}")).toEqual({ key: "sendThing", data: ["mine"] });
+
+    client.disconnect();
+  });
+
   test("registers message and pubsub handlers from serialized endpoints", async () => {
     setFakeWebSocket();
     const client = new FetchClient("https://api.example", {}, { service: serviceSignal });

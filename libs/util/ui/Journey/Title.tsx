@@ -22,8 +22,8 @@ export const Title = ({ children, className, direction = "right" }: TitleProps) 
       <div
         className={cn(
           "absolute bottom-[30px] left-[-16px] z-10 size-8 rounded-full border-8 border-primary",
-          direction === "right" && "bg-secondary md:left-[-52px]",
-          direction === "left" && "bg-secondary md:right-[-52px] md:left-auto",
+          direction === "right" && "bg-muted md:left-[-52px]",
+          direction === "left" && "bg-muted md:right-[-52px] md:left-auto",
         )}
       />
     </div>

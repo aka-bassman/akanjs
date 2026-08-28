@@ -65,7 +65,11 @@ export const lazy = <Loaded,>(loader: () => Promise<Loaded>, option?: LazyOption
     const [mounted, setMounted] = React.useState(false);
     React.useEffect(() => setMounted(true), []);
     if (!mounted) return <>{renderFallback()}</>;
-    return <LazyInner {...props} ref={ref as never} />;
+    return (
+      <React.Suspense fallback={renderFallback()}>
+        <LazyInner {...props} ref={ref as never} />
+      </React.Suspense>
+    );
   });
   Gate.displayName = "LazySsrFalseGate";
   return Gate as unknown as LoadedOf<Loaded>;

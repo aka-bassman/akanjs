@@ -55,7 +55,7 @@ export const DefaultMenu = ({
   const LiRefs = useRef<HTMLLIElement[]>([]);
   const overflowLiRef = useRef<HTMLLIElement | null>(null);
   const itemWidthsRef = useRef<number[]>([]);
-  const innerWidth = st.use.innerWidth();
+  const innerWidth = st.use.innerWidth({ agent: false });
 
   const subMenuClassName =
     mode === "horizontal"

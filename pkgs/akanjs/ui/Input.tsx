@@ -1,6 +1,7 @@
 "use client";
 import { cn, usePage } from "akanjs/client";
 import { isEmail } from "akanjs/common";
+import { useFieldTool } from "akanjs/store";
 import React, {
   type ChangeEvent,
   type InputHTMLAttributes,
@@ -12,7 +13,7 @@ import React, {
   useState,
 } from "react";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
-
+import { agentAttrs } from "./agentAttrs";
 import { inputRecipe } from "./recipe";
 import { createOverridable, useUiRecipe } from "./UiOverride";
 
@@ -61,6 +62,7 @@ const DefaultInput = ({
   validate,
   ...rest
 }: InputProps) => {
+  useFieldTool(onChange, { disabled: rest.disabled });
   const { l } = usePage();
   const [firstFocus, setFirstFocus] = useState(true);
   const validateResult = validate ? validate(value) : undefined;
@@ -111,6 +113,7 @@ const DefaultInput = ({
       {icon ? <div className={cn("flex items-center justify-center", iconClassName)}>{icon}</div> : null}
       <input
         {...rest}
+        {...agentAttrs(onChange)}
         ref={inputRef}
         value={value}
         onChange={(e) => {
@@ -124,7 +127,7 @@ const DefaultInput = ({
         }}
         onKeyDown={handleKeyDown}
         className={cn(
-          `b-5 text-foreground outline-hidden duration-300 focus:border-primary focus:outline-hidden ${icon && ""}`,
+          "text-foreground outline-hidden duration-300 focus:border-primary focus:outline-hidden",
           inputType,
           // statusClass,
           inputClassName,
@@ -168,6 +171,7 @@ const DefaultTextArea = ({
   validate,
   ...rest
 }: TextAreaProps) => {
+  useFieldTool(onChange, { disabled: rest.disabled });
   const { l } = usePage();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const validateResult = validate(value);
@@ -205,6 +209,7 @@ const DefaultTextArea = ({
     <div className={cn("relative mb-5", className)}>
       <textarea
         {...rest}
+        {...agentAttrs(onChange)}
         ref={inputRef}
         value={value}
         onChange={(e) => {
@@ -261,6 +266,7 @@ const DefaultPassword = ({
   validate,
   ...rest
 }: PasswordProps) => {
+  useFieldTool(onChange, { disabled: rest.disabled });
   const { l } = usePage();
   const inputRef = useRef<HTMLInputElement>(null);
   const validateResult = validate(value);
@@ -305,6 +311,7 @@ const DefaultPassword = ({
         ) : null}
         <input
           {...rest}
+          {...agentAttrs(onChange)}
           type={showPassword ? "text" : "password"}
           ref={inputRef}
           value={value}
@@ -319,7 +326,9 @@ const DefaultPassword = ({
             onChange?.(e.target.value, e);
           }}
           className={cn(
-            cn(inputBase, `text-foreground duration-300 focus:border-primary focus:outline-hidden ${icon && "pl-12"}`),
+            inputBase,
+            "text-foreground duration-300 focus:border-primary focus:outline-hidden",
+            icon && "pl-12",
             statusClass,
             inputClassName,
           )}
@@ -374,6 +383,7 @@ const DefaultEmail = ({
   inputWrapperClassName,
   ...rest
 }: EmailProps) => {
+  useFieldTool(onChange, { disabled: rest.disabled });
   const { l } = usePage();
   const inputRef = useRef<HTMLInputElement>(null);
   const isValidEmail = isEmail(value);
@@ -423,6 +433,7 @@ const DefaultEmail = ({
         ) : null}
         <input
           {...rest}
+          {...agentAttrs(onChange)}
           type="email"
           value={value}
           ref={inputRef}
@@ -437,7 +448,8 @@ const DefaultEmail = ({
             onChange?.(e.target.value, e);
           }}
           className={cn(
-            `text-foreground outline-hidden duration-300 focus:border-primary focus:outline-hidden ${icon && "pl-12"}`,
+            "text-foreground outline-hidden duration-300 focus:border-primary focus:outline-hidden",
+            icon && "pl-12",
             inputType,
             statusClass,
             inputClassName,
@@ -486,6 +498,7 @@ const DefaultNumber = ({
   parser,
   ...rest
 }: NumberProps) => {
+  useFieldTool(onChange, { disabled: rest.disabled });
   const { l } = usePage();
   const inputRef = useRef<HTMLInputElement>(null);
   const validateResult = validate ? validate(value) : undefined;
@@ -590,6 +603,7 @@ const DefaultNumber = ({
         ) : null}
         <input
           {...rest}
+          {...agentAttrs(onChange)}
           ref={inputRef}
           value={formatValue}
           onKeyDown={handleKeyDown}
@@ -609,7 +623,9 @@ const DefaultNumber = ({
             if (cacheKey) sessionStorage.setItem(cacheKey, parsedValue);
           }}
           className={cn(
-            cn(inputBase, `text-foreground duration-300 focus:border-primary focus:outline-hidden ${icon && "pl-12"}`),
+            inputBase,
+            "text-foreground duration-300 focus:border-primary focus:outline-hidden",
+            icon && "pl-12",
             statusClass,
             inputClassName,
           )}
@@ -630,9 +646,11 @@ export type CheckboxProps = Omit<InputHTMLAttributes<HTMLInputElement>, "onChang
 };
 
 const DefaultCheckbox = ({ checked, onChange, className, ...rest }: CheckboxProps) => {
+  useFieldTool(onChange, { disabled: rest.disabled });
   return (
     <input
       {...rest}
+      {...agentAttrs(onChange)}
       type="checkbox"
       checked={checked}
       // Native rendering with `accent-color` rather than an appearance-none rebuild: the browser keeps

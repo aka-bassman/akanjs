@@ -491,6 +491,8 @@ describe("signal serialization and registry", () => {
       modelType: "full",
       nullable: true,
     });
+    // Sort keys are the client's only source for the orderings a list UI may offer.
+    expect(databaseSignal.filter?.sortKeys).toEqual(["latest", "oldest", "relevance", "titleAsc"]);
     expect(databaseSignal.getGuards).toBeUndefined();
     expect(databaseSignal.cruGuards).toBeUndefined();
     expect(serviceSignal).toEqual({
@@ -599,6 +601,23 @@ describe("SignalContext execution", () => {
     );
   });
 
+  test("parses boolean search args sent as query text", async () => {
+    const endpointInfo = buildEndpoint
+      .query(String)
+      .search("archived", Boolean)
+      .exec((archived) => `archived:${String(archived)}`);
+    const context = makeSignalContext({
+      endpointInfo,
+      request: makeHttpRequest({ url: "http://localhost/items?archived=true" }),
+    });
+
+    await context.init();
+    const response = (await context.exec()) as Response;
+
+    expect(context.args).toEqual([true]);
+    expect(await response.json()).toBe("archived:true");
+  });
+
   test("parses websocket message and pubsub room args", async () => {
     const messageInfo = buildEndpoint
       .message(String)
@@ -610,7 +629,7 @@ describe("SignalContext execution", () => {
       .room("roomId", String)
       .exec(() => undefined);
     const wsReq = {
-      ws: { id: "ws-1" },
+      ws: { id: "ws-1", data: { socketId: "socket-1" } },
       data: ["hello"],
       eventType: "message",
     } as never;
@@ -624,7 +643,7 @@ describe("SignalContext execution", () => {
     });
     const pubsubContext = new SignalContext(
       "roomKey",
-      { ws: { id: "ws-2" }, data: ["room-1"], eventType: "subscribe" } as never,
+      { ws: { id: "ws-2", data: { socketId: "socket-2" } }, data: ["room-1"], eventType: "subscribe" } as never,
       {
         endpointInfo: pubsubInfo,
         adaptor: new (adapt("signalTestPubsubAdaptor"))(),
@@ -642,6 +661,31 @@ describe("SignalContext execution", () => {
     expect(messageContext.internalArgs).toEqual([]);
     expect(pubsubContext.args).toEqual(["room-1"]);
     expect(pubsubContext.getRoomId("roomKey")).toBe("roomKey-room-1");
+  });
+
+  test("hands a message handler the socket id minted at the handshake", async () => {
+    const endpointInfo = buildEndpoint
+      .message(String)
+      .msg("text", String)
+      .with(Ws)
+      .exec((text, ws) => `${text}:${ws.socketId}`);
+    const context = new SignalContext(
+      "messageKey",
+      { ws: { data: { socketId: "socket-1" } }, data: ["hello"], eventType: "message" } as never,
+      {
+        endpointInfo,
+        adaptor: new (adapt("signalTestWsSocketIdAdaptor"))(),
+        registry: getDefaultInjectRegistry(),
+        env: {} as never,
+        live: makeLiveRegistry(),
+        middleware: new Map(),
+      },
+    );
+
+    await context.init();
+    const result = (await context.exec()) as unknown as string;
+
+    expect(result).toBe("hello:socket-1");
   });
 
   test("runs guards, internal args, and middleware in order", async () => {

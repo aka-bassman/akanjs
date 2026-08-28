@@ -1,6 +1,7 @@
 import { type Cls, ENDPOINT_META, PrimitiveRegistry, type PrimitiveScalar, SLICE_META } from "akanjs/base";
 import { Logger } from "akanjs/common";
 import { ConstantRegistry, type ConstantType } from "akanjs/constant";
+import { getFilterMeta } from "akanjs/document";
 import type { LiveRegistry } from "akanjs/service";
 import type {
   ArgInfo,
@@ -64,6 +65,7 @@ export class FetchSerializer {
       args: endpointInfo.args.map(FetchSerializer.#serializeArg),
       returns: FetchSerializer.#serializeReturns(endpointInfo),
       ...(endpointInfo.signalOption.path ? { path: endpointInfo.signalOption.path } : {}),
+      ...(endpointInfo.signalOption.method ? { method: endpointInfo.signalOption.method } : {}),
       ...(endpointInfo.signalOption.fileUpload ? { fileUpload: true } : {}),
       ...(guards?.length ? { guards } : {}),
     };
@@ -90,9 +92,13 @@ export class FetchSerializer {
     for (const [key, endpointInfo] of Object.entries(endpointMeta)) {
       endpoint[key] = FetchSerializer.#serializeEndpoint(endpointInfo);
     }
+    // Sort keys are the one piece of filter metadata a client needs: a list UI cannot offer an ordering it
+    // cannot name. The query map stays server-side — its args carry no schema a client could render yet.
+    const sortKeys = Object.keys(getFilterMeta(sliceCls.srv.db.filter, { allowEmpty: true })?.sort ?? {});
     return {
       ...(prefix ? { prefix } : {}),
       ...(Object.keys(slice).length ? { slice } : {}),
+      ...(sortKeys.length ? { filter: { filter: {}, sortKeys } } : {}),
       ...(sliceCls.getGuards.filter((g) => g.name !== "None").length
         ? { getGuards: sliceCls.getGuards.map((g) => g.name) }
         : {}),

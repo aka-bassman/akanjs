@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { AppExecutor, WorkspaceExecutor } from "../executors";
 import type { PackageJson } from "../types";
 import { AkanAppConfig, AkanLibConfig, deriveDefaultAppId } from "./akanConfig";
 import type { DeepPartial, LibConfigResult } from "./types";
@@ -19,7 +20,6 @@ const packageJson: PackageJson = {
     react: "19.0.0",
     "react-dom": "19.0.0",
     "react-server-dom-webpack": "19.0.0",
-    sharp: "1.0.0",
     "@external/runtime": "2.0.0",
   },
 };
@@ -144,8 +144,6 @@ describe("AkanAppConfig", () => {
         react: "19.0.0",
         "react-dom": "19.0.0",
         "react-server-dom-webpack": "19.0.0",
-        croner: akanPackageJson.peerDependencies?.croner,
-        sharp: "1.0.0",
         "@external/runtime": "2.0.0",
       },
     });
@@ -184,8 +182,6 @@ describe("AkanAppConfig", () => {
       react: runtimeDependencies.react,
       "react-dom": runtimeDependencies["react-dom"],
       "react-server-dom-webpack": runtimeDependencies["react-server-dom-webpack"],
-      croner: runtimeDependencies.croner,
-      sharp: runtimeDependencies.sharp,
     });
   });
 
@@ -198,9 +194,6 @@ describe("AkanAppConfig", () => {
     const multipleConfig = new AkanAppConfig(app, [], packageJson, { defaultDatabaseMode: "multiple" }, baseDevEnv);
     const clusterConfig = new AkanAppConfig(app, [], packageJson, { defaultDatabaseMode: "cluster" }, baseDevEnv);
 
-    expect(singleConfig.getProductionPackageJson().dependencies).toMatchObject({
-      croner: runtimeDependencies.croner,
-    });
     expect(singleConfig.getProductionPackageJson().dependencies).not.toHaveProperty("ioredis");
     expect(singleConfig.getProductionPackageJson().dependencies).not.toHaveProperty("bullmq");
     expect(singleConfig.getProductionPackageJson().dependencies).not.toHaveProperty("@libsql/client");
@@ -210,7 +203,6 @@ describe("AkanAppConfig", () => {
     expect(multipleConfig.getProductionPackageJson().dependencies).toMatchObject({
       "@libsql/client": runtimeDependencies["@libsql/client"],
       bullmq: runtimeDependencies.bullmq,
-      croner: runtimeDependencies.croner,
       ioredis: runtimeDependencies.ioredis,
       protobufjs: runtimeDependencies.protobufjs,
     });
@@ -218,7 +210,6 @@ describe("AkanAppConfig", () => {
 
     expect(clusterConfig.getProductionPackageJson().dependencies).toMatchObject({
       bullmq: runtimeDependencies.bullmq,
-      croner: runtimeDependencies.croner,
       ioredis: runtimeDependencies.ioredis,
       postgres: runtimeDependencies.postgres,
       protobufjs: runtimeDependencies.protobufjs,
@@ -389,6 +380,52 @@ describe("deriveDefaultAppId", () => {
     // Empty org and digit-leading segments stay valid package identifiers.
     expect(deriveDefaultAppId("", "app")).toBe("com.app.app");
     expect(deriveDefaultAppId("123repo", "9app")).toBe("com.app123repo.app9app");
+  });
+});
+
+describe("AkanAppConfig lib externalLibs", () => {
+  test("merges lib-declared external libs into the app's own, deduped", () => {
+    const libAwarePackageJson: PackageJson = {
+      ...packageJson,
+      dependencies: { ...packageJson.dependencies, puppeteer: "24.0.0" },
+    };
+    const config = new AkanAppConfig(
+      app,
+      ["shared"],
+      libAwarePackageJson,
+      { externalLibs: ["@external/runtime"] },
+      baseDevEnv,
+      [],
+      ["@external/runtime", "puppeteer"],
+    );
+
+    expect(config.externalLibs).toEqual(["@external/runtime", "puppeteer"]);
+    expect(config.getProductionPackageJson().dependencies).toMatchObject({
+      "@external/runtime": "2.0.0",
+      puppeteer: "24.0.0",
+    });
+  });
+
+  test("reads them off every workspace lib config on load", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "akan-config-libext-"));
+    try {
+      fs.mkdirSync(path.join(root, "apps/extapp"), { recursive: true });
+      fs.mkdirSync(path.join(root, "libs/extlib"), { recursive: true });
+      fs.writeFileSync(path.join(root, "apps/extapp/akan.config.ts"), "export default { externalLibs: ['shiki'] };\n");
+      fs.writeFileSync(
+        path.join(root, "libs/extlib/akan.config.ts"),
+        "export default { externalLibs: ['puppeteer'] };\n",
+      );
+      fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "extrepo", version: "1.0.0" }));
+      fs.writeFileSync(path.join(root, ".env"), "AKAN_PUBLIC_REPO_NAME=extrepo\nAKAN_PUBLIC_SERVE_DOMAIN=ext.test\n");
+
+      const workspace = WorkspaceExecutor.fromRoot({ workspaceRoot: root, repoName: "extrepo" });
+      const config = await AppExecutor.from(workspace, "extapp").getConfig();
+
+      expect(config.externalLibs).toEqual(["shiki", "puppeteer"]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

@@ -25,8 +25,8 @@ export default function Page() {
             </li>
             <li>
               {l.trans({
-                en: "Use `Doc.Setting` to choose BaseURL, role, and JWT.",
-                ko: "`Doc.Setting`에서 BaseURL, role, JWT를 조절합니다.",
+                en: "Use `Doc.Setting` to choose BaseURL, guards, and JWT.",
+                ko: "`Doc.Setting`에서 BaseURL, guard, JWT를 조절합니다.",
               })}
             </li>
             <li>
@@ -78,8 +78,8 @@ export default function ApiDocsPage() {
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="auth" title={l.trans({ en: "Auth And Roles", ko: "Auth와 role" })}>
-        <Docs.Title>{l.trans({ en: "Auth And Roles", ko: "Auth와 role" })}</Docs.Title>
+      <Scroll.Slide id="auth" title={l.trans({ en: "Auth And Guards", ko: "Auth와 guard" })}>
+        <Docs.Title>{l.trans({ en: "Auth And Guards", ko: "Auth와 guard" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
@@ -96,8 +96,8 @@ export default function ApiDocsPage() {
             </li>
             <li>
               {l.trans({
-                en: "Role filters help you focus on public, user, or admin endpoints.",
-                ko: "Role filter는 public, user, admin endpoint를 나눠 보는 데 도움됩니다.",
+                en: "The guard filter lists the guard names the signals declare, so you can focus on the endpoints one guard gates.",
+                ko: "Guard filter는 signal이 선언한 guard 이름을 나열하므로, 특정 guard가 지키는 endpoint만 골라 볼 수 있습니다.",
               })}
             </li>
             <li>

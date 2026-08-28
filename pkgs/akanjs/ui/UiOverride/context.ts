@@ -1,6 +1,14 @@
 "use client";
 import { type ComponentType, createContext } from "react";
 import type { ClassNameValue as ClassValue } from "tailwind-merge";
+import type { ApprovalProps as AgentApprovalProps } from "../Agent/Approval";
+import type { BubbleProps as AgentBubbleProps } from "../Agent/Bubble";
+import type { ChatProps as AgentChatProps } from "../Agent/Chat";
+import type { ComposerProps as AgentComposerProps } from "../Agent/Composer";
+import type { LauncherProps as AgentLauncherProps } from "../Agent/Launcher";
+import type { CodeProps as AgentCodeProps, MarkdownProps as AgentMarkdownProps } from "../Agent/Markdown";
+import type { MenuProps as AgentMenuProps } from "../Agent/Menu";
+import type { QuestionProps as AgentQuestionProps } from "../Agent/Question";
 import type { BadgeProps } from "../Badge";
 import type { ButtonProps } from "../Button";
 import type { DatePickerProps, RangePickerProps, TimePickerProps } from "../DatePicker";
@@ -48,6 +56,19 @@ export interface AkanUiOverrides {
   Menu: ComponentType<MenuProps>;
   Tooltip: ComponentType<TooltipProps>;
   Unauthorized: ComponentType<UnauthorizedProps>;
+  AgentChat: ComponentType<AgentChatProps>;
+
+  // In-page chat, one slot per part. `AgentChat` replaces the whole panel; these replace what it renders, so an
+  // app re-skins the transcript or the composer without re-implementing the loop, the slash commands, or the
+  // approval gate. `AgentCode` is the seam a syntax highlighter binds to — the fence's language reaches it.
+  AgentLauncher: ComponentType<AgentLauncherProps>;
+  AgentBubble: ComponentType<AgentBubbleProps>;
+  AgentComposer: ComponentType<AgentComposerProps>;
+  AgentApproval: ComponentType<AgentApprovalProps>;
+  AgentQuestion: ComponentType<AgentQuestionProps>;
+  AgentMenu: ComponentType<AgentMenuProps>;
+  AgentMarkdown: ComponentType<AgentMarkdownProps>;
+  AgentCode: ComponentType<AgentCodeProps>;
 
   // Generic components. The public export keeps its full generic signature; the slot stores the widest
   // instantiation, so an override is authored against that erased prop type without touching generics.

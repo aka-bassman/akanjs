@@ -18,7 +18,6 @@ const defaultWorkspacePeerDependencies = new Set([
   "@react-spring/web",
   "@use-gesture/react",
   "chance",
-  "croner",
   "react",
   "react-dom",
   "react-icons",
@@ -30,6 +29,9 @@ const defaultWorkspacePeerDependencies = new Set([
   "tailwindcss",
   "typescript",
 ]);
+
+/** High enough that a real cleanup pass sees every finding at once; `0` on the CLI lifts the cap entirely. */
+export const defaultMaxDiagnostics = 200;
 
 export class WorkspaceRunner extends runner("workspace") {
   async generateAgentRules(
@@ -192,16 +194,37 @@ export class WorkspaceRunner extends runner("workspace") {
     throw new Error(`[workspace] failed to locate akanjs package.json from ${import.meta.dir}`);
   }
 
-  async lint(exec: Exec, workspace: Workspace, { fix = true }: { fix?: boolean } = {}) {
+  async lint(
+    exec: Exec,
+    workspace: Workspace,
+    { fix = true, maxDiagnostics = defaultMaxDiagnostics }: { fix?: boolean; maxDiagnostics?: number } = {},
+  ) {
+    const configPath = await WorkspaceRunner.resolveBiomeConfigPath(workspace);
     await workspace.spawn("./node_modules/.bin/biome", [
       "check",
       ...(fix ? ["--write"] : []),
       "--no-errors-on-unmatched",
+      //? Biome caps output at 20 diagnostics by default, which reads as "only 20 problems left" while the
+      //? rest are hidden — a shrinking list then looks like progress when the mix of findings merely changed.
+      `--max-diagnostics=${maxDiagnostics > 0 ? maxDiagnostics : "none"}`,
+      //? Pinning the config makes a malformed biome.json fail as a parse error on the offending line. Without
+      //? it Biome 2.5.8 falls back to discovery and reports whatever nested config the walk finds first —
+      //? typically inside a directory `files.includes` excludes, which names the wrong file entirely.
+      ...(configPath ? ["--config-path", configPath] : []),
       exec.cwdPath,
     ]);
     await this.#enforceStyleContract(exec);
     await this.#enforceRecipeGate(exec);
     await this.#enforceAgentsIndex(exec);
+  }
+
+  /** `biome.json` first, mirroring Biome's own precedence; `biome.jsonc` is the one that may carry comments. */
+  static async resolveBiomeConfigPath(workspace: Workspace): Promise<string | null> {
+    for (const fileName of ["biome.json", "biome.jsonc"]) {
+      const configPath = path.join(workspace.workspaceRoot, fileName);
+      if (await Bun.file(configPath).exists()) return configPath;
+    }
+    return null;
   }
 
   /**

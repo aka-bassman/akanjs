@@ -38,7 +38,6 @@ interface ChildState {
 
 interface GatewayWsData {
   childIdx: number;
-  socketId: string;
   upstream: WebSocket;
 }
 
@@ -68,6 +67,11 @@ export interface AkanAppOptions {
   port?: number;
   wsBasePort?: number;
   openapi?: boolean;
+  /**
+   * Boot only these modules and the ones they reach, in every child. Omitted or empty mounts every enabled
+   * module. Handed down as `AKAN_MODULES`, since each replica builds its own container.
+   */
+  modules?: string[];
 }
 
 interface AkanReplicaConfig {
@@ -90,6 +94,8 @@ export class AkanApp {
   /** Hosted by `akan start`: crash loops should yield to the dev host, which restarts on file edits. */
   readonly #devHosted = process.env.AKAN_COMMAND_TYPE === "start";
   readonly #healthTimeoutMs = AkanApp.#parseHealthTimeoutMs();
+  /** Child stderr is bundler/runtime noise the gateway cannot act on; it still reaches the rotating log file. */
+  readonly #printChildStderr = process.env.AKAN_CHILD_STDERR === "1";
   readonly #serverPath: string;
   readonly #artifactDir: string;
   readonly #replica: AkanReplicaConfig;
@@ -98,6 +104,7 @@ export class AkanApp {
   readonly #port: number;
   readonly #wsBasePort: number;
   readonly #openapi?: boolean;
+  readonly #modules: string[];
   readonly #children = new Map<number, ChildState>();
   readonly #roomChildren = new Map<string, Set<number>>();
   readonly #childRooms = new Map<number, Set<string>>();
@@ -139,6 +146,7 @@ export class AkanApp {
     this.#port = Number(resolvedOptions.port ?? process.env.PORT ?? 8282);
     this.#wsBasePort = Number(resolvedOptions.wsBasePort ?? process.env.AKAN_WS_BASE_PORT ?? this.#port + 10_000);
     this.#openapi = resolvedOptions.openapi;
+    this.#modules = resolvedOptions.modules ?? [];
   }
 
   static #resolveServerPath(serverPath: string) {
@@ -171,10 +179,16 @@ export class AkanApp {
     return Math.max(min, parsed);
   }
 
+  /**
+   * The command that started this gateway outranks an inherited `NODE_ENV`: the command is a statement about
+   * this run, while the env var can arrive from a shell export, a CI image, or the workspace `.env` Bun loads
+   * on its own. Handing a dev child `NODE_ENV=production` makes it serve from the production route cache and
+   * throw on every route, since only `akan build` writes the routes manifest that cache expects.
+   */
   static #defaultChildNodeEnv() {
-    if (process.env.NODE_ENV) return process.env.NODE_ENV;
     if (process.env.AKAN_COMMAND_TYPE === "start") return "development";
     if (process.env.AKAN_COMMAND_TYPE === "build") return "production";
+    if (process.env.NODE_ENV) return process.env.NODE_ENV;
     return Bun.main.endsWith(".js") ? "production" : "development";
   }
 
@@ -304,6 +318,7 @@ export class AkanApp {
         AKAN_CHILD_SOCKET: upstream.http.socketPath,
         AKAN_CHILD_WS_PORT: upstream.ws ? String(upstream.ws.port) : "",
         ...(this.#openapi === undefined ? {} : { AKAN_OPENAPI: this.#openapi ? "true" : "false" }),
+        ...(this.#modules.length ? { AKAN_MODULES: this.#modules.join(",") } : {}),
       },
       ipc: (message) => this.#handleMessage(idx, message as AkanIpcMessage, proc),
       stdout: "pipe",
@@ -584,8 +599,9 @@ export class AkanApp {
     const upstreamWs = new WebSocket(`ws://${upstream.host}:${upstream.port}${url.pathname}${url.search}`, {
       headers: this.#makeProxyHeaders(req, child.idx),
     } as unknown as string[]);
-    const socketId = crypto.randomUUID();
-    const upgraded = server.upgrade(req, { data: { childIdx: child.idx, socketId, upstream: upstreamWs } });
+    // No socket id here: the child mints its own on the socket it accepts from us, and that is the one
+    // the room bookkeeping and every endpoint see. A second id on this hop would only look authoritative.
+    const upgraded = server.upgrade(req, { data: { childIdx: child.idx, upstream: upstreamWs } });
     if (!upgraded) {
       upstreamWs.close();
       return new Response("WebSocket upgrade failed", { status: 500 });
@@ -604,7 +620,11 @@ export class AkanApp {
       const result = ws.send(event.data as string | ArrayBuffer);
       if (result === 0) upstream.close();
     });
-    upstream.addEventListener("close", (event) => ws.close(relayableCloseCode(event.code), event.reason));
+    upstream.addEventListener("close", (event) => {
+      const code = AkanApp.#sendableCloseCode(event.code);
+      if (code === undefined) ws.close();
+      else ws.close(code, event.reason);
+    });
     upstream.addEventListener("error", () => ws.close(1011, "upstream websocket error"));
     Object.assign(ws.data, { pending });
   }
@@ -624,8 +644,16 @@ export class AkanApp {
     else ws.data.pending?.push(payload as string | ArrayBuffer);
   }
 
+  //? 1005/1006 are local-only statuses that may never be sent on the wire; Bun 1.4 throws instead of forwarding one.
+  static #sendableCloseCode(code: number): number | undefined {
+    const sendable = (code >= 1000 && code <= 1014 && (code < 1004 || code > 1006)) || (code >= 3000 && code <= 4999);
+    return sendable ? code : undefined;
+  }
+
   #handleWsClose(ws: Bun.ServerWebSocket<GatewayWsData>, code: number, reason: string) {
-    ws.data.upstream.close(relayableCloseCode(code), reason);
+    const upstreamCode = AkanApp.#sendableCloseCode(code);
+    if (upstreamCode === undefined) ws.data.upstream.close();
+    else ws.data.upstream.close(upstreamCode, reason);
     const child = this.#children.get(ws.data.childIdx);
     if (child) child.metrics.activeWebSockets = Math.max(0, (child.metrics.activeWebSockets ?? 1) - 1);
   }
@@ -1237,7 +1265,7 @@ export class AkanApp {
 
   #writeChildOutputLineRaw(idx: number, role: AkanChildRole, type: "stdout" | "stderr", line: string) {
     const prefixedLine = `[child:${idx} ${role}] [${type}] ${line}`;
-    process[type].write(prefixedLine);
+    if (type === "stdout" || this.#printChildStderr) process[type].write(prefixedLine);
     this.#logWriter?.write(`${idx}-${role}`, AkanApp.#stripAnsi(prefixedLine));
   }
 

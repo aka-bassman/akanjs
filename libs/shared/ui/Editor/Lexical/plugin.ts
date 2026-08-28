@@ -1,8 +1,10 @@
 import type { Klass, LexicalEditor, LexicalNode } from "lexical";
 import type { ReactNode } from "react";
 
+import type { MentionSource } from "./mention.type";
+
 /** Slash-menu section a plugin option is filed under (mirrors the built-in groups). */
-export type EditorSlashGroup = "text" | "list" | "media" | "structure";
+export type EditorSlashGroup = "text" | "list" | "media" | "structure" | "reference";
 
 /** A slash-menu entry contributed by an {@link EditorPlugin}. */
 export interface EditorSlashOption {
@@ -28,6 +30,9 @@ export interface EditorSlashOption {
  * - `nodes` — registered at editor creation. Lexical requires node classes up
  *   front, so these are read **once at mount**; changing them later is ignored.
  * - `slashOptions` — merged into the slash menu's option set.
+ * - `mentionSources` — mentionable domain models for the `@` menu. Unlike `nodes`
+ *   these are re-read on every render, because `MentionNode` is registered with
+ *   the editor itself and only the search behavior arrives here.
  * - `render` — returns extra plugin components rendered inside `<LexicalComposer>`
  *   (e.g. a mutation listener for cleanup on node deletion). May freely use
  *   `useLexicalComposerContext` and the host lib's own hooks/stores.
@@ -35,6 +40,7 @@ export interface EditorSlashOption {
 export interface EditorPlugin {
   nodes?: readonly Klass<LexicalNode>[];
   slashOptions?: readonly EditorSlashOption[];
+  mentionSources?: readonly MentionSource[];
   render?: () => ReactNode;
 }
 
@@ -45,3 +51,7 @@ export const collectPluginNodes = (plugins: readonly EditorPlugin[] | undefined)
 /** Flatten every plugin's slash-menu options for `SlashMenuPlugin`. */
 export const collectPluginSlashOptions = (plugins: readonly EditorPlugin[] | undefined): EditorSlashOption[] =>
   (plugins ?? []).flatMap((plugin) => [...(plugin.slashOptions ?? [])]);
+
+/** Flatten every plugin's mentionable models for `MentionPlugin`. */
+export const collectPluginMentionSources = (plugins: readonly EditorPlugin[] | undefined): MentionSource[] =>
+  (plugins ?? []).flatMap((plugin) => [...(plugin.mentionSources ?? [])]);

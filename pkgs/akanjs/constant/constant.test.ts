@@ -165,6 +165,10 @@ type _RelationMethodAssertions = [
   Assert<Equal<Extract<NonFunctionalKeys<InstanceType<typeof MethodUserLight>>, "hello">, never>>,
   Assert<Equal<Extract<NonFunctionalKeys<InstanceType<typeof MethodUserLight>>, "name">, "name">>,
 ];
+type _UnknownModelAssertions = [
+  Assert<Equal<PurifiedModel<unknown>, unknown>>,
+  Assert<Equal<DocumentModel<unknown>, unknown>>,
+];
 
 const validUserId = "1234567890abcdef12345678";
 const validChildId = "abcdefabcdefabcdefabcdef";
@@ -218,6 +222,23 @@ describe("via and ConstantField", () => {
     expect(UserFull.text.title.has("name")).toBe(true);
     expect(UserFull.text.tag.has("tags")).toBe(true);
     expect(UserFull.text.filter.has("role")).toBe(true);
+  });
+
+  test("defers a default thunk to the first getDefault call and memoizes it", () => {
+    let calls = 0;
+    const LazyInput = via((f) => ({
+      token: f(String, {
+        default: () => {
+          calls += 1;
+          return `token-${calls}`;
+        },
+      }),
+    }));
+
+    expect(calls).toBe(0);
+    expect(LazyInput.getDefault().token).toBe("token-1");
+    expect(LazyInput.getDefault().token).toBe("token-1");
+    expect(calls).toBe(1);
   });
 
   test("crystalizes constructor input into typed runtime values", () => {

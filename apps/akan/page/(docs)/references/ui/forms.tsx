@@ -117,8 +117,8 @@ export const SearchInput = ({ query, setQuery }) => (
     {
       name: "Select",
       desc: l.trans({
-        en: "Controlled selector that accepts primitive arrays, label/value options, or Akan enum instances. It supports single, multiple, and searchable selection modes.",
-        ko: "primitive array, label/value option, Akan enum instance를 받을 수 있는 controlled selector입니다. single, multiple, searchable selection mode를 지원합니다.",
+        en: "Controlled selector that accepts primitive arrays, label/value options, or Akan enum instances. It supports single, multiple, and searchable selection modes. The option list portals to document.body and is placed against the field, matching its width, so a Select inside a scrolling modal body or a table is not clipped by it.",
+        ko: "primitive array, label/value option, Akan enum instance를 받을 수 있는 controlled selector입니다. single, multiple, searchable selection mode를 지원합니다. option list는 document.body로 portal되어 field 기준으로 배치되고 field 너비를 따르므로, 스크롤되는 modal body나 table 안의 Select도 잘리지 않습니다.",
       }),
       props: [
         {

@@ -13,7 +13,7 @@ export interface DraggableUnitProps {
 }
 
 export default function DraggableUnit({ id, onClick, children, className }: DraggableUnitProps) {
-  const { attributes, listeners, setNodeRef, transform, isOver, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, transform } = useSortable({
     id,
   });
   const [isDrag, setIsDrag] = useState(false);

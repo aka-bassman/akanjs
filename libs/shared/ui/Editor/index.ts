@@ -5,4 +5,6 @@ export const Editor = {
   RichContent,
 };
 
+export { mentionEditorPlugin } from "./Lexical/mention";
+export type { MentionCandidate, MentionSource } from "./Lexical/mention.type";
 export type { EditorPlugin, EditorSlashGroup, EditorSlashOption } from "./Lexical/plugin";

@@ -1,6 +1,8 @@
 "use client";
 import { cn } from "akanjs/client";
+import { useFieldTool } from "akanjs/store";
 import { useState } from "react";
+import { agentAttrs } from "./agentAttrs";
 
 export interface SwitchProps {
   checked?: boolean;
@@ -30,12 +32,14 @@ export const Switch = ({
   className,
   variant = "primary",
 }: SwitchProps) => {
+  useFieldTool(onChange, { disabled });
   const [internal, setInternal] = useState(defaultChecked ?? false);
   const isControlled = checked !== undefined;
   const isChecked = isControlled ? checked : internal;
   const state = isChecked ? "checked" : "unchecked";
   return (
     <button
+      {...agentAttrs(onChange)}
       type="button"
       role="switch"
       aria-checked={isChecked}

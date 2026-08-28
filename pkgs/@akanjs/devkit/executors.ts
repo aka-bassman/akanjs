@@ -23,6 +23,7 @@ import { pathToFileURL } from "node:url";
 import type { AkanPlugin, AkanSyncContext, PluginRuntimeContext } from "akanjs";
 import {
   capitalize,
+  getPageSourceFileViolation,
   isRouteSourceFile,
   Logger,
   parseRouteModuleKey,
@@ -1007,6 +1008,16 @@ export class SysExecutor extends Executor {
     const path = this.type === "app" ? `apps/${this.name}/lib` : `libs/${this.name}/lib`;
     return await this.workspace.getDirInModule(path, this.name);
   }
+  async getPageConventionViolations(): Promise<{ relativePath: string; reason: string }[]> {
+    if (!(await this.exists("page"))) return [];
+    const violations: { relativePath: string; reason: string }[] = [];
+    for (const entry of await this.getAllFiles("**/*", { cwd: this.getPath("page") })) {
+      const relativePath = entry.split(path.sep).join("/");
+      const reason = getPageSourceFileViolation(relativePath);
+      if (reason) violations.push({ relativePath: `page/${relativePath}`, reason });
+    }
+    return violations;
+  }
 
   #scanInfo: AppInfo | LibInfo | null = null;
   hasScanInfo() {
@@ -1365,6 +1376,12 @@ export class AppExecutor extends SysExecutor {
         this.cp("public", `${this.dist.cwdPath}/public`, { dereference: true }),
       ]);
     } else await this.removeDir(".akan");
+    //? `akan start` is the dev server, and it must say so rather than inherit an answer. Bun auto-loads the
+    //? workspace `.env`, so NODE_ENV=production can reach this process without ever being exported in a shell —
+    //? and a dev server that believes it is production serves from the production route cache, whose every
+    //? route throws because a dev artifact carries no routes manifest. Written into `process.env` and not only
+    //? into the child env because the builder runs here and bakes NODE_ENV into the bundles it emits.
+    if (type === "start") process.env.NODE_ENV = "development";
     const devPort = type === "start" ? (await this.getDevPort()).toString() : undefined;
     const env = this.getCommandEnv({
       AKAN_COMMAND_TYPE: type,
@@ -1703,7 +1720,7 @@ export class LibExecutor extends SysExecutor {
   #akanConfig: AkanLibConfig | null = null;
   override async getConfig({ refresh }: { refresh?: boolean } = {}) {
     if (this.#akanConfig && !refresh) return this.#akanConfig;
-    this.#akanConfig = await AkanLibConfig.from(this);
+    this.#akanConfig = await AkanLibConfig.from(this, { bustImportCache: refresh });
     return this.#akanConfig;
   }
 }
@@ -1809,7 +1826,7 @@ export class PkgExecutor extends Executor {
           default: "./index.ts",
         },
       },
-      engines: { bun: ">=1.3.13" },
+      engines: { bun: ">=1.4.0" },
       ...dependencyMaps,
     };
     await Promise.all([this.dist.writeJson("package.json", distPkgJson), this.writeJson("package.json", distPkgJson)]);

@@ -1,6 +1,7 @@
 import {
   AGENT_BLOCK_END,
   AGENT_BLOCK_START,
+  CLAUDE_COMMENT_RULE,
   readDevkitVersion,
   renderRecipeEntries,
   stampBlockVersion,
@@ -190,13 +191,15 @@ ${AGENT_BLOCK_END}
 `;
 };
 
-// Claude Code natively imports other files with \`@path\`, so CLAUDE.md stays a thin pointer to AGENTS.md
-// instead of duplicating its content.
+// Claude Code natively imports other files with \`@path\`, so CLAUDE.md stays a pointer to AGENTS.md instead of
+// duplicating its content. The comment rule is the one exception — see CLAUDE_COMMENT_RULE for why it is restated.
 const renderClaudeMd = async (workspace: Workspace) => {
   const context = await AkanContextAnalyzer.analyze(workspace);
   return `# ${context.repoName} — Claude Code Guide
 
 @AGENTS.md
+
+${CLAUDE_COMMENT_RULE}
 `;
 };
 

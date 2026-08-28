@@ -777,6 +777,7 @@ export class ModelDictInfo<
       });
     });
   }
+  /** Under its own `store` node rather than beside `signal`, because the two hold the same key by design. */
   #registerErrorToRoot(refName: string, rootDict: RootDictionary) {
     this.languages.forEach((language) => {
       ensureNode(getRootModelNode(rootDict, language, refName), "error");
@@ -803,6 +804,12 @@ export class ModelDictInfo<
   }
 }
 
+/**
+ * Every parameter of `ModelDictInfo` is listed here positionally, so a parameter added to the class has to be
+ * added to all three lists below in the same slot. Omitting one does not fail to compile — inference silently
+ * shifts, so the last parameter falls off the end and becomes its default `never`, which reads at the call site
+ * as `l("<model>.<key>")` no longer existing.
+ */
 // biome-ignore lint/suspicious/noExplicitAny: wildcard type used to merge arbitrary dictionary instances.
 type AnyModelDictInfo = ModelDictInfo<any, any, any, any, any, any, any, any, any, any, any>;
 

@@ -13,6 +13,10 @@ export const STATE_META = Symbol.for("akan.state");
 export const STATE_INIT_META = Symbol.for("akan.state.init");
 export const STATE_DERIVED_META = Symbol.for("akan.state.derived");
 export const ACTION_META = Symbol.for("akan.action");
+/** Which module declared each action. See `ActionOwner`. */
+export const ACTION_OWNER_META = Symbol.for("akan.action.owner");
+/** What a dispatcher does, carried on the function so a component handed one can annotate the DOM with it. */
+export const ACTION_TAG = Symbol.for("akan.action.tag");
 export const SERVER_VALUE = Symbol.for("akan.value.server");
 export const CLIENT_VALUE = Symbol.for("akan.value.client");
 export const DEFAULT_VALUE = Symbol.for("akan.value.default");

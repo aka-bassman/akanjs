@@ -125,7 +125,7 @@ const CSRWrapper = ({
     bottomSafeArea,
     pathRoutes,
   } = useCsr();
-  const csrLoaded = st.use.csrLoaded();
+  const csrLoaded = st.use.csrLoaded({ agent: false });
   const { router: reactRouter } = useCsr();
   useEffect(() => {
     debugFrame("csrWrapper.mount", { appName, layoutStyle, pathCount: pathRoutes.length });

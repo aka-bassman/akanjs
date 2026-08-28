@@ -11,6 +11,7 @@
 - Styling Foundation (#styling-foundation)
 - Design System First (#design-system-first)
 - Theme System Declaration (#theme-system)
+- Lib-Owned Tokens (#lib-tokens)
 - Font Declaration (#font-declaration)
 
 ## Content
@@ -48,6 +49,12 @@ Theme System Declaration
 Theme and color are declared from the app style entry. The app imports Tailwind and Akan UI styles, defines raw CSS variables per theme under :root / [data-theme], then maps them to Tailwind color names with @theme inline. Switching themes is just toggling the data-theme attribute.
 
 Because @theme inline references var(), the same class (bg-primary, text-foreground …) resolves to different colors per data-theme — so one app can define light, dark, brand, or admin themes without changing any component class.
+
+Lib-Owned Tokens
+
+A lib whose components need fixed colors — a vendor sign-in button, a brand mark — declares them once in libs/<lib>/ui/tokens.css. Every app whose pages reach that lib compiles the file automatically, ahead of its own stylesheets, so the app stays the last word on any variable both declare. Nothing is imported by hand, and adding an app cannot forget it.
+
+These are plain custom properties, not a Tailwind @theme extension: the color vocabulary is closed per stylesheet, so bg-kakao would generate no CSS. Reference them as bg-[var(--kakao)], which the color lint rules allow by design. An @import the pipeline cannot resolve fails the build rather than compiling to nothing.
 
 Font Declaration
 
@@ -103,6 +110,22 @@ Fonts are declared from the root layout. Export a fonts array with a font name, 
   --color-muted: var(--muted);
   --color-border: var(--border);
 }
+```
+
+### libs/social/ui/tokens.css
+
+```ts
+:root {
+  --kakao: #fee500;
+  --kakao-foreground: #3c1e1e;
+  --naver: #1ec800;
+}
+```
+
+### libs/social/ui/KakaoButton.tsx
+
+```typescript
+<button className="bg-[var(--kakao)] text-[var(--kakao-foreground)]">Kakao</button>
 ```
 
 ### apps/myapp/page/akanjs/_layout.tsx

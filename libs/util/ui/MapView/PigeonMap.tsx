@@ -6,6 +6,9 @@ import type { CSSProperties } from "react";
 
 import Pigeon from "./Pigeon";
 
+const lightMapTiler = (x: number, y: number, z: number) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+const darkMapTiler = (x: number, y: number, z: number) => `https://basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`;
+
 export interface PigeonMapProps {
   id?: string;
   className?: string;
@@ -17,6 +20,10 @@ export interface PigeonMapProps {
   zoomControlStyle?: CSSProperties;
   children?: any;
   showZoomControl?: boolean;
+  showScaleBar?: boolean;
+  scaleBarClassName?: string;
+  center?: cnst.Coordinate;
+  zoom?: number;
 }
 export default function PigeonMap({
   id,
@@ -25,12 +32,16 @@ export default function PigeonMap({
   onClick,
   onRightClick,
   onMouseMove,
-  mapTiler = (x, y, z, dpr) =>
-    `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
+  mapTiler,
   zoomControlStyle,
   children,
   showZoomControl = true,
+  showScaleBar = true,
+  scaleBarClassName,
+  center,
+  zoom,
 }: PigeonMapProps) {
+  const theme = st.use.theme();
   const mapCenter = st.use.mapCenter();
   const mapZoom = st.use.mapZoom();
   const mapBounds = st.use.mapBounds();
@@ -38,24 +49,26 @@ export default function PigeonMap({
     <Pigeon
       className={className}
       onLoad={onLoad}
-      zoom={mapZoom}
-      center={mapCenter}
+      zoom={zoom ?? mapZoom}
+      center={center ?? mapCenter}
       onClick={onClick}
       onRightClick={onRightClick}
-      onChangeZoom={(zoom) => {
-        st.do.setMapZoom(zoom);
+      onChangeZoom={(nextZoom) => {
+        if (zoom === undefined) st.do.setMapZoom(nextZoom);
       }}
-      onChangeCenter={(center) => {
-        st.do.setMapCenter(center);
+      onChangeCenter={(nextCenter) => {
+        if (center === undefined) st.do.setMapCenter(nextCenter);
       }}
       onMouseMove={onMouseMove}
       bounds={mapBounds}
       onChangeBounds={(bounds) => {
-        st.do.setMapBounds(bounds);
+        if (center === undefined) st.do.setMapBounds(bounds);
       }}
-      mapTiler={mapTiler}
+      mapTiler={mapTiler ?? (theme === "dark" ? darkMapTiler : lightMapTiler)}
       zoomControlStyle={zoomControlStyle}
       showZoomControl={showZoomControl}
+      showScaleBar={showScaleBar}
+      scaleBarClassName={scaleBarClassName}
     >
       {children}
     </Pigeon>

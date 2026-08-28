@@ -184,6 +184,15 @@ describe("AkanQualityScanner ssr rules", () => {
   });
 });
 
+const signalOf = (entries: string) =>
+  [
+    `import { endpoint, slice } from "akanjs/signal";`,
+    `export class PostSlice extends slice(srv.post, { guards: {}, mcp: { get: true } }, (init) => ({`,
+    entries,
+    `})) {}`,
+    "",
+  ].join("\n");
+
 describe("AkanQualityScanner layout rules", () => {
   test("flags an unknown app root file but not a facet entrypoint", async () => {
     const root = await makeWorkspace({
@@ -195,5 +204,48 @@ describe("AkanQualityScanner layout rules", () => {
 
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.file).toBe("apps/demo/helper.ts");
+  });
+
+  test("flags an unknown lib root file but not a facet entrypoint", async () => {
+    const root = await makeWorkspace({
+      "libs/demo/client.ts": "export const client = 1;\n",
+      "libs/demo/helper.ts": "export const helper = 1;\n",
+    });
+
+    const warnings = rulesOf(await new AkanQualityScanner().scan(root), "akan.layout.lib-root-file");
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.file).toBe("libs/demo/helper.ts");
+  });
+
+  test("flags a root folder no facet owns, on both sides", async () => {
+    const root = await makeWorkspace({
+      "apps/demo/base/helper.ts": "export const helper = 1;\n",
+      "apps/demo/common/helper.ts": "export const helper = 1;\n",
+      "libs/demo/base/helper.ts": "export const helper = 1;\n",
+      "libs/demo/common/helper.ts": "export const helper = 1;\n",
+    });
+
+    const result = await new AkanQualityScanner().scan(root);
+
+    expect(rulesOf(result, "akan.layout.app-root-folder").map((warning) => warning.file)).toEqual([
+      "apps/demo/base/helper.ts",
+    ]);
+    expect(rulesOf(result, "akan.layout.lib-root-folder").map((warning) => warning.file)).toEqual([
+      "libs/demo/base/helper.ts",
+    ]);
+  });
+
+  test("keeps a root signal test out of the lib facet rule", async () => {
+    const root = await makeWorkspace({
+      "libs/demo/lib/cnst.ts": "export const cnst = 1;\n",
+      "libs/demo/lib/user.signal.test.ts": "export const test = 1;\n",
+      "libs/demo/lib/helper.ts": "export const helper = 1;\n",
+    });
+
+    const warnings = rulesOf(await new AkanQualityScanner().scan(root), "akan.layout.lib-facet-file");
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.file).toBe("libs/demo/lib/helper.ts");
   });
 });

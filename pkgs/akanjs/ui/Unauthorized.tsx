@@ -1,7 +1,7 @@
 "use client";
 import { cn, usePage } from "akanjs/client";
 import type { ReactNode } from "react";
-import { AiOutlineBlock } from "react-icons/ai";
+import { AiOutlineLock } from "react-icons/ai";
 
 import { createOverridable } from "./UiOverride";
 
@@ -20,10 +20,12 @@ export const DefaultUnauthorized = ({ className = "", description, children, min
           also had `w-full` typo'd inside the brackets, which broke that class too. */}
       <div
         style={{ minHeight }}
-        className={cn("flex w-full flex-col items-center justify-center gap-3 pt-6 pb-3 text-foreground/30", className)}
+        className={cn("flex w-full flex-col items-center justify-center gap-3 px-6 py-8 text-center", className)}
       >
-        <AiOutlineBlock className="scale-150 text-4xl" />
-        <p>{description ?? l("base.unauthorized")}</p>
+        <div className="flex size-14 items-center justify-center rounded-full bg-warning/12 text-3xl text-warning/70">
+          <AiOutlineLock />
+        </div>
+        <p className="text-foreground/55 text-sm">{description ?? l("base.unauthorized")}</p>
       </div>
       {children}
     </div>

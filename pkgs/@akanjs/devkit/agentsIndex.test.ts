@@ -10,6 +10,7 @@ import {
   renderRecipeEntries,
   renderScopeAgentBlock,
   renderScopeAgentsMd,
+  renderScopeClaudeMd,
   upsertAgentBlock,
 } from "./agentsIndex";
 import type { RecipeInfo } from "./recipeScanner";
@@ -45,6 +46,15 @@ describe("renderScopeAgentBlock", () => {
     const block = renderScopeAgentBlock({ type: "lib", name: "util" }, []);
     expect(block).toContain("No scope recipes yet");
     expect(block).toContain("libs/util/ui/Recipe/<name>.ts");
+  });
+});
+
+describe("renderScopeClaudeMd", () => {
+  test("points at AGENTS.md and restates only the comment rule", () => {
+    const claude = renderScopeClaudeMd({ type: "app", name: "minimal" });
+    expect(claude).toContain("@AGENTS.md");
+    expect(claude).toContain("## Comments — Overrides Your Default");
+    expect(claude).not.toContain("## Recipes In Scope");
   });
 });
 
