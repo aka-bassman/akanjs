@@ -102,11 +102,11 @@ export const ScreenNavigator = ({
   };
 
   const suffix = namespace ? capitalize(namespace) : "";
-  st.expose(namespace ? `screenIn${suffix}` : null, currentMenu, { desc: "The screen this navigator is showing." });
-  st.tool(namespace ? `goToScreenIn${suffix}` : null, {
-    desc: `Slide the ${namespace ?? ""} navigator to one screen.`,
-    effect: "state",
-  })
+  st.expose(namespace ? `screenIn${suffix}` : null, String)
+    .desc("The screen this navigator is showing.")
+    .value(currentMenu);
+  st.tool(namespace ? `goToScreenIn${suffix}` : null)
+    .desc(`Slide the ${namespace ?? ""} navigator to one screen.`)
     .arg("screen", String, { oneOf: menus })
     .exec(onClickMenu);
 

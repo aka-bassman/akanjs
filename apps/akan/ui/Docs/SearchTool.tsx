@@ -27,9 +27,8 @@ export const SearchTool = () => {
     void load();
     return () => controller.abort();
   }, []);
-  st.tool("searchDocs", {
-    desc: "Search the documentation. Returns matching pages as { href, title, section }; open one with navigate.",
-  })
+  st.tool("searchDocs")
+    .desc("Search the documentation. Returns matching pages as { href, title, section }; open one with navigate.")
     .arg("query", String)
     .exec((query) =>
       scoreDocs(items, query, activeLang)

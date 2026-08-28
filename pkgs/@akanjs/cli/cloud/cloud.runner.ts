@@ -291,21 +291,19 @@ export class CloudRunner extends runner("cloud") {
       }
     }
 
-    await Promise.all(
-      akanPkgs.map(async (library) => {
-        Logger.info(`Publishing ${library}@${nextVersion} to ${registry ?? "npm"}...`);
-        await workspace.spawn(
-          "npm",
-          ["publish", "--tag", tag, ...this.#getRegistryArgs(registry), ...this.#getLocalRegistryAuthArgs(registry)],
-          {
-            cwd: path.join(workspace.workspaceRoot, "dist/pkgs", library),
-            env: this.#getRegistryEnv(registry),
-            stdio: "inherit",
-          },
-        );
-        Logger.info(`${library}@${nextVersion} is published to ${registry ?? "npm"}`);
-      }),
-    );
+    for (const library of akanPkgs) {
+      Logger.info(`Publishing ${library}@${nextVersion} to ${registry ?? "npm"}...`);
+      await workspace.spawn(
+        "npm",
+        ["publish", "--tag", tag, ...this.#getRegistryArgs(registry), ...this.#getLocalRegistryAuthArgs(registry)],
+        {
+          cwd: path.join(workspace.workspaceRoot, "dist/pkgs", library),
+          env: this.#getRegistryEnv(registry),
+          stdio: "inherit",
+        },
+      );
+      Logger.info(`${library}@${nextVersion} is published to ${registry ?? "npm"}`);
+    }
     Logger.info(`All libraries are published to ${registry ?? "npm"}`);
   }
   async update(workspace: Workspace, tag: string = "latest", { registryUrl }: RegistryOptions = {}) {

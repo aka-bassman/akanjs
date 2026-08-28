@@ -19,7 +19,6 @@ tools, and the loop stay in the client; the server serves exactly one stateless 
       "name": "setSceneSeconds",
       "description": "Change this scene's length in seconds",
       "parameters": { "type": "object", "properties": { "seconds": { "type": "number" } }, "required": ["seconds"], "additionalProperties": false },
-      "effect": "mutation",
       "needsConfirm": false
     }
   ],

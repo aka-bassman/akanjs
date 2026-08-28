@@ -17,10 +17,9 @@ interface ViewToolsProps {
  * whose id matches opens, so the close verb reaches the surface once instead of once per row.
  */
 const ViewTools = ({ modelName, closeView }: ViewToolsProps) => {
-  st.tool(`closeViewOf${capitalize(modelName)}`, {
-    desc: `Close the ${modelName} detail view.`,
-    effect: "state",
-  }).exec(closeView);
+  st.tool(`closeViewOf${capitalize(modelName)}`)
+    .desc(`Close the ${modelName} detail view.`)
+    .exec(closeView);
   return null;
 };
 

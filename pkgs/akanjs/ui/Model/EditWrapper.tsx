@@ -37,11 +37,8 @@ export default function EditWrapper({
   // rather than a collision because the id rides in the argument instead of the closure, which is what `shared`
   // declares — a tool closing over its own row would let last-wins edit the wrong one.
   const editModel = st
-    .tool(disabled ? null : names.editModel, {
-      desc: `Open one ${modelName} in the edit form.`,
-      effect: "state",
-      shared: true,
-    })
+    .tool(disabled ? null : names.editModel)
+    .desc(`Open one ${modelName} in the edit form.`)
     .arg("modelId", ID)
     .exec((id) => {
       void storeDo[names.editModel](id, { modal });

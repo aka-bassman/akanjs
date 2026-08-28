@@ -64,12 +64,6 @@ export const AgentRichPlugin = ({ name, blocks = true, flush }: AgentRichPluginP
   };
 
   st.tool(name, {
-    desc: [
-      "Replace this rich-text field with markdown.",
-      "Headings, lists, checklists, quotes, code fences, ```mermaid diagrams, links, bold/italic/strikethrough,",
-      "`inline code` and ==highlight== are understood; tables, images and mentions are not.",
-    ].join(" "),
-    effect: "state",
     guard: (args) => {
       if (isEmptyRichContent(content()) || args.replaceAll === true) return true;
       const losses = lossyNodesOf(content());
@@ -80,26 +74,28 @@ export const AgentRichPlugin = ({ name, blocks = true, flush }: AgentRichPluginP
         : "This field already holds text. Edit it by block instead, or pass replaceAll: true to overwrite it.";
     },
   })
+    .desc(
+      [
+        "Replace this rich-text field with markdown.",
+        "Headings, lists, checklists, quotes, code fences, ```mermaid diagrams, links, bold/italic/strikethrough,",
+        "`inline code` and ==highlight== are understood; tables, images and mentions are not.",
+      ].join(" "),
+    )
     .arg("markdown", String)
-    .arg("replaceAll", Boolean, { optional: true })
+    .opt("replaceAll", Boolean)
     .exec(async (markdown) => {
       await commit(() => {
         $convertFromMarkdownString(markdown, AKAN_TRANSFORMERS);
       });
     });
 
-  st.tool(blockBase ? `read${blockBase}` : null, {
-    desc: "List this field's top-level blocks as `index type text`. Read before editing by block — an index shifts under insert and remove.",
-    effect: "query",
-  }).exec(() => richBlockListing(content()));
+  st.tool(blockBase ? `read${blockBase}` : null, { settle: false })
+    .desc(
+      "List this field's top-level blocks as `index type text`. Read before editing by block — an index shifts under insert and remove.",
+    )
+    .exec(() => richBlockListing(content()));
 
   st.tool(blockBase ? `edit${blockBase}` : null, {
-    desc: [
-      "Change one top-level block of this field, leaving the rest of the document exactly as it is —",
-      "the only way to edit a field that holds images, tables, callouts or mentions.",
-      "`markdown` may span several blocks. Returns the fresh listing, so the indices it reports are current.",
-    ].join(" "),
-    effect: "state",
     guard: (args) => {
       const op = args.op as RichBlockOp;
       if (op !== "remove" && !String(args.markdown ?? "").trim()) return `"${op}" needs the markdown to write.`;
@@ -113,9 +109,16 @@ export const AgentRichPlugin = ({ name, blocks = true, flush }: AgentRichPluginP
         : `This field has ${count} blocks, so "${op}" takes an index of 0 to ${last}.`;
     },
   })
+    .desc(
+      [
+        "Change one top-level block of this field, leaving the rest of the document exactly as it is —",
+        "the only way to edit a field that holds images, tables, callouts or mentions.",
+        "`markdown` may span several blocks. Returns the fresh listing, so the indices it reports are current.",
+      ].join(" "),
+    )
     .arg("op", String, { oneOf: richBlockOps })
-    .arg("index", Int, { optional: true })
-    .arg("markdown", String, { optional: true })
+    .opt("index", Int)
+    .opt("markdown", String)
     .exec(async (op, index, markdown) => {
       await commit(() => {
         $spliceRichBlocks(op, index ?? 0, op === "remove" ? [] : $blocksFromMarkdown(markdown ?? ""));

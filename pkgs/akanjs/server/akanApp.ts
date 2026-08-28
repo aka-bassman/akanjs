@@ -621,9 +621,7 @@ export class AkanApp {
       if (result === 0) upstream.close();
     });
     upstream.addEventListener("close", (event) => {
-      const code = AkanApp.#sendableCloseCode(event.code);
-      if (code === undefined) ws.close();
-      else ws.close(code, event.reason);
+      ws.close(relayableCloseCode(event.code), event.reason);
     });
     upstream.addEventListener("error", () => ws.close(1011, "upstream websocket error"));
     Object.assign(ws.data, { pending });
@@ -644,16 +642,8 @@ export class AkanApp {
     else ws.data.pending?.push(payload as string | ArrayBuffer);
   }
 
-  //? 1005/1006 are local-only statuses that may never be sent on the wire; Bun 1.4 throws instead of forwarding one.
-  static #sendableCloseCode(code: number): number | undefined {
-    const sendable = (code >= 1000 && code <= 1014 && (code < 1004 || code > 1006)) || (code >= 3000 && code <= 4999);
-    return sendable ? code : undefined;
-  }
-
   #handleWsClose(ws: Bun.ServerWebSocket<GatewayWsData>, code: number, reason: string) {
-    const upstreamCode = AkanApp.#sendableCloseCode(code);
-    if (upstreamCode === undefined) ws.data.upstream.close();
-    else ws.data.upstream.close(upstreamCode, reason);
+    ws.data.upstream.close(relayableCloseCode(code), reason);
     const child = this.#children.get(ws.data.childIdx);
     if (child) child.metrics.activeWebSockets = Math.max(0, (child.metrics.activeWebSockets ?? 1) - 1);
   }

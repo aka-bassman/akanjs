@@ -74,10 +74,9 @@ const EditModel = <Full,>({
 
   // This component mounts only while the editor is open, which is what keeps one registration on a list that
   // renders an editor per row: at most one of them is ever open.
-  st.tool(cancelEdit ? `cancelEditOf${ModelName}` : null, {
-    desc: `Close the ${modelName} form without saving.`,
-    effect: "state",
-  }).exec(() => cancelEdit?.());
+  st.tool(cancelEdit ? `cancelEditOf${ModelName}` : null)
+    .desc(`Close the ${modelName} form without saving.`)
+    .exec(() => cancelEdit?.());
 
   const checkSubmitable = useDebounce(() => {
     storeDo[names.checkModelSubmitable]();
@@ -314,11 +313,10 @@ export default function EditModal<Full extends { id: string }>({
               };
               const submitModel = st
                 .tool(names.submitModel, {
-                  desc: `Save the ${names.model} the open form holds.`,
-                  effect: "mutation",
                   guard: () =>
                     modelSubmit.disabled || disabled ? `The ${names.model} form is not ready to submit.` : true,
                 })
+                .desc(`Save the ${names.model} the open form holds.`)
                 .exec(() => handleSubmit());
               return (
                 <Button

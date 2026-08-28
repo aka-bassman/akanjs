@@ -116,11 +116,9 @@ export const ExportPDF = () => {
     // 메모리 정리
     URL.revokeObjectURL(url);
   };
-  st.tool("exportPdf", {
-    desc: "Render the page on screen to a PDF and save it.",
-    effect: "query",
-    guard: () => (loading === true ? "The PDF is already being made." : true),
-  }).exec(exportPdf);
+  st.tool("exportPdf", { settle: false, guard: () => (loading === true ? "The PDF is already being made." : true) })
+    .desc("Render the page on screen to a PDF and save it.")
+    .exec(exportPdf);
   return (
     <button
       onClick={() => void exportPdf()}

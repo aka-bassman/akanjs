@@ -121,7 +121,6 @@ describe("StoreSurfaceSource", () => {
     const surface = new AgenticSurface();
     surface.addSource(source);
     const goBack = entryOf("goBack");
-    expect(goBack?.effect).toBe("state");
     expect(goBack?.parameters).toEqual({ type: "object", properties: {}, additionalProperties: false });
     // History is the browser's, not a control the page draws — but an entry page has nothing behind it.
     await expect(surface.call("goBack", {})).rejects.toThrow("no previous page");
@@ -145,7 +144,7 @@ describe("StoreSurfaceSource", () => {
     const surface = new AgenticSurface();
     surface.addSource(source);
     const readScreen = entryOf("readScreen");
-    expect(readScreen?.effect).toBe("query");
+    expect(readScreen?.settle).toBe(false);
     expect(Object.keys((readScreen?.parameters?.properties ?? {}) as object)).toEqual(["section"]);
     expect(readScreen?.parameters?.required).toBeUndefined();
     expect(await surface.call("readScreen", {})).toBe("No rendered document is available.");
@@ -164,7 +163,6 @@ describe("StoreSurfaceSource", () => {
   test("highlight is published as a screen-driving tool and answers honestly with no document", async () => {
     const surface = new AgenticSurface();
     surface.addSource(source);
-    expect(entryOf("highlight")?.effect).toBe("state");
     expect(await surface.call("highlight", { target: "submitTask" })).toBe("No rendered document is available.");
     await expect(surface.call("highlight", { target: "  " })).rejects.toThrow("highlight needs a target.");
   });

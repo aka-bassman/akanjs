@@ -61,20 +61,18 @@ export const DefaultDropdown = ({
   const recipe = useUiRecipe("button") ?? buttonRecipe;
   const position = useOverlayPosition({ opened, triggerRef: ref, panelRef: menuRef, align });
   const suffix = namespace ? capitalize(namespace) : "";
-  st.expose(namespace ? `dropdownIn${suffix}` : null, opened, { desc: "Whether this dropdown menu is showing." });
+  st.expose(namespace ? `dropdownIn${suffix}` : null, Boolean)
+    .desc("Whether this dropdown menu is showing.")
+    .value(opened);
   const openDropdown = st
-    .tool(namespace ? `openDropdownIn${suffix}` : null, {
-      desc: `Open the ${namespace ?? ""} dropdown menu.`,
-      effect: "state",
-    })
+    .tool(namespace ? `openDropdownIn${suffix}` : null)
+    .desc(`Open the ${namespace ?? ""} dropdown menu.`)
     .exec(() => {
       setOpened(true);
     });
   const closeDropdown = st
-    .tool(namespace ? `closeDropdownIn${suffix}` : null, {
-      desc: `Close the ${namespace ?? ""} dropdown menu.`,
-      effect: "state",
-    })
+    .tool(namespace ? `closeDropdownIn${suffix}` : null)
+    .desc(`Close the ${namespace ?? ""} dropdown menu.`)
     .exec(() => {
       setOpened(false);
     });

@@ -1,12 +1,12 @@
 "use client";
 import { Children, type ReactElement, useEffect, useRef } from "react";
 import { useScopePath, useSurface } from "./surfaceContext";
-import type { ToolConfirm, ToolEffect } from "./types";
+import type { ToolConfirm } from "./types";
 
 interface AgenticProps {
   name: string;
   description?: string;
-  effect?: ToolEffect;
+  settle?: boolean;
   confirm?: ToolConfirm;
   children: ReactElement<{ onClick?: () => unknown }>;
 }
@@ -17,7 +17,7 @@ interface AgenticProps {
  * The first-class path is passing a hook-made tool by reference as the handler itself; this wrapper is for
  * elements whose handler you do not own — third-party components and embeds.
  */
-export const Agentic = ({ name, description, effect, confirm, children }: AgenticProps) => {
+export const Agentic = ({ name, description, settle, confirm, children }: AgenticProps) => {
   const surface = useSurface();
   const scope = useScopePath();
   const child = Children.only(children);
@@ -28,7 +28,7 @@ export const Agentic = ({ name, description, effect, confirm, children }: Agenti
     return surface.registerTool(scope, {
       name,
       description,
-      effect,
+      settle,
       ...(confirm === undefined
         ? {}
         : {

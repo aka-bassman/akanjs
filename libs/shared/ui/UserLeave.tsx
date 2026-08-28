@@ -17,14 +17,14 @@ export const LeaveInfo = ({ className, redirect, leaveReasons, comeBackReasons }
   useEffect(() => {
     st.do.setLeaveInfo(new cnst.LeaveInfo());
   }, []);
-  st.tool("answerLeaveSurvey", {
-    desc: "Answer the leaving survey — why you are going, how satisfied you were, and anything else. It does not close the account.",
-    effect: "state",
-  })
-    .arg("type", cnst.LeaveType, { optional: true })
-    .arg("reason", String, { optional: true })
-    .arg("satisfaction", Int, { optional: true })
-    .arg("voc", String, { optional: true })
+  st.tool("answerLeaveSurvey")
+    .desc(
+      "Answer the leaving survey — why you are going, how satisfied you were, and anything else. It does not close the account.",
+    )
+    .opt("type", cnst.LeaveType)
+    .opt("reason", String)
+    .opt("satisfaction", Int)
+    .opt("voc", String)
     .exec((type, reason, satisfaction, voc) =>
       st.do.setLeaveInfo({
         ...leaveInfo,
@@ -222,15 +222,13 @@ interface VocProps {
   redirect?: string;
 }
 export const Voc = ({ className, value, onChange, redirect }: VocProps) => {
-  st.tool("leaveService", {
-    desc: "Close this account for good and submit the leaving survey with it.",
-    effect: "mutation",
-    confirm: "Close the account permanently? This cannot be undone.",
-  }).exec(async () => {
-    await st.do.setLeaveInfoOfSelf();
-    await st.do.removeSelf({ redirect });
-    msg.success("user.leaveSuccess");
-  });
+  st.tool("leaveService", { confirm: "Close the account permanently? This cannot be undone." })
+    .desc("Close this account for good and submit the leaving survey with it.")
+    .exec(async () => {
+      await st.do.setLeaveInfoOfSelf();
+      await st.do.removeSelf({ redirect });
+      msg.success("user.leaveSuccess");
+    });
   return (
     <div className={cn("flex flex-col items-center justify-center gap-4", className)}>
       <div className="mb-10 w-full text-xl">운영진에 바라는 개선사항을 알려주세요.</div>

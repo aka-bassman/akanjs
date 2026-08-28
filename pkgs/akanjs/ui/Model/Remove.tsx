@@ -42,7 +42,8 @@ export default function Remove({ className, name, modelId, slice, modal, redirec
   // The confirmation this draws is a modal; the agent's is the approval card the `remove` prefix turns on. Both
   // land on the same removal, and the id rides in the argument so a per-row copy of this stays interchangeable.
   const removeTool = st
-    .tool(names.removeModel, { desc: `Remove one ${modelName}.`, effect: "mutation", shared: true })
+    .tool(names.removeModel)
+    .desc(`Remove one ${modelName}.`)
     .arg("modelId", ID)
     .exec((id) => removeModel(id));
   return (

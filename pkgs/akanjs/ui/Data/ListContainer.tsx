@@ -184,52 +184,39 @@ export default function ListContainer<
   const loadedList = () => [...(storeGet<DataList<Light>>()[namesOfSlice.modelList] as DataList<Light>)];
   const whileLoaded = () => (modelListLoading ? `The ${modelName} list is still loading.` : true);
   const setViewOfModel = st
-    .tool(namesOfSlice.setViewOfModel, {
-      desc: `Render the ${modelName} list as cards or as a table.`,
-      effect: "state",
-    })
+    .tool(namesOfSlice.setViewOfModel)
+    .desc(`Render the ${modelName} list as cards or as a table.`)
     .arg("mode", String, { oneOf: ["card", "list"] })
     .exec((mode) => {
       setView(mode);
     });
   const setSortOfModel = st
-    .tool(sortKeys.length > 1 ? namesOfSlice.setSortOfModel : null, {
-      desc: `Reorder the ${modelName} list.`,
-      effect: "state",
-    })
+    .tool(sortKeys.length > 1 ? namesOfSlice.setSortOfModel : null)
+    .desc(`Reorder the ${modelName} list.`)
     .arg("sortKey", String, { oneOf: sortKeys })
     .exec((sortKey) => storeDo[namesOfSlice.setSortOfModel](sortKey));
   const setLimitOfModel = st
-    .tool(namesOfSlice.setLimitOfModel, {
-      desc: `Set how many ${modelName} rows one page holds.`,
-      effect: "state",
-    })
+    .tool(namesOfSlice.setLimitOfModel)
+    .desc(`Set how many ${modelName} rows one page holds.`)
     .arg("limit", Int, { oneOf: pageLimits })
     .exec((limit) => storeDo[namesOfSlice.setLimitOfModel](limit));
   const refreshModel = st
-    .tool(namesOfSlice.refreshModel, { desc: `Reload the ${modelName} list from the server.`, effect: "query" })
+    .tool(namesOfSlice.refreshModel, { settle: false })
+    .desc(`Reload the ${modelName} list from the server.`)
     .exec(() => storeDo[namesOfSlice.refreshModel]());
   const newModel = st
-    .tool(renderTemplate && create ? namesOfSlice.newModel : null, {
-      desc: `Open the form that creates a ${modelName}.`,
-      effect: "state",
-    })
+    .tool(renderTemplate && create ? namesOfSlice.newModel : null)
+    .desc(`Open the form that creates a ${modelName}.`)
     .exec(() => storeDo[namesOfSlice.newModel]());
   const exportCsvOfModel = st
-    .tool(namesOfSlice.exportCsvOfModel, {
-      desc: `Download the loaded page of ${modelName} rows as a CSV file.`,
-      effect: "state",
-      guard: whileLoaded,
-    })
+    .tool(namesOfSlice.exportCsvOfModel, { guard: whileLoaded })
+    .desc(`Download the loaded page of ${modelName} rows as a CSV file.`)
     .exec(() => {
       downloadBlob(toCsvBlob(columns, loadedList() as Record<string, unknown>[], columnTitle), `${sliceName}.csv`);
     });
   const exportJsonOfModel = st
-    .tool(namesOfSlice.exportJsonOfModel, {
-      desc: `Download the loaded page of ${modelName} rows as a JSON file.`,
-      effect: "state",
-      guard: whileLoaded,
-    })
+    .tool(namesOfSlice.exportJsonOfModel, { guard: whileLoaded })
+    .desc(`Download the loaded page of ${modelName} rows as a JSON file.`)
     .exec(() => {
       downloadBlob(toJsonBlob(loadedList()), `${sliceName}.json`);
     });
@@ -241,25 +228,16 @@ export default function ListContainer<
   // rather than offering a button some rows do not have. The editor's own verbs are not here — `Model.EditModal`
   // and `Model.ViewModal` publish those while they are open, which is also the only moment they can be used.
   const rowActions = Array.isArray(actions) ? actions : [];
-  st.tool(rowActions.includes("edit") && renderTemplate ? namesOfSlice.editModel : null, {
-    desc: `Open one ${modelName} in the edit form.`,
-    effect: "state",
-    shared: true,
-  })
+  st.tool(rowActions.includes("edit") && renderTemplate ? namesOfSlice.editModel : null)
+    .desc(`Open one ${modelName} in the edit form.`)
     .arg("modelId", ID)
     .exec((modelId) => storeDo[namesOfSlice.editModel](modelId));
-  st.tool(rowActions.includes("view") && renderView ? namesOfSlice.viewModel : null, {
-    desc: `Open one ${modelName} in the detail view.`,
-    effect: "state",
-    shared: true,
-  })
+  st.tool(rowActions.includes("view") && renderView ? namesOfSlice.viewModel : null)
+    .desc(`Open one ${modelName} in the detail view.`)
     .arg("modelId", ID)
     .exec((modelId) => storeDo[namesOfSlice.viewModel](modelId));
-  st.tool(rowActions.includes("remove") ? namesOfSlice.removeModel : null, {
-    desc: `Remove one ${modelName}.`,
-    effect: "mutation",
-    shared: true,
-  })
+  st.tool(rowActions.includes("remove") ? namesOfSlice.removeModel : null)
+    .desc(`Remove one ${modelName}.`)
     .arg("modelId", ID)
     .exec((modelId) => storeDo[namesOfSlice.removeModel](modelId));
   const scopePath = useScreenScope({

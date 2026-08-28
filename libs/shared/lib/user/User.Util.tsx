@@ -203,8 +203,6 @@ export const ChangePassword = ({ siteKey }: { siteKey: string }) => {
   const passwordConfirm = st.use.passwordConfirm();
   const turnstileToken = st.use.turnstileToken();
   st.tool("changePassword", {
-    desc: "Save the new password the change-password form holds.",
-    effect: "mutation",
     confirm: true,
     guard: () =>
       userModal !== "changePassword"
@@ -216,7 +214,9 @@ export const ChangePassword = ({ siteKey }: { siteKey: string }) => {
             : !turnstileToken
               ? "The are-you-a-robot check has to be solved by a person first."
               : true,
-  }).exec(() => st.do.changePassword());
+  })
+    .desc("Save the new password the change-password form holds.")
+    .exec(() => st.do.changePassword());
   return (
     <>
       <button
@@ -427,8 +427,6 @@ export const ForgotPassword = () => {
   const [finished, setFinished] = useState(false);
   const [accountId, setAccountId] = useState("");
   st.tool("resetPassword", {
-    desc: "Email a password-reset link to one account address.",
-    effect: "mutation",
     confirm: ({ accountId }) => `Send a password reset email to ${String(accountId)}?`,
     guard: ({ accountId }) =>
       finished
@@ -437,6 +435,7 @@ export const ForgotPassword = () => {
           ? true
           : "That is not an email address.",
   })
+    .desc("Email a password-reset link to one account address.")
     .arg("accountId", String)
     .exec(async (address) => {
       setAccountId(address);
@@ -484,9 +483,9 @@ interface SignoutProps {
   children: ReactNode;
 }
 export const Signout = ({ className, href, children }: SignoutProps) => {
-  st.tool("signout", { desc: "Sign out of this account.", effect: "mutation", confirm: true }).exec(() =>
-    st.do.logout(),
-  );
+  st.tool("signout", { confirm: true })
+    .desc("Sign out of this account.")
+    .exec(() => st.do.logout());
   return (
     <Link className={className} href={href} onClick={() => void st.do.logout()}>
       {children}
@@ -501,11 +500,9 @@ interface ResendPhoneCodeForSigninProps {
   hash: string;
 }
 export const ResendPhoneCodeForSignin = ({ className, userId, phone, hash }: ResendPhoneCodeForSigninProps) => {
-  st.tool("resendPhoneCode", {
-    desc: "Send the sign-in code to this phone number again by SMS.",
-    effect: "mutation",
-    confirm: true,
-  }).exec(() => st.do.requestPhoneCodeForSignin(userId, phone, hash));
+  st.tool("resendPhoneCode", { confirm: true })
+    .desc("Send the sign-in code to this phone number again by SMS.")
+    .exec(() => st.do.requestPhoneCodeForSignin(userId, phone, hash));
   return (
     <div className={cn("mt-2 flex justify-center", className)}>
       <button
@@ -552,11 +549,9 @@ interface ActivateProps {
   redirect?: string;
 }
 export const Activate = ({ className, userId, redirect }: ActivateProps) => {
-  st.tool("activateUser", {
-    desc: "Finish signing up and open the account.",
-    effect: "mutation",
-    confirm: true,
-  }).exec(() => st.do.activateUser(userId, { redirect }));
+  st.tool("activateUser", { confirm: true })
+    .desc("Finish signing up and open the account.")
+    .exec(() => st.do.activateUser(userId, { redirect }));
   return (
     <button
       className={cn(buttonRecipe({ variant: "primary" }), className)}
@@ -620,10 +615,10 @@ export const SigninWithPhoneCode = ({ redirect, userId, className = "" }: Signin
     await st.do.signinWithPhoneCode(userId, { redirect });
   };
   st.tool("signinWithPhoneCode", {
-    desc: "Sign in with the six-digit code that was texted to this number, once it is typed in.",
-    effect: "mutation",
     guard: () => (phoneCode.length === 6 ? true : "The six-digit code from the text goes in first."),
-  }).exec(handleClick);
+  })
+    .desc("Sign in with the six-digit code that was texted to this number, once it is typed in.")
+    .exec(handleClick);
   useEffect(() => {
     if (phoneCode.length === 6) void handleClick();
   }, [phoneCode]);
@@ -648,10 +643,10 @@ export const VerifyPhoneInPrepareUser = ({ userId, redirect, className = "" }: V
     await st.do.verifyPhoneInPrepareUser(userId, { redirect });
   };
   st.tool("verifyPhoneCode", {
-    desc: "Confirm the phone number with the six-digit code that was texted to it, once it is typed in.",
-    effect: "mutation",
     guard: () => (phoneCode.length === 6 ? true : "The six-digit code from the text goes in first."),
-  }).exec(handleClick);
+  })
+    .desc("Confirm the phone number with the six-digit code that was texted to it, once it is typed in.")
+    .exec(handleClick);
   useEffect(() => {
     if (phoneCode.length === 6) void handleClick();
   }, [phoneCode]);
@@ -686,11 +681,10 @@ export const PushNotificationSwitch = ({ className }: PushNotificationSwitchProp
   }, []);
 
   st.tool("setPushNotification", {
-    desc: "Turn push notifications on or off for this device.",
-    effect: "mutation",
     guard: ({ on }) =>
       !deviceToken ? "This device has no push token yet." : on === checked ? `Already ${on ? "on" : "off"}.` : true,
   })
+    .desc("Turn push notifications on or off for this device.")
     .arg("on", Boolean)
     .exec((on) => (on ? st.do.addNotiDeviceTokenOfSelf(deviceToken) : st.do.subNotiDeviceTokenOfSelf(deviceToken)));
   return (
@@ -719,8 +713,6 @@ export const SetAccountIdByAdmin = ({ className, accountId }: SetAccountIdByAdmi
       ? l("user.setAccountIdByAdminInvalid")
       : null;
   st.tool("setAccountIdByAdmin", {
-    desc: "Change the account id this user signs in with.",
-    effect: "mutation",
     confirm: "Change the sign-in id of this account?",
     guard: ({ accountId: next }) =>
       typeof next !== "string" || next.length < 4
@@ -729,6 +721,7 @@ export const SetAccountIdByAdmin = ({ className, accountId }: SetAccountIdByAdmi
           ? "This account signs in with an email, so the new id has to be an email too."
           : true,
   })
+    .desc("Change the account id this user signs in with.")
     .arg("accountId", String)
     .exec(async (next) => {
       await st.do.setAccountIdByAdmin(next);
@@ -854,14 +847,13 @@ export const SetPhoneByAdmin = ({ className, phone }: SetPhoneByAdminProps) => {
   const [changePhone, setChangePhone] = useState(phone ?? "empty");
   const [editState, setEditState] = useState<"edit" | "saving" | null>(null);
   st.tool("setPhoneByAdmin", {
-    desc: "Change the phone number this user verifies with.",
-    effect: "mutation",
     confirm: "Change the verified phone number of this account?",
     guard: ({ phone: next }) =>
       typeof next !== "string" || !isPhoneNumber(formatPhone(next))
         ? "That is not a phone number this account can verify with."
         : true,
   })
+    .desc("Change the phone number this user verifies with.")
     .arg("phone", String)
     .exec(async (next) => {
       const formatted = formatPhone(next);

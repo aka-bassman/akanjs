@@ -41,6 +41,9 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   replacement for `AgentBubble` carries its own `memo`, since the transcript re-renders on every delta. Only then
   `AgentChat`, which replaces the panel whole: it also replaces the slash commands, the compaction notice and the
   approval gate, so reach for it when the *layout* differs, not when the look does.
+  A manifest reaches a layout-mounted chat like any other component: the override provider wraps the whole layout
+  stack, root layouts included. `UiOverrideProvider` is also a public `akanjs/ui` export, for giving one mount site
+  a different slot map than its route would.
 - **The composer is a textarea**: Enter sends, Shift+Enter writes a newline, and it grows to a few lines before
   it scrolls. The vertical arrows still walk what was sent, but only from the first or last line — anywhere else
   the caret is the textarea's own. On a phone the panel is the whole screen (it is a card from `sm:` up) and it
@@ -116,12 +119,19 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
 
 ## Publishing A Tool
 - **Declare the tool beside the control that already does it.**
-  `st.tool("x", { desc }).arg("id", ID).exec(fn)` publishes one action and returns the callable to hand to
-  `onClick` — one handler for the person and the agent, which is the point: a button wired to an inline arrow can
-  be clicked by a person and by nobody else. `.exec()` is the only hook, so the chain completes in one
-  unconditional statement, and the callable carries `data-akan-action` like a store setter does. A `remove*` name
-  defaults to a confirm gate. Reach a store action from the body — `.exec((id) => st.do.removeX(id))` — which is
-  how an agent gets CRUD; `st.do` on its own reaches nobody.
+  `st.tool("x").desc("…").arg("id", ID).opt("force", Boolean).exec(fn)` publishes one action and returns the
+  callable to hand to `onClick` — one handler for the person and the agent, which is the point: a button wired to
+  an inline arrow can be clicked by a person and by nobody else. `.desc()` is required and comes first, `.arg()`
+  is an argument the caller must pass and `.opt()` one it may leave out (the `exec` parameter is then `| null`),
+  and `.exec()` is the only hook, so the chain completes in one unconditional statement and the callable carries
+  `data-akan-action` like a store setter does. A `remove*` name defaults to a confirm gate. Reach a store action
+  from the body — `.exec((id) => st.do.removeX(id))` — which is how an agent gets CRUD; `st.do` on its own
+  reaches nobody.
+- **The second argument is how the call behaves, never what it is.** `{ settle, confirm, guard }`:
+  `settle: false` marks a read that returns what is already there and skips the wait; every other tool is waited
+  out before its effect on the screen is reported, because a write may still be landing when `exec` resolves. A
+  tool that reads and one that writes are otherwise the same declaration — there is no taxonomy field, because
+  nothing downstream would read one.
 - **A falsy name declares the tool without publishing it** — the callable still drives the click a person makes,
   and the agent never learns the tool exists. That is the only way a conditional surface stays legal, because
   `.exec()` is a hook and the declaration can never be skipped: withhold the name, not the call. `st.useState`
@@ -132,7 +142,7 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
 - **An `enumOf` class is a complete argument type on its own**: `.arg("mode", TaskStatus)` publishes the values as
   the argument's `enum`, refuses anything off them by name at call time, and narrows the `.exec` parameter to the
   value union — nothing else to write, and the scalar (`string` / `integer` / `number`) comes from the values.
-  **A value set the *render* decides takes `.arg(name, type, { oneOf })`** instead, because `enumOf` registers
+  **A value set the *render* decides takes `.arg(name, type, { oneOf })`** (or `.opt`) instead, because `enumOf` registers
   globally and a component cannot build one per render: pass the list it has — a slice's sort keys, the options a
   prop carried — and it is published and enforced the same way. Neither reaches a set that fills in *after* the
   first render, since a declaration is mount-static; put that in the tool's `guard`, which is re-read per call and
@@ -145,10 +155,13 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   tool that captured its own row would be fifty registrations of one name, forty-nine of them shadowed, and the
   survivor would remove whichever row happened to mount last. Take the id instead — `removeTask(taskId)`, never
   fifty `removeTask` — and every row's registration is then interchangeable, so a row component may publish after
-  all: say so with `shared: true` and the repeats are one declaration rather than a warned-about clash. The ids
-  come from the `<slice>.items` resource `Load.Units` and `Data.ListContainer` already expose. `shared` is a claim
-  about the *tool*, not a way to quiet a console: two rows whose tools would do different things (a different
-  `modal`, a different redirect) are not interchangeable, and that one wants a `namespace` or nothing at all.
+  all. **Nothing is written to say so: the description says it.** Fifty rows of one component produce one name
+  and one `.desc()`, which is the same declaration fifty times over and warns about nothing; a second description
+  arriving under a name already taken is two components that happened to pick one word, and that warns. So the
+  rule an app follows is about the sentence, not about a flag — two tools that would do different things
+  (a different `modal`, a different redirect) cannot honestly share a description, and that pair wants a
+  `namespace` or nothing at all. The ids come from the `<slice>.items` resource `Load.Units` and
+  `Data.ListContainer` already expose.
 
 ## What `akanjs/ui` Publishes For You
 - **`akanjs/ui` publishes its own controls, so an app writes nothing for them.** `Data.ListContainer` (and every
@@ -199,9 +212,9 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   **The patch writes each plain field through that control's own published tool, not the setter underneath it** —
   which is what carries the control's `transform`, so a field cannot normalize one way for `setPhoneOnBizAccount`
   and another way for `fillBizAccountForm`. Only a composite, having no control, dispatches its setter directly.
-  The patch tool is registered `shared`, because the entry is a pure function of the model: a form put on screen by
-  a shell that subscribes it (`Model.EditModal`) *and* by the `Template` inside it is one declaration twice over,
-  not a clash — so neither has to suppress the other, and neither is asked to.
+  The patch tool's entry is a pure function of the model, so a form put on screen by a shell that subscribes it
+  (`Model.EditModal`) *and* by the `Template` inside it registers the same name with the same description twice
+  over — one declaration, not a clash. Neither has to suppress the other, and neither is asked to.
 - **A `disabled` control publishes nothing, so the agent never gets a lever the person cannot pull.** Every value
   control reads it — `Field.*`, `Input.*`, `Select`, `Switch`, and the four relation pickers — and disabling a
   mounted control withdraws its tool for as long as it stays disabled. One gate covers both writers: with no
@@ -271,18 +284,26 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `Field.TextList` does, and the only place an inline arrow is the right answer rather than a bug.
 
 ## Reading State
-- **Reading is per key, not per store.** `st.useState(name, initial, meta)` publishes local state (read-only
-  unless `set:` names a type) and `st.expose(name, value)` a derived value. A subscribed store key is listed in
+- **Reading is per key, not per store.** `st.expose(name, Type).desc("…").value(v)` publishes a derived value and
+  `st.useState(name, Type, { set: true }).desc("…").init(initial)` local state, read-only without `set`. Both
+  end in a hook, so a conditional surface withholds the name rather than skipping the chain. A subscribed store key is listed in
   the state context block by name and pulled with `readState(key)`, masked by the model that key declares — while
   a key the screen does not read stays unreadable even when a sibling key of the same store is live. **There is no
   store-level exposure declaration**: a store class says nothing about agents, and `st.use.x({ agent: false })` is
   how the component that subscribes a value keeps it off the surface. Base-store plumbing does the same at the
   call site — `st.use.path({ agent: false })`, `st.use.tryJwt({ agent: false })` — so routing and the caller's
   credential stay off the surface unless a component opts a key in, as ThemeToggle does for `theme`.
-- **Model-facing text is English, always** — tool `desc`, `instructions`, Guide text. The `l()` rule covers
+- **Model-facing text is English, always** — every `.desc()`, `instructions`, Guide text. The `l()` rule covers
   strings a *user* reads: Chat's own buttons go through `l("base.*")`, the model's text never does.
-- A masked model never crosses the boundary: a value whose `hidden`/`secret` fields are populated is refused at
-  read unless a `mask:` model is named — the same rule and wording as `AgentBridge.read`.
+- **The declared type is the mask.** `st.expose`/`st.useState` take a scalar, an enum, a model class, a one-level
+  array of any of those, or `Any`. A model class both typechecks what the component hands over — the state object,
+  so a hydrated document and a plain copy of one are equally accepted — and strips the model's `hidden`, `secret`,
+  and `visual` fields on the way out, by the model that was *named* rather than by whatever class the value still
+  happens to carry. A `Date` leaves as an ISO string. `Any` is the escape hatch and passes the value untouched, so
+  a payload nobody modeled stays publishable and its owner keeps the tokens it costs. A type nothing can read (a
+  `Map`, an `Upload`, a class that is not a model) is reported on the console and left unpublished, never thrown —
+  the same degradation an undescribable `.arg` gets. `.value()` also takes a thunk, which is read when the agent
+  reads: that is the shape for a value assembled out of a ref the children fill in after the render.
 - **A field the page needs and an agent does not is `field.visual`.** `abstractData: field.visual(String)` — a blur
   placeholder, a rendered HTML body, a serialized geometry: real data the screen renders, and hundreds of tokens per
   record no question is answered from. It is stripped by `mask`, so it leaves every agent-facing read and every MCP

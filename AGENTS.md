@@ -7,12 +7,12 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.50 -->
+<!-- akan:agent:version 3.0.0-alpha.52 -->
 
 ## Workspace
 
 - Repo: akanjs
-- Apps: minimal, akan
+- Apps: akan, minimal
 - Libraries: util, shared
 - Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
 
@@ -547,14 +547,21 @@ package; apps and libs never import it directly (`no-import-external-library`) �
   `option.setAgentAccess(SignedIn)`.
 - **The LLM is configured in `option.ts`, never through the environment.** `option.setLlm({ apiKey, model, host })`
   fills whichever adaptor holds `LlmAdaptorRole`; swap providers with `option.applyAdaptor(LlmAdaptorRole, X)`.
-- **Declare the tool beside the control that already does it.** `st.tool("x", { desc }).arg("id", ID).exec(fn)`
-  publishes one action and returns the callable to hand to `onClick` — one handler for the person and the agent.
-  Reach a store action from the body (`.exec((id) => st.do.removeX(id))`); `st.do` on its own reaches nobody.
+- **Declare the tool beside the control that already does it.**
+  `st.tool("x").desc("…").arg("id", ID).opt("force", Boolean).exec(fn)` publishes one action and returns the
+  callable to hand to `onClick` — one handler for the person and the agent. `.desc()` is required and comes first,
+  `.arg()` is an argument the caller must pass and `.opt()` one it may, and `.exec()` is the only hook. Reach a
+  store action from the body (`.exec((id) => st.do.removeX(id))`); `st.do` on its own reaches nobody.
 - **Publish a tool only where the screen already renders the control.** A falsy name declares the tool without
   publishing it, which is how a conditional surface stays legal — `.exec()` is a hook, so withhold the name, not
   the call. A `disabled` control publishes nothing.
 - **A component that renders once per row takes the row id as an argument**, never a closure over it — fifty
-  registrations of one name leave forty-nine shadowed. Interchangeable repeats say so with `shared: true`.
+  registrations of one name leave forty-nine shadowed. The description is what makes the repeats one declaration:
+  same name and same `.desc()` is the same tool registered fifty times, and only a second description under that
+  name warns.
+- **`{ settle: false }` is the read that returns what is already there.** Every other tool is waited out before
+  what it did to the screen is reported, because a write may still be landing when `exec` resolves. `{ confirm }`
+  and `{ guard }` ride the same object; a `remove*` name confirms by default.
 - **A component that can render twice on one screen takes a `namespace` prop** (`Tab`, `Dialog`, `Dropdown`,
   `ScreenNavigator`) and publishes nothing without one.
 - **Forms publish themselves**: a `Field.*` / `Input.*` / `Select` / `Switch` handed `onChange={st.do.setXOnY}`
@@ -562,6 +569,11 @@ package; apps and libs never import it directly (`no-import-external-library`) �
   nothing — normalize with the control's `transform` prop, and multi-write with a `_postSet<Field>` store method.
 - **Reading is per key, not per store.** `st.use.x({ agent: false })` keeps a subscribed key off the surface;
   a key no component reads is unreadable. A value with populated `hidden`/`secret` fields is refused at read.
+- **A component's own value is published by its declared type.** `st.expose("taskId", ID).desc("…").value(v)` for
+  a derived value and `st.useState("tab", String, { set: true }).desc("…").init("all")` for local state — the type
+  typechecks what is handed over and decides how it is read, so a model class masks by that model. `Any` is the
+  escape hatch: no typecheck, and the value passes untouched. `.value()` also takes a thunk, read when the agent
+  reads.
 - **Return what answers the question, not the record.** A tool's value is capped at 20,000 characters before it
   enters the transcript and clipped with a note the model reads (`ToolOutput.limit`), because a store key is sized
   for a screen and not for a model's window: one `readState` of a list whose rows carry inlined bytes is megabytes,
@@ -580,7 +592,7 @@ package; apps and libs never import it directly (`no-import-external-library`) �
 - The framework publishes five built-ins on every store surface — `navigate`, `goBack`, `readScreen`,
   `readState(key)`, `highlight(target)` — plus `askUser`, which the session owns. **There is no general-purpose
   wait**: publish an `st.tool` beside the control that starts the work and let it await the work.
-- **Model-facing text is English, always** — tool `desc`, `instructions`, Guide text. The `l()` rule covers
+- **Model-facing text is English, always** — every `.desc()`, `instructions`, Guide text. The `l()` rule covers
   strings a *user* reads.
 
 Full contract — the chat's own options, attachments and speech, zones, what `akanjs/ui` publishes for you, slash

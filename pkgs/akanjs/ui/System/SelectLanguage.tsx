@@ -22,7 +22,8 @@ export const SelectLanguage = ({ className, languages = parseAkanI18nEnv().local
   const { lang } = usePage();
   const offered = languages.filter((lang) => !!languageNames[lang as keyof typeof languageNames]);
   const setLanguage = st
-    .tool("setLanguage", { desc: "Show the site in another language.", effect: "state" })
+    .tool("setLanguage")
+    .desc("Show the site in another language.")
     .arg("language", String, { oneOf: offered })
     .exec((language) => {
       router.setLang(language);

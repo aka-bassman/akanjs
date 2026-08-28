@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { watch } from "node:fs";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -11,14 +10,18 @@ const tempRoots: string[] = [];
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const waitFor = async <T>(fn: () => Promise<T | null>, timeoutMs = 5_000): Promise<T> => {
+const waitFor = async <T>(
+  fn: () => Promise<T | null>,
+  timeoutMs = 5_000,
+  message = `Timed out after ${timeoutMs}ms`,
+): Promise<T> => {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const value = await fn();
     if (value) return value;
     await wait(50);
   }
-  throw new Error(`Timed out after ${timeoutMs}ms`);
+  throw new Error(message);
 };
 
 const withTimeout = async <T>(promise: Promise<T>, message: string, timeoutMs = 5_000): Promise<T> => {
@@ -103,30 +106,16 @@ const waitForRawCloseCode = (socket: Socket) =>
     "timed out waiting for raw websocket close",
   );
 
+// Poll rather than fs.watch: Bun coalesces appends made within one window and drops all but the first
+// event, so a close relayed right after the upgrade line never wakes a watcher.
 const observeNextRelayEvent = async (filePath: string, trigger: () => void | Promise<void>): Promise<string> => {
   const previous = (await readFile(filePath, "utf8")).trim().split("\n").filter(Boolean).length;
-  let watcher: ReturnType<typeof watch> | undefined;
-  let timer: Timer | undefined;
-  try {
-    const observed = new Promise<string>((resolve, reject) => {
-      const inspect = () => {
-        void readFile(filePath, "utf8")
-          .then((text) => {
-            const codes = text.trim().split("\n").filter(Boolean);
-            if (codes.length > previous) resolve(codes[previous] ?? "");
-          })
-          .catch(reject);
-      };
-      watcher = watch(filePath, inspect);
-      watcher.once("error", reject);
-      timer = setTimeout(() => reject(new Error("timed out waiting for upstream relay event")), 5_000);
-    });
-    await trigger();
-    return await observed;
-  } finally {
-    watcher?.close();
-    if (timer) clearTimeout(timer);
-  }
+  await trigger();
+  return await waitFor(
+    async () => (await readFile(filePath, "utf8")).trim().split("\n").filter(Boolean)[previous] ?? null,
+    5_000,
+    "timed out waiting for upstream relay event",
+  );
 };
 
 const writeWebSocketRelayChild = async (serverPath: string, observedPath: string) => {

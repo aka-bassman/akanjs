@@ -274,14 +274,13 @@ describe("AgentSession settle and progress", () => {
     // Lands a tick later, like a store action that fires `void fetch.*` and commits when the answer arrives.
     surface.registerTool([], {
       name: "bumpLater",
-      effect: "mutation",
       run: () => {
         setTimeout(() => {
           count += 1;
         }, 0);
       },
     });
-    surface.registerTool([], { name: "peek", effect: "query", run: () => count });
+    surface.registerTool([], { name: "peek", settle: false, run: () => count });
     const { runner } = scripted(
       [
         { type: "toolCall", id: "c1", name: "bumpLater", args: {} },
@@ -850,7 +849,6 @@ describe("AgentSession long tools", () => {
     // The shape an app writes: the tool does not return until the work it started is done.
     surface.registerTool([], {
       name: "generate",
-      effect: "mutation",
       run: async () => {
         for (let at = 0; at < 5; at += 1) await tick();
         status = "ready";

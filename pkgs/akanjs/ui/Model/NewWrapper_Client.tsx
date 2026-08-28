@@ -45,10 +45,9 @@ export const NewWrapper_Client = <Full,>({
   // screen creates something different (its own `partial`) and takes one to say so.
   const newModel = st
     .tool(`${sliceName.replace(modelName, names.newModel)}${namespace ? `In${capitalize(namespace)}` : ""}`, {
-      desc: `Open the form that creates a ${modelName}.`,
-      effect: "state",
       guard: () => (disabled ? `A ${modelName} form is already open.` : true),
     })
+    .desc(`Open the form that creates a ${modelName}.`)
     .exec(() => {
       const cnst = ConstantRegistry.getDatabase(modelName);
       const crystal = new cnst.full().set(partial as unknown as GetStateObject<Full>) as unknown as Full;

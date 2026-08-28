@@ -35,17 +35,18 @@ export const Provider = ({
   useEffect(() => {
     setOpenState(open);
   }, [open]);
-  st.expose(namespace ? `dialogIn${suffix}` : null, openState, { desc: "Whether this dialog is showing." });
+  st.expose(namespace ? `dialogIn${suffix}` : null, Boolean)
+    .desc("Whether this dialog is showing.")
+    .value(openState);
   const openDialog = st
-    .tool(namespace ? `openDialogIn${suffix}` : null, { desc: `Open the ${namespace ?? ""} dialog.`, effect: "state" })
+    .tool(namespace ? `openDialogIn${suffix}` : null)
+    .desc(`Open the ${namespace ?? ""} dialog.`)
     .exec(() => {
       setOpenState(true);
     });
   const closeDialog = st
-    .tool(namespace ? `closeDialogIn${suffix}` : null, {
-      desc: `Close the ${namespace ?? ""} dialog.`,
-      effect: "state",
-    })
+    .tool(namespace ? `closeDialogIn${suffix}` : null)
+    .desc(`Close the ${namespace ?? ""} dialog.`)
     .exec(() => {
       // Through the surface's own dismissal so the agent and `Dialog.Close` take the exact path the X button
       // takes. Flipping the state is the fallback for a dialog that draws no modal.

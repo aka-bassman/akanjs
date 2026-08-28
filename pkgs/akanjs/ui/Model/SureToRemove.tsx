@@ -52,11 +52,8 @@ export default function SureToRemove({
   // `typeNameToRemove` makes a person retype the name before the button unlocks. An approval card is one click,
   // so it is not that gate — the lever is withheld rather than offered at a friction the screen does not have.
   const removeTool = st
-    .tool(typeNameToRemove ? null : names.removeModel, {
-      desc: `Remove one ${modelName}.`,
-      effect: "mutation",
-      shared: true,
-    })
+    .tool(typeNameToRemove ? null : names.removeModel)
+    .desc(`Remove one ${modelName}.`)
     .arg("modelId", ID)
     .exec((id) => removeModel(id));
   return (

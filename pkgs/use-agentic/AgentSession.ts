@@ -99,7 +99,6 @@ export class AgentSession {
       required: ["question"],
       additionalProperties: false,
     },
-    effect: "query",
     needsConfirm: false,
   };
 
@@ -446,9 +445,9 @@ export class AgentSession {
           () => AgentSession.#raced(this.#surface.call(call.name, call.args), signal),
         ),
       );
-      // A query reads and returns; anything else may still be landing, and a report taken now would describe the
-      // screen as it was one tick before the call.
-      if (entry.effect !== "query") await this.#options.settle?.();
+      // A read returns what is already there; anything else may still be landing, and a report taken now would
+      // describe the screen as it was one tick before the call.
+      if (entry.settle !== false) await this.#options.settle?.();
       const changes = this.#surface.diffSince(before);
       return {
         ...base,

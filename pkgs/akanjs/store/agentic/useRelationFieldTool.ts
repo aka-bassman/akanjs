@@ -70,7 +70,7 @@ export const useRelationFieldTool = <T extends { id: string }>(
     const offList = surface.registerTool(scope, {
       name: listName,
       description: `List the ${target}s the ${ref.refName} form can pick for ${ref.key}, loading them first. Pass an id from it to ${action}.`,
-      effect: "query",
+      settle: false,
       run: async () => {
         await live.current.load();
         return options();
@@ -85,7 +85,6 @@ export const useRelationFieldTool = <T extends { id: string }>(
         ...(nullable ? {} : { required: [argName] }),
         additionalProperties: false,
       },
-      effect: "state",
       guard: (args) => {
         const ids = idsIn(args);
         if (!Array.isArray(ids)) return `"${argName}" of ${action} must be an array of ids.`;

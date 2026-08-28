@@ -82,6 +82,8 @@ export { Tab } from "./Tab";
 export { Table } from "./Table";
 export { ToggleSelect } from "./ToggleSelect";
 export { Tooltip, type TooltipProps } from "./Tooltip";
+// `UiOverrideProvider` is public on purpose, not incidentally: an app mounts it by hand where the route
+// manifest cannot reach — a component rendered by a root-boundary layout sits outside the generated provider.
 export {
   type AkanModalComponent,
   type AkanUiOverrideManifest,

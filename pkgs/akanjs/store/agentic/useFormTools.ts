@@ -18,10 +18,10 @@ import { FormFields } from "./formFields";
  * own setter, and a composite is waved through because its rows are written with `writeOn<Model>(path, value)`,
  * which no control can annotate — so this is the one place an agent can reach a field the screen may not show.
  *
- * Registered `shared`, because the entry is a pure function of `refName`: the schema comes from the model, the
- * guard re-reads the live surface, and every `write` reaches the one store instance. So a form put on screen by a
- * shell that subscribes it (`Model.EditModal`) and by the `Template` inside it registers one declaration twice,
- * which is interchangeable in the exact sense `shared` means — not a clash an app could fix by suppressing one.
+ * The entry is a pure function of `refName`: the schema comes from the model, the guard re-reads the live surface,
+ * and every `write` reaches the one store instance. So a form put on screen by a shell that subscribes it
+ * (`Model.EditModal`) and by the `Template` inside it registers one declaration twice — the same description both
+ * times, which is what the surface reads as interchangeable rather than as a clash an app has to suppress.
  */
 export const useFormTools = (refName: string | null, write: (action: string, value: unknown) => void) => {
   const surface = useSurface();
@@ -48,8 +48,6 @@ export const useFormTools = (refName: string | null, write: (action: string, val
         properties: Object.fromEntries(fields.map((entry) => [entry.key, entry.schema])),
         additionalProperties: false,
       },
-      effect: "state",
-      shared: true,
       guard: (args) => {
         const keys = Object.keys(args);
         if (!keys.length) return "Name at least one field to fill.";

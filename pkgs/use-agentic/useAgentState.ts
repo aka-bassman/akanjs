@@ -54,7 +54,6 @@ export const useAgentState = <T>(
         required: ["value"],
         additionalProperties: false,
       },
-      effect: "state",
       run: (args) => {
         const parse = live.current.meta.parse;
         setValue(parse ? parse(args.value) : (args.value as T));

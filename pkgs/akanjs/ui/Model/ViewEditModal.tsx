@@ -20,7 +20,8 @@ import View from "./View";
  */
 const useCloseViewTool = (modelName: string, closeView: () => void) =>
   st
-    .tool(`closeViewOf${capitalize(modelName)}`, { desc: `Close the open ${modelName} modal.`, effect: "state" })
+    .tool(`closeViewOf${capitalize(modelName)}`)
+    .desc(`Close the open ${modelName} modal.`)
     .exec(closeView);
 
 interface ActionProps {
@@ -33,10 +34,8 @@ interface ActionProps {
 const EditAction = ({ modelName, label, onAct, closeView }: ActionProps) => {
   useCloseViewTool(modelName, closeView);
   const editModel = st
-    .tool(`edit${capitalize(modelName)}`, {
-      desc: `Turn the open ${modelName} from its detail view into the edit form.`,
-      effect: "state",
-    })
+    .tool(`edit${capitalize(modelName)}`)
+    .desc(`Turn the open ${modelName} from its detail view into the edit form.`)
     .exec(onAct);
   return (
     <button className={buttonRecipe({ variant: "primary" }, "w-full")} onClick={editModel} {...agentAttrs(editModel)}>
@@ -48,10 +47,8 @@ const EditAction = ({ modelName, label, onAct, closeView }: ActionProps) => {
 const SaveAction = ({ modelName, label, onAct, closeView }: ActionProps) => {
   useCloseViewTool(modelName, closeView);
   const submitModel = st
-    .tool(`submit${capitalize(modelName)}`, {
-      desc: `Save the ${modelName} the open form holds.`,
-      effect: "mutation",
-    })
+    .tool(`submit${capitalize(modelName)}`)
+    .desc(`Save the ${modelName} the open form holds.`)
     .exec(onAct);
   return (
     <button

@@ -56,7 +56,6 @@ export class StoreSurfaceSource implements SurfaceSource {
         required: ["path"],
         additionalProperties: false,
       },
-      effect: "state",
       // An absolute or scheme-relative URL would send the user off-site; the agent only ever drives this app.
       guard: (args) =>
         typeof args.path === "string" && args.path.startsWith("/") && !args.path.startsWith("//")
@@ -84,7 +83,6 @@ export class StoreSurfaceSource implements SurfaceSource {
       description:
         "Go back to the previous page in this session's history. Use it to undo a navigation; use navigate for a path.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
-      effect: "state",
       // Re-checked at call time, so a first page with nothing behind it refuses instead of leaving the app.
       guard: () => (router.canGoBack() ? true : "There is no previous page in this session's history."),
       run: async () => {
@@ -113,7 +111,7 @@ export class StoreSurfaceSource implements SurfaceSource {
         },
         additionalProperties: false,
       },
-      effect: "query",
+      settle: false,
       run: (args) => {
         const root = StoreSurfaceSource.#zoneRoot(viewKey);
         const section = typeof args.section === "string" ? args.section.trim() : "";
@@ -150,7 +148,6 @@ export class StoreSurfaceSource implements SurfaceSource {
         required: ["target"],
         additionalProperties: false,
       },
-      effect: "state",
       run: (args) => {
         const name = typeof args.target === "string" ? args.target.trim() : "";
         if (!name) throw new Error("highlight needs a target.");
@@ -183,7 +180,6 @@ export class StoreSurfaceSource implements SurfaceSource {
         required: ["key"],
         additionalProperties: false,
       },
-      effect: "state",
       run: (args: Record<string, unknown>) => {
         this.#bridge ??= AgentBridge.of();
         return this.#bridge.read(String(args.key), viewKey);

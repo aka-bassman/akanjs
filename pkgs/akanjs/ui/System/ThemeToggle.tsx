@@ -13,7 +13,8 @@ export interface ThemeToggleProps {
 export const ThemeToggle = ({ themes }: ThemeToggleProps) => {
   const theme = st.use.theme();
   const applyTheme = st
-    .tool("applyTheme", { desc: `Switch this page's color theme. One of: ${themes?.join(", ") ?? "none"}.` })
+    .tool("applyTheme")
+    .desc(`Switch this page's color theme. One of: ${themes?.join(", ") ?? "none"}.`)
     .arg("theme", String)
     .exec((theme) => {
       document.documentElement.setAttribute("data-theme", theme);

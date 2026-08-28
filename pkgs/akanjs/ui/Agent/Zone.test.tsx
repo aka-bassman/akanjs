@@ -45,11 +45,15 @@ describe("Agent.Zone", () => {
       return null;
     };
     const ApproveTool = () => {
-      st.tool("approveComment", { desc: "Approve one comment." }).exec(() => undefined);
+      st.tool("approveComment")
+        .desc("Approve one comment.")
+        .exec(() => undefined);
       return <p>comment queue text</p>;
     };
     const PublishTool = () => {
-      st.tool("publishPost", { desc: "Publish one post." }).exec(() => undefined);
+      st.tool("publishPost")
+        .desc("Publish one post.")
+        .exec(() => undefined);
       return <p>post editor text</p>;
     };
     const container = document.createElement("div");

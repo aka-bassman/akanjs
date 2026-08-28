@@ -1,14 +1,8 @@
 "use client";
 import { cn } from "akanjs/client";
 import { useState } from "react";
-import type { PublishedTool, SurfaceView, ToolEffect } from "use-agentic";
+import type { PublishedTool, SurfaceView } from "use-agentic";
 import { buttonRecipe } from "../recipe";
-
-const effectClass: { [key in ToolEffect]: string } = {
-  state: "bg-muted text-foreground/70",
-  query: "bg-info/15 text-info",
-  mutation: "bg-warning/15 text-warning",
-};
 
 interface ToolProps {
   className?: string;
@@ -39,14 +33,6 @@ export default function Tool({ className, surface, tool, onRun }: ToolProps) {
   return (
     <details className={cn("rounded-field bg-background/60 px-2 py-1", className)}>
       <summary className="flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
-        <span
-          className={cn(
-            "rounded-field px-1.5 py-0.5 text-[10px] uppercase",
-            tool.effect ? effectClass[tool.effect] : "bg-muted text-foreground/50",
-          )}
-        >
-          {tool.effect ?? "tool"}
-        </span>
         <span className="truncate font-mono text-xs">{tool.name}</span>
         {tool.needsConfirm ? <span className="shrink-0 text-[10px] text-foreground/40">confirm</span> : null}
       </summary>
