@@ -2,6 +2,7 @@ import { AgentScope } from "use-agentic";
 import Context from "./Context";
 import { Dock } from "./Dock";
 import { Guide } from "./Guide";
+import { History } from "./History";
 import { Chat } from "./index_";
 import Section from "./Section";
 import { Skip } from "./Skip";
@@ -15,6 +16,7 @@ export const Agent = {
   Context,
   Dock,
   Guide,
+  History,
   Scope: AgentScope,
   Section,
   Skip,

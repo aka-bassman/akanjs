@@ -7,15 +7,19 @@ import type {
 } from "./predefinedAdaptor/llm.adaptor";
 import { LlmAdaptorRole } from "./predefinedAdaptor/role.adaptor";
 import { serve } from "./serve";
+import { ToolNames } from "./toolNames";
 
 export class AgentService extends serve("agent" as const, ({ plug }) => ({
   llm: plug(LlmAdaptorRole),
 })) {
   async runTurn(request: LlmTurnRequest, onDelta?: (delta: string) => void) {
-    const prepared = AgentService.readable(AgentService.explained(request), this.llm.accepts);
+    // A zone's tools are scope-prefixed with a `.`, which no provider's function schema accepts — renamed on the
+    // way out and read back on the way in, so the browser is answered with the name its surface registered.
+    const names = ToolNames.of(request);
+    const prepared = names.encode(AgentService.readable(AgentService.explained(request), this.llm.accepts));
     const answer = await this.llm.chat(prepared, onDelta);
     if (!answer) throw new Err("agent.error.llmUnavailable");
-    return { text: answer.text ?? "", toolCalls: answer.toolCalls ?? [], stop: answer.stop };
+    return { text: answer.text ?? "", toolCalls: names.decode(answer.toolCalls ?? []), stop: answer.stop };
   }
 
   /**

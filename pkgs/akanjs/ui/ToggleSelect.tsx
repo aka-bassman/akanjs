@@ -16,6 +16,7 @@ export interface ToggleSelectProps<I extends string | number | boolean | null> {
   nullable: boolean;
   validate: (value: I) => boolean | string;
   onChange: (value: I, idx: number) => void;
+  onClear?: () => void;
   disabled?: boolean;
 }
 const DefaultToggleSelect = <I extends string | number | boolean | null>({
@@ -26,6 +27,7 @@ const DefaultToggleSelect = <I extends string | number | boolean | null>({
   validate,
   value,
   onChange,
+  onClear,
   disabled,
 }: ToggleSelectProps<I>) => {
   const { l } = usePage();
@@ -61,7 +63,8 @@ const DefaultToggleSelect = <I extends string | number | boolean | null>({
             disabled={isDisabled}
             className={cn(toggleBtn, isSelected && selectedCls, isDisabled && "cursor-not-allowed", btnClassName)}
             onClick={() => {
-              onChange(option.value, idx);
+              if (nullable && isSelected) onClear?.();
+              else onChange(option.value, idx);
             }}
           >
             {option.label}

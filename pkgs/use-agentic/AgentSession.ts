@@ -139,6 +139,10 @@ export class AgentSession {
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
   #saving: Promise<unknown> = Promise.resolve();
   #restoring = false;
+  // Mutable rather than read off `#options`: both can be attached after construction, which is what lets a zone
+  // be assembled by a server component and still keep its transcript where the app keeps it.
+  #history: SessionHistory | undefined;
+  #onCompact: AgentSessionOptions["onCompact"];
   #compacting = false;
   /** Size below which auto-compaction stays out of the way, raised when a summary failed to shrink anything. */
   #compactFloor = 0;
@@ -147,6 +151,8 @@ export class AgentSession {
     this.#surface = surface;
     this.#runner = runner;
     this.#options = options;
+    this.#history = options.history;
+    this.#onCompact = options.onCompact;
     const restored = AgentSession.#restored(options.history);
     if (Array.isArray(restored)) this.#messages = restored;
     else {
@@ -294,7 +300,7 @@ export class AgentSession {
       clearTimeout(this.#saveTimer);
       this.#saveTimer = null;
     }
-    const history = this.#options.history;
+    const history = this.#history;
     if (history) {
       // Chained behind the pending saves so a clear can never be overtaken by one queued before it, and awaited
       // so the returned promise means what it says: an async host has cleared by the time this resolves.
@@ -303,6 +309,31 @@ export class AgentSession {
     }
     this.#version += 1;
     for (const listener of this.#listeners) listener();
+  };
+
+  /**
+   * Attaches a transcript store to a session built without one — what `Agent.History` mounts, so a zone can be
+   * assembled by a server component and still keep its transcript wherever the app keeps it. `null` detaches.
+   *
+   * Restoring follows the rule an async `load` already follows: it lands only while nothing has happened to this
+   * session yet. Attach before the first turn and it restores; attach after and it saves from there on, with the
+   * store never asked for a transcript that would be discarded. One rule rather than a mount-order surprise.
+   */
+  setHistory = (history: SessionHistory | null) => {
+    this.#history = history ?? undefined;
+    if (!history || this.#version !== 0) return;
+    const restored = AgentSession.#restored(history);
+    if (!(restored instanceof Promise)) {
+      this.#restore(restored);
+      return;
+    }
+    this.#restoring = true;
+    void this.#hydrate(restored);
+  };
+
+  /** The compaction hook as a setter, for the same reason `setHistory` is one: a host attaches it after the fact. */
+  setOnCompact = (onCompact: AgentSessionOptions["onCompact"] | null) => {
+    this.#onCompact = onCompact ?? undefined;
   };
 
   /**
@@ -383,7 +414,7 @@ export class AgentSession {
       const message = Compaction.message(summary);
       this.#messages = [message, ...this.#messages.slice(at)];
       try {
-        this.#options.onCompact?.(replaced, message);
+        this.#onCompact?.(replaced, message);
       } catch {
         // A host that fails to record the cut does not undo one the transcript has already taken.
       }
@@ -669,7 +700,7 @@ export class AgentSession {
 
   /** Debounced: streaming patches the last message on every delta, and a save per delta would thrash storage. */
   #schedulePersist() {
-    const history = this.#options.history;
+    const history = this.#history;
     if (!history) return;
     if (this.#saveTimer) clearTimeout(this.#saveTimer);
     this.#saveTimer = setTimeout(() => {
@@ -710,6 +741,15 @@ export class AgentSession {
       // History is best-effort; a transcript that cannot be fetched leaves the chat starting empty.
     }
     this.#restoring = false;
+    this.#restore(restored);
+  }
+
+  /**
+   * Lands a restore under the one rule — only into a session nothing has happened to yet — and notifies either
+   * way, because `isRestoring` may have turned over with it. Notifies by hand rather than through `#notify`,
+   * which would save the transcript it has just loaded.
+   */
+  #restore(restored: ChatMessage[]) {
     if (this.#version === 0 && restored.length) this.#messages = restored;
     this.#version += 1;
     for (const listener of this.#listeners) listener();

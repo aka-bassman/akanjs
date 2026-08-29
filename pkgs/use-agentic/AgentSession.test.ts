@@ -456,11 +456,14 @@ describe("AgentSession askUser", () => {
 
 describe("AgentSession history", () => {
   const memoryHistory = (initial: import("./types").ChatMessage[] | null = null) => {
-    const state = { stored: initial, saves: 0, cleared: 0 };
+    const state = { stored: initial, saves: 0, cleared: 0, loads: 0 };
     return {
       state,
       history: {
-        load: () => state.stored,
+        load: () => {
+          state.loads += 1;
+          return state.stored;
+        },
         save: (messages: readonly import("./types").ChatMessage[]) => {
           state.stored = [...messages];
           state.saves += 1;
@@ -582,6 +585,71 @@ describe("AgentSession history", () => {
     release();
     await cleared;
     expect(order).toEqual(["save:slow", "save:fast", "clear"]);
+  });
+
+  test("a history attached before the first turn restores, and saves from then on", async () => {
+    const { state, history } = memoryHistory([{ role: "user", text: "earlier" }]);
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {});
+    expect(session.messages).toEqual([]);
+    session.setHistory(history);
+    expect(session.messages).toEqual([{ role: "user", text: "earlier" }]);
+    session.note("later");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(state.saves).toBe(1);
+    expect(state.stored?.map((message) => message.text)).toEqual(["earlier", "later"]);
+  });
+
+  test("a history attached after the conversation moved on saves without restoring, and is never asked to load", () => {
+    const { state, history } = memoryHistory([{ role: "user", text: "from another visit" }]);
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {});
+    session.note("already said");
+    session.setHistory(history);
+    expect(session.messages.map((message) => message.text)).toEqual(["already said"]);
+    // Not merely discarded on arrival: a store is never asked for a transcript that would be thrown away.
+    expect(state.loads).toBe(0);
+  });
+
+  test("detaching stops the saving", async () => {
+    const { state, history } = memoryHistory();
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {});
+    session.setHistory(history);
+    session.note("kept");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(state.saves).toBe(1);
+    session.setHistory(null);
+    session.note("not kept");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(state.saves).toBe(1);
+  });
+
+  test("an attached async history reports while it loads, exactly as a constructed one does", async () => {
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {});
+    const pending = Promise.resolve([{ role: "user" as const, text: "from the server" }]);
+    session.setHistory({ load: () => pending, save: () => undefined, clear: () => undefined });
+    expect(session.isRestoring).toBe(true);
+    await pending;
+    await Promise.resolve();
+    expect(session.isRestoring).toBe(false);
+    expect(session.messages).toEqual([{ role: "user", text: "from the server" }]);
+  });
+
+  test("setOnCompact attaches the hook a constructed session takes as an option", async () => {
+    const cuts: number[] = [];
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {
+      history: {
+        load: () => [
+          { role: "user", text: "x".repeat(30_000) },
+          { role: "assistant", text: "ok" },
+        ],
+        save: () => undefined,
+        clear: () => undefined,
+      },
+      compact: { summarize: async () => "notes" },
+    });
+    session.setOnCompact((replaced) => cuts.push(replaced.length));
+    expect(await session.compact()).toBe(true);
+    expect(cuts).toEqual([2]);
+    session.setOnCompact(null);
   });
 
   test("a history that throws never breaks the chat", async () => {

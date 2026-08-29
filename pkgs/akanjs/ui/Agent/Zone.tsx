@@ -56,6 +56,10 @@ export interface ZoneProps {
  * inside — hook tools, `st.use` subscriptions, guides — belongs to this zone's session *and* to the root agent:
  * zones are views, never walls. An `Agent.Chat` mounted inside binds to this session automatically, so two zones
  * on one screen run two conversations in parallel, each seeing only its own subtree.
+ *
+ * **Everything a zone publishes is named `<id>.<name>`.** Instructions that name a tool must carry the prefix —
+ * a bare name is a tool that does not exist, and the model calling it spends a turn on `Unknown tool`. Build the
+ * name from the id rather than writing it twice, and read `Agent.Context`'s Assemble to see the published list.
  */
 export const Zone = ({
   className,

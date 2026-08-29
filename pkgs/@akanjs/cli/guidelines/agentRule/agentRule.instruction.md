@@ -123,6 +123,13 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `data-agent-zone` container; guides follow the layout cascade (ancestors and own, never a sibling's). Zone
   membership is positional — there is no per-declaration zone key, so a lib component joins whatever zone the app
   mounts it in.
+- **Everything a zone publishes is named `<id>.<name>`,** and that name is what instructions must use. A bare
+  `createVideoProject` inside a zone naming its tool `videoProjectDraft.createVideoProject` is a tool that does
+  not exist: the model calls it, the surface answers `Unknown tool`, and a turn is gone. Build the name from the
+  id (``const zoneTool = (name) => `${ZONE}.${name}` ``) rather than writing it in two places, and read
+  `Agent.Context`'s **Assemble** to see the published list — the names exist in neither file's source. The dot is
+  the surface's own join and never reaches a provider: `AgentService` renames it to `__` on the wire, because
+  every OpenAI-compatible and Anthropic function schema allows `[A-Za-z0-9_-]` only, up to 64 characters.
 - **`builtins` decides which of the runtime's own tools a session gets** — all of them by default, `false` none,
   an array exactly the ones it names, on `Agent.Zone` and `Agent.Chat` alike. A zone whose conversation must stay
   on one screen takes `navigate` and `goBack` off it: `<Agent.Zone id="wizard" builtins={["readScreen",
@@ -132,6 +139,14 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   declaring a hook tool of the same name works at the root and **not inside a zone**, where the hook entry is
   registered under its scope-prefixed name and never collides — `builtins` is the zone's answer. A tool the screen
   declares under a built-in name is the screen's, not the runtime's, so `builtins={false}` leaves it standing.
+- **`<Agent.History load save clear onCompact />` backs a zone's transcript from a leaf inside it**, instead of
+  through `persist` on whoever builds the session. A function cannot cross the server/client boundary as a prop,
+  so `persist={myStore}` makes every ancestor up to the zone a client component; mounted this way the only client
+  module is the leaf, and `Agent.Zone` and the chat inside it stay server-assembled. Same shape as `Agent.Guide`,
+  and it renders nothing. Restoring follows the session's one rule — it lands only while nothing has happened to
+  the conversation yet — so mounting with the zone restores and mounting later saves from there on, with the
+  store never asked for a transcript that would be discarded. `session.setHistory` / `setOnCompact` are the same
+  thing for a session an app built itself.
 - **A zone can be handed a session instead of building one**: `<Agent.Zone session={mine} onSession={…}>`. The app
   then owns it, so unmounting the zone leaves it running — the opposite of a session the zone made, which it
   aborts. `onSession` fires either way, for a page that wants to send into the conversation from outside it.

@@ -2,9 +2,10 @@ import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { AgentRunner, AgentSession, RunnerRequest } from "use-agentic";
+import type { AgentRunner, AgentSession, ChatMessage, RunnerRequest } from "use-agentic";
 
 let Zone: typeof import("./Zone").Zone;
+let History: typeof import("./History").History;
 let st: typeof import("akanjs/store").st;
 let useAgent: typeof import("use-agentic").useAgent;
 
@@ -23,6 +24,7 @@ beforeAll(async () => {
   const { registerClientRuntime } = await import("akanjs/client");
   registerClientRuntime({ usePage: () => ({ path: "/", lang: "en", l }), fetch: {} });
   ({ Zone } = await import("./Zone"));
+  ({ History } = await import("./History"));
   ({ st } = await import("akanjs/store"));
   ({ useAgent } = await import("use-agentic"));
 });
@@ -131,6 +133,41 @@ describe("Agent.Zone", () => {
     expect(sessions.wizard.surface.call("navigate", { path: "/elsewhere" })).rejects.toThrow("Unknown tool");
     // The surface is shared, so the neighbouring zone must be untouched by what this one withheld.
     expect(roaming[0].tools.map((tool) => tool.name)).toContain("navigate");
+    act(() => root.unmount());
+  });
+
+  test("Agent.History backs the zone's transcript with the app's own store, from a leaf inside it", async () => {
+    const seen: RunnerRequest[] = [];
+    const saved: ChatMessage[][] = [];
+    const held: { session: AgentSession | null } = { session: null };
+    const Probe = () => {
+      held.session = useAgent();
+      return null;
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        <Zone id="draft" runner={runnerOf("A", seen)}>
+          <History
+            clear={() => undefined}
+            load={() => [{ role: "user", text: "from an earlier visit" }]}
+            save={(messages) => void saved.push([...messages])}
+          />
+          <Probe />
+        </Zone>,
+      ),
+    );
+    // Mounted with the zone, so nothing has happened yet and the restore lands.
+    expect(held.session?.messages.map((message) => message.text)).toEqual(["from an earlier visit"]);
+    await act(async () => {
+      await held.session?.send("and now?");
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    expect(saved.at(-1)?.map((message) => message.text)).toEqual(["from an earlier visit", "and now?", "A"]);
     act(() => root.unmount());
   });
 

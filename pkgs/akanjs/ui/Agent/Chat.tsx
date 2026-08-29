@@ -69,6 +69,11 @@ export interface ChatProps {
    * button, a menu item — instead of the built-in launcher. Left off, the panel owns the state as before.
    */
   open?: boolean;
+  /**
+   * Left off while `open` is controlled, the panel cannot close itself — so it draws **no close button** rather
+   * than an inert one. That is the shape of a fixed panel with nowhere to close to, and it is also what keeps a
+   * controlled chat assemblable by a server component, since this is the only prop here that is a function.
+   */
   onOpenChange?: (open: boolean) => void;
   /** `false` draws no launcher, for an app that opens the panel from a control of its own. */
   launcher?: boolean;
