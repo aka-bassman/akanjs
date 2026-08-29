@@ -96,4 +96,73 @@ describe("Agent.Zone", () => {
     expect(screenA).not.toContain("post editor text");
     act(() => root.unmount());
   });
+
+  test("builtins narrows what the runtime contributes to this zone, and only to this zone", async () => {
+    const penned: RunnerRequest[] = [];
+    const roaming: RunnerRequest[] = [];
+    const sessions: Record<string, AgentSession> = {};
+    const Probe = ({ name }: { name: string }) => {
+      sessions[name] = useAgent();
+      return null;
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        <>
+          <Zone builtins={["readScreen", "readState"]} id="wizard" runner={runnerOf("A", penned)}>
+            <Probe name="wizard" />
+          </Zone>
+          <Zone id="free" runner={runnerOf("B", roaming)}>
+            <Probe name="free" />
+          </Zone>
+        </>,
+      ),
+    );
+    await act(async () => {
+      await Promise.all([sessions.wizard.send("stay"), sessions.free.send("go")]);
+    });
+    const penTools = penned[0].tools.map((tool) => tool.name);
+    expect(penTools).toContain("readScreen");
+    expect(penTools).not.toContain("navigate");
+    expect(penTools).not.toContain("goBack");
+    // Withheld, not discouraged: the name is unreachable even when the model names it directly.
+    expect(sessions.wizard.surface.call("navigate", { path: "/elsewhere" })).rejects.toThrow("Unknown tool");
+    // The surface is shared, so the neighbouring zone must be untouched by what this one withheld.
+    expect(roaming[0].tools.map((tool) => tool.name)).toContain("navigate");
+    act(() => root.unmount());
+  });
+
+  test("a session the app hands in is used as-is and survives the zone that rendered it", async () => {
+    const seen: RunnerRequest[] = [];
+    const lib = await import("use-agentic");
+    const { agentSessionOf } = await import("./agentSessionOf");
+    const own = agentSessionOf({ l: (key) => key, view: ["held"], runner: runnerOf("A", seen) });
+    const handed: AgentSession[] = [];
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const Probe = () => {
+      handed.push(useAgent());
+      return null;
+    };
+    act(() =>
+      root.render(
+        <lib.AgentProvider surface={lib.AgenticSurface.shared}>
+          <Zone id="held" onSession={(session) => handed.push(session)} session={own}>
+            <Probe />
+          </Zone>
+        </lib.AgentProvider>,
+      ),
+    );
+    expect(handed.length).toBeGreaterThan(1);
+    expect(handed.every((session) => session === own)).toBe(true);
+    act(() => root.unmount());
+    // The zone never owned it, so unmounting must not have ended a turn the page may still be driving.
+    await act(async () => {
+      await own.send("still usable");
+    });
+    expect(own.messages.at(-1)?.text).toBe("A");
+  });
 });

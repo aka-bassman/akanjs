@@ -7,12 +7,12 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.52 -->
+<!-- akan:agent:version 3.0.0-alpha.54 -->
 
 ## Workspace
 
 - Repo: akanjs
-- Apps: akan, minimal
+- Apps: minimal, akan
 - Libraries: util, shared
 - Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
 
@@ -114,6 +114,17 @@ back.
   the resolved data as a prop. A component is a PascalCase binding whose own initializer is `async`, so an async
   handler declared inside a synchronous component, an inline `onClick={async () => …}`, and
   `lazy(async () => import(…))` are all untouched.
+- **Never call `fetch.init*` from a client file** (`no-init-fetch-in-client.grit`). `fetch.init<Model><Suffix>` and
+  `fetch.get<Model>Init<Suffix>` compose the slice's list and insight queries into the hydration snapshot that
+  `Load.Units` / `Load.View` seed the store from. From a route it resolves before the first byte; after hydration it
+  is two extra round-trips for a shell the browser already painted, landing in a value nothing reads. Load it in the
+  page and pass the result down as an `init` prop — or hand the unawaited promise across — and reload from the client
+  through the generated `st.do.init<Model><Suffix>()`. The gate is the file: the real `"use client"` directive (the
+  same text as a string literal or inside sample code is not one) plus `*.store.ts`, which is client-only by role and
+  carries no directive. The name is matched by shape, since a lint rule cannot know which slices exist: the
+  generated one always carries two capital-led segments (`init` + `Capitalize<refName>` + `Capitalize<suffix>`), so
+  a hand-written `initPayment` is out and `initializeSomething` was never in. `view` / `edit` hydrate alike but are
+  left unmatched — `edit<X>` is a plausible custom endpoint name.
 - `noArrayIndexKey` and `useExhaustiveDependencies` are **off** on purpose: `key={idx}` for embedded scalars and
   short dependency arrays are intentional, not oversights.
 - **A grit plugin diagnostic is suppressed as `lint/plugin`, not `plugin`** — `// biome-ignore lint/plugin: <reason>`
@@ -625,10 +636,13 @@ commands, transcript compaction, and the built-in tool semantics: `get_guideline
   `filter` 0): `title` is the one line a human scans for, `desc` is prose, `tag` is a keyword list, `filter` is a
   scoping value (status, owner, role) that must be matchable but must never outrank a real title hit.
 - `thumb` is mirrored for rendering a hit and is **not** indexed — never expect it to match.
-- **A `secret`, `hidden`, or `resolve()` field with `text` throws at class-build time**, not at query time. That is
-  deliberate: the mirror is plaintext, so an indexed secret would leak through search. Do not work around it. The
-  same throw covers a `text` field *underneath* one of those — a scalar's own field is reachable through its parent,
-  so `f.secret(Noti)` where `Noti.label` carries a role is rejected at the parent, not silently indexed.
+- **`field.secret`, `field.hidden` and `resolve()` take no `text` role — it is a compile error**, because the
+  mirror is plaintext and an indexed secret would leak through search. The class build throws the same refusal as
+  a backstop, for an option object the excess-property check cannot see through, and names the way out: drop the
+  role, or leave the field unmasked. Do not work around either. The throw also covers a `text` field *underneath*
+  one of those — a scalar's own field is reachable through its parent, so `f.secret(Noti)` where `Noti.label`
+  carries a role is rejected at the parent, not silently indexed; that one is only reachable at runtime, since the
+  pairing spans two files.
 - The role works on a relation too (`image: field(File, { text: "thumb" })`) and on an array (`playing: field([String],
   { text: "tag" })`); an array of objects indexes by leaf key, including an array leaf (`works[*].tags`). A field
   inside a `Map` indexes nothing: there is no fixed path to extract it from.

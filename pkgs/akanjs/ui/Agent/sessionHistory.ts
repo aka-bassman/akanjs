@@ -30,9 +30,17 @@ const withoutContent = (message: ChatMessage): ChatMessage =>
  * why the cap is applied *before* the pairing repair: the window it keeps can start between a tool call and the
  * result answering it, and a transcript restored in that state is refused by the provider on its first turn.
  */
-export const sessionHistoryOf = (persist: PersistOption | undefined, pathKey = ""): SessionHistory | undefined => {
-  if (!persist || typeof window === "undefined") return undefined;
-  const option = persist === true ? {} : persist;
+export const sessionHistoryOf = (
+  persist: PersistOption | SessionHistory | undefined,
+  pathKey = "",
+): SessionHistory | undefined => {
+  if (!persist) return undefined;
+  // A host that brought its own store is handed straight back: `load` is what only a `SessionHistory` has, and the
+  // web-storage branch below is exactly the thing such a host is replacing, window or no window.
+  if (typeof persist === "object" && typeof (persist as SessionHistory).load === "function")
+    return persist as SessionHistory;
+  if (typeof window === "undefined") return undefined;
+  const option = persist === true ? {} : (persist as Exclude<PersistOption, boolean>);
   const storage = option.storage === "local" ? window.localStorage : window.sessionStorage;
   const key = option.key ?? `akan.agent.${getEnv().appName}${pathKey ? `.${pathKey}` : ""}`;
   const version = 1;

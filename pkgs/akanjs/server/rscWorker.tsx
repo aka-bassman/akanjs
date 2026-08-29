@@ -552,7 +552,6 @@ export class RscRenderer {
           });
           return;
         }
-        const theme = untrackedCookies().get("theme")?.value;
         let element: ReactNode;
         let effectivePatchDecision = safePatchDecision;
         if (match && safePatchDecision.status === "patch" && safePatchDecision.patch) {
@@ -568,9 +567,9 @@ export class RscRenderer {
               reason: "suffix-compose-fallback",
               commonPrefixLength: safePatchDecision.commonPrefixLength,
             };
-            element = await this.#renderMatched(urlObj, match, theme, searchParams);
+            element = await this.#renderMatched(urlObj, match, searchParams);
           } else element = suffixElement;
-        } else if (match) element = await this.#renderMatched(urlObj, match, theme, searchParams);
+        } else if (match) element = await this.#renderMatched(urlObj, match, searchParams);
         else element = await this.#renderNotFound(urlObj);
         const traceCacheKey =
           effectivePatchDecision.status === "patch" ? (patchCacheEntry?.key ?? cacheEntry?.key) : cacheEntry?.key;
@@ -1247,12 +1246,8 @@ export class RscRenderer {
     const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead, {
       hasExplicitLanguageAlternates: routeHead.hasExplicitLanguageAlternates,
     });
-    const theme = untrackedCookies().get("theme")?.value;
     return (
-      <html
-        lang={params.lang ?? RscRenderer.#getLocale(pathname, this.#i18n)}
-        {...(theme ? { "data-theme": theme } : { suppressHydrationWarning: true })}
-      >
+      <html lang={params.lang ?? RscRenderer.#getLocale(pathname, this.#i18n)} suppressHydrationWarning>
         <head key="head">
           <meta key="charset" charSet="utf-8" />
           <meta key="viewport" name="viewport" content="width=device-width, initial-scale=1" />
@@ -1274,7 +1269,6 @@ export class RscRenderer {
   async #renderMatched(
     url: URL,
     match: { pathRoute: PathRoute; params: Record<string, string> },
-    theme?: string,
     searchParams = RouteTreeBuilder.parseSearchParams(url.search),
   ): Promise<ReactNode> {
     this.#logger.verbose(
@@ -1300,11 +1294,9 @@ export class RscRenderer {
       searchParams,
       navKey: url.pathname + url.search,
     });
+    // Cookie theme is applied on the HTML stream and by the client so RSC cache cannot replay a stale data-theme.
     return (
-      <html
-        lang={match.params.lang ?? this.#i18n.defaultLocale}
-        {...(theme ? { "data-theme": theme } : { suppressHydrationWarning: true })}
-      >
+      <html lang={match.params.lang ?? this.#i18n.defaultLocale} suppressHydrationWarning>
         <head key="head">
           <meta key="charset" charSet="utf-8" />
           <meta key="viewport" name="viewport" content="width=device-width, initial-scale=1" />

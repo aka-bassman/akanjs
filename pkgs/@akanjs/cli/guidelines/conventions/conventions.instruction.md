@@ -96,6 +96,17 @@ back.
   the resolved data as a prop. A component is a PascalCase binding whose own initializer is `async`, so an async
   handler declared inside a synchronous component, an inline `onClick={async () => …}`, and
   `lazy(async () => import(…))` are all untouched.
+- **Never call `fetch.init*` from a client file** (`no-init-fetch-in-client.grit`). `fetch.init<Model><Suffix>` and
+  `fetch.get<Model>Init<Suffix>` compose the slice's list and insight queries into the hydration snapshot that
+  `Load.Units` / `Load.View` seed the store from. From a route it resolves before the first byte; after hydration it
+  is two extra round-trips for a shell the browser already painted, landing in a value nothing reads. Load it in the
+  page and pass the result down as an `init` prop — or hand the unawaited promise across — and reload from the client
+  through the generated `st.do.init<Model><Suffix>()`. The gate is the file: the real `"use client"` directive (the
+  same text as a string literal or inside sample code is not one) plus `*.store.ts`, which is client-only by role and
+  carries no directive. The name is matched by shape, since a lint rule cannot know which slices exist: the
+  generated one always carries two capital-led segments (`init` + `Capitalize<refName>` + `Capitalize<suffix>`), so
+  a hand-written `initPayment` is out and `initializeSomething` was never in. `view` / `edit` hydrate alike but are
+  left unmatched — `edit<X>` is a plausible custom endpoint name.
 - `noArrayIndexKey` and `useExhaustiveDependencies` are **off** on purpose: `key={idx}` for embedded scalars and
   short dependency arrays are intentional, not oversights.
 - **A grit plugin diagnostic is suppressed as `lint/plugin`, not `plugin`** — `// biome-ignore lint/plugin: <reason>`

@@ -159,6 +159,15 @@ export class AgenticSurface {
     return null;
   }
 
+  /**
+   * Whether a *mounted component* declares this name — a source's contribution answers `false`. The distinction is
+   * what lets a host drop the built-in tools without dropping a screen's own tool that deliberately shadows one.
+   */
+  declares(name: string, view: string[] = []): boolean {
+    const stack = this.#tools.get(name);
+    return !!stack?.length && AgenticSurface.#within(view.join("."), name);
+  }
+
   /** Every call made through this surface, oldest first. What the dock shows the user to check against the screen. */
   get transcript(): readonly AgentCall[] {
     return this.#calls;

@@ -27,6 +27,14 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   cannot spend the LLM key.
   `persist` keeps the transcript across reloads (sessionStorage; `{ storage: "local" }` to outlive the tab),
   default off, and `shortcut={false}` gives the browser back the Cmd/Ctrl+L the launcher otherwise captures.
+  **`persist` also takes a `SessionHistory` of the app's own** — `{ load, save, clear }` — which is how a
+  transcript lives on a server instead of in web storage. All three may answer asynchronously; a `load` still in
+  flight when the user sends the first message is **dropped, not merged**, because the conversation on screen is
+  the one they are having — which makes **sending on mount a race the restore loses**, so an opening prompt waits
+  for `session.isRestoring` to clear or goes into `defaultDraft` and lets the user send it. Saves are chained rather than fired per change, so a slow store cannot land an older
+  transcript last. **Every session option on the chat — `runner`, `instructions`, `maxTurns`, `compact`,
+  `builtins`, `persist`, `onCompact` — is ignored when an enclosing `Agent.Zone` or `AgentProvider` already holds
+  a session**: the chat binds to that one, and the options belong to whoever built it.
   **A session the chat made ends when the chat unmounts** — nothing renders its approvals once it is gone, so a
   turn left running would drive a screen the user has navigated away from; a session handed down by an
   `AgentProvider` or an `Agent.Zone` belongs to whoever provided it.
@@ -34,7 +42,10 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `open` / `onOpenChange` drive it from the app's own control (`launcher={false}` then draws no launcher of its
   own), `launcherClassName` / `panelClassName` reach one surface each where `className` reaches both, `intro`
   replaces the empty-state line — where starter questions go — and `header` adds controls beside the built-in
-  clear and close. Then the slots: `AgentLauncher`, `AgentBubble`, `AgentComposer`, `AgentApproval`,
+  clear and close. `chrome={false}` drops the header bar whole, for an `inline` chat inside a panel the app
+  already titles, and `defaultDraft` opens the composer with text in it without sending it. A panel driven by a
+  controlled `open` with **no** `onOpenChange` draws no close button at all rather than an inert one. Then the
+  slots: `AgentLauncher`, `AgentBubble`, `AgentComposer`, `AgentApproval`,
   `AgentQuestion`, `AgentMenu`, `AgentMarkdown` and `AgentCode` each replace one part in `_overrides.tsx`, and
   `akanjs/ui` exports every default beside them (`DefaultBubble`, `DefaultComposer`, …) so a skin composes the
   one it is replacing. `AgentCode` is where a highlighter binds — the fence's language reaches it — and a
@@ -112,6 +123,24 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `data-agent-zone` container; guides follow the layout cascade (ancestors and own, never a sibling's). Zone
   membership is positional — there is no per-declaration zone key, so a lib component joins whatever zone the app
   mounts it in.
+- **`builtins` decides which of the runtime's own tools a session gets** — all of them by default, `false` none,
+  an array exactly the ones it names, on `Agent.Zone` and `Agent.Chat` alike. A zone whose conversation must stay
+  on one screen takes `navigate` and `goBack` off it: `<Agent.Zone id="wizard" builtins={["readScreen",
+  "readState"]}>`. The tools are **withheld, not discouraged** — a withheld name answers the same "unknown tool"
+  a name that was never registered gets, so no prompt can talk the model past it, and the narrowing is the
+  session's alone: the surface is shared, and the neighbouring zone still navigates. Shadowing a built-in by
+  declaring a hook tool of the same name works at the root and **not inside a zone**, where the hook entry is
+  registered under its scope-prefixed name and never collides — `builtins` is the zone's answer. A tool the screen
+  declares under a built-in name is the screen's, not the runtime's, so `builtins={false}` leaves it standing.
+- **A zone can be handed a session instead of building one**: `<Agent.Zone session={mine} onSession={…}>`. The app
+  then owns it, so unmounting the zone leaves it running — the opposite of a session the zone made, which it
+  aborts. `onSession` fires either way, for a page that wants to send into the conversation from outside it.
+- **`akanjs/ui` exports what a custom transport or transcript needs**, so no app reaches into the package's
+  internals: `httpRunner` (the wire the default runner speaks — point it at an endpoint of the app's own and
+  streaming is kept), `fetchRunner` (the default, to wrap), `AgentSession`, `AgentProvider`, and the
+  `AgentRunner` / `RunnerRequest` / `RunnerEvent` / `ChatMessage` / `SessionHistory` / `PublishedTool` /
+  `ContextBlock` types. `onCompact(replaced, summary)` reports a compaction's cut, for a host that keeps a
+  server-side summary and has to move its own watermark to the same place.
 - **Route guidance is `<Agent.Guide instructions="..." />`** rendered from a `_layout.tsx` or a page — the render
   tree is the cascade: nested Guides concatenate outer-to-inner and navigating away withdraws them. It is a
   component, not a pageConfig field. Module `*.abstract.md` files are developer docs and are never served to the
@@ -386,7 +415,8 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
 ## Built-In Tools
 - The framework publishes five built-ins on every store surface: `navigate` (internal paths only, the same
   router `Link` rides), `goBack` (this session's history — global, because history is not a control a page owns and
-  a page that draws no back link is not one you may not leave), `readScreen` (the rendered DOM as compact text —
+  a page that draws no back link is not one you may not leave — a screen that must not be left withholds them
+  with `builtins`, not with prose), `readScreen` (the rendered DOM as compact text —
   headings, links, control values, and `(disabled)` on a control or button that has it; the chat's own UI is
   skipped via `data-agent-ui`, and a password value is never read), `readState(key)` (one masked store key), and
   `highlight(target)`. Declaring a hook tool under one of those names shadows the built-in, so reuse them only to

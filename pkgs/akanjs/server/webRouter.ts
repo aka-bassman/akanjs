@@ -616,7 +616,8 @@ export class WebRouter {
           if (rscResult.type === "redirect")
             return Response.redirect(new URL(rscResult.location, url.origin), rscResult.status);
           if (rscResult.type === "not-found") return this.#renderSystemNotFoundFallbackResponse(req, url);
-          const themeCookieExists = WebRouter.#hasCookie(req, "theme");
+          // First-paint data-theme: cookie is no longer a React <html> prop (RSC cache would replay it).
+          const cookieTheme = WebRouter.#cookieValue(req, "theme");
           const hostRequestStore = createRequestStore(req);
           const extraBootstrapInline = [
             rscResult.trace?.routeState
@@ -634,7 +635,7 @@ export class WebRouter {
             bootstrapModules: [this.#artifact.rscClientUrl],
             extraBootstrapInline: extraBootstrapInline || undefined,
             importmap: this.#artifact.vendorMap,
-            theme: themeCookieExists ? undefined : (rscResult.theme ?? "system"),
+            theme: cookieTheme ?? rscResult.theme ?? "system",
             lateControl: rscResult.lateControl,
             waitForAllReady: rscResult.trace?.ssrBlocking ?? false,
             onCancel: (reason: unknown) => {
@@ -803,9 +804,6 @@ export class WebRouter {
     }
   }
 
-  static #hasCookie(req: Request, name: string): boolean {
-    return parseCookieHeader(req.headers.get("cookie") ?? "").has(name);
-  }
   #getHtmlCacheEntry(req: Request, url: URL): { entry: RouteCacheEntry | null; reason?: string } {
     const decision = resolvePublicRouteCacheEntryDecision({
       request: req,

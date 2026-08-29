@@ -37,11 +37,20 @@ export interface PendingQuestion {
   dismiss: (reason?: string) => void;
 }
 
-/** Where a session keeps its transcript across page loads. Storage-neutral: the host decides what backs it. */
+/**
+ * Where a session keeps its transcript across page loads. Storage-neutral: the host decides what backs it, so a
+ * server-side transcript is as legal as web storage — which is why every method may answer asynchronously. A
+ * `load` still in flight when the user sends the first message is dropped rather than merged: the conversation
+ * on screen is the one they are having, and splicing a restored one under it would rewrite what they just said.
+ *
+ * Which makes **sending on mount a race the restore loses** — an opening prompt fired from an effect beats the
+ * fetch, and the user watches the conversation they came back to never arrive. Wait for `isRestoring` to clear,
+ * or write the prompt into the composer and leave the send to them.
+ */
 export interface SessionHistory {
-  load(): ChatMessage[] | null;
-  save(messages: readonly ChatMessage[]): void;
-  clear(): void;
+  load(): ChatMessage[] | null | Promise<ChatMessage[] | null>;
+  save(messages: readonly ChatMessage[]): void | Promise<void>;
+  clear(): void | Promise<void>;
 }
 
 export interface AgentSessionOptions {
@@ -49,7 +58,11 @@ export interface AgentSessionOptions {
   buildContext?: (surface: SurfaceView) => ContextBlock[];
   /** Assistant turns per send before the session asks whether to keep going, or stops. */
   maxTurns?: number;
-  /** Restores settled messages at construction and saves after every change, debounced. Failures are silent. */
+  /**
+   * Restores settled messages at construction and saves after every change, debounced. Failures are silent, and
+   * saves are chained rather than issued in parallel — an async host would otherwise land them out of order and
+   * persist an older transcript last.
+   */
   history?: SessionHistory;
   /**
    * Awaited after a tool that changed something and before its change report is taken. A surface is read
@@ -68,6 +81,15 @@ export interface AgentSessionOptions {
    * few messages is replaced by one summary of itself, before the turn that would have overflowed is sent.
    */
   compact?: CompactOptions;
+  /**
+   * Fires after a compaction replaced `replaced` with `summary`. A host that keeps its own server-side summary
+   * uses it to move its watermark to the same cut, so the two do not summarize the same messages twice.
+   *
+   * It matters most to a host whose watermark is a *position*: compaction shrinks the transcript in place, so a
+   * "sync everything past index N" scheme silently stops syncing once N is past the shortened array — no
+   * duplicate, no error, just messages that never reach the server. Reset the mark here.
+   */
+  onCompact?: (replaced: readonly ChatMessage[], summary: ChatMessage) => void;
 }
 
 /**
@@ -115,6 +137,8 @@ export class AgentSession {
   #version = 0;
   #listeners = new Set<() => void>();
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
+  #saving: Promise<unknown> = Promise.resolve();
+  #restoring = false;
   #compacting = false;
   /** Size below which auto-compaction stays out of the way, raised when a summary failed to shrink anything. */
   #compactFloor = 0;
@@ -123,7 +147,20 @@ export class AgentSession {
     this.#surface = surface;
     this.#runner = runner;
     this.#options = options;
-    this.#messages = AgentSession.#restored(options.history);
+    const restored = AgentSession.#restored(options.history);
+    if (Array.isArray(restored)) this.#messages = restored;
+    else {
+      this.#restoring = true;
+      void this.#hydrate(restored);
+    }
+  }
+
+  /**
+   * True while an async `history.load()` is still in flight — the transcript is empty but not yet known to be.
+   * A host that opens with a prompt of its own waits for this before sending, or the restore loses the race.
+   */
+  get isRestoring() {
+    return this.#restoring;
   }
 
   get surface(): SurfaceView {
@@ -243,7 +280,7 @@ export class AgentSession {
   /**
    * Empties the transcript and the persisted history, ending a turn that is still running. Awaiting the abort
    * matters: the loop settles in its own `finally`, a microtask later, and a transcript emptied before that lands
-   * is one the winding-down turn appends onto.
+   * is one the winding-down turn appends onto. The returned promise waits for the history to clear too.
    */
   reset = async () => {
     if (this.#active) {
@@ -257,10 +294,12 @@ export class AgentSession {
       clearTimeout(this.#saveTimer);
       this.#saveTimer = null;
     }
-    try {
-      this.#options.history?.clear();
-    } catch {
-      // History is best-effort; a full or blocked storage never breaks the chat.
+    const history = this.#options.history;
+    if (history) {
+      // Chained behind the pending saves so a clear can never be overtaken by one queued before it, and awaited
+      // so the returned promise means what it says: an async host has cleared by the time this resolves.
+      this.#saving = this.#saving.then(() => history.clear()).catch(() => undefined);
+      await this.#saving;
     }
     this.#version += 1;
     for (const listener of this.#listeners) listener();
@@ -340,7 +379,14 @@ export class AgentSession {
     try {
       const summary = (await this.#summarize(Compaction.digest(this.#messages.slice(0, at)), signal)).trim();
       if (!summary || signal.aborted) return false;
-      this.#messages = [Compaction.message(summary), ...this.#messages.slice(at)];
+      const replaced = this.#messages.slice(0, at);
+      const message = Compaction.message(summary);
+      this.#messages = [message, ...this.#messages.slice(at)];
+      try {
+        this.#options.onCompact?.(replaced, message);
+      } catch {
+        // A host that fails to record the cut does not undo one the transcript has already taken.
+      }
       return true;
     } finally {
       this.#compacting = false;
@@ -628,23 +674,44 @@ export class AgentSession {
     if (this.#saveTimer) clearTimeout(this.#saveTimer);
     this.#saveTimer = setTimeout(() => {
       this.#saveTimer = null;
-      try {
-        history.save(this.#messages);
-      } catch {
-        // History is best-effort; a full or blocked storage never breaks the chat.
-      }
+      // Chained, not fired: an async host save issued per change would race, and the loser writing last would
+      // persist the older transcript. Reading `#messages` at run time also collapses a queued pair into one save.
+      this.#saving = this.#saving.then(() => history.save(this.#messages)).catch(() => undefined);
     }, 300);
   }
 
-  static #restored(history: SessionHistory | undefined): ChatMessage[] {
+  /** Sync for the storage case, a promise for a host that fetches — the constructor takes whichever it gets. */
+  static #restored(history: SessionHistory | undefined): ChatMessage[] | Promise<ChatMessage[]> {
     if (!history) return [];
     try {
       const messages = history.load();
-      if (!Array.isArray(messages)) return [];
-      // A reload mid-turn leaves both an assistant draft that never settled and calls nothing answered.
-      return Transcript.sanitize(messages);
+      if (messages instanceof Promise) return messages.then(AgentSession.#settled, () => []);
+      return AgentSession.#settled(messages);
     } catch {
       return [];
     }
+  }
+
+  static #settled(messages: ChatMessage[] | null): ChatMessage[] {
+    // A reload mid-turn leaves both an assistant draft that never settled and calls nothing answered.
+    return Array.isArray(messages) ? Transcript.sanitize(messages) : [];
+  }
+
+  /**
+   * Lands an async restore, and only into a session nothing has happened to yet: `#version` is still 0 exactly
+   * while the transcript is untouched, so a user who sent a message — or cleared the chat — during the fetch keeps
+   * what they did. Notifies by hand rather than through `#notify`, which would save the transcript it just loaded.
+   */
+  async #hydrate(pending: Promise<ChatMessage[]>) {
+    let restored: ChatMessage[] = [];
+    try {
+      restored = await pending;
+    } catch {
+      // History is best-effort; a transcript that cannot be fetched leaves the chat starting empty.
+    }
+    this.#restoring = false;
+    if (this.#version === 0 && restored.length) this.#messages = restored;
+    this.#version += 1;
+    for (const listener of this.#listeners) listener();
   }
 }

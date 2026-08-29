@@ -1,6 +1,13 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
-import type { ChatMessage } from "use-agentic";
+import type { ChatMessage, SessionHistory } from "use-agentic";
+
+// The web-storage branch loads synchronously; only a host's own history may answer with a promise.
+const stored = (history: SessionHistory | undefined): ChatMessage[] | null => {
+  const loaded = history?.load() ?? null;
+  if (loaded instanceof Promise) throw new Error("expected a synchronous web-storage load");
+  return loaded;
+};
 
 let sessionHistoryOf: typeof import("./sessionHistory").sessionHistoryOf;
 
@@ -19,9 +26,9 @@ describe("sessionHistoryOf", () => {
     const messages: ChatMessage[] = [{ role: "user", text: "hi" }];
     history.save(messages);
     expect(window.sessionStorage.getItem("akan.agent.historytest")).toContain('"hi"');
-    expect(history.load()).toEqual(messages);
+    expect(stored(history)).toEqual(messages);
     history.clear();
-    expect(history.load()).toBeNull();
+    expect(stored(history)).toBeNull();
   });
 
   test("a zone path keys its own entry, and local storage is the explicit opt-up", () => {
@@ -38,15 +45,30 @@ describe("sessionHistoryOf", () => {
   test("a stale version envelope is discarded instead of replayed", () => {
     window.sessionStorage.setItem("akan.agent.historytest", JSON.stringify({ v: 0, messages: [{ role: "user" }] }));
     const history = sessionHistoryOf(true);
-    expect(history?.load()).toBeNull();
+    expect(stored(history)).toBeNull();
     window.sessionStorage.removeItem("akan.agent.historytest");
+  });
+
+  test("a host's own history is handed back untouched, cap and attachment stripping included", async () => {
+    const saved: ChatMessage[][] = [];
+    const own: SessionHistory = {
+      load: async () => [{ role: "user", text: "from the server" }],
+      save: (messages) => void saved.push([...messages]),
+      clear: () => undefined,
+    };
+    const history = sessionHistoryOf(own, "server");
+    expect(history).toBe(own);
+    expect(await history?.load()).toEqual([{ role: "user", text: "from the server" }]);
+    history?.save([{ role: "user", text: "kept whole" }]);
+    expect(saved).toEqual([[{ role: "user", text: "kept whole" }]]);
+    expect(window.sessionStorage.getItem("akan.agent.historytest.server")).toBeNull();
   });
 
   test("only the newest messages survive the cap", () => {
     const history = sessionHistoryOf(true, "cap");
     const many: ChatMessage[] = Array.from({ length: 60 }, (_, idx) => ({ role: "user", text: `m${idx}` }));
     history?.save(many);
-    const loaded = history?.load();
+    const loaded = stored(history);
     expect(loaded).toHaveLength(50);
     expect(loaded?.[0]?.text).toBe("m10");
     history?.clear();
@@ -68,7 +90,7 @@ describe("sessionHistoryOf", () => {
     const raw = window.sessionStorage.getItem("akan.agent.historytest.attach") ?? "";
     expect(raw).not.toContain("AAAA");
     expect(raw).not.toContain("a very long extraction");
-    expect(history?.load()?.[0]?.attachments).toEqual([
+    expect(stored(history)?.[0]?.attachments).toEqual([
       { name: "shot.png", mimeType: "image/png" },
       { name: "spec.pdf", mimeType: "application/pdf" },
       { name: "hosted.png", mimeType: "image/png", url: "https://cdn/hosted.png" },
@@ -92,7 +114,7 @@ describe("sessionHistoryOf", () => {
           : { role: "assistant", toolCalls: [{ id: `c${at + 1}`, name: "bump", args: {} }] },
       );
     history.save(long);
-    const kept = history.load() ?? [];
+    const kept = stored(history) ?? [];
     const calls = kept.flatMap((message) => message.toolCalls ?? []).map((call) => call.id);
     const answers = kept.flatMap((message) => message.toolResults ?? []).map((result) => result.id);
     // Nothing restored answers a call the window cut away, and nothing restored is left unanswered.

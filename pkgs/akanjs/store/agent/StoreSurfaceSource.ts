@@ -13,13 +13,21 @@ import { ScreenTarget } from "./ScreenTarget";
  *
  * Per zone view: a zone's `readState` reaches the keys its own subtree subscribes, and its `readScreen` and
  * `highlight` reach into its own `data-agent-zone` container rather than the whole document. A page can shadow any
- * of them by registering a hook tool of the same name — hook entries win over a source's.
+ * of them by registering a hook tool of the same name — hook entries win over a source's. **That is a root-scope
+ * move only**: inside a zone the hook entry is registered under its scope-prefixed name, which can never collide
+ * with the bare name a source publishes, so a zone drops a built-in with the session's `builtins` option instead.
  */
 export class StoreSurfaceSource implements SurfaceSource {
   /** Defined in `akanjs/ui/styles.css`, so the flash follows the app's own theme tokens. */
   static readonly highlightClass = "akan-agent-highlight";
   /** Mirrors the animation in that stylesheet: the class outlives the ring by nothing. */
   static readonly highlightMs = 2400;
+  /**
+   * What `tools()` contributes, in the order it builds them — the list a session's `builtins` option selects from.
+   * A screen that declares a hook tool of one of these names is not in it: that entry is the screen's, not this
+   * source's, so withholding the built-ins never withholds a tool a component published on purpose.
+   */
+  static readonly builtins = ["navigate", "goBack", "readScreen", "readState", "highlight"] as const;
 
   #bridge: AgentBridge | null;
   readonly #builtins = new Map<string, ToolEntry[]>();

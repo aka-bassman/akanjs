@@ -290,7 +290,9 @@ export class CloudRunner extends runner("cloud") {
         return;
       }
     }
-
+    Logger.info("Logging in to npm...");
+    await workspace.spawn("npm", ["login"], { stdio: "inherit" });
+    Logger.info("Logged in to npm");
     for (const library of akanPkgs) {
       Logger.info(`Publishing ${library}@${nextVersion} to ${registry ?? "npm"}...`);
       await workspace.spawn(

@@ -530,6 +530,52 @@ describe("Agent.Chat", () => {
     unmount();
   });
 
+  test("chrome={false} drops the whole header bar, leaving the transcript and composer", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat chrome={false} defaultOpen header={<span>HEADER</span>} inline />
+      </lib.AgentProvider>,
+    );
+    expect(container.querySelector("header")).toBeNull();
+    expect(container.innerHTML).not.toContain("HEADER");
+    expect(container.querySelector("textarea")).not.toBeNull();
+    unmount();
+  });
+
+  test("a panel the app controls without listening draws no close button instead of an inert one", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat inline open />
+      </lib.AgentProvider>,
+    );
+    expect(container.querySelector('button[aria-label="base.cancel"]')).toBeNull();
+    unmount();
+    const heard: boolean[] = [];
+    const listening = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat inline onOpenChange={(next) => heard.push(next)} open />
+      </lib.AgentProvider>,
+    );
+    const close = document.body.querySelector<HTMLButtonElement>('button[aria-label="base.cancel"]');
+    act(() => close?.click());
+    expect(heard).toEqual([false]);
+    listening.unmount();
+  });
+
+  test("defaultDraft opens with the composer already written in, and sends nothing on its own", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultDraft="summarize this page" defaultOpen />
+      </lib.AgentProvider>,
+    );
+    expect(container.querySelector("textarea")?.value).toBe("summarize this page");
+    expect(session.messages).toEqual([]);
+    unmount();
+  });
+
   test("Shift+Enter writes a newline instead of sending, and the arrows then belong to the textarea", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
     const { container, unmount } = mount(
