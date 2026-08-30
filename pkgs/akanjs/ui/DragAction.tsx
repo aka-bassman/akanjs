@@ -3,8 +3,9 @@ import { useGesture } from "@use-gesture/react";
 import type { ReactDOMAttributes } from "@use-gesture/react/dist/declarations/src/types";
 import { cn } from "akanjs/client";
 import { animated } from "akanjs/ui";
-import { createContext, type ReactNode, useContext, useRef } from "react";
+import { type ReactNode, useContext, useRef } from "react";
 import { SpringValue, useSpring } from "react-spring";
+import { sharedContext } from "../client/sharedContext";
 
 interface DragActionContextType {
   bind: () => ReactDOMAttributes;
@@ -17,7 +18,7 @@ interface DragActionContextType {
   onClick?: () => void;
 }
 
-const DragActionContext = createContext<DragActionContextType>({
+const DragActionContext = sharedContext<DragActionContextType>("dragAction", {
   bind: () => ({}),
   x: new SpringValue(0),
   y: new SpringValue(0),

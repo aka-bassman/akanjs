@@ -146,7 +146,9 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   and it renders nothing. Restoring follows the session's one rule — it lands only while nothing has happened to
   the conversation yet — so mounting with the zone restores and mounting later saves from there on, with the
   store never asked for a transcript that would be discarded. `session.setHistory` / `setOnCompact` are the same
-  thing for a session an app built itself.
+  thing for a session an app built itself — and are what a host calls when the store must outlive the view, since
+  the component's store lives exactly as long as the component. A zone's own session dies with it either way; one
+  the app handed in through `session` does not, and its saving stops when the `Agent.History` unmounts.
 - **A zone can be handed a session instead of building one**: `<Agent.Zone session={mine} onSession={…}>`. The app
   then owns it, so unmounting the zone leaves it running — the opposite of a session the zone made, which it
   aborts. `onSession` fires either way, for a page that wants to send into the conversation from outside it.

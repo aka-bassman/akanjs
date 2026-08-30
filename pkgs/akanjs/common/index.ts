@@ -39,6 +39,7 @@ export {
 export { mergeVersion } from "./mergeVersion";
 export { objectify } from "./objectify";
 export { pathGet } from "./pathGet";
+export { pathGetLoose } from "./pathGetLoose";
 export { pathSet } from "./pathSet";
 export { randomPick } from "./randomPick";
 export { randomPicks } from "./randomPicks";

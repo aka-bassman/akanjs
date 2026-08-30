@@ -622,6 +622,21 @@ describe("AgentSession history", () => {
     expect(state.saves).toBe(1);
   });
 
+  test("whoever attached last owns the slot, and a stale detach leaves it alone", async () => {
+    const first = memoryHistory();
+    const second = memoryHistory();
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {});
+    const detachFirst = session.setHistory(first.history);
+    session.setHistory(second.history);
+    // The order a remount arrives in: the newcomer is already installed when the old one's cleanup runs.
+    detachFirst();
+    session.note("after the handover");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(second.state.saves).toBe(1);
+    expect(first.state.saves).toBe(0);
+    expect(second.state.stored?.map((message) => message.text)).toEqual(["after the handover"]);
+  });
+
   test("an attached async history reports while it loads, exactly as a constructed one does", async () => {
     const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {});
     const pending = Promise.resolve([{ role: "user" as const, text: "from the server" }]);

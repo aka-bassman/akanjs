@@ -1,5 +1,6 @@
 "use client";
-import { createContext, type RefObject } from "react";
+import type { RefObject } from "react";
+import { sharedContext } from "../../client/sharedContext";
 
 interface TabContextType {
   defaultMenu: string | null;
@@ -10,7 +11,7 @@ interface TabContextType {
   switchTab: (menu: string) => void;
 }
 
-export const TabContext = createContext<TabContextType>({
+export const TabContext = sharedContext<TabContextType>("tab", {
   defaultMenu: null,
   menu: null,
   setMenu: (value: string | null) => null,

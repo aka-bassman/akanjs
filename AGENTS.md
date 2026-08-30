@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.54 -->
+<!-- akan:agent:version 3.0.0-alpha.59 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -442,6 +442,12 @@ workflow changes.
 - **A filter may not be keyed after its own model.** Filter methods are assigned after CRUD, so a filter `chat` on
   model `chat` would silently swap the single-document `removeChat`/`updateChat` for a hookless query-level one. It
   throws at boot instead (`assertFilterFitsCrud`).
+- **"Has no value" is `q.empty`, never `q.missing`.** The three absence operators are distinct: `q.exists` is the
+  key being present, `q.missing` is the key being *absent from the stored JSON*, and `q.empty` is either — absent,
+  or present and null. An optional field is written both ways over its life: an insert that omits it leaves the key
+  out, while a document read back and saved carries the explicit `null` that the read materialized. So `q.missing`
+  matches a freshly inserted row and silently stops matching that same row after its first round-trip save. Reach
+  for it only to find rows written before the field was declared.
 
 ### Text Search In A Filter — `q.search()`
 

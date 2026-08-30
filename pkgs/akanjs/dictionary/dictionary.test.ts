@@ -32,7 +32,7 @@ type TestFilter = {
 };
 type TestEnum = {
   refName: "dictionaryTestStatus";
-  value: "active" | "archived";
+  value: "active" | "archived" | "v1.2-legacy";
 };
 type TestSlice = {
   active: SliceInfo<
@@ -267,6 +267,12 @@ const modelDict = modelDictionary(languages)
       "已归档状态",
       "アーカイブ済み状態",
     ]),
+    "v1.2-legacy": t(["V1.2 Legacy", "V1.2 레거시", "V1.2 旧版", "V1.2 レガシー"]).desc([
+      "Legacy v1.2 status",
+      "레거시 v1.2 상태",
+      "旧版 v1.2 状态",
+      "レガシー v1.2 状態",
+    ]),
   }))
   .applyBaseSignal("dictionaryTestItem")
   .slice<TestSlice>((fn) => ({
@@ -387,6 +393,11 @@ describe("makeTrans", () => {
     expect(trans.translate("ko", "dictionaryTestStatus.archived.desc" as never)).toBe("보관된 상태");
     expect(trans.translate("zhChs", "dictionaryTestStatus.active.desc" as never)).toBe("启用状态");
     expect(trans.translate("ja", "dictionaryTestStatus.archived" as never)).toBe("アーカイブ済み");
+
+    // An enum value is a real-world identifier, so a dotted one must not be read as a path into the tree.
+    expect(trans.translate("en", "dictionaryTestStatus.v1.2-legacy" as never)).toBe("V1.2 Legacy");
+    expect(trans.translate("ko", "dictionaryTestStatus.v1.2-legacy.desc" as never)).toBe("레거시 v1.2 상태");
+    expect(trans.translate("en", "dictionaryTestStatus.v1" as never)).toBe("dictionaryTestStatus.v1");
 
     expect(trans.translate("en", "dictionaryTestItem.signal.createDictionaryTestItem" as never)).toBe(
       "Create DictionaryTestItem",

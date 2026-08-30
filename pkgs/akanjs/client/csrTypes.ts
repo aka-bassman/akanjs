@@ -1,9 +1,10 @@
 "use client";
 import type { ReactDOMAttributes } from "@use-gesture/react/dist/declarations/src/types";
 import type { PromiseOrObject } from "akanjs/base";
-import { createContext, type ForwardRefExoticComponent, type ReactNode, type RefObject, useContext } from "react";
+import { type ForwardRefExoticComponent, type ReactNode, type RefObject, useContext } from "react";
 import type { AnimatedComponent, AnimatedProps, Interpolation, SpringValue } from "react-spring";
 import type { RouterInstance } from "./router";
+import { sharedContext } from "./sharedContext";
 import type { ReactFont } from "./types";
 
 export type TransitionType = "none" | "fade" | "bottomUp" | "stack" | "scaleOut";
@@ -355,7 +356,7 @@ export type UseCsrTransition = CsrTransitionStyles & {
 };
 
 export type CsrContextType = RouteState & UseCsrTransition;
-export const csrContext = createContext<CsrContextType>({} as unknown as CsrContextType);
+export const csrContext = sharedContext<CsrContextType>("csr", {} as unknown as CsrContextType);
 export const useCsr = () => {
   const contextValues = useContext(csrContext);
   return contextValues;
@@ -369,7 +370,7 @@ export interface PathContextType {
   setGestureEnabled: (enabled: boolean) => void;
   registerFrameSlot: (slot: FrameSlotRegistration) => () => void;
 }
-export const pathContext = createContext<PathContextType>({} as unknown as PathContextType);
+export const pathContext = sharedContext<PathContextType>("path", {} as unknown as PathContextType);
 export const usePathCtx = () => {
   const contextValues = useContext(pathContext);
   return contextValues;

@@ -20,6 +20,12 @@ export interface HistoryProps {
  *
  * Restoring follows the session's one rule: it lands only while nothing has happened to the conversation yet, so
  * mounting with the zone restores and mounting later saves from there on.
+ *
+ * The store is attached for exactly as long as this is mounted. A zone's own session dies with it, so that is the
+ * whole story there — but a session the app handed in (`Agent.Zone`'s `session` prop) outlives this, and its
+ * saving stops on unmount: nothing is claiming to persist it any more, and a component that is gone should not
+ * still be writing. A host that wants the store to outlive the view calls `session.setHistory` itself, which also
+ * takes the slot, so a later unmount here leaves it alone.
  */
 export const History = ({ load, save, clear, onCompact }: HistoryProps) => {
   const session = useContext(SessionContext);
@@ -28,16 +34,15 @@ export const History = ({ load, save, clear, onCompact }: HistoryProps) => {
   const latest = useRef({ load, save, clear, onCompact });
   latest.current = { load, save, clear, onCompact };
   useEffect(() => {
-    session.setHistory({
+    const detachHistory = session.setHistory({
       load: () => latest.current.load(),
       save: (messages) => latest.current.save(messages),
       clear: () => latest.current.clear(),
     });
-    session.setOnCompact((replaced, summary) => latest.current.onCompact?.(replaced, summary));
+    const detachCompact = session.setOnCompact((replaced, summary) => latest.current.onCompact?.(replaced, summary));
     return () => {
-      // The session may outlive this component when the app owns it, and a detached store is the honest state.
-      session.setHistory(null);
-      session.setOnCompact(null);
+      detachHistory();
+      detachCompact();
     };
   }, [session]);
   return null;

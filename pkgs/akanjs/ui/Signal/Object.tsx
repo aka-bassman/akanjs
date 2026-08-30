@@ -90,7 +90,7 @@ const ObjectDetail = ({ className, objRef }: ObjectDetailProps) => {
                       <ObjectType objRef={modelRef} arrDepth={arrDepth} nullable={nullable} />
                     ) : (
                       <span className={docPill("muted", "font-mono")}>
-                        {typeLabel(ConstantRegistry.getModelName(modelRef), arrDepth, nullable)}
+                        {typeLabel(isMap ? "Map" : ConstantRegistry.getModelName(modelRef), arrDepth, nullable)}
                       </span>
                     )}
                     {isMap ? (

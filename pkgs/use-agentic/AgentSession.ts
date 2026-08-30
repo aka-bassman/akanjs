@@ -318,22 +318,31 @@ export class AgentSession {
    * Restoring follows the rule an async `load` already follows: it lands only while nothing has happened to this
    * session yet. Attach before the first turn and it restores; attach after and it saves from there on, with the
    * store never asked for a transcript that would be discarded. One rule rather than a mount-order surprise.
+   *
+   * Returns the detach, which clears the slot only while this call's store is still the one in it.
    */
   setHistory = (history: SessionHistory | null) => {
     this.#history = history ?? undefined;
-    if (!history || this.#version !== 0) return;
-    const restored = AgentSession.#restored(history);
-    if (!(restored instanceof Promise)) {
-      this.#restore(restored);
-      return;
+    if (history && this.#version === 0) {
+      const restored = AgentSession.#restored(history);
+      if (restored instanceof Promise) {
+        this.#restoring = true;
+        void this.#hydrate(restored);
+      } else this.#restore(restored);
     }
-    this.#restoring = true;
-    void this.#hydrate(restored);
+    // Detaches only what this call installed. Whoever attached last owns the slot — another mount, or a host
+    // taking it back — and an unmount that arrives after them must not silently stop their saving.
+    return () => {
+      if (history && this.#history === history) this.#history = undefined;
+    };
   };
 
   /** The compaction hook as a setter, for the same reason `setHistory` is one: a host attaches it after the fact. */
   setOnCompact = (onCompact: AgentSessionOptions["onCompact"] | null) => {
     this.#onCompact = onCompact ?? undefined;
+    return () => {
+      if (onCompact && this.#onCompact === onCompact) this.#onCompact = undefined;
+    };
   };
 
   /**

@@ -16,6 +16,9 @@ const root: RootDictionary = {
       },
       nickname: { t: "" },
     },
+    llmModel: {
+      "gpt-5.6-terra": { t: "GPT 5.6 Terra", desc: { t: "The model is GPT 5.6 Terra" } },
+    },
   },
   ko: {
     user: {
@@ -47,6 +50,13 @@ describe("DictionaryLookup", () => {
     expect(lookup.text("unknownModel.signal.x")).toBeUndefined();
     // An empty translation is as unusable as a missing one — callers must be able to omit the field.
     expect(lookup.text("user.nickname")).toBeUndefined();
+  });
+
+  test("resolves an enum key whose value carries the separator", () => {
+    const lookup = new DictionaryLookup("en");
+    expect(lookup.text("llmModel.gpt-5.6-terra")).toBe("GPT 5.6 Terra");
+    expect(lookup.text("llmModel.gpt-5.6-terra.desc")).toBe("The model is GPT 5.6 Terra");
+    expect(lookup.text("llmModel.gpt-5.6")).toBeUndefined();
   });
 
   test("rejects a key that names no path below a model", () => {

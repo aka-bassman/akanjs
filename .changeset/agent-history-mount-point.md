@@ -16,5 +16,9 @@ conversation yet. Mounting with the zone restores; mounting later saves from the
 asked for a transcript that would be discarded. `AgentSession.setHistory` / `setOnCompact` back it, for a session
 an app built itself.
 
+`setHistory` and `setOnCompact` return a detach that clears the slot only while their own value is still in it,
+so a remount's cleanup cannot silently stop the saving of whoever attached after it. The store lives exactly as
+long as the component; a host that wants it to outlive the view attaches it on the session itself.
+
 Also documents that `open` without `onOpenChange` draws no close button — a fixed panel with nowhere to close to,
 and the shape that keeps a controlled chat free of function props.

@@ -1,6 +1,7 @@
 "use client";
-import { type ComponentType, createContext } from "react";
+import type { ComponentType } from "react";
 import type { ClassNameValue as ClassValue } from "tailwind-merge";
+import { sharedContext } from "../../client/sharedContext";
 import type { ApprovalProps as AgentApprovalProps } from "../Agent/Approval";
 import type { BubbleProps as AgentBubbleProps } from "../Agent/Bubble";
 import type { ChatProps as AgentChatProps } from "../Agent/Chat";
@@ -140,4 +141,4 @@ export type AkanUiOverrideManifest = Partial<AkanUiOverrides> & { recipes?: Part
  * merged (child wins) by each nested `UiOverrideProvider`, mirroring how nested
  * `_layout.tsx` / `_overrides.tsx` stack down the route tree.
  */
-export const UiOverrideContext = createContext<AkanUiOverrideManifest>({});
+export const UiOverrideContext = sharedContext<AkanUiOverrideManifest>("uiOverride", {});
