@@ -18,6 +18,7 @@ import {
   DocumentSchema,
   documentQueryHelper,
   encodeDocumentValue,
+  FilterQueryError,
   fillMissingFilterArgs,
   from,
   getFilterInfoByKey,
@@ -27,6 +28,7 @@ import {
   into,
   isDocumentId,
   type ModelCls,
+  resolveFilterQuery,
   type SchemaOf,
   sanitizeJson,
 } from ".";
@@ -448,6 +450,32 @@ describe("by, from, into, and DatabaseRegistry", () => {
     expect(byTitle.queryFn?.(...fillMissingFilterArgs(byTitle, ["Alpha"]), documentQueryHelper)).toEqual({
       kind: "all",
       queries: [{ title: "Alpha" }, {}],
+    });
+  });
+
+  test("compiles a query key and its args into the filter's own query", () => {
+    expect(resolveFilterQuery(DocumentTestFilter, "byTitle", ["Alpha", true])).toEqual({
+      kind: "all",
+      queries: [{ title: "Alpha" }, { archived: true }],
+    });
+    // No key at all is the `any` filter every model carries, which is what a listing with no filter picked means.
+    expect(resolveFilterQuery(DocumentTestFilter)).toEqual({ removedAt: { empty: true } });
+    // An omitted optional reaches the query as `undefined`, exactly as the other filter call paths pad it.
+    expect(resolveFilterQuery(DocumentTestFilter, "byTitle", ["Alpha"])).toEqual({
+      kind: "all",
+      queries: [{ title: "Alpha" }, {}],
+    });
+    // The declared type is what parses the value, so an id the wire spelled wrong is refused here.
+    expect(() => resolveFilterQuery(DocumentTestFilter, "byOwner", ["not-an-id"])).toThrow(
+      'Invalid filter argument "ownerId" for key: byOwner',
+    );
+    expect(() => resolveFilterQuery(DocumentTestFilter, "byTitle", [])).toThrow(
+      'Missing filter argument "title" for key: byTitle',
+    );
+    expect(() => resolveFilterQuery(DocumentTestFilter, "missing")).toThrow(FilterQueryError);
+    // Args past the ones the filter declared are dropped: the caller names a filter, never a query.
+    expect(resolveFilterQuery(DocumentTestFilter, "byOwner", ["1234567890abcdef12345678", "extra"])).toEqual({
+      ownerId: "1234567890abcdef12345678",
     });
   });
 

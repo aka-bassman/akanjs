@@ -129,12 +129,17 @@ export interface SerializedArg {
   nullable?: boolean;
   example?: string | number | boolean | Date;
   enum?: string;
+  /** The values this arg accepts, when they are a fixed list the caller has to pick from. */
+  oneOf?: (string | number)[];
+  /** For an id a filter declared against a model: the model it points at, so a UI can offer a picker. */
+  ref?: string;
 }
 export interface SerializedEndpoint extends SerializedSignalOption {
   type: "query" | "mutation" | "pubsub" | "message" | "prompt";
   returns: SerializedReturns;
 }
 export interface SerializedFilter {
+  /** Every filter query the model declares, by key, with the args each one takes. */
   filter: { [key: string]: SerializedArg[] };
   sortKeys: string[];
 }

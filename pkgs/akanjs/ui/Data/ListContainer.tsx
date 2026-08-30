@@ -12,7 +12,7 @@ import {
 } from "akanjs/client";
 import { capitalize } from "akanjs/common";
 import { type BaseInsight, ConstantRegistry, labelOf } from "akanjs/constant";
-import type { FetchInitForm, SliceMeta } from "akanjs/fetch";
+import type { FetchInitForm, QuerySetting, SliceMeta } from "akanjs/fetch";
 import { st } from "akanjs/store";
 import { useScreenScope } from "akanjs/webkit";
 import { type ReactNode, useEffect, useState } from "react";
@@ -36,6 +36,7 @@ import { Select } from "../Select";
 import DataCardList from "./CardList";
 import { columnKey, downloadBlob, toCsvBlob, toJsonBlob } from "./dataExport";
 import { dictLabel } from "./dataText";
+import { QueryMakerArgs, QueryMakerKey, resolveQuerySetting, useQueryMaker } from "./QueryMaker";
 import DataTableList from "./TableList";
 
 const controlClassName = "h-9";
@@ -55,8 +56,10 @@ export interface ListContainerProps<
   cardListClassName?: string;
   /** Initial rendering mode. The toolbar toggle switches it from here. */
   type?: "card" | "list";
-  /** Static query object passed as the first argument of the generated init action. */
-  query?: Record<string, unknown>;
+  /** Fixed filter query for this listing. Given one, the panel is scoped and offers no query maker. */
+  query?: QuerySetting;
+  /** Summary column to filter query. A `?filter=<column>` link opens the listing on the query it names. */
+  queryMap?: { [column: string]: QuerySetting };
   /** Initial fetch form: page, limit, sort, and the default values a new model starts from. */
   init?: FetchInitForm<Input, any>;
   /** Generated slice metadata for the target model. */
@@ -76,9 +79,15 @@ export interface ListContainerProps<
   renderDashboard?: ({
     summary,
     hidePresents,
+    onSelect,
+    queryKey,
   }: {
     summary: Record<string, unknown>;
     hidePresents?: boolean;
+    /** Applies one summary column's filter to this listing, in place. */
+    onSelect: (setting: QuerySetting) => void;
+    /** The filter key the listing is showing right now. */
+    queryKey: string;
   }) => ReactNode;
   renderItem?: (props: ModelProps<any, any>) => ReactNode;
   renderTemplate?: (props: any) => ReactNode | null;
@@ -100,6 +109,7 @@ export default function ListContainer<
   cardListClassName,
   type = "card",
   query,
+  queryMap,
   init,
   create = true,
   slice,
@@ -167,10 +177,17 @@ export default function ListContainer<
   const sortOfModel = storeUse[namesOfSlice.sortOfModel]() as string;
   const modelInsight = storeUse[namesOfSlice.modelInsight]() as BaseInsight;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
+  const searchParams = st.use.searchParams({ agent: false });
+  const filter = Array.isArray(searchParams.filter) ? searchParams.filter[0] : searchParams.filter;
+  const initQuery = query ?? (filter ? queryMap?.[filter] : undefined);
+  const queryState = useQueryMaker({ slice, query: initQuery });
   useEffect(() => {
     // The init form rides the argument after the slice's own, so every positional slot has to be filled first.
     const queryArgs = new Array(slice.argLength).fill(null) as unknown[];
-    if (query) queryArgs[0] = query;
+    if (initQuery) {
+      const { queryKey, args } = resolveQuerySetting(initQuery);
+      [queryArgs[0], queryArgs[1]] = [queryKey, args];
+    }
     void storeDo[namesOfSlice.initModel](...queryArgs, { sort, ...init });
   }, []);
 
@@ -252,18 +269,33 @@ export default function ListContainer<
 
   const modelLabel = dictLabel(l._, `${sliceName}.modelName`, refName);
   const RenderTitle = renderTitle ?? ((model: Full) => `${modelLabel} - ${model.id ? model.id : "New"}`);
-  const ModelDashboard = (): ReactNode => {
-    const Stat = renderDashboard;
-    // `summary` is an app-level state key, not a generated one: read it off the state so a store without it
-    // renders nothing instead of calling an accessor that does not exist.
-    const summary = storeSel<Record<string, unknown> | undefined>(
-      (state) => (state as { summary?: Record<string, unknown> }).summary,
+  // `summary` is an app-level state key, not a generated one: read it off the state so a store without it renders
+  // nothing instead of calling an accessor that does not exist. Built as a value rather than mounted as
+  // `<ModelDashboard />`, for the same reason the query maker is: a component type this render creates is a new
+  // type every render, so React would remount the dashboard and lose the tile the user just picked.
+  const summary = storeSel<Record<string, unknown> | undefined>(
+    (state) => (state as { summary?: Record<string, unknown> }).summary,
+  );
+  const summaryLoading = storeSel<boolean>((state) => !!(state as { summaryLoading?: boolean }).summaryLoading);
+  const modelDashboard =
+    !renderDashboard || !summary ? null : summaryLoading ? (
+      <Loading.Skeleton className="mb-4" active />
+    ) : (
+      renderDashboard({
+        summary,
+        hidePresents: true,
+        onSelect: queryState.applySetting,
+        queryKey: queryState.setting.queryKey,
+      })
     );
-    const summaryLoading = storeSel<boolean>((state) => !!(state as { summaryLoading?: boolean }).summaryLoading);
-    if (!Stat || !summary) return null;
-    return summaryLoading ? <Loading.Skeleton className="mb-4" active /> : <Stat summary={summary} hidePresents />;
-  };
-  const RenderQueryMaker = renderQueryMaker;
+  // Called, not mounted as `<RenderQueryMaker />`: a wrapper this render creates is a new component type every
+  // time, so React would unmount the maker on each parent render and take the filter the user picked with it.
+  // A fixed `query` is the panel's scope, so the maker that would widen it is not drawn at all.
+  const queryMakerArgs = renderQueryMaker ? (
+    renderQueryMaker()
+  ) : query ? null : (
+    <QueryMakerArgs slice={slice} state={queryState} />
+  );
   const RenderInsight = (): ReactNode => (renderInsight ? renderInsight({ insight: modelInsight }) : null);
   const RenderTemplate = renderTemplate;
   const RenderTools = (): ReactNode => {
@@ -356,6 +388,14 @@ export default function ListContainer<
               </button>
             ))}
           </div>
+          {query ? null : (
+            <QueryMakerKey
+              className="w-44 min-w-0"
+              selectClassName={cn("min-h-0", controlClassName)}
+              slice={slice}
+              state={queryState}
+            />
+          )}
           <RenderSort />
           <Select<number>
             className="w-36 min-w-0"
@@ -389,8 +429,8 @@ export default function ListContainer<
           ) : null}
         </div>
       </div>
-      {query ? null : <ModelDashboard />}
-      {RenderQueryMaker ? <RenderQueryMaker /> : null}
+      {query ? null : modelDashboard}
+      {queryMakerArgs}
       <RenderInsight />
       {view === "card" ? (
         <DataCardList

@@ -4,12 +4,13 @@ import { usePage } from "akanjs/client";
 import { type ConstantCls, ConstantRegistry } from "akanjs/constant";
 import type { SerializedArg } from "akanjs/signal";
 import { st } from "akanjs/store";
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import { AiOutlineDelete, AiOutlinePlus } from "react-icons/ai";
 import { buttonRecipe } from "../Button";
 import { DatePicker } from "../DatePicker";
 import { Input } from "../Input";
 import { dictText, docDash, docUi } from "../Reference";
+import { Select } from "../Select";
 import { Tooltip } from "../Tooltip";
 import UiObject from "./Object";
 import { signalUi } from "./style";
@@ -137,30 +138,46 @@ Arg.Param = ArgParam;
 interface ArgQueryProps {
   endpointKey: string;
   arg: SerializedArg;
+  label?: string;
   value: any;
   onChange: (value: any) => void;
+  /** Replaces the scalar input this arg would otherwise get, once per element for an array arg. */
+  renderScalar?: (value: any, onChange: (value: any) => void) => ReactNode;
 }
-const ArgQuery = ({ endpointKey, arg, value, onChange }: ArgQueryProps) => {
+const ArgQuery = ({ endpointKey, arg, label, value, onChange, renderScalar }: ArgQueryProps) => {
   const argRef = ConstantRegistry.getModelRef(arg.refName, arg.modelType);
   if (!PrimitiveRegistry.has(argRef)) throw new Error(`Query arg - ${endpointKey}/${arg.name} must be scalar`);
   else if ((arg.arrDepth ?? 0) > 1)
     throw new Error(`Query arg - ${endpointKey}/${arg.name} must not be more than 2D array`);
   const argType = PrimitiveRegistry.getName(argRef as typeof PrimitiveScalar) as DefaultPrimitiveName;
+  const enumRef = arg.enum ? ConstantRegistry.enum.get(arg.enum) : undefined;
+  const options: (string | number)[] = arg.oneOf ?? (enumRef ? [...enumRef.values] : []);
+  const multiple = (arg.arrDepth ?? 0) > 0;
+  const renderLeaf = (leafValue: unknown, onLeafChange: (value: unknown) => void) =>
+    renderScalar ? (
+      renderScalar(leafValue, onLeafChange)
+    ) : (
+      <Arg argType={argType} value={leafValue as string} onChange={onLeafChange} />
+    );
   return (
     <div className={signalUi.inputRow}>
-      <div className={signalUi.inputLabel}>{arg.name}</div>
+      <div className={signalUi.inputLabel}>{label ?? arg.name}</div>
       <div className="w-full">
-        {(arg.arrDepth ?? 0) > 0 && Array.isArray(value) ? (
+        {options.length ? (
+          <Select<string | number, boolean>
+            options={options.map((option) => ({ label: option, value: option }))}
+            multiple={multiple}
+            nullable={arg.nullable}
+            value={multiple ? ((value as (string | number)[] | null) ?? []) : (value as string | number)}
+            onChange={onChange}
+          />
+        ) : multiple && Array.isArray(value) ? (
           <div className="flex flex-col gap-2">
             {value.map((val, idx) => (
               <div className="flex items-center gap-2" key={idx}>
-                <Arg
-                  argType={argType}
-                  value={val as string}
-                  onChange={(val) => {
-                    onChange([...(value.slice(0, idx) as string[]), val, ...(value.slice(idx + 1) as string[])]);
-                  }}
-                />
+                {renderLeaf(val, (val) => {
+                  onChange([...(value.slice(0, idx) as string[]), val, ...(value.slice(idx + 1) as string[])]);
+                })}
                 <button
                   className={buttonRecipe({ variant: "ghost", size: "icon" }, "size-8 shrink-0 text-foreground/50")}
                   onClick={() => {
@@ -183,7 +200,7 @@ const ArgQuery = ({ endpointKey, arg, value, onChange }: ArgQueryProps) => {
             </button>
           </div>
         ) : (
-          <Arg argType={argType} value={value as string} onChange={onChange} />
+          renderLeaf(value, onChange)
         )}
       </div>
     </div>
@@ -214,14 +231,14 @@ const ArgFormData = ({ endpointKey, arg, value, onChange }: ArgFormDataProps) =>
 Arg.FormData = ArgFormData;
 
 interface ArgIDProps {
-  value: string;
+  value: string | null;
   onChange: (value: string) => void;
 }
 const ArgID = ({ value, onChange }: ArgIDProps) => {
   return (
     <Input
       inputClassName="w-full font-mono"
-      value={value}
+      value={value ?? ""}
       onChange={(value) => {
         onChange(value);
       }}
@@ -268,14 +285,14 @@ const ArgFloat = ({ value, onChange }: ArgFloatProps) => {
 Arg.Float = ArgFloat;
 
 interface ArgStringProps {
-  value: string;
+  value: string | null;
   onChange: (value: string) => void;
 }
 const ArgString = ({ value, onChange }: ArgStringProps) => {
   return (
     <Input
       inputClassName="w-full font-mono"
-      value={value}
+      value={value ?? ""}
       onChange={(value) => {
         onChange(value);
       }}

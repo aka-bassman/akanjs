@@ -851,6 +851,12 @@ describe("SignalResolver declaration contracts", () => {
     await endpointMeta.serverResolverTestItemInsightInCategory.execFn?.call(sliceEndpoint, "news");
     expect(calls.at(-1)).toEqual({ method: "__insight", args: [{ category: "news" }] });
 
+    // The root list compiles its `(queryKey, args)` pair through the model's own filter, and defaults to `any`.
+    await endpointMeta.serverResolverTestItemList.execFn?.call(sliceEndpoint, "byOwner", [validId], 0, 20, "latest");
+    expect((calls.at(-1) as { args: unknown[] }).args[0]).toEqual({ ownerId: validId });
+    await endpointMeta.serverResolverTestItemList.execFn?.call(sliceEndpoint, undefined, undefined, 0, 20, "latest");
+    expect((calls.at(-1) as { args: unknown[] }).args[0]).toEqual({ removedAt: { empty: true } });
+
     await endpointMeta.serverResolverTestItem.execFn?.call(sliceEndpoint, validId);
     expect(calls.at(-1)).toEqual({ method: "getServerResolverTestItem", args: [validId] });
     await endpointMeta.createServerResolverTestItem.execFn?.call(sliceEndpoint, { title: "Alpha" });

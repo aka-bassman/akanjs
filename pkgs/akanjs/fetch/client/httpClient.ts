@@ -115,7 +115,15 @@ export class HttpClient {
     searchArgs.forEach((arg) => {
       const argValue = argMap.get(arg.name);
       if (argValue === null || argValue === undefined) return;
-      if (arg.arrDepth && Array.isArray(argValue))
+      // `Any` carries a structure the query string has no spelling for; `String(value)` would send
+      // "[object Object]". `HttpExecutionContext` parses it back with the same rule.
+      if (arg.refName === "Any") {
+        // A value JSON has no spelling for — a function, a symbol — stringifies to the JS `undefined`, which
+        // `set` would write as the literal text "undefined" and the reader would reject as malformed JSON.
+        // An arg it cannot carry is an arg it does not carry.
+        const encoded = JSON.stringify(argValue);
+        if (encoded !== undefined) searchParams.set(arg.name, encoded);
+      } else if (arg.arrDepth && Array.isArray(argValue))
         argValue.forEach((value) => {
           searchParams.append(arg.name, String(value));
         });

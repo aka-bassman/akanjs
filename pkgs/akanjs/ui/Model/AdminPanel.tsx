@@ -1,6 +1,6 @@
 import type { ModelProps } from "akanjs/client";
 import type { BaseInsight } from "akanjs/constant";
-import type { SliceMeta } from "akanjs/fetch";
+import type { QuerySetting, SliceMeta } from "akanjs/fetch";
 import type { ComponentType, ReactNode } from "react";
 import { Data } from "../Data";
 import type { ListContainerProps } from "../Data/ListContainer";
@@ -17,8 +17,13 @@ interface AdminPanelProps<T extends string, State, Input, Full extends { id: str
   template?: any;
   unit?: any;
   view?: any;
-  /** Summary column to query descriptor. Only a column this map names becomes a link to its filtered listing. */
-  queryMap?: { [key: string]: unknown };
+  /**
+   * Overrides the filter a summary column applies. A column left out still narrows the listing when its own
+   * field declares one with `.meta(...)`.
+   */
+  queryMap?: { [column: string]: QuerySetting };
+  /** Model whose fields `summaryColumns` name. Defaults to the `summary` model the state key already implies. */
+  summaryRefName?: string;
   /** Keys of the app's `summary` state shown as dashboard tiles above the list. */
   summaryColumns?: string[];
   /** Model insight keys shown above the list. The header already carries the total count. */
@@ -35,6 +40,7 @@ export default function AdminPanel<
   slice,
   components,
   queryMap,
+  summaryRefName,
   template,
   unit,
   view,
@@ -46,12 +52,15 @@ export default function AdminPanel<
   // Only default a dashboard when there is something to put in it: the summary it reads is an app-level store
   // key, so a panel that asks for no column would render an empty frame on every app that has one.
   renderDashboard = summaryColumns?.length
-    ? ({ summary, hidePresents }) => (
+    ? ({ summary, hidePresents, onSelect, queryKey }) => (
         <Data.Dashboard
           summary={summary}
           slice={slice}
           columns={summaryColumns}
           queryMap={queryMap}
+          summaryRefName={summaryRefName}
+          onSelect={onSelect}
+          queryKey={queryKey}
           hidePresents={hidePresents}
         />
       )
@@ -71,6 +80,7 @@ export default function AdminPanel<
   return (
     <Data.ListContainer
       slice={slice}
+      queryMap={queryMap}
       renderItem={Unit}
       renderInsight={renderInsight}
       renderDashboard={renderDashboard}

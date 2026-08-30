@@ -470,12 +470,13 @@ describe("MCP over a booted container", () => {
   });
 
   test("refuses a value sent for the Any argument it left out of the schema", async () => {
-    // The root list's raw `query` descriptor is declared on the endpoint but published nowhere, because an `Any`
-    // schema tells a model nothing. Read as sent, it would be an arbitrary filter over every model exposed
-    // through `mcp: { list: true }` — the narrowing a named filter slice exists to make deliberate.
-    const raw = await call("serverResolverTestItemList", { query: { category: "all" } });
+    // The root list names a filter through `queryKey` and passes that filter's own args through `args`, which is
+    // `Any` and so published nowhere: an `Any` schema tells a model nothing. A model may still pick a filter that
+    // needs no arguments, which is the narrowing the key exists to make deliberate.
+    const raw = await call("serverResolverTestItemList", { args: ["all"] });
     expect(raw.result.isError).toBe(true);
-    expect(raw.result.content[0].text).toBe('Unknown argument "query".');
+    expect(raw.result.content[0].text).toBe('Unknown argument "args".');
+    expect((await call("serverResolverTestItemList", { queryKey: "any" })).result.isError).toBe(false);
   });
 
   test("lifts a lone value into the list an argument was declared as", async () => {
@@ -560,6 +561,25 @@ describe("MCP over a booted container", () => {
       new Request("http://127.0.0.1:8080/api/serverResolverTestItem/visualItem"),
     );
     expect(await response.json()).toMatchObject({ title: "shot", preview: "data:image/png;base64,AAAA" });
+  });
+
+  test("compiles the root list's queryKey and args into the filter the model declared", async () => {
+    const routes = httpRoutes as Record<string, { GET: (req: Request) => Promise<Response> }>;
+    const list = async (search: string) =>
+      await routes["/serverResolverTestItem/serverResolverTestItemList"].GET(
+        new Request(`http://127.0.0.1:8080/api/serverResolverTestItem/serverResolverTestItemList${search}`),
+      );
+
+    // `args` rides the query string JSON-encoded, which is the only spelling `Any` has there.
+    const named = await list(`?queryKey=inCategory&args=${encodeURIComponent('["news"]')}&limit=5`);
+    expect(named.status).toBe(200);
+    // No key at all is the `any` filter every model carries.
+    expect((await list("?limit=5")).status).toBe(200);
+    // A filter arg the caller left out is refused rather than widening the query to every row, and a refusal
+    // the caller can fix answers 400 — only a throw from inside the filter itself is the app's own 500.
+    expect((await list("?queryKey=inCategory")).status).toBe(400);
+    expect((await list("?queryKey=notAFilter")).status).toBe(400);
+    expect((await list("?queryKey=inCategory&args=not-json")).status).toBe(400);
   });
 
   test("stops sending the structured result twice when the legacy text block is turned off", async () => {
@@ -803,7 +823,7 @@ describe("MCP over a booted container", () => {
     expect(json.result.resourceTemplates.map((t: { uriTemplate: string }) => t.uriTemplate)).toEqual([
       "akan://serverResolverTestItem/light/{serverResolverTestItemId}",
       "akan://serverResolverTestItem/{serverResolverTestItemId}",
-      "akan://serverResolverTestItem/list{?skip,limit,sort}",
+      "akan://serverResolverTestItem/list{?queryKey,skip,limit,sort}",
       "akan://serverResolverTestItem/list/inCategory{?category,skip,limit,sort}",
     ]);
   });

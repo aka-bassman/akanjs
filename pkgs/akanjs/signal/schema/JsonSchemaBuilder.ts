@@ -38,7 +38,11 @@ export class JsonSchemaBuilder {
   }
 
   arg(arg: SerializedArg): JsonSchema {
-    const schema = arg.enum ? this.#enum(arg.enum) : this.#ref(arg.refName, arg.modelType);
+    const schema = arg.oneOf
+      ? JsonSchemaBuilder.#inlineEnum(arg.oneOf)
+      : arg.enum
+        ? this.#enum(arg.enum)
+        : this.#ref(arg.refName, arg.modelType);
     return JsonSchemaBuilder.#nullable(JsonSchemaBuilder.#arrayed(schema, arg.arrDepth ?? 0), !!arg.nullable);
   }
 

@@ -81,6 +81,7 @@ export class FetchClient {
   readonly handler: Record<string, FetchHandler>;
   readonly slice: Record<string, SliceMeta> = {};
   readonly sortKeyMap = new Map<string, string[]>();
+  readonly filterQueryMap = new Map<string, { [queryKey: string]: SerializedArg[] }>();
   readonly #originWs = new Map<string, WsClient>();
   readonly #handlerStore: Record<string, FetchHandler> = {};
   readonly #handlerFactory = new Map<string, FetchHandlerFactory>();
@@ -178,10 +179,11 @@ export class FetchClient {
           this.#registerSlice(refName, suffix, slice, signal.prefix);
       }
       if (signal.filter) {
-        this.#registerFilterSortKey(refName, signal.filter.sortKeys);
-        for (const [suffix, args] of Object.entries(signal.filter.filter)) {
-          this.#registerFilterQuery(suffix, args);
-        }
+        // The merged copy, not the incoming one: a lib signal applied on its own carries only its own
+        // filters, and the map a UI reads has to hold every filter the model ended up with.
+        const filter = this.serializedSignal[refName]?.filter ?? signal.filter;
+        this.#registerFilterSortKey(refName, filter.sortKeys);
+        this.#registerFilterQuery(refName, filter.filter);
       }
     }
     return this;
@@ -281,8 +283,8 @@ export class FetchClient {
   #registerFilterSortKey(refName: string, sortKeys: string[]) {
     this.sortKeyMap.set(refName, sortKeys);
   }
-  #registerFilterQuery(suffix: string, args: SerializedArg[]) {
-    // TODO: Implement
+  #registerFilterQuery(refName: string, filter: { [queryKey: string]: SerializedArg[] }) {
+    this.filterQueryMap.set(refName, filter);
   }
   #makeHttpFn(key: string, endpoint: SerializedEndpoint, prefix?: string) {
     const argLength = endpoint.args.length;

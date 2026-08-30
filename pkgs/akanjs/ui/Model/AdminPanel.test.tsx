@@ -8,8 +8,9 @@ import { AgenticSurface, AgentProvider } from "use-agentic";
 let AdminPanel: typeof import("./AdminPanel").default;
 let makeStore: (state?: Record<string, unknown>) => void;
 let calls: Record<string, ReturnType<typeof mock>>;
+let setState: (state: Record<string, unknown>) => void;
 
-const slice = { refName: "adminTestItem", sliceName: "adminTestItem", argLength: 1 };
+const slice = { refName: "adminTestItem", sliceName: "adminTestItem", argLength: 2 };
 const components = { Template: {}, Unit: {}, View: {} };
 const l = Object.assign((key: string) => key, {
   _: (key: string) => key,
@@ -26,13 +27,34 @@ beforeAll(async () => {
   const { Int, SLICE_META } = await import("akanjs/base");
   const { ConstantRegistry, via } = await import("akanjs/constant");
   const { registerClientRuntime } = await import("akanjs/client");
-  const { store, StoreRegistry } = await import("akanjs/store");
+  const { st, store, StoreRegistry } = await import("akanjs/store");
+  setState = (state) => (st as unknown as { set: (state: Record<string, unknown>) => void }).set(state);
 
   const Input = via((f) => ({ title: f(String) }));
   const Obj = via(Input, () => ({}));
   const Light = via(Obj, ["title"] as const, () => ({}));
   const Full = via(Obj, Light, () => ({}));
   const Insight = via(Full, (f) => ({ count: f(Int, { default: 0 }) }));
+  // Mirrors a real `summary` model: the counter field names the query it counts, which is where a tile without
+  // an entry in `queryMap` finds its filter.
+  const SummaryInput = via((f) => ({
+    pendingItem: f(Int, { default: 0 }).meta({
+      refName: "adminTestItem",
+      queryKey: "byStatuses",
+      queryArgs: [["prepare"]],
+    }),
+    hourlyItem: f(Int, { default: 0 }).meta({
+      refName: "adminTestItem",
+      queryKey: "byTitle",
+      queryArgs: () => ["Ada"],
+    }),
+    otherItem: f(Int, { default: 0 }).meta({ refName: "somethingElse", queryKey: "byTitle", queryArgs: ["x"] }),
+  }));
+  const SummaryObj = via(SummaryInput, () => ({}));
+  const SummaryLight = via(SummaryObj, ["pendingItem"] as const, () => ({}));
+  const SummaryFull = via(SummaryObj, SummaryLight, () => ({}));
+  const SummaryInsight = via(SummaryFull, (f) => ({ count: f(Int, { default: 0 }) }));
+  ConstantRegistry.buildModel("summary", SummaryInput, SummaryObj, SummaryFull, SummaryLight, SummaryInsight, {});
   const cnst = ConstantRegistry.buildModel("adminTestItem", Input, Obj, Full, Light, Insight, {});
   calls = {
     adminTestItemList: mock(async () => [new Light({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada" })]),
@@ -46,7 +68,19 @@ beforeAll(async () => {
   });
   registerClientRuntime({
     usePage: () => ({ path: "/", lang: "en", l }),
-    fetch: { sortKeyMap: new Map([["adminTestItem", ["latest", "oldest", "titleAsc"]]]) },
+    fetch: {
+      sortKeyMap: new Map([["adminTestItem", ["latest", "oldest", "titleAsc"]]]),
+      filterQueryMap: new Map([
+        [
+          "adminTestItem",
+          {
+            any: [],
+            byTitle: [{ type: "search", name: "title", refName: "String" }],
+            byStatuses: [{ type: "search", name: "statuses", refName: "String", arrDepth: 1, nullable: true }],
+          },
+        ],
+      ]),
+    },
   } as never);
   const signal = {
     refName: "adminTestItem",
@@ -56,7 +90,14 @@ beforeAll(async () => {
     serializedSignal: {
       prefix: "adminTestItem",
       endpoint: {},
-      slice: { "": { args: [{ type: "search", name: "query", refName: "Any", nullable: true }] } },
+      slice: {
+        "": {
+          args: [
+            { type: "search", name: "queryKey", refName: "String", nullable: true },
+            { type: "search", name: "args", refName: "Any", nullable: true },
+          ],
+        },
+      },
     },
     slices: [],
   } as unknown as ClientSignal<"adminTestItem">;
@@ -88,6 +129,10 @@ const mount = async (node: ReactNode, ready: () => boolean) => {
   return { container, unmount: () => act(() => root.unmount()) };
 };
 
+/** A tile's label span sits directly under whatever element the tile is — a button when it carries a filter. */
+const tileOf = (container: HTMLElement, label: string) =>
+  [...container.querySelectorAll("span")].find((span) => span.textContent === label)?.parentElement;
+
 describe("Model.AdminPanel", () => {
   test("renders the list chrome on a store that has no app-level summary state", async () => {
     makeStore();
@@ -106,12 +151,54 @@ describe("Model.AdminPanel", () => {
   test("fills every slice argument before the init form so the query is not read as the form", async () => {
     makeStore();
     const { unmount } = await mount(
-      <AdminPanel slice={slice} components={components} query={{ title: "Ada" }} init={{ limit: 50 }} />,
+      <AdminPanel
+        slice={slice}
+        components={components}
+        query={{ queryKey: "byTitle", args: ["Ada"] }}
+        init={{ limit: 50 }}
+      />,
       () => calls.adminTestItemList.mock.calls.length > 0,
     );
 
-    expect(calls.adminTestItemList).toHaveBeenCalledWith({ title: "Ada" }, 0, 50, "latest", expect.any(Object));
+    expect(calls.adminTestItemList).toHaveBeenCalledWith("byTitle", ["Ada"], 0, 50, "latest", expect.any(Object));
     unmount();
+  });
+
+  test("opens on the query a `?filter=` link names through the query map", async () => {
+    makeStore();
+    setState({ searchParams: { filter: "pendingItem" } });
+    const { unmount } = await mount(
+      <AdminPanel
+        slice={slice}
+        components={components}
+        queryMap={{ pendingItem: { queryKey: "byPending" } }}
+        init={{ limit: 20 }}
+      />,
+      () => calls.adminTestItemList.mock.calls.length > 0,
+    );
+
+    expect(calls.adminTestItemList).toHaveBeenCalledWith("byPending", [], 0, 20, "latest", expect.any(Object));
+    unmount();
+    setState({ searchParams: {} });
+  });
+
+  test("keeps the query maker mounted across a re-render, so the picked filter survives", async () => {
+    makeStore();
+    const { container, unmount } = await mount(
+      <AdminPanel slice={slice} components={components} />,
+      () => calls.adminTestItemList.mock.calls.length > 0,
+    );
+
+    // The filter select sits in the toolbar, left of the sort select. Rendering it through a wrapper this
+    // render creates would remount it on every store update and reset the filter the user picked.
+    const filterSelect = container.querySelector("[data-open]");
+    expect(filterSelect).not.toBeNull();
+    await act(async () => {
+      setState({ adminTestItemListLoading: true });
+    });
+    expect(container.querySelector("[data-open]")).toBe(filterSelect);
+    unmount();
+    setState({ adminTestItemListLoading: false });
   });
 
   test("offers every sort key the model's serialized signal carries", async () => {
@@ -197,25 +284,208 @@ describe("Model.AdminPanel", () => {
     unmount();
   });
 
-  test("renders summary tiles from the app summary state, and links only the columns the query map names", async () => {
-    makeStore({ summary: { totalItem: 7, pendingItem: 2 }, summaryLoading: false });
+  test("renders summary tiles from the app summary state, and leaves a column with no filter inert", async () => {
+    makeStore({ summary: { totalItem: 7, plainItem: 2 }, summaryLoading: false });
     const { container, unmount } = await mount(
       <AdminPanel
         slice={slice}
         components={components}
-        summaryColumns={["totalItem", "pendingItem"]}
-        queryMap={{ totalItem: {} }}
+        summaryColumns={["totalItem", "plainItem"]}
+        queryMap={{ totalItem: { queryKey: "any" } }}
       />,
       () => calls.adminTestItemList.mock.calls.length > 0,
     );
 
     expect(container.textContent).toContain("Total Item");
     expect(container.textContent).toContain("7");
-    // A csr Link renders an anchor with no href, so the tag is what says whether the tile navigates.
-    const tileOf = (label: string) =>
-      [...container.querySelectorAll("span")].find((span) => span.textContent === label)?.parentElement;
-    expect(tileOf("Total Item")?.tagName).toBe("A");
-    expect(tileOf("Pending Item")?.tagName).toBe("DIV");
+    // The tag is what says whether the tile applies a filter. `plainItem` is named by neither the map nor a
+    // field declaration, so it counts something this listing cannot narrow to and stays inert.
+    expect(tileOf(container, "Total Item")?.tagName).toBe("BUTTON");
+    expect(tileOf(container, "Plain Item")?.tagName).toBe("DIV");
     unmount();
+  });
+
+  test("applies the tile's own filter in place, reading args written as a thunk at the moment of the click", async () => {
+    makeStore();
+    setState({ summary: { recentItem: 3 }, summaryLoading: false });
+    let readAt = 0;
+    const { container, unmount } = await mount(
+      <AdminPanel
+        slice={slice}
+        components={components}
+        summaryColumns={["recentItem"]}
+        queryMap={{
+          recentItem: {
+            queryKey: "byTitle",
+            // A thunk is how an arg relative to now stays current; it must be read on click, not at declaration.
+            args: () => {
+              readAt += 1;
+              return [`Ada-${readAt}`];
+            },
+          },
+        }}
+        init={{ limit: 20 }}
+      />,
+      () => calls.adminTestItemList.mock.calls.length > 0,
+    );
+    calls.adminTestItemList.mockClear();
+    calls.adminTestItemList.mockClear();
+
+    await act(async () => {
+      (tileOf(container, "Recent Item") as HTMLElement).click();
+    });
+    await waitFor(() => calls.adminTestItemList.mock.calls.length > 0);
+
+    // The resolved array reaches the wire — a thunk would have serialized to the literal "undefined".
+    expect(calls.adminTestItemList.mock.calls[0]?.slice(0, 5)).toEqual(["byTitle", ["Ada-1"], 0, 20, "latest"]);
+    expect(readAt).toBe(1);
+    // The tile the filter came from reads as the active one, which needs the dashboard to survive the re-render
+    // the request causes.
+    expect(tileOf(container, "Recent Item")?.className).toContain("border-primary");
+    unmount();
+    setState({ summary: undefined });
+  });
+
+  test("resolves a thunk on the query a `?filter=` link names, before the first request", async () => {
+    makeStore();
+    setState({ searchParams: { filter: "recentItem" } });
+    const { unmount } = await mount(
+      <AdminPanel
+        slice={slice}
+        components={components}
+        queryMap={{ recentItem: { queryKey: "byTitle", args: () => ["Ada"] } }}
+        init={{ limit: 20 }}
+      />,
+      () => calls.adminTestItemList.mock.calls.length > 0,
+    );
+
+    expect(calls.adminTestItemList).toHaveBeenCalledWith("byTitle", ["Ada"], 0, 20, "latest", expect.any(Object));
+    unmount();
+    setState({ searchParams: {} });
+  });
+  test("PROBE args ui", async () => {
+    makeStore();
+    setState({ summary: { recentItem: 3 }, summaryLoading: false });
+    const { container, unmount } = await mount(
+      <AdminPanel
+        slice={slice}
+        components={components}
+        summaryColumns={["recentItem"]}
+        queryMap={{ recentItem: { queryKey: "byStatuses", args: [["prepare"]] } }}
+        init={{ limit: 20 }}
+      />,
+      () => calls.adminTestItemList.mock.calls.length > 0,
+    );
+    console.info(
+      "BEFORE inputs:",
+      [...container.querySelectorAll("input")].map((i) => i.value),
+    );
+    await act(async () => {
+      (tileOf(container, "Recent Item") as HTMLElement).click();
+    });
+    await waitFor(() => calls.adminTestItemList.mock.calls.length > 1);
+    console.info(
+      "AFTER inputs:",
+      [...container.querySelectorAll("input")].map((i) => i.value),
+    );
+    console.info("CALL:", JSON.stringify(calls.adminTestItemList.mock.calls.at(-1)?.slice(0, 3)));
+    unmount();
+    setState({ summary: undefined });
+  });
+
+  test("takes a tile's filter from the summary field's own query metadata when the query map names none", async () => {
+    makeStore();
+    setState({ summary: { pendingItem: 3, otherItem: 9 }, summaryLoading: false });
+    const { container, unmount } = await mount(
+      <AdminPanel
+        slice={slice}
+        components={components}
+        summaryColumns={["pendingItem", "otherItem"]}
+        init={{ limit: 20 }}
+      />,
+      () => calls.adminTestItemList.mock.calls.length > 0,
+    );
+
+    // `otherItem` counts another model's rows, so it narrows nothing here and stays inert.
+    expect(tileOf(container, "Pending Item")?.tagName).toBe("BUTTON");
+    expect(tileOf(container, "Other Item")?.tagName).toBe("DIV");
+
+    await act(async () => {
+      (tileOf(container, "Pending Item") as HTMLElement).click();
+    });
+    await waitFor(() => calls.adminTestItemList.mock.calls.length > 1);
+
+    expect(calls.adminTestItemList.mock.calls.at(-1)?.slice(0, 2)).toEqual(["byStatuses", [["prepare"]]]);
+    expect([...container.querySelectorAll("input")].map((input) => input.value)).toEqual(["prepare"]);
+    unmount();
+    setState({ summary: undefined });
+  });
+
+  test("reads a metadata thunk at the moment the tile is clicked", async () => {
+    makeStore();
+    setState({ summary: { hourlyItem: 5 }, summaryLoading: false });
+    const { container, unmount } = await mount(
+      <AdminPanel slice={slice} components={components} summaryColumns={["hourlyItem"]} init={{ limit: 20 }} />,
+      () => calls.adminTestItemList.mock.calls.length > 0,
+    );
+
+    await act(async () => {
+      (tileOf(container, "Hourly Item") as HTMLElement).click();
+    });
+    await waitFor(() => calls.adminTestItemList.mock.calls.length > 1);
+
+    expect(calls.adminTestItemList.mock.calls.at(-1)?.slice(0, 2)).toEqual(["byTitle", ["Ada"]]);
+    unmount();
+    setState({ summary: undefined });
+  });
+
+  test("lets an explicit query map override what the field declares", async () => {
+    makeStore();
+    setState({ summary: { pendingItem: 3 }, summaryLoading: false });
+    const { container, unmount } = await mount(
+      <AdminPanel
+        slice={slice}
+        components={components}
+        summaryColumns={["pendingItem"]}
+        queryMap={{ pendingItem: { queryKey: "byTitle", args: ["Override"] } }}
+        init={{ limit: 20 }}
+      />,
+      () => calls.adminTestItemList.mock.calls.length > 0,
+    );
+
+    await act(async () => {
+      (tileOf(container, "Pending Item") as HTMLElement).click();
+    });
+    await waitFor(() => calls.adminTestItemList.mock.calls.length > 1);
+
+    expect(calls.adminTestItemList.mock.calls.at(-1)?.slice(0, 2)).toEqual(["byTitle", ["Override"]]);
+    unmount();
+    setState({ summary: undefined });
+  });
+
+  test("takes a query map entry that names its list `queryArgs`, the way a field declaration does", async () => {
+    makeStore();
+    setState({ summary: { pendingItem: 3 }, summaryLoading: false });
+    const { container, unmount } = await mount(
+      <AdminPanel
+        slice={slice}
+        components={components}
+        summaryColumns={["pendingItem"]}
+        // The shape a `.meta(...)` declaration already has: forwarding one needs no renaming at the call site.
+        queryMap={{ pendingItem: { queryKey: "byTitle", queryArgs: () => ["FromMeta"] } }}
+        init={{ limit: 20 }}
+      />,
+      () => calls.adminTestItemList.mock.calls.length > 0,
+    );
+
+    await act(async () => {
+      (tileOf(container, "Pending Item") as HTMLElement).click();
+    });
+    await waitFor(() => calls.adminTestItemList.mock.calls.length > 1);
+
+    expect(calls.adminTestItemList.mock.calls.at(-1)?.slice(0, 2)).toEqual(["byTitle", ["FromMeta"]]);
+    expect([...container.querySelectorAll("input")].map((input) => input.value)).toEqual(["FromMeta"]);
+    unmount();
+    setState({ summary: undefined });
   });
 });

@@ -27,7 +27,7 @@ not about akan module conventions, and a `//!` shipping to every visitor is no b
 and unused-import-clean by construction — so `biome check --write` stripped the imports and the next sync put
 them back, 116 diagnostics per lap.
 
-**`akan lint` prints up to 200 diagnostics** and takes `--maxDiagnostics <n>` (`0` for no limit). Biome's default
+**`akan lint` prints up to 200 diagnostics** and takes `--max-diagnostics <n>` (`0` for no limit). Biome's default
 is 20; a run that shows 20 of 44 reads as "20 problems left", so a change in the *mix* of findings looks like
 progress.
 

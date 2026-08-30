@@ -86,6 +86,11 @@ describe("JsonSchemaBuilder", () => {
       type: "string",
       enum: ["admin", "user"],
     });
+    // `oneOf` is a fixed list an arg carries without a registered enum behind it — the root slice's query keys.
+    expect(schema.arg({ type: "search", name: "queryKey", refName: "String", oneOf: ["any", "byAuthor"] })).toEqual({
+      type: "string",
+      enum: ["any", "byAuthor"],
+    });
   });
 
   test("falls back to an annotated string for an enum that is not registered", () => {

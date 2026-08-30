@@ -1,4 +1,5 @@
 import {
+  Any,
   type BackendEnv,
   type Cls,
   FIELD_META,
@@ -462,6 +463,16 @@ export class HttpExecutionContext<Appended = unknown> {
     if (!this.#url) this.#url = new URL(this.req.url);
     return this.#url;
   }
+  /** The read side of `HttpClient.makeUrl`'s `Any` rule: the query string carries the value JSON-encoded. */
+  static #parseAny(name: string, raw: string | string[] | null): unknown {
+    if (raw === null) return null;
+    if (Array.isArray(raw)) return raw.map((value) => HttpExecutionContext.#parseAny(name, value));
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new Exception.BadRequest(`Invalid JSON in "${name}"`);
+    }
+  }
   async getArgs(endpointInfo: EndpointInfo): Promise<unknown[]> {
     if (endpointInfo.args.length === 0) return [];
     this.params = this.req.params;
@@ -501,7 +512,8 @@ export class HttpExecutionContext<Appended = unknown> {
             nullable: arg.option?.nullable,
           });
         case "search": {
-          const value = arg.arrDepth ? this.url.searchParams.getAll(arg.name) : this.url.searchParams.get(arg.name);
+          const raw = arg.arrDepth ? this.url.searchParams.getAll(arg.name) : this.url.searchParams.get(arg.name);
+          const value = arg.argRef === Any ? HttpExecutionContext.#parseAny(arg.name, raw) : raw;
           const result = deserialize(arg.argRef, arg.arrDepth, value, {
             key: arg.name,
             nullable: arg.option?.nullable,

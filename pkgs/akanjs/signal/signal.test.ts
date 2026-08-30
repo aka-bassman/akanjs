@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ENDPOINT_META, ID, INJECT_META, INTERNAL_META, Int, SLICE_META } from "akanjs/base";
+import { Any, ENDPOINT_META, ID, INJECT_META, INTERNAL_META, Int, SLICE_META } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { by, type DatabaseCls, DatabaseRegistry, from, into, type ModelCls } from "akanjs/document";
 import {
@@ -423,8 +423,8 @@ describe("signal class factories and composition", () => {
     ) {}
 
     expect(Object.keys(MainSlice[SLICE_META]).sort()).toEqual(["", "byOwner", "libOwner"]);
-    expect(MainSlice[SLICE_META][""]?.args[0]?.name).toBe("query");
-    expect(MainSlice[SLICE_META][""]?.args[0]?.option?.nullable).toBe(true);
+    expect(MainSlice[SLICE_META][""]?.args.map((arg) => arg.name)).toEqual(["queryKey", "args"]);
+    expect(MainSlice[SLICE_META][""]?.args.every((arg) => arg.option?.nullable)).toBe(true);
     expect(MainSlice.getGuards.map((guard) => guard.name)).toEqual(["Public", "None"]);
     expect(MainSlice.cruGuards.map((guard) => guard.name)).toEqual(["TestAdmin"]);
     expect(Object.keys(MainSlice.srv.srvMap).sort()).toEqual(["signalTestAuxService", "signalTestItemService"]);
@@ -493,6 +493,17 @@ describe("signal serialization and registry", () => {
     });
     // Sort keys are the client's only source for the orderings a list UI may offer.
     expect(databaseSignal.filter?.sortKeys).toEqual(["latest", "oldest", "relevance", "titleAsc"]);
+    // The filter map is the other half: the root slice names one of these keys instead of carrying a query.
+    expect(databaseSignal.filter?.filter.byOwner).toEqual([
+      { type: "search", refName: "ID", name: "ownerId", ref: "user" },
+    ]);
+    expect(databaseSignal.slice?.[""]?.args[0]).toEqual({
+      type: "search",
+      refName: "String",
+      name: "queryKey",
+      nullable: true,
+      oneOf: ["any", "byOwner"],
+    });
     expect(databaseSignal.getGuards).toBeUndefined();
     expect(databaseSignal.cruGuards).toBeUndefined();
     expect(serviceSignal).toEqual({
@@ -616,6 +627,27 @@ describe("SignalContext execution", () => {
 
     expect(context.args).toEqual([true]);
     expect(await response.json()).toBe("archived:true");
+  });
+
+  test("parses an Any search arg as the JSON the query string carries", async () => {
+    const endpointInfo = buildEndpoint
+      .query(String)
+      .search("args", Any)
+      .exec((args) => JSON.stringify(args));
+    const contextOf = (url: string) => makeSignalContext({ endpointInfo, request: makeHttpRequest({ url }) });
+
+    const context = contextOf(`http://localhost/items?args=${encodeURIComponent('["Alpha",7]')}`);
+    await context.init();
+    expect(context.args).toEqual([["Alpha", 7]]);
+    expect(await ((await context.exec()) as Response).json()).toBe('["Alpha",7]');
+
+    const empty = contextOf("http://localhost/items");
+    await empty.init();
+    expect(empty.args).toEqual([null]);
+
+    const malformed = contextOf("http://localhost/items?args=not-json");
+    // `SignalContext.try` wraps init at the route, so a bad value answers 400 instead of a 500.
+    await expect(malformed.init()).rejects.toMatchObject({ message: 'Invalid JSON in "args"', statusCode: 400 });
   });
 
   test("parses websocket message and pubsub room args", async () => {
