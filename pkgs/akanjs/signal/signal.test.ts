@@ -720,6 +720,43 @@ describe("SignalContext execution", () => {
     expect(result).toBe("hello:socket-1");
   });
 
+  test("registers ws cleanup through the detached on/off the Ws arg hands out", async () => {
+    const cleaned: string[] = [];
+    const endpointInfo = buildEndpoint
+      .pubsub(String)
+      .room("roomId", String)
+      .with(Ws)
+      .exec((roomId, ws) => {
+        const remove = () => {
+          cleaned.push(`removed:${roomId as string}`);
+        };
+        ws.on("disconnect", remove);
+        ws.on("unsubscribe", remove);
+        ws.off("unsubscribe", remove);
+      });
+    const context = new SignalContext(
+      "roomKey",
+      { ws: { data: { socketId: "socket-1" } }, data: ["room-1"], eventType: "subscribe" } as never,
+      {
+        endpointInfo,
+        adaptor: new (adapt("signalTestWsLifecycleAdaptor"))(),
+        registry: getDefaultInjectRegistry(),
+        env: {} as never,
+        live: makeLiveRegistry(),
+        middleware: new Map(),
+      },
+    );
+
+    await context.init();
+    await context.exec();
+
+    const wsCtx = context.getWebSocketContext();
+    expect(wsCtx.onDisconnect.size).toBe(1);
+    expect(wsCtx.onUnsubscribe.size).toBe(0);
+    for (const handler of wsCtx.onDisconnect) await handler();
+    expect(cleaned).toEqual(["removed:room-1"]);
+  });
+
   test("runs guards, internal args, and middleware in order", async () => {
     signalTestOrder = [];
     const endpointInfo = buildEndpoint

@@ -380,6 +380,12 @@ workflow changes.
   `context.getClientPort()`) along with host and protocol.
 - **Every socket carries a `socketId`, and only the framework mints one.** `AppWsData` assigns it at the handshake, and a `message` / `pubsub` handler reads it off the `Ws` internal arg — `.with(Ws)` hands `{ ws, socketId, subscribe, on, off }`. Never mint your own from `ws.data`: the room bookkeeping keys on the framework's id, and a second one fails to match it silently. It identifies a **connection**, not a caller — a reconnect gets a new id and the federation gateway's own socket is a different one — so per-user state keys on the account, never on this.
 
+- **A cleanup registered with `ws.on("disconnect" | "unsubscribe", fn)` is scoped to the call that registered it.**
+  From a `pubsub` subscribe it belongs to that room — `unsubscribe` runs when the client leaves it or a credential
+  change revokes it, `disconnect` when the socket closes while still subscribed — so a room already left runs
+  neither again, and cleanup that must happen either way registers for both. From a `message` handler it belongs to
+  the socket and runs at close. A handler that throws is logged and never blocks the rest of the teardown.
+
 ### Authorization Defaults
 
 - **Every `slice()` takes an explicit `{ guards: {…} }` second argument, and `root:` is always `Admin`.**

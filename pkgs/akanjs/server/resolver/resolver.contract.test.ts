@@ -18,6 +18,7 @@ import {
 import { endpoint } from "../../signal/endpoint";
 import { Public } from "../../signal/guards";
 import { internal } from "../../signal/internal";
+import { Ws } from "../../signal/internalArg";
 import { CascadeRunner } from "./CascadeRunner";
 import { DatabaseResolver } from "./database.resolver";
 import {
@@ -790,6 +791,130 @@ describe("SignalResolver declaration contracts", () => {
     expect(member.unsubscribed).toEqual([roomId]);
     expect(websocket.instance.calls).toContainEqual({ method: "leaveRoom", args: [member, roomId] });
     expect(await SignalResolver.revalidateWsRooms(member, registry)).toEqual([]);
+  });
+
+  test("runs ws cleanup on unsubscribe and close, from a message handler as well as a room", async () => {
+    const cleaned: string[] = [];
+    class LifecycleEndpoint extends endpoint(serverResolverTestServiceModel, (builder) => ({
+      lifecycleRoom: builder
+        .pubsub(ServerResolverTestLight, { guards: [Public] })
+        .room("roomId", ID)
+        .with(Ws)
+        .exec((roomId, ws) => {
+          ws.on("unsubscribe", () => {
+            cleaned.push(`unsubscribe:${roomId as string}`);
+          });
+          ws.on("disconnect", () => {
+            cleaned.push(`disconnect:${roomId as string}`);
+          });
+        }),
+      lifecycleMessage: builder
+        .message(String, { guards: [Public] })
+        .msg("text", String)
+        .with(Ws)
+        .exec((text, ws) => {
+          ws.on("disconnect", () => {
+            cleaned.push(`disconnect:${text as string}`);
+          });
+          return `ok:${text as string}`;
+        }),
+    })) {}
+    const registry = getDefaultInjectRegistry();
+    const websocket = makeFakeWebsocket();
+    registry.adaptor.set(SolidPubSub, websocket.instance);
+    const resolved = SignalResolver.resolveEndpoint(LifecycleEndpoint, new LifecycleEndpoint(), {
+      registry,
+      env: makeEnv(),
+      live: getDefaultLiveRegistry(),
+      middleware: new Map(),
+    });
+
+    const unsubscribed = makeWs();
+    await resolved.wsRoutes?.lifecycleRoom?.(unsubscribed, [validId], "subscribe");
+    expect(await resolved.wsRoutes?.lifecycleMessage?.(unsubscribed, ["chat"], "message")).toEqual({
+      type: "msg",
+      key: "lifecycleMessage",
+      data: "ok:chat",
+    });
+    await resolved.wsRoutes?.lifecycleRoom?.(unsubscribed, [validId], "unsubscribe");
+    expect(cleaned).toEqual([`unsubscribe:${validId}`]);
+
+    // The room was already unsubscribed, so only the message handler is left to run at close.
+    await SignalResolver.handleWsClose(unsubscribed, registry);
+    expect(cleaned).toEqual([`unsubscribe:${validId}`, "disconnect:chat"]);
+
+    cleaned.length = 0;
+    const closed = makeWs();
+    await resolved.wsRoutes?.lifecycleRoom?.(closed, [validId], "subscribe");
+    await resolved.wsRoutes?.lifecycleMessage?.(closed, ["chat"], "message");
+    await SignalResolver.handleWsClose(closed, registry);
+    expect(cleaned).toEqual([`unsubscribe:${validId}`, `disconnect:${validId}`, "disconnect:chat"]);
+
+    cleaned.length = 0;
+    const reclosed = makeWs();
+    await SignalResolver.handleWsClose(reclosed, registry);
+    expect(cleaned).toEqual([]);
+  });
+
+  test("runs a cleanup registered for both endings once when the socket closes subscribed", async () => {
+    const cleaned: string[] = [];
+    class SharedCleanupEndpoint extends endpoint(serverResolverTestServiceModel, (builder) => ({
+      sharedRoom: builder
+        .pubsub(ServerResolverTestLight, { guards: [Public] })
+        .room("roomId", ID)
+        .with(Ws)
+        .exec((roomId, ws) => {
+          const leave = () => {
+            cleaned.push(`left:${roomId as string}`);
+          };
+          ws.on("unsubscribe", leave);
+          ws.on("disconnect", leave);
+        }),
+    })) {}
+    const registry = getDefaultInjectRegistry();
+    const websocket = makeFakeWebsocket();
+    registry.adaptor.set(SolidPubSub, websocket.instance);
+    const resolved = SignalResolver.resolveEndpoint(SharedCleanupEndpoint, new SharedCleanupEndpoint(), {
+      registry,
+      env: makeEnv(),
+      live: getDefaultLiveRegistry(),
+      middleware: new Map(),
+    });
+
+    const ws = makeWs();
+    await resolved.wsRoutes?.sharedRoom?.(ws, [validId], "subscribe");
+    await SignalResolver.handleWsClose(ws, registry);
+
+    expect(cleaned).toEqual([`left:${validId}`]);
+  });
+
+  test("keeps a throwing cleanup handler from skipping the socket teardown", async () => {
+    class ThrowingLifecycleEndpoint extends endpoint(serverResolverTestServiceModel, (builder) => ({
+      throwingRoom: builder
+        .pubsub(ServerResolverTestLight, { guards: [Public] })
+        .room("roomId", ID)
+        .with(Ws)
+        .exec((_roomId, ws) => {
+          ws.on("disconnect", () => {
+            throw new Error("cleanup exploded");
+          });
+        }),
+    })) {}
+    const registry = getDefaultInjectRegistry();
+    const websocket = makeFakeWebsocket();
+    registry.adaptor.set(SolidPubSub, websocket.instance);
+    const resolved = SignalResolver.resolveEndpoint(ThrowingLifecycleEndpoint, new ThrowingLifecycleEndpoint(), {
+      registry,
+      env: makeEnv(),
+      live: getDefaultLiveRegistry(),
+      middleware: new Map(),
+    });
+
+    const ws = makeWs();
+    await resolved.wsRoutes?.throwingRoom?.(ws, [validId], "subscribe");
+    await SignalResolver.handleWsClose(ws, registry);
+
+    expect(websocket.instance.calls).toContainEqual({ method: "unregisterSocket", args: [ws] });
   });
 
   test("turns slice declarations into CRUD/list/insight endpoint declarations", async () => {

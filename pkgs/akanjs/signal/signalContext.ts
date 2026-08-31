@@ -598,14 +598,16 @@ export class WebSocketExecutionContext<Appended = unknown> {
       nullable: endpointInfo.returns.nullable,
     }) as unknown as Response;
   }
-  on(event: "disconnect" | "unsubscribe", handler: () => void) {
+  // Arrows, not methods: `Ws` hands these to a handler detached from the context, so a method would run with
+  // the wrapper object as `this` and register into nothing.
+  on = (event: "disconnect" | "unsubscribe", handler: () => PromiseOrObject<void>) => {
     if (event === "disconnect") this.onDisconnect.add(handler);
     else this.onUnsubscribe.add(handler);
-  }
-  off(event: "disconnect" | "unsubscribe", handler: () => void) {
+  };
+  off = (event: "disconnect" | "unsubscribe", handler: () => PromiseOrObject<void>) => {
     if (event === "disconnect") this.onDisconnect.delete(handler);
     else this.onUnsubscribe.delete(handler);
-  }
+  };
 }
 
 export class ResolveFieldContext {
