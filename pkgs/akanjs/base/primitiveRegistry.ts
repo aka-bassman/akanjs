@@ -44,7 +44,7 @@ export class PrimitiveRegistry {
   }
 }
 
-export type PrimitiveValue = string | number | boolean | Dayjs | Date | null | undefined;
+export type PrimitiveValue = string | number | boolean | Dayjs | Date | Uint8Array | null | undefined;
 export class PrimitiveScalar {
   static refName: string;
   static [SERVER_VALUE]: unknown;
@@ -176,6 +176,49 @@ export class Any extends PrimitiveScalar {
   static override [EXAMPLE_VALUE]: object = {};
 }
 PrimitiveRegistry.register(Any);
+
+type NodeBuffer = Uint8Array & { toString(encoding: string): string };
+interface BufferCtor {
+  from(buffer: ArrayBufferLike, byteOffset: number, length: number): NodeBuffer;
+  from(text: string, encoding: string): NodeBuffer;
+}
+
+export class Binary extends PrimitiveScalar {
+  static override refName: "Binary" = "Binary";
+  static override [SERVER_VALUE]: Uint8Array;
+  static override [CLIENT_VALUE]: Uint8Array;
+  static override [DEFAULT_VALUE]: Uint8Array | null = null;
+  static override [PURIFIED_VALUE]: Uint8Array | null = null;
+  static override [EXAMPLE_VALUE]: string = "AAEC";
+
+  static override validate(value: Uint8Array | string): boolean {
+    return value instanceof Uint8Array || typeof value === "string";
+  }
+  static override parseValue(input: Uint8Array | string): Uint8Array {
+    return typeof input === "string" ? Binary.#fromBase64(input) : input;
+  }
+  static override serializeValue(value: Uint8Array | string): string {
+    return typeof value === "string" ? value : Binary.#toBase64(value);
+  }
+
+  static #toBase64(bytes: Uint8Array): string {
+    const buffer = (globalThis as { Buffer?: BufferCtor }).Buffer;
+    if (buffer) return buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
+    let binary = "";
+    for (let idx = 0; idx < bytes.length; idx += 0x8000)
+      binary += String.fromCharCode(...bytes.subarray(idx, idx + 0x8000));
+    return btoa(binary);
+  }
+  static #fromBase64(text: string): Uint8Array {
+    const buffer = (globalThis as { Buffer?: BufferCtor }).Buffer;
+    if (buffer) return buffer.from(text, "base64");
+    const binary = atob(text);
+    const bytes = new Uint8Array(binary.length);
+    for (let idx = 0; idx < binary.length; idx += 1) bytes[idx] = binary.charCodeAt(idx);
+    return bytes;
+  }
+}
+PrimitiveRegistry.register(Binary);
 
 export class Upload extends PrimitiveScalar {
   static override refName: "Upload" = "Upload";
@@ -359,4 +402,4 @@ Object.assign(Date, {
 });
 PrimitiveRegistry.register(Date);
 
-export type DefaultPrimitiveName = "String" | "Boolean" | "Date" | "Int" | "Float" | "ID" | "Any" | "Upload";
+export type DefaultPrimitiveName = "String" | "Boolean" | "Date" | "Int" | "Float" | "ID" | "Any" | "Binary" | "Upload";

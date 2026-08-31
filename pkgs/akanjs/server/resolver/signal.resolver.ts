@@ -1,5 +1,6 @@
 import {
   type BackendEnv,
+  Binary,
   type Cls,
   ENDPOINT_META,
   FIELD_META,
@@ -31,7 +32,7 @@ import { SignalContext, type WebSocketExecutionContext } from "../../signal/sign
 import type { SliceCls } from "../../signal/slice";
 import type { SliceInfo } from "../../signal/sliceInfo";
 import type { WebsocketMessageData, WebsocketSubscribeAck } from "../../signal/types";
-import type { HttpRoutes, SignalRoutes, WebsocketRoutes } from "../types";
+import type { HttpRoutes, LocalPublish, SignalRoutes, WebsocketRoutes } from "../types";
 
 type HttpRouteHandler = (req: Bun.BunRequest) => Response | Promise<Response | undefined> | undefined;
 type HttpMethodRoutes = Record<string, HttpRouteHandler>;
@@ -42,12 +43,18 @@ export class SignalResolver {
   static makeRoomId(key: string, args: unknown[]) {
     return `${key}${args.length ? "-" : ""}${args.join("-")}`;
   }
-  static #localPublish: (roomId: string, data: object | object[]) => void = () => {
+  static #localPublish: LocalPublish = () => {
     SignalResolver.logger.verbose(`Local publish is not initialized yet`);
   };
-  static setLocalPublish(localPublish: (roomId: string, data: object | object[]) => void, websocket: WebsocketAdaptor) {
+  static readonly #coalescingRooms = new Set<string>();
+
+  static coalescesRoom(roomId: string): boolean {
+    const separator = roomId.indexOf("-");
+    return SignalResolver.#coalescingRooms.has(separator >= 0 ? roomId.slice(0, separator) : roomId);
+  }
+  static setLocalPublish(localPublish: LocalPublish, websocket: WebsocketAdaptor) {
     SignalResolver.#localPublish = localPublish;
-    websocket.setEventHandler((roomId, data) => localPublish(roomId, data as object | object[]));
+    websocket.setEventHandler((roomId, data) => localPublish(roomId, data as object | object[] | Uint8Array));
   }
   static resolveServerSignal(
     serverSignalCls: ServerSignalCls,
@@ -59,6 +66,9 @@ export class SignalResolver {
     Object.entries(endpointMeta).forEach(([key, endpointInfo]) => {
       if (endpointInfo.type !== "pubsub") throw new Error(`Endpoint ${key} is not a pubsub endpoint`);
       websocket.registerEndpoint(key, endpointInfo.returns.returnRef as Cls, endpointInfo.returns.arrDepth);
+      const isBinaryFrame = endpointInfo.returns.returnRef === Binary && !endpointInfo.returns.arrDepth;
+      if (isBinaryFrame && endpointInfo.signalOption.backpressure !== "queue") SignalResolver.#coalescingRooms.add(key);
+      let warnedRawBytes = false;
       const serializeFn = (data: unknown) =>
         serialize(endpointInfo.returns.returnRef, endpointInfo.returns.arrDepth, data, "object", {
           nullable: endpointInfo.returns.nullable,
@@ -74,12 +84,22 @@ export class SignalResolver {
             registry,
             live,
           });
+          const roomId = SignalResolver.makeRoomId(key, roomArgs);
+          if (isBinaryFrame) {
+            const bytes = Binary._parse(resolvedData as Uint8Array) as Uint8Array;
+            websocket.publish(roomId, bytes);
+            SignalResolver.#localPublish(roomId, bytes);
+            return;
+          }
           const serializedData = serializeFn(resolvedData) as object | object[] | null;
           if (!serializedData) {
             this.logger.warn(`Failed to serialize data for ${key}`);
             return;
           }
-          const roomId = SignalResolver.makeRoomId(key, roomArgs);
+          if (!warnedRawBytes && ArrayBuffer.isView(serializedData)) {
+            warnedRawBytes = true;
+            this.logger.warn(`${key} publishes bytes but does not return Binary; declare pubsub(Binary) instead.`);
+          }
           websocket.publish(roomId, serializedData);
           SignalResolver.#localPublish(roomId, serializedData);
         },

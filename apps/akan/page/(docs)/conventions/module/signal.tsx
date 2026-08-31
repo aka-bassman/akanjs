@@ -76,8 +76,8 @@ export default function Page() {
     {
       name: "pubsub(ReturnType, options?)",
       desc: l.trans({
-        en: "Realtime subscription channel. Use room(...) to describe the subscription room.",
-        ko: "Realtime subscription channel입니다. room(...)으로 subscription room을 정의합니다.",
+        en: 'Realtime subscription channel. Use room(...) to describe the subscription room. A Binary return sends raw bytes in a websocket binary frame and coalesces under backpressure; name backpressure: "queue" when every frame has to arrive.',
+        ko: 'Realtime subscription channel입니다. room(...)으로 subscription room을 정의합니다. return이 Binary면 raw byte를 websocket binary frame으로 보내고 backpressure 시 최신 frame만 남깁니다. 모든 frame이 도착해야 하면 backpressure: "queue"를 지정합니다.',
       }),
       example: "chatAdded: pubsub(Chat).room(...).exec(...)",
     },

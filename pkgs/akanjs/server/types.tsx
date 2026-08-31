@@ -13,6 +13,8 @@ export type WebsocketRoutes = Record<string, WebsocketRoute>;
 
 export type HttpRoutes = Bun.Serve.Options<unknown>["routes"];
 
+export type LocalPublish = (roomId: string, data: object | object[] | Uint8Array) => void;
+
 export interface SignalRouteOptions {
   globalPrefix?: false;
 }

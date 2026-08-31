@@ -92,6 +92,13 @@ export interface SignalOption<Response = any, Nullable extends boolean = false, 
   method?: HttpMutationMethod;
   /** Marks this mutation as the framework file-upload endpoint (see resolveFileUploadCapability). */
   fileUpload?: boolean;
+  /**
+   * What a `pubsub(Binary)` does when a subscriber cannot keep up. `"coalesce"` (the default) keeps only the
+   * newest frame per room, which is what a telemetry or video stream wants — an old frame is worthless once a
+   * newer one exists. Name `"queue"` when the frames are a sequence a subscriber has to see in full, such as
+   * deltas against a base it already holds; the send buffer then grows with the slowest subscriber.
+   */
+  backpressure?: "coalesce" | "queue";
 
   // * ==================== Schedule ==================== * //
   scheduleType?: "init" | "destroy" | "cron" | "interval" | "timeout";

@@ -259,6 +259,41 @@ describe("makeAkanChildProxyHeaders", () => {
     expect(headers.get("x-forwarded-host")).toBe("internal.example");
     expect(headers.get("x-forwarded-proto")).toBe("http");
   });
+
+  test("stamps the socket peer as the client, since the child only ever sees the gateway", () => {
+    const req = new Request("http://internal.example/", { headers: { host: "internal.example" } });
+
+    const headers = makeAkanChildProxyHeaders(req, 0, { address: "203.0.113.10", port: 54321, family: "IPv4" });
+
+    expect(headers.get("x-real-ip")).toBe("203.0.113.10");
+    expect(headers.get("x-forwarded-for")).toBe("203.0.113.10");
+    expect(headers.get("x-forwarded-port")).toBe("54321");
+  });
+
+  test("unwraps an IPv4-mapped peer, which a udp4 return path cannot use", () => {
+    const req = new Request("http://internal.example/", { headers: { host: "internal.example" } });
+
+    const headers = makeAkanChildProxyHeaders(req, 0, { address: "::ffff:203.0.113.10", port: 1, family: "IPv6" });
+
+    expect(headers.get("x-real-ip")).toBe("203.0.113.10");
+  });
+
+  test("keeps an upstream proxy's x-real-ip over its own peer, which is then that proxy", () => {
+    const req = new Request("http://internal.example/", {
+      headers: { host: "internal.example", "x-real-ip": "203.0.113.10", "x-forwarded-for": "203.0.113.10" },
+    });
+
+    const headers = makeAkanChildProxyHeaders(req, 0, { address: "10.0.0.5", port: 443, family: "IPv4" });
+
+    expect(headers.get("x-real-ip")).toBe("203.0.113.10");
+    expect(headers.get("x-forwarded-for")).toBe("203.0.113.10, 203.0.113.10");
+  });
+
+  test("falls back to loopback only when there is no peer to read", () => {
+    const req = new Request("http://internal.example/", { headers: { host: "internal.example" } });
+
+    expect(makeAkanChildProxyHeaders(req, 0).get("x-real-ip")).toBe("127.0.0.1");
+  });
 });
 
 describe("AkanApp", () => {

@@ -195,6 +195,8 @@ export class JsonSchemaBuilder {
         return { type: "integer" };
       case "Upload":
         return { type: "string", format: "binary" };
+      case "Binary":
+        return { type: "string", contentEncoding: "base64" };
       case "Any":
         return {};
       default:

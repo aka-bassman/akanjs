@@ -59,6 +59,18 @@ export const eventPayload = via.scalar("eventPayload", {
 });`,
     },
     {
+      name: "Binary",
+      desc: l.trans({
+        en: "Raw bytes for a signal argument or return, never a model field. It is a Uint8Array on both sides and base64 on a JSON wire; a pubsub whose whole return is Binary sends its own websocket frame instead. Store a blob as a File model.",
+        ko: "signal argument와 return을 위한 raw byte입니다. model field로는 쓸 수 없습니다. 양쪽 모두 Uint8Array이고 JSON wire에서는 base64이며, return 전체가 Binary인 pubsub은 별도의 websocket binary frame으로 보냅니다. blob 저장은 File model을 사용합니다.",
+      }),
+      code: `import { Binary } from "akanjs/base";
+
+export class StreamEndpoint extends endpoint(srv.stream, ({ pubsub }) => ({
+  chunkReceived: pubsub(Binary).room("channel", String).exec(() => undefined),
+}))  {}`,
+    },
+    {
       name: "dayjs / Dayjs",
       desc: l.trans({
         en: "Akan re-exports the configured dayjs function and Dayjs type from base. Apps and libs use it for document dates, store state dates, service calculations, and UI formatting.",

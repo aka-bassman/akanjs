@@ -551,7 +551,7 @@ export class AkanApp {
     if (this.#isWebSocketPath(url.pathname)) return this.#upgradeWebSocket(req, server);
     const assetResponse = await this.#serveImmutableArtifact(req, url);
     if (assetResponse) return assetResponse;
-    return await this.#proxyHttp(req);
+    return await this.#proxyHttp(req, server);
   }
 
   #isWebSocketPath(pathname: string) {
@@ -597,7 +597,7 @@ export class AkanApp {
     if (!child || !upstream) return new Response("No websocket upstream is ready", { status: 503 });
     const url = new URL(req.url);
     const upstreamWs = new WebSocket(`ws://${upstream.host}:${upstream.port}${url.pathname}${url.search}`, {
-      headers: this.#makeProxyHeaders(req, child.idx),
+      headers: this.#makeProxyHeaders(req, child.idx, server),
     } as unknown as string[]);
     // No socket id here: the child mints its own on the socket it accepts from us, and that is the one
     // the room bookkeeping and every endpoint see. A second id on this hop would only look authoritative.
@@ -697,14 +697,14 @@ export class AkanApp {
     };
   }
 
-  async #proxyHttp(req: Request): Promise<Response> {
+  async #proxyHttp(req: Request, server: Bun.Server<GatewayWsData>): Promise<Response> {
     const child = this.#pickFederationChild();
     if (!child?.upstream || child.upstream.type !== "unix") {
       return this.#respondWithCrashPage(req) ?? new Response("No healthy federation child is ready", { status: 503 });
     }
     const url = new URL(req.url);
     const upstreamUrl = `http://akan-child${url.pathname}${url.search}`;
-    const headers = this.#makeProxyHeaders(req, child.idx);
+    const headers = this.#makeProxyHeaders(req, child.idx, server);
     child.metrics.activeRequests = (child.metrics.activeRequests ?? 0) + 1;
     child.metrics.totalRequests = (child.metrics.totalRequests ?? 0) + 1;
     const traced = isTraceEnabled();
@@ -875,8 +875,8 @@ export class AkanApp {
     return resolved;
   }
 
-  #makeProxyHeaders(req: Request, childIdx: number) {
-    return makeAkanChildProxyHeaders(req, childIdx);
+  #makeProxyHeaders(req: Request, childIdx: number, server?: Bun.Server<GatewayWsData>) {
+    return makeAkanChildProxyHeaders(req, childIdx, server?.requestIP(req));
   }
 
   #invalidateFederationChildCache() {

@@ -1,5 +1,11 @@
 export { applyMixins } from "./applyMixins";
 export { capitalize } from "./capitalize";
+export {
+  clientAddressFromHeaders,
+  clientPortFromHeaders,
+  forwardedHeaders,
+  normalizeIpAddress,
+} from "./clientAddress";
 export { deepObjectify } from "./deepObjectify";
 export {
   type FileUploadCapability,
@@ -76,3 +82,4 @@ export {
   type WebsocketAuthRequest,
   websocketAuthContract,
 } from "./websocketAuth";
+export { type WebsocketBinaryFrame, websocketBinaryFrameContract } from "./websocketBinaryFrame";

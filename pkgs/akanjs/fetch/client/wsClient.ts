@@ -1,4 +1,4 @@
-import { Logger, websocketAuthContract } from "akanjs/common";
+import { Logger, websocketAuthContract, websocketBinaryFrameContract } from "akanjs/common";
 import type {
   WebsocketAuthAck,
   WebsocketMessageData,
@@ -85,6 +85,7 @@ export class WsClient {
     if (this.#destroyed) return;
 
     this.#ws = new WebSocket(this.url);
+    this.#ws.binaryType = "arraybuffer";
     this.#ws.onopen = (e) => {
       this.#reconnectAttempts = 0;
       this.connected = true;
@@ -102,7 +103,13 @@ export class WsClient {
     };
     this.#ws.onmessage = (e) => {
       try {
-        const parsed = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+        if (typeof e.data !== "string") {
+          const frame = websocketBinaryFrameContract.decode(e.data as ArrayBuffer);
+          if (frame) this.#handlePubsub(frame.roomId, frame.payload);
+          else this.logger.warn("Unknown binary WebSocket frame");
+          return;
+        }
+        const parsed = JSON.parse(e.data) as { error?: unknown } & WebsocketResData;
         if (parsed?.error) {
           throw this.#restoreError(parsed);
         }

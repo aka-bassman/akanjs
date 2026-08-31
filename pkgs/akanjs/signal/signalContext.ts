@@ -8,6 +8,7 @@ import {
   type PromiseOrObject,
   Upload,
 } from "akanjs/base";
+import { clientAddressFromHeaders, clientPortFromHeaders, normalizeIpAddress } from "akanjs/common";
 import {
   type ConstantCls,
   type ConstantFieldTypeInput,
@@ -433,6 +434,27 @@ export class SignalContext<
   get<T = unknown>(key: string): T | null {
     if (this.transport === "http") return this.getHttpContext<{ [key: string]: T }>().req[key] ?? null;
     return this.getWebSocketContext<{ [key: string]: T }>().ws.data[key] ?? null;
+  }
+  /**
+   * The caller's IP, preferring what a proxy recorded over the socket peer. Behind the federation gateway the
+   * peer is the gateway itself for every request and for the whole life of every socket, so `remoteAddress`
+   * alone names the wrong machine — which is why nothing here reads it first. IPv4 arrives unwrapped from its
+   * `::ffff:` form, so it can be used as a destination as well as an identity.
+   *
+   * `null` means no proxy recorded one and the transport has no peer to fall back on — never a placeholder,
+   * because a loopback-looking address for an unknown caller is the failure this replaced.
+   */
+  getClientIp(): string | null {
+    if (this.transport === "http") return clientAddressFromHeaders(this.getHttpContext().req.headers);
+    const { ws } = this.getWebSocketContext<{ headers?: Headers }>();
+    const forwarded = ws.data.headers ? clientAddressFromHeaders(ws.data.headers) : null;
+    return forwarded ?? (ws.remoteAddress ? normalizeIpAddress(ws.remoteAddress) : null);
+  }
+  /** The caller's source port as the nearest proxy recorded it, else this socket's own. */
+  getClientPort(): number | null {
+    if (this.transport === "http") return clientPortFromHeaders(this.getHttpContext().req.headers);
+    const { ws } = this.getWebSocketContext<{ headers?: Headers }>();
+    return (ws.data.headers ? clientPortFromHeaders(ws.data.headers) : null) ?? null;
   }
   getRoomId(key: string) {
     if (this.transport !== "websocket") throw new Error("Transport is not websocket");

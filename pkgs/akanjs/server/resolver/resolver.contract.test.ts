@@ -872,7 +872,7 @@ describe("SignalResolver declaration contracts", () => {
     const live = getDefaultLiveRegistry();
     const websocket = makeFakeWebsocket();
     registry.adaptor.set(SolidPubSub, websocket.instance);
-    const localPublishes: { roomId: string; data: object | object[] }[] = [];
+    const localPublishes: { roomId: string; data: unknown }[] = [];
     SignalResolver.setLocalPublish((roomId, data) => localPublishes.push({ roomId, data }), websocket.instance);
 
     const ServerSignalRef = SignalResolver.resolveServerSignal(ServerResolverTestServerSignal, { registry, live });
@@ -886,6 +886,8 @@ describe("SignalResolver declaration contracts", () => {
       },
     }) as InstanceType<typeof ServerSignalRef> & {
       roomFeed: (roomId: string, data: unknown) => Promise<void>;
+      roomStream: (channel: string, data: Uint8Array) => Promise<void>;
+      roomQueuedStream: (channel: string, data: Uint8Array) => Promise<void>;
       processItem: (itemId: string, options?: unknown) => Promise<unknown>;
     };
 
@@ -916,6 +918,26 @@ describe("SignalResolver declaration contracts", () => {
       ],
     });
     expect(localPublishes.at(-1)?.roomId).toBe(`roomFeed-${validId}`);
+
+    // A Binary return skips `serialize`, which would have base64'd it, and travels as the bytes themselves.
+    const packet = new Uint8Array([2, 148, 1, 2, 63]);
+    await serverSignal.roomStream("ch1", packet);
+    expect(websocket.instance.calls.at(-1)).toEqual({ method: "publish", args: ["roomStream-ch1", packet] });
+    expect(localPublishes.at(-1)).toEqual({ roomId: "roomStream-ch1", data: packet });
+
+    await serverSignal.roomStream("ch1", "ApQBAj8=" as unknown as Uint8Array);
+    const last = localPublishes.at(-1)?.data;
+    expect(last).toBeInstanceOf(Uint8Array);
+    expect([...(last as Uint8Array)]).toEqual([2, 148, 1, 2, 63]);
+
+    // Coalescing follows the endpoint that owns the room, so every publish path reaches the same answer
+    // without carrying it. A room no endpoint declared `Binary` for is absent, and queues.
+    expect(SignalResolver.coalescesRoom("roomStream-ch1")).toBe(true);
+    expect(SignalResolver.coalescesRoom("roomQueuedStream-ch1")).toBe(false);
+    expect(SignalResolver.coalescesRoom("roomFeed-anything")).toBe(false);
+
+    await serverSignal.roomQueuedStream("ch1", packet);
+    expect(localPublishes.at(-1)?.roomId).toBe("roomQueuedStream-ch1");
 
     await serverSignal.processItem(validId, { delay: 10 });
     expect(queueCalls).toEqual([{ key: "processItem", args: [validId], options: { delay: 10 } }]);

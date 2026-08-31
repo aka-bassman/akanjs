@@ -1,5 +1,5 @@
 import { type BackendEnv, type BaseEnv, getEnv } from "akanjs/base";
-import { Logger } from "akanjs/common";
+import { Logger, websocketBinaryFrameContract } from "akanjs/common";
 import { DictionaryLookup } from "akanjs/dictionary";
 import type {
   Adaptor,
@@ -16,6 +16,7 @@ import { createOpenApiDocument } from "../signal/openapi";
 import { FetchSerializer } from "../signal/serializer";
 import type { AkanLib, AkanLibProps } from "./akanLib";
 import type { BuilderRpc } from "./artifact";
+import { BinaryPubsub } from "./binaryPubsub";
 import { DevtoolsRouter } from "./devtools";
 import { DiLifecycle } from "./di/diLifecycle";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
@@ -27,7 +28,7 @@ import { WebProxyRunner } from "./proxy";
 import { SignalResolver } from "./resolver";
 import { ApiRouter } from "./routing/apiRouter";
 import type { AppWsData } from "./routing/appWsData";
-import type { HttpRoutes, SignalRoutes, WebsocketRoutes } from "./types";
+import type { HttpRoutes, LocalPublish, SignalRoutes, WebsocketRoutes } from "./types";
 import type { WebRouter } from "./webRouter";
 
 export interface AkanServerProps extends AkanLibProps {
@@ -139,7 +140,8 @@ export class AkanServer {
   shutdownTimeoutMs = AkanServer.#defaultShutdownTimeoutMs();
 
   #di: DiLifecycle;
-  #localPublish: ((roomId: string, data: object | object[]) => void) | null = null;
+  #localPublish: LocalPublish | null = null;
+  readonly #binaryPubsub = new BinaryPubsub();
   #metricsTimer: Timer | null = null;
   constructor(
     name = "AkanServer",
@@ -319,6 +321,7 @@ export class AkanServer {
         hmrHub,
         hmrState: webRouter ? { state: webRouter.renderState } : null,
         logger: this.logger,
+        onDrain: () => this.#binaryPubsub.flush(),
       }),
       // `data` is typed by the upgrade call site; the runtime default is unused.
       data: {},
@@ -377,16 +380,20 @@ export class AkanServer {
 
     const websocket = this.#di.getWebsocketAdaptor();
     if (!websocket) throw new Error("WebSocket Redis adaptor is not registered");
-    SignalResolver.setLocalPublish((roomId, data) => {
-      const publishData: WebsocketPublishData = { type: "pub", roomId, data };
-      server?.publish(roomId, JSON.stringify(publishData));
-      wsServer?.publish(roomId, JSON.stringify(publishData));
-    }, websocket);
-    this.#localPublish = (roomId, data) => {
+    this.#binaryPubsub.setServers(server, wsServer);
+    const localPublish: LocalPublish = (roomId, data) => {
+      if (data instanceof Uint8Array) {
+        this.#binaryPubsub.publish(roomId, websocketBinaryFrameContract.encode({ roomId, payload: data }), {
+          coalesce: SignalResolver.coalescesRoom(roomId),
+        });
+        return;
+      }
       const publishData: WebsocketPublishData = { type: "pub", roomId, data };
       server?.publish(roomId, JSON.stringify(publishData));
       wsServer?.publish(roomId, JSON.stringify(publishData));
     };
+    SignalResolver.setLocalPublish(localPublish, websocket);
+    this.#localPublish = localPublish;
 
     this.status = "running";
     this.#startMetricsReporting();
@@ -481,7 +488,8 @@ export class AkanServer {
 
   #handleIpcMessage(message: AkanIpcMessage) {
     if (!message || typeof message !== "object") return;
-    if (message.type === "pubsub.deliver") this.#localPublish?.(message.roomId, message.data as object | object[]);
+    if (message.type === "pubsub.deliver")
+      this.#localPublish?.(message.roomId, message.data as object | object[] | Uint8Array);
     else if (message.type === "health.ping")
       process.send?.({
         type: "health.pong",
@@ -508,6 +516,7 @@ export class AkanServer {
   async #reportMetrics() {
     const metrics = await ProcessMetricsCollector.collect({
       role: this.serverMode,
+      pubsubCoalesceCount: this.#binaryPubsub.coalescedCount,
       ...(this.#prepared?.webRouter?.getMetrics() ?? {}),
     });
     process.send?.({ type: "metrics.report", pid: process.pid, metrics } satisfies AkanIpcMessage);

@@ -1,3 +1,5 @@
+import { clientAddressFromHeaders, clientPortFromHeaders, forwardedHeaders, normalizeIpAddress } from "akanjs/common";
+
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "user-agent"] as const;
 
 /**
@@ -9,7 +11,10 @@ const CREDENTIAL_HEADERS = ["authorization", "cookie", "user-agent"] as const;
 export class AppWsData {
   static fromRequest(req: Request): AppWsData {
     const headers = new Headers();
-    for (const key of CREDENTIAL_HEADERS) {
+    // The forwarded set travels with the credentials because the handshake is the only moment the socket
+    // ever sees them: behind the federation gateway `ws.remoteAddress` is the gateway, for the whole life
+    // of the connection, so an endpoint that reads the peer instead names the wrong machine every time.
+    for (const key of [...CREDENTIAL_HEADERS, ...forwardedHeaders]) {
       const value = req.headers.get(key);
       if (value) headers.set(key, value);
     }
@@ -48,6 +53,18 @@ export class AppWsData {
    * It outlives a credential swap on purpose: the socket is still the same socket.
    */
   socketId: string;
+  /** The caller's address as the nearest proxy recorded it, or null when nothing did. */
+  get ip(): string | null {
+    return clientAddressFromHeaders(this.headers);
+  }
+  /** The caller's source port as the nearest proxy recorded it, or null when nothing did. */
+  get port(): number | null {
+    return clientPortFromHeaders(this.headers);
+  }
+  /** The address to answer on: what a proxy recorded, else this socket's own peer. */
+  ipOf(ws: Bun.ServerWebSocket<unknown>): string | null {
+    return this.ip ?? (ws.remoteAddress ? normalizeIpAddress(ws.remoteAddress) : null);
+  }
   constructor(headers: Headers) {
     this.createdAt = Date.now();
     this.headers = headers;
