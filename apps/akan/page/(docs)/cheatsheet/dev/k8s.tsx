@@ -151,6 +151,12 @@ main:
               })}
             </li>
           </DocsList>
+          <div>
+            {l.trans({
+              en: "A single request-serving replica (`1,0,0` or `0,0,1`) runs in the pod's only process, with no gateway in front of it. That leaves the kubelet as the only thing that can restart a wedged server, so the chart ships liveness, readiness, and startup probes on /_akan/app/health, which a solo process answers itself.",
+              ko: "요청을 처리하는 replica가 하나(`1,0,0` 또는 `0,0,1`)면 pod의 유일한 프로세스에서 gateway 없이 실행됩니다. 멈춘 서버를 재시작할 수 있는 것이 kubelet뿐이므로, chart는 /_akan/app/health에 liveness, readiness, startup probe를 함께 배포하며 solo 프로세스가 이 경로에 직접 응답합니다.",
+            })}
+          </div>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />

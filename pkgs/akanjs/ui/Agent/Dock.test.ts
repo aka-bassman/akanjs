@@ -4,6 +4,8 @@ import { createElement } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
 
 let html: string;
+let bridge: InstanceType<typeof import("akanjs/store")["AgentBridge"]>;
+let Dock: typeof import("./Dock")["Dock"];
 
 /**
  * Imported after the environment is set, not before: the `akanjs/store` barrel reaches `baseSt`, which calls
@@ -15,7 +17,7 @@ beforeAll(async () => {
   process.env.AKAN_PUBLIC_SERVE_DOMAIN = "localhost";
   process.env.AKAN_PUBLIC_ENV = "testing";
 
-  const [{ Int, SLICE_META }, { ConstantRegistry, via }, storeFacet, { Dock }] = await Promise.all([
+  const [{ Int, SLICE_META }, { ConstantRegistry, via }, storeFacet, dockFacet] = await Promise.all([
     import("akanjs/base"),
     import("akanjs/constant"),
     import("akanjs/store"),
@@ -63,7 +65,8 @@ beforeAll(async () => {
   }
   StoreRegistry.register(DeskStore);
   const instance = new StoreInstance(StoreRegistry.merge("dockRoot", DeskStore));
-  const bridge = new AgentBridge(instance);
+  Dock = dockFacet.Dock;
+  bridge = new AgentBridge(instance);
   instance.retainLive("deskDraft");
   html = await new Response(await renderToReadableStream(createElement(Dock, { bridge, open: true }))).text();
 });
@@ -84,5 +87,23 @@ describe("Agent.Dock", () => {
     // Tools come from the surface, so a store method and a generated setter appear nowhere in the dock.
     expect(html).not.toContain("wipeDesk");
     expect(html).not.toContain("setLabelOnDockDesk");
+  });
+
+  test("offers an assemble preview of the turn context", () => {
+    expect(html).toContain("Assemble");
+  });
+
+  test("renders nothing in production", async () => {
+    const previous = process.env.AKAN_PUBLIC_ENV;
+    process.env.AKAN_PUBLIC_ENV = "main";
+    try {
+      const production = await new Response(
+        await renderToReadableStream(createElement(Dock, { bridge, open: true })),
+      ).text();
+      expect(production).not.toContain("Assemble");
+      expect(production).not.toContain("Agent");
+    } finally {
+      process.env.AKAN_PUBLIC_ENV = previous;
+    }
   });
 });

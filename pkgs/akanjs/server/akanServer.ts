@@ -1,3 +1,4 @@
+import type { AkanWebConfig, AkanWebOption } from "akanjs";
 import { type BackendEnv, type BaseEnv, getEnv } from "akanjs/base";
 import { Logger, websocketBinaryFrameContract } from "akanjs/common";
 import { DictionaryLookup } from "akanjs/dictionary";
@@ -5,6 +6,7 @@ import type {
   Adaptor,
   AdaptorCls,
   AkanIpcMessage,
+  AkanMetricsReport,
   DatabaseConfig,
   Service,
   ServiceCls,
@@ -14,6 +16,7 @@ import type { ServerSignal, ServerSignalCls, WebsocketPublishData } from "akanjs
 import { AgentRelayAccess } from "../signal/guards";
 import { createOpenApiDocument } from "../signal/openapi";
 import { FetchSerializer } from "../signal/serializer";
+import { SignalContext } from "../signal/signalContext";
 import type { AkanLib, AkanLibProps } from "./akanLib";
 import type { BuilderRpc } from "./artifact";
 import { BinaryPubsub } from "./binaryPubsub";
@@ -21,14 +24,23 @@ import { DevtoolsRouter } from "./devtools";
 import { DiLifecycle } from "./di/diLifecycle";
 import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { isPortInUseError } from "./lifecycle/portInUse";
+import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
 import { ShutdownManager } from "./lifecycle/shutdownManager";
+import { RotatingLogWriter } from "./logging/rotatingLogWriter";
 import { type McpAuthOption, McpRouter } from "./mcp";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { WebProxyRunner } from "./proxy";
 import { SignalResolver } from "./resolver";
 import { ApiRouter } from "./routing/apiRouter";
 import type { AppWsData } from "./routing/appWsData";
-import type { HttpRoutes, LocalPublish, SignalRoutes, WebsocketRoutes } from "./types";
+import { createSoloAppRoutes } from "./routing/soloAppRoutes";
+import {
+  getWebConfigFromEnv,
+  type HttpRoutes,
+  type LocalPublish,
+  type SignalRoutes,
+  type WebsocketRoutes,
+} from "./types";
 import type { WebRouter } from "./webRouter";
 
 export interface AkanServerProps extends AkanLibProps {
@@ -136,6 +148,8 @@ export class AkanServer {
   mcpAuth: McpAuthOption = AkanServer.#mcpAuthFromEnv();
   mcpOption: Omit<McpServerOption, "enabled" | "readOnly" | "auth"> = AkanServer.#mcpOptionFromEnv();
   serverMode: "federation" | "batch" | "all";
+  /** Resolved at `init`: what this process actually serves, after env and artifact availability. */
+  web: AkanWebConfig = getWebConfigFromEnv();
   modules: string[];
   shutdownTimeoutMs = AkanServer.#defaultShutdownTimeoutMs();
 
@@ -143,6 +157,16 @@ export class AkanServer {
   #localPublish: LocalPublish | null = null;
   readonly #binaryPubsub = new BinaryPubsub();
   #metricsTimer: Timer | null = null;
+  /**
+   * No gateway socket means nothing is proxying this process, so it owns the whole surface: the
+   * `/_akan/app/*` observability routes the gateway would have answered, and the rotating log file the
+   * gateway would have written. Derived rather than declared — a spawned child always carries the socket,
+   * so the two modes cannot disagree about which one this is.
+   */
+  readonly #solo = !process.env.AKAN_CHILD_SOCKET;
+  #logWriter: RotatingLogWriter | null = null;
+  #removeLogSink: (() => void) | null = null;
+  #lastMetrics: AkanMetricsReport = {};
   constructor(
     name = "AkanServer",
     env: BackendEnv = {},
@@ -183,6 +207,12 @@ export class AkanServer {
   setOpenApi(openapi = true) {
     if (this.status !== "stopped") throw new Error("OpenAPI config must be set before app initialization.");
     this.openapi = openapi;
+    return this;
+  }
+  /** Narrows the web surface this process serves. Never widens it past what the build produced. */
+  setWeb(web: AkanWebOption = true) {
+    if (this.status !== "stopped") throw new Error("Web config must be set before app initialization.");
+    this.web = AkanServer.#narrowWeb(this.web, web);
     return this;
   }
   setMcp(mcp: boolean | McpServerOption = true) {
@@ -257,7 +287,7 @@ export class AkanServer {
     };
   }
 
-  async init({ routes: initRoutes = true, web = true }: { routes?: boolean; web?: boolean } = {}) {
+  async init({ routes: initRoutes = true, web }: { routes?: boolean; web?: AkanWebOption } = {}) {
     if (this.status !== "stopped") throw new Error("AkanServer is not able to init. It is already running.");
     this.status = "initializing";
     const { routes, wsRoutes, routeOptions } = await this.#di.initializeAll();
@@ -266,7 +296,8 @@ export class AkanServer {
       this.status = "initialized";
       return this;
     }
-    if (!web) {
+    const requestedWeb = AkanServer.#narrowWeb(this.web, web);
+    const noWeb = () => {
       this.#prepared = {
         routes,
         routeOptions,
@@ -280,11 +311,27 @@ export class AkanServer {
       };
       this.status = "initialized";
       return this;
+    };
+    if (!requestedWeb.ssr) {
+      this.web = requestedWeb;
+      this.logger.info("web off: serving api only (AKAN_SSR=false, or a build with `web: false`)");
+      return noWeb();
     }
     const { WebRouter } = await import("./webRouter");
     const webRouter = await WebRouter.create({
+      web: requestedWeb,
       upgradeHmrWs: (req, data) => this.#server?.upgrade(req, { data }) ?? false,
     });
+    // A build that excluded the web artifacts leaves nothing to serve. Boot the api rather than crashing on
+    // the missing artifact, and say so once — the alternative is a replica that restart-loops for a reason
+    // only the build log carries.
+    if (!webRouter) {
+      this.web = { ssr: false, csr: false };
+      this.logger.warn("web off: no build artifact under .akan/artifact; serving api only");
+      return noWeb();
+    }
+    this.web = webRouter.web;
+    this.logger.verbose(`web on: ssr=${this.web.ssr} csr=${this.web.csr}`);
     const { renderEnvRoutes, hmrHub, builderRpc } = await webRouter.initializeRoute();
     const webProxyRunner = WebProxyRunner.create(this.#di.webProxies);
     this.#prepared = {
@@ -307,6 +354,7 @@ export class AkanServer {
       throw new Error("AkanServer is not able to listen. Call `init` first.");
     }
     this.status = "starting";
+    this.#startFileLogging();
     const port = process.env.AKAN_CHILD_SOCKET
       ? undefined
       : Number(process.env.AKAN_CHILD_WS_PORT || process.env.PORT || 8282);
@@ -373,6 +421,9 @@ export class AkanServer {
 
     const server = this.#server;
     const wsServer = this.#wsServer;
+    // Only the listening server can answer `requestIP`, and behind the gateway `x-real-ip` beats it anyway,
+    // so this is what gives a solo process the caller instead of `null`.
+    SignalContext.setHttpPeerResolver((req) => server?.requestIP(req as Bun.BunRequest) ?? null);
     hmrHub?.setPublisher((topic, payload) => {
       server?.publish(topic, payload);
       wsServer?.publish(topic, payload);
@@ -414,7 +465,7 @@ export class AkanServer {
     return this;
   }
 
-  async start({ listen, web = true }: { listen?: boolean; web?: boolean } = {}) {
+  async start({ listen, web }: { listen?: boolean; web?: AkanWebOption } = {}) {
     const isNoListenCommand = process.env.AKAN_COMMAND_TYPE === "script" || process.env.AKAN_COMMAND_TYPE === "console";
     const shouldListen = (listen ?? !isNoListenCommand) && this.serverMode !== "batch";
     await this.init({ routes: shouldListen, web });
@@ -456,9 +507,11 @@ export class AkanServer {
       this.#wsServer?.stop(true);
       this.#server = null;
       this.#wsServer = null;
+      SignalContext.setHttpPeerResolver(null);
 
       this.#prepared?.webRouter?.dispose();
       await this.#withShutdownTimeout(this.#di.destroyAll());
+      await this.#stopFileLogging();
       this.#prepared = null;
       this.status = "stopped";
       this.logger.info(`Shutdown completed successfully in ${Date.now() - now}ms`);
@@ -519,6 +572,7 @@ export class AkanServer {
       pubsubCoalesceCount: this.#binaryPubsub.coalescedCount,
       ...(this.#prepared?.webRouter?.getMetrics() ?? {}),
     });
+    this.#lastMetrics = metrics;
     process.send?.({ type: "metrics.report", pid: process.pid, metrics } satisfies AkanIpcMessage);
     if (process.env.AKAN_MEMORY_LOG === "1") {
       this.logger.info(`memory role=${this.serverMode} ${ProcessMetricsCollector.format(metrics)}`);
@@ -573,6 +627,15 @@ export class AkanServer {
           })
         : null;
     const mcpRoutes: HttpRoutes = mcpRouter?.createRoutes() ?? {};
+    const soloRoutes: HttpRoutes = this.#solo
+      ? createSoloAppRoutes(() => ({
+          role: this.serverMode,
+          running: this.status === "running",
+          status: this.status,
+          port: this.#server?.port ?? null,
+          metrics: this.#lastMetrics,
+        }))
+      : {};
     // Builds the catalogue here rather than on the first agent request, so what MCP published — and what it
     // refused despite an author opting in — is in the boot log of the process that decided it.
     mcpRouter?.report();
@@ -588,7 +651,24 @@ export class AkanServer {
       openapi: this.openapi,
       getStatus: () => this.status,
     }).createRoutes();
-    return { ...openapiRoutes, ...mcpRoutes, ...devtoolsRoutes };
+    return { ...openapiRoutes, ...mcpRoutes, ...devtoolsRoutes, ...soloRoutes };
+  }
+
+  #startFileLogging() {
+    if (!this.#solo || this.#logWriter) return;
+    this.#logWriter = RotatingLogWriter.fromRuntimeDir(resolveRuntimeDir());
+    if (!this.#logWriter) return;
+    this.#removeLogSink = Logger.addSink((entry) => {
+      this.#logWriter?.write(this.serverMode, entry.plainMessage);
+    });
+  }
+
+  async #stopFileLogging() {
+    this.#removeLogSink?.();
+    this.#removeLogSink = null;
+    const writer = this.#logWriter;
+    this.#logWriter = null;
+    await writer?.close();
   }
 
   /**
@@ -641,6 +721,13 @@ export class AkanServer {
    */
   static #isEnvOn(...names: string[]) {
     return !names.some((name) => process.env[name] === "false" || process.env[name] === "0");
+  }
+
+  /** Narrows only — a surface the build or the env left out cannot be switched back on here. */
+  static #narrowWeb(current: AkanWebConfig, web: AkanWebOption | undefined): AkanWebConfig {
+    if (web === undefined || web === true) return current;
+    if (web === false) return { ssr: false, csr: false };
+    return { ssr: current.ssr, csr: web.csr && current.csr };
   }
 
   /** Named rather than defaulted: an absent env must leave the option unset so a value written in code still wins. */

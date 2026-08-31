@@ -114,6 +114,21 @@ void run();`}
               ko: "단일 Akan App은 clustering 기능을 기본으로 지원합니다. 여러 server replica를 실행하고 Akan App이 트래픽을 분산할 수 있으므로, nginx, docker compose, pm2 같은 별도 로컬 load-balancing 도구를 직접 구성하지 않아도 됩니다.",
             })}
           </Docs.Alert>
+          <div>
+            {l.trans({
+              en: "With one traffic replica there is nothing to balance, so Akan App runs that server in its own process instead of spawning it and proxying to it. The container then holds one process rather than two, and every request skips a proxy hop. Two or more replicas, or a batch-only replica that never listens, bring the gateway back. Set AKAN_SOLO=false to keep the gateway for a single replica; akan start always runs it, because the gateway is also the dev server's build relay and error overlay.",
+              ko: "트래픽 replica가 하나면 분산할 대상이 없으므로, Akan App은 그 서버를 spawn해서 프록시하지 않고 자기 프로세스에서 직접 실행합니다. 컨테이너의 프로세스가 둘에서 하나로 줄고, 모든 요청이 프록시 홉을 건너뜁니다. replica가 둘 이상이거나 listen하지 않는 batch 전용 replica면 gateway가 다시 사용됩니다. 단일 replica에서도 gateway를 쓰려면 AKAN_SOLO=false를 설정하며, akan start는 gateway가 개발 서버의 빌드 릴레이이자 에러 오버레이이기도 하므로 항상 gateway로 실행됩니다.",
+            })}
+          </div>
+          <Docs.Mermaid
+            title="Solo replica"
+            highlightNodes={["solo"]}
+            chart={`flowchart LR
+  browser[Browser] --> solo["Akan App + Akan Server<br/>(one process)"]
+  solo --> webTraffic["Pages, API, WebSocket"]
+  solo --> background["Queue, Timer, Jobs"]
+  solo -.->|"web only"| rsc["RSC Worker"]`}
+          />
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -590,8 +605,8 @@ void run();`}
               <div className="font-bold">{l.trans({ en: "Health", ko: "상태 확인" })}</div>
               <div className="mt-2 text-foreground/70 text-sm leading-relaxed">
                 {l.trans({
-                  en: "Use this to check whether the gateway and server processes are running and ready.",
-                  ko: "게이트웨이와 서버 프로세스가 실행 중이고 준비되었는지 확인할 때 사용합니다.",
+                  en: "Use this to check whether the server processes are running and ready. A solo replica answers it itself, in the same shape the gateway uses, so a probe reads one contract either way.",
+                  ko: "서버 프로세스가 실행 중이고 준비되었는지 확인할 때 사용합니다. solo replica는 gateway와 같은 형태로 직접 응답하므로, probe는 두 경우 모두 같은 형식을 읽습니다.",
                 })}
               </div>
               <Code.Snippet
@@ -645,7 +660,7 @@ AKAN_LOG_MAX_FILES=100`}
           <Docs.Mermaid
             title="Runtime checks"
             chart={`flowchart LR
-  developer[Developer] --> gateway[Akan App Gateway]
+  developer[Developer] --> gateway["Akan App<br/>(gateway or solo)"]
   gateway --> health["/_akan/app/health"]
   gateway --> metrics["/_akan/app/metrics"]
   gateway --> logs["Terminal Logs"]

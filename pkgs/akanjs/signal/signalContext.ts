@@ -28,6 +28,9 @@ import { isTraceEnabled, runWithTrace, SignalTrace, traceSpan } from "./trace";
 
 export type SignalTransportType = "http" | "websocket";
 
+/** What `Bun.Server.requestIP` reports for the socket a request arrived on. */
+export type HttpPeerResolver = (req: Request) => { address: string; port: number } | null;
+
 const httpEndpointTypes = new Set<EndpointType>(["query", "mutation", "prompt"]);
 
 interface WebSocketRequest {
@@ -204,6 +207,16 @@ export class SignalContext<
    * hold for the life of the process. Building both per request cost an instance, a handler and a closure on every
    * call for every registered middleware — and `Logging` is registered by default.
    */
+  static #httpPeer: HttpPeerResolver | null = null;
+  /**
+   * Lets the http branch of `getClientIp` reach the socket the way the websocket branch already reaches
+   * `ws.remoteAddress`. Registered by whichever `Bun.serve` is listening, because only the server can answer
+   * `requestIP`. Behind the federation gateway this never fires — the gateway always writes `x-real-ip` —
+   * so it is the answer for a process nothing is proxying.
+   */
+  static setHttpPeerResolver(resolve: HttpPeerResolver | null) {
+    SignalContext.#httpPeer = resolve;
+  }
   static #middlewareHandlers = new WeakMap<MiddlewareCls, WeakMap<object, Promise<MiddlewareHandler>>>();
   static #getMiddlewareHandler(MiddlewareCls: MiddlewareCls, env: BackendEnv): Promise<MiddlewareHandler> {
     const byEnv =
@@ -445,14 +458,23 @@ export class SignalContext<
    * because a loopback-looking address for an unknown caller is the failure this replaced.
    */
   getClientIp(): string | null {
-    if (this.transport === "http") return clientAddressFromHeaders(this.getHttpContext().req.headers);
+    if (this.transport === "http") {
+      const { req } = this.getHttpContext();
+      const forwarded = clientAddressFromHeaders(req.headers);
+      if (forwarded) return forwarded;
+      const peer = SignalContext.#httpPeer?.(req);
+      return peer ? normalizeIpAddress(peer.address) : null;
+    }
     const { ws } = this.getWebSocketContext<{ headers?: Headers }>();
     const forwarded = ws.data.headers ? clientAddressFromHeaders(ws.data.headers) : null;
     return forwarded ?? (ws.remoteAddress ? normalizeIpAddress(ws.remoteAddress) : null);
   }
   /** The caller's source port as the nearest proxy recorded it, else this socket's own. */
   getClientPort(): number | null {
-    if (this.transport === "http") return clientPortFromHeaders(this.getHttpContext().req.headers);
+    if (this.transport === "http") {
+      const { req } = this.getHttpContext();
+      return clientPortFromHeaders(req.headers) ?? SignalContext.#httpPeer?.(req)?.port ?? null;
+    }
     const { ws } = this.getWebSocketContext<{ headers?: Headers }>();
     return (ws.data.headers ? clientPortFromHeaders(ws.data.headers) : null) ?? null;
   }

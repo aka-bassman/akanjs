@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { Any, ENDPOINT_META, ID, INJECT_META, INTERNAL_META, Int, SLICE_META } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { by, type DatabaseCls, DatabaseRegistry, from, into, type ModelCls } from "akanjs/document";
@@ -194,15 +194,18 @@ const makeHttpRequest = ({
   url = "http://localhost/api?ownerId=u1&ids=a&ids=b",
   params = { id: "123" },
   body,
+  headers = {},
 }: {
   url?: string;
   params?: Record<string, string>;
   body?: Record<string, unknown>;
+  headers?: Record<string, string>;
 } = {}) =>
   ({
     url,
     params,
     body: body ? {} : undefined,
+    headers: new Headers(headers),
     json: async () => body ?? {},
   }) as unknown as Bun.BunRequest;
 
@@ -1268,5 +1271,32 @@ describe("SignalContext websocket authorization", () => {
 
     expect(await context.authorize()).toBe(true);
     expect(signalTestOrder).toEqual(["global:before", "global:after"]);
+  });
+});
+
+describe("SignalContext caller address", () => {
+  afterEach(() => SignalContext.setHttpPeerResolver(null));
+
+  test("prefers a proxy's header over the socket peer", () => {
+    SignalContext.setHttpPeerResolver(() => ({ address: "10.0.0.9", port: 55_000 }));
+    const context = makeSignalContext({
+      request: makeHttpRequest({ headers: { "x-real-ip": "203.0.113.7", "x-forwarded-port": "443" } }),
+    });
+    expect(context.getClientIp()).toBe("203.0.113.7");
+    expect(context.getClientPort()).toBe(443);
+  });
+
+  test("falls back to the socket peer when nothing proxied the call", () => {
+    SignalContext.setHttpPeerResolver(() => ({ address: "::ffff:198.51.100.4", port: 44_100 }));
+    const context = makeSignalContext({ request: makeHttpRequest() });
+    // Unwrapped from its IPv4-mapped form, so it can address a socket as well as identify a caller.
+    expect(context.getClientIp()).toBe("198.51.100.4");
+    expect(context.getClientPort()).toBe(44_100);
+  });
+
+  test("is null rather than a placeholder when there is no header and no peer", () => {
+    const context = makeSignalContext({ request: makeHttpRequest() });
+    expect(context.getClientIp()).toBeNull();
+    expect(context.getClientPort()).toBeNull();
   });
 });

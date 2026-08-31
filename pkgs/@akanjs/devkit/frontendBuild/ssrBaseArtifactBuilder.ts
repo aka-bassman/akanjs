@@ -77,6 +77,7 @@ export class SsrBaseArtifactBuilder {
       branches: [...akanConfig.branches],
       i18n: akanConfig.i18n,
       imageConfig: akanConfig.images,
+      web: akanConfig.web,
       deepLinkAssociations: Object.values(akanConfig.mobile.targets)
         .filter((target) => (target.deepLinks?.domains?.length ?? 0) > 0)
         .map((target) => ({

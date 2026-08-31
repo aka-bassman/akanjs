@@ -37,7 +37,7 @@ Write API. Use it for create, update, delete, or business actions.
 
 WebSocket message handler. Use msg(...) for incoming payload fields.
 
-Realtime subscription channel. Use room(...) to describe the subscription room.
+Realtime subscription channel. Use room(...) to describe the subscription room. A Binary return sends raw bytes in a websocket binary frame and coalesces under backpressure; name backpressure: "queue" when every frame has to arrive.
 
 Prompt an MCP client renders as a slash command. exec returns PromptMessage[] or a bare string. Takes .param(...) and .search(...) only.
 

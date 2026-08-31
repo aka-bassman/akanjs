@@ -5,13 +5,15 @@ import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { Logger } from "akanjs/common";
 import type { AkanChildRole, AkanChildStatus, AkanIpcMessage, AkanMetricsReport, AkanUpstream } from "akanjs/service";
-import { isTraceEnabled } from "akanjs/signal";
+import { isTraceEnabled } from "../signal/trace";
 import { makeAkanChildProxyHeaders } from "./akanAppHeaders";
 import type { BuilderCsrReq, BuilderCsrRes, BuilderMessage, BuilderReq, BuilderRes } from "./artifact";
 import { resolveEncodedSidecar } from "./assetEncoding";
 import { isPortInUseError } from "./lifecycle/portInUse";
+import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
 import { RotatingLogWriter } from "./logging/rotatingLogWriter";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
+import { getWebConfigFromEnv } from "./types";
 
 interface ChildState {
   idx: number;
@@ -34,6 +36,11 @@ interface ChildState {
   lastRestartAt?: number;
   lastRestartReason?: string;
   lastErrorMessage?: string;
+}
+
+/** The shape `#startSolo` needs off `server.ts`; the module itself is loaded by path, so it has no type here. */
+interface SoloServer {
+  start: (options: { listen: boolean }) => Promise<unknown>;
 }
 
 interface GatewayWsData {
@@ -72,6 +79,13 @@ export interface AkanAppOptions {
    * module. Handed down as `AKAN_MODULES`, since each replica builds its own container.
    */
   modules?: string[];
+  /**
+   * Run the one replica in this process instead of spawning it — see `#startSolo`. Defaults on for a single
+   * traffic replica the environment configured, and off whenever `replica` is passed here, because code that
+   * states a topology is asking for the gateway that serves it. `AKAN_SOLO=false` turns it off; like
+   * `AKAN_SSR`, the env can only narrow, so it cannot force a gateway's replicas into one process.
+   */
+  solo?: boolean;
 }
 
 interface AkanReplicaConfig {
@@ -104,7 +118,10 @@ export class AkanApp {
   readonly #port: number;
   readonly #wsBasePort: number;
   readonly #openapi?: boolean;
+  /** The gateway hands `/_akan/client|styles|fonts` straight off disk, so it needs the same answer its children do. */
+  readonly #web = getWebConfigFromEnv();
   readonly #modules: string[];
+  readonly #solo: boolean;
   readonly #children = new Map<number, ChildState>();
   readonly #roomChildren = new Map<string, Set<number>>();
   readonly #childRooms = new Map<number, Set<string>>();
@@ -136,17 +153,29 @@ export class AkanApp {
     this.#serverPath = AkanApp.#resolveServerPath(resolvedOptions.serverPath ?? serverPath);
     this.#artifactDir = path.resolve(path.dirname(this.#serverPath), ".akan", "artifact");
     this.#replica = AkanApp.#parseReplicaConfig(resolvedOptions.replica);
-    this.#runtimeDir = path.resolve(
-      resolvedOptions.runtimeDir ??
-        process.env.AKAN_RUNTIME_DIR ??
-        (process.env.NODE_ENV === "production"
-          ? path.resolve(process.cwd(), "runtime")
-          : path.resolve(process.cwd(), "local", "apps", process.env.AKAN_PUBLIC_APP_NAME ?? "unknown", "runtime")),
-    );
+    this.#runtimeDir = resolveRuntimeDir(resolvedOptions.runtimeDir);
     this.#port = Number(resolvedOptions.port ?? process.env.PORT ?? 8282);
     this.#wsBasePort = Number(resolvedOptions.wsBasePort ?? process.env.AKAN_WS_BASE_PORT ?? this.#port + 10_000);
     this.#openapi = resolvedOptions.openapi;
     this.#modules = resolvedOptions.modules ?? [];
+    this.#solo = AkanApp.#resolveSolo(resolvedOptions, this.#replica);
+  }
+
+  /**
+   * One replica that serves traffic means there is nothing to balance and nothing to fan pubsub out to, so the
+   * gateway is a second Bun runtime and a proxy hop in front of the only server there is. Measured on
+   * `apps/akan`: 28MB of RSS and half the requests per second.
+   *
+   * A batch-only replica is excluded because it never listens — keeping the gateway is what leaves something
+   * bound to answer `/_akan/app/health`. `akan start` is excluded because the gateway is also the dev host's
+   * builder relay, its crash page, and what holds the port across a child restart.
+   */
+  static #resolveSolo(options: AkanAppOptions, replica: AkanReplicaConfig) {
+    if (options.solo !== undefined) return options.solo;
+    if (process.env.AKAN_SOLO === "false" || process.env.AKAN_SOLO === "0") return false;
+    if (process.env.AKAN_COMMAND_TYPE === "start") return false;
+    if (options.replica !== undefined) return false;
+    return replica.total === 1 && replica.batch === 0;
   }
 
   static #resolveServerPath(serverPath: string) {
@@ -213,6 +242,7 @@ export class AkanApp {
   }
 
   async start() {
+    if (this.#solo) return await this.#startSolo();
     await this.#prepareRuntimeDir();
     this.#startFileLogging();
     for (let idx = 0; idx < this.#replica.total; idx++) this.#spawn(idx);
@@ -238,6 +268,26 @@ export class AkanApp {
       // Keep the orchestrator alive while child processes run.
       this.#resolveStopped = resolve;
     });
+  }
+
+  async #startSolo() {
+    const role = this.#getRole(0);
+    // The env a spawned child would have been handed, minus `AKAN_CHILD_SOCKET`: its absence is what tells
+    // `AkanServer` it owns the whole surface, so it binds `PORT` and answers `/_akan/app/*` itself.
+    Object.assign(process.env, {
+      NODE_ENV: AkanApp.#defaultChildNodeEnv(),
+      AKAN_REPLICA: this.#replica.value,
+      AKAN_REPLICA_IDX: "0",
+      AKAN_APP_DIR: path.dirname(this.#serverPath),
+      SERVER_MODE: role,
+      ...(this.#openapi === undefined ? {} : { AKAN_OPENAPI: this.#openapi ? "true" : "false" }),
+      ...(this.#modules.length ? { AKAN_MODULES: this.#modules.join(",") } : {}),
+    });
+    this.logger.info(`Starting ${role} replica in this process (solo); set AKAN_SOLO=false for the gateway`);
+    const mod = (await import(this.#serverPath)) as { server?: SoloServer; app?: SoloServer };
+    const server = mod.server ?? mod.app;
+    if (!server?.start) throw new Error("server.ts must export server or app with start()");
+    await server.start({ listen: true });
   }
 
   async stop(signal = "SIGTERM") {
@@ -559,6 +609,7 @@ export class AkanApp {
   }
 
   async #serveImmutableArtifact(req: Request, url: URL): Promise<Response | null> {
+    if (!this.#web.ssr) return null;
     const clientPrefix = "/_akan/client/";
     if (url.pathname.startsWith(clientPrefix)) {
       const filePath = this.#safeResolve(

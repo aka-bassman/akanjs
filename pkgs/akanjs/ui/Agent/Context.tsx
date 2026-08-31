@@ -14,10 +14,12 @@ interface ContextProps {
  *
  * The tool list leads, by name only: a zone publishes its tools scope-prefixed, and instructions that name a tool
  * without its prefix name a tool that does not exist. That is invisible in the source of either file and obvious
- * here.
+ * here. Renders nothing on `AKAN_PUBLIC_ENV=main`.
  */
 export default function Context({ className }: ContextProps) {
   const [shown, setShown] = useState("");
+  // Production visitors never see the turn snapshot — tool names, guides, and the assembled context.
+  if (process.env.AKAN_PUBLIC_ENV === "main" || process.env.NODE_ENV === "develop") return null;
   const assemble = () => {
     try {
       const { guides, tools } = AgenticSurface.shared.snapshot();

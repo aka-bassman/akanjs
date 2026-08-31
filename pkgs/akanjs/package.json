@@ -1,6 +1,6 @@
 {
   "name": "akanjs",
-  "version": "3.0.0-alpha.64",
+  "version": "3.0.0-alpha.67",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -109,6 +109,11 @@
       "import": "./server/rscWorker.tsx",
       "types": "./server/rscWorker.tsx",
       "default": "./server/rscWorker.tsx"
+    },
+    "./server/akanApp": {
+      "import": "./server/akanApp.ts",
+      "types": "./server/akanApp.ts",
+      "default": "./server/akanApp.ts"
     },
     "./server/memoryLimit": {
       "import": "./server/memoryLimit.ts",
