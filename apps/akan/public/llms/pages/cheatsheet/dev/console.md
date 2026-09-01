@@ -10,6 +10,7 @@
 
 - Server Console (#overview)
 - Local Console (#local)
+- Multi-line Input (#multiline)
 - Container Console (#container)
 - Lifecycle (#lifecycle)
 - Globals (#globals)
@@ -34,6 +35,22 @@ Local Console
 Open a local console when you want to inspect services, call small methods, or try a quick query without writing a repeatable script file.
 
 Run locally
+
+Multi-line Input
+
+Paste a snippet as it is: the console reads a pasted block as one command instead of running it line by line.
+
+A `const` declared on the first pasted line is visible on the last one.
+
+A line that ends inside an open bracket, string, or comment keeps reading at the `...` prompt.
+
+`const` and `let` live for one command only, so assign without a keyword to keep a value.
+
+End a block with `return <expr>` to print its value.
+
+`.clear` or Ctrl+C discards the pending input, and Ctrl+D closes the console.
+
+One pasted command
 
 Container Console
 
@@ -85,6 +102,14 @@ Keep `AKAN_CONSOLE=1` out of permanent deployment configuration.
 
 ```bash
 akan console myapp
+```
+
+### Code
+
+```ts
+const user = await service("user").pickById("6890f2c1f0a1b2c3d4e5f6a7");
+user.name = "changed";
+return await user.save();
 ```
 
 ### Code

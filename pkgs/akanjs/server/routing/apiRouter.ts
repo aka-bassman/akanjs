@@ -2,6 +2,7 @@ import { dayjs } from "akanjs/base";
 import { type Logger, websocketAuthContract } from "akanjs/common";
 import type { InjectRegistry } from "akanjs/service";
 import { Exception, type WebsocketReqData } from "akanjs/signal";
+import { compressResponse } from "../contentEncoding";
 import type { HmrWsData, HmrWsHub } from "../hmr/wsHub";
 import { copyBunRequestFields, type WebProxyRunner } from "../proxy";
 import { SignalResolver } from "../resolver";
@@ -81,9 +82,12 @@ export class ApiRouter {
     webProxyRunner,
   }: ApiRouteInputs): NonNullHttpRoutes {
     const endpointEntries = Object.entries(routes ?? {}).map(
-      ([p, handler]) => [ApiRouter.#applyGlobalPrefix(prefix, p, routeOptions?.[p]), handler] as const,
+      ([p, handler]) =>
+        [ApiRouter.#applyGlobalPrefix(prefix, p, routeOptions?.[p]), ApiRouter.#compressRoute(handler)] as const,
     );
-    const builtinEntries = Object.entries(builtinRoutes ?? {});
+    const builtinEntries = Object.entries(builtinRoutes ?? {}).map(
+      ([path, handler]) => [path, ApiRouter.#compressRoute(handler)] as const,
+    );
     const endpointPaths = new Set([...endpointEntries.map(([path]) => path), ...builtinEntries.map(([path]) => path)]);
     const routeTable = {
       [`${prefix}${websocketPrefix}` as "/api/ws"]: (req) => {
@@ -227,15 +231,7 @@ export class ApiRouter {
   }
 
   static #wrapRoute(route: RouteValue, runner: WebProxyRunner): RouteValue {
-    if (typeof route === "function") return ApiRouter.#wrapHandler(route as RouteHandler, runner) as RouteValue;
-    if (route instanceof Response) return ApiRouter.#wrapHandler(() => route, runner) as RouteValue;
-    if (!route || typeof route !== "object") return route;
-    return Object.fromEntries(
-      Object.entries(route).map(([method, handler]) => [
-        method,
-        typeof handler === "function" ? ApiRouter.#wrapHandler(handler as RouteHandler, runner) : handler,
-      ]),
-    ) as RouteValue;
+    return ApiRouter.#mapRoute(route, (handler) => ApiRouter.#wrapHandler(handler, runner));
   }
 
   static #wrapHandler(handler: RouteHandler, runner: WebProxyRunner): RouteHandler {
@@ -244,5 +240,33 @@ export class ApiRouter {
       if (result.response) return result.response;
       return await handler(copyBunRequestFields(result.request, req));
     };
+  }
+
+  /**
+   * Signal endpoints answer with a fully-built JSON body, so this is the one place every model response passes
+   * through with the request still in hand. The web routes are deliberately left out: their bodies stream, and
+   * `compressResponse` buffers.
+   *
+   * Behind the gateway this finds `Accept-Encoding: identity` and does nothing — the gateway asks for an
+   * identity body because Bun's `fetch` decodes any `Content-Encoding` it is handed, so a child that
+   * compressed here would only be paying to have the gateway undo it. The gateway compresses instead.
+   */
+  static #compressRoute(route: RouteValue): RouteValue {
+    return ApiRouter.#mapRoute(route, (handler) => async (req) => {
+      const response = await handler(req);
+      return response ? await compressResponse(req, response) : response;
+    });
+  }
+
+  static #mapRoute(route: RouteValue, wrap: (handler: RouteHandler) => RouteHandler): RouteValue {
+    if (typeof route === "function") return wrap(route as RouteHandler) as RouteValue;
+    if (route instanceof Response) return wrap(() => route) as RouteValue;
+    if (!route || typeof route !== "object") return route;
+    return Object.fromEntries(
+      Object.entries(route).map(([method, handler]) => [
+        method,
+        typeof handler === "function" ? wrap(handler as RouteHandler) : handler,
+      ]),
+    ) as RouteValue;
   }
 }

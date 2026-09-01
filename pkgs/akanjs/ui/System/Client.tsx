@@ -209,7 +209,7 @@ export const ClientPathWrapper = ({
 };
 
 interface ClientBridgeProps {
-  env: ClientEnv;
+  env?: object;
   lang?: string;
   theme?: AkanTheme;
   prefix?: string;
@@ -218,7 +218,12 @@ interface ClientBridgeProps {
 }
 
 export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId, wsConnect = true }: ClientBridgeProps) => {
-  (globalThis as typeof globalThis & { __AKAN_CLIENT_ENV__?: ClientEnv }).__AKAN_CLIENT_ENV__ = env;
+  // Base env is recomputed here rather than taken from the app's `env/env.client.ts`: that file is imported
+  // by a server component, so its `getEnv()` would resolve to the server's own hosts and ship them to the browser.
+  (globalThis as typeof globalThis & { __AKAN_CLIENT_ENV__?: ClientEnv }).__AKAN_CLIENT_ENV__ = {
+    ...getEnv(),
+    ...env,
+  };
   const uiOperation = st.use.uiOperation({ agent: false });
   const pathname = st.use.pathname({ agent: false });
   const params = st.use.params({ agent: false });

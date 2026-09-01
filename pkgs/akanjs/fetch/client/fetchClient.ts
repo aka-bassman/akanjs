@@ -1,6 +1,13 @@
 import { DataList, getEnv, PrimitiveRegistry, type PromiseOrObject } from "akanjs/base";
 import { capitalize, type FetchPolicy, fileUploadContract, Logger, resolveFileUploadCapability } from "akanjs/common";
-import { type BaseInsight, type BaseObject, ConstantRegistry, deserialize, serialize } from "akanjs/constant";
+import {
+  type BaseInsight,
+  type BaseObject,
+  ConstantRegistry,
+  deserialize,
+  serialize,
+  withSharedInstances,
+} from "akanjs/constant";
 import type {
   DatabaseSignal,
   SerializedArg,
@@ -652,7 +659,9 @@ export class FetchClient {
         listFn(...fetchQueryArgs, skip, limit, sort, { ...option, crystalize: false }),
         fetchInsight ? insightFn(...fetchQueryArgs, { ...option, crystalize: false }) : null,
       ])) as unknown as [BaseObject[], BaseInsight];
-      const modelList = new DataList(modelObjList.map((modelObj) => new cnst.light(modelObj)));
+      const modelList = new DataList(
+        withSharedInstances(() => modelObjList.map((modelObj) => new cnst.light(modelObj))),
+      );
       const modelInsight = new cnst.insight(modelObjInsight);
       const lastPage = modelObjInsight?.count
         ? Math.max(Math.floor((modelObjInsight.count - 1) / (limit || 20)) + 1, 1)

@@ -3493,6 +3493,7 @@ Priority: P2
 Headings:
 - Server Console
 - Local Console
+- Multi-line Input
 - Container Console
 - Lifecycle
 - Globals
@@ -3516,11 +3517,11 @@ Open a local console when you want to inspect services, call small methods, or t
 
 Run locally
 
-Container Console
+Multi-line Input
 
-In Docker or Kubernetes, execute the generated `console.js` that already exists in the built image.
+Paste a snippet as it is: the console reads a pasted block as one command instead of running it line by line.
 
-Set `AKAN_CONSOLE=1` on the exec command itself for production-like environments. Avoid keeping it permanently in deployment env.
+A `const` declared on the first pasted line is visible on the last one.
 
 ## Constant Schema Docs
 

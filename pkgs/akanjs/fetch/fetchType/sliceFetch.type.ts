@@ -1,10 +1,9 @@
-import type { GetStateObject, SLICE_META } from "akanjs/base";
+import type { SLICE_META } from "akanjs/base";
 import type { FetchPolicy } from "akanjs/common";
 import type { ConstantModel, DefaultOf, ProtoFile, PurifiedModel } from "akanjs/constant";
 import type { DatabaseModel, ExtractSort, FilterInstance } from "akanjs/document";
 import type {
   SlceCnstCapitalizedRefName,
-  SlceCnstDefaultInput,
   SlceCnstFull,
   SlceCnstInput,
   SlceCnstInsight,
@@ -28,11 +27,9 @@ type _Full<S extends SliceCls> = SlceCnstFull<S>;
 type _Light<S extends SliceCls> = SlceCnstLight<S>;
 type _Insight<S extends SliceCls> = SlceCnstInsight<S>;
 type _PurifiedInput<S extends SliceCls> = SlceCnstPurifiedInput<S>;
-type _DefaultInput<S extends SliceCls> = SlceCnstDefaultInput<S>;
 type _Filter<S extends SliceCls> = SlceDbFilter<S>;
 type _Sort<S extends SliceCls> = SlceDbSort<S>;
-type _LightWithId<S extends SliceCls> = _Light<S> extends { id: string } ? _Light<S> : { id: string };
-type _SliceFetchInitOption<S extends SliceCls> = FetchInitOption<_Input<S>, _Filter<S>, _DefaultInput<S>, _Sort<S>>;
+type SliceInitOption<S extends SliceCls> = FetchInitOption<_Input<S>, _Filter<S>>;
 
 // The 4 dynamic parts below are each a single homomorphic mapped type over
 // `keyof SliceMap`, which preserves each result key's declaration trace
@@ -57,43 +54,33 @@ type SliceInsightFetch<S extends SliceCls> = {
   ) => Promise<_Insight<S>>;
 };
 
+type SliceInit<S extends SliceCls, Suffix extends keyof _SliceMap<S>> = InitReturn<
+  _RefName<S>,
+  Suffix & string,
+  _Light<S>,
+  _Insight<S>,
+  SliceInfoArgs<_SliceMap<S>[Suffix]>,
+  _Filter<S>
+>;
+
+type SliceServerInit<S extends SliceCls, Suffix extends keyof _SliceMap<S>> = ServerInit<
+  _RefName<S>,
+  _Light<S>,
+  _Insight<S>,
+  SliceInfoArgs<_SliceMap<S>[Suffix]>,
+  _Filter<S>
+>;
+
 type SliceInitFetch<S extends SliceCls> = {
   [Suffix in keyof _SliceMap<S> as Suffix extends string ? `init${_Cap<S>}${Capitalize<Suffix>}` : never]: (
-    ...args: [...SliceInfoArgs<_SliceMap<S>[Suffix]>, option?: _SliceFetchInitOption<S>]
-  ) => Promise<
-    InitReturn<
-      _RefName<S>,
-      Suffix & string,
-      _Light<S>,
-      _Insight<S>,
-      SliceInfoArgs<_SliceMap<S>[Suffix]>,
-      _Filter<S>,
-      _Cap<S>,
-      Suffix extends string ? Capitalize<Suffix> : never,
-      _LightWithId<S>,
-      GetStateObject<_LightWithId<S>>,
-      GetStateObject<_Insight<S>>,
-      _Sort<S>
-    >
-  >;
+    ...args: [...SliceInfoArgs<_SliceMap<S>[Suffix]>, option?: SliceInitOption<S>]
+  ) => Promise<SliceInit<S, Suffix>>;
 };
 
 type SliceGetInitFetch<S extends SliceCls> = {
   [Suffix in keyof _SliceMap<S> as Suffix extends string ? `get${_Cap<S>}Init${Capitalize<Suffix>}` : never]: (
-    ...args: [...SliceInfoArgs<_SliceMap<S>[Suffix]>, option?: _SliceFetchInitOption<S>]
-  ) => Promise<
-    ServerInit<
-      _RefName<S>,
-      _Light<S>,
-      _Insight<S>,
-      SliceInfoArgs<_SliceMap<S>[Suffix]>,
-      _Filter<S>,
-      _Cap<S>,
-      GetStateObject<_LightWithId<S>>,
-      GetStateObject<_Insight<S>>,
-      _Sort<S>
-    >
-  >;
+    ...args: [...SliceInfoArgs<_SliceMap<S>[Suffix]>, option?: SliceInitOption<S>]
+  ) => Promise<SliceServerInit<S, Suffix>>;
 };
 
 export type GetFetchTypeFromSlice<SlceCls extends SliceCls> = SlceCls["srv"]["cnst"] extends ConstantModel
@@ -172,23 +159,13 @@ type AppliedBaseSliceFetchType<
   ) => Promise<Full>;
 };
 
-export interface FetchInitForm<
-  Input,
-  Filter extends FilterInstance,
-  _DefaultInput = DefaultOf<Input>,
-  _Sort = ExtractSort<Filter>,
-> {
+export interface FetchInitForm<Input, Filter extends FilterInstance> {
   page?: number;
   limit?: number;
-  sort?: _Sort;
-  default?: Partial<_DefaultInput>;
+  sort?: ExtractSort<Filter>;
+  default?: Partial<DefaultOf<Input>>;
   invalidate?: boolean;
   insight?: boolean;
 }
 
-type FetchInitOption<
-  Input,
-  Filter extends FilterInstance,
-  _DefaultInput = DefaultOf<Input>,
-  _Sort = ExtractSort<Filter>,
-> = FetchPolicy & FetchInitForm<Input, Filter, _DefaultInput, _Sort>;
+type FetchInitOption<Input, Filter extends FilterInstance> = FetchPolicy & FetchInitForm<Input, Filter>;

@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.65 -->
+<!-- akan:agent:version 3.0.0-alpha.67 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/devkit, @akanjs/cli
 
 ## Repo Overview
 
@@ -383,6 +383,40 @@ const config: AppConfig = { docker: "FROM oven/bun:1-slim\n…" }; // verbatim, 
   change in dev. Keep a lib's steps to what its runtime genuinely requires.
 - `AkanAppConfig.docker` is the resolved declaration; `AkanAppConfig.dockerfile` is the text `akan build` writes
   to `dist/apps/<app>/Dockerfile`.
+
+## Shipped Assets — `assets` In `akan.config.ts`
+
+`akan build` copies the whole `public/` tree into `dist`, lib assets dereferenced, and that copy is the image.
+**`assets: { pruneFonts, keepFonts }`** trims the fonts out of it that nothing reads. **Source trees are never
+touched** — an app's and a lib's own `public/` keep every file, because one shared font folder is picked over
+differently by every app that mounts it and by other repos.
+
+```ts
+const config: LibConfig = { assets: { keepFonts: ["fonts/Assistant-*.woff2"] } }; // libs/<lib>/akan.config.ts
+const config: AppConfig = { assets: { pruneFonts: false } }; // emergency valve, not the normal escape hatch
+```
+
+- **A font with `optimize` on is a build input, not a runtime asset.** `FontOptimizer` subsets it into
+  `.akan/artifact/fonts` and the emitted CSS points at `/_akan/fonts/*`, which `WebRouter` serves from the
+  artifact — so the source in `public/` is never opened again. That is the bulk of what this drops, and it
+  applies to the fonts the app *does* use, not only the ones it does not.
+- **The keep-set is derived per app, per build; there is no list of fonts to drop.** An exclude list would rot
+  the moment another app or repo started using one of them, and nobody would know to update it. A font survives
+  because ① its font declares `optimize: false`, so `FontCss.getRuntimeCss` emits the raw src; ② something
+  references its filename — anything under `public/`, the compiled stylesheet, a client/server bundle, the CSR
+  shell; or ③ a `keepFonts` glob names it.
+- **`keepFonts` belongs to the `akan.config.ts` that owns the font**, written against that lib's or app's own
+  `public/` (`"fonts/X.woff2"`, resolved to `libs/<lib>/fonts/X.woff2`). A lib shared across repos carries the
+  reason its own CSS needs a font, instead of every mounting app rediscovering it in production.
+- **A reference from a build bundle is ignored for an already-subset font.** Every route file's `fonts`
+  declaration is inlined into the pages bundle, the client chunks and the CSR shell, so a declared source is in
+  all three whether or not anything loads it. `public/` and the compiled CSS are read as authoritative.
+- **A generated manifest that lists every public asset keeps every font it names** — a service-worker precache
+  file is the usual one. That is a real reference, not a false positive, so the build reports it at `info`:
+  read the `[font-prune] kept …` line before concluding the prune does nothing.
+- Matching is by filename, including the percent-encoded spelling, so a `url()` survives however it is written.
+- The phase is `assets`, between `csr` and `compress`. An api-only build (`web: false`) copies no `public/` and
+  the phase finds nothing to do.
 
 ## React Components And Styling (`**/*.tsx`)
 

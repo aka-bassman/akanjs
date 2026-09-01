@@ -25,33 +25,45 @@ export interface QuerySetting {
   queryArgs?: unknown[] | (() => unknown[]);
 }
 
+type ServerInitShape<
+  RefName extends string,
+  QueryArgs,
+  CapRefName extends string,
+  LightObj,
+  InsightObj,
+  Sort,
+> = SliceMeta & {
+  [K in `${RefName}ObjList`]: LightObj[];
+} & {
+  [K in `${RefName}ObjInsight`]: InsightObj;
+} & {
+  [K in `pageOf${CapRefName}`]: number;
+} & {
+  [K in `lastPageOf${CapRefName}`]: number;
+} & {
+  [K in `limitOf${CapRefName}`]: number;
+} & {
+  [K in `queryArgsOf${CapRefName}`]: QueryArgs;
+} & {
+  [K in `sortOf${CapRefName}`]: Sort;
+} & {
+  [K in `${RefName}InitAt`]: Date;
+};
+
 export type ServerInit<
   RefName extends string,
   Light,
   Insight = any,
   QueryArgs = any,
   Filter extends FilterInstance = any,
-  _CapitalizedRefName extends string = Capitalize<RefName>,
-  _LightObj = GetStateObject<Light>,
-  _InsightObj = GetStateObject<Insight>,
-  _Sort = ExtractSort<Filter>,
-> = SliceMeta & {
-  [K in `${RefName}ObjList`]: _LightObj[];
-} & {
-  [K in `${RefName}ObjInsight`]: _InsightObj;
-} & {
-  [K in `pageOf${_CapitalizedRefName}`]: number;
-} & {
-  [K in `lastPageOf${_CapitalizedRefName}`]: number;
-} & {
-  [K in `limitOf${_CapitalizedRefName}`]: number;
-} & {
-  [K in `queryArgsOf${_CapitalizedRefName}`]: QueryArgs;
-} & {
-  [K in `sortOf${_CapitalizedRefName}`]: _Sort;
-} & {
-  [K in `${RefName}InitAt`]: Date;
-};
+> = ServerInitShape<
+  RefName,
+  QueryArgs,
+  Capitalize<RefName>,
+  GetStateObject<Light>,
+  GetStateObject<Insight>,
+  ExtractSort<Filter>
+>;
 /** Client/server-friendly return type for initialized list and insight data. */
 export type ClientInit<
   RefName extends string,
@@ -59,13 +71,7 @@ export type ClientInit<
   Insight = any,
   QueryArgs = any,
   Filter extends FilterInstance = any,
-  _CapitalizedRefName extends string = Capitalize<RefName>,
-  _LightObj = GetStateObject<Light>,
-  _InsightObj = GetStateObject<Insight>,
-  _Sort = ExtractSort<Filter>,
-> = PromiseOrObject<
-  ServerInit<RefName, Light, Insight, QueryArgs, Filter, _CapitalizedRefName, _LightObj, _InsightObj, _Sort>
->;
+> = PromiseOrObject<ServerInit<RefName, Light, Insight, QueryArgs, Filter>>;
 
 export type ServerView<RefName extends string, Model> = { refName: RefName } & {
   [K in `${RefName}Obj`]: GetStateObject<Model>;
@@ -94,6 +100,18 @@ export type EditReturn<RefName extends string, Full> = {
   [K in `${RefName}Edit`]: ServerEdit<RefName, Full>;
 };
 
+type InitReturnShape<
+  RefName extends string,
+  CapSuffix extends string,
+  Init,
+  ListItem extends { id: string },
+  Insight,
+> = {
+  [K in `${RefName}Init${CapSuffix}`]: Init;
+} & {
+  [K in `${RefName}List${CapSuffix}`]: DataList<ListItem>;
+} & { [K in `${RefName}Insight${CapSuffix}`]: Insight };
+
 export type InitReturn<
   RefName extends string,
   Suffix extends string,
@@ -101,26 +119,12 @@ export type InitReturn<
   Insight,
   Args,
   Filter extends FilterInstance,
-  _CapitalizedRefName extends string = Capitalize<RefName>,
-  _CapitalizedSuffix extends string = Capitalize<Suffix>,
-  _Light extends { id: string } = Light extends { id: string } ? Light : { id: string },
-  _LightObj = GetStateObject<_Light>,
-  _InsightObj = GetStateObject<Insight>,
-  _Sort = ExtractSort<Filter>,
-> = {
-  [K in `${RefName}Init${_CapitalizedSuffix}`]: ServerInit<
-    RefName,
-    Light,
-    Insight,
-    Args,
-    Filter,
-    _CapitalizedRefName,
-    _LightObj,
-    _InsightObj,
-    _Sort
-  >;
-} & {
-  [K in `${RefName}List${_CapitalizedSuffix}`]: DataList<_Light>;
-} & { [K in `${RefName}Insight${_CapitalizedSuffix}`]: Insight };
+> = InitReturnShape<
+  RefName,
+  Capitalize<Suffix>,
+  ServerInit<RefName, Light, Insight, Args, Filter>,
+  Light extends { id: string } ? Light : { id: string },
+  Insight
+>;
 
 // ============= Method Generators =============

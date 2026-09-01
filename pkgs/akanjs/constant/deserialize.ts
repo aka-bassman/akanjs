@@ -1,6 +1,6 @@
 import { Any, applyFnToArrayObjects, type Cls, FIELD_META, PrimitiveRegistry, type PrimitiveScalar } from "akanjs/base";
 
-import { type ConstantCls, type ConstantModelRef, ConstantRegistry, type FieldProps } from ".";
+import { type ConstantCls, type ConstantModelRef, ConstantRegistry, type FieldProps, withSharedInstances } from ".";
 
 const getDeserializeFn = (inputRef: ConstantModelRef | PrimitiveScalar) => {
   const deserializeFn = PrimitiveRegistry.has(inputRef as Cls)
@@ -66,5 +66,7 @@ export const deserialize = (
   if (nullable && (value === null || value === undefined)) return null;
   else if (!nullable && (value === null || value === undefined) && argRef !== Any)
     throw new Error(`Invalid Value (Nullable) in ${key} ${argRef} for value ${value}`);
-  return deserializeInput(value, argRef, arrDepth, convertFn) as object[];
+  // One response is one pass, so a relation repeated across its rows is built once. Nested `deserialize` calls
+  // join the pass their caller opened rather than starting one of their own.
+  return withSharedInstances(() => deserializeInput(value, argRef, arrDepth, convertFn)) as object[];
 };

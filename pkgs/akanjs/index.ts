@@ -65,6 +65,27 @@ export interface AkanWebConfig {
  */
 export type AkanWebOption = boolean | { csr: boolean };
 
+/**
+ * How `akan build` trims the `public/` tree it copies into `dist`. Source trees are never touched: an app's
+ * and a lib's `public/` keep every file, and only the build's own copy is trimmed.
+ */
+export interface AkanAssetsConfig {
+  /**
+   * Drop font files from the build's `public/` that no built surface references. A font with `optimize` on is
+   * served from `/_akan/fonts` after subsetting, so its source is a build input the image never reads.
+   */
+  pruneFonts: boolean;
+  /**
+   * Font files to keep whatever the scan concludes, as globs relative to this app's or lib's own `public/`
+   * (`"fonts/Assistant-*.woff2"`). For the case a scan cannot see: a URL assembled at runtime. Declare it in
+   * the `akan.config.ts` that owns the font, so the reason travels with the lib rather than with the app.
+   */
+  keepFonts: string[];
+}
+
+/** A lib picks only which of its own fonts must survive; whether to prune at all belongs to the app. */
+export type LibAssetsConfig = Pick<AkanAssetsConfig, "keepFonts">;
+
 export type DatabaseMode = "single" | "multiple" | "cluster";
 export type MobileEnv = "local" | "debug" | "develop" | "main";
 export type MobilePermission = "camera" | "contacts" | "location" | "push" | "speech";
@@ -233,12 +254,16 @@ export interface AppConfigResult {
   publicEnv: string[];
   mobile: AkanMobileConfig;
   secrets: string[];
+  /** How the build trims the `public/` copy it ships. */
+  assets: AkanAssetsConfig;
 }
 
 export interface LibConfigResult {
   externalLibs: string[];
   /** Image steps every app that mounts this lib inherits, unless that app declares a whole Dockerfile. */
   docker: LibDockerConfig;
+  /** Which of this lib's own public fonts every app that mounts it must keep. */
+  assets: LibAssetsConfig;
 }
 
 export type DeepPartial<T> = {

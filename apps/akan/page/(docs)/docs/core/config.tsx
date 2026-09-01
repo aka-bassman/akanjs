@@ -136,12 +136,9 @@ export default config;`}
           <Code.Snippet
             className="w-full"
             title="env/env.client.local.ts"
-            code={`import { getEnv } from "akanjs/base";
-
-import type { AppClientEnv } from "./env.client.type";
+            code={`import type { AppClientEnv } from "./env.client.type";
 
 export const env: AppClientEnv = {
-  ...getEnv(),
   google: {
     mapKey: "local-map-key",
   },
@@ -150,12 +147,11 @@ export const env: AppClientEnv = {
           <Code.Snippet
             className="w-full"
             title="env/env.server.local.ts"
-            code={`import { getEnv } from "akanjs/base";
-
-import type { ModulesOptions } from "../lib/option";
+            code={`import type { ModulesOptions } from "../lib/option";
+import { libEnv } from "./env.server.type";
 
 export const env: ModulesOptions = {
-  ...getEnv(),
+  ...libEnv,
   hostname: null,
   security: {
     verifies: [["password", "phone"]],

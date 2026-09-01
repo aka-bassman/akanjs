@@ -3,7 +3,7 @@ import { DataList } from "akanjs/base";
 import { cn } from "akanjs/client";
 import { capitalize, isQueryEqual, lowerlize } from "akanjs/common";
 import type { BaseInsight } from "akanjs/constant";
-import { ConstantRegistry, labelOf } from "akanjs/constant";
+import { ConstantRegistry, labelOf, withSharedInstances } from "akanjs/constant";
 import type { ClientInit, ServerInit } from "akanjs/fetch";
 import { st } from "akanjs/store";
 import { useFetch, usePageTool, useScreenScope } from "akanjs/webkit";
@@ -123,7 +123,9 @@ function Render<RefName extends string, Light extends { id: string }>({
   const modelInitList = useMemo<DataList<Light>>(() => {
     if (loaded.current) return modelList;
     const initModelObjList = (init as any)[names.modelObjList] as Light[];
-    return new DataList<Light>(initModelObjList.map((model) => new cnst.light().set(model) as unknown as Light));
+    return new DataList<Light>(
+      withSharedInstances(() => initModelObjList.map((model) => new cnst.light().set(model) as unknown as Light)),
+    );
   }, []);
 
   useEffect(() => {

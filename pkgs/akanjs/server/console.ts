@@ -1,13 +1,10 @@
-import { createInterface } from "node:readline/promises";
-import { inspect } from "node:util";
 import type { BaseEnv } from "akanjs/base";
 import type { Adaptor, Service } from "akanjs/service";
 import type { ServerSignal } from "akanjs/signal";
 import type { AkanServer } from "./akanServer";
+import { AkanConsoleSession } from "./consoleSession";
 
-type AsyncFunctionConstructor = new (...args: string[]) => (scope: object) => Promise<unknown>;
-
-const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as AsyncFunctionConstructor;
+export * from "./consoleEvaluator";
 
 export interface AkanConsoleOptions {
   prompt?: string;
@@ -88,102 +85,13 @@ export const createAkanConsoleContext = (
   return context;
 };
 
-const createScope = (context: Record<string, unknown>) =>
-  new Proxy(context, {
-    has: () => true,
-    get(target, prop) {
-      if (prop === Symbol.unscopables) return undefined;
-      if (prop in target) return target[prop as keyof typeof target];
-      return (globalThis as Record<PropertyKey, unknown>)[prop];
-    },
-    set(target, prop, value) {
-      target[prop as keyof typeof target] = value;
-      return true;
-    },
-  });
-
-export const evaluateAkanConsoleInput = async (source: string, context: Record<string, unknown>) => {
-  const trimmed = source.trim();
-  if (!trimmed) return undefined;
-  const scope = createScope(context);
-
-  try {
-    return await new AsyncFunction("scope", `with (scope) { return await (${trimmed}); }`)(scope);
-  } catch (error) {
-    if (!(error instanceof SyntaxError)) throw error;
-    return await new AsyncFunction("scope", `with (scope) { return await (async () => {\n${trimmed}\n})(); }`)(scope);
-  }
-};
-
-const printHelp = (output: typeof process.stdout) => {
-  output.write(
-    [
-      "Akan console commands:",
-      "  .help       Show this help",
-      "  .globals    Show available global names",
-      "  .exit       Close the console",
-      "",
-      "Examples:",
-      "  debug()",
-      '  methods(service("user"))',
-      '  await service("user").__count()',
-      '  userService = service("user")',
-      "",
-    ].join("\n"),
-  );
-};
-
-const formatValue = (value: unknown) => {
-  if (value === undefined) return "";
-  return `${inspect(value, { colors: true, depth: 5, maxArrayLength: 100 })}\n`;
-};
-
 export const startAkanConsole = async (server: AkanServer, options: AkanConsoleOptions = {}) => {
-  const input = options.input ?? process.stdin;
-  const output = options.output ?? process.stdout;
-  const context = createAkanConsoleContext(server, options.globals);
-  const prompt = options.prompt ?? `akan:${server.name}> `;
-  const rl = createInterface({ input, output, terminal: true });
-
-  output.write(`Akan console started for ${server.name}. Type .help for commands.\n`);
-  rl.setPrompt(prompt);
-  rl.prompt();
-
-  rl.on("SIGINT", () => {
-    output.write("\n");
-    rl.close();
+  const session = new AkanConsoleSession({
+    context: createAkanConsoleContext(server, options.globals),
+    prompt: options.prompt ?? `akan:${server.name}> `,
+    banner: `Akan console started for ${server.name}. Type .help for commands.\n`,
+    input: options.input,
+    output: options.output,
   });
-
-  for await (const line of rl) {
-    const trimmed = line.trim();
-    try {
-      if (!trimmed) {
-        rl.prompt();
-        continue;
-      }
-      if (trimmed === ".exit" || trimmed === ".quit") {
-        rl.close();
-        break;
-      }
-      if (trimmed === ".help") {
-        printHelp(output);
-        rl.prompt();
-        continue;
-      }
-      if (trimmed === ".globals") {
-        output.write(
-          `${Object.keys(context)
-            .sort((a, b) => a.localeCompare(b))
-            .join(", ")}\n`,
-        );
-        rl.prompt();
-        continue;
-      }
-
-      output.write(formatValue(await evaluateAkanConsoleInput(line, context)));
-    } catch (error) {
-      output.write(`${error instanceof Error ? error.stack || error.message : String(error)}\n`);
-    }
-    rl.prompt();
-  }
+  await session.run();
 };

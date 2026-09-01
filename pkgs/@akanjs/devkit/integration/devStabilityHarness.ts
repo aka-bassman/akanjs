@@ -118,11 +118,7 @@ export default config;
       ),
       this.writeFile(
         "env/env.client.ts",
-        `import { getEnv } from "akanjs/base";
-
-export const env = {
-  ...getEnv(),
-} as const;
+        `export const env = {} as const;
 `,
       ),
       this.writeFile(

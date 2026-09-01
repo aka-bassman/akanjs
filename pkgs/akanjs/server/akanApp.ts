@@ -1,6 +1,6 @@
-// styleguard-disable inline-color — 이 서버 부트스트랩 파일은 백엔드가 뜨지 못했을 때 보여주는 독립형
-// "Backend failed to start" 에러 페이지 HTML(인라인 <style>)을 렌더한다. 그 실패 경로에서는 앱 테마/토큰
-// CSS 파이프라인이 없으므로 하드코딩 색이 불가피하다. 파일 전체 범위의 명시적 예외.
+// styleguard-disable inline-color — 이 서버 부트스트랩 파일은 백엔드가 아직/끝내 뜨지 못했을 때 보여주는
+// 독립형 상태 페이지 HTML(인라인 <style>)을 렌더한다. 그 경로에서는 앱 테마/토큰 CSS 파이프라인이 없으므로
+// 하드코딩 색이 불가피하다. 파일 전체 범위의 명시적 예외.
 import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { Logger } from "akanjs/common";
@@ -9,6 +9,7 @@ import { isTraceEnabled } from "../signal/trace";
 import { makeAkanChildProxyHeaders } from "./akanAppHeaders";
 import type { BuilderCsrReq, BuilderCsrRes, BuilderMessage, BuilderReq, BuilderRes } from "./artifact";
 import { resolveEncodedSidecar } from "./assetEncoding";
+import { compressResponse } from "./contentEncoding";
 import { isPortInUseError } from "./lifecycle/portInUse";
 import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
 import { RotatingLogWriter } from "./logging/rotatingLogWriter";
@@ -108,6 +109,7 @@ export class AkanApp {
   /** Hosted by `akan start`: crash loops should yield to the dev host, which restarts on file edits. */
   readonly #devHosted = process.env.AKAN_COMMAND_TYPE === "start";
   readonly #healthTimeoutMs = AkanApp.#parseHealthTimeoutMs();
+  readonly #upstreamWaitMs = AkanApp.#parseUpstreamWaitMs();
   /** Child stderr is bundler/runtime noise the gateway cannot act on; it still reaches the rotating log file. */
   readonly #printChildStderr = process.env.AKAN_CHILD_STDERR === "1";
   readonly #serverPath: string;
@@ -228,6 +230,17 @@ export class AkanApp {
   static #parseHealthTimeoutMs() {
     const configured = Number(process.env.AKAN_HEALTH_TIMEOUT_MS);
     if (Number.isFinite(configured) && configured > 0) return configured;
+    return process.env.AKAN_COMMAND_TYPE === "start" ? 15_000 : 5_000;
+  }
+
+  /**
+   * How long a request waits for a replica that is booting or restarting before the gateway answers
+   * 503. Dev pays first-touch transpiles on the boot path, so it gets the wider budget; `0` restores
+   * the old fail-immediately behavior.
+   */
+  static #parseUpstreamWaitMs() {
+    const configured = Number(process.env.AKAN_UPSTREAM_WAIT_MS);
+    if (Number.isFinite(configured) && configured >= 0) return configured;
     return process.env.AKAN_COMMAND_TYPE === "start" ? 15_000 : 5_000;
   }
 
@@ -749,10 +762,8 @@ export class AkanApp {
   }
 
   async #proxyHttp(req: Request, server: Bun.Server<GatewayWsData>): Promise<Response> {
-    const child = this.#pickFederationChild();
-    if (!child?.upstream || child.upstream.type !== "unix") {
-      return this.#respondWithCrashPage(req) ?? new Response("No healthy federation child is ready", { status: 503 });
-    }
+    const child = await this.#pickReadyFederationChild(req);
+    if (!child?.upstream || child.upstream.type !== "unix") return this.#respondWithUnavailable(req);
     const url = new URL(req.url);
     const upstreamUrl = `http://akan-child${url.pathname}${url.search}`;
     const headers = this.#makeProxyHeaders(req, child.idx, server);
@@ -769,7 +780,7 @@ export class AkanApp {
         signal: req.signal,
         redirect: "manual",
       });
-      return this.#proxyResponse(upstreamRes);
+      return await this.#proxyResponse(req, upstreamRes);
     } catch (error) {
       if (AkanApp.#isUpstreamOpenFailure(error)) {
         this.logger.error(
@@ -792,26 +803,69 @@ export class AkanApp {
   }
 
   /**
-   * Dev-only: every traffic replica is in the crashed terminal state, so a bare 503 would hide the
-   * boot error from the browser. Surface it, and reload once a fixed gateway takes over the port.
+   * A replica that is booting or restarting is normally back within a second or two, and a browser
+   * handed a 503 stays on that dead page until somebody reloads by hand — so a request waits for the
+   * upstream instead of failing at it. A dev crash loop is terminal, so it is answered immediately.
    */
-  #respondWithCrashPage(req: Request): Response | null {
+  async #pickReadyFederationChild(req: Request): Promise<ChildState | null> {
+    const ready = this.#pickFederationChild();
+    if (ready?.upstream) return ready;
+    const deadline = performance.now() + this.#upstreamWaitMs;
+    while (performance.now() < deadline) {
+      if (this.#stopping || req.signal.aborted || this.#getCrashLoopDetail()) return null;
+      await Bun.sleep(50);
+      const child = this.#pickFederationChild();
+      if (child?.upstream) return child;
+    }
+    return null;
+  }
+
+  /** Dev-only terminal state: every traffic replica gave up booting. The detail is the boot error. */
+  #getCrashLoopDetail(): string | null {
     if (!this.#devHosted) return null;
     const trafficChildren = [...this.#children.values()].filter((child) => child.role !== "batch");
     if (trafficChildren.length === 0) return null;
     if (!trafficChildren.every((child) => child.status === "crashed")) return null;
-    const detail =
+    return (
       trafficChildren.map((child) => child.lastErrorMessage ?? child.lastRestartReason).find(Boolean) ??
-      "unknown boot error";
-    const message = `Backend failed to start after ${AkanApp.#devMaxChildBootFailures} boot attempts: ${detail}`;
+      "unknown boot error"
+    );
+  }
+
+  /**
+   * Both states answer 503, so an ingress or CDN reads them exactly as before; the HTML body is what
+   * a browser navigation needs, since nothing on a bare-text 503 can bring the page back on its own.
+   */
+  #respondWithUnavailable(req: Request): Response {
+    const crashDetail = this.#getCrashLoopDetail();
+    const page = crashDetail
+      ? {
+          heading: "Backend failed to start",
+          detail: crashDetail,
+          text: `Backend failed to start after ${AkanApp.#devMaxChildBootFailures} boot attempts: ${crashDetail}`,
+          note: `The dev server stopped retrying after ${AkanApp.#devMaxChildBootFailures} failed boots. Fix the error and save — this page reloads automatically.`,
+        }
+      : {
+          heading: "Backend is starting",
+          detail: "No healthy federation child is ready",
+          text: "No healthy federation child is ready",
+          note: "A replica is booting or restarting — this page reloads itself as soon as it answers.",
+        };
     if (!req.headers.get("accept")?.includes("text/html")) {
-      return new Response(message, { status: 503, headers: { "cache-control": "no-store" } });
+      return new Response(page.text, { status: 503, headers: { "cache-control": "no-store" } });
     }
-    const html = `<!doctype html>
+    return new Response(AkanApp.#statusPageHtml(page), {
+      status: 503,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
+
+  static #statusPageHtml({ heading, detail, note }: { heading: string; detail: string; note: string }) {
+    return `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Backend failed to start</title>
+<title>${AkanApp.#escapeHtml(heading)}</title>
 <style>
   body { margin: 0; padding: 48px 24px; background: #111827; color: #e5e7eb; font-family: ui-sans-serif, system-ui, sans-serif; }
   main { max-width: 720px; margin: 0 auto; }
@@ -822,9 +876,9 @@ export class AkanApp {
 </head>
 <body>
 <main>
-<h1>Backend failed to start</h1>
+<h1>${AkanApp.#escapeHtml(heading)}</h1>
 <pre>${AkanApp.#escapeHtml(detail)}</pre>
-<p>The dev server stopped retrying after ${AkanApp.#devMaxChildBootFailures} failed boots. Fix the error and save &mdash; this page reloads automatically.</p>
+<p>${AkanApp.#escapeHtml(note)}</p>
 </main>
 <script>
   const poll = async () => {
@@ -838,10 +892,6 @@ export class AkanApp {
 </script>
 </body>
 </html>`;
-    return new Response(html, {
-      status: 503,
-      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-    });
   }
 
   static #escapeHtml(text: string) {
@@ -865,18 +915,26 @@ export class AkanApp {
     this.#proxyHopMaxMs = Math.max(this.#proxyHopMaxMs, durationMs);
   }
 
-  #proxyResponse(upstreamRes: Response): Response {
+  async #proxyResponse(req: Request, upstreamRes: Response): Promise<Response> {
     const headers = new Headers(upstreamRes.headers);
     // Bun fetch transparently decompresses upstream bodies but keeps these
     // headers, which makes browsers try to decode an already-decoded payload.
     headers.delete("content-encoding");
     headers.delete("content-length");
     this.#rewriteInternalLocation(headers);
-    return new Response(upstreamRes.body, {
+    const proxied = new Response(upstreamRes.body, {
       status: upstreamRes.status,
       statusText: upstreamRes.statusText,
       headers,
     });
+    // The gateway is the only hop that still sees the real client's Accept-Encoding, so it is where the child's
+    // JSON gets compressed. Narrowed to JSON on purpose: `compressResponse` buffers, and everything else the
+    // gateway relays — SSR HTML, an RSC flight payload — is streamed so the browser can start on the shell.
+    return AkanApp.#isProxiedJson(headers) ? await compressResponse(req, proxied) : proxied;
+  }
+
+  static #isProxiedJson(headers: Headers): boolean {
+    return (headers.get("content-type") ?? "").split(";")[0]?.trim().toLowerCase() === "application/json";
   }
 
   #rewriteInternalLocation(headers: Headers) {

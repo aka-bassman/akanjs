@@ -59,6 +59,58 @@ export default function Page() {
       </Scroll.Slide>
       <Divider />
 
+      <Scroll.Slide id="multiline" title={l.trans({ en: "Multi-line Input", ko: "여러 줄 입력" })}>
+        <Docs.Title>{l.trans({ en: "Multi-line Input", ko: "여러 줄 입력" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Paste a snippet as it is: the console reads a pasted block as one command instead of running it line by line.",
+              ko: "코드를 그대로 붙여넣으면 됩니다. Console은 붙여넣은 block을 한 줄씩 실행하지 않고 하나의 command로 읽습니다.",
+            })}
+          </div>
+          <DocsList>
+            <li>
+              {l.trans({
+                en: "A `const` declared on the first pasted line is visible on the last one.",
+                ko: "붙여넣은 첫 줄에서 선언한 `const`를 마지막 줄에서 사용할 수 있습니다.",
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: "A line that ends inside an open bracket, string, or comment keeps reading at the `...` prompt.",
+                ko: "괄호나 문자열, comment가 닫히지 않은 줄은 `...` prompt에서 계속 입력을 받습니다.",
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: "`const` and `let` live for one command only, so assign without a keyword to keep a value.",
+                ko: "`const`와 `let`은 한 command 안에서만 유지되므로, 값을 남기려면 keyword 없이 대입하세요.",
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: "End a block with `return <expr>` to print its value.",
+                ko: "Block의 값을 출력하려면 `return <expr>`로 끝내세요.",
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: "`.clear` or Ctrl+C discards the pending input, and Ctrl+D closes the console.",
+                ko: "`.clear`나 Ctrl+C는 입력 중인 내용을 버리고, Ctrl+D는 console을 닫습니다.",
+              })}
+            </li>
+          </DocsList>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title={l.trans({ en: "One pasted command", ko: "붙여넣은 하나의 command" })}
+          code={`const user = await service("user").pickById("6890f2c1f0a1b2c3d4e5f6a7");
+user.name = "changed";
+return await user.save();`}
+        />
+      </Scroll.Slide>
+      <Divider />
+
       <Scroll.Slide id="container" title={l.trans({ en: "Container Console", ko: "Container console" })}>
         <Docs.Title>{l.trans({ en: "Container Console", ko: "Container console" })}</Docs.Title>
         <Docs.Description>

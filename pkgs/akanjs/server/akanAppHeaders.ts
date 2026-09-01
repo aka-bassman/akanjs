@@ -36,6 +36,10 @@ export function makeAkanChildProxyHeaders(req: Request, childIdx: number, peer?:
     headers.get("x-forwarded-proto") ?? (req.url.startsWith("https:") ? "https" : "http"),
   );
   headers.set("x-akan-child-idx", String(childIdx));
+  // Bun's `fetch` decodes whatever `Content-Encoding` the child answers with, whatever this hop asked for, so a
+  // compressed child body is only ever decompressed again here. The gateway compresses for the real client; the
+  // child is told plainly not to bother. Set rather than deleted: `fetch` supplies its own default otherwise.
+  headers.set("accept-encoding", "identity");
   if (!headers.has("x-request-id") && process.env.AKAN_BENCH_SKIP_REQUEST_ID !== "1") {
     headers.set("x-request-id", crypto.randomUUID());
   }

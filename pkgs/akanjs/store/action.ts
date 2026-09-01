@@ -16,6 +16,7 @@ import {
   type FieldState,
   immerify,
   type ProtoFile,
+  withSharedInstances,
 } from "akanjs/constant";
 import type { BaseFilterSortKey, ExtractSort, FilterInstance } from "akanjs/document";
 import type { FetchInitForm, FetchProxy } from "akanjs/fetch";
@@ -48,6 +49,10 @@ type _ActionDefault<S extends SliceCls> = SlceCnstDefault<S>;
 type _ActionDefaultInput<S extends SliceCls> = SlceCnstDefaultInput<S>;
 type _ActionFilter<S extends SliceCls> = SlceDbFilter<S>;
 type _ActionSort<S extends SliceCls> = SlceDbSort<S>;
+type SliceInitForm<S extends SliceCls> = FetchInitForm<_ActionInput<S>, _ActionFilter<S>> & FetchPolicy;
+type SliceRefreshForm<S extends SliceCls, Suffix extends keyof _SliceMap<S>> = SliceInitForm<S> & {
+  queryArgs?: StoreSliceArgs<S, Suffix>;
+};
 
 const isNullableSliceArg = (arg: SerializedSlice["args"][number]) => arg.nullable ?? arg.type === "search";
 
@@ -132,7 +137,7 @@ export type SliceAction<
   _CapitalizedRefName extends string = Capitalize<RefName>,
   _CapitalizedSuffix extends string = Capitalize<Suffix>,
   _Sort = ExtractSort<Filter>,
-  _FetchInitFormWithFetchPolicy = FetchInitForm<Input, Filter, DefaultOf<Input>, _Sort> & FetchPolicy,
+  _FetchInitFormWithFetchPolicy = FetchInitForm<Input, Filter> & FetchPolicy,
 > = {
   [KDefaultOf in `init${_CapitalizedRefName}${_CapitalizedSuffix}`]: (
     ...args: [...args: QueryArgs, initForm?: _FetchInitFormWithFetchPolicy]
@@ -235,7 +240,7 @@ type DefaultSliceActionFields<
   ) => Promise<void>;
 } & {
   [Suffix in _Suffixes as `refresh${_CapRef}${StoreSliceSuffixCap<SlceCls, Suffix>}`]: (
-    initForm?: _FetchInitFormWithFetchPolicy & { queryArgs?: StoreSliceArgs<SlceCls, Suffix> },
+    initForm?: SliceRefreshForm<SlceCls, Suffix>,
   ) => Promise<void>;
 } & {
   [Suffix in _Suffixes as `select${_CapRef}${StoreSliceSuffixCap<SlceCls, Suffix>}`]: (
@@ -278,7 +283,7 @@ export type DefaultAction<
   _DefaultInput = _ActionDefaultInput<SlceCls>,
   _Sort = _ActionSort<SlceCls>,
   _CreateOption = CreateOption<_Full>,
-  _FetchInitFormWithFetchPolicy = FetchInitForm<_Input, _Filter, _DefaultInput, _Sort> & FetchPolicy,
+  _FetchInitFormWithFetchPolicy = SliceInitForm<SlceCls>,
 > = BaseAction<_RefName, _Input, _Full, _Light, _CapitalizedRefName, _CreateOption> &
   FormSetter<_Full, _RefName, _CapitalizedRefName, _Default> &
   DefaultSliceActionFields<SlceCls, _CapitalizedRefName, _FetchInitFormWithFetchPolicy, _Light, _Sort>;
@@ -819,8 +824,8 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       }
 
       // set the rest of the models to the model list
-      const lightModels = fullOrLightModels.map(
-        (fullOrLightModel) => new cnst.light().set(fullOrLightModel) as unknown as Light,
+      const lightModels = withSharedInstances(() =>
+        fullOrLightModels.map((fullOrLightModel) => new cnst.light().set(fullOrLightModel) as unknown as Light),
       );
       slices.forEach(({ sliceName }) => {
         const namesOfSlice = {
@@ -877,15 +882,10 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
     const singleSliceAction = {
       [namesOfSlice.initModel]: async function (
         this: SetGet,
-        ...args: [...args: any[], initForm: FetchInitForm<Input, Filter, DefaultOf<Input>, Sort> & FetchPolicy]
+        ...args: [...args: any[], initForm: FetchInitForm<Input, Filter> & FetchPolicy]
       ) {
         const initArgLength = Math.min(args.length, slice.args.length);
-        const initForm = { invalidate: false, ...(args[slice.args.length] ?? {}) } as FetchInitForm<
-          Input,
-          Filter,
-          DefaultOf<Input>,
-          Sort
-        > &
+        const initForm = { invalidate: false, ...(args[slice.args.length] ?? {}) } as FetchInitForm<Input, Filter> &
           FetchPolicy;
         const queryArgs = new Array(initArgLength).fill(null).map((_, i) => args[i] as object);
         const defaultModel = new cnst.full().set(initForm.default ?? {}) as unknown as Full;
@@ -897,7 +897,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       },
       [namesOfSlice.refreshModel]: async function (
         this: SetGet,
-        initForm: FetchInitForm<Input, Filter, DefaultOf<Input>, Sort> & FetchPolicy & { queryArgs?: any[] } = {},
+        initForm: FetchInitForm<Input, Filter> & FetchPolicy & { queryArgs?: any[] } = {},
       ) {
         const args = initForm.queryArgs ?? [];
         const refreshArgLength = Math.min(args.length, slice.args.length);

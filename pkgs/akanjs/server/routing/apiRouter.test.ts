@@ -2,6 +2,10 @@ import { getDefaultInjectRegistry } from "akanjs/service";
 import { AkanResponse, WebProxyRunner } from "../proxy";
 import type { HttpRoutes, WebsocketRoutes } from "../types";
 
+type RouteFn = (req: Request) => Response | Promise<Response>;
+const get = (path: string, acceptEncoding = "") =>
+  new Request(`http://localhost${path}`, acceptEncoding ? { headers: { "accept-encoding": acceptEncoding } } : {});
+
 describe("ApiRouter.buildRoutes", () => {
   test("keeps the global prefix by default", async () => {
     process.env.AKAN_PUBLIC_APP_NAME = "test";
@@ -47,7 +51,9 @@ describe("ApiRouter.buildRoutes", () => {
 
     expect(Object.keys(routes)).toContain("/openapi.json");
     expect(Object.keys(routes)).not.toContain("/api/openapi.json");
-    expect(await (await (routes["/openapi.json"] as () => Response)()).json()).toEqual({ openapi: "3.1.0" });
+    expect(await (await (routes["/openapi.json"] as RouteFn)(get("/openapi.json"))).json()).toEqual({
+      openapi: "3.1.0",
+    });
   });
 
   test("wraps only render routes with the web proxy runner", async () => {
@@ -71,8 +77,10 @@ describe("ApiRouter.buildRoutes", () => {
       webProxyRunner: new WebProxyRunner([RewriteRenderProxy]),
     });
 
-    expect(await (await (routes["/api/ping"] as () => Response)()).json()).toBe("api");
-    expect(await (await (routes["/openapi.json"] as () => Response)()).json()).toEqual({ openapi: "3.1.0" });
+    expect(await (await (routes["/api/ping"] as RouteFn)(get("/api/ping"))).json()).toBe("api");
+    expect(await (await (routes["/openapi.json"] as RouteFn)(get("/openapi.json"))).json()).toEqual({
+      openapi: "3.1.0",
+    });
     const renderResponse = await (routes["/*"] as (req: Request) => Response | Promise<Response>)(
       new Request("http://localhost/dashboard"),
     );
@@ -238,5 +246,39 @@ describe("ApiRouter websocket authentication", () => {
 
     expect(AppWsData.of(ws).cookies.has("jwt")).toBe(false);
     expect(AppWsData.of(ws).account).toBeUndefined();
+  });
+});
+
+describe("ApiRouter endpoint responses over a real socket", () => {
+  test("compresses a signal endpoint's JSON, and leaves the decoded body identical", async () => {
+    process.env.AKAN_PUBLIC_APP_NAME = "test";
+    const { ApiRouter } = await import("./apiRouter");
+    const payload = { rows: Array.from({ length: 200 }, (_, i) => ({ id: i, title: "repeated title" })) };
+    const server = Bun.serve({
+      port: 0,
+      routes: ApiRouter.buildRoutes({
+        prefix: "/api",
+        websocketPrefix: "/ws",
+        routes: { "/rows": () => Response.json(payload) } as HttpRoutes,
+        renderEnvRoutes: {},
+        upgradeAppWs: () => false,
+      }) as never,
+    });
+
+    const compressed = await fetch(`http://localhost:${server.port}/api/rows`, {
+      headers: { "accept-encoding": "br" },
+    });
+    const plain = await fetch(`http://localhost:${server.port}/api/rows`, {
+      headers: { "accept-encoding": "identity" },
+    });
+
+    expect(compressed.headers.get("content-encoding")).toBe("br");
+    expect(plain.headers.get("content-encoding")).toBeNull();
+    // Bun's fetch decodes the body but keeps the header, so this is the wire size against the decoded one.
+    const wireBytes = Number(compressed.headers.get("content-length"));
+    expect(wireBytes).toBeLessThan(JSON.stringify(payload).length / 10);
+    expect(await compressed.json()).toEqual(payload);
+    expect(await plain.json()).toEqual(payload);
+    server.stop(true);
   });
 });

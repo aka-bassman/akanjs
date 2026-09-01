@@ -40,6 +40,11 @@ interface WebSocketRequest {
 }
 type RuntimeRecord = Record<string, unknown>;
 type MiddlewareHandler = (context: SignalContext, next: () => Promise<unknown>) => PromiseOrObject<unknown>;
+/**
+ * Every relation subtree one response has resolved, by model class and then document id. Request-scoped: the
+ * outermost `resolveReturn` starts it and every recursion threads it down, so nothing survives the response.
+ */
+type ResolveCache = Map<ConstantFieldTypeInput, Map<string, Promise<unknown>>>;
 
 interface ExceptionLike {
   statusCode: number;
@@ -340,12 +345,15 @@ export class SignalContext<
       arrDepth,
       registry,
       live,
+      cache = new Map(),
     }: {
       signalContext: SignalContext | null;
       returnRef: ConstantFieldTypeInput;
       arrDepth: number;
       registry: InjectRegistry;
       live: LiveRegistry;
+      /** Omitted by the outermost call, which starts an empty one; every recursion threads it down. */
+      cache?: ResolveCache;
     },
   ): Promise<unknown> {
     if (value === null || value === undefined) return value;
@@ -353,56 +361,181 @@ export class SignalContext<
     else if (arrDepth)
       return await Promise.all(
         (value as unknown[]).map((v) =>
-          SignalContext.resolveReturn(v, { signalContext, returnRef, arrDepth: arrDepth - 1, registry, live }),
+          SignalContext.resolveReturn(v, { signalContext, returnRef, arrDepth: arrDepth - 1, registry, live, cache }),
         ),
       );
     const valueRecord = value as RuntimeRecord;
     const resolvedValue = {} as RuntimeRecord;
-    await Promise.all(
-      Object.entries((returnRef as ConstantCls)[FIELD_META]).map(async ([key, field]) => {
-        if (field.fieldType === "hidden" || field.fieldType === "secret") return;
-        else if (field.fieldType === "resolve") {
-          const refName = ConstantRegistry.getRefName(returnRef as ConstantCls);
-          const internal = live.internal.get(`${refName}Internal`);
-          if (!internal) throw new Error(`Internal ${refName} is not registered`);
-          const internalCls = internal.constructor as InternalCls;
-          const internalInfo = internalCls[INTERNAL_META][key] as InternalInfo<"resolveField"> | undefined;
-          if (!internalInfo) throw new Error(`Internal info ${key} is not found`);
-          const resolveFieldContext = new ResolveFieldContext(valueRecord, { signalContext, internalInfo, internal });
-          const resolved = await resolveFieldContext.exec();
-          resolvedValue[key] = await SignalContext.resolveReturn(resolved, {
+    // Only a field that loads or computes gets a promise. Awaiting every field cost one promise and one
+    // microtask hop per field per document, and a model is mostly fields that are a plain copy.
+    const pending: Promise<void>[] = [];
+    const assign = (key: string, resolved: Promise<unknown>) =>
+      pending.push(
+        resolved.then((v) => {
+          resolvedValue[key] = v;
+        }),
+      );
+    for (const [key, field] of Object.entries((returnRef as ConstantCls)[FIELD_META])) {
+      if (field.fieldType === "hidden" || field.fieldType === "secret") continue;
+      else if (field.fieldType === "resolve")
+        assign(
+          key,
+          SignalContext.#resolveComputed(key, valueRecord, {
+            signalContext,
+            returnRef,
+            field,
+            registry,
+            live,
+            cache,
+          }),
+        );
+      else if (!field.isClass) resolvedValue[key] = valueRecord[key];
+      else if (field.isScalar)
+        assign(
+          key,
+          SignalContext.resolveReturn(valueRecord[key], {
             signalContext,
             returnRef: field.modelRef,
             arrDepth: field.arrDepth,
             registry,
             live,
-          });
-        } else if (!field.isClass) resolvedValue[key] = valueRecord[key];
-        else if (field.isScalar) {
-          resolvedValue[key] = await SignalContext.resolveReturn(valueRecord[key], {
+            cache,
+          }),
+        );
+      else
+        assign(
+          key,
+          SignalContext.#resolveRelation(valueRecord[key], {
             signalContext,
-            returnRef: field.modelRef,
+            modelRef: field.modelRef,
             arrDepth: field.arrDepth,
+            nullable: field.nullable,
             registry,
             live,
-          });
-        } else {
-          const refName = ConstantRegistry.getRefName(field.modelRef);
-          const service = live.service.get(refName) as unknown as DatabaseService;
-          if (!service) throw new Error(`Service ${refName} is not registered`);
-          const loaded = await SignalContext.loadNested(valueRecord[key], service, field);
-          const resolved = await SignalContext.resolveReturn(loaded, {
-            signalContext,
-            returnRef: field.modelRef,
-            arrDepth: field.arrDepth,
-            registry,
-            live,
-          });
-          resolvedValue[key] = resolved;
-        }
-      }),
-    );
+            cache,
+          }),
+        );
+    }
+    if (pending.length) await Promise.all(pending);
     return resolvedValue;
+  }
+  static async #resolveComputed(
+    key: string,
+    valueRecord: RuntimeRecord,
+    {
+      signalContext,
+      returnRef,
+      field,
+      registry,
+      live,
+      cache,
+    }: {
+      signalContext: SignalContext | null;
+      returnRef: ConstantFieldTypeInput;
+      field: ConstantCls[typeof FIELD_META][string];
+      registry: InjectRegistry;
+      live: LiveRegistry;
+      cache: ResolveCache;
+    },
+  ): Promise<unknown> {
+    const refName = ConstantRegistry.getRefName(returnRef as ConstantCls);
+    const internal = live.internal.get(`${refName}Internal`);
+    if (!internal) throw new Error(`Internal ${refName} is not registered`);
+    const internalCls = internal.constructor as InternalCls;
+    const internalInfo = internalCls[INTERNAL_META][key] as InternalInfo<"resolveField"> | undefined;
+    if (!internalInfo) throw new Error(`Internal info ${key} is not found`);
+    const resolveFieldContext = new ResolveFieldContext(valueRecord, { signalContext, internalInfo, internal });
+    const resolved = await resolveFieldContext.exec();
+    return await SignalContext.resolveReturn(resolved, {
+      signalContext,
+      returnRef: field.modelRef,
+      arrDepth: field.arrDepth,
+      registry,
+      live,
+      cache,
+    });
+  }
+  static async #resolveRelation(
+    value: unknown,
+    {
+      signalContext,
+      modelRef,
+      arrDepth,
+      nullable,
+      registry,
+      live,
+      cache,
+    }: {
+      signalContext: SignalContext | null;
+      modelRef: ConstantFieldTypeInput;
+      arrDepth: number;
+      nullable: boolean;
+      registry: InjectRegistry;
+      live: LiveRegistry;
+      cache: ResolveCache;
+    },
+  ): Promise<unknown> {
+    if (arrDepth) {
+      if (value === null || value === undefined) {
+        if (nullable) return null;
+        throw new Error(`Document ${value} is not found`);
+      }
+      return await Promise.all(
+        (value as unknown[]).map((item) =>
+          SignalContext.#resolveRelation(item, {
+            signalContext,
+            modelRef,
+            arrDepth: arrDepth - 1,
+            nullable,
+            registry,
+            live,
+            cache,
+          }),
+        ),
+      );
+    }
+    const refName = ConstantRegistry.getRefName(modelRef as ConstantCls);
+    const service = live.service.get(refName) as unknown as DatabaseService;
+    if (!service) throw new Error(`Service ${refName} is not registered`);
+    // The cached load is deliberately nullable, so one entry serves a nullable and a non-nullable reference to
+    // the same document alike and the refusal below stays each field's own.
+    const resolved =
+      value === null || value === undefined
+        ? null
+        : await SignalContext.#resolveOnce(cache, modelRef, String(value), async () => {
+            const loaded = await SignalContext.loadNested(value, service, { arrDepth: 0, nullable: true });
+            return await SignalContext.resolveReturn(loaded, {
+              signalContext,
+              returnRef: modelRef,
+              arrDepth: 0,
+              registry,
+              live,
+              cache,
+            });
+          });
+    if (resolved === null && !nullable) throw new Error(`Document ${value} is not found`);
+    return resolved;
+  }
+  /**
+   * The resolved subtree for one document, computed once per response.
+   *
+   * A listing whose rows share a relation — twenty users with the same avatar — otherwise loads, `toJSON`s and
+   * walks that document once per row, and every copy is identical by construction. The promise is what is
+   * stored, not the value, so rows that ask together coalesce onto the first load instead of racing it.
+   */
+  static #resolveOnce(
+    cache: ResolveCache,
+    modelRef: ConstantFieldTypeInput,
+    id: string,
+    load: () => Promise<unknown>,
+  ): Promise<unknown> {
+    const byId = cache.get(modelRef) ?? new Map<string, Promise<unknown>>();
+    if (!cache.has(modelRef)) cache.set(modelRef, byId);
+    const cached = byId.get(id);
+    if (cached) return cached;
+    const resolving = load();
+    byId.set(id, resolving);
+    return resolving;
   }
   static async loadNested(
     value: unknown,

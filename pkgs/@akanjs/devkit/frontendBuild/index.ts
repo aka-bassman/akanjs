@@ -9,6 +9,7 @@ export * from "./cssImportResolver";
 export * from "./devChangePlanner";
 export * from "./devGeneratedIndexSync";
 export * from "./fontOptimizer";
+export * from "./fontPruner";
 export * from "./hmrChangeClassifier";
 export * from "./hmrWatcher";
 export * from "./pagesBundleBuilder";

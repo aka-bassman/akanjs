@@ -469,6 +469,36 @@ describe("serialize, deserialize, purify, and immerify", () => {
     expect(inputSerialized.members).toEqual([validUserId]);
   });
 
+  test("builds a relation once per deserialize pass and shares it across every row naming it", () => {
+    const ownerObj = { id: validUserId, name: "Ada", age: 31, role: "admin", tags: [], addressLabel: "Seoul" };
+    const rows = [
+      { id: validChildId, title: "Core", owner: ownerObj, members: [ownerObj] },
+      { id: validChildId, title: "Platform", owner: { ...ownerObj }, members: [{ ...ownerObj }] },
+    ];
+
+    const teams = deserialize(TeamFull, 1, rows, {
+      convertFn: (value) => new TeamFull(value as never),
+    }) as unknown as { owner: object; members: object[] }[];
+
+    expect(teams[0].owner).toBeInstanceOf(UserLight);
+    expect(teams[0].owner).toBe(teams[0].members[0]);
+    expect(teams[0].owner).toBe(teams[1].owner);
+    expect(teams[1].members[0]).toBe(teams[0].owner);
+    // A second response is a second pass, so it does not reuse the first one's instances.
+    const later = deserialize(TeamFull, 1, rows, {
+      convertFn: (value) => new TeamFull(value as never),
+    }) as unknown as { owner: object }[];
+    expect(later[0].owner).not.toBe(teams[0].owner);
+  });
+
+  test("keeps an already-crystalized relation instead of copying it", () => {
+    const owner = new UserLight({ id: validUserId, name: "Ada" } as never);
+    const team = new TeamFull({ id: validChildId, title: "Core", owner, members: [owner] } as never);
+
+    expect(team.owner).toBe(owner);
+    expect(team.members[0]).toBe(owner);
+  });
+
   test("purifies valid input and rejects invalid values", () => {
     const user = createUser();
     const purified = UserFull.purify(user);

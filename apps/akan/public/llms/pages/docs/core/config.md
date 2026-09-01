@@ -239,12 +239,9 @@ export default config;
 ### env/env.client.local.ts
 
 ```ts
-import { getEnv } from "akanjs/base";
-
 import type { AppClientEnv } from "./env.client.type";
 
 export const env: AppClientEnv = {
-  ...getEnv(),
   google: {
     mapKey: "local-map-key",
   },
@@ -254,12 +251,11 @@ export const env: AppClientEnv = {
 ### env/env.server.local.ts
 
 ```ts
-import { getEnv } from "akanjs/base";
-
 import type { ModulesOptions } from "../lib/option";
+import { libEnv } from "./env.server.type";
 
 export const env: ModulesOptions = {
-  ...getEnv(),
+  ...libEnv,
   hostname: null,
   security: {
     verifies: [["password", "phone"]],

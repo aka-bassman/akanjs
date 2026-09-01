@@ -33,9 +33,12 @@ type EndpointClientReturns<E, SlceCls extends SliceCls | never> = [SlceCls] exte
       SlceCnstInsight<SlceCls>
     >;
 
-type EndpInfoReturns<E, SlceCls extends SliceCls | never> =
-  | EndpointClientReturns<E, SlceCls>
-  | (EndpInfoNullable<E> extends true ? null : never);
+type OrNull<T, Nullable> = Nullable extends true ? T | null : T;
+
+type EndpInfoReturns<E, SlceCls extends SliceCls | never> = OrNull<
+  EndpointClientReturns<E, SlceCls>,
+  EndpInfoNullable<E>
+>;
 
 type QueryOrMutationFetchFn<E, SlceCls extends SliceCls | never> = (
   ...args: [...EndpInfoArgs<E>, fetchPolicy?: FetchPolicy]

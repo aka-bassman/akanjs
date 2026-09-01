@@ -11,7 +11,6 @@ SECRET_MAP=( \
 "apps/akan/env/env.client.develop.ts,bunkan-akan-client-env-develop,develop" \
 "apps/akan/env/env.client.main.ts,bunkan-akan-client-env-main,main" \
 "libs/shared/env/env.server.testing.ts,bunkan-shared-server-env-testing,testing" \
-"libs/social/env/env.server.testing.ts,bunkan-social-server-env-testing,testing" \
 "libs/util/env/env.server.testing.ts,bunkan-util-server-env-testing,testing" \
 )
 

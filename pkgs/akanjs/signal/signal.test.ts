@@ -88,6 +88,34 @@ ConstantRegistry.buildModel(
   },
 );
 
+const SignalTestHolderInput = via((f) => ({
+  label: f(String),
+  related: f(SignalTestRelatedFull).optional(),
+  relateds: f([SignalTestRelatedFull]),
+  requiredRelated: f(SignalTestRelatedFull),
+}));
+const SignalTestHolderObject = via(SignalTestHolderInput, () => ({}));
+const SignalTestHolderLight = via(SignalTestHolderObject, ["label"] as const, () => ({}));
+const SignalTestHolderFull = via(SignalTestHolderObject, SignalTestHolderLight, () => ({}));
+const SignalTestHolderInsight = via(SignalTestHolderFull, (f) => ({
+  total: f(Int, { default: 0, accumulate: {} }),
+}));
+ConstantRegistry.buildModel(
+  "signalTestHolder",
+  SignalTestHolderInput,
+  SignalTestHolderObject,
+  SignalTestHolderFull,
+  SignalTestHolderLight,
+  SignalTestHolderInsight,
+  {
+    SignalTestHolderInput,
+    SignalTestHolderObject,
+    SignalTestHolderFull,
+    SignalTestHolderLight,
+    SignalTestHolderInsight,
+  },
+);
+
 class SignalTestFilter extends from(SignalTestFull, (filter) => ({
   query: {
     byOwner: filter()
@@ -1051,6 +1079,65 @@ describe("SignalContext return resolution", () => {
     expect(resolvedArray).toEqual([
       [{ title: "A", nested: { label: "N" }, relatedIds: [], resolvedLabel: "resolved:A" }],
     ]);
+  });
+
+  test("loads and walks a relation once per response, however many rows name it", async () => {
+    const loaded: string[] = [];
+    const live = makeLiveRegistry();
+    live.service.set("signalTestRelated", {
+      __load: async (id: string) => {
+        loaded.push(id);
+        return { toJSON: () => ({ id, title: `related:${id}` }) };
+      },
+    } as unknown as DatabaseService);
+    const resolveHolders = async () =>
+      (await SignalContext.resolveReturn(
+        [
+          { label: "a", related: "rel-1", relateds: ["rel-1", "rel-2"], requiredRelated: "rel-1" },
+          { label: "b", related: "rel-1", relateds: ["rel-2"], requiredRelated: "rel-2" },
+        ],
+        {
+          signalContext: null,
+          returnRef: SignalTestHolderFull,
+          arrDepth: 1,
+          registry: getDefaultInjectRegistry(),
+          live,
+        },
+      )) as { related: unknown; relateds: unknown[]; requiredRelated: unknown }[];
+
+    const holders = await resolveHolders();
+
+    expect(loaded.toSorted()).toEqual(["rel-1", "rel-2"]);
+    expect(holders[0].related).toMatchObject({ id: "rel-1", title: "related:rel-1" });
+    expect(holders[0].related).toBe(holders[1].related);
+    expect(holders[0].relateds[0]).toBe(holders[0].related);
+    expect(holders[1].requiredRelated).toBe(holders[0].relateds[1]);
+
+    await resolveHolders();
+    // The cache is the response's, not the process's, so the second one loads both documents again.
+    expect(loaded).toHaveLength(4);
+  });
+
+  test("refuses a missing document for a non-nullable relation even when a nullable one cached the miss", async () => {
+    const live = makeLiveRegistry();
+    live.service.set("signalTestRelated", {
+      __load: async () => null,
+    } as unknown as DatabaseService);
+    const resolveHolder = async (holder: object) =>
+      await SignalContext.resolveReturn(holder, {
+        signalContext: null,
+        returnRef: SignalTestHolderFull,
+        arrDepth: 0,
+        registry: getDefaultInjectRegistry(),
+        live,
+      });
+
+    await expect(resolveHolder({ label: "a", related: "gone", relateds: [], requiredRelated: "gone" })).rejects.toThrow(
+      "Document gone is not found",
+    );
+    await expect(resolveHolder({ label: "a", related: "gone", relateds: [], requiredRelated: null })).rejects.toThrow(
+      "Document null is not found",
+    );
   });
 
   test("loadNested handles nullable and non-nullable missing documents", async () => {

@@ -247,6 +247,14 @@ describe("makeAkanChildProxyHeaders", () => {
     expect(headers.get("x-akan-child-idx")).toBe("2");
   });
 
+  test("asks the child for an identity body, whatever the real client accepts", () => {
+    const req = new Request("http://akan-internal/", {
+      headers: { host: "internal.example", "accept-encoding": "gzip, deflate, br" },
+    });
+
+    expect(makeAkanChildProxyHeaders(req, 0).get("accept-encoding")).toBe("identity");
+  });
+
   test("falls back to request host and protocol without upstream forwarded headers", () => {
     const req = new Request("http://internal.example/", {
       headers: {
@@ -525,6 +533,111 @@ describe("AkanApp", () => {
       await Promise.race([running, wait(1_000)]);
     }
   }, 20_000);
+
+  test("holds a request until a booting replica reports ready", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akan-app-boot-wait-"));
+    tempRoots.push(root);
+    const serverPath = path.join(root, "server.ts");
+    const runtimeDir = path.join(root, "runtime");
+    const port = 24_000 + Math.floor(Math.random() * 10_000);
+
+    await Bun.write(
+      serverPath,
+      `
+        export const server = {
+          async start() {
+            Bun.serve({ unix: process.env.AKAN_CHILD_SOCKET, fetch() { return new Response("ok"); } });
+            process.on("message", (message) => {
+              if (!message || typeof message !== "object") return;
+              if (message.type === "health.ping") {
+                process.send?.({ type: "health.pong", nonce: message.nonce, sentAt: message.sentAt, pid: process.pid });
+              }
+              if (message.type === "shutdown") process.exit(0);
+            });
+            await Bun.sleep(1_500);
+            process.send?.({
+              type: "ready",
+              pid: process.pid,
+              replicaIdx: 0,
+              role: "all",
+              upstream: { type: "unix", socketPath: process.env.AKAN_CHILD_SOCKET },
+              healthPath: "/_akan/app/child-health",
+            });
+          },
+        };
+      `,
+    );
+
+    const app = new AkanApp(serverPath, { replica: 1, runtimeDir, port });
+    const running = app.start();
+    try {
+      const health = await waitFor(async () => {
+        const res = await fetch(`http://127.0.0.1:${port}/_akan/app/health`).catch(() => null);
+        if (!res?.ok) return null;
+        return (await res.json()) as { children: Array<{ ready: boolean }> };
+      });
+      expect(health.children[0]?.ready).toBe(false);
+
+      const held = await fetch(`http://127.0.0.1:${port}/while-booting`);
+      expect(held.status).toBe(200);
+      expect(await held.text()).toBe("ok");
+    } finally {
+      await app.stop();
+      await Promise.race([running, wait(1_000)]);
+    }
+  }, 15_000);
+
+  test("serves a self-reloading page once the upstream wait budget runs out", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akan-app-boot-page-"));
+    tempRoots.push(root);
+    const serverPath = path.join(root, "server.ts");
+    const runtimeDir = path.join(root, "runtime");
+    const port = 24_000 + Math.floor(Math.random() * 10_000);
+
+    await Bun.write(
+      serverPath,
+      `
+        export const server = {
+          async start() {
+            Bun.serve({ unix: process.env.AKAN_CHILD_SOCKET, fetch() { return new Response("ok"); } });
+            process.on("message", (message) => {
+              if (message && typeof message === "object" && message.type === "shutdown") process.exit(0);
+            });
+            await new Promise(() => {});
+          },
+        };
+      `,
+    );
+
+    const originalWait = process.env.AKAN_UPSTREAM_WAIT_MS;
+    process.env.AKAN_UPSTREAM_WAIT_MS = "200";
+    let app: AkanApp;
+    try {
+      app = new AkanApp(serverPath, { replica: 1, runtimeDir, port });
+    } finally {
+      if (originalWait === undefined) delete process.env.AKAN_UPSTREAM_WAIT_MS;
+      else process.env.AKAN_UPSTREAM_WAIT_MS = originalWait;
+    }
+    const running = app.start();
+    try {
+      const htmlRes = await waitFor(async () =>
+        fetch(`http://127.0.0.1:${port}/`, { headers: { accept: "text/html" } }).catch(() => null),
+      );
+      expect(htmlRes.status).toBe(503);
+      expect(htmlRes.headers.get("content-type") ?? "").toContain("text/html");
+      expect(htmlRes.headers.get("cache-control")).toBe("no-store");
+      const htmlBody = await htmlRes.text();
+      expect(htmlBody).toContain("Backend is starting");
+      expect(htmlBody).toContain("location.reload()");
+
+      const textRes = await fetch(`http://127.0.0.1:${port}/api/anything`);
+      expect(textRes.status).toBe(503);
+      expect(await textRes.text()).toContain("No healthy federation child is ready");
+    } finally {
+      await app.stop();
+      await Promise.race([running, wait(1_000)]);
+    }
+  }, 15_000);
 
   test("honors an explicitly configured runtimeDir for child sockets", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "akan-app-runtime-dir-"));

@@ -17,9 +17,9 @@ export type SrvMap<S extends ServiceModel> = S["srvMap"];
 
 export type CnstRefName<S extends ServiceModel> = CnstOf<S>["refName"];
 export type CnstInput<S extends ServiceModel> = CnstOf<S>["_Input"];
-export type CnstFull<S extends ServiceModel> = UnCls<CnstOf<S>["full"]> & CnstOf<S>["_Full"];
-export type CnstLight<S extends ServiceModel> = UnCls<CnstOf<S>["light"]> & CnstOf<S>["_Light"];
-export type CnstInsight<S extends ServiceModel> = UnCls<CnstOf<S>["insight"]> & CnstOf<S>["_Insight"];
+export type CnstFull<S extends ServiceModel> = CnstOf<S>["_Full"];
+export type CnstLight<S extends ServiceModel> = CnstOf<S>["_Light"];
+export type CnstInsight<S extends ServiceModel> = CnstOf<S>["_Insight"];
 export type CnstDefault<S extends ServiceModel> = CnstOf<S>["_Default"];
 export type CnstDefaultInput<S extends ServiceModel> = CnstOf<S>["_DefaultInput"];
 export type CnstDefaultState<S extends ServiceModel> = CnstOf<S>["_DefaultState"];

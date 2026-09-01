@@ -30,7 +30,11 @@ export type DocumentModel<T> = unknown extends T
         : Docify<T>;
 
 export type FieldState<T> = T extends { id: string } ? T | null : T;
-export type DefaultOf<S> = GetStateObject<{ [K in keyof S]: FieldState<S[K]> }>;
+export type DefaultOf<S> = {
+  [K in keyof S as S[K] extends (...args: never[]) => unknown ? never : K extends "prototype" ? never : K]: FieldState<
+    S[K]
+  >;
+};
 
 export type DefaultOfSchema<Schema, RelationKey = never> = [RelationKey] extends [never]
   ? Schema

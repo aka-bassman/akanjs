@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ImageOptimizer } from "./imageOptimizer";
+import type { AkanImageConfig } from "./types";
 
 const onePixelPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -17,6 +18,32 @@ let optimizer: ImageOptimizer;
 
 const request = (url: string, width: number, accept: string) =>
   new Request(`http://local.akan/_akan/image?url=${encodeURIComponent(url)}&w=${width}&q=75`, { headers: { accept } });
+
+const upstreamImage = async () => {
+  const photo = await Bun.file(path.join(root, "public/photo.png")).bytes();
+  let served = 0;
+  const upstream = Bun.serve({
+    port: 0,
+    fetch: async () => {
+      served += 1;
+      await Bun.sleep(20);
+      return new Response(photo, { headers: { "content-type": "image/png" } });
+    },
+  });
+  return {
+    url: `http://localhost:${upstream.port}/photo.png`,
+    hits: () => served,
+    stop: () => upstream.stop(true),
+  };
+};
+
+const remoteOptimizer = (cacheDir: string, config: Partial<AkanImageConfig> = {}) =>
+  new ImageOptimizer({
+    publicDir: path.join(root, "public"),
+    cacheDir: path.join(root, cacheDir),
+    prodMode: true,
+    config: { remotePatterns: [{ protocol: "http", hostname: "localhost" }], ...config },
+  });
 
 describe("ImageOptimizer", () => {
   beforeAll(async () => {
@@ -100,5 +127,81 @@ describe("ImageOptimizer", () => {
     } finally {
       Bun.Image.backend = backend;
     }
+  });
+
+  test("collapses concurrent requests for one image into a single fetch and encode", async () => {
+    const { url, hits, stop } = await upstreamImage();
+    try {
+      const remote = remoteOptimizer("cache-remote");
+      const all = await Promise.all(Array.from({ length: 8 }, () => remote.handle(request(url, 32, "image/webp"))));
+
+      expect(all.map((res) => res.status)).toEqual(Array(8).fill(200));
+      expect(new Set(all.map((res) => res.headers.get("ETag"))).size).toBe(1);
+      expect(hits()).toBe(1);
+    } finally {
+      stop();
+    }
+  });
+
+  test("serves a warm remote image without touching the origin", async () => {
+    const { url, hits, stop } = await upstreamImage();
+    try {
+      const remote = remoteOptimizer("cache-warm-remote");
+      const etags: (string | null)[] = [];
+      for (let i = 0; i < 4; i += 1) {
+        const res = await remote.handle(request(url, 32, "image/webp"));
+        expect(res.status).toBe(200);
+        expect(res.headers.get("Content-Type")).toBe("image/webp");
+        etags.push(res.headers.get("ETag"));
+      }
+
+      expect(hits()).toBe(1);
+      expect(new Set(etags).size).toBe(1);
+    } finally {
+      stop();
+    }
+  });
+
+  test("refetches a remote image once its ttl has run out", async () => {
+    const { url, hits, stop } = await upstreamImage();
+    try {
+      const remote = remoteOptimizer("cache-expiring-remote", { minimumCacheTTL: 0 });
+      for (let i = 0; i < 3; i += 1) expect((await remote.handle(request(url, 32, "image/webp"))).status).toBe(200);
+
+      expect(hits()).toBe(3);
+    } finally {
+      stop();
+    }
+  });
+
+  test("refetches a remote image every time under akan start", async () => {
+    const { url, hits, stop } = await upstreamImage();
+    try {
+      const dev = new ImageOptimizer({
+        publicDir: path.join(root, "public"),
+        cacheDir: path.join(root, "cache-dev-remote"),
+        prodMode: false,
+        config: { remotePatterns: [{ protocol: "http", hostname: "localhost" }] },
+      });
+      for (let i = 0; i < 3; i += 1) expect((await dev.handle(request(url, 32, "image/webp"))).status).toBe(200);
+
+      expect(hits()).toBe(3);
+    } finally {
+      stop();
+    }
+  });
+
+  test("serves every request when image work is capped to one at a time", async () => {
+    const capped = new ImageOptimizer({
+      publicDir: path.join(root, "public"),
+      cacheDir: path.join(root, "cache-capped"),
+      prodMode: true,
+      config: { maxConcurrency: 1 },
+    });
+    const widths = [32, 48, 64, 96, 128, 256, 384];
+    const all = await Promise.all(widths.map((width) => capped.handle(request("/photo.png", width, "image/webp"))));
+
+    expect(all.map((res) => res.status)).toEqual(widths.map(() => 200));
+    expect(new Set(all.map((res) => res.headers.get("Content-Type")))).toEqual(new Set(["image/webp"]));
   });
 });

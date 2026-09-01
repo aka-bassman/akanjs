@@ -7,7 +7,13 @@ import type {
   ApplicationBuildResult,
 } from "./applicationBuildReporter";
 import type { App } from "./commandDecorators";
-import { AllRoutesBuilder, CsrArtifactBuilder, precompressArtifacts, SsrBaseArtifactBuilder } from "./frontendBuild";
+import {
+  AllRoutesBuilder,
+  CsrArtifactBuilder,
+  FontPruner,
+  precompressArtifacts,
+  SsrBaseArtifactBuilder,
+} from "./frontendBuild";
 import { Spinner } from "./spinner";
 
 export interface TypecheckOptions {
@@ -15,7 +21,7 @@ export interface TypecheckOptions {
   incremental?: boolean;
 }
 
-export type BuildPhaseId = "prepare" | "typecheck" | "backend" | "ssr" | "csr" | "compress" | "metadata";
+export type BuildPhaseId = "prepare" | "typecheck" | "backend" | "ssr" | "csr" | "assets" | "compress" | "metadata";
 
 export type BuildPhaseResult = ApplicationBuildPhaseResult & { id: BuildPhaseId };
 export type BuildResult = ApplicationBuildResult;
@@ -37,6 +43,7 @@ const BUILD_PHASE_EMOJIS: Record<BuildPhaseId, string> = {
   backend: "📦",
   ssr: "🧭",
   csr: "🎨",
+  assets: "✂️",
   compress: "🗜️",
   metadata: "📝",
 };
@@ -77,7 +84,7 @@ export class ApplicationBuildRunner {
   async build({ spinner = false }: BuildOptions = {}): Promise<BuildResult> {
     // serial build is needed because of Bun.build is unstable for parallel build
     const phaseOptions = { spinner };
-    const { web } = await this.#app.getConfig();
+    const { web, assets } = await this.#app.getConfig();
     await this.#runPhase("prepare", "Preparing output directory", () => this.#app.prepareCommand("build"), undefined, {
       spinner,
     });
@@ -106,6 +113,16 @@ export class ApplicationBuildRunner {
       "Building CSR assets",
       async () => (web.csr ? await this.#buildCsr() : null),
       (result) => result?.outputDir ?? (web.csr ? "skipped" : "disabled by akan.config.ts web.csr"),
+      phaseOptions,
+    );
+    await this.#runPhase(
+      "assets",
+      "Trimming unread static assets",
+      async () => (assets.pruneFonts ? await new FontPruner(this.#app, assets).prune() : null),
+      (result) =>
+        result
+          ? `${result.removed.length} font file(s) dropped, ${ApplicationBuildRunner.formatBytes(result.freedBytes)} freed; ${result.kept.length} kept`
+          : "disabled by akan.config.ts assets.pruneFonts",
       phaseOptions,
     );
     await this.#runPhase(
