@@ -274,14 +274,13 @@ describe("AgentSession settle and progress", () => {
     // Lands a tick later, like a store action that fires `void fetch.*` and commits when the answer arrives.
     surface.registerTool([], {
       name: "bumpLater",
-      effect: "mutation",
       run: () => {
         setTimeout(() => {
           count += 1;
         }, 0);
       },
     });
-    surface.registerTool([], { name: "peek", effect: "query", run: () => count });
+    surface.registerTool([], { name: "peek", settle: false, run: () => count });
     const { runner } = scripted(
       [
         { type: "toolCall", id: "c1", name: "bumpLater", args: {} },
@@ -457,11 +456,14 @@ describe("AgentSession askUser", () => {
 
 describe("AgentSession history", () => {
   const memoryHistory = (initial: import("./types").ChatMessage[] | null = null) => {
-    const state = { stored: initial, saves: 0, cleared: 0 };
+    const state = { stored: initial, saves: 0, cleared: 0, loads: 0 };
     return {
       state,
       history: {
-        load: () => state.stored,
+        load: () => {
+          state.loads += 1;
+          return state.stored;
+        },
         save: (messages: readonly import("./types").ChatMessage[]) => {
           state.stored = [...messages];
           state.saves += 1;
@@ -498,12 +500,171 @@ describe("AgentSession history", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     expect(state.saves).toBe(1);
     expect(state.stored?.map((message) => message.text)).toEqual(["question", "answer"]);
-    session.reset();
+    await session.reset();
     expect(session.messages).toEqual([]);
     expect(state.cleared).toBe(1);
     await new Promise((resolve) => setTimeout(resolve, 350));
     expect(state.saves).toBe(1);
     expect(state.stored).toBeNull();
+  });
+
+  test("an async load lands into an untouched transcript and reports while it is in flight", async () => {
+    let settle: (messages: import("./types").ChatMessage[]) => void = () => undefined;
+    const pending = new Promise<import("./types").ChatMessage[]>((resolve) => {
+      settle = resolve;
+    });
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {
+      history: { load: () => pending, save: () => undefined, clear: () => undefined },
+    });
+    expect(session.isRestoring).toBe(true);
+    expect(session.messages).toEqual([]);
+    const seen: number[] = [];
+    session.subscribe(() => seen.push(session.version));
+    settle([{ role: "user", text: "restored" }]);
+    await pending;
+    await Promise.resolve();
+    expect(session.isRestoring).toBe(false);
+    expect(session.messages).toEqual([{ role: "user", text: "restored" }]);
+    expect(seen.length).toBe(1);
+  });
+
+  test("an async load that arrives after the user sent something is dropped, not merged", async () => {
+    let settle: (messages: import("./types").ChatMessage[]) => void = () => undefined;
+    const pending = new Promise<import("./types").ChatMessage[]>((resolve) => {
+      settle = resolve;
+    });
+    const { runner } = scripted([
+      { type: "text", delta: "answer" },
+      { type: "done", stop: "end" },
+    ]);
+    const session = new AgentSession(new AgenticSurface(), runner, {
+      history: { load: () => pending, save: () => undefined, clear: () => undefined },
+    });
+    await session.send("question");
+    settle([{ role: "user", text: "restored" }]);
+    await pending;
+    await Promise.resolve();
+    expect(session.messages.map((message) => message.text)).toEqual(["question", "answer"]);
+  });
+
+  test("an async load that rejects leaves the chat empty and usable", async () => {
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {
+      history: { load: () => Promise.reject(new Error("offline")), save: () => undefined, clear: () => undefined },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(session.isRestoring).toBe(false);
+    expect(session.messages).toEqual([]);
+  });
+
+  test("async saves run one at a time and a clear queues behind them", async () => {
+    const order: string[] = [];
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first = true;
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {
+      history: {
+        load: () => null,
+        save: async () => {
+          const slow = first;
+          first = false;
+          if (slow) await held;
+          order.push(slow ? "save:slow" : "save:fast");
+        },
+        clear: () => {
+          order.push("clear");
+        },
+      },
+    });
+    session.note("one");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    session.note("two");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    const cleared = session.reset();
+    release();
+    await cleared;
+    expect(order).toEqual(["save:slow", "save:fast", "clear"]);
+  });
+
+  test("a history attached before the first turn restores, and saves from then on", async () => {
+    const { state, history } = memoryHistory([{ role: "user", text: "earlier" }]);
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {});
+    expect(session.messages).toEqual([]);
+    session.setHistory(history);
+    expect(session.messages).toEqual([{ role: "user", text: "earlier" }]);
+    session.note("later");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(state.saves).toBe(1);
+    expect(state.stored?.map((message) => message.text)).toEqual(["earlier", "later"]);
+  });
+
+  test("a history attached after the conversation moved on saves without restoring, and is never asked to load", () => {
+    const { state, history } = memoryHistory([{ role: "user", text: "from another visit" }]);
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {});
+    session.note("already said");
+    session.setHistory(history);
+    expect(session.messages.map((message) => message.text)).toEqual(["already said"]);
+    // Not merely discarded on arrival: a store is never asked for a transcript that would be thrown away.
+    expect(state.loads).toBe(0);
+  });
+
+  test("detaching stops the saving", async () => {
+    const { state, history } = memoryHistory();
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {});
+    session.setHistory(history);
+    session.note("kept");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(state.saves).toBe(1);
+    session.setHistory(null);
+    session.note("not kept");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(state.saves).toBe(1);
+  });
+
+  test("whoever attached last owns the slot, and a stale detach leaves it alone", async () => {
+    const first = memoryHistory();
+    const second = memoryHistory();
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {});
+    const detachFirst = session.setHistory(first.history);
+    session.setHistory(second.history);
+    // The order a remount arrives in: the newcomer is already installed when the old one's cleanup runs.
+    detachFirst();
+    session.note("after the handover");
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(second.state.saves).toBe(1);
+    expect(first.state.saves).toBe(0);
+    expect(second.state.stored?.map((message) => message.text)).toEqual(["after the handover"]);
+  });
+
+  test("an attached async history reports while it loads, exactly as a constructed one does", async () => {
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {});
+    const pending = Promise.resolve([{ role: "user" as const, text: "from the server" }]);
+    session.setHistory({ load: () => pending, save: () => undefined, clear: () => undefined });
+    expect(session.isRestoring).toBe(true);
+    await pending;
+    await Promise.resolve();
+    expect(session.isRestoring).toBe(false);
+    expect(session.messages).toEqual([{ role: "user", text: "from the server" }]);
+  });
+
+  test("setOnCompact attaches the hook a constructed session takes as an option", async () => {
+    const cuts: number[] = [];
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {
+      history: {
+        load: () => [
+          { role: "user", text: "x".repeat(30_000) },
+          { role: "assistant", text: "ok" },
+        ],
+        save: () => undefined,
+        clear: () => undefined,
+      },
+      compact: { summarize: async () => "notes" },
+    });
+    session.setOnCompact((replaced) => cuts.push(replaced.length));
+    expect(await session.compact()).toBe(true);
+    expect(cuts).toEqual([2]);
+    session.setOnCompact(null);
   });
 
   test("a history that throws never breaks the chat", async () => {
@@ -824,6 +985,30 @@ describe("AgentSession compaction", () => {
     expect(await session.retry()).toBe(false);
   });
 
+  test("onCompact reports the cut, so a host can move its own summary watermark to the same place", async () => {
+    const cuts: { replaced: number; summary: string | undefined }[] = [];
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {
+      history: restored([...bulky("first"), { role: "user", text: "second" }, { role: "assistant", text: "ok" }]),
+      compact: { summarize: async () => "notes" },
+      onCompact: (replaced, summary) => cuts.push({ replaced: replaced.length, summary: summary.text }),
+    });
+    expect(await session.compact()).toBe(true);
+    expect(cuts).toEqual([{ replaced: 4, summary: session.messages[0].text }]);
+    expect(session.messages[0].summary).toBe(true);
+  });
+
+  test("a host that throws from onCompact does not undo the cut the transcript already took", async () => {
+    const session = new AgentSession(new AgenticSurface(), scripted([]).runner, {
+      history: restored(bulky("first")),
+      compact: { summarize: async () => "notes" },
+      onCompact: () => {
+        throw new Error("watermark store is down");
+      },
+    });
+    expect(await session.compact()).toBe(true);
+    expect(session.messages.map((message) => message.summary === true)).toEqual([true]);
+  });
+
   test("compact refuses while a turn is running, and reports nothing to do on an empty transcript", async () => {
     const surface = new AgenticSurface();
     surface.registerTool([], { name: "hold", confirm: true, run: () => 1 });
@@ -850,7 +1035,6 @@ describe("AgentSession long tools", () => {
     // The shape an app writes: the tool does not return until the work it started is done.
     surface.registerTool([], {
       name: "generate",
-      effect: "mutation",
       run: async () => {
         for (let at = 0; at < 5; at += 1) await tick();
         status = "ready";

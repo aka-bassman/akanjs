@@ -4,9 +4,10 @@ import { useGesture } from "@use-gesture/react";
 import { cn } from "akanjs/client";
 import { useFieldTool } from "akanjs/store";
 import { animated } from "akanjs/ui";
-import { createContext, type ReactElement, type ReactNode, useContext, useRef } from "react";
+import { type ReactElement, type ReactNode, useContext, useRef } from "react";
 import { BiTrash } from "react-icons/bi";
 import { MdDragIndicator } from "react-icons/md";
+import { sharedContext } from "../client/sharedContext";
 import { agentAttrs } from "./agentAttrs";
 import { buttonRecipe } from "./Button";
 import { useUiRecipe } from "./UiOverride";
@@ -24,7 +25,7 @@ interface DragListContextType<V> {
   bind: (...args: any[]) => any;
   onRemove: (value: V) => void;
 }
-const dragListContext = createContext<DragListContextType<any>>({} as unknown as DragListContextType<any>);
+const dragListContext = sharedContext<DragListContextType<any>>("dragList", {} as unknown as DragListContextType<any>);
 const useDragList = () => useContext(dragListContext);
 
 interface DragListProps<V> {

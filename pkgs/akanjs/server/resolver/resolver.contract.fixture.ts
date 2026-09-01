@@ -1,4 +1,4 @@
-import { ID, Int } from "akanjs/base";
+import { Binary, ID, Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { by, type DatabaseCls, DatabaseRegistry, from, into, type ModelCls, type SchemaOf } from "akanjs/document";
 import { ServiceModel, serve } from "akanjs/service";
@@ -185,6 +185,14 @@ export class ServerResolverTestEndpoint extends endpoint(serverResolverTestServi
     .exec(() => {
       resolverOrder.push("pubsub-subscribe");
     }),
+  roomStream: builder
+    .pubsub(Binary)
+    .room("channel", String)
+    .exec(() => undefined),
+  roomQueuedStream: builder
+    .pubsub(Binary, { backpressure: "queue" })
+    .room("channel", String)
+    .exec(() => undefined),
   guardedRoomFeed: builder
     .pubsub(ServerResolverTestLight, { guards: [ServerResolverTestRoomGuard] })
     .room("roomId", ID)

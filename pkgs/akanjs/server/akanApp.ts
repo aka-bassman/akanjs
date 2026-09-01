@@ -5,13 +5,15 @@ import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { Logger } from "akanjs/common";
 import type { AkanChildRole, AkanChildStatus, AkanIpcMessage, AkanMetricsReport, AkanUpstream } from "akanjs/service";
-import { isTraceEnabled } from "akanjs/signal";
+import { isTraceEnabled } from "../signal/trace";
 import { makeAkanChildProxyHeaders } from "./akanAppHeaders";
 import type { BuilderCsrReq, BuilderCsrRes, BuilderMessage, BuilderReq, BuilderRes } from "./artifact";
 import { resolveEncodedSidecar } from "./assetEncoding";
 import { isPortInUseError } from "./lifecycle/portInUse";
+import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
 import { RotatingLogWriter } from "./logging/rotatingLogWriter";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
+import { getWebConfigFromEnv } from "./types";
 
 interface ChildState {
   idx: number;
@@ -34,6 +36,11 @@ interface ChildState {
   lastRestartAt?: number;
   lastRestartReason?: string;
   lastErrorMessage?: string;
+}
+
+/** The shape `#startSolo` needs off `server.ts`; the module itself is loaded by path, so it has no type here. */
+interface SoloServer {
+  start: (options: { listen: boolean }) => Promise<unknown>;
 }
 
 interface GatewayWsData {
@@ -72,6 +79,13 @@ export interface AkanAppOptions {
    * module. Handed down as `AKAN_MODULES`, since each replica builds its own container.
    */
   modules?: string[];
+  /**
+   * Run the one replica in this process instead of spawning it — see `#startSolo`. Defaults on for a single
+   * traffic replica the environment configured, and off whenever `replica` is passed here, because code that
+   * states a topology is asking for the gateway that serves it. `AKAN_SOLO=false` turns it off; like
+   * `AKAN_SSR`, the env can only narrow, so it cannot force a gateway's replicas into one process.
+   */
+  solo?: boolean;
 }
 
 interface AkanReplicaConfig {
@@ -104,7 +118,10 @@ export class AkanApp {
   readonly #port: number;
   readonly #wsBasePort: number;
   readonly #openapi?: boolean;
+  /** The gateway hands `/_akan/client|styles|fonts` straight off disk, so it needs the same answer its children do. */
+  readonly #web = getWebConfigFromEnv();
   readonly #modules: string[];
+  readonly #solo: boolean;
   readonly #children = new Map<number, ChildState>();
   readonly #roomChildren = new Map<string, Set<number>>();
   readonly #childRooms = new Map<number, Set<string>>();
@@ -136,17 +153,29 @@ export class AkanApp {
     this.#serverPath = AkanApp.#resolveServerPath(resolvedOptions.serverPath ?? serverPath);
     this.#artifactDir = path.resolve(path.dirname(this.#serverPath), ".akan", "artifact");
     this.#replica = AkanApp.#parseReplicaConfig(resolvedOptions.replica);
-    this.#runtimeDir = path.resolve(
-      resolvedOptions.runtimeDir ??
-        process.env.AKAN_RUNTIME_DIR ??
-        (process.env.NODE_ENV === "production"
-          ? path.resolve(process.cwd(), "runtime")
-          : path.resolve(process.cwd(), "local", "apps", process.env.AKAN_PUBLIC_APP_NAME ?? "unknown", "runtime")),
-    );
+    this.#runtimeDir = resolveRuntimeDir(resolvedOptions.runtimeDir);
     this.#port = Number(resolvedOptions.port ?? process.env.PORT ?? 8282);
     this.#wsBasePort = Number(resolvedOptions.wsBasePort ?? process.env.AKAN_WS_BASE_PORT ?? this.#port + 10_000);
     this.#openapi = resolvedOptions.openapi;
     this.#modules = resolvedOptions.modules ?? [];
+    this.#solo = AkanApp.#resolveSolo(resolvedOptions, this.#replica);
+  }
+
+  /**
+   * One replica that serves traffic means there is nothing to balance and nothing to fan pubsub out to, so the
+   * gateway is a second Bun runtime and a proxy hop in front of the only server there is. Measured on
+   * `apps/akan`: 28MB of RSS and half the requests per second.
+   *
+   * A batch-only replica is excluded because it never listens — keeping the gateway is what leaves something
+   * bound to answer `/_akan/app/health`. `akan start` is excluded because the gateway is also the dev host's
+   * builder relay, its crash page, and what holds the port across a child restart.
+   */
+  static #resolveSolo(options: AkanAppOptions, replica: AkanReplicaConfig) {
+    if (options.solo !== undefined) return options.solo;
+    if (process.env.AKAN_SOLO === "false" || process.env.AKAN_SOLO === "0") return false;
+    if (process.env.AKAN_COMMAND_TYPE === "start") return false;
+    if (options.replica !== undefined) return false;
+    return replica.total === 1 && replica.batch === 0;
   }
 
   static #resolveServerPath(serverPath: string) {
@@ -213,6 +242,7 @@ export class AkanApp {
   }
 
   async start() {
+    if (this.#solo) return await this.#startSolo();
     await this.#prepareRuntimeDir();
     this.#startFileLogging();
     for (let idx = 0; idx < this.#replica.total; idx++) this.#spawn(idx);
@@ -238,6 +268,26 @@ export class AkanApp {
       // Keep the orchestrator alive while child processes run.
       this.#resolveStopped = resolve;
     });
+  }
+
+  async #startSolo() {
+    const role = this.#getRole(0);
+    // The env a spawned child would have been handed, minus `AKAN_CHILD_SOCKET`: its absence is what tells
+    // `AkanServer` it owns the whole surface, so it binds `PORT` and answers `/_akan/app/*` itself.
+    Object.assign(process.env, {
+      NODE_ENV: AkanApp.#defaultChildNodeEnv(),
+      AKAN_REPLICA: this.#replica.value,
+      AKAN_REPLICA_IDX: "0",
+      AKAN_APP_DIR: path.dirname(this.#serverPath),
+      SERVER_MODE: role,
+      ...(this.#openapi === undefined ? {} : { AKAN_OPENAPI: this.#openapi ? "true" : "false" }),
+      ...(this.#modules.length ? { AKAN_MODULES: this.#modules.join(",") } : {}),
+    });
+    this.logger.info(`Starting ${role} replica in this process (solo); set AKAN_SOLO=false for the gateway`);
+    const mod = (await import(this.#serverPath)) as { server?: SoloServer; app?: SoloServer };
+    const server = mod.server ?? mod.app;
+    if (!server?.start) throw new Error("server.ts must export server or app with start()");
+    await server.start({ listen: true });
   }
 
   async stop(signal = "SIGTERM") {
@@ -551,7 +601,7 @@ export class AkanApp {
     if (this.#isWebSocketPath(url.pathname)) return this.#upgradeWebSocket(req, server);
     const assetResponse = await this.#serveImmutableArtifact(req, url);
     if (assetResponse) return assetResponse;
-    return await this.#proxyHttp(req);
+    return await this.#proxyHttp(req, server);
   }
 
   #isWebSocketPath(pathname: string) {
@@ -559,6 +609,7 @@ export class AkanApp {
   }
 
   async #serveImmutableArtifact(req: Request, url: URL): Promise<Response | null> {
+    if (!this.#web.ssr) return null;
     const clientPrefix = "/_akan/client/";
     if (url.pathname.startsWith(clientPrefix)) {
       const filePath = this.#safeResolve(
@@ -597,7 +648,7 @@ export class AkanApp {
     if (!child || !upstream) return new Response("No websocket upstream is ready", { status: 503 });
     const url = new URL(req.url);
     const upstreamWs = new WebSocket(`ws://${upstream.host}:${upstream.port}${url.pathname}${url.search}`, {
-      headers: this.#makeProxyHeaders(req, child.idx),
+      headers: this.#makeProxyHeaders(req, child.idx, server),
     } as unknown as string[]);
     // No socket id here: the child mints its own on the socket it accepts from us, and that is the one
     // the room bookkeeping and every endpoint see. A second id on this hop would only look authoritative.
@@ -621,9 +672,7 @@ export class AkanApp {
       if (result === 0) upstream.close();
     });
     upstream.addEventListener("close", (event) => {
-      const code = AkanApp.#sendableCloseCode(event.code);
-      if (code === undefined) ws.close();
-      else ws.close(code, event.reason);
+      ws.close(relayableCloseCode(event.code), event.reason);
     });
     upstream.addEventListener("error", () => ws.close(1011, "upstream websocket error"));
     Object.assign(ws.data, { pending });
@@ -644,16 +693,8 @@ export class AkanApp {
     else ws.data.pending?.push(payload as string | ArrayBuffer);
   }
 
-  //? 1005/1006 are local-only statuses that may never be sent on the wire; Bun 1.4 throws instead of forwarding one.
-  static #sendableCloseCode(code: number): number | undefined {
-    const sendable = (code >= 1000 && code <= 1014 && (code < 1004 || code > 1006)) || (code >= 3000 && code <= 4999);
-    return sendable ? code : undefined;
-  }
-
   #handleWsClose(ws: Bun.ServerWebSocket<GatewayWsData>, code: number, reason: string) {
-    const upstreamCode = AkanApp.#sendableCloseCode(code);
-    if (upstreamCode === undefined) ws.data.upstream.close();
-    else ws.data.upstream.close(upstreamCode, reason);
+    ws.data.upstream.close(relayableCloseCode(code), reason);
     const child = this.#children.get(ws.data.childIdx);
     if (child) child.metrics.activeWebSockets = Math.max(0, (child.metrics.activeWebSockets ?? 1) - 1);
   }
@@ -707,14 +748,14 @@ export class AkanApp {
     };
   }
 
-  async #proxyHttp(req: Request): Promise<Response> {
+  async #proxyHttp(req: Request, server: Bun.Server<GatewayWsData>): Promise<Response> {
     const child = this.#pickFederationChild();
     if (!child?.upstream || child.upstream.type !== "unix") {
       return this.#respondWithCrashPage(req) ?? new Response("No healthy federation child is ready", { status: 503 });
     }
     const url = new URL(req.url);
     const upstreamUrl = `http://akan-child${url.pathname}${url.search}`;
-    const headers = this.#makeProxyHeaders(req, child.idx);
+    const headers = this.#makeProxyHeaders(req, child.idx, server);
     child.metrics.activeRequests = (child.metrics.activeRequests ?? 0) + 1;
     child.metrics.totalRequests = (child.metrics.totalRequests ?? 0) + 1;
     const traced = isTraceEnabled();
@@ -885,8 +926,8 @@ export class AkanApp {
     return resolved;
   }
 
-  #makeProxyHeaders(req: Request, childIdx: number) {
-    return makeAkanChildProxyHeaders(req, childIdx);
+  #makeProxyHeaders(req: Request, childIdx: number, server?: Bun.Server<GatewayWsData>) {
+    return makeAkanChildProxyHeaders(req, childIdx, server?.requestIP(req));
   }
 
   #invalidateFederationChildCache() {

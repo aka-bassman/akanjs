@@ -86,7 +86,7 @@ interface ListProps<Item> {
   label?: string;
   desc?: string;
   nullable?: boolean;
-  value: Item[];
+  value: Item[] | null;
   onChange: (value: Item[]) => void;
   onAdd: () => void;
   renderItem: (item: Item, idx: number) => ReactNode;
@@ -105,11 +105,12 @@ const List = <Item,>({
   const { l } = usePage();
   const recipe = useUiRecipe("button") ?? buttonRecipe;
   useFieldTool(onChange);
+  const items = value ?? [];
   return (
     <div {...agentAttrs(onChange)} className={cn("flex w-full flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <div className="mb-2 flex w-full flex-col gap-2 rounded-box border border-border p-2">
-        {value.map((item, idx) => (
+        {items.map((item, idx) => (
           <>
             <div key={idx} className="flex h-full w-full items-center justify-between gap-2">
               {renderItem(item, idx)}
@@ -120,7 +121,7 @@ const List = <Item,>({
                     "size-6 border-destructive p-0 text-destructive hover:bg-destructive hover:text-destructive-foreground",
                   )}
                   onClick={() => {
-                    onChange(value.filter((_, i) => i !== idx));
+                    onChange(items.filter((_, i) => i !== idx));
                   }}
                 >
                   <BiTrash />
@@ -352,7 +353,7 @@ interface SwitchProps {
   desc?: string;
   labelClassName?: string;
   className?: string;
-  value: boolean;
+  value: boolean | null;
   onChange: (value: boolean) => void;
   inputClassName?: string;
   onDesc?: string;
@@ -380,7 +381,7 @@ const Switch = ({
           variant="accent"
           disabled={disabled}
           className={inputClassName}
-          checked={value}
+          checked={value ?? false}
           onChange={(checked) => {
             onChange(checked);
           }}
@@ -392,7 +393,7 @@ const Switch = ({
 };
 Field.Switch = Switch;
 
-interface ToggleSelectProps<I> {
+interface ToggleSelectProps<I, Nullable extends boolean> {
   className?: string;
   labelClassName?: string;
   label?: string;
@@ -400,14 +401,14 @@ interface ToggleSelectProps<I> {
   model?: string;
   field?: string;
   items: { label: string; value: I; disabled?: boolean }[] | readonly I[] | I[] | EnumInstance<string, I>;
-  value: I;
-  nullable?: boolean;
+  value: I | null;
+  nullable?: Nullable;
   disabled?: boolean;
   validate?: (value: I) => boolean | string;
-  onChange: (value: I) => void;
+  onChange: (value: Nullable extends true ? I | null : I) => void;
   btnClassName?: string;
 }
-const ToggleSelect = <I extends string | number | boolean | null>({
+const ToggleSelect = <I extends string | number | boolean | null, Nullable extends boolean = false>({
   className,
   labelClassName,
   label,
@@ -419,14 +420,15 @@ const ToggleSelect = <I extends string | number | boolean | null>({
   nullable,
   disabled,
   btnClassName,
-}: ToggleSelectProps<I>) => {
+}: ToggleSelectProps<I, Nullable>) => {
   useFieldTool(onChange, { disabled });
   const { l } = usePage();
   const isEnumValue = isEnum(items as EnumInstance<string, I>);
+  const change = onChange as (value: I | null) => void;
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
-      <UtilToggleSelect
+      <UtilToggleSelect<I | null>
         className="mt-2"
         nullable={!!nullable}
         btnClassName={btnClassName}
@@ -439,12 +441,15 @@ const ToggleSelect = <I extends string | number | boolean | null>({
             : (items as { label: string; value: I; disabled?: boolean }[])
         }
         value={value}
-        onChange={(value: I, idx) => {
-          onChange(value);
+        onChange={(selected) => {
+          change(selected);
+        }}
+        onClear={() => {
+          change(null);
         }}
         disabled={disabled}
-        validate={(value: I) => {
-          return validate?.(value) ?? true;
+        validate={(selected) => {
+          return selected === null ? true : (validate?.(selected) ?? true);
         }}
       />
     </div>
@@ -458,7 +463,7 @@ interface MultiToggleSelectProps<I extends string | number | boolean> {
   label?: string;
   desc?: string;
   items: EnumInstance<string, I> | { label: string; value: I; disabled?: boolean }[] | readonly I[] | I[];
-  value: I[];
+  value: I[] | null;
   disabled?: boolean;
   minlength?: number;
   maxlength?: number;
@@ -483,7 +488,7 @@ const MultiToggleSelect = <I extends string | number | boolean>({
   const isEnumValue = isEnum(items as EnumInstance<string, I>);
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
-      {label ? <Label className={labelClassName} nullable={!!minlength} label={label} desc={desc} /> : null}
+      {label ? <Label className={labelClassName} nullable={!minlength} label={label} desc={desc} /> : null}
       <UtilToggleSelect.Multi
         nullable={!minlength}
         items={
@@ -494,7 +499,7 @@ const MultiToggleSelect = <I extends string | number | boolean>({
               })) as { label: string; value: string; disabled?: boolean }[])
             : (items as { label: string; value: string; disabled?: boolean }[])
         }
-        value={value as string[]}
+        value={(value ?? []) as string[]}
         onChange={(values) => {
           onChange(values as I[]);
         }}
@@ -515,7 +520,7 @@ interface TextListProps {
   desc?: string;
   labelClassName?: string;
   className?: string;
-  value: string[];
+  value: string[] | null;
   onChange: (value: string[]) => void;
   inputClassName?: string;
   placeholder?: string;
@@ -549,6 +554,7 @@ const TextList = ({
   useFieldTool(onChange, { transform, disabled, sortable: true });
   const { l } = usePage();
   const recipe = useUiRecipe("button") ?? buttonRecipe;
+  const texts = value ?? [];
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={!minlength} label={label} desc={desc} /> : null}
@@ -561,10 +567,10 @@ const TextList = ({
             onChange(sorted);
           }}
           onRemove={(_, idx) => {
-            onChange(value.filter((_, i) => i !== idx));
+            onChange(texts.filter((_, i) => i !== idx));
           }}
         >
-          {value.map((text, idx) => (
+          {texts.map((text, idx) => (
             <DraggableList.Item key={idx} value={text}>
               <div className="flex w-full items-center">
                 <DraggableList.Cursor>
@@ -575,7 +581,7 @@ const TextList = ({
                     value={text}
                     cacheKey={cache ? `${label}-${desc}-textList-[${idx}]` : undefined}
                     onChange={(text) => {
-                      const newValue = [...value];
+                      const newValue = [...texts];
                       newValue[idx] = transform(text);
                       onChange(newValue);
                     }}
@@ -595,7 +601,7 @@ const TextList = ({
                       "size-6 border-destructive p-0 text-destructive hover:bg-destructive hover:text-destructive-foreground",
                     )}
                     onClick={() => {
-                      onChange(value.filter((_, i) => i !== idx));
+                      onChange(texts.filter((_, i) => i !== idx));
                     }}
                   >
                     <BiTrash />
@@ -606,11 +612,11 @@ const TextList = ({
           ))}
         </DraggableList>
         <div className="my-5 h-[0.5px] bg-foreground/20" />
-        {value.length <= maxTextlength ? (
+        {texts.length <= maxTextlength ? (
           <button
             className={recipe({ variant: "outline" }, "w-full")}
             onClick={() => {
-              onChange([...value, ""]);
+              onChange([...texts, ""]);
             }}
           >
             + New
@@ -627,7 +633,7 @@ interface TagsProps {
   desc?: string;
   labelClassName?: string;
   className?: string;
-  value: string[];
+  value: string[] | null;
   onChange: (value: string[]) => void;
   inputClassName?: string;
   placeholder?: string;
@@ -660,11 +666,12 @@ const Tags = ({
   useFieldTool(onChange, { transform, disabled });
   const { l } = usePage();
   const badge = useUiRecipe("badge") ?? badgeRecipe;
+  const tagList = value ?? [];
   const [inputVisible, setInputVisible] = useState(false);
   const [tag, setTag] = useState("");
   const addTag = () => {
     if (!tag.length) return;
-    onChange([...value, tag]);
+    onChange([...tagList, tag]);
     setInputVisible(false);
     setTag("");
   };
@@ -673,14 +680,14 @@ const Tags = ({
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={!minlength} label={label} desc={desc} /> : null}
       <div className="flex w-full flex-wrap items-center gap-1 rounded-box border border-border p-2">
-        {value.map((val, idx) => (
+        {tagList.map((val, idx) => (
           <span className={badge({ variant: "outline" }, "items-center")} key={idx}>
             <div className="text-xs italic">#</div>
             {val}
             <BiX
               className="ml-1 cursor-pointer opacity-50 duration-200 hover:opacity-100"
               onClick={() => {
-                if (!disabled) onChange(value.filter((v, i) => i !== idx));
+                if (!disabled) onChange(tagList.filter((v, i) => i !== idx));
               }}
             />
           </span>
@@ -1458,7 +1465,7 @@ interface ChildrenProps<T extends string, State, Input, Full, Light> {
   disabled?: boolean;
   nullable?: boolean;
   initArgs?: any[];
-  value: Light[];
+  value: Light[] | null;
   onChange: (value: Light[]) => void;
   onSearch?: (text: string) => void;
   slice: SliceMeta;
@@ -1518,7 +1525,7 @@ const Children = <T extends string, State, Input, Full extends { id: string }, L
         labelClassName={labelClassName}
         selectClassName={selectClassName}
         multiple
-        value={value.map((model) => model.id)}
+        value={(value ?? []).map((model) => model.id)}
         options={modelList.map((model) => {
           const label = renderOption(model);
           return { label: typeof label === "string" ? label : model.id, value: model.id };
@@ -1557,7 +1564,7 @@ interface ChildrenIdProps<T extends string, State, Input, Full, Light> {
   disabled?: boolean;
   nullable?: boolean;
   initArgs?: any[];
-  value: string[];
+  value: string[] | null;
   slice: SliceMeta;
   onChange: (value: string[]) => void;
   onSearch?: (text: string) => void;
@@ -1610,7 +1617,7 @@ const ChildrenId = <T extends string, State, Input, Full extends { id: string },
         labelClassName={labelClassName}
         multiple
         // selectClassName={selectClassName}
-        value={value}
+        value={value ?? []}
         options={modelList.map((model) => {
           const label = renderOption(model);
           return { label: typeof label === "string" ? label : model.id, value: model.id };

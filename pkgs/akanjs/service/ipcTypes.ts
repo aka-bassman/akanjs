@@ -37,6 +37,7 @@ export interface AkanMetricsReport {
   queueWakeCount?: number;
   pubsubDeliverCount?: number;
   pubsubDropCount?: number;
+  pubsubCoalesceCount?: number;
   rssBytes?: number;
   heapTotalBytes?: number;
   heapUsedBytes?: number;

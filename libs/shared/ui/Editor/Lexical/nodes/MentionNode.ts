@@ -77,6 +77,18 @@ export class MentionNode extends TextNode {
     this.__imageUrl = payload.imageUrl ?? null;
   }
 
+  /** The strings the chip was built from — what a markdown export writes and a re-import restores. */
+  getPayload(): MentionPayload {
+    const self = this.getLatest();
+    return {
+      refName: self.__refName,
+      refId: self.__refId,
+      label: self.__label,
+      href: self.__href,
+      imageUrl: self.__imageUrl,
+    };
+  }
+
   override exportJSON(): SerializedMentionNode {
     return {
       ...super.exportJSON(),

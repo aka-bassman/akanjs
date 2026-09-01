@@ -48,7 +48,6 @@ export interface AgentWireTool {
   name: string;
   description?: string;
   parameters?: Record<string, unknown>;
-  effect?: string;
   needsConfirm?: boolean;
 }
 

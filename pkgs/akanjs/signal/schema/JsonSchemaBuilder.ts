@@ -38,7 +38,11 @@ export class JsonSchemaBuilder {
   }
 
   arg(arg: SerializedArg): JsonSchema {
-    const schema = arg.enum ? this.#enum(arg.enum) : this.#ref(arg.refName, arg.modelType);
+    const schema = arg.oneOf
+      ? JsonSchemaBuilder.#inlineEnum(arg.oneOf)
+      : arg.enum
+        ? this.#enum(arg.enum)
+        : this.#ref(arg.refName, arg.modelType);
     return JsonSchemaBuilder.#nullable(JsonSchemaBuilder.#arrayed(schema, arg.arrDepth ?? 0), !!arg.nullable);
   }
 
@@ -191,6 +195,8 @@ export class JsonSchemaBuilder {
         return { type: "integer" };
       case "Upload":
         return { type: "string", format: "binary" };
+      case "Binary":
+        return { type: "string", contentEncoding: "base64" };
       case "Any":
         return {};
       default:

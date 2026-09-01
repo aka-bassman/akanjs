@@ -5,8 +5,8 @@ export class FileStatus extends enumOf("fileStatus", ["active", "uploading"]) {}
 
 export class FileInput extends via((field) => ({
   filename: field(String, { text: "title" }),
-  mimetype: field(String, { text: "filter" }),
-  encoding: field(String),
+  mimetype: field.hidden(String),
+  encoding: field.hidden(String),
   imageSize: field<[number, number]>([Int], { default: [0, 0] }),
   url: field(String, { default: "" }),
   abstractData: field.visual(String).optional(),

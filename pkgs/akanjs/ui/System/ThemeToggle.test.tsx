@@ -1,5 +1,5 @@
 import "../../test/registerDom";
-import { beforeAll, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -20,6 +20,12 @@ beforeAll(async () => {
 });
 
 describe("ThemeToggle agent surface", () => {
+  afterEach(() => {
+    document.documentElement.removeAttribute("data-theme");
+    // biome-ignore lint/suspicious/noDocumentCookie: happy-dom drops Secure cookies from setCookie.
+    document.cookie = "theme=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+  });
+
   test("publishes the theme and an applyTheme tool the agent can drive, withdrawn on unmount", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -40,5 +46,20 @@ describe("ThemeToggle agent surface", () => {
     act(() => root.unmount());
     expect(surface.snapshot().tools.map((tool) => tool.name)).not.toContain("applyTheme");
     expect(instance.liveKeys.has("theme")).toBe(false);
+  });
+
+  test("restores the cookie theme over a stale document attribute on mount", () => {
+    // biome-ignore lint/suspicious/noDocumentCookie: happy-dom drops Secure cookies from setCookie.
+    document.cookie = "theme=light";
+    document.documentElement.setAttribute("data-theme", "dark");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(<ThemeToggle themes={["light", "dark"]} />));
+    const bridge = new AgentBridge(StoreRegistry.instance);
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+    expect(bridge.read("theme")).toBe("light");
+    act(() => root.unmount());
+    document.body.removeChild(container);
   });
 });

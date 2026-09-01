@@ -50,7 +50,6 @@ describe("useAgentState", () => {
       </AgentProvider>,
     );
     const setter = surface.snapshot().tools.find((entry) => entry.name === "setPreviewMode");
-    expect(setter?.effect).toBe("state");
     expect(setter?.parameters).toEqual({
       type: "object",
       properties: { value: { type: "string", enum: ["fit", "fill"] } },

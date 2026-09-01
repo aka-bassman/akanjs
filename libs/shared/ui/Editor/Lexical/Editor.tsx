@@ -18,7 +18,7 @@ import { addFileUntilActive } from "@libs/shared/webkit";
 import type { Any } from "akanjs/base";
 import { cn } from "akanjs/client";
 import type { ProtoFile } from "akanjs/constant";
-import type { EditorState } from "lexical";
+import { BLUR_COMMAND, COMMAND_PRIORITY_LOW, type EditorState } from "lexical";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { createEditorConfig } from "./config";
@@ -27,11 +27,14 @@ import { validateLinkUrl } from "./editor.util";
 import { AKAN_TRANSFORMERS } from "./markdown";
 import { reconcileAttachments } from "./media";
 import {
+  collectPluginFeatures,
   collectPluginMentionSources,
   collectPluginNodes,
   collectPluginSlashOptions,
   type EditorPlugin,
 } from "./plugin";
+import { AgentFieldPlugin } from "./plugins/AgentFieldPlugin";
+import { AgentMentionPlugin } from "./plugins/AgentMentionPlugin";
 import { AgentRichPlugin } from "./plugins/AgentRichPlugin";
 import { AutoLinkPlugin } from "./plugins/AutoLinkPlugin";
 import { CalloutPlugin } from "./plugins/CalloutPlugin";
@@ -102,6 +105,34 @@ export const EditableSyncPlugin = ({ editable }: { editable: boolean }) => {
 };
 
 /**
+ * Commits the pending debounced change the moment the editor loses focus.
+ *
+ * Without this, clicking away (e.g. into another field of the same form) inside the
+ * `CHANGE_DEBOUNCE_MS` window leaves the just-typed text sitting uncommitted in
+ * `latestStateRef` while `ExternalValuePlugin`'s focus guard has already dropped
+ * (the root is no longer `activeElement`) — a follow-up render with the still-stale
+ * `value` prop then overwrites the editor with the pre-edit content, and the pending
+ * timer commits that stale state a moment later. Flushing synchronously on blur closes
+ * the window entirely: the store is already caught up by the time focus leaves.
+ */
+export const FlushOnBlurPlugin = ({ onBlur }: { onBlur: () => void }) => {
+  const [editor] = useLexicalComposerContext();
+  useEffect(
+    () =>
+      editor.registerCommand(
+        BLUR_COMMAND,
+        () => {
+          onBlur();
+          return false;
+        },
+        COMMAND_PRIORITY_LOW,
+      ),
+    [editor, onBlur],
+  );
+  return null;
+};
+
+/**
  * Re-applies an externally-changed `value` imperatively. Guards against the
  * onChange→setState→value feedback loop by (a) skipping while the editor is
  * focused (never clobber active typing) and (b) skipping when the incoming
@@ -165,6 +196,7 @@ export default function Editor({
   );
   const extraSlashOptions = useMemo(() => collectPluginSlashOptions(plugins), [plugins]);
   const mentionSources = useMemo(() => collectPluginMentionSources(plugins), [plugins]);
+  const pluginFeatures = useMemo(() => collectPluginFeatures(plugins), [plugins]);
 
   // Latest values kept in refs so the change/upload callbacks stay identity-stable.
   const onChangeRef = useRef(onChange);
@@ -270,54 +302,63 @@ export default function Editor({
   return (
     <LexicalComposer initialConfig={initialConfig}>
       <EditorUploadProvider value={uploadValue}>
-        <div ref={setAnchorElem} className={cn("akan-editor relative w-full", className)}>
-          <RichTextPlugin
-            contentEditable={
-              <ContentEditable
-                className={cn("leading-7 outline-none", showHandle && "pl-2")}
-                aria-placeholder={placeholder}
-                placeholder={
-                  <div
-                    className={cn(
-                      "pointer-events-none absolute top-2 select-none text-foreground/40",
-                      showHandle ? "left-7" : "left-0",
-                    )}
-                  >
-                    {placeholder}
-                  </div>
-                }
-                style={{ minHeight: editable ? (height ?? "8rem") : undefined }}
-              />
-            }
-            ErrorBoundary={LexicalErrorBoundary}
-          />
-          <HistoryPlugin />
-          <ListPlugin />
-          <CheckListPlugin />
-          <LinkPlugin validateUrl={validateLinkUrl} />
-          <AutoLinkPlugin />
-          <HorizontalRulePlugin />
-          <TabIndentationPlugin />
-          <CodeHighlightPlugin />
-          {markdown ? <MarkdownShortcutPlugin transformers={AKAN_TRANSFORMERS} /> : null}
-          <TablePlugin hasCellMerge hasCellBackgroundColor />
-          <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
-          <ExternalValuePlugin value={value} />
-          <AgentRichPlugin name={editable ? (agentName ?? null) : null} blocks={agentBlocks} flush={flush} />
-          <EditableSyncPlugin editable={editable} />
-          <MentionLinkPlugin />
-          {editable && slashMenu ? (
-            <SlashMenuPlugin extraOptions={extraSlashOptions} mentionSources={mentionSources} />
-          ) : null}
-          {editable && mentionSources.length ? <MentionPlugin sources={mentionSources} /> : null}
-          {editable && toolbar ? <FloatingToolbarPlugin /> : null}
-          {editable && blockActions && anchorElem ? <DraggableBlockPlugin anchorElem={anchorElem} /> : null}
-          {editable ? <CalloutPlugin /> : null}
-          {editable ? <CollapsiblePlugin /> : null}
-          {editable ? <TableActionsPlugin /> : null}
-          {editable && addFilesGql ? <UploadPlugin /> : null}
-          {editable ? plugins?.map((plugin, index) => <Fragment key={index}>{plugin.render?.()}</Fragment>) : null}
-        </div>
+        <AgentFieldPlugin
+          name={editable ? (agentName ?? null) : null}
+          blocks={agentBlocks}
+          features={pluginFeatures}
+          flush={flush}
+        >
+          <div ref={setAnchorElem} className={cn("akan-editor relative w-full", className)}>
+            <RichTextPlugin
+              contentEditable={
+                <ContentEditable
+                  className={cn("leading-7 outline-none", showHandle && "pl-2")}
+                  aria-placeholder={placeholder}
+                  placeholder={
+                    <div
+                      className={cn(
+                        "pointer-events-none absolute top-2 select-none text-foreground/40",
+                        showHandle ? "left-7" : "left-0",
+                      )}
+                    >
+                      {placeholder}
+                    </div>
+                  }
+                  style={{ minHeight: editable ? (height ?? "8rem") : undefined }}
+                />
+              }
+              ErrorBoundary={LexicalErrorBoundary}
+            />
+            <HistoryPlugin />
+            <ListPlugin />
+            <CheckListPlugin />
+            <LinkPlugin validateUrl={validateLinkUrl} />
+            <AutoLinkPlugin />
+            <HorizontalRulePlugin />
+            <TabIndentationPlugin />
+            <CodeHighlightPlugin />
+            {markdown ? <MarkdownShortcutPlugin transformers={AKAN_TRANSFORMERS} /> : null}
+            <TablePlugin hasCellMerge hasCellBackgroundColor />
+            <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
+            <FlushOnBlurPlugin onBlur={flush} />
+            <ExternalValuePlugin value={value} />
+            <AgentRichPlugin />
+            <AgentMentionPlugin sources={mentionSources} />
+            <EditableSyncPlugin editable={editable} />
+            <MentionLinkPlugin />
+            {editable && slashMenu ? (
+              <SlashMenuPlugin extraOptions={extraSlashOptions} mentionSources={mentionSources} />
+            ) : null}
+            {editable && mentionSources.length ? <MentionPlugin sources={mentionSources} /> : null}
+            {editable && toolbar ? <FloatingToolbarPlugin /> : null}
+            {editable && blockActions && anchorElem ? <DraggableBlockPlugin anchorElem={anchorElem} /> : null}
+            {editable ? <CalloutPlugin /> : null}
+            {editable ? <CollapsiblePlugin /> : null}
+            {editable ? <TableActionsPlugin /> : null}
+            {editable && addFilesGql ? <UploadPlugin /> : null}
+            {editable ? plugins?.map((plugin, index) => <Fragment key={index}>{plugin.render?.()}</Fragment>) : null}
+          </div>
+        </AgentFieldPlugin>
       </EditorUploadProvider>
     </LexicalComposer>
   );

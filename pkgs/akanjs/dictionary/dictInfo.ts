@@ -206,12 +206,13 @@ export class ModelDictInfo<
     } as unknown as BaseModelCrudGetSignalTranslation<T, [string, string]>;
   }
   static baseSliceDictionary: {
-    [key in ""]: FunctionTranslation<[string, string], "query">;
+    [key in ""]: FunctionTranslation<[string, string], "queryKey" | "args">;
   } = {
     "": fn(["Universal", "유니버설"])
       .desc(["Universal Slice", "유니버설 슬라이스"])
       .arg((t) => ({
-        query: t(["Query", "쿼리"]).desc(["Query Description", "쿼리 설명"]),
+        queryKey: t(["Query", "쿼리"]).desc(["Filter query to run", "실행할 필터 쿼리"]),
+        args: t(["Arguments", "인자"]).desc(["Arguments of the filter query", "필터 쿼리의 인자"]),
       })),
   };
 

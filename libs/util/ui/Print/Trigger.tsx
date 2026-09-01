@@ -17,9 +17,11 @@ interface TriggerProps {
 export const Trigger = ({ children, className, pageStyle }: TriggerProps) => {
   const { ref } = useContext(PrintContext);
   const print = useReactToPrint({ contentRef: ref, pageStyle });
-  st.tool("printPage", { desc: "Open the print dialog for the document on screen.", effect: "query" }).exec(() => {
-    print();
-  });
+  st.tool("printPage", { settle: false })
+    .desc("Open the print dialog for the document on screen.")
+    .exec(() => {
+      print();
+    });
   return (
     <div
       className={cn("cursor-pointer", className)}

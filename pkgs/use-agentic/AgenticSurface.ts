@@ -58,15 +58,22 @@ export class AgenticSurface {
   }
 
   /**
-   * A row component registers the same name once per row. That is legal when the tool takes the row's id as an
-   * argument rather than closing over it, because every registration is then interchangeable and last-wins picks
-   * an equivalent one — `shared` is the registrant saying so, and it turns fifty rows from fifty collisions into
-   * one declaration. A shared name landing on top of a name nobody shared is still a real clash, and still warns.
+   * A row component registers the same name once per row, which is legal when the tool takes the row's id as an
+   * argument rather than closing over it: every registration is then interchangeable and last-wins picks an
+   * equivalent one. The description is what says so — two registrations that describe the same action to a model
+   * are the same declaration twice, and fifty rows are one entry rather than fifty collisions. Two that describe
+   * different actions under one name are a real clash whichever of them mounted last, and warn.
    */
   registerTool(scope: string[], entry: ToolEntry) {
     const key = AgenticSurface.fullName(scope, entry.name);
-    const interchangeable = !!entry.shared && (this.#tools.get(key) ?? []).every((existing) => existing.shared);
-    return this.#stack(this.#tools, key, entry, interchangeable);
+    const stack = this.#tools.get(key);
+    const interchangeable = !stack?.length || stack[stack.length - 1].description === entry.description;
+    return this.#stack(
+      this.#tools,
+      key,
+      entry,
+      interchangeable ? null : "is registered by two declarations that describe it differently",
+    );
   }
 
   registerResource(scope: string[], entry: ResourceEntry) {
@@ -150,6 +157,15 @@ export class AgenticSurface {
       if (found) return found;
     }
     return null;
+  }
+
+  /**
+   * Whether a *mounted component* declares this name — a source's contribution answers `false`. The distinction is
+   * what lets a host drop the built-in tools without dropping a screen's own tool that deliberately shadows one.
+   */
+  declares(name: string, view: string[] = []): boolean {
+    const stack = this.#tools.get(name);
+    return !!stack?.length && AgenticSurface.#within(view.join("."), name);
   }
 
   /** Every call made through this surface, oldest first. What the dock shows the user to check against the screen. */
@@ -268,11 +284,11 @@ export class AgenticSurface {
     return viewKey.startsWith(`${scopeKey}.`) || scopeKey.startsWith(`${viewKey}.`);
   }
 
-  #stack<E>(map: Map<string, E[]>, key: string, entry: E, interchangeable = false) {
+  #stack<E>(map: Map<string, E[]>, key: string, entry: E, clash: string | null = "is registered more than once") {
     const stack = map.get(key) ?? [];
-    if (stack.length && !interchangeable && !this.#warned.has(key)) {
+    if (stack.length && clash && !this.#warned.has(key)) {
       this.#warned.add(key);
-      console.warn(`[use-agentic] "${key}" is registered more than once; the newest registration wins.`);
+      console.warn(`[use-agentic] "${key}" ${clash}; the newest registration wins.`);
     }
     stack.push(entry);
     map.set(key, stack);
@@ -294,7 +310,6 @@ export class AgenticSurface {
       name,
       ...(entry.description ? { description: entry.description } : {}),
       ...(entry.parameters ? { parameters: entry.parameters } : {}),
-      ...(entry.effect ? { effect: entry.effect } : {}),
       needsConfirm: entry.confirm !== undefined && entry.confirm !== false,
     };
   }

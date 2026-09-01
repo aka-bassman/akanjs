@@ -1371,11 +1371,20 @@ export class AppExecutor extends SysExecutor {
       await Promise.all([this.dist.mkdir("private"), this.dist.mkdir("public")]);
       //* Lib assets are symlinks in the app dir (see syncAssets). dist is the docker build context and the
       //* release tarball root, neither of which follows a link out of itself, so materialize them here.
+      //* `public/` has exactly one reader — the web router's catch-all — so an api-only build leaves it out.
       await Promise.all([
         this.cp("private", `${this.dist.cwdPath}/private`, { dereference: true }),
-        this.cp("public", `${this.dist.cwdPath}/public`, { dereference: true }),
+        ...(akanConfig.web.ssr ? [this.cp("public", `${this.dist.cwdPath}/public`, { dereference: true })] : []),
       ]);
-    } else await this.removeDir(".akan");
+    } else {
+      await this.removeDir(".akan");
+      //? `web` is a build declaration: `akan start` keeps the full dev surface because the incremental
+      //? builder is also the file watcher, so switching it off would take server-code HMR with it.
+      if (!akanConfig.web.ssr || !akanConfig.web.csr)
+        this.logger.verbose(
+          `akan.config.ts disables web.${!akanConfig.web.ssr ? "ssr" : "csr"}; \`akan start\` still serves it, \`akan build\` will not`,
+        );
+    }
     //? `akan start` is the dev server, and it must say so rather than inherit an answer. Bun auto-loads the
     //? workspace `.env`, so NODE_ENV=production can reach this process without ever being exported in a shell —
     //? and a dev server that believes it is production serves from the production route cache, whose every

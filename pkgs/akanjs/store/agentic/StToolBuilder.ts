@@ -13,7 +13,6 @@ import {
   AgenticSurface,
   type JsonSchema,
   type ToolConfirm,
-  type ToolEffect,
   type ToolGuard,
   useScopePath,
   useSurface,
@@ -24,15 +23,14 @@ import { tagAction } from "../actionTag";
 import { useEffect, useRef } from "../hooks";
 
 export interface StToolMeta {
-  desc?: string;
-  effect?: ToolEffect;
+  /**
+   * Whether the call has to be waited out before what it did to the screen is reported back to the model. `false`
+   * is a read that returns what is already there; the default waits, because a write may still be landing when
+   * `exec` resolves and a report taken then describes the screen one tick before the call.
+   */
+  settle?: boolean;
   confirm?: ToolConfirm;
   guard?: ToolGuard;
-  /**
-   * Set by a component that renders once per row. It is only true when the row's id rides in an argument rather
-   * than in the closure, which is what makes every row's registration interchangeable.
-   */
-  shared?: boolean;
 }
 
 interface StToolArg {
@@ -44,18 +42,19 @@ interface StToolArg {
 
 /** `oneOf` is the runtime half of `enumOf`: a value set only known once the component renders. */
 export interface StToolArgOption<V> {
-  optional?: boolean;
   oneOf?: readonly V[];
 }
 
 type ArgValue<T> = T extends EnumInstance<string, infer V> ? V : T extends { [CLIENT_VALUE]: infer V } ? V : never;
 
 /**
- * A component tool in the signal's vocabulary: `st.tool("x", { desc }).arg("id", ID).exec(fn)`.
+ * A component tool past its description: `.arg()` for what the caller must pass, `.opt()` for what it may, and
+ * one `.exec()`.
  *
  * This is not A12's rejected store-action builder — a store action derives its schema from the endpoint it is
- * named after, while a component tool exists nowhere else, so declaring is the only source there is. `.arg()` only
- * accumulates data; `.exec()` is the one hook, so the chain must complete in one unconditional statement.
+ * named after, while a component tool exists nowhere else, so declaring is the only source there is. `.arg()` and
+ * `.opt()` only accumulate data; `.exec()` is the one hook, so the chain must complete in one unconditional
+ * statement.
  *
  * A falsy name declares the tool without publishing it: the callable still works for the click that a person
  * makes, and nothing reaches the agent. That is how a conditional surface stays writable at all — `.exec()` is a
@@ -63,21 +62,18 @@ type ArgValue<T> = T extends EnumInstance<string, infer V> ? V : T extends { [CL
  */
 export class StToolBuilder<Args extends unknown[] = []> {
   readonly #name: string | null;
+  readonly #desc: string;
   readonly #meta: StToolMeta;
   readonly #args: StToolArg[];
 
-  constructor(name: string | null, meta: StToolMeta = {}, args: StToolArg[] = []) {
+  constructor(name: string | null, desc: string, meta: StToolMeta = {}, args: StToolArg[] = []) {
     this.#name = name;
+    this.#desc = desc;
     this.#meta = meta;
     this.#args = args;
   }
 
   arg<T extends ParamFieldType>(name: string, type: T): StToolBuilder<[...Args, ArgValue<T>]>;
-  arg<T extends ParamFieldType, const V extends ArgValue<T>>(
-    name: string,
-    type: T,
-    option: StToolArgOption<V> & { optional: true },
-  ): StToolBuilder<[...Args, V | null]>;
   arg<T extends ParamFieldType, const V extends ArgValue<T>>(
     name: string,
     type: T,
@@ -87,15 +83,38 @@ export class StToolBuilder<Args extends unknown[] = []> {
     name: string,
     type: T,
     option: StToolArgOption<ArgValue<T>> = {},
+  ): StToolBuilder<[...Args, ArgValue<T>]> {
+    return this.#push(name, type, false, option) as StToolBuilder<[...Args, ArgValue<T>]>;
+  }
+
+  opt<T extends ParamFieldType>(name: string, type: T): StToolBuilder<[...Args, ArgValue<T> | null]>;
+  opt<T extends ParamFieldType, const V extends ArgValue<T>>(
+    name: string,
+    type: T,
+    option: StToolArgOption<V>,
+  ): StToolBuilder<[...Args, V | null]>;
+  opt<T extends ParamFieldType>(
+    name: string,
+    type: T,
+    option: StToolArgOption<ArgValue<T>> = {},
+  ): StToolBuilder<[...Args, ArgValue<T> | null]> {
+    return this.#push(name, type, true, option);
+  }
+
+  #push<T extends ParamFieldType>(
+    name: string,
+    type: T,
+    optional: boolean,
+    option: StToolArgOption<ArgValue<T>>,
   ): StToolBuilder<[...Args, ArgValue<T> | null]> {
     // An argument nothing can describe withdraws the whole tool — the same withholding a falsy name performs, so
     // the callable still drives the click a person makes and the route still renders. Publishing the rest of the
     // arguments would hand an agent a tool it can only call wrong; throwing would cost a page its server render
     // over an agent-tooling concern. Reported here, where the type was written, rather than on the first call.
     const published = this.#name && StToolBuilder.#describable(this.#name, name, type) ? this.#name : null;
-    return new StToolBuilder(published, this.#meta, [
+    return new StToolBuilder(published, this.#desc, this.#meta, [
       ...this.#args,
-      { name, type, optional: !!option.optional, ...(option.oneOf ? { oneOf: option.oneOf } : {}) },
+      { name, type, optional, ...(option.oneOf ? { oneOf: option.oneOf } : {}) },
     ]);
   }
 
@@ -105,8 +124,8 @@ export class StToolBuilder<Args extends unknown[] = []> {
     const scope = useScopePath();
     const live = useRef({ run, meta: this.#meta });
     live.current = { run, meta: this.#meta };
-    const declared = useRef<{ name: string | null; meta: StToolMeta; args: StToolArg[] } | null>(null);
-    declared.current ??= { name: this.#name, meta: this.#meta, args: this.#args };
+    const declared = useRef<{ name: string | null; desc: string; meta: StToolMeta; args: StToolArg[] } | null>(null);
+    declared.current ??= { name: this.#name, desc: this.#desc, meta: this.#meta, args: this.#args };
     const callable = useRef<((...args: Args) => Promise<void>) | null>(null);
     if (!callable.current) {
       const call = async (...args: Args) => {
@@ -122,9 +141,8 @@ export class StToolBuilder<Args extends unknown[] = []> {
       if (!spec || !name) return;
       return surface.registerTool(scope, {
         name,
-        description: spec.meta.desc,
-        effect: spec.meta.effect,
-        ...(spec.meta.shared ? { shared: true } : {}),
+        description: spec.desc,
+        settle: spec.meta.settle,
         parameters: StToolBuilder.parametersOf(spec.args),
         // A `remove*` tool confirms unless it declares otherwise — destructiveness read off the key, as MCP hints are.
         ...(spec.meta.confirm === undefined && !name.startsWith("remove")

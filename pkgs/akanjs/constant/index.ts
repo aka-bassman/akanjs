@@ -3,6 +3,7 @@ export * from "./constantRegistry";
 export * from "./crystalize";
 export * from "./deserialize";
 export * from "./fieldInfo";
+export * from "./fieldQueryMeta";
 export * from "./getDefault";
 export * from "./immerify";
 export * from "./labelOf";

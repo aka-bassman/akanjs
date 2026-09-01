@@ -12,6 +12,7 @@
 - Mount and Secure (#agent-mount)
 - The Declared Surface (#agent-surface)
 - Zone Agents (#agent-zones)
+- Skipping A Region (#agent-skip)
 - Swapping the Model (#agent-llm)
 
 ## Content
@@ -92,9 +93,9 @@ A long conversation summarizes itself, because nothing else keeps it inside the 
 
 Reading is per key, not per store: a key the screen does not read stays unreadable even while a sibling key of the same store is live, and every read is masked by the model that key declares. hidden and secret fields never cross the boundary. Base-store plumbing is subscribed with `{ agent: false }` so routing and the caller's credential stay off the surface; a component that wants an agent to read a base key opts it in, as ThemeToggle does for theme.
 
-The only way an action reaches an agent. Returns the callable to wire to onClick; a remove* name confirms by default.
+The only way an action reaches an agent. desc is required and comes first; arg is what the caller must pass and opt what it may. Returns the callable to wire to onClick; a remove* name confirms by default.
 
-Local state and derived values, read-only unless set: names a type.
+Derived values and local state. The declared type typechecks what you hand over and masks how it reads — a model class strips its own hidden, secret, and visual fields; Any passes untouched. Read-only unless set: true.
 
 Subscribes without joining the surface. There is no store-level exposure switch — a store class says nothing about agents.
 
@@ -103,6 +104,16 @@ Zone Agents
 Wrap a section in Agent.Zone and everything mounted inside — subscriptions, hook tools, guides — belongs to that zone's own conversation as well as to the root agent. Zones are views of the screen, never walls between its parts. A zone's readScreen reads only its own container, and an Agent.Chat mounted inside binds to the zone session automatically.
 
 Guides follow the layout cascade: a zone reads its ancestors' guidance plus its own, and never a sibling's. The root chat outside the zones keeps seeing the whole screen, so wrapping a section costs the root agent nothing.
+
+Skipping A Region
+
+readScreen reads the whole rendered screen, and a footer, a cookie banner, or a nav that repeats on every route costs the same tokens as the content — on that read and on every later turn, since the read stays in the transcript. Agent.Skip leaves a region out of the default read.
+
+What stands in its place is a named marker, never nothing. A deleted region reads as an absent one — an agent asked about the footer would answer that the page has none. The name in the marker is a section, so naming it reads the region after all: the marker is what the default read leaves out, not a wall.
+
+It hides text, not behaviour. Tools and state keys are declarations rather than markup, so an st.tool declared inside is published exactly as before and highlight still reaches a control in there. This is field.visual one layer up: cost, not secrecy.
+
+Reach for it second. A read is scoped from the other side too: Agent.Zone and readScreen({ section }) narrow to one container, which beats blocklisting five regions on a screen that is mostly chrome. And a footer is last in the document, so on a page long enough to truncate it was already past the cut — the regions worth marking are the ones above the content.
 
 Swapping the Model
 
@@ -130,13 +141,18 @@ export const option = new AkanOption<ModulesOptions>()
 
 ```ts
 const waypointList = st.use.waypointList();
-const publish = st.tool("publishPlan", { desc: "Publish the flight plan being edited." })
+const publish = st.tool("publishPlan")
+  .desc("Publish the flight plan being edited.")
   .exec(() => st.do.publishPlan());
-const focusWaypoint = st.tool("focusWaypoint", { desc: "Center the map on one waypoint." })
+const focusWaypoint = st.tool("focusWaypoint")
+  .desc("Center the map on one waypoint.")
   .arg("waypointId", ID)
-  .exec((waypointId) => st.do.selectWaypoint(waypointId));
+  .opt("zoom", Int)
+  .exec((waypointId, zoom) => st.do.selectWaypoint(waypointId, zoom));
 
-st.expose("selectedWaypointId", selected?.id ?? null);
+st.expose("selectedWaypointId", ID)
+  .desc("The waypoint the map is centered on.")
+  .value(selected?.id ?? null);
 
 <Button onClick={publish}>{l("plan.publishPlan")}</Button>
 <Agent.Guide instructions="This screen edits the weekly flight plan. Focus a waypoint before editing it." />
@@ -154,6 +170,20 @@ st.expose("selectedWaypointId", selected?.id ?? null);
   <Post.Zone.Editor init={postInit} />
   <Agent.Chat inline />
 </Agent.Zone>
+```
+
+### a region marked, and what the read prints instead
+
+```ts
+<Agent.Skip label="site footer">
+  <Footer />
+</Agent.Skip>
+
+// Or on the element the page already renders, where a wrapper div would move a flex or grid layout:
+<footer id="footer" data-agent-skip="site footer">…</footer>
+
+// readScreen then prints this in place of the whole region:
+// [skipped: site footer (#footer)]
 ```
 
 ### apps/<app>/lib/option.ts

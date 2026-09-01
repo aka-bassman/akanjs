@@ -25,19 +25,19 @@ describe("AgenticSurface", () => {
     expect(surface.snapshot().tools).toHaveLength(1);
   });
 
-  test("a shared name repeats without warning, and one that nobody shared still clashes", async () => {
+  test("one description repeats without warning, and a second description under that name clashes", async () => {
     const surface = new AgenticSurface();
     const warnings: string[] = [];
     const warn = console.warn;
     console.warn = (message: string) => warnings.push(message);
     try {
-      surface.registerTool([], tool("removeTask", { shared: true }));
-      surface.registerTool([], tool("removeTask", { shared: true, run: () => "newest" }));
+      surface.registerTool([], tool("removeTask", { description: "Remove one task." }));
+      surface.registerTool([], tool("removeTask", { description: "Remove one task.", run: () => "newest" }));
       expect(warnings).toEqual([]);
       expect(await surface.call("removeTask")).toBe("newest");
       expect(surface.snapshot().tools).toHaveLength(1);
 
-      surface.registerTool([], tool("removeTask"));
+      surface.registerTool([], tool("removeTask", { description: "Archive one task." }));
       expect(warnings).toHaveLength(1);
     } finally {
       console.warn = warn;
@@ -104,7 +104,7 @@ describe("AgenticSurface", () => {
     const surface = new AgenticSurface();
     surface.registerTool(
       [],
-      tool("b", { description: "B", parameters: { type: "object" }, effect: "mutation", confirm: true }),
+      tool("b", { description: "B", parameters: { type: "object" }, settle: false, confirm: true }),
     );
     surface.registerTool([], tool("a"));
     surface.registerResource([], { name: "ok", read: () => 42 });
@@ -120,7 +120,6 @@ describe("AgenticSurface", () => {
       name: "b",
       description: "B",
       parameters: { type: "object" },
-      effect: "mutation",
       needsConfirm: true,
     });
     expect(snapshot.tools[0].needsConfirm).toBe(false);

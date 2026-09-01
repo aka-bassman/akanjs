@@ -27,6 +27,14 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   cannot spend the LLM key.
   `persist` keeps the transcript across reloads (sessionStorage; `{ storage: "local" }` to outlive the tab),
   default off, and `shortcut={false}` gives the browser back the Cmd/Ctrl+L the launcher otherwise captures.
+  **`persist` also takes a `SessionHistory` of the app's own** — `{ load, save, clear }` — which is how a
+  transcript lives on a server instead of in web storage. All three may answer asynchronously; a `load` still in
+  flight when the user sends the first message is **dropped, not merged**, because the conversation on screen is
+  the one they are having — which makes **sending on mount a race the restore loses**, so an opening prompt waits
+  for `session.isRestoring` to clear or goes into `defaultDraft` and lets the user send it. Saves are chained rather than fired per change, so a slow store cannot land an older
+  transcript last. **Every session option on the chat — `runner`, `instructions`, `maxTurns`, `compact`,
+  `builtins`, `persist`, `onCompact` — is ignored when an enclosing `Agent.Zone` or `AgentProvider` already holds
+  a session**: the chat binds to that one, and the options belong to whoever built it.
   **A session the chat made ends when the chat unmounts** — nothing renders its approvals once it is gone, so a
   turn left running would drive a screen the user has navigated away from; a session handed down by an
   `AgentProvider` or an `Agent.Zone` belongs to whoever provided it.
@@ -34,13 +42,19 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `open` / `onOpenChange` drive it from the app's own control (`launcher={false}` then draws no launcher of its
   own), `launcherClassName` / `panelClassName` reach one surface each where `className` reaches both, `intro`
   replaces the empty-state line — where starter questions go — and `header` adds controls beside the built-in
-  clear and close. Then the slots: `AgentLauncher`, `AgentBubble`, `AgentComposer`, `AgentApproval`,
+  clear and close. `chrome={false}` drops the header bar whole, for an `inline` chat inside a panel the app
+  already titles, and `defaultDraft` opens the composer with text in it without sending it. A panel driven by a
+  controlled `open` with **no** `onOpenChange` draws no close button at all rather than an inert one. Then the
+  slots: `AgentLauncher`, `AgentBubble`, `AgentComposer`, `AgentApproval`,
   `AgentQuestion`, `AgentMenu`, `AgentMarkdown` and `AgentCode` each replace one part in `_overrides.tsx`, and
   `akanjs/ui` exports every default beside them (`DefaultBubble`, `DefaultComposer`, …) so a skin composes the
   one it is replacing. `AgentCode` is where a highlighter binds — the fence's language reaches it — and a
   replacement for `AgentBubble` carries its own `memo`, since the transcript re-renders on every delta. Only then
   `AgentChat`, which replaces the panel whole: it also replaces the slash commands, the compaction notice and the
   approval gate, so reach for it when the *layout* differs, not when the look does.
+  A manifest reaches a layout-mounted chat like any other component: the override provider wraps the whole layout
+  stack, root layouts included. `UiOverrideProvider` is also a public `akanjs/ui` export, for giving one mount site
+  a different slot map than its route would.
 - **The composer is a textarea**: Enter sends, Shift+Enter writes a newline, and it grows to a few lines before
   it scrolls. The vertical arrows still walk what was sent, but only from the first or last line — anywhere else
   the caret is the textarea's own. On a phone the panel is the whole screen (it is a card from `sm:` up) and it
@@ -109,6 +123,41 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `data-agent-zone` container; guides follow the layout cascade (ancestors and own, never a sibling's). Zone
   membership is positional — there is no per-declaration zone key, so a lib component joins whatever zone the app
   mounts it in.
+- **Everything a zone publishes is named `<id>.<name>`,** and that name is what instructions must use. A bare
+  `createVideoProject` inside a zone naming its tool `videoProjectDraft.createVideoProject` is a tool that does
+  not exist: the model calls it, the surface answers `Unknown tool`, and a turn is gone. Build the name from the
+  id (``const zoneTool = (name) => `${ZONE}.${name}` ``) rather than writing it in two places, and read
+  `Agent.Context`'s **Assemble** to see the published list — the names exist in neither file's source. The dot is
+  the surface's own join and never reaches a provider: `AgentService` renames it to `__` on the wire, because
+  every OpenAI-compatible and Anthropic function schema allows `[A-Za-z0-9_-]` only, up to 64 characters.
+- **`builtins` decides which of the runtime's own tools a session gets** — all of them by default, `false` none,
+  an array exactly the ones it names, on `Agent.Zone` and `Agent.Chat` alike. A zone whose conversation must stay
+  on one screen takes `navigate` and `goBack` off it: `<Agent.Zone id="wizard" builtins={["readScreen",
+  "readState"]}>`. The tools are **withheld, not discouraged** — a withheld name answers the same "unknown tool"
+  a name that was never registered gets, so no prompt can talk the model past it, and the narrowing is the
+  session's alone: the surface is shared, and the neighbouring zone still navigates. Shadowing a built-in by
+  declaring a hook tool of the same name works at the root and **not inside a zone**, where the hook entry is
+  registered under its scope-prefixed name and never collides — `builtins` is the zone's answer. A tool the screen
+  declares under a built-in name is the screen's, not the runtime's, so `builtins={false}` leaves it standing.
+- **`<Agent.History load save clear onCompact />` backs a zone's transcript from a leaf inside it**, instead of
+  through `persist` on whoever builds the session. A function cannot cross the server/client boundary as a prop,
+  so `persist={myStore}` makes every ancestor up to the zone a client component; mounted this way the only client
+  module is the leaf, and `Agent.Zone` and the chat inside it stay server-assembled. Same shape as `Agent.Guide`,
+  and it renders nothing. Restoring follows the session's one rule — it lands only while nothing has happened to
+  the conversation yet — so mounting with the zone restores and mounting later saves from there on, with the
+  store never asked for a transcript that would be discarded. `session.setHistory` / `setOnCompact` are the same
+  thing for a session an app built itself — and are what a host calls when the store must outlive the view, since
+  the component's store lives exactly as long as the component. A zone's own session dies with it either way; one
+  the app handed in through `session` does not, and its saving stops when the `Agent.History` unmounts.
+- **A zone can be handed a session instead of building one**: `<Agent.Zone session={mine} onSession={…}>`. The app
+  then owns it, so unmounting the zone leaves it running — the opposite of a session the zone made, which it
+  aborts. `onSession` fires either way, for a page that wants to send into the conversation from outside it.
+- **`akanjs/ui` exports what a custom transport or transcript needs**, so no app reaches into the package's
+  internals: `httpRunner` (the wire the default runner speaks — point it at an endpoint of the app's own and
+  streaming is kept), `fetchRunner` (the default, to wrap), `AgentSession`, `AgentProvider`, and the
+  `AgentRunner` / `RunnerRequest` / `RunnerEvent` / `ChatMessage` / `SessionHistory` / `PublishedTool` /
+  `ContextBlock` types. `onCompact(replaced, summary)` reports a compaction's cut, for a host that keeps a
+  server-side summary and has to move its own watermark to the same place.
 - **Route guidance is `<Agent.Guide instructions="..." />`** rendered from a `_layout.tsx` or a page — the render
   tree is the cascade: nested Guides concatenate outer-to-inner and navigating away withdraws them. It is a
   component, not a pageConfig field. Module `*.abstract.md` files are developer docs and are never served to the
@@ -116,12 +165,19 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
 
 ## Publishing A Tool
 - **Declare the tool beside the control that already does it.**
-  `st.tool("x", { desc }).arg("id", ID).exec(fn)` publishes one action and returns the callable to hand to
-  `onClick` — one handler for the person and the agent, which is the point: a button wired to an inline arrow can
-  be clicked by a person and by nobody else. `.exec()` is the only hook, so the chain completes in one
-  unconditional statement, and the callable carries `data-akan-action` like a store setter does. A `remove*` name
-  defaults to a confirm gate. Reach a store action from the body — `.exec((id) => st.do.removeX(id))` — which is
-  how an agent gets CRUD; `st.do` on its own reaches nobody.
+  `st.tool("x").desc("…").arg("id", ID).opt("force", Boolean).exec(fn)` publishes one action and returns the
+  callable to hand to `onClick` — one handler for the person and the agent, which is the point: a button wired to
+  an inline arrow can be clicked by a person and by nobody else. `.desc()` is required and comes first, `.arg()`
+  is an argument the caller must pass and `.opt()` one it may leave out (the `exec` parameter is then `| null`),
+  and `.exec()` is the only hook, so the chain completes in one unconditional statement and the callable carries
+  `data-akan-action` like a store setter does. A `remove*` name defaults to a confirm gate. Reach a store action
+  from the body — `.exec((id) => st.do.removeX(id))` — which is how an agent gets CRUD; `st.do` on its own
+  reaches nobody.
+- **The second argument is how the call behaves, never what it is.** `{ settle, confirm, guard }`:
+  `settle: false` marks a read that returns what is already there and skips the wait; every other tool is waited
+  out before its effect on the screen is reported, because a write may still be landing when `exec` resolves. A
+  tool that reads and one that writes are otherwise the same declaration — there is no taxonomy field, because
+  nothing downstream would read one.
 - **A falsy name declares the tool without publishing it** — the callable still drives the click a person makes,
   and the agent never learns the tool exists. That is the only way a conditional surface stays legal, because
   `.exec()` is a hook and the declaration can never be skipped: withhold the name, not the call. `st.useState`
@@ -132,7 +188,7 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
 - **An `enumOf` class is a complete argument type on its own**: `.arg("mode", TaskStatus)` publishes the values as
   the argument's `enum`, refuses anything off them by name at call time, and narrows the `.exec` parameter to the
   value union — nothing else to write, and the scalar (`string` / `integer` / `number`) comes from the values.
-  **A value set the *render* decides takes `.arg(name, type, { oneOf })`** instead, because `enumOf` registers
+  **A value set the *render* decides takes `.arg(name, type, { oneOf })`** (or `.opt`) instead, because `enumOf` registers
   globally and a component cannot build one per render: pass the list it has — a slice's sort keys, the options a
   prop carried — and it is published and enforced the same way. Neither reaches a set that fills in *after* the
   first render, since a declaration is mount-static; put that in the tool's `guard`, which is re-read per call and
@@ -145,10 +201,13 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   tool that captured its own row would be fifty registrations of one name, forty-nine of them shadowed, and the
   survivor would remove whichever row happened to mount last. Take the id instead — `removeTask(taskId)`, never
   fifty `removeTask` — and every row's registration is then interchangeable, so a row component may publish after
-  all: say so with `shared: true` and the repeats are one declaration rather than a warned-about clash. The ids
-  come from the `<slice>.items` resource `Load.Units` and `Data.ListContainer` already expose. `shared` is a claim
-  about the *tool*, not a way to quiet a console: two rows whose tools would do different things (a different
-  `modal`, a different redirect) are not interchangeable, and that one wants a `namespace` or nothing at all.
+  all. **Nothing is written to say so: the description says it.** Fifty rows of one component produce one name
+  and one `.desc()`, which is the same declaration fifty times over and warns about nothing; a second description
+  arriving under a name already taken is two components that happened to pick one word, and that warns. So the
+  rule an app follows is about the sentence, not about a flag — two tools that would do different things
+  (a different `modal`, a different redirect) cannot honestly share a description, and that pair wants a
+  `namespace` or nothing at all. The ids come from the `<slice>.items` resource `Load.Units` and
+  `Data.ListContainer` already expose.
 
 ## What `akanjs/ui` Publishes For You
 - **`akanjs/ui` publishes its own controls, so an app writes nothing for them.** `Data.ListContainer` (and every
@@ -199,9 +258,9 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   **The patch writes each plain field through that control's own published tool, not the setter underneath it** —
   which is what carries the control's `transform`, so a field cannot normalize one way for `setPhoneOnBizAccount`
   and another way for `fillBizAccountForm`. Only a composite, having no control, dispatches its setter directly.
-  The patch tool is registered `shared`, because the entry is a pure function of the model: a form put on screen by
-  a shell that subscribes it (`Model.EditModal`) *and* by the `Template` inside it is one declaration twice over,
-  not a clash — so neither has to suppress the other, and neither is asked to.
+  The patch tool's entry is a pure function of the model, so a form put on screen by a shell that subscribes it
+  (`Model.EditModal`) *and* by the `Template` inside it registers the same name with the same description twice
+  over — one declaration, not a clash. Neither has to suppress the other, and neither is asked to.
 - **A `disabled` control publishes nothing, so the agent never gets a lever the person cannot pull.** Every value
   control reads it — `Field.*`, `Input.*`, `Select`, `Switch`, and the four relation pickers — and disabling a
   mounted control withdraws its tool for as long as it stays disabled. One gate covers both writers: with no
@@ -271,18 +330,26 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `Field.TextList` does, and the only place an inline arrow is the right answer rather than a bug.
 
 ## Reading State
-- **Reading is per key, not per store.** `st.useState(name, initial, meta)` publishes local state (read-only
-  unless `set:` names a type) and `st.expose(name, value)` a derived value. A subscribed store key is listed in
+- **Reading is per key, not per store.** `st.expose(name, Type).desc("…").value(v)` publishes a derived value and
+  `st.useState(name, Type, { set: true }).desc("…").init(initial)` local state, read-only without `set`. Both
+  end in a hook, so a conditional surface withholds the name rather than skipping the chain. A subscribed store key is listed in
   the state context block by name and pulled with `readState(key)`, masked by the model that key declares — while
   a key the screen does not read stays unreadable even when a sibling key of the same store is live. **There is no
   store-level exposure declaration**: a store class says nothing about agents, and `st.use.x({ agent: false })` is
   how the component that subscribes a value keeps it off the surface. Base-store plumbing does the same at the
   call site — `st.use.path({ agent: false })`, `st.use.tryJwt({ agent: false })` — so routing and the caller's
   credential stay off the surface unless a component opts a key in, as ThemeToggle does for `theme`.
-- **Model-facing text is English, always** — tool `desc`, `instructions`, Guide text. The `l()` rule covers
+- **Model-facing text is English, always** — every `.desc()`, `instructions`, Guide text. The `l()` rule covers
   strings a *user* reads: Chat's own buttons go through `l("base.*")`, the model's text never does.
-- A masked model never crosses the boundary: a value whose `hidden`/`secret` fields are populated is refused at
-  read unless a `mask:` model is named — the same rule and wording as `AgentBridge.read`.
+- **The declared type is the mask.** `st.expose`/`st.useState` take a scalar, an enum, a model class, a one-level
+  array of any of those, or `Any`. A model class both typechecks what the component hands over — the state object,
+  so a hydrated document and a plain copy of one are equally accepted — and strips the model's `hidden`, `secret`,
+  and `visual` fields on the way out, by the model that was *named* rather than by whatever class the value still
+  happens to carry. A `Date` leaves as an ISO string. `Any` is the escape hatch and passes the value untouched, so
+  a payload nobody modeled stays publishable and its owner keeps the tokens it costs. A type nothing can read (a
+  `Map`, an `Upload`, a class that is not a model) is reported on the console and left unpublished, never thrown —
+  the same degradation an undescribable `.arg` gets. `.value()` also takes a thunk, which is read when the agent
+  reads: that is the shape for a value assembled out of a ref the children fill in after the render.
 - **A field the page needs and an agent does not is `field.visual`.** `abstractData: field.visual(String)` — a blur
   placeholder, a rendered HTML body, a serialized geometry: real data the screen renders, and hundreds of tokens per
   record no question is answered from. It is stripped by `mask`, so it leaves every agent-facing read and every MCP
@@ -365,7 +432,8 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
 ## Built-In Tools
 - The framework publishes five built-ins on every store surface: `navigate` (internal paths only, the same
   router `Link` rides), `goBack` (this session's history — global, because history is not a control a page owns and
-  a page that draws no back link is not one you may not leave), `readScreen` (the rendered DOM as compact text —
+  a page that draws no back link is not one you may not leave — a screen that must not be left withholds them
+  with `builtins`, not with prose), `readScreen` (the rendered DOM as compact text —
   headings, links, control values, and `(disabled)` on a control or button that has it; the chat's own UI is
   skipped via `data-agent-ui`, and a password value is never read), `readState(key)` (one masked store key), and
   `highlight(target)`. Declaring a hook tool under one of those names shadows the built-in, so reuse them only to

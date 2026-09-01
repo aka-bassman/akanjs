@@ -1,9 +1,26 @@
 import { describe, expect, it } from "bun:test";
 import { contentFromText } from "../../../../common/contentFromText";
+import type { EditorLosses } from "../feature";
 import { isEmptyRichContent, lossSentence, lossyNodesOf, richBlockListing, richBlocksOf } from "./agentRichPlugin.util";
 
 // Relative imports, and no `@lexical/*` anywhere: the util reads serialized JSON so the guard is
 // testable without the sibling node packages, whose dev ESM builds trip bun's loader.
+
+// What `lossesOf(AKAN_FEATURES)` produces today, plus a plugin-contributed node. The real table cannot
+// be imported here (`markdown.ts` reaches MermaidNode → `@libs/util/ui` → the util store), and
+// `feature.test.ts` covers the derivation itself. `table` stands in for the narrowed loss a carried
+// feature reports — markdown carries a table, but not a merged cell.
+const labels: EditorLosses = {
+  "akan-image": { label: "image" },
+  "akan-video": { label: "video" },
+  "akan-file": { label: "file" },
+  "akan-embed": { label: "embed" },
+  "akan-excalidraw": { label: "drawing" },
+  "akan-callout": { label: "callout" },
+  "akan-collapsible": { label: "toggle" },
+  "akan-page-block": { label: "nested page" },
+  table: { label: "merged table cell", when: (node) => (node.children ?? []).some((row) => row.type === "merged") },
+};
 
 const docOf = (...children: unknown[]) => ({
   root: { type: "root", version: 1, children },
@@ -15,33 +32,40 @@ const textOf = (text: string) => ({ type: "text", version: 1, text });
 describe("agentRichPlugin.util", () => {
   describe("isEmptyRichContent", () => {
     it("treats every vintage of blank content as empty", () => {
-      expect(isEmptyRichContent(null)).toBe(true);
-      expect(isEmptyRichContent([])).toBe(true);
-      expect(isEmptyRichContent({})).toBe(true);
-      expect(isEmptyRichContent(contentFromText(""))).toBe(true);
-      expect(isEmptyRichContent(docOf(paragraphOf()))).toBe(true);
+      expect(isEmptyRichContent(null, labels)).toBe(true);
+      expect(isEmptyRichContent([], labels)).toBe(true);
+      expect(isEmptyRichContent({}, labels)).toBe(true);
+      expect(isEmptyRichContent(contentFromText(""), labels)).toBe(true);
+      expect(isEmptyRichContent(docOf(paragraphOf()), labels)).toBe(true);
     });
 
     it("is not empty once a person has typed", () => {
-      expect(isEmptyRichContent(contentFromText("hello"))).toBe(false);
+      expect(isEmptyRichContent(contentFromText("hello"), labels)).toBe(false);
     });
 
     it("is not empty when a textless block still carries meaning", () => {
-      expect(isEmptyRichContent(docOf({ type: "akan-image", version: 1 }))).toBe(false);
+      expect(isEmptyRichContent(docOf({ type: "akan-image", version: 1 }), labels)).toBe(false);
     });
 
     it("counts whitespace as blank", () => {
-      expect(isEmptyRichContent(contentFromText("  \n  "))).toBe(true);
+      expect(isEmptyRichContent(contentFromText("  \n  "), labels)).toBe(true);
     });
   });
 
   describe("lossyNodesOf", () => {
-    it("finds a mention nested inside a paragraph", () => {
-      const content = docOf(paragraphOf(textOf("cc "), { type: "akan-mention", version: 1 }));
-      expect(lossyNodesOf(content)).toEqual([{ label: "mention", count: 1 }]);
+    it("finds a loss nested below the root, not just a root child", () => {
+      const content = docOf({
+        type: "akan-callout",
+        version: 1,
+        children: [paragraphOf(textOf("see")), { type: "akan-image", version: 1 }],
+      });
+      expect(lossyNodesOf(content, labels)).toEqual([
+        { label: "callout", count: 1 },
+        { label: "image", count: 1 },
+      ]);
     });
 
-    it("counts a table once, not its rows and cells", () => {
+    it("stays silent where the loss rule declines the node — markdown carries an ordinary table", () => {
       const content = docOf({
         type: "table",
         version: 1,
@@ -50,7 +74,19 @@ describe("agentRichPlugin.util", () => {
           { type: "tablerow", version: 1, children: [{ type: "tablecell", version: 1, children: [] }] },
         ],
       });
-      expect(lossyNodesOf(content)).toEqual([{ label: "table", count: 1 }]);
+      expect(lossyNodesOf(content, labels)).toEqual([]);
+    });
+
+    it("counts a narrowed loss once, not its rows and cells", () => {
+      const content = docOf({
+        type: "table",
+        version: 1,
+        children: [
+          { type: "merged", version: 1, children: [{ type: "tablecell", version: 1, children: [] }] },
+          { type: "tablerow", version: 1, children: [{ type: "tablecell", version: 1, children: [] }] },
+        ],
+      });
+      expect(lossyNodesOf(content, labels)).toEqual([{ label: "merged table cell", count: 1 }]);
     });
 
     it("counts a toggle once, not its title and content", () => {
@@ -62,11 +98,17 @@ describe("agentRichPlugin.util", () => {
           { type: "akan-collapsible-content", version: 1, children: [] },
         ],
       });
-      expect(lossyNodesOf(content)).toEqual([{ label: "toggle", count: 1 }]);
+      expect(lossyNodesOf(content, labels)).toEqual([{ label: "toggle", count: 1 }]);
     });
 
     it("leaves mermaid out — it has its own transformer", () => {
-      expect(lossyNodesOf(docOf({ type: "akan-mermaid", version: 1 }))).toEqual([]);
+      expect(lossyNodesOf(docOf({ type: "akan-mermaid", version: 1 }), labels)).toEqual([]);
+    });
+
+    it("counts a node a plugin contributed, which serializes no text of its own", () => {
+      const content = docOf({ type: "akan-page-block", version: 1 });
+      expect(lossyNodesOf(content, labels)).toEqual([{ label: "nested page", count: 1 }]);
+      expect(isEmptyRichContent(content, labels)).toBe(false);
     });
 
     it("leaves the nodes markdown does carry out", () => {
@@ -76,24 +118,24 @@ describe("agentRichPlugin.util", () => {
         { type: "code", version: 1, children: [textOf("run()")] },
         { type: "horizontalrule", version: 1 },
       );
-      expect(lossyNodesOf(content)).toEqual([]);
+      expect(lossyNodesOf(content, labels)).toEqual([]);
     });
 
     it("reports the most numerous loss first", () => {
       const content = docOf(
         { type: "akan-image", version: 1 },
         { type: "akan-image", version: 1 },
-        paragraphOf({ type: "akan-mention", version: 1 }),
+        { type: "akan-callout", version: 1, children: [] },
         { type: "akan-image", version: 1 },
       );
-      expect(lossyNodesOf(content)).toEqual([
+      expect(lossyNodesOf(content, labels)).toEqual([
         { label: "image", count: 3 },
-        { label: "mention", count: 1 },
+        { label: "callout", count: 1 },
       ]);
     });
 
     it("reads a legacy array-shaped value without throwing", () => {
-      expect(lossyNodesOf([{ type: "akan-image" }])).toEqual([{ label: "image", count: 1 }]);
+      expect(lossyNodesOf([{ type: "akan-image" }], labels)).toEqual([{ label: "image", count: 1 }]);
     });
   });
 
@@ -104,9 +146,9 @@ describe("agentRichPlugin.util", () => {
       expect(
         lossSentence([
           { label: "image", count: 2 },
-          { label: "mention", count: 1 },
+          { label: "callout", count: 1 },
         ]),
-      ).toBe("2 images, 1 mention");
+      ).toBe("2 images, 1 callout");
     });
   });
 

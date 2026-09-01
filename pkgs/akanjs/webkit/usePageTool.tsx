@@ -1,5 +1,5 @@
 "use client";
-import { Int } from "akanjs/base";
+import { Any, Int } from "akanjs/base";
 import { st } from "akanjs/store";
 
 interface PageToolOptions {
@@ -21,19 +21,17 @@ interface PageToolOptions {
  * keep quoting whatever the list held on its first render.
  */
 export const usePageTool = ({ name, model, page, lastPage, total, onSelect }: PageToolOptions) => {
-  st.expose(name ? `pagesOf${model.charAt(0).toUpperCase()}${model.slice(1)}` : null, page, {
-    desc: `Where the ${model} list is paged to.`,
-    serialize: () => ({ page, lastPage, total }),
-  });
+  st.expose(name ? `pagesOf${model.charAt(0).toUpperCase()}${model.slice(1)}` : null, Any)
+    .desc(`Where the ${model} list is paged to.`)
+    .value({ page, lastPage, total });
   return st
     .tool(name, {
-      desc: `Turn the ${model} list to one page.`,
-      effect: "state",
       guard: ({ page }) =>
         Number(page) >= 1 && Number(page) <= lastPage
           ? true
           : `The ${model} list has ${lastPage} page${lastPage === 1 ? "" : "s"}.`,
     })
+    .desc(`Turn the ${model} list to one page.`)
     .arg("page", Int)
     .exec(onSelect);
 };

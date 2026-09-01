@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { AgentService } from "./agent.service";
+import { DeepseekLlm } from "./predefinedAdaptor/deepseekLlm";
 import type { LlmTurnRequest } from "./predefinedAdaptor/llm.adaptor";
+import { ToolNames } from "./toolNames";
 
 const turn = (): LlmTurnRequest => ({
   tools: [],
@@ -80,5 +82,43 @@ describe("AgentService.explained", () => {
   test("a transcript with nothing failed is handed on untouched", () => {
     const request = turn();
     expect(AgentService.explained(request)).toBe(request);
+  });
+});
+
+describe("AgentService tool names on the provider wire", () => {
+  // The exact shape that failed in an app: a zone's tools are scope-prefixed, DeepSeek did not reject the illegal
+  // name, and the model normalized it to the bare one — which the browser answered with `Unknown tool`.
+  const zoneTurn = (): LlmTurnRequest => ({
+    context: [],
+    messages: [{ role: "assistant", toolCalls: [{ id: "c0", name: "videoProjectDraft.readDraft", args: {} }] }],
+    tools: [{ name: "videoProjectDraft.createVideoProject", description: "Create it." }, { name: "readScreen" }],
+  });
+
+  /** What `runTurn` composes, without the adaptor plumbing an instance would need. */
+  const prepared = (request: LlmTurnRequest) => {
+    const names = ToolNames.of(request);
+    return { names, request: names.encode(AgentService.readable(AgentService.explained(request), undefined)) };
+  };
+
+  test("every function name the provider is handed is one its schema accepts", () => {
+    const body = DeepseekLlm.requestBody("deepseek-chat", prepared(zoneTurn()).request);
+    const declared = body.tools?.map((tool) => tool.function.name) ?? [];
+    const called = body.messages.flatMap((message) =>
+      "tool_calls" in message ? (message.tool_calls ?? []).map((call) => call.function.name) : [],
+    );
+    expect(declared).toEqual(["videoProjectDraft__createVideoProject", "readScreen"]);
+    expect(called).toEqual(["videoProjectDraft__readDraft"]);
+    for (const name of [...declared, ...called]) expect(name).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+  });
+
+  test("a call answered under the renamed tool comes back as the name the surface registered", () => {
+    const { names } = prepared(zoneTurn());
+    const answered = names.decode([{ id: "c1", name: "videoProjectDraft__createVideoProject", args: {} }]);
+    expect(answered[0].name).toBe("videoProjectDraft.createVideoProject");
+  });
+
+  test("a turn with no zone leaves the provider body exactly as it was before any of this", () => {
+    const flat: LlmTurnRequest = { context: [], messages: [], tools: [{ name: "readScreen" }] };
+    expect(prepared(flat).request).toBe(flat);
   });
 });

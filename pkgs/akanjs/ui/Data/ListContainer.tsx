@@ -12,7 +12,7 @@ import {
 } from "akanjs/client";
 import { capitalize } from "akanjs/common";
 import { type BaseInsight, ConstantRegistry, labelOf } from "akanjs/constant";
-import type { FetchInitForm, SliceMeta } from "akanjs/fetch";
+import type { FetchInitForm, QuerySetting, SliceMeta } from "akanjs/fetch";
 import { st } from "akanjs/store";
 import { useScreenScope } from "akanjs/webkit";
 import { type ReactNode, useEffect, useState } from "react";
@@ -36,6 +36,7 @@ import { Select } from "../Select";
 import DataCardList from "./CardList";
 import { columnKey, downloadBlob, toCsvBlob, toJsonBlob } from "./dataExport";
 import { dictLabel } from "./dataText";
+import { QueryMakerArgs, QueryMakerKey, resolveQuerySetting, useQueryMaker } from "./QueryMaker";
 import DataTableList from "./TableList";
 
 const controlClassName = "h-9";
@@ -55,8 +56,10 @@ export interface ListContainerProps<
   cardListClassName?: string;
   /** Initial rendering mode. The toolbar toggle switches it from here. */
   type?: "card" | "list";
-  /** Static query object passed as the first argument of the generated init action. */
-  query?: Record<string, unknown>;
+  /** Fixed filter query for this listing. Given one, the panel is scoped and offers no query maker. */
+  query?: QuerySetting;
+  /** Summary column to filter query. A `?filter=<column>` link opens the listing on the query it names. */
+  queryMap?: { [column: string]: QuerySetting };
   /** Initial fetch form: page, limit, sort, and the default values a new model starts from. */
   init?: FetchInitForm<Input, any>;
   /** Generated slice metadata for the target model. */
@@ -76,9 +79,15 @@ export interface ListContainerProps<
   renderDashboard?: ({
     summary,
     hidePresents,
+    onSelect,
+    queryKey,
   }: {
     summary: Record<string, unknown>;
     hidePresents?: boolean;
+    /** Applies one summary column's filter to this listing, in place. */
+    onSelect: (setting: QuerySetting) => void;
+    /** The filter key the listing is showing right now. */
+    queryKey: string;
   }) => ReactNode;
   renderItem?: (props: ModelProps<any, any>) => ReactNode;
   renderTemplate?: (props: any) => ReactNode | null;
@@ -100,6 +109,7 @@ export default function ListContainer<
   cardListClassName,
   type = "card",
   query,
+  queryMap,
   init,
   create = true,
   slice,
@@ -167,10 +177,17 @@ export default function ListContainer<
   const sortOfModel = storeUse[namesOfSlice.sortOfModel]() as string;
   const modelInsight = storeUse[namesOfSlice.modelInsight]() as BaseInsight;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
+  const searchParams = st.use.searchParams({ agent: false });
+  const filter = Array.isArray(searchParams.filter) ? searchParams.filter[0] : searchParams.filter;
+  const initQuery = query ?? (filter ? queryMap?.[filter] : undefined);
+  const queryState = useQueryMaker({ slice, query: initQuery });
   useEffect(() => {
     // The init form rides the argument after the slice's own, so every positional slot has to be filled first.
     const queryArgs = new Array(slice.argLength).fill(null) as unknown[];
-    if (query) queryArgs[0] = query;
+    if (initQuery) {
+      const { queryKey, args } = resolveQuerySetting(initQuery);
+      [queryArgs[0], queryArgs[1]] = [queryKey, args];
+    }
     void storeDo[namesOfSlice.initModel](...queryArgs, { sort, ...init });
   }, []);
 
@@ -184,52 +201,39 @@ export default function ListContainer<
   const loadedList = () => [...(storeGet<DataList<Light>>()[namesOfSlice.modelList] as DataList<Light>)];
   const whileLoaded = () => (modelListLoading ? `The ${modelName} list is still loading.` : true);
   const setViewOfModel = st
-    .tool(namesOfSlice.setViewOfModel, {
-      desc: `Render the ${modelName} list as cards or as a table.`,
-      effect: "state",
-    })
+    .tool(namesOfSlice.setViewOfModel)
+    .desc(`Render the ${modelName} list as cards or as a table.`)
     .arg("mode", String, { oneOf: ["card", "list"] })
     .exec((mode) => {
       setView(mode);
     });
   const setSortOfModel = st
-    .tool(sortKeys.length > 1 ? namesOfSlice.setSortOfModel : null, {
-      desc: `Reorder the ${modelName} list.`,
-      effect: "state",
-    })
+    .tool(sortKeys.length > 1 ? namesOfSlice.setSortOfModel : null)
+    .desc(`Reorder the ${modelName} list.`)
     .arg("sortKey", String, { oneOf: sortKeys })
     .exec((sortKey) => storeDo[namesOfSlice.setSortOfModel](sortKey));
   const setLimitOfModel = st
-    .tool(namesOfSlice.setLimitOfModel, {
-      desc: `Set how many ${modelName} rows one page holds.`,
-      effect: "state",
-    })
+    .tool(namesOfSlice.setLimitOfModel)
+    .desc(`Set how many ${modelName} rows one page holds.`)
     .arg("limit", Int, { oneOf: pageLimits })
     .exec((limit) => storeDo[namesOfSlice.setLimitOfModel](limit));
   const refreshModel = st
-    .tool(namesOfSlice.refreshModel, { desc: `Reload the ${modelName} list from the server.`, effect: "query" })
+    .tool(namesOfSlice.refreshModel, { settle: false })
+    .desc(`Reload the ${modelName} list from the server.`)
     .exec(() => storeDo[namesOfSlice.refreshModel]());
   const newModel = st
-    .tool(renderTemplate && create ? namesOfSlice.newModel : null, {
-      desc: `Open the form that creates a ${modelName}.`,
-      effect: "state",
-    })
+    .tool(renderTemplate && create ? namesOfSlice.newModel : null)
+    .desc(`Open the form that creates a ${modelName}.`)
     .exec(() => storeDo[namesOfSlice.newModel]());
   const exportCsvOfModel = st
-    .tool(namesOfSlice.exportCsvOfModel, {
-      desc: `Download the loaded page of ${modelName} rows as a CSV file.`,
-      effect: "state",
-      guard: whileLoaded,
-    })
+    .tool(namesOfSlice.exportCsvOfModel, { guard: whileLoaded })
+    .desc(`Download the loaded page of ${modelName} rows as a CSV file.`)
     .exec(() => {
       downloadBlob(toCsvBlob(columns, loadedList() as Record<string, unknown>[], columnTitle), `${sliceName}.csv`);
     });
   const exportJsonOfModel = st
-    .tool(namesOfSlice.exportJsonOfModel, {
-      desc: `Download the loaded page of ${modelName} rows as a JSON file.`,
-      effect: "state",
-      guard: whileLoaded,
-    })
+    .tool(namesOfSlice.exportJsonOfModel, { guard: whileLoaded })
+    .desc(`Download the loaded page of ${modelName} rows as a JSON file.`)
     .exec(() => {
       downloadBlob(toJsonBlob(loadedList()), `${sliceName}.json`);
     });
@@ -241,25 +245,16 @@ export default function ListContainer<
   // rather than offering a button some rows do not have. The editor's own verbs are not here — `Model.EditModal`
   // and `Model.ViewModal` publish those while they are open, which is also the only moment they can be used.
   const rowActions = Array.isArray(actions) ? actions : [];
-  st.tool(rowActions.includes("edit") && renderTemplate ? namesOfSlice.editModel : null, {
-    desc: `Open one ${modelName} in the edit form.`,
-    effect: "state",
-    shared: true,
-  })
+  st.tool(rowActions.includes("edit") && renderTemplate ? namesOfSlice.editModel : null)
+    .desc(`Open one ${modelName} in the edit form.`)
     .arg("modelId", ID)
     .exec((modelId) => storeDo[namesOfSlice.editModel](modelId));
-  st.tool(rowActions.includes("view") && renderView ? namesOfSlice.viewModel : null, {
-    desc: `Open one ${modelName} in the detail view.`,
-    effect: "state",
-    shared: true,
-  })
+  st.tool(rowActions.includes("view") && renderView ? namesOfSlice.viewModel : null)
+    .desc(`Open one ${modelName} in the detail view.`)
     .arg("modelId", ID)
     .exec((modelId) => storeDo[namesOfSlice.viewModel](modelId));
-  st.tool(rowActions.includes("remove") ? namesOfSlice.removeModel : null, {
-    desc: `Remove one ${modelName}.`,
-    effect: "mutation",
-    shared: true,
-  })
+  st.tool(rowActions.includes("remove") ? namesOfSlice.removeModel : null)
+    .desc(`Remove one ${modelName}.`)
     .arg("modelId", ID)
     .exec((modelId) => storeDo[namesOfSlice.removeModel](modelId));
   const scopePath = useScreenScope({
@@ -274,18 +269,33 @@ export default function ListContainer<
 
   const modelLabel = dictLabel(l._, `${sliceName}.modelName`, refName);
   const RenderTitle = renderTitle ?? ((model: Full) => `${modelLabel} - ${model.id ? model.id : "New"}`);
-  const ModelDashboard = (): ReactNode => {
-    const Stat = renderDashboard;
-    // `summary` is an app-level state key, not a generated one: read it off the state so a store without it
-    // renders nothing instead of calling an accessor that does not exist.
-    const summary = storeSel<Record<string, unknown> | undefined>(
-      (state) => (state as { summary?: Record<string, unknown> }).summary,
+  // `summary` is an app-level state key, not a generated one: read it off the state so a store without it renders
+  // nothing instead of calling an accessor that does not exist. Built as a value rather than mounted as
+  // `<ModelDashboard />`, for the same reason the query maker is: a component type this render creates is a new
+  // type every render, so React would remount the dashboard and lose the tile the user just picked.
+  const summary = storeSel<Record<string, unknown> | undefined>(
+    (state) => (state as { summary?: Record<string, unknown> }).summary,
+  );
+  const summaryLoading = storeSel<boolean>((state) => !!(state as { summaryLoading?: boolean }).summaryLoading);
+  const modelDashboard =
+    !renderDashboard || !summary ? null : summaryLoading ? (
+      <Loading.Skeleton className="mb-4" active />
+    ) : (
+      renderDashboard({
+        summary,
+        hidePresents: true,
+        onSelect: queryState.applySetting,
+        queryKey: queryState.setting.queryKey,
+      })
     );
-    const summaryLoading = storeSel<boolean>((state) => !!(state as { summaryLoading?: boolean }).summaryLoading);
-    if (!Stat || !summary) return null;
-    return summaryLoading ? <Loading.Skeleton className="mb-4" active /> : <Stat summary={summary} hidePresents />;
-  };
-  const RenderQueryMaker = renderQueryMaker;
+  // Called, not mounted as `<RenderQueryMaker />`: a wrapper this render creates is a new component type every
+  // time, so React would unmount the maker on each parent render and take the filter the user picked with it.
+  // A fixed `query` is the panel's scope, so the maker that would widen it is not drawn at all.
+  const queryMakerArgs = renderQueryMaker ? (
+    renderQueryMaker()
+  ) : query ? null : (
+    <QueryMakerArgs slice={slice} state={queryState} />
+  );
   const RenderInsight = (): ReactNode => (renderInsight ? renderInsight({ insight: modelInsight }) : null);
   const RenderTemplate = renderTemplate;
   const RenderTools = (): ReactNode => {
@@ -378,6 +388,14 @@ export default function ListContainer<
               </button>
             ))}
           </div>
+          {query ? null : (
+            <QueryMakerKey
+              className="w-44 min-w-0"
+              selectClassName={cn("min-h-0", controlClassName)}
+              slice={slice}
+              state={queryState}
+            />
+          )}
           <RenderSort />
           <Select<number>
             className="w-36 min-w-0"
@@ -411,8 +429,8 @@ export default function ListContainer<
           ) : null}
         </div>
       </div>
-      {query ? null : <ModelDashboard />}
-      {RenderQueryMaker ? <RenderQueryMaker /> : null}
+      {query ? null : modelDashboard}
+      {queryMakerArgs}
       <RenderInsight />
       {view === "card" ? (
         <DataCardList

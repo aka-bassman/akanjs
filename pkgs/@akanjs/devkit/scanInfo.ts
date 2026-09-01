@@ -9,6 +9,7 @@ import type {
   PkgScanResult,
   ScanResult,
 } from "./akanConfig";
+import { AkanAppConfig } from "./akanConfig";
 import { AppExecutor, LibExecutor, PkgExecutor, WorkspaceExecutor } from "./executors";
 import { isAllowedLibFacetRootFile, rootAllowedDirs, rootAllowedFiles } from "./workspaceLayout";
 
@@ -285,12 +286,11 @@ class ScanInfo {
       }),
     ]);
     const routes = exec.type === "lib" ? [] : await (exec as AppExecutor).getPageKeys();
-    const scanResult: AppScanResult | LibScanResult = {
+    const common = {
       name: exec.name,
       type: exec.type,
       repoName: exec.workspace.repoName,
       serveDomain: WorkspaceExecutor.getBaseDevEnv(path.join(exec.workspace.workspaceRoot, ".env")).serveDomain,
-      akanConfig,
       files,
       libDeps,
       pkgDeps,
@@ -298,6 +298,11 @@ class ScanInfo {
       devDependencies: npmDevDeps.filter((dep) => !isAkanFrameworkDependency(dep)),
       routes,
     };
+    //? `exec.type` and the resolved config class are correlated, which the union alone cannot express.
+    const scanResult: AppScanResult | LibScanResult =
+      akanConfig instanceof AkanAppConfig
+        ? ({ ...common, akanConfig } satisfies AppScanResult)
+        : ({ ...common, akanConfig } satisfies LibScanResult);
     return scanResult;
   }
 
@@ -462,7 +467,7 @@ export class LibInfo extends ScanInfo {
           LibInfo.libInfos.set(libName, await LibInfo.fromExecutor(libExecutor));
         }),
     );
-    const libInfo = new LibInfo(exec, scanResult);
+    const libInfo = new LibInfo(exec, scanResult as LibScanResult);
     LibInfo.libInfos.set(exec.name, libInfo);
     LibInfo.#sortedLibIndices = null;
     return libInfo;

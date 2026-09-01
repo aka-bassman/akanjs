@@ -1,4 +1,5 @@
 import type { SliceMeta } from "akanjs/fetch";
+import type { SerializedArg } from "akanjs/signal";
 import type { ReactNode } from "react";
 import type { TransMessageOption } from "./makePageProto";
 
@@ -49,6 +50,8 @@ type RuntimeFetch = typeof globalThis.fetch & {
   slice: Record<string, SliceMeta>;
   /** Sort keys per model refName, registered from each serialized signal's filter. */
   sortKeyMap?: Map<string, string[]>;
+  /** Filter queries per model refName, with the args each one takes — what the root slice picks from. */
+  filterQueryMap?: Map<string, { [queryKey: string]: SerializedArg[] }>;
   ws: RuntimeWs;
   [key: string]: unknown;
 };

@@ -69,6 +69,8 @@ export const mcpRefusalOf = (endpoint: McpExposureEndpoint, { readOnly }: McpExp
     return "this deployment is read-only, which drops every endpoint that is not a query.";
   if (endpoint.returns.refName === "Any" || endpoint.returns.refName === "Upload")
     return `a return typed \`${endpoint.returns.refName}\` cannot be described to a model.`;
+  if (endpoint.returns.refName === "Binary")
+    return "a return typed `Binary` is raw bytes, which cost a model its window and tell it nothing.";
   if (endpoint.fileUpload || endpoint.args.some((arg) => arg.refName === "Upload"))
     return "a file upload has no MCP representation.";
   if (endpoint.type === "mutation" && !endpoint.guards.some((name) => name !== "Public"))

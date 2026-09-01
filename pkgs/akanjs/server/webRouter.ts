@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import type { AkanWebConfig } from "akanjs";
 import { getEnv } from "akanjs/base";
 import {
   type AkanI18nConfig,
@@ -54,7 +55,7 @@ import { createDefaultSitemapXml, getSitemapBasePath } from "./sitemap";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
 import type { RscTraceMetadata, SsrManifest } from "./ssrTypes";
 import { createSubRouteIndexResponse, createSystemPageResponse, getSystemPageHomeHref } from "./systemPages";
-import type { BaseBuildArtifact, HttpRoutes, RenderState } from "./types";
+import { type BaseBuildArtifact, type HttpRoutes, type RenderState, resolveWebConfig } from "./types";
 
 const CLIENT_CLOSED_REQUEST_STATUS = 499;
 export const DEFAULT_HTML_RESULT_CACHE_MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -268,11 +269,13 @@ export interface SsrRoutesResult {
 }
 
 export interface SsrRoutesInputs {
+  web: AkanWebConfig;
   upgradeHmrWs: (req: Request, data: HmrWsData) => boolean;
 }
 
 interface WebRouterOptions {
   artifact: BaseBuildArtifact;
+  web: AkanWebConfig;
   cssBytesByUrl: Record<string, Uint8Array>;
   rsc: RscWorker;
   seedIndex: RouteSeedIndex;
@@ -325,9 +328,12 @@ export class WebRouter {
   #htmlCacheBypass = 0;
   #runtimeManifest: { revision: number; manifest: MergedManifest } | null = null;
   renderState: RenderState;
+  /** What this router actually mounts, already intersected with what the artifact carries. */
+  readonly web: AkanWebConfig;
   #seedIndex: RouteSeedIndex;
-  constructor({ artifact, cssBytesByUrl, rsc, seedIndex, upgradeHmrWs }: WebRouterOptions) {
+  constructor({ artifact, web, cssBytesByUrl, rsc, seedIndex, upgradeHmrWs }: WebRouterOptions) {
     this.#logger.verbose(`[SSR] loaded ${Object.keys(cssBytesByUrl).length} CSS assets`);
+    this.web = web;
     if (process.env.NODE_ENV === "production" && !this.#prodMode)
       this.#logger.warn("[SSR] NODE_ENV=production ignored under `akan start`; serving in dev mode");
     this.#artifact = artifact;
@@ -388,14 +394,16 @@ export class WebRouter {
     });
 
     const renderEnvRoutes: HttpRoutes = {
-      "/__csr": async () => {
-        this.#requestStats.csr += 1;
-        const csrHtml = await this.#resolveCsrHtml(csrOutputDir, "/");
-        const csrFile = csrHtml ? Bun.file(csrHtml) : null;
-        const htmlText =
-          csrFile && (await csrFile.exists())
-            ? await csrFile.text()
-            : `<!doctype html>
+      ...(this.web.csr
+        ? {
+            "/__csr": async () => {
+              this.#requestStats.csr += 1;
+              const csrHtml = await this.#resolveCsrHtml(csrOutputDir, "/");
+              const csrFile = csrHtml ? Bun.file(csrHtml) : null;
+              const htmlText =
+                csrFile && (await csrFile.exists())
+                  ? await csrFile.text()
+                  : `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -408,10 +416,12 @@ export class WebRouter {
     <script type="module" src="/csr.js"></script>
   </body>
 </html>`;
-        return new Response(this.#withCsrHmr(htmlText), {
-          headers: { "Content-Type": "text/html; charset=utf-8" },
-        });
-      },
+              return new Response(this.#withCsrHmr(htmlText), {
+                headers: { "Content-Type": "text/html; charset=utf-8" },
+              });
+            },
+          }
+        : {}),
       [`${clientServePrefix}/*`]: async (req) => {
         this.#requestStats.staticAsset += 1;
         const url = new URL(req.url);
@@ -532,20 +542,20 @@ export class WebRouter {
           return imageOptimizer.handle(req);
         }
 
-        const isCsr = url.searchParams.get("csr") === "true";
-        if (isCsr) {
-          this.#requestStats.csr += 1;
-          const csrHtml = await this.#resolveCsrHtml(csrOutputDir, url.pathname);
-          if (!csrHtml) return this.#csrUnavailableResponse(url.pathname);
-          const html = await Bun.file(csrHtml).text();
-          return new Response(this.#withCsrHmr(html), {
-            headers: { "Content-Type": "text/html; charset=utf-8" },
-          });
-        }
+        if (this.web.csr) {
+          const isCsr = url.searchParams.get("csr") === "true";
+          if (isCsr) {
+            this.#requestStats.csr += 1;
+            const csrHtml = await this.#resolveCsrHtml(csrOutputDir, url.pathname);
+            if (!csrHtml) return this.#csrUnavailableResponse(url.pathname);
+            const html = await Bun.file(csrHtml).text();
+            return new Response(this.#withCsrHmr(html), {
+              headers: { "Content-Type": "text/html; charset=utf-8" },
+            });
+          }
 
-        const csrAssetPath = path.extname(url.pathname) ? WebRouter.#safeResolve(csrOutputDir, url.pathname) : null;
-        if (csrAssetPath) {
-          if (await Bun.file(csrAssetPath).exists()) {
+          const csrAssetPath = path.extname(url.pathname) ? WebRouter.#safeResolve(csrOutputDir, url.pathname) : null;
+          if (csrAssetPath && (await Bun.file(csrAssetPath).exists())) {
             this.#requestStats.staticAsset += 1;
             return WebRouter.#fileResponse(req, csrAssetPath, {
               contentType: Bun.file(csrAssetPath).type || "application/octet-stream",
@@ -616,7 +626,8 @@ export class WebRouter {
           if (rscResult.type === "redirect")
             return Response.redirect(new URL(rscResult.location, url.origin), rscResult.status);
           if (rscResult.type === "not-found") return this.#renderSystemNotFoundFallbackResponse(req, url);
-          const themeCookieExists = WebRouter.#hasCookie(req, "theme");
+          // First-paint data-theme: cookie is no longer a React <html> prop (RSC cache would replay it).
+          const cookieTheme = WebRouter.#cookieValue(req, "theme");
           const hostRequestStore = createRequestStore(req);
           const extraBootstrapInline = [
             rscResult.trace?.routeState
@@ -634,7 +645,7 @@ export class WebRouter {
             bootstrapModules: [this.#artifact.rscClientUrl],
             extraBootstrapInline: extraBootstrapInline || undefined,
             importmap: this.#artifact.vendorMap,
-            theme: themeCookieExists ? undefined : (rscResult.theme ?? "system"),
+            theme: cookieTheme ?? rscResult.theme ?? "system",
             lateControl: rscResult.lateControl,
             waitForAllReady: rscResult.trace?.ssrBlocking ?? false,
             onCancel: (reason: unknown) => {
@@ -803,9 +814,6 @@ export class WebRouter {
     }
   }
 
-  static #hasCookie(req: Request, name: string): boolean {
-    return parseCookieHeader(req.headers.get("cookie") ?? "").has(name);
-  }
   #getHtmlCacheEntry(req: Request, url: URL): { entry: RouteCacheEntry | null; reason?: string } {
     const decision = resolvePublicRouteCacheEntryDecision({
       request: req,
@@ -1043,18 +1051,24 @@ export class WebRouter {
     });
   }
 
-  static async create({ upgradeHmrWs }: SsrRoutesInputs) {
+  /**
+   * `null` when the build produced no web artifact — an api-only build, or a workspace with no `page/` at all.
+   * The caller boots without a web surface instead of failing on the missing file.
+   */
+  static async create({ web, upgradeHmrWs }: SsrRoutesInputs): Promise<WebRouter | null> {
     const artifactDir = WebRouter.#resolveArtifactDir();
-    const artifact = WebRouter.#normalizeArtifact(
-      (await Bun.file(path.join(artifactDir, "base-artifact.json")).json()) as BaseBuildArtifact,
-      artifactDir,
-    );
+    const artifactFile = Bun.file(path.join(artifactDir, "base-artifact.json"));
+    if (!(await artifactFile.exists())) return null;
+    const artifact = WebRouter.#normalizeArtifact((await artifactFile.json()) as BaseBuildArtifact, artifactDir);
+    const builtWeb = resolveWebConfig(artifact.web);
+    if (!builtWeb.ssr) return null;
     const cssBytesByUrl = await WebRouter.#loadCssBytesByUrl(artifact, artifactDir);
     const rsc = new RscWorker(artifact);
     await rsc.ready;
     const seedIndex = await RouteSeedIndexStore.load(artifactDir);
     return new WebRouter({
       artifact,
+      web: { ssr: true, csr: web.csr && builtWeb.csr },
       cssBytesByUrl,
       rsc,
       seedIndex,

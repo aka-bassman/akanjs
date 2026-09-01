@@ -9,10 +9,10 @@ export default function Page() {
     {
       name: ".arg(name, Type, options?)",
       desc: l.trans({
-        en: "Required parameter. Options include { ref, renderOption } for UI rendering in admin panels.",
-        ko: "필수 파라미터. 관리자 패널의 UI 렌더링을 위한 { ref, renderOption } 옵션 포함.",
+        en: "Required parameter. `ref` names the model an ID points at, so the admin panel offers a picker instead of a text field.",
+        ko: "필수 파라미터. ID가 가리키는 모델을 `ref`로 지정하면 관리자 패널이 텍스트 입력 대신 선택 모달을 띄웁니다.",
       }),
-      example: `.arg("categoryId", ID)`,
+      example: `.arg("categoryId", ID, { ref: "category" })`,
     },
     {
       name: ".opt(name, Type, options?)",

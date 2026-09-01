@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
 import { actionTagOf } from "../actionTag";
 import { StToolBuilder } from "./StToolBuilder";
+import { StToolDraft } from "./StToolDraft";
 
 const mount = (node: ReactNode) => {
   const container = document.createElement("div");
@@ -70,7 +71,8 @@ describe("StToolBuilder", () => {
     console.error = (message: unknown) => errors.push(String(message));
     let clicked = 0;
     const Widget = () => {
-      const edit = new StToolBuilder("editProject")
+      const edit = new StToolDraft("editProject")
+        .desc("Edit one project.")
         .arg("projectId", ID)
         .arg("info", PortfolioInfo as unknown as typeof ID)
         .exec(() => {
@@ -99,7 +101,8 @@ describe("StToolBuilder", () => {
     const calls: unknown[][] = [];
     const held: { edit?: (id: string, info: string) => Promise<void> } = {};
     const Widget = () => {
-      held.edit = new StToolBuilder("editProject")
+      held.edit = new StToolDraft("editProject")
+        .desc("Edit one project.")
         .arg("projectId", ID)
         .arg("info", PortfolioInfo as unknown as typeof ID)
         .exec((...args) => {
@@ -166,7 +169,8 @@ describe("StToolBuilder.exec", () => {
     const tab: { switchTab?: (menu: "one" | "two") => Promise<void> } = {};
     const seen: string[] = [];
     const Tabs = () => {
-      tab.switchTab = new StToolBuilder("switchTab", { desc: "Switch the tab." })
+      tab.switchTab = new StToolDraft("switchTab")
+        .desc("Switch the tab.")
         .arg("menu", String, { oneOf: ["one", "two"] })
         .exec((menu) => void seen.push(menu));
       return null;
@@ -192,7 +196,8 @@ describe("StToolBuilder.exec", () => {
     const held: { setMode?: (mode: "fit" | "fill", level: 1 | 2 | 3) => Promise<void> } = {};
     const seen: unknown[] = [];
     const Panel = () => {
-      held.setMode = new StToolBuilder("setMode", { desc: "Set the mode." })
+      held.setMode = new StToolDraft("setMode")
+        .desc("Set the mode.")
         .arg("mode", StToolMode)
         .arg("level", StToolLevel)
         .exec((mode, level) => void seen.push([mode, level]));
@@ -229,7 +234,8 @@ describe("StToolBuilder.exec", () => {
     const tab: { switchTab?: (menu: string) => Promise<void> } = {};
     const seen: string[] = [];
     const Tabs = () => {
-      tab.switchTab = new StToolBuilder(null, { desc: "Switch the tab." })
+      tab.switchTab = new StToolDraft(null)
+        .desc("Switch the tab.")
         .arg("menu", String)
         .exec((menu) => void seen.push(menu));
       return null;
@@ -244,5 +250,75 @@ describe("StToolBuilder.exec", () => {
     await tab.switchTab?.("two");
     expect(seen).toEqual(["two"]);
     unmount();
+  });
+
+  test("opt leaves the argument out of required and hands the exec a null when it is omitted", async () => {
+    const surface = new AgenticSurface();
+    // The declared type is the assertion: `.arg` narrows to the value, `.opt` to the value or null.
+    const held: { answer?: (reason: string, score: number | null) => Promise<void> } = {};
+    const seen: unknown[][] = [];
+    const Survey = () => {
+      held.answer = new StToolDraft("answerSurvey")
+        .desc("Answer the survey.")
+        .arg("reason", String)
+        .opt("score", Int)
+        .exec((reason, score) => void seen.push([reason, score]));
+      return null;
+    };
+    const unmount = mount(
+      <AgentProvider surface={surface}>
+        <Survey />
+      </AgentProvider>,
+    );
+    expect(surface.snapshot().tools[0]?.parameters).toEqual({
+      type: "object",
+      properties: { reason: { type: "string" }, score: { type: "integer" } },
+      required: ["reason"],
+      additionalProperties: false,
+    });
+    await surface.call("answerSurvey", { reason: "too slow" });
+    await surface.call("answerSurvey", { reason: "too slow", score: 2 });
+    expect(seen).toEqual([
+      ["too slow", null],
+      ["too slow", 2],
+    ]);
+    await expect(surface.call("answerSurvey", {})).rejects.toThrow('Missing argument "reason" for answerSurvey.');
+    unmount();
+  });
+
+  test("one name declared twice is a clash only when the two describe it differently", () => {
+    const surface = new AgenticSurface();
+    const warnings: string[] = [];
+    const warn = console.warn;
+    console.warn = (message: string) => warnings.push(message);
+    const Row = ({ desc }: { desc: string }) => {
+      new StToolDraft("removeTask")
+        .desc(desc)
+        .arg("taskId", ID)
+        .exec(() => undefined);
+      return null;
+    };
+    try {
+      const unmount = mount(
+        <AgentProvider surface={surface}>
+          <Row desc="Remove one task." />
+          <Row desc="Remove one task." />
+        </AgentProvider>,
+      );
+      expect(warnings).toEqual([]);
+      expect(surface.snapshot().tools).toHaveLength(1);
+      unmount();
+
+      const clash = mount(
+        <AgentProvider surface={surface}>
+          <Row desc="Remove one task." />
+          <Row desc="Archive one task." />
+        </AgentProvider>,
+      );
+      expect(warnings).toHaveLength(1);
+      clash();
+    } finally {
+      console.warn = warn;
+    }
   });
 });

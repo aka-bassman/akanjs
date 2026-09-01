@@ -41,6 +41,8 @@ all: runs both federation and batch behavior in one server process. This is the 
 
 A single Akan App has built-in clustering. You can run multiple server replicas and let Akan App distribute traffic, without setting up separate local load-balancing tools such as nginx, docker compose, or pm2.
 
+With one traffic replica there is nothing to balance, so Akan App runs that server in its own process instead of spawning it and proxying to it. The container then holds one process rather than two, and every request skips a proxy hop. Two or more replicas, or a batch-only replica that never listens, bring the gateway back. Set AKAN_SOLO=false to keep the gateway for a single replica; akan start always runs it, because the gateway is also the dev server's build relay and error overlay.
+
 Root-level Env Variables
 
 The root .env file decides which organization, domain, environment, operation mode, and log level the app uses while it runs. Most projects keep these values stable, but changing them lets the same app behave like a local, debug, develop, or production-like service.
@@ -179,7 +181,7 @@ Akan runtime exposes simple ways to check whether the app is alive, how busy it 
 
 Health
 
-Use this to check whether the gateway and server processes are running and ready.
+Use this to check whether the server processes are running and ready. A solo replica answers it itself, in the same shape the gateway uses, so a probe reads one contract either way.
 
 Metrics
 

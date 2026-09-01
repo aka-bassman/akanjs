@@ -13,13 +13,21 @@ import { ScreenTarget } from "./ScreenTarget";
  *
  * Per zone view: a zone's `readState` reaches the keys its own subtree subscribes, and its `readScreen` and
  * `highlight` reach into its own `data-agent-zone` container rather than the whole document. A page can shadow any
- * of them by registering a hook tool of the same name — hook entries win over a source's.
+ * of them by registering a hook tool of the same name — hook entries win over a source's. **That is a root-scope
+ * move only**: inside a zone the hook entry is registered under its scope-prefixed name, which can never collide
+ * with the bare name a source publishes, so a zone drops a built-in with the session's `builtins` option instead.
  */
 export class StoreSurfaceSource implements SurfaceSource {
   /** Defined in `akanjs/ui/styles.css`, so the flash follows the app's own theme tokens. */
   static readonly highlightClass = "akan-agent-highlight";
   /** Mirrors the animation in that stylesheet: the class outlives the ring by nothing. */
   static readonly highlightMs = 2400;
+  /**
+   * What `tools()` contributes, in the order it builds them — the list a session's `builtins` option selects from.
+   * A screen that declares a hook tool of one of these names is not in it: that entry is the screen's, not this
+   * source's, so withholding the built-ins never withholds a tool a component published on purpose.
+   */
+  static readonly builtins = ["navigate", "goBack", "readScreen", "readState", "highlight"] as const;
 
   #bridge: AgentBridge | null;
   readonly #builtins = new Map<string, ToolEntry[]>();
@@ -56,7 +64,6 @@ export class StoreSurfaceSource implements SurfaceSource {
         required: ["path"],
         additionalProperties: false,
       },
-      effect: "state",
       // An absolute or scheme-relative URL would send the user off-site; the agent only ever drives this app.
       guard: (args) =>
         typeof args.path === "string" && args.path.startsWith("/") && !args.path.startsWith("//")
@@ -84,7 +91,6 @@ export class StoreSurfaceSource implements SurfaceSource {
       description:
         "Go back to the previous page in this session's history. Use it to undo a navigation; use navigate for a path.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
-      effect: "state",
       // Re-checked at call time, so a first page with nothing behind it refuses instead of leaving the app.
       guard: () => (router.canGoBack() ? true : "There is no previous page in this session's history."),
       run: async () => {
@@ -113,7 +119,7 @@ export class StoreSurfaceSource implements SurfaceSource {
         },
         additionalProperties: false,
       },
-      effect: "query",
+      settle: false,
       run: (args) => {
         const root = StoreSurfaceSource.#zoneRoot(viewKey);
         const section = typeof args.section === "string" ? args.section.trim() : "";
@@ -150,7 +156,6 @@ export class StoreSurfaceSource implements SurfaceSource {
         required: ["target"],
         additionalProperties: false,
       },
-      effect: "state",
       run: (args) => {
         const name = typeof args.target === "string" ? args.target.trim() : "";
         if (!name) throw new Error("highlight needs a target.");
@@ -183,7 +188,6 @@ export class StoreSurfaceSource implements SurfaceSource {
         required: ["key"],
         additionalProperties: false,
       },
-      effect: "state",
       run: (args: Record<string, unknown>) => {
         this.#bridge ??= AgentBridge.of();
         return this.#bridge.read(String(args.key), viewKey);

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { dayjs, enumOf, FIELD_META, Float, ID, Int, type PrimitiveScalar } from "akanjs/base";
+import { Binary, dayjs, enumOf, FIELD_META, Float, ID, Int, type PrimitiveScalar } from "akanjs/base";
 import { immerable } from "immer";
 import {
   type ConstantCls,
@@ -517,5 +517,13 @@ describe("serialize, deserialize, purify, and immerify", () => {
     expect((immered as unknown as Record<symbol, unknown>)[immerable]).toBe(true);
     const address = immerify(AddressInput as never, { city: "Seoul", zip: 12345 });
     expect((address as Record<symbol, unknown>)[immerable]).toBe(true);
+  });
+});
+
+describe("Binary as a model field", () => {
+  test("fails the class build, naming the File model as the way to store bytes", () => {
+    expect(() => via((f) => ({ blob: f(Binary) }))).toThrow('Field "blob" is Binary, which is not storable');
+    expect(() => via((f) => ({ blobs: f([Binary]) }))).toThrow('Field "blobs" is Binary, which is not storable');
+    expect(() => via((f) => ({ blobs: f(Map, { of: Binary }) }))).toThrow("is Binary, which is not storable");
   });
 });

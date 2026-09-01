@@ -280,13 +280,18 @@ export const option = new AkanOption<ModulesOptions>()
           className="w-full"
           title="<Model>.Zone.tsx — the tool and the button are one declaration"
           code={`const waypointList = st.use.waypointList();
-const publish = st.tool("publishPlan", { desc: "Publish the flight plan being edited." })
+const publish = st.tool("publishPlan")
+  .desc("Publish the flight plan being edited.")
   .exec(() => st.do.publishPlan());
-const focusWaypoint = st.tool("focusWaypoint", { desc: "Center the map on one waypoint." })
+const focusWaypoint = st.tool("focusWaypoint")
+  .desc("Center the map on one waypoint.")
   .arg("waypointId", ID)
-  .exec((waypointId) => st.do.selectWaypoint(waypointId));
+  .opt("zoom", Int)
+  .exec((waypointId, zoom) => st.do.selectWaypoint(waypointId, zoom));
 
-st.expose("selectedWaypointId", selected?.id ?? null);
+st.expose("selectedWaypointId", ID)
+  .desc("The waypoint the map is centered on.")
+  .value(selected?.id ?? null);
 
 <Button onClick={publish}>{l("plan.publishPlan")}</Button>
 <Agent.Guide instructions="This screen edits the weekly flight plan. Focus a waypoint before editing it." />`}
@@ -294,17 +299,17 @@ st.expose("selectedWaypointId", selected?.id ?? null);
         <div className="space-y-1">
           {[
             {
-              title: "st.tool(name).arg(…).exec(fn)",
+              title: "st.tool(name).desc(…).arg(…).opt(…).exec(fn)",
               desc: l.trans({
-                en: "The only way an action reaches an agent. Returns the callable to wire to onClick; a remove* name confirms by default.",
-                ko: "액션이 에이전트에게 닿는 유일한 경로입니다. onClick에 연결할 callable을 돌려주고, remove* 이름은 기본으로 승인을 받습니다.",
+                en: "The only way an action reaches an agent. desc is required and comes first; arg is what the caller must pass and opt what it may. Returns the callable to wire to onClick; a remove* name confirms by default.",
+                ko: "액션이 에이전트에게 닿는 유일한 경로입니다. desc는 필수이고 맨 앞에 옵니다. arg는 호출자가 반드시 넘겨야 하는 인자, opt는 생략할 수 있는 인자입니다. onClick에 연결할 callable을 돌려주고, remove* 이름은 기본으로 승인을 받습니다.",
               }),
             },
             {
-              title: "st.useState · st.expose",
+              title: "st.expose(name, Type) · st.useState(name, Type)",
               desc: l.trans({
-                en: "Local state and derived values, read-only unless set: names a type.",
-                ko: "로컬 상태와 파생 값입니다. set:으로 타입을 주기 전에는 읽기 전용입니다.",
+                en: "Derived values and local state. The declared type typechecks what you hand over and masks how it reads — a model class strips its own hidden, secret, and visual fields; Any passes untouched. Read-only unless set: true.",
+                ko: "파생 값과 로컬 상태입니다. 선언한 타입이 넘기는 값을 typecheck하고 읽히는 형태를 결정합니다 — 모델 클래스는 그 모델의 hidden·secret·visual을 벗겨내고, Any는 그대로 통과시킵니다. set: true 전에는 읽기 전용입니다.",
               }),
             },
             {

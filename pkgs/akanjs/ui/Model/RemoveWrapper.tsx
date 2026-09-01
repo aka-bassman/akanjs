@@ -29,7 +29,8 @@ export default function RemoveWrapper({ children, slice, name, modelId, classNam
   // The `remove` prefix turns on the approval card by default, which is the agent's half of the Popconfirm
   // this draws for a person.
   const removeModel = st
-    .tool(names.removeModel, { desc: `Remove one ${modelName}.`, effect: "mutation", shared: true })
+    .tool(names.removeModel)
+    .desc(`Remove one ${modelName}.`)
     .arg("modelId", ID)
     .exec((id) => storeDo[names.removeModel](id, { modal }));
   return (

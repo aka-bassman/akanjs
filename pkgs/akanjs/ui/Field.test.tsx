@@ -254,3 +254,50 @@ describe("Field.TextList over DraggableList", () => {
     container.remove();
   });
 });
+
+describe("Field.ToggleSelect", () => {
+  const renderCells = (node: ReactNode) => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(node));
+    return {
+      click: (label: string) => {
+        const cell = [...container.querySelectorAll("button")].find((el) => el.textContent === label);
+        act(() => cell?.click());
+      },
+      unmount: () => {
+        act(() => root.unmount());
+        container.remove();
+      },
+    };
+  };
+
+  test("a nullable field clears when the selected cell is clicked again", () => {
+    const writes: (string | null)[] = [];
+    const view = renderCells(
+      <Field.ToggleSelect
+        items={["draft", "live"]}
+        value="live"
+        nullable
+        onChange={(value) => void writes.push(value)}
+      />,
+    );
+
+    view.click("live");
+    view.click("draft");
+    expect(writes).toEqual([null, "draft"]);
+    view.unmount();
+  });
+
+  test("a required field cannot be emptied — the selected cell rewrites its own value", () => {
+    const writes: string[] = [];
+    const view = renderCells(
+      <Field.ToggleSelect items={["draft", "live"]} value="live" onChange={(value) => void writes.push(value)} />,
+    );
+
+    view.click("live");
+    expect(writes).toEqual(["live"]);
+    view.unmount();
+  });
+});

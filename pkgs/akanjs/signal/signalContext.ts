@@ -1,4 +1,5 @@
 import {
+  Any,
   type BackendEnv,
   type Cls,
   FIELD_META,
@@ -7,6 +8,7 @@ import {
   type PromiseOrObject,
   Upload,
 } from "akanjs/base";
+import { clientAddressFromHeaders, clientPortFromHeaders, normalizeIpAddress } from "akanjs/common";
 import {
   type ConstantCls,
   type ConstantFieldTypeInput,
@@ -25,6 +27,9 @@ import { Msg } from "./mcp/Msg";
 import { isTraceEnabled, runWithTrace, SignalTrace, traceSpan } from "./trace";
 
 export type SignalTransportType = "http" | "websocket";
+
+/** What `Bun.Server.requestIP` reports for the socket a request arrived on. */
+export type HttpPeerResolver = (req: Request) => { address: string; port: number } | null;
 
 const httpEndpointTypes = new Set<EndpointType>(["query", "mutation", "prompt"]);
 
@@ -202,6 +207,16 @@ export class SignalContext<
    * hold for the life of the process. Building both per request cost an instance, a handler and a closure on every
    * call for every registered middleware — and `Logging` is registered by default.
    */
+  static #httpPeer: HttpPeerResolver | null = null;
+  /**
+   * Lets the http branch of `getClientIp` reach the socket the way the websocket branch already reaches
+   * `ws.remoteAddress`. Registered by whichever `Bun.serve` is listening, because only the server can answer
+   * `requestIP`. Behind the federation gateway this never fires — the gateway always writes `x-real-ip` —
+   * so it is the answer for a process nothing is proxying.
+   */
+  static setHttpPeerResolver(resolve: HttpPeerResolver | null) {
+    SignalContext.#httpPeer = resolve;
+  }
   static #middlewareHandlers = new WeakMap<MiddlewareCls, WeakMap<object, Promise<MiddlewareHandler>>>();
   static #getMiddlewareHandler(MiddlewareCls: MiddlewareCls, env: BackendEnv): Promise<MiddlewareHandler> {
     const byEnv =
@@ -433,6 +448,36 @@ export class SignalContext<
     if (this.transport === "http") return this.getHttpContext<{ [key: string]: T }>().req[key] ?? null;
     return this.getWebSocketContext<{ [key: string]: T }>().ws.data[key] ?? null;
   }
+  /**
+   * The caller's IP, preferring what a proxy recorded over the socket peer. Behind the federation gateway the
+   * peer is the gateway itself for every request and for the whole life of every socket, so `remoteAddress`
+   * alone names the wrong machine — which is why nothing here reads it first. IPv4 arrives unwrapped from its
+   * `::ffff:` form, so it can be used as a destination as well as an identity.
+   *
+   * `null` means no proxy recorded one and the transport has no peer to fall back on — never a placeholder,
+   * because a loopback-looking address for an unknown caller is the failure this replaced.
+   */
+  getClientIp(): string | null {
+    if (this.transport === "http") {
+      const { req } = this.getHttpContext();
+      const forwarded = clientAddressFromHeaders(req.headers);
+      if (forwarded) return forwarded;
+      const peer = SignalContext.#httpPeer?.(req);
+      return peer ? normalizeIpAddress(peer.address) : null;
+    }
+    const { ws } = this.getWebSocketContext<{ headers?: Headers }>();
+    const forwarded = ws.data.headers ? clientAddressFromHeaders(ws.data.headers) : null;
+    return forwarded ?? (ws.remoteAddress ? normalizeIpAddress(ws.remoteAddress) : null);
+  }
+  /** The caller's source port as the nearest proxy recorded it, else this socket's own. */
+  getClientPort(): number | null {
+    if (this.transport === "http") {
+      const { req } = this.getHttpContext();
+      return clientPortFromHeaders(req.headers) ?? SignalContext.#httpPeer?.(req)?.port ?? null;
+    }
+    const { ws } = this.getWebSocketContext<{ headers?: Headers }>();
+    return (ws.data.headers ? clientPortFromHeaders(ws.data.headers) : null) ?? null;
+  }
   getRoomId(key: string) {
     if (this.transport !== "websocket") throw new Error("Transport is not websocket");
     else if (this.endpointInfo.type !== "pubsub") throw new Error("Endpoint is not pubsub");
@@ -461,6 +506,16 @@ export class HttpExecutionContext<Appended = unknown> {
   get url() {
     if (!this.#url) this.#url = new URL(this.req.url);
     return this.#url;
+  }
+  /** The read side of `HttpClient.makeUrl`'s `Any` rule: the query string carries the value JSON-encoded. */
+  static #parseAny(name: string, raw: string | string[] | null): unknown {
+    if (raw === null) return null;
+    if (Array.isArray(raw)) return raw.map((value) => HttpExecutionContext.#parseAny(name, value));
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new Exception.BadRequest(`Invalid JSON in "${name}"`);
+    }
   }
   async getArgs(endpointInfo: EndpointInfo): Promise<unknown[]> {
     if (endpointInfo.args.length === 0) return [];
@@ -501,7 +556,8 @@ export class HttpExecutionContext<Appended = unknown> {
             nullable: arg.option?.nullable,
           });
         case "search": {
-          const value = arg.arrDepth ? this.url.searchParams.getAll(arg.name) : this.url.searchParams.get(arg.name);
+          const raw = arg.arrDepth ? this.url.searchParams.getAll(arg.name) : this.url.searchParams.get(arg.name);
+          const value = arg.argRef === Any ? HttpExecutionContext.#parseAny(arg.name, raw) : raw;
           const result = deserialize(arg.argRef, arg.arrDepth, value, {
             key: arg.name,
             nullable: arg.option?.nullable,
@@ -564,14 +620,16 @@ export class WebSocketExecutionContext<Appended = unknown> {
       nullable: endpointInfo.returns.nullable,
     }) as unknown as Response;
   }
-  on(event: "disconnect" | "unsubscribe", handler: () => void) {
+  // Arrows, not methods: `Ws` hands these to a handler detached from the context, so a method would run with
+  // the wrapper object as `this` and register into nothing.
+  on = (event: "disconnect" | "unsubscribe", handler: () => PromiseOrObject<void>) => {
     if (event === "disconnect") this.onDisconnect.add(handler);
     else this.onUnsubscribe.add(handler);
-  }
-  off(event: "disconnect" | "unsubscribe", handler: () => void) {
+  };
+  off = (event: "disconnect" | "unsubscribe", handler: () => PromiseOrObject<void>) => {
     if (event === "disconnect") this.onDisconnect.delete(handler);
     else this.onUnsubscribe.delete(handler);
-  }
+  };
 }
 
 export class ResolveFieldContext {

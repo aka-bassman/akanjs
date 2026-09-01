@@ -24,7 +24,7 @@ export interface DockProps {
  * The in-page surface of the agent: what this screen declared an agent may do, what it may read, and what it has
  * done. Tools come from the surface rather than from the store, because a tool exists only where a component
  * declared one — the dock is the way to see that this screen published what its author thought it did, which is
- * the one thing no amount of reading the source answers.
+ * the one thing no amount of reading the source answers. Renders nothing on `AKAN_PUBLIC_ENV=main`.
  */
 export const Dock = ({ className, bridge, surface, open = false }: DockProps) => {
   const held = useRef<{ bridge: AgentBridge; surface: AgenticSurface } | null>(null);
@@ -39,6 +39,8 @@ export const Dock = ({ className, bridge, surface, open = false }: DockProps) =>
     if (liveA !== liveB) return liveA ? -1 : 1;
     return a < b ? -1 : 1;
   });
+  // Production visitors never see this: it lists every published tool and can run them by hand.
+  if (process.env.AKAN_PUBLIC_ENV === "main") return null;
   return (
     <aside
       data-agent-ui=""

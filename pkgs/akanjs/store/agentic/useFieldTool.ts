@@ -58,7 +58,6 @@ const rowEntries = (ref: FormFieldRef, arraySchema: JsonSchema): ToolEntry[] => 
         required: ["values"],
         additionalProperties: false,
       },
-      effect: "state",
       run: (args) => {
         const checked = FormFields.checked(names.addFieldOnModel, "values", ref.field, args.values);
         return dispatcherOf(names.addFieldOnModel)?.(checked);
@@ -73,7 +72,6 @@ const rowEntries = (ref: FormFieldRef, arraySchema: JsonSchema): ToolEntry[] => 
         required: ["idxs"],
         additionalProperties: false,
       },
-      effect: "state",
       guard: (args) => {
         const idxs = args.idxs;
         if (!Array.isArray(idxs) || !idxs.length) return `"idxs" of ${names.subFieldOnModel} takes at least one index.`;
@@ -118,7 +116,6 @@ const moveEntry = (ref: FormFieldRef, onChange: () => (value: unknown) => unknow
       required: ["from", "to"],
       additionalProperties: false,
     },
-    effect: "state",
     guard: (args) => {
       const length = rowsOf(ref).length;
       const outside = ["from", "to"].filter((key) => {
@@ -168,7 +165,6 @@ export const useFieldTool = (onChange: unknown, { transform, disabled, sortable 
         name: action,
         description: `Set ${ref.key} on the ${ref.refName} form.`,
         parameters: { type: "object", properties: { value: schema }, required: ["value"], additionalProperties: false },
-        effect: "state",
         run: (args) => {
           const checked = FormFields.checked(action, "value", ref.field, args.value === undefined ? null : args.value);
           return (live.current.onChange as (value: unknown) => unknown)(normalized(checked, live.current.transform));

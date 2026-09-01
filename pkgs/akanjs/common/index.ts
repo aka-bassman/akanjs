@@ -1,5 +1,11 @@
 export { applyMixins } from "./applyMixins";
 export { capitalize } from "./capitalize";
+export {
+  clientAddressFromHeaders,
+  clientPortFromHeaders,
+  forwardedHeaders,
+  normalizeIpAddress,
+} from "./clientAddress";
 export { deepObjectify } from "./deepObjectify";
 export {
   type FileUploadCapability,
@@ -39,6 +45,7 @@ export {
 export { mergeVersion } from "./mergeVersion";
 export { objectify } from "./objectify";
 export { pathGet } from "./pathGet";
+export { pathGetLoose } from "./pathGetLoose";
 export { pathSet } from "./pathSet";
 export { randomPick } from "./randomPick";
 export { randomPicks } from "./randomPicks";
@@ -75,3 +82,4 @@ export {
   type WebsocketAuthRequest,
   websocketAuthContract,
 } from "./websocketAuth";
+export { type WebsocketBinaryFrame, websocketBinaryFrameContract } from "./websocketBinaryFrame";

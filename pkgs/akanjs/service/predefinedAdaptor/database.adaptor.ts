@@ -391,6 +391,8 @@ interface SqlDialect {
   docColumn(): string;
   docValuePlaceholder(): string;
   extract(path: string): string;
+  projectExpr(path: string): string;
+  decodeProjected(value: unknown): unknown;
   eq(path: string, value: unknown): SqlFrag;
   ne(path: string, value: unknown): SqlFrag;
   compare(path: string, op: "gt" | "gte" | "lt" | "lte", value: unknown): SqlFrag;
@@ -428,6 +430,16 @@ export class SqliteDialect implements SqlDialect {
   }
   extract(path: string) {
     return `json_extract(${this.docColumn()}, ${this.#path(path)})`;
+  }
+  // A projected column is read back as a value, not compared, so it must keep its JSON type. `json_extract`
+  // unwraps a scalar into a SQL value — a string field holding '{"a":1}' comes back indistinguishable from an
+  // object, and a boolean comes back as 0/1 — while `->` yields the value's JSON text, which `decodeProjected`
+  // parses back into exactly what was stored.
+  projectExpr(path: string) {
+    return `${this.docColumn()} -> ${this.#path(path)}`;
+  }
+  decodeProjected(value: unknown) {
+    return typeof value === "string" ? JSON.parse(value) : value;
   }
   eq(path: string, value: unknown): SqlFrag {
     return value === null
@@ -562,6 +574,13 @@ export class PostgresDialect implements SqlDialect {
   }
   extract(path: string) {
     return this.#jsonb(path);
+  }
+  // `#>` stays jsonb, which the driver parses into the stored value with its type intact.
+  projectExpr(path: string) {
+    return this.#jsonb(path);
+  }
+  decodeProjected(value: unknown) {
+    return value;
   }
   eq(path: string, value: unknown): SqlFrag {
     return value === null
@@ -757,6 +776,11 @@ class QueryCompiler {
   fieldExpr(path: string) {
     this.assertPath(path);
     return BASE_COLUMNS.has(path) ? quoteIdent(path) : this.dialect.extract(path);
+  }
+
+  projectExpr(path: string) {
+    this.assertPath(path);
+    return BASE_COLUMNS.has(path) ? quoteIdent(path) : this.dialect.projectExpr(path);
   }
 
   // A search node compiles to a JOIN rather than a WHERE fragment, so it contributes no SQL here and instead
@@ -1001,6 +1025,7 @@ export class SqlDocumentStore {
   #insertStmt: AkanSqlStatement | null = null;
   #readStmtCache = new Map<string, AkanSqlStatement>();
   #docPrototype: object | null = null;
+  #immutableKeys: string[] | null = null;
 
   constructor(
     private readonly owner: DocumentDatabaseOwner,
@@ -1452,7 +1477,7 @@ export class SqlDocumentStore {
     const jsonFields = fields.filter((field) => !BASE_COLUMNS.has(field));
     const baseColumns = [...BASE_COLUMNS].map((field) => quoteIdent(field));
     const jsonColumns = jsonFields.map(
-      (field, idx) => `${this.compiler.fieldExpr(field)} AS ${quoteIdent(this.projectionAlias(idx))}`,
+      (field, idx) => `${this.compiler.projectExpr(field)} AS ${quoteIdent(this.projectionAlias(idx))}`,
     );
     return [...baseColumns, ...jsonColumns].join(", ");
   }
@@ -1470,7 +1495,7 @@ export class SqlDocumentStore {
     };
     const jsonFields = fields.filter((field) => !BASE_COLUMNS.has(field));
     for (const [idx, field] of jsonFields.entries()) {
-      const value = this.parseProjectedValue(row[this.projectionAlias(idx)]);
+      const value = this.dialect.decodeProjected(row[this.projectionAlias(idx)]);
       const props = (this.database.doc[FIELD_META] as unknown as FieldMap)[field]?.getProps?.();
       if (value === null && !props?.nullable) {
         if (props?.default != null) {
@@ -1520,7 +1545,9 @@ export class SqlDocumentStore {
     originalData: DocumentRecord,
     { runSaveHooks = true, crudType = "update" }: WriteHookOptions = {},
   ) {
-    const doc = this.hydrate(this.prepareDocument({ ...data, id, updatedAt: dayjs() }), originalData);
+    const prepared = this.prepareDocument({ ...data, id, updatedAt: dayjs() });
+    this.#assertImmutableUnchanged(prepared, originalData);
+    const doc = this.hydrate(prepared, originalData);
     if (runSaveHooks) await this.runHooks("save", crudType, doc, "pre");
     await this.runHooks(crudType, crudType, doc, "pre");
     const row = this.toRow(doc);
@@ -1535,15 +1562,21 @@ export class SqlDocumentStore {
     return doc;
   }
 
-  private parseProjectedValue(value: unknown) {
-    if (typeof value !== "string") return value;
-    const trimmed = value.trim();
-    if (!trimmed || (trimmed[0] !== "{" && trimmed[0] !== "[")) return value;
-    try {
-      return JSON.parse(trimmed);
-    } catch {
-      return value;
-    }
+  // `immutable` is enforced on the document path only, mirroring mongoose: a query-level write compiles straight
+  // to SQL and is left alone, the same way mongoose exempts `bulkWrite` — that path fires no hooks either, so a
+  // caller reaching for it has already stepped outside document semantics. Checked before the save hooks so the
+  // error names what the caller changed, not what a hook derived from it.
+  #assertImmutableUnchanged(prepared: DocumentRecord, originalData: DocumentRecord) {
+    this.#immutableKeys ??= Object.entries(this.database.doc[FIELD_META] as unknown as FieldMap)
+      .filter(([, fieldMeta]) => fieldMeta.getProps().immutable)
+      .map(([key]) => key);
+    if (!this.#immutableKeys.length) return;
+    const changed = this.#immutableKeys.filter((key) => jsonStr(prepared[key]) !== jsonStr(originalData[key]));
+    if (!changed.length) return;
+    // The values are left out of the message: an immutable field may also be `field.secret`.
+    throw new Error(
+      `Cannot modify immutable field${changed.length > 1 ? "s" : ""} on ${this.table} (${String(prepared.id)}): ${changed.join(", ")}`,
+    );
   }
 
   private decodeDocumentPayload(payload: Record<string, unknown>) {

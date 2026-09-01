@@ -4,8 +4,9 @@ import { cn } from "akanjs/client";
 import { capitalize } from "akanjs/common";
 import { st } from "akanjs/store";
 import { animated } from "akanjs/ui";
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { SpringValue, useSpringValue } from "react-spring";
+import { sharedContext } from "../client/sharedContext";
 
 interface ScreenNavigatorContextType {
   bind: (...args: any[]) => any;
@@ -16,7 +17,7 @@ interface ScreenNavigatorContextType {
   onClickMenu: (menu: string) => void;
 }
 
-const ScreenNavigatorContext = createContext<ScreenNavigatorContextType>({
+const ScreenNavigatorContext = sharedContext<ScreenNavigatorContextType>("screenNavigator", {
   bind: () => ({}),
   xValue: new SpringValue(0),
   setMenu: null as unknown as (menu: string) => void,
@@ -102,11 +103,11 @@ export const ScreenNavigator = ({
   };
 
   const suffix = namespace ? capitalize(namespace) : "";
-  st.expose(namespace ? `screenIn${suffix}` : null, currentMenu, { desc: "The screen this navigator is showing." });
-  st.tool(namespace ? `goToScreenIn${suffix}` : null, {
-    desc: `Slide the ${namespace ?? ""} navigator to one screen.`,
-    effect: "state",
-  })
+  st.expose(namespace ? `screenIn${suffix}` : null, String)
+    .desc("The screen this navigator is showing.")
+    .value(currentMenu);
+  st.tool(namespace ? `goToScreenIn${suffix}` : null)
+    .desc(`Slide the ${namespace ?? ""} navigator to one screen.`)
     .arg("screen", String, { oneOf: menus })
     .exec(onClickMenu);
 

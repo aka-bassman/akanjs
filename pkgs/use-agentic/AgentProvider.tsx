@@ -6,7 +6,7 @@ import { SurfaceContext } from "./surfaceContext";
 import type { AgentRunner } from "./types";
 import { SessionContext } from "./useAgent";
 
-interface AgentProviderProps extends AgentSessionOptions {
+export interface AgentProviderProps extends AgentSessionOptions {
   surface?: AgenticSurface;
   session?: AgentSession;
   runner?: AgentRunner;

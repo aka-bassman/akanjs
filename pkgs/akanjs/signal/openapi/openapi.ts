@@ -212,6 +212,7 @@ const getProtectedGuards = (guards?: string[]) =>
 
 const isBinaryResponseEndpoint = (endpoint: SerializedEndpoint) =>
   endpoint.returns.refName === "Upload" ||
+  endpoint.returns.refName === "Binary" ||
   (endpoint.returns.refName === "Any" &&
     Boolean(endpoint.path?.includes("*") || endpoint.path?.toLowerCase().includes("blob")));
 

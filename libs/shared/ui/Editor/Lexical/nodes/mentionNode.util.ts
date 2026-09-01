@@ -9,6 +9,7 @@ import {
   type Spread,
   type TextNode,
 } from "lexical";
+import { rememberMention } from "../mentionCache";
 import { MentionNode } from "./MentionNode";
 
 export interface MentionPayload {
@@ -28,9 +29,13 @@ export type SerializedMentionNode = Spread<
   SerializedTextNode
 >;
 
-export const $createMentionNode = (payload: MentionPayload): MentionNode =>
+export const $createMentionNode = (payload: MentionPayload): MentionNode => {
+  // Every mention the editor builds is recorded, because the markdown token carries no href or avatar
+  // and a round-trip would otherwise hand back a chip that no longer links anywhere. See `mentionCache`.
+  rememberMention(payload);
   // token mode deletes the chip as one unit; directionless keeps it out of RTL/LTR resolution.
-  $applyNodeReplacement(new MentionNode(payload).setMode("token").toggleDirectionless());
+  return $applyNodeReplacement(new MentionNode(payload).setMode("token").toggleDirectionless());
+};
 
 export const $isMentionNode = (node: LexicalNode | null | undefined): node is MentionNode =>
   node instanceof MentionNode;

@@ -126,6 +126,7 @@ async function withFullSsrCacheHarness<T>(
     htmlCachePaths?: string;
     htmlCacheMaxBodyBytes?: string;
     appDir?: string;
+    web?: { ssr: boolean; csr: boolean };
     onRenderInput?: (input: Parameters<SsrFromRscRenderer["render"]>[0]) => void;
   } = {},
 ): Promise<T> {
@@ -180,6 +181,7 @@ async function withFullSsrCacheHarness<T>(
   const fakeWorker = options.worker ?? createFakeRscWorker();
   const router = new WebRouter({
     artifact: options.artifact ?? createTestArtifact(),
+    web: options.web ?? { ssr: true, csr: true },
     cssBytesByUrl: {},
     rsc: fakeWorker as never,
     seedIndex: { entries: [], globalLayoutFiles: [] },
@@ -389,6 +391,32 @@ describe("WebRouter dev mode selection", () => {
 
   test("stays in production mode when no command claims otherwise", async () => {
     await expect(devRoutes()).resolves.not.toContain("/_akan/hmr");
+  });
+});
+
+describe("WebRouter csr surface", () => {
+  const routeKeys = async (web?: { ssr: boolean; csr: boolean }) =>
+    await withFullSsrCacheHarness(async ({ renderEnvRoutes }) => Object.keys(renderEnvRoutes), { web });
+
+  test("mounts /__csr only while the csr surface is on", async () => {
+    await expect(routeKeys()).resolves.toContain("/__csr");
+    await expect(routeKeys({ ssr: true, csr: false })).resolves.not.toContain("/__csr");
+  });
+
+  test("stops answering ?csr=true once the csr surface is off", async () => {
+    const withCsr = await withFullSsrCacheHarness(
+      async ({ fullSsr }) => await fullSsr(new Request("https://example.test/?csr=true")),
+      { web: { ssr: true, csr: true } },
+    );
+    // No artifact on disk, so this is the prod "no CSR html" 404 rather than a render — but it is the CSR path.
+    expect(withCsr.status).toBe(404);
+
+    const withoutCsr = await withFullSsrCacheHarness(
+      async ({ fullSsr }) => await fullSsr(new Request("https://example.test/?csr=true")),
+      { web: { ssr: true, csr: false } },
+    );
+    expect(withoutCsr.status).toBe(200);
+    expect(await withoutCsr.text()).toContain("render-1");
   });
 });
 

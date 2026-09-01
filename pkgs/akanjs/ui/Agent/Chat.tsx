@@ -14,7 +14,14 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { AiOutlineClear, AiOutlineClose } from "react-icons/ai";
-import { type AgentRunner, type AgentSession, type CompactOptions, SessionContext } from "use-agentic";
+import {
+  type AgentRunner,
+  type AgentSession,
+  type AgentSessionOptions,
+  type CompactOptions,
+  SessionContext,
+  type SessionHistory,
+} from "use-agentic";
 import { createOverridable } from "../UiOverride";
 import Approval from "./Approval";
 import { agentSessionOf } from "./agentSessionOf";
@@ -26,6 +33,7 @@ import { Launcher } from "./Launcher";
 import Menu from "./Menu";
 import Question from "./Question";
 import type { PersistOption } from "./sessionHistory";
+import type { BuiltinOption } from "./sessionView";
 import { tokenCount } from "./tokenCount";
 import { useChatAttachments } from "./useChatAttachments";
 import { useChatVoice } from "./useChatVoice";
@@ -48,17 +56,35 @@ export interface ChatProps {
    * messages left verbatim below the summary. Tune it per provider; `{ at: 0 }` turns it off.
    */
   compact?: CompactOptions;
+  /**
+   * Which of the runtime's own tools this chat's agent gets — all of them by default, `false` none, an array
+   * exactly the ones it names. A chat that must not leave the screen it is on drops `navigate` and `goBack`.
+   */
+  builtins?: BuiltinOption;
+  /** Called after a compaction replaced messages with one summary — where a host syncs its own watermark. */
+  onCompact?: AgentSessionOptions["onCompact"];
   defaultOpen?: boolean;
   /**
    * Controlled open state. Pass it with `onOpenChange` to drive the panel from the app's own control — a header
    * button, a menu item — instead of the built-in launcher. Left off, the panel owns the state as before.
    */
   open?: boolean;
+  /**
+   * Left off while `open` is controlled, the panel cannot close itself — so it draws **no close button** rather
+   * than an inert one. That is the shape of a fixed panel with nowhere to close to, and it is also what keeps a
+   * controlled chat assemblable by a server component, since this is the only prop here that is a function.
+   */
   onOpenChange?: (open: boolean) => void;
   /** `false` draws no launcher, for an app that opens the panel from a control of its own. */
   launcher?: boolean;
-  /** Keeps the transcript across reloads — sessionStorage by default, `{ storage: "local" }` to outlive the tab. */
-  persist?: PersistOption;
+  /**
+   * Keeps the transcript across reloads — sessionStorage by default, `{ storage: "local" }` to outlive the tab, or
+   * a `SessionHistory` of the app's own to keep it anywhere else, a server included.
+   *
+   * Ignored, like every session option above it, when an enclosing `Agent.Zone` or `AgentProvider` already holds a
+   * session: this chat then binds to that one, and the options belong to whoever built it.
+   */
+  persist?: PersistOption | SessionHistory;
   /** Renders in the page flow instead of floating above it — a zone chat that lives inside its own section. */
   inline?: boolean;
   /** `false` gives the browser its own Cmd/Ctrl+L back, for an app whose shell already spends that chord. */
@@ -70,6 +96,13 @@ export interface ChatProps {
   intro?: ReactNode;
   /** Extra header controls, left of the built-in clear and close buttons. */
   header?: ReactNode;
+  /**
+   * `false` draws no header bar at all — for an `inline` chat inside a panel the app already titles. The extra
+   * `header` controls go with it, and the clear action stays reachable as the `/new` command.
+   */
+  chrome?: boolean;
+  /** The composer's opening text, read once at mount — where a `?prompt=` lands without sending it. */
+  defaultDraft?: string;
   /**
    * Reads a file the user attached into an attachment, or answers `null` to leave it to the built-in reader
    * (images as bytes, text as text). This is where an app puts what needs a parser — a PDF's text, a spreadsheet's
@@ -121,6 +154,8 @@ export const DefaultChat = ({
   runner,
   maxTurns,
   compact,
+  builtins,
+  onCompact,
   defaultOpen = false,
   open: openProp,
   onOpenChange,
@@ -132,6 +167,8 @@ export const DefaultChat = ({
   panelClassName,
   intro,
   header,
+  chrome = true,
+  defaultDraft,
   attach,
   voice,
 }: ChatProps) => {
@@ -149,7 +186,9 @@ export const DefaultChat = ({
       instructions,
       maxTurns,
       compact,
+      builtins,
       persist,
+      onCompact,
     });
   const session = held.current;
   const prompts = useRef<AgentPrompts | null>(null);
@@ -167,7 +206,7 @@ export const DefaultChat = ({
     if (openProp === undefined) setOwnOpen(next);
     onOpenChange?.(next);
   };
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(defaultDraft ?? "");
   const files = useChatAttachments({ session, attach, l });
   const speech = useChatVoice({
     session,
@@ -252,6 +291,9 @@ export const DefaultChat = ({
     setDraft(text);
     menu.reopen();
   };
+  // A panel driven by a controlled `open` with no `onOpenChange` cannot close itself, so it draws no close button
+  // rather than one that does nothing — the case an `inline` chat inside an app's own frame lands in.
+  const closable = openProp === undefined || !!onOpenChange;
   const dismiss = () => {
     returning.current = true;
     setOpen(false);
@@ -417,39 +459,43 @@ export const DefaultChat = ({
       style={inline ? undefined : { paddingBottom: keyboardInset || undefined }}
       {...files.dropProps}
     >
-      <header className="flex items-center gap-2 border-foreground/5 border-b px-4 py-3">
-        <span className="font-semibold text-sm">{title ?? l("base.agent")}</span>
-        {session.isRunning ? <span className="size-2 animate-pulse rounded-full bg-primary" /> : null}
-        {tokens ? (
-          <span className="shrink-0 whitespace-nowrap text-[10px] text-foreground/40">
-            {l("base.agentTokens", { count: tokenCount(tokens) })}
-          </span>
-        ) : null}
-        <span className="ml-auto flex items-center gap-2">
-          {header}
-          {session.messages.length ? (
-            <button
-              aria-label={l("base.agentClear")}
-              className="text-foreground/50 hover:text-foreground"
-              onClick={() => {
-                files.clear();
-                void session.reset();
-              }}
-              type="button"
-            >
-              <AiOutlineClear />
-            </button>
+      {chrome ? (
+        <header className="flex items-center gap-2 border-foreground/5 border-b px-4 py-3">
+          <span className="font-semibold text-sm">{title ?? l("base.agent")}</span>
+          {session.isRunning ? <span className="size-2 animate-pulse rounded-full bg-primary" /> : null}
+          {tokens ? (
+            <span className="shrink-0 whitespace-nowrap text-[10px] text-foreground/40">
+              {l("base.agentTokens", { count: tokenCount(tokens) })}
+            </span>
           ) : null}
-          <button
-            aria-label={l("base.cancel")}
-            className="text-foreground/50 hover:text-foreground"
-            onClick={dismiss}
-            type="button"
-          >
-            <AiOutlineClose />
-          </button>
-        </span>
-      </header>
+          <span className="ml-auto flex items-center gap-2">
+            {header}
+            {session.messages.length ? (
+              <button
+                aria-label={l("base.agentClear")}
+                className="text-foreground/50 hover:text-foreground"
+                onClick={() => {
+                  files.clear();
+                  void session.reset();
+                }}
+                type="button"
+              >
+                <AiOutlineClear />
+              </button>
+            ) : null}
+            {closable ? (
+              <button
+                aria-label={l("base.cancel")}
+                className="text-foreground/50 hover:text-foreground"
+                onClick={dismiss}
+                type="button"
+              >
+                <AiOutlineClose />
+              </button>
+            ) : null}
+          </span>
+        </header>
+      ) : null}
       <div
         aria-busy={session.isRunning}
         aria-live="polite"

@@ -7,6 +7,7 @@ import {
   debugFrame,
   defaultPageState,
   fetch,
+  getCookie,
   getPathInfo,
   initAuth,
   type Location,
@@ -256,9 +257,16 @@ export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId, wsConnect
     (fetch.instance as { connect: () => void }).connect();
   }, [wsConnect]);
 
+  useLayoutEffect(() => {
+    restoreDocumentTheme(theme);
+  }, [theme, pathname]);
+
   useEffect(() => {
-    if (getThemeCookie() !== undefined) return;
-    applyThemePolicy(theme ?? "system");
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) restoreDocumentTheme(theme);
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
   }, [theme]);
 
   // useEffect(() => {
@@ -297,11 +305,15 @@ export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId, wsConnect
 };
 Client.Bridge = ClientBridge;
 
-function getThemeCookie(): string | undefined {
-  return document.cookie
-    .split(";")
-    .find((cookie) => cookie.trim().startsWith("theme="))
-    ?.split("=")[1];
+function restoreDocumentTheme(layoutTheme: AkanTheme | undefined): void {
+  const cookieTheme = getCookie("theme");
+  // RSC cache replay and bfcache can restore a stale data-theme; the cookie is the live preference.
+  if (cookieTheme) {
+    document.documentElement.setAttribute("data-theme", cookieTheme);
+    st.do.setTheme(cookieTheme);
+    return;
+  }
+  applyThemePolicy(layoutTheme ?? "system");
 }
 
 function applyThemePolicy(theme: AkanTheme): void {

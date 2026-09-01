@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { DataList, Int } from "akanjs/base";
+import { websocketBinaryFrameContract } from "akanjs/common";
 import { ConstantRegistry, via } from "akanjs/constant";
 import type {
   DatabaseSignal,
@@ -191,6 +192,10 @@ class FakeWebSocket {
     this.onmessage?.({ data: typeof data === "string" ? data : JSON.stringify(data) });
   }
 
+  receiveBinary(frame: Uint8Array) {
+    this.onmessage?.({ data: frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength) });
+  }
+
   close() {
     this.readyState = FakeWebSocket.CLOSED;
     this.onclose?.({ code: 1000, reason: "closed" });
@@ -311,6 +316,11 @@ const serviceSignal: SerializedSignal = {
       args: [arg("room", "roomId")],
       returns: { refName: "fetchTestItem", modelType: "light" },
     },
+    streamThing: {
+      type: "pubsub",
+      args: [arg("room", "channel")],
+      returns: { refName: "Binary" },
+    },
   },
 };
 
@@ -319,7 +329,12 @@ const databaseSignal: SerializedSignal = {
   getGuards: ["Public"],
   cruGuards: ["Admin"],
   slice: {
-    "": { args: [arg("search", "query", { refName: "Any", nullable: true })] },
+    "": {
+      args: [
+        arg("search", "queryKey", { refName: "String", nullable: true, oneOf: ["any", "byTitle"] }),
+        arg("search", "args", { refName: "Any", nullable: true }),
+      ],
+    },
     byOwner: { args: [arg("param", "ownerId", { refName: "ID" })], guards: ["Public"] },
   },
   filter: {
@@ -353,6 +368,23 @@ describe("HttpClient", () => {
       HttpClient.makeUrl("/items/:id/:missing", [arg("search", "tags", { arrDepth: 1 }), arg("search", "q")], argMap),
     ).toBe("/items/id-1/:missing?tags=a&tags=b&q=hello");
     expect(HttpClient.makeUrl("/items", [arg("search", "empty", { nullable: true })], new Map())).toBe("/items");
+    // `Any` has a structure the query string cannot spell, and `String(value)` would send "[object Object]".
+    expect(
+      HttpClient.makeUrl(
+        "/items",
+        [arg("search", "args", { refName: "Any", nullable: true })],
+        new Map<string, unknown>([["args", ["a", 2, null]]]),
+      ),
+    ).toBe(`/items?args=${encodeURIComponent('["a",2,null]')}`);
+    // A value JSON cannot spell stringifies to `undefined`, which `URLSearchParams.set` would write as the
+    // literal text "undefined" — and the reader answers 400 on it. An arg it cannot carry it does not carry.
+    expect(
+      HttpClient.makeUrl(
+        "/items",
+        [arg("search", "args", { refName: "Any", nullable: true })],
+        new Map<string, unknown>([["args", () => ["a"]]]),
+      ),
+    ).toBe("/items");
     expect(
       FetchClient.makeHttpUrl(
         "ping",
@@ -1110,6 +1142,7 @@ describe("FetchClient database signal helpers", () => {
       argLength: 1,
     });
     expect(client.sortKeyMap.get("fetchTestItem")).toEqual(["latest", "oldest"]);
+    expect(client.filterQueryMap.get("fetchTestItem")).toEqual({ byTitle: [arg("param", "title")] });
     expect(fetchCalls.map((call) => call.url)).toEqual([
       "https://api.example/fetchTest/fetchTestItem/1234567890abcdef12345678",
       "https://api.example/fetchTest/lightFetchTestItem/1234567890abcdef12345678",
@@ -1402,5 +1435,50 @@ describe("FetchClient websocket generation", () => {
     expect(published[0]).toBeInstanceOf(FetchTestLight);
     expect((published[0] as InstanceType<typeof FetchTestLight>).title).toBe("Published");
     expect(JSON.parse(ws.sent[2] ?? "{}")).toEqual({ key: "roomThing", data: ["room-1"], subscribe: false });
+  });
+
+  test("hands a binary frame to its room as bytes, and leaves the JSON rooms on the same socket alone", async () => {
+    setFakeWebSocket();
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+    client.connect();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    const streamed: unknown[] = [];
+    const published: unknown[] = [];
+
+    const cleanupStream = (await client.handler.subscribeStreamThing("ch1", (data: unknown) =>
+      streamed.push(data),
+    )) as () => void;
+    await client.handler.subscribeRoomThing("room-1", (data: unknown) => published.push(data));
+
+    ws.receiveBinary(
+      websocketBinaryFrameContract.encode({
+        roomId: "streamThing-ch1",
+        payload: new Uint8Array([2, 148, 1, 2, 63]),
+      }),
+    );
+    ws.receive({ type: "pub", roomId: "roomThing-room-1", data: { title: "Published" } });
+
+    expect(streamed[0]).toBeInstanceOf(Uint8Array);
+    expect([...(streamed[0] as Uint8Array)]).toEqual([2, 148, 1, 2, 63]);
+    expect((published[0] as InstanceType<typeof FetchTestLight>).title).toBe("Published");
+
+    cleanupStream();
+    ws.receiveBinary(websocketBinaryFrameContract.encode({ roomId: "streamThing-ch1", payload: new Uint8Array([9]) }));
+    expect(streamed).toHaveLength(1);
+  });
+
+  test("ignores a binary frame for a room nothing subscribed to", async () => {
+    setFakeWebSocket();
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+    client.connect();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    const streamed: unknown[] = [];
+    await client.handler.subscribeStreamThing("ch1", (data: unknown) => streamed.push(data));
+
+    ws.receiveBinary(websocketBinaryFrameContract.encode({ roomId: "streamThing-ch2", payload: new Uint8Array([1]) }));
+
+    expect(streamed).toEqual([]);
   });
 });

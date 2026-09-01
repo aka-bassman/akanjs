@@ -18,6 +18,7 @@ import {
 import { endpoint } from "../../signal/endpoint";
 import { Public } from "../../signal/guards";
 import { internal } from "../../signal/internal";
+import { Ws } from "../../signal/internalArg";
 import { CascadeRunner } from "./CascadeRunner";
 import { DatabaseResolver } from "./database.resolver";
 import {
@@ -792,6 +793,130 @@ describe("SignalResolver declaration contracts", () => {
     expect(await SignalResolver.revalidateWsRooms(member, registry)).toEqual([]);
   });
 
+  test("runs ws cleanup on unsubscribe and close, from a message handler as well as a room", async () => {
+    const cleaned: string[] = [];
+    class LifecycleEndpoint extends endpoint(serverResolverTestServiceModel, (builder) => ({
+      lifecycleRoom: builder
+        .pubsub(ServerResolverTestLight, { guards: [Public] })
+        .room("roomId", ID)
+        .with(Ws)
+        .exec((roomId, ws) => {
+          ws.on("unsubscribe", () => {
+            cleaned.push(`unsubscribe:${roomId as string}`);
+          });
+          ws.on("disconnect", () => {
+            cleaned.push(`disconnect:${roomId as string}`);
+          });
+        }),
+      lifecycleMessage: builder
+        .message(String, { guards: [Public] })
+        .msg("text", String)
+        .with(Ws)
+        .exec((text, ws) => {
+          ws.on("disconnect", () => {
+            cleaned.push(`disconnect:${text as string}`);
+          });
+          return `ok:${text as string}`;
+        }),
+    })) {}
+    const registry = getDefaultInjectRegistry();
+    const websocket = makeFakeWebsocket();
+    registry.adaptor.set(SolidPubSub, websocket.instance);
+    const resolved = SignalResolver.resolveEndpoint(LifecycleEndpoint, new LifecycleEndpoint(), {
+      registry,
+      env: makeEnv(),
+      live: getDefaultLiveRegistry(),
+      middleware: new Map(),
+    });
+
+    const unsubscribed = makeWs();
+    await resolved.wsRoutes?.lifecycleRoom?.(unsubscribed, [validId], "subscribe");
+    expect(await resolved.wsRoutes?.lifecycleMessage?.(unsubscribed, ["chat"], "message")).toEqual({
+      type: "msg",
+      key: "lifecycleMessage",
+      data: "ok:chat",
+    });
+    await resolved.wsRoutes?.lifecycleRoom?.(unsubscribed, [validId], "unsubscribe");
+    expect(cleaned).toEqual([`unsubscribe:${validId}`]);
+
+    // The room was already unsubscribed, so only the message handler is left to run at close.
+    await SignalResolver.handleWsClose(unsubscribed, registry);
+    expect(cleaned).toEqual([`unsubscribe:${validId}`, "disconnect:chat"]);
+
+    cleaned.length = 0;
+    const closed = makeWs();
+    await resolved.wsRoutes?.lifecycleRoom?.(closed, [validId], "subscribe");
+    await resolved.wsRoutes?.lifecycleMessage?.(closed, ["chat"], "message");
+    await SignalResolver.handleWsClose(closed, registry);
+    expect(cleaned).toEqual([`unsubscribe:${validId}`, `disconnect:${validId}`, "disconnect:chat"]);
+
+    cleaned.length = 0;
+    const reclosed = makeWs();
+    await SignalResolver.handleWsClose(reclosed, registry);
+    expect(cleaned).toEqual([]);
+  });
+
+  test("runs a cleanup registered for both endings once when the socket closes subscribed", async () => {
+    const cleaned: string[] = [];
+    class SharedCleanupEndpoint extends endpoint(serverResolverTestServiceModel, (builder) => ({
+      sharedRoom: builder
+        .pubsub(ServerResolverTestLight, { guards: [Public] })
+        .room("roomId", ID)
+        .with(Ws)
+        .exec((roomId, ws) => {
+          const leave = () => {
+            cleaned.push(`left:${roomId as string}`);
+          };
+          ws.on("unsubscribe", leave);
+          ws.on("disconnect", leave);
+        }),
+    })) {}
+    const registry = getDefaultInjectRegistry();
+    const websocket = makeFakeWebsocket();
+    registry.adaptor.set(SolidPubSub, websocket.instance);
+    const resolved = SignalResolver.resolveEndpoint(SharedCleanupEndpoint, new SharedCleanupEndpoint(), {
+      registry,
+      env: makeEnv(),
+      live: getDefaultLiveRegistry(),
+      middleware: new Map(),
+    });
+
+    const ws = makeWs();
+    await resolved.wsRoutes?.sharedRoom?.(ws, [validId], "subscribe");
+    await SignalResolver.handleWsClose(ws, registry);
+
+    expect(cleaned).toEqual([`left:${validId}`]);
+  });
+
+  test("keeps a throwing cleanup handler from skipping the socket teardown", async () => {
+    class ThrowingLifecycleEndpoint extends endpoint(serverResolverTestServiceModel, (builder) => ({
+      throwingRoom: builder
+        .pubsub(ServerResolverTestLight, { guards: [Public] })
+        .room("roomId", ID)
+        .with(Ws)
+        .exec((_roomId, ws) => {
+          ws.on("disconnect", () => {
+            throw new Error("cleanup exploded");
+          });
+        }),
+    })) {}
+    const registry = getDefaultInjectRegistry();
+    const websocket = makeFakeWebsocket();
+    registry.adaptor.set(SolidPubSub, websocket.instance);
+    const resolved = SignalResolver.resolveEndpoint(ThrowingLifecycleEndpoint, new ThrowingLifecycleEndpoint(), {
+      registry,
+      env: makeEnv(),
+      live: getDefaultLiveRegistry(),
+      middleware: new Map(),
+    });
+
+    const ws = makeWs();
+    await resolved.wsRoutes?.throwingRoom?.(ws, [validId], "subscribe");
+    await SignalResolver.handleWsClose(ws, registry);
+
+    expect(websocket.instance.calls).toContainEqual({ method: "unregisterSocket", args: [ws] });
+  });
+
   test("turns slice declarations into CRUD/list/insight endpoint declarations", async () => {
     const SliceEndpoint = SignalResolver.resolveSlice(ServerResolverTestSlice);
     const endpointMeta = SliceEndpoint[ENDPOINT_META];
@@ -851,6 +976,12 @@ describe("SignalResolver declaration contracts", () => {
     await endpointMeta.serverResolverTestItemInsightInCategory.execFn?.call(sliceEndpoint, "news");
     expect(calls.at(-1)).toEqual({ method: "__insight", args: [{ category: "news" }] });
 
+    // The root list compiles its `(queryKey, args)` pair through the model's own filter, and defaults to `any`.
+    await endpointMeta.serverResolverTestItemList.execFn?.call(sliceEndpoint, "byOwner", [validId], 0, 20, "latest");
+    expect((calls.at(-1) as { args: unknown[] }).args[0]).toEqual({ ownerId: validId });
+    await endpointMeta.serverResolverTestItemList.execFn?.call(sliceEndpoint, undefined, undefined, 0, 20, "latest");
+    expect((calls.at(-1) as { args: unknown[] }).args[0]).toEqual({ removedAt: { empty: true } });
+
     await endpointMeta.serverResolverTestItem.execFn?.call(sliceEndpoint, validId);
     expect(calls.at(-1)).toEqual({ method: "getServerResolverTestItem", args: [validId] });
     await endpointMeta.createServerResolverTestItem.execFn?.call(sliceEndpoint, { title: "Alpha" });
@@ -866,7 +997,7 @@ describe("SignalResolver declaration contracts", () => {
     const live = getDefaultLiveRegistry();
     const websocket = makeFakeWebsocket();
     registry.adaptor.set(SolidPubSub, websocket.instance);
-    const localPublishes: { roomId: string; data: object | object[] }[] = [];
+    const localPublishes: { roomId: string; data: unknown }[] = [];
     SignalResolver.setLocalPublish((roomId, data) => localPublishes.push({ roomId, data }), websocket.instance);
 
     const ServerSignalRef = SignalResolver.resolveServerSignal(ServerResolverTestServerSignal, { registry, live });
@@ -880,6 +1011,8 @@ describe("SignalResolver declaration contracts", () => {
       },
     }) as InstanceType<typeof ServerSignalRef> & {
       roomFeed: (roomId: string, data: unknown) => Promise<void>;
+      roomStream: (channel: string, data: Uint8Array) => Promise<void>;
+      roomQueuedStream: (channel: string, data: Uint8Array) => Promise<void>;
       processItem: (itemId: string, options?: unknown) => Promise<unknown>;
     };
 
@@ -910,6 +1043,26 @@ describe("SignalResolver declaration contracts", () => {
       ],
     });
     expect(localPublishes.at(-1)?.roomId).toBe(`roomFeed-${validId}`);
+
+    // A Binary return skips `serialize`, which would have base64'd it, and travels as the bytes themselves.
+    const packet = new Uint8Array([2, 148, 1, 2, 63]);
+    await serverSignal.roomStream("ch1", packet);
+    expect(websocket.instance.calls.at(-1)).toEqual({ method: "publish", args: ["roomStream-ch1", packet] });
+    expect(localPublishes.at(-1)).toEqual({ roomId: "roomStream-ch1", data: packet });
+
+    await serverSignal.roomStream("ch1", "ApQBAj8=" as unknown as Uint8Array);
+    const last = localPublishes.at(-1)?.data;
+    expect(last).toBeInstanceOf(Uint8Array);
+    expect([...(last as Uint8Array)]).toEqual([2, 148, 1, 2, 63]);
+
+    // Coalescing follows the endpoint that owns the room, so every publish path reaches the same answer
+    // without carrying it. A room no endpoint declared `Binary` for is absent, and queues.
+    expect(SignalResolver.coalescesRoom("roomStream-ch1")).toBe(true);
+    expect(SignalResolver.coalescesRoom("roomQueuedStream-ch1")).toBe(false);
+    expect(SignalResolver.coalescesRoom("roomFeed-anything")).toBe(false);
+
+    await serverSignal.roomQueuedStream("ch1", packet);
+    expect(localPublishes.at(-1)?.roomId).toBe("roomQueuedStream-ch1");
 
     await serverSignal.processItem(validId, { delay: 10 });
     expect(queueCalls).toEqual([{ key: "processItem", args: [validId], options: { delay: 10 } }]);

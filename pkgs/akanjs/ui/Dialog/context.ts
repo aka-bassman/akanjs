@@ -1,5 +1,6 @@
 "use client";
-import { createContext, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { sharedContext } from "../../client/sharedContext";
 
 export interface DialogContextType {
   open: boolean;
@@ -18,7 +19,7 @@ export interface DialogContextType {
   setAction: (action: ReactNode) => void;
 }
 
-export const DialogContext = createContext<DialogContextType>({
+export const DialogContext = sharedContext<DialogContextType>("dialog", {
   open: false,
   setOpen: (open: boolean) => null,
   openDialog: () => null,

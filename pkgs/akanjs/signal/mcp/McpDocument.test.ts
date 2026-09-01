@@ -29,8 +29,15 @@ const signal = (): Record<string, SerializedSignal> => ({
     getGuards: ["Public"],
     cruGuards: ["Admin"],
     slice: {
-      // The root slice `slice()` generates: its one argument is a raw query descriptor typed `Any`.
-      "": { args: [{ type: "search", name: "query", refName: "Any" }], guards: ["Public"] },
+      // The root slice `slice()` generates: it names one of the model's filters and carries that filter's own
+      // args in an `Any`, which publishes nowhere.
+      "": {
+        args: [
+          { type: "search", name: "queryKey", refName: "String", nullable: true, oneOf: ["any", "byAuthor"] },
+          { type: "search", name: "args", refName: "Any", nullable: true },
+        ],
+        guards: ["Public"],
+      },
       byAuthor: {
         args: [{ type: "search", name: "authorId", refName: "ID", nullable: true }],
         guards: ["Public"],
@@ -232,12 +239,17 @@ describe("McpDocument", () => {
   test("leaves an Any argument out of the schema instead of publishing an empty one", () => {
     const doc = new McpDocument(signal());
     const list = doc.tools.find((tool) => tool.name === "mcpPostList");
-    // The root list's `query` is a raw database query descriptor. `Any` publishes as `{}`, which tells a model
+    // The root list's `args` carries whatever the named filter takes. `Any` publishes as `{}`, which tells a model
     // nothing — the same reason an `Any` return is refused — and a value sent for it is refused by name at the
-    // server, like any other argument the published schema does not carry.
-    expect(Object.keys(list?.inputSchema.properties as object)).toEqual(["skip", "limit", "sort"]);
+    // server, like any other argument the published schema does not carry. The key beside it is a plain string,
+    // so a model can still pick a filter, and the values it may pick are published with it.
+    const properties = (list?.inputSchema.properties ?? {}) as Record<string, unknown>;
+    expect(Object.keys(properties)).toEqual(["queryKey", "skip", "limit", "sort"]);
+    expect(properties.queryKey).toEqual({
+      anyOf: [{ type: "string", enum: ["any", "byAuthor"] }, { type: "null" }],
+    });
     expect(doc.resourceTemplates.map((template) => template.uriTemplate)).toContain(
-      "akan://mcpPost/list{?skip,limit,sort}",
+      "akan://mcpPost/list{?queryKey,skip,limit,sort}",
     );
   });
 
@@ -370,7 +382,7 @@ describe("McpDocument", () => {
     expect(doc.resourceTemplates.map((template) => template.uriTemplate)).toEqual([
       "akan://mcpPost/light/{mcpPostId}",
       "akan://mcpPost/{mcpPostId}",
-      "akan://mcpPost/list{?skip,limit,sort}",
+      "akan://mcpPost/list{?queryKey,skip,limit,sort}",
       "akan://mcpPost/list/byAuthor{?authorId,skip,limit,sort}",
       // A slice's required params belong in the template too: without them the uri addresses a read that can
       // only fail. `parse` reads every query key back, so both kinds round-trip through form expansion.

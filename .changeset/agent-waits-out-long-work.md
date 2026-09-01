@@ -19,10 +19,9 @@ waited, so the model needs no second call to read the result.
 earlier turn, or by a person clicking the button. It parks on a published state key, the ones `readState` already
 lists, and resumes the moment the key moves. Deliberately not a bare sleep: a sleep only makes the polling slower,
 and a value worth waiting two minutes for is server-derived state, which in an akan app lives in the store already
-— so the requirement is that a mounted component subscribes it, not that anything new be declared. It is
-`effect: "state"` rather than
-`"query"` on purpose: the point of waiting is that something changed, so the session settles the screen afterwards
-and takes the diff. Running out is not a failure — it answers with what the key holds now and the model decides
+— so the requirement is that a mounted component subscribes it, not that anything new be declared. It settles rather than
+declaring `settle: false` on purpose: the point of waiting is that something changed, so the session settles the
+screen afterwards and takes the diff. Running out is not a failure — it answers with what the key holds now and the model decides
 whether to wait again. Default 120s, clamped to 600, and a key this screen does not read is refused by name with
 the ones it does.
 

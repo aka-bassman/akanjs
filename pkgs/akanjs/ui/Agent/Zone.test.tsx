@@ -2,9 +2,10 @@ import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { AgentRunner, AgentSession, RunnerRequest } from "use-agentic";
+import type { AgentRunner, AgentSession, ChatMessage, RunnerRequest } from "use-agentic";
 
 let Zone: typeof import("./Zone").Zone;
+let History: typeof import("./History").History;
 let st: typeof import("akanjs/store").st;
 let useAgent: typeof import("use-agentic").useAgent;
 
@@ -23,6 +24,7 @@ beforeAll(async () => {
   const { registerClientRuntime } = await import("akanjs/client");
   registerClientRuntime({ usePage: () => ({ path: "/", lang: "en", l }), fetch: {} });
   ({ Zone } = await import("./Zone"));
+  ({ History } = await import("./History"));
   ({ st } = await import("akanjs/store"));
   ({ useAgent } = await import("use-agentic"));
 });
@@ -45,11 +47,15 @@ describe("Agent.Zone", () => {
       return null;
     };
     const ApproveTool = () => {
-      st.tool("approveComment", { desc: "Approve one comment." }).exec(() => undefined);
+      st.tool("approveComment")
+        .desc("Approve one comment.")
+        .exec(() => undefined);
       return <p>comment queue text</p>;
     };
     const PublishTool = () => {
-      st.tool("publishPost", { desc: "Publish one post." }).exec(() => undefined);
+      st.tool("publishPost")
+        .desc("Publish one post.")
+        .exec(() => undefined);
       return <p>post editor text</p>;
     };
     const container = document.createElement("div");
@@ -91,5 +97,109 @@ describe("Agent.Zone", () => {
     expect(screenA).toContain("comment queue text");
     expect(screenA).not.toContain("post editor text");
     act(() => root.unmount());
+  });
+
+  test("builtins narrows what the runtime contributes to this zone, and only to this zone", async () => {
+    const penned: RunnerRequest[] = [];
+    const roaming: RunnerRequest[] = [];
+    const sessions: Record<string, AgentSession> = {};
+    const Probe = ({ name }: { name: string }) => {
+      sessions[name] = useAgent();
+      return null;
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        <>
+          <Zone builtins={["readScreen", "readState"]} id="wizard" runner={runnerOf("A", penned)}>
+            <Probe name="wizard" />
+          </Zone>
+          <Zone id="free" runner={runnerOf("B", roaming)}>
+            <Probe name="free" />
+          </Zone>
+        </>,
+      ),
+    );
+    await act(async () => {
+      await Promise.all([sessions.wizard.send("stay"), sessions.free.send("go")]);
+    });
+    const penTools = penned[0].tools.map((tool) => tool.name);
+    expect(penTools).toContain("readScreen");
+    expect(penTools).not.toContain("navigate");
+    expect(penTools).not.toContain("goBack");
+    // Withheld, not discouraged: the name is unreachable even when the model names it directly.
+    expect(sessions.wizard.surface.call("navigate", { path: "/elsewhere" })).rejects.toThrow("Unknown tool");
+    // The surface is shared, so the neighbouring zone must be untouched by what this one withheld.
+    expect(roaming[0].tools.map((tool) => tool.name)).toContain("navigate");
+    act(() => root.unmount());
+  });
+
+  test("Agent.History backs the zone's transcript with the app's own store, from a leaf inside it", async () => {
+    const seen: RunnerRequest[] = [];
+    const saved: ChatMessage[][] = [];
+    const held: { session: AgentSession | null } = { session: null };
+    const Probe = () => {
+      held.session = useAgent();
+      return null;
+    };
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        <Zone id="draft" runner={runnerOf("A", seen)}>
+          <History
+            clear={() => undefined}
+            load={() => [{ role: "user", text: "from an earlier visit" }]}
+            save={(messages) => void saved.push([...messages])}
+          />
+          <Probe />
+        </Zone>,
+      ),
+    );
+    // Mounted with the zone, so nothing has happened yet and the restore lands.
+    expect(held.session?.messages.map((message) => message.text)).toEqual(["from an earlier visit"]);
+    await act(async () => {
+      await held.session?.send("and now?");
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    expect(saved.at(-1)?.map((message) => message.text)).toEqual(["from an earlier visit", "and now?", "A"]);
+    act(() => root.unmount());
+  });
+
+  test("a session the app hands in is used as-is and survives the zone that rendered it", async () => {
+    const seen: RunnerRequest[] = [];
+    const lib = await import("use-agentic");
+    const { agentSessionOf } = await import("./agentSessionOf");
+    const own = agentSessionOf({ l: (key) => key, view: ["held"], runner: runnerOf("A", seen) });
+    const handed: AgentSession[] = [];
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const Probe = () => {
+      handed.push(useAgent());
+      return null;
+    };
+    act(() =>
+      root.render(
+        <lib.AgentProvider surface={lib.AgenticSurface.shared}>
+          <Zone id="held" onSession={(session) => handed.push(session)} session={own}>
+            <Probe />
+          </Zone>
+        </lib.AgentProvider>,
+      ),
+    );
+    expect(handed.length).toBeGreaterThan(1);
+    expect(handed.every((session) => session === own)).toBe(true);
+    act(() => root.unmount());
+    // The zone never owned it, so unmounting must not have ended a turn the page may still be driving.
+    await act(async () => {
+      await own.send("still usable");
+    });
+    expect(own.messages.at(-1)?.text).toBe("A");
   });
 });

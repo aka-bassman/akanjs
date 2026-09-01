@@ -1,4 +1,4 @@
-import { pathGet } from "akanjs/common";
+import { pathGetLoose } from "akanjs/common";
 import { DictionaryRegistry } from "./dictionaryRegistry";
 import type { DictionaryNode } from "./trans";
 
@@ -23,7 +23,7 @@ export class DictionaryLookup {
     const [refName, ...rest] = key.split(".");
     if (!refName) return undefined;
     const model = this.#models[refName];
-    const node = (rest.length ? pathGet(rest.join("."), model) : model) as { t?: unknown } | null;
+    const node = (rest.length ? pathGetLoose(rest, model) : model) as { t?: unknown } | null;
     const text = node?.t;
     return typeof text === "string" && text.length ? text : undefined;
   }

@@ -191,12 +191,8 @@ interface ManageAdminRoleProps {
 }
 export const ManageAdminRole = ({ className, id, roles }: ManageAdminRoleProps) => {
   const { l } = usePage();
-  st.tool("setAdminRole", {
-    desc: "Grant or revoke the admin role for one account.",
-    effect: "mutation",
-    shared: true,
-    confirm: true,
-  })
+  st.tool("setAdminRole", { confirm: true })
+    .desc("Grant or revoke the admin role for one account.")
     .arg("adminId", ID)
     .arg("granted", Boolean)
     .exec((adminId, granted) =>
@@ -229,12 +225,8 @@ interface ManageSuperAdminRoleProps {
 }
 export const ManageSuperAdminRole = ({ className, id, roles }: ManageSuperAdminRoleProps) => {
   const { l } = usePage();
-  st.tool("setSuperAdminRole", {
-    desc: "Grant or revoke the super-admin role for one account — the role that can manage every other admin.",
-    effect: "mutation",
-    shared: true,
-    confirm: "Change super-admin, the role that can manage every other admin?",
-  })
+  st.tool("setSuperAdminRole", { confirm: "Change super-admin, the role that can manage every other admin?" })
+    .desc("Grant or revoke the super-admin role for one account — the role that can manage every other admin.")
     .arg("adminId", ID)
     .arg("granted", Boolean)
     .exec((adminId, granted) =>
@@ -316,9 +308,9 @@ interface SignoutProps {
   children: ReactNode;
 }
 export const Signout = ({ className, href, children }: SignoutProps) => {
-  st.tool("signoutAdmin", { desc: "Sign out of the admin console.", effect: "mutation", confirm: true }).exec(() =>
-    st.do.signoutAdmin(),
-  );
+  st.tool("signoutAdmin", { confirm: true })
+    .desc("Sign out of the admin console.")
+    .exec(() => st.do.signoutAdmin());
   return (
     <Link className={className} href={href} onClick={() => void st.do.signoutAdmin()}>
       {children}

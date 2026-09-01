@@ -35,6 +35,18 @@ const options: AkanAppOptions = {
 };`,
     },
     {
+      name: "AkanServer web surfaces",
+      desc: l.trans({
+        en: "`server.setWeb(true | false | { csr })` and the `AKAN_SSR` / `AKAN_CSR` env narrow what a process serves beyond its API: SSR is the RSC renderer and its RSC worker process, CSR is the mobile SPA bundle at `/__csr`. They only narrow — a surface `akan.config.ts` left out of the build cannot be switched back on — and `AKAN_SSR=false` takes CSR with it, because the CSR bundle inlines the stylesheet the SSR build compiles. The boot log names the resolved answer.",
+        ko: "`server.setWeb(true | false | { csr })`과 `AKAN_SSR` / `AKAN_CSR` env는 프로세스가 API 외에 무엇을 서비스할지 좁힙니다. SSR은 RSC 렌더러와 그 RSC worker process, CSR은 `/__csr`의 모바일 SPA bundle입니다. 좁히기만 하며, `akan.config.ts`가 빌드에서 뺀 surface는 다시 켤 수 없습니다. `AKAN_SSR=false`는 CSR도 함께 내립니다. CSR bundle이 SSR 빌드가 컴파일한 stylesheet를 인라인하기 때문입니다. 부팅 로그에 확정된 결과가 남습니다.",
+      }),
+      code: `# api only, no RSC worker process
+AKAN_SSR=false bun main.js
+
+# web without the mobile SPA bundle
+AKAN_CSR=false bun main.js`,
+    },
+    {
       name: "AkanOption",
       desc: l.trans({
         en: "App/library option builder used by `lib/option.ts`. It registers env-derived use objects, signal middleware, adaptor overrides, and web proxies, and carries the settings an app owns: `setMcp` for the MCP server, `setAgentAccess` for the guards a caller must pass to spend the LLM key through the agent relay, and `setLlm` for the model that relay speaks to. Every lib's option is read in mount order with the app's last.",

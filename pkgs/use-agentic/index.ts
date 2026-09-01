@@ -8,6 +8,7 @@ export * from "./AgentScope";
 export * from "./AgentSession";
 export * from "./Compaction";
 export * from "./httpRunner";
+export * from "./sharedContext";
 export * from "./surfaceContext";
 export * from "./ToolOutput";
 export * from "./Transcript";

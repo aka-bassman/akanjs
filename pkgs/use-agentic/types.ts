@@ -1,7 +1,5 @@
 export type JsonSchema = Record<string, unknown>;
 
-export type ToolEffect = "state" | "query" | "mutation";
-
 /** `true` asks with a default message, a string is the message, a function decides from the arguments. */
 export type ToolConfirm = boolean | string | ((args: Record<string, unknown>) => string | boolean);
 
@@ -12,11 +10,13 @@ export interface ToolEntry {
   name: string;
   description?: string;
   parameters?: JsonSchema;
-  effect?: ToolEffect;
+  /**
+   * Whether a call has to be waited out before its effect on the screen is reported. `false` is a read that
+   * returns what is already there; the default waits, because a write may still be landing when `run` resolves.
+   */
+  settle?: boolean;
   confirm?: ToolConfirm;
   guard?: ToolGuard;
-  /** Declares that repeat registrations of this name are interchangeable — see `AgenticSurface.registerTool`. */
-  shared?: boolean;
   run: (args: Record<string, unknown>) => unknown;
 }
 
@@ -69,7 +69,6 @@ export interface PublishedTool {
   name: string;
   description?: string;
   parameters?: JsonSchema;
-  effect?: ToolEffect;
   needsConfirm: boolean;
 }
 

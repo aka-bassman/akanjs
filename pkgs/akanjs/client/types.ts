@@ -1,5 +1,5 @@
 import type { BaseInsight } from "akanjs/constant";
-import type { FetchInitForm, SliceMeta } from "akanjs/fetch";
+import type { FetchInitForm, QuerySetting, SliceMeta } from "akanjs/fetch";
 import type { ReactElement, ReactNode } from "react";
 
 export type ReactFontStyle = "normal" | "italic" | "oblique";
@@ -109,7 +109,7 @@ const slugFontPart = (value: string) =>
 export interface ModelsProps<M extends { id: string }> {
   className?: string;
   slice?: SliceMeta;
-  query?: Record<string, unknown>;
+  query?: QuerySetting;
   init?: FetchInitForm<any, any>;
   onClickItem?: (model: M) => unknown;
 }
@@ -127,7 +127,7 @@ export type ModelProps<T extends string, L extends { id: string }> = { [key in T
 export interface ModelDashboardProps<Summary> {
   className?: string;
   summary: Summary;
-  queryMap?: Record<string, unknown>;
+  queryMap?: { [column: string]: QuerySetting };
   columns?: (keyof Summary)[];
   hidePresents?: boolean;
   slice?: SliceMeta;

@@ -173,6 +173,37 @@ describe("AkanServer OpenAPI config", () => {
   });
 });
 
+describe("AkanServer web config", () => {
+  test("reads AKAN_SSR / AKAN_CSR and lets setWeb narrow but never widen", async () => {
+    setAkanEnv();
+    const { AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-web-"));
+    const make = () => new AkanServer("serverWeb", createEnv(tmp), "all", createLib());
+
+    try {
+      expect(make().web).toEqual({ ssr: true, csr: true });
+      expect(make().setWeb({ csr: false }).web).toEqual({ ssr: true, csr: false });
+      expect(make().setWeb(false).web).toEqual({ ssr: false, csr: false });
+
+      process.env.AKAN_CSR = "false";
+      expect(make().web).toEqual({ ssr: true, csr: false });
+      // Narrowing only: `setWeb` cannot put back what the env took away.
+      expect(make().setWeb(true).web).toEqual({ ssr: true, csr: false });
+      expect(make().setWeb({ csr: true }).web).toEqual({ ssr: true, csr: false });
+
+      // A csr-only process has no artifact to serve from, so AKAN_SSR=false drops csr with it.
+      process.env.AKAN_SSR = "0";
+      delete process.env.AKAN_CSR;
+      expect(make().web).toEqual({ ssr: false, csr: false });
+      expect(make().setWeb({ csr: true }).web).toEqual({ ssr: false, csr: false });
+    } finally {
+      delete process.env.AKAN_SSR;
+      delete process.env.AKAN_CSR;
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("AkanServer MCP config", () => {
   test("reads every option from env and lets code override it", async () => {
     setAkanEnv();

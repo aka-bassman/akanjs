@@ -1,5 +1,6 @@
 import {
   type BackendEnv,
+  Binary,
   type Cls,
   ENDPOINT_META,
   FIELD_META,
@@ -8,6 +9,7 @@ import {
   INTERNAL_META,
   Int,
   PrimitiveRegistry,
+  type PromiseOrObject,
   SLICE_META,
 } from "akanjs/base";
 import { capitalize, Logger } from "akanjs/common";
@@ -31,7 +33,7 @@ import { SignalContext, type WebSocketExecutionContext } from "../../signal/sign
 import type { SliceCls } from "../../signal/slice";
 import type { SliceInfo } from "../../signal/sliceInfo";
 import type { WebsocketMessageData, WebsocketSubscribeAck } from "../../signal/types";
-import type { HttpRoutes, SignalRoutes, WebsocketRoutes } from "../types";
+import type { HttpRoutes, LocalPublish, SignalRoutes, WebsocketRoutes } from "../types";
 
 type HttpRouteHandler = (req: Bun.BunRequest) => Response | Promise<Response | undefined> | undefined;
 type HttpMethodRoutes = Record<string, HttpRouteHandler>;
@@ -42,12 +44,18 @@ export class SignalResolver {
   static makeRoomId(key: string, args: unknown[]) {
     return `${key}${args.length ? "-" : ""}${args.join("-")}`;
   }
-  static #localPublish: (roomId: string, data: object | object[]) => void = () => {
+  static #localPublish: LocalPublish = () => {
     SignalResolver.logger.verbose(`Local publish is not initialized yet`);
   };
-  static setLocalPublish(localPublish: (roomId: string, data: object | object[]) => void, websocket: WebsocketAdaptor) {
+  static readonly #coalescingRooms = new Set<string>();
+
+  static coalescesRoom(roomId: string): boolean {
+    const separator = roomId.indexOf("-");
+    return SignalResolver.#coalescingRooms.has(separator >= 0 ? roomId.slice(0, separator) : roomId);
+  }
+  static setLocalPublish(localPublish: LocalPublish, websocket: WebsocketAdaptor) {
     SignalResolver.#localPublish = localPublish;
-    websocket.setEventHandler((roomId, data) => localPublish(roomId, data as object | object[]));
+    websocket.setEventHandler((roomId, data) => localPublish(roomId, data as object | object[] | Uint8Array));
   }
   static resolveServerSignal(
     serverSignalCls: ServerSignalCls,
@@ -59,6 +67,9 @@ export class SignalResolver {
     Object.entries(endpointMeta).forEach(([key, endpointInfo]) => {
       if (endpointInfo.type !== "pubsub") throw new Error(`Endpoint ${key} is not a pubsub endpoint`);
       websocket.registerEndpoint(key, endpointInfo.returns.returnRef as Cls, endpointInfo.returns.arrDepth);
+      const isBinaryFrame = endpointInfo.returns.returnRef === Binary && !endpointInfo.returns.arrDepth;
+      if (isBinaryFrame && endpointInfo.signalOption.backpressure !== "queue") SignalResolver.#coalescingRooms.add(key);
+      let warnedRawBytes = false;
       const serializeFn = (data: unknown) =>
         serialize(endpointInfo.returns.returnRef, endpointInfo.returns.arrDepth, data, "object", {
           nullable: endpointInfo.returns.nullable,
@@ -74,12 +85,22 @@ export class SignalResolver {
             registry,
             live,
           });
+          const roomId = SignalResolver.makeRoomId(key, roomArgs);
+          if (isBinaryFrame) {
+            const bytes = Binary._parse(resolvedData as Uint8Array) as Uint8Array;
+            websocket.publish(roomId, bytes);
+            SignalResolver.#localPublish(roomId, bytes);
+            return;
+          }
           const serializedData = serializeFn(resolvedData) as object | object[] | null;
           if (!serializedData) {
             this.logger.warn(`Failed to serialize data for ${key}`);
             return;
           }
-          const roomId = SignalResolver.makeRoomId(key, roomArgs);
+          if (!warnedRawBytes && ArrayBuffer.isView(serializedData)) {
+            warnedRawBytes = true;
+            this.logger.warn(`${key} publishes bytes but does not return Binary; declare pubsub(Binary) instead.`);
+          }
           websocket.publish(roomId, serializedData);
           SignalResolver.#localPublish(roomId, serializedData);
         },
@@ -323,6 +344,42 @@ export class SignalResolver {
     Map<string, SignalContext<WebSocketExecutionContext>>
   >();
   /**
+   * Message contexts that registered a lifecycle handler. A message context is otherwise dropped the moment it
+   * answers, so `ws.on("disconnect", …)` from one would land in an object nothing reads again — a silent
+   * no-op beside the same call working from a pubsub subscribe.
+   */
+  static #liveWsMessageCtx = new WeakMap<Bun.ServerWebSocket<unknown>, Set<SignalContext<WebSocketExecutionContext>>>();
+  static #retainWsContext(ws: Bun.ServerWebSocket<unknown>, context: SignalContext<WebSocketExecutionContext>) {
+    const wsCtx = context.getWebSocketContext();
+    if (!wsCtx.onDisconnect.size && !wsCtx.onUnsubscribe.size) return;
+    const contexts = SignalResolver.#liveWsMessageCtx.get(ws) ?? new Set<SignalContext<WebSocketExecutionContext>>();
+    contexts.add(context);
+    SignalResolver.#liveWsMessageCtx.set(ws, contexts);
+  }
+  /**
+   * Cleanup handlers belong to the app, so one that throws must not take the rest of the teardown with it: a
+   * rejection here would skip `unregisterSocket` and leak the socket's room membership in Redis for good.
+   *
+   * A close ends both the subscription and the connection, so it passes both events — and a handler registered
+   * for both, the way a cleanup that must happen either way is written, runs once rather than twice.
+   */
+  static async #runLifecycleHandlers(
+    contexts: Iterable<SignalContext<WebSocketExecutionContext>>,
+    events: ("unsubscribe" | "disconnect")[],
+  ) {
+    const handlers = new Set<() => PromiseOrObject<void>>();
+    for (const event of events)
+      for (const context of contexts) {
+        const wsCtx = context.getWebSocketContext();
+        for (const handler of event === "disconnect" ? wsCtx.onDisconnect : wsCtx.onUnsubscribe) handlers.add(handler);
+      }
+    if (!handlers.size) return;
+    const results = await Promise.allSettled([...handlers].map(async (handler) => await handler()));
+    for (const result of results)
+      if (result.status === "rejected")
+        SignalResolver.logger.error(`WebSocket cleanup handler failed: ${result.reason}`);
+  }
+  /**
    * A path may legitimately carry several methods — a `query` GET and a `mutation` POST sharing a custom `path` —
    * so methods merge rather than replace. The same method twice leaves one of the two endpoints unreachable with
    * nothing said about it, and the shadowed half is as easily the guarded one, so it fails the boot instead.
@@ -451,10 +508,7 @@ export class SignalResolver {
               const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws);
               if (roomCtxMap) {
                 const roomCtx = roomCtxMap.get(roomId);
-                if (roomCtx) {
-                  const unsubscribeHandlers = [...roomCtx.getWebSocketContext().onUnsubscribe.values()];
-                  await Promise.all(unsubscribeHandlers.map((handler) => handler()));
-                }
+                if (roomCtx) await SignalResolver.#runLifecycleHandlers([roomCtx], ["unsubscribe"]);
                 roomCtxMap.delete(roomId);
                 if (roomCtxMap.size === 0) SignalResolver.#liveWsPubsubRoomCtx.delete(ws);
                 // Remove room membership from Redis
@@ -474,6 +528,7 @@ export class SignalResolver {
               { endpointInfo, adaptor: endpoint, registry, env, live, middleware },
             ).init();
             const result = (await context.exec()) as object | object[];
+            SignalResolver.#retainWsContext(ws, context as SignalContext<WebSocketExecutionContext>);
             const messageData: WebsocketMessageData = { type: "msg", key, data: result };
             return messageData;
           };
@@ -537,7 +592,7 @@ export class SignalResolver {
     for (const [roomId, roomCtx] of [...roomCtxMap]) {
       if (await roomCtx.authorize()) continue;
       ws.unsubscribe(roomId);
-      await Promise.all([...roomCtx.getWebSocketContext().onUnsubscribe.values()].map((handler) => handler()));
+      await SignalResolver.#runLifecycleHandlers([roomCtx], ["unsubscribe"]);
       roomCtxMap.delete(roomId);
       websocket.leaveRoom(ws, roomId);
       revokedRooms.push(roomId);
@@ -552,18 +607,13 @@ export class SignalResolver {
   }
 
   static async handleWsClose(ws: Bun.ServerWebSocket<any>, registry: InjectRegistry) {
-    const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws);
-    if (roomCtxMap) {
-      const unsubscribeHandlers = [...roomCtxMap.values()].flatMap((roomCtx) => [
-        ...roomCtx.getWebSocketContext().onUnsubscribe.values(),
-      ]);
-      await Promise.all(unsubscribeHandlers.map((handler) => handler()));
-      const disconnectHandlers = [...roomCtxMap.values()].flatMap((roomCtx) => [
-        ...roomCtx.getWebSocketContext().onDisconnect.values(),
-      ]);
-      await Promise.all(disconnectHandlers.map((handler) => handler()));
-    }
+    const contexts = [
+      ...(SignalResolver.#liveWsPubsubRoomCtx.get(ws)?.values() ?? []),
+      ...(SignalResolver.#liveWsMessageCtx.get(ws) ?? []),
+    ];
+    await SignalResolver.#runLifecycleHandlers(contexts, ["unsubscribe", "disconnect"]);
     SignalResolver.#liveWsPubsubRoomCtx.delete(ws);
+    SignalResolver.#liveWsMessageCtx.delete(ws);
 
     // Clean up socket from Redis
     await SignalResolver.#getWebsocket(registry).unregisterSocket(ws);

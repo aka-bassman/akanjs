@@ -1,5 +1,5 @@
 import type { AkanMetricsReport } from "akanjs/service";
-import { getTraceSnapshot, isTraceEnabled } from "akanjs/signal";
+import { getTraceSnapshot, isTraceEnabled } from "../signal/trace";
 
 type BunJscHeapStats = {
   heapSize?: number;

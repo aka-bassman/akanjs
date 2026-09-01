@@ -1,8 +1,8 @@
 "use client";
 
-import { setCookie } from "akanjs/client";
+import { getCookie, setCookie } from "akanjs/client";
 import { st } from "akanjs/store";
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { buttonRecipe } from "../Button";
 import { Dropdown } from "../Dropdown";
 import { Switch } from "../Switch";
@@ -13,17 +13,27 @@ export interface ThemeToggleProps {
 export const ThemeToggle = ({ themes }: ThemeToggleProps) => {
   const theme = st.use.theme();
   const applyTheme = st
-    .tool("applyTheme", { desc: `Switch this page's color theme. One of: ${themes?.join(", ") ?? "none"}.` })
+    .tool("applyTheme")
+    .desc(`Switch this page's color theme. One of: ${themes?.join(", ") ?? "none"}.`)
     .arg("theme", String)
     .exec((theme) => {
       document.documentElement.setAttribute("data-theme", theme);
       setCookie("theme", theme);
       st.do.setTheme(theme);
     });
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!themes) return;
-    const currentTheme = document.documentElement.getAttribute("data-theme");
-    st.do.setTheme(currentTheme && themes.includes(currentTheme) ? currentTheme : themes[0]);
+    const cookieTheme = getCookie("theme");
+    const documentTheme = document.documentElement.getAttribute("data-theme");
+    // Cookie outranks the live attribute: a cached RSC tree can restore a stale data-theme on <html>.
+    const next =
+      cookieTheme && themes.includes(cookieTheme)
+        ? cookieTheme
+        : documentTheme && themes.includes(documentTheme)
+          ? documentTheme
+          : themes[0];
+    document.documentElement.setAttribute("data-theme", next);
+    st.do.setTheme(next);
   }, [themes]);
 
   if (!themes || themes.length <= 1) return null;

@@ -921,6 +921,8 @@ all: runs both federation and batch behavior in one server process. This is the 
 
 A single Akan App has built-in clustering. You can run multiple server replicas and let Akan App distribute traffic, without setting up separate local load-balancing tools such as nginx, docker compose, or pm2.
 
+With one traffic replica there is nothing to balance, so Akan App runs that server in its own process instead of spawning it and proxying to it. The container then holds one process rather than two, and every request skips a proxy hop. Two or more replicas, or a batch-only replica that never listens, bring the gateway back. Set AKAN_SOLO=false to keep the gateway for a single replica; akan start always runs it, because the gateway is also the dev server's build relay and error overlay.
+
 Root-level Env Variables
 
 The root .env file decides which organization, domain, environment, operation mode, and log level the app uses while it runs. Most projects keep these values stable, but changing them lets the same app behave like a local, debug, develop, or production-like service.
@@ -954,8 +956,6 @@ Unset means on. Set 0 to switch the full-text index off; indexed data is kept an
 Search tokenizer
 
 The fts5 tokenizer the index is built with. Defaults to unicode61 remove_diacritics 2. Changing it rebuilds the index from the mirror on the next boot, so no data is re-read from the model tables. The rebuild takes no cross-process claim, so a fleet restarted at once repeats it in every process; stagger the restart when the mirror is large. database.search.tokenizer in the app config takes precedence. A value this SQLite build cannot provide fails the boot and names the fix, rather than starting a server whose every search would raise. That boot failure leaves writes alone: the index is dropped but nothing else is, so the models on that database keep accepting writes and the next healthy boot recovers the index in full.
-
-File log detail
 
 ## Fundamentals
 
@@ -1194,6 +1194,8 @@ Finite number primitive scalar for decimal values such as coordinates, rates, ba
 
 Loose object scalar for payloads whose shape is intentionally open. Prefer explicit scalar/model fields when the shape is stable; use Any for integration blobs or flexible metadata.
 
+Raw bytes for a signal argument or return, never a model field. It is a Uint8Array on both sides and base64 on a JSON wire; a pubsub whose whole return is Binary sends its own websocket frame instead. Store a blob as a File model.
+
 Akan re-exports the configured dayjs function and Dayjs type from base. Apps and libs use it for document dates, store state dates, service calculations, and UI formatting.
 
 Creates a typed enum scalar class from a literal value list. The generated enum exposes values, has, indexOf, find, filter, map, and forEach helpers used by constants and UI labels.
@@ -1340,6 +1342,8 @@ akanjs/server
 Gateway/orchestrator used by app `main.ts` files. It starts child server replicas, proxies HTTP and WebSocket traffic, reports metrics, and handles shutdown for local and production runs.
 
 Constructor option type for `AkanApp`. It configures replica layout, server path, runtime directory, HTTP port, and WebSocket base port for the gateway process, plus `openapi` and `modules`. `modules` boots only the named modules and the ones they depend on, in every child; omitted or empty mounts every enabled module.
+
+`server.setWeb(true | false | { csr })` and the `AKAN_SSR` / `AKAN_CSR` env narrow what a process serves beyond its API: SSR is the RSC renderer and its RSC worker process, CSR is the mobile SPA bundle at `/__csr`. They only narrow — a surface `akan.config.ts` left out of the build cannot be switched back on — and `AKAN_SSR=false` takes CSR with it, because the CSR bundle inlines the stylesheet the SSR build compiles. The boot log names the resolved answer.
 
 App/library option builder used by `lib/option.ts`. It registers env-derived use objects, signal middleware, adaptor overrides, and web proxies, and carries the settings an app owns: `setMcp` for the MCP server, `setAgentAccess` for the guards a caller must pass to spend the LLM key through the agent relay, and `setLlm` for the model that relay speaks to. Every lib's option is read in mount order with the app's last.
 
@@ -1741,6 +1745,7 @@ Headings:
 - routes
 - mobile
 - defaultDatabaseMode
+- web
 - images
 - i18n
 - publicEnv
@@ -2151,7 +2156,7 @@ Write API. Use it for create, update, delete, or business actions.
 
 WebSocket message handler. Use msg(...) for incoming payload fields.
 
-Realtime subscription channel. Use room(...) to describe the subscription room.
+Realtime subscription channel. Use room(...) to describe the subscription room. A Binary return sends raw bytes in a websocket binary frame and coalesces under backpressure; name backpressure: "queue" when every frame has to arrive.
 
 Prompt an MCP client renders as a slash command. exec returns PromptMessage[] or a bare string. Takes .param(...) and .search(...) only.
 
@@ -3340,11 +3345,11 @@ Unit where relative display stops and date formatting begins.
 
 Automatic compact format or full date-time format.
 
+Relative phrasing. `"fromNow"` (default) is dayjs locale strings. `"always"` / `"auto"` use Intl (`1 day ago` vs `yesterday`). A function replaces the relative label.
+
 Namespace of loading indicators for async UI: full-area overlays, buttons, inputs, progress bars, skeletons, and spinners.
 
 Absolute overlay for blocking a local area.
-
-Skeleton placeholder for pending content.
 
 ## Forms
 
@@ -3553,6 +3558,7 @@ Headings:
 - Minimal Compose
 - Open Console
 - Important Env
+- Trim The Web Surface
 - Scale With AKAN_REPLICA
 - Tips
 

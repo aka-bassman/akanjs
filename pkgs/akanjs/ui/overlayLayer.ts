@@ -1,5 +1,6 @@
 "use client";
-import { createContext, useContext } from "react";
+import { useContext } from "react";
+import { sharedContext } from "../client/sharedContext";
 
 /**
  * Overlay surfaces render through `createPortal(document.body)`, so they leave the DOM subtree of the
@@ -22,7 +23,7 @@ export const OVERLAY_LAYER_ATTR = "data-akan-overlay";
 export const overlayZ = { select: 90, dropdown: 100, popconfirmScrim: 105, popconfirm: 110 } as const;
 
 /** Scope that rendered the surrounding content — empty at page level. */
-const OverlayOwnerContext = createContext("");
+const OverlayOwnerContext = sharedContext("overlayOwner", "");
 
 /** Wrap the content a dismissable container owns, with the scope from {@link useOverlayScope}. */
 export const OverlayOwnerProvider = OverlayOwnerContext.Provider;

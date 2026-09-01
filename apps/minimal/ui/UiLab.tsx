@@ -375,7 +375,13 @@ export const LabStatus = () => (
       <div className="flex flex-col gap-2 text-sm">
         <ObjectId id="507f1f77bcf86cd799439011" />
         <div className="text-foreground/70">
-          3시간 전: <RecentTime date={dayjs().subtract(3, "hour")} />
+          fromNow: <RecentTime date={dayjs().subtract(1, "day")} />
+        </div>
+        <div className="text-foreground/70">
+          auto: <RecentTime date={dayjs().subtract(1, "day")} relative="auto" />
+        </div>
+        <div className="text-foreground/70">
+          always: <RecentTime date={dayjs().subtract(1, "day")} relative="always" />
         </div>
       </div>
     </Section>
