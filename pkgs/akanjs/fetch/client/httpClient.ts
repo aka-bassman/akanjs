@@ -27,6 +27,19 @@ interface FetchOptions {
   baseUrl?: string;
 }
 
+const jsonContentType = /^application\/(?:[\w.+-]+\+)?json\b/i;
+
+const transportErrorKeyMap = {
+  408: "base.error.gatewayTimeout",
+  502: "base.error.serverUnavailable",
+  503: "base.error.serverUnavailable",
+  504: "base.error.gatewayTimeout",
+} as const;
+
+const serverUnreachableKey = "base.error.serverUnreachable";
+const unexpectedResponseKey = "base.error.unexpectedResponse";
+const transportDetailLimit = 200;
+
 export class HttpClient {
   readonly baseUrl: string;
   constructor(
@@ -42,11 +55,18 @@ export class HttpClient {
   #resolveBaseUrl(baseUrl?: string) {
     return (baseUrl ?? this.baseUrl).replace(/\/$/, "");
   }
+  #resolveUrl(url: string, options: FetchOptions) {
+    return `${this.#resolveBaseUrl(options.baseUrl)}${url}`;
+  }
+  // Accept describes the response, not the body: a proxy that sees no `Accept: application/json` cannot
+  // tell this call from a browser navigation, and answers a dead upstream with its own HTML page.
+  static #makeHeaders(headers: Record<string, string>, options: FetchOptions) {
+    return { Accept: "application/json", ...headers, ...options.headers };
+  }
   async get<Returns = unknown>(url: string, options: FetchOptions = {}): Promise<Returns> {
-    const res = await fetch(`${this.#resolveBaseUrl(options.baseUrl)}${url}`, {
-      headers: { "Content-Type": "application/json", ...options.headers },
+    return await this.#request<Returns>(this.#resolveUrl(url, options), {
+      headers: HttpClient.#makeHeaders({ "Content-Type": "application/json" }, options),
     });
-    return await this.#readJsonResponse<Returns>(res);
   }
   #makeReqContent(data: FormData | Record<string, unknown>): { body: BodyInit; headers: Record<string, string> } {
     // FormData: do not set Content-Type — fetch adds multipart boundary; a bare
@@ -61,12 +81,11 @@ export class HttpClient {
     options: FetchOptions = {},
   ): Promise<Returns> {
     const { body, headers } = this.#makeReqContent(data);
-    const res = await fetch(`${this.#resolveBaseUrl(options.baseUrl)}${url}`, {
+    return await this.#request<Returns>(this.#resolveUrl(url, options), {
       method,
       body,
-      headers: { ...headers, ...options.headers },
+      headers: HttpClient.#makeHeaders(headers, options),
     });
-    return await this.#readJsonResponse<Returns>(res);
   }
   async put<Returns = unknown>(
     url: string,
@@ -83,17 +102,68 @@ export class HttpClient {
     return await this.send<Returns>("POST", url, data, options);
   }
   async delete<Returns = unknown>(url: string, options: FetchOptions = {}): Promise<Returns> {
-    const res = await fetch(`${this.#resolveBaseUrl(options.baseUrl)}${url}`, {
+    return await this.#request<Returns>(this.#resolveUrl(url, options), {
       method: "DELETE",
-      headers: { "Content-Type": "application/json", ...options.headers },
+      headers: HttpClient.#makeHeaders({ "Content-Type": "application/json" }, options),
     });
+  }
+
+  async #request<Returns>(url: string, init: RequestInit): Promise<Returns> {
+    const res = await this.#fetch(url, init);
     return await this.#readJsonResponse<Returns>(res);
   }
 
+  /**
+   * `fetch` rejects only when no response arrived at all — a refused connection, a DNS failure, a socket
+   * dropped mid-flight. That is the server being unreachable, not an error this API reported, so it is
+   * restored as one rather than surfacing the runtime's own `TypeError: Failed to fetch`.
+   */
+  async #fetch(url: string, init: RequestInit) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") throw error;
+      throw this.#restoreError({ error: serverUnreachableKey, details: String(error) }, 503);
+    }
+  }
+
   async #readJsonResponse<Returns>(res: Response): Promise<Returns> {
-    const body = await res.json();
+    const body = await this.#readBody(res);
     if (res.ok) return body as Returns;
     throw this.#restoreError(body, res.status);
+  }
+
+  /**
+   * A proxy answers a restarting upstream with a page of its own — nginx's `504 Gateway Time-out` HTML,
+   * the federation gateway's plain-text 503. That body is not this API's, so parsing it would surface the
+   * parser's complaint (`Unexpected token '<'`) instead of the fact that the server is down.
+   */
+  async #readBody(res: Response) {
+    if (jsonContentType.test(res.headers.get("content-type") ?? "")) {
+      try {
+        return (await res.json()) as unknown;
+      } catch (error) {
+        throw this.#transportError(res.status, String(error));
+      }
+    }
+    const raw = await res.text();
+    const parsed = HttpClient.#parseJson(raw);
+    if (parsed === undefined) throw this.#transportError(res.status, raw);
+    return parsed;
+  }
+
+  // A body without the JSON content-type may still be ours — a proxy can strip the header.
+  static #parseJson(raw: string): unknown {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+
+  #transportError(status: number, detail: string): RestoredError {
+    const error = transportErrorKeyMap[status as keyof typeof transportErrorKeyMap] ?? unexpectedResponseKey;
+    return this.#restoreError({ error, data: { status }, details: detail.slice(0, transportDetailLimit) }, status);
   }
 
   #restoreError(body: unknown, fallbackStatusCode: number): RestoredError {

@@ -13,6 +13,7 @@ import type {
   SerializedFilter,
   SerializedReturns,
   SerializedSignal,
+  SerializedSignalMcp,
   SerializedSlice,
   SliceCls,
   SliceInfo,
@@ -69,6 +70,7 @@ export class FetchSerializer {
       ...(endpointInfo.signalOption.method ? { method: endpointInfo.signalOption.method } : {}),
       ...(endpointInfo.signalOption.fileUpload ? { fileUpload: true } : {}),
       ...(guards?.length ? { guards } : {}),
+      ...(endpointInfo.signalOption.mcp === false ? { mcp: false as const } : {}),
     };
   }
 
@@ -107,6 +109,7 @@ export class FetchSerializer {
       args: sliceInfo.args.map(FetchSerializer.#serializeArg),
       ...(sliceInfo.signalOption.path ? { path: sliceInfo.signalOption.path } : {}),
       ...(guards?.length ? { guards } : {}),
+      ...(sliceInfo.signalOption.mcp === false ? { mcp: false as const } : {}),
     };
   }
 
@@ -148,8 +151,19 @@ export class FetchSerializer {
       ...(sliceCls.removeGuards !== sliceCls.cruGuards && sliceCls.removeGuards.filter((g) => g.name !== "None").length
         ? { removeGuards: sliceCls.removeGuards.map((g) => g.name) }
         : {}),
+      ...FetchSerializer.#serializeSliceMcp(sliceCls),
       endpoint,
     };
+  }
+
+  /** Only the verbs kept off the shelf travel: `true` is the default, so emitting it would grow every payload. */
+  static #serializeSliceMcp(sliceCls: SliceCls): { mcp?: SerializedSignalMcp } {
+    const mcp = Object.fromEntries(
+      Object.entries(sliceCls.mcp ?? {})
+        .filter(([, published]) => !published)
+        .map(([verb]) => [verb, false]),
+    ) as SerializedSignalMcp;
+    return Object.keys(mcp).length ? { mcp } : {};
   }
 
   static serializeServiceSignal(endpointCls: EndpointCls): SerializedSignal {

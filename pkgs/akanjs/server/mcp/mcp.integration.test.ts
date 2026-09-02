@@ -241,7 +241,6 @@ describe("MCP over a booted container", () => {
       "echoTitle",
       "failingTitle",
       "joinTags",
-      "lightServerResolverTestItem",
       "maybeItem",
       "renameTitle",
       "serverResolverTestItem",
@@ -387,11 +386,14 @@ describe("MCP over a booted container", () => {
     const log = lines.join("\n");
     // The whole build, not one caller's view: `deniedTitle` and `deniedItem` are in the catalogue and are hidden
     // per credential at listing time, so these counts run ahead of what `tools/list` returned above.
-    expect(log).toContain("MCP catalogue: tools=14 prompts=4 resourceTemplates=4");
+    expect(log).toContain("MCP catalogue: tools=13 prompts=4 resourceTemplates=3 · listing ");
+    // Which signals a listing went to, so a catalogue that grew can say where. Every entry inlines the schema of
+    // every model it mentions, and the whole thing is re-sent to every agent that connects.
+    expect(log).toContain("MCP catalogue cost: serverResolverTestItem 17/");
     expect(lines.find((line) => line.includes('"publicRenameTitle"'))).toContain("`[Public]` is having none");
     // The read-only valve reports itself the same way, rather than leaving an author to wonder where a guarded,
     // deliberately exposed mutation went.
-    expect(log).toContain("MCP catalogue: tools=13 prompts=4 resourceTemplates=4 (read-only deployment)");
+    expect(log).toContain("MCP catalogue: tools=12 prompts=4 resourceTemplates=3 (read-only deployment)");
     expect(lines.find((line) => line.includes('did not expose "renameTitle"'))).toContain("read-only");
     // Published with nothing an agent can pick it by, which is a broken tool rather than an untidy one. These
     // signals carry no dictionary at all, so every entry is named — including the generated ones, whose only
@@ -821,7 +823,6 @@ describe("MCP over a booted container", () => {
   test("advertises the templates its exposed reads are addressable by", async () => {
     const { json } = await post({ jsonrpc: "2.0", id: 1, method: "resources/templates/list" });
     expect(json.result.resourceTemplates.map((t: { uriTemplate: string }) => t.uriTemplate)).toEqual([
-      "akan://serverResolverTestItem/light/{serverResolverTestItemId}",
       "akan://serverResolverTestItem/{serverResolverTestItemId}",
       "akan://serverResolverTestItem/list{?queryKey,skip,limit,sort}",
       "akan://serverResolverTestItem/list/inCategory{?category,skip,limit,sort}",

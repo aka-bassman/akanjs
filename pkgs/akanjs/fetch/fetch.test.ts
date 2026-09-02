@@ -121,12 +121,19 @@ const originalEnv = {
 const fetchCalls: FetchCall[] = [];
 const jsonResponses: unknown[] = [];
 const responseStatuses: number[] = [];
+const rawResponses: (Response | Error)[] = [];
 
 const setMockFetch = () => {
   fetchCalls.length = 0;
   jsonResponses.length = 0;
+  rawResponses.length = 0;
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     fetchCalls.push({ url: String(url), init });
+    if (rawResponses.length) {
+      const next = rawResponses.shift();
+      if (next instanceof Error) throw next;
+      return next as Response;
+    }
     const value = jsonResponses.length ? jsonResponses.shift() : { ok: true };
     const status = responseStatuses.length ? responseStatuses.shift() : 200;
     return Response.json(value, { status });
@@ -157,6 +164,7 @@ afterEach(() => {
   fetchCalls.length = 0;
   jsonResponses.length = 0;
   responseStatuses.length = 0;
+  rawResponses.length = 0;
 });
 
 const arg = (type: SerializedArg["type"], name: string, extra: Partial<SerializedArg> = {}): SerializedArg => ({
@@ -462,8 +470,9 @@ describe("HttpClient", () => {
       body: JSON.stringify({ title: "A" }),
       headers: { "Content-Type": "application/json" },
     });
-    expect(fetchCalls[2]?.init?.headers).toEqual({});
+    expect(fetchCalls[2]?.init?.headers).toEqual({ Accept: "application/json" });
     expect(fetchCalls[3]?.init).toMatchObject({ method: "DELETE" });
+    for (const call of fetchCalls) expect(call.init?.headers).toMatchObject({ Accept: "application/json" });
   });
 
   test("restores non-ok responses with the provided error constructor", async () => {
@@ -489,6 +498,73 @@ describe("HttpClient", () => {
       path: "/items/1",
       timestamp: "2026-05-25T00:00:00.000Z",
     });
+  });
+
+  test("restores a proxy html page as a transport error instead of a parse failure", async () => {
+    setMockFetch();
+    const page = "<html>\n<head><title>504 Gateway Time-out</title></head>\n<body></body>\n</html>\n";
+    rawResponses.push(new Response(page, { status: 504, headers: { "content-type": "text/html" } }));
+    const client = new HttpClient("https://api.example", TestErr);
+
+    const error = (await client.get("/items").catch((error: unknown) => error)) as TestErr;
+
+    expect(error).toBeInstanceOf(TestErr);
+    expect(error.message).toBe("base.error.gatewayTimeout");
+    expect(error).toMatchObject({ statusCode: 504, data: { status: 504 }, details: page });
+  });
+
+  test("restores a plain-text gateway 503 as a transport error", async () => {
+    setMockFetch();
+    rawResponses.push(new Response("No healthy federation child is ready", { status: 503 }));
+    const client = new HttpClient("https://api.example", TestErr);
+
+    const error = (await client.post("/items", { title: "A" }).catch((error: unknown) => error)) as TestErr;
+
+    expect(error.message).toBe("base.error.serverUnavailable");
+    expect(error).toMatchObject({ statusCode: 503, details: "No healthy federation child is ready" });
+  });
+
+  test("caps the transport error detail so a page body never becomes the message", async () => {
+    setMockFetch();
+    rawResponses.push(new Response("x".repeat(5000), { status: 500, headers: { "content-type": "text/plain" } }));
+    const client = new HttpClient("https://api.example", TestErr);
+
+    const error = (await client.get("/items").catch((error: unknown) => error)) as TestErr;
+
+    expect(error.message).toBe("base.error.unexpectedResponse");
+    expect(String(error.details)).toHaveLength(200);
+  });
+
+  test("reads a json body a proxy stripped the content-type from", async () => {
+    setMockFetch();
+    rawResponses.push(new Response(JSON.stringify({ value: "ok" }), { status: 200 }));
+    const client = new HttpClient("https://api.example", TestErr);
+
+    expect(await client.get<{ value: string }>("/items")).toEqual({ value: "ok" });
+  });
+
+  test("restores a refused connection as an unreachable server", async () => {
+    setMockFetch();
+    rawResponses.push(new TypeError("Unable to connect. Is the computer able to access the url?"));
+    const client = new HttpClient("https://api.example", TestErr);
+
+    const error = (await client.get("/items").catch((error: unknown) => error)) as TestErr;
+
+    expect(error).toBeInstanceOf(TestErr);
+    expect(error.message).toBe("base.error.serverUnreachable");
+    expect(error.statusCode).toBe(503);
+  });
+
+  test("leaves a caller-side abort untouched", async () => {
+    setMockFetch();
+    const abort = new Error("The operation was aborted.");
+    abort.name = "AbortError";
+    rawResponses.push(abort);
+    const client = new HttpClient("https://api.example", TestErr);
+
+    const error = (await client.get("/items").catch((error: unknown) => error)) as Error;
+
+    expect(error).toBe(abort);
   });
 });
 
@@ -804,7 +880,7 @@ describe("FetchClient HTTP generation", () => {
     expect(fetchCalls[0]?.init?.headers).toMatchObject({ Authorization: "Bearer explicit" });
     expect(fetchCalls[1]?.init?.headers).toMatchObject({ Authorization: "Bearer request-token" });
     expect(fetchCalls[2]?.init?.body).toBeInstanceOf(FormData);
-    expect(fetchCalls[2]?.init?.headers).toEqual({});
+    expect(fetchCalls[2]?.init?.headers).toEqual({ Accept: "application/json" });
     expect(fetchCalls[3]).toMatchObject({
       url: "https://clone.example/custom/bbbbbbbbbbbbbbbbbbbbbbbb",
       init: { headers: { "Content-Type": "application/json", Authorization: "Bearer clone-jwt" } },

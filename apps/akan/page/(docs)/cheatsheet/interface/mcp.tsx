@@ -52,8 +52,8 @@ export default function Page() {
           </div>
           <Docs.Alert type="info">
             {l.trans({
-              en: "Exposure follows the guards. A real guard publishes; no guards at all is refused; a mutation whose only guard is [Public] is refused. A Public read publishes. A refused endpoint answers the same unknown tool as one that does not exist.",
-              ko: "노출은 guard를 따릅니다. 실질 guard가 있으면 게시되고, guard가 없으면 거부되며, [Public]만 있는 mutation도 거부됩니다. Public 읽기는 게시됩니다. 거부된 endpoint는 존재하지 않는 것과 같은 unknown tool을 돌려줍니다.",
+              en: "Exposure follows the guards. A real guard publishes; no guards at all is refused; a mutation whose only guard is [Public] is refused. A Public read publishes. A refused endpoint answers the same unknown tool as one that does not exist. Write mcp: false when an endpoint is guarded correctly and still has no business on a shelf.",
+              ko: "노출은 guard를 따릅니다. 실질 guard가 있으면 게시되고, guard가 없으면 거부되며, [Public]만 있는 mutation도 거부됩니다. Public 읽기는 게시됩니다. 거부된 endpoint는 존재하지 않는 것과 같은 unknown tool을 돌려줍니다. guard는 옳게 달렸는데 선반에 올릴 이유가 없는 endpoint에는 mcp: false를 쓰세요.",
             })}
           </Docs.Alert>
         </Docs.Description>
@@ -197,8 +197,34 @@ export default function Page() {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Every generated read also gets a resource URI. An insight does not — it is an aggregate with nothing to point at. A custom endpoint keeps its tool and gets no template. The root list is the bare .../list, with no third segment, because that segment is the slice key.",
-              ko: "생성된 조회에는 resource URI도 붙습니다. insight는 예외입니다. 집계값이라 가리킬 대상이 없습니다. 커스텀 endpoint는 tool은 갖고 template은 받지 않습니다. 모델 자체의 목록은 세 번째 segment 없이 .../list입니다. 그 자리는 slice key의 몫이기 때문입니다.",
+              en: "mcp: false keeps an entry off the shelf without touching its guards. On slice() it mirrors the guards map — same keys, same cru fallbacks, and the same scope: the root slice and generated CRUD, never a named slice or a custom endpoint. Those write their own. It is curation, not authorization: HTTP serves the endpoint exactly as before.",
+              ko: "mcp: false는 guard를 건드리지 않고 항목만 선반에서 뺍니다. slice()에서는 guards map을 그대로 따라갑니다. 키도 cru 폴백도 같고, 범위도 같습니다. 루트 slice와 생성 CRUD까지이며, 이름 있는 slice나 커스텀 endpoint에는 닿지 않습니다. 그쪽은 각자 적습니다. 권한이 아니라 큐레이션입니다. HTTP는 그대로 서빙합니다.",
+            })}
+          </div>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title="task.signal.ts"
+          code={`export class TaskSlice extends slice(
+  srv.task,
+  {
+    guards: { root: Admin, get: SignedIn, cru: SignedIn },
+    mcp: { cru: false },
+  },
+  (init) => ({
+    inTodo: init({ guards: [SignedIn], mcp: false }).exec(function () {
+      return this.taskService.queryByStatuses(["todo"]);
+    }),
+  }),
+) {}
+
+requestPhoneCode: mutation(Boolean, { guards: [SignedIn], mcp: false })`}
+        />
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Every published read also gets a resource URI. An insight does not — it is an aggregate with nothing to point at. A custom endpoint keeps its tool and gets no template, and the refused lightX read gets neither. The root list is the bare .../list, with no third segment, because that segment is the slice key.",
+              ko: "게시된 조회에는 resource URI도 붙습니다. insight는 예외입니다. 집계값이라 가리킬 대상이 없습니다. 커스텀 endpoint는 tool은 갖고 template은 받지 않으며, 거부된 lightX 조회는 둘 다 없습니다. 모델 자체의 목록은 세 번째 segment 없이 .../list입니다. 그 자리는 slice key의 몫이기 때문입니다.",
             })}
           </div>
         </Docs.Description>
@@ -206,7 +232,6 @@ export default function Page() {
           className="w-full"
           title={l.trans({ en: "generated resource uris", ko: "생성되는 resource uri" })}
           code={`akan://task/{taskId}
-akan://task/light/{taskId}
 akan://task/list{?skip,limit,sort}
 akan://task/list/inTodo{?skip,limit,sort}`}
         />
@@ -411,6 +436,12 @@ AKAN_MCP_RESOURCE=https://api.example.com/mcp`}
               {l.trans({
                 en: "An Any or Upload return is refused. A required Any argument is refused too — leave optional Any out of the schema, and send nothing under that name.",
                 ko: "Any나 Upload 반환은 거부됩니다. 필수 Any 인자도 거부됩니다. optional Any는 schema에서 빠지고, 그 이름으로 값을 보내면 거부됩니다.",
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: "The generated lightX read is refused. It returns the same document as X under the same guards, so one read never costs two tools — call X.",
+                ko: "생성된 lightX 조회는 거부됩니다. 같은 guard로 X와 같은 문서를 돌려주므로, 조회 하나가 tool 두 개를 쓰지 않습니다. X를 부르세요.",
               })}
             </li>
             <li>

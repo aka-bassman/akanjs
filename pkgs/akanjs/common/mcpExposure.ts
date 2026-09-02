@@ -16,9 +16,13 @@ export interface McpExposureEndpoint {
   args: { name: string; refName: string; type: string; arrDepth?: number; nullable?: boolean }[];
   guards?: string[];
   fileUpload?: boolean;
+  mcp?: boolean;
 }
 
 export interface McpExposureOption {
+  /** The model the endpoint belongs to and the name it is published under: one rule reads the key, not the shape. */
+  refName: string;
+  key: string;
   /**
    * The read-only deployment valve, which is server configuration. The browser explorer cannot know it and so
    * badges what the code decided; the boot log is where a read-only deployment says what it dropped.
@@ -56,12 +60,23 @@ export const mcpHintsOf = (key: string, endpoint: { type: string }) => {
 };
 
 /** The sentence explaining why this endpoint is not in the catalogue, or `null` when it is. */
-export const mcpRefusalOf = (endpoint: McpExposureEndpoint, { readOnly }: McpExposureOption = {}): string | null => {
+export const mcpRefusalOf = (
+  endpoint: McpExposureEndpoint,
+  { refName, key, readOnly }: McpExposureOption,
+): string | null => {
+  // First, because it is the one answer nobody has to derive: somebody stated it. Curation, not authorization —
+  // HTTP serves this endpoint exactly as before, and its guards are still what decide who may call it.
+  if (endpoint.mcp === false)
+    return "it declares `mcp: false`, so it is deliberately off the agent shelf. HTTP still serves it.";
   // The whole exposure policy, and the first gate because it applies to every kind. Publishing follows the guards:
   // an endpoint with none has had no decision made about who may reach it, and a catalogue entry is the one place
   // that omission stops being invisible. `guards: [Public]` is the same access, written down, and publishes.
   if (!endpoint.guards?.length)
     return "it declares no guards, and exposure follows them — write `guards: [Public]` if anonymous access is the intent.";
+  // `light<Model>` reads the same document as `<Model>` under the same guards, in a shape trimmed for a page's
+  // payload rather than for a model. Publishing both spends two entries of every catalogue listing on one read.
+  if (key === `light${capitalize(refName)}`)
+    return `it reads the same document as \`${refName}\` in a smaller shape — call \`${refName}\` instead.`;
   if (endpoint.type === "prompt") return mcpPromptRefusalOf(endpoint);
   if (endpoint.type === "pubsub" || endpoint.type === "message")
     return `\`${endpoint.type}\` rides the websocket, and its internal arguments read a socket an MCP request does not have.`;

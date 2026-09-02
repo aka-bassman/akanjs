@@ -633,6 +633,13 @@ describe("AkanApp", () => {
       const textRes = await fetch(`http://127.0.0.1:${port}/api/anything`);
       expect(textRes.status).toBe(503);
       expect(await textRes.text()).toContain("No healthy federation child is ready");
+
+      const jsonRes = await fetch(`http://127.0.0.1:${port}/api/anything`, {
+        headers: { accept: "application/json" },
+      });
+      expect(jsonRes.status).toBe(503);
+      expect(jsonRes.headers.get("content-type") ?? "").toContain("application/json");
+      expect(await jsonRes.json()).toMatchObject({ error: "base.error.serverUnavailable", statusCode: 503 });
     } finally {
       await app.stop();
       await Promise.race([running, wait(1_000)]);

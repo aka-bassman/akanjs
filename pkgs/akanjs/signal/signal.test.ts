@@ -495,6 +495,25 @@ describe("signal serialization and registry", () => {
   ) {}
   class RegistryServerSignal extends serverSignal(RegistryEndpoint, RegistryInternal) {}
 
+  test("resolves the mcp map the way it resolves the guards map, and ships only what is off", () => {
+    // Same keys, same fallbacks, same scope as `guards`: `create`/`update`/`remove` inherit `cru`, and a verb
+    // that names itself wins over it. Only the `false` answers travel — `true` is the default, so serializing it
+    // would put a field on every signal that says nothing.
+    class McpSlice extends slice(
+      signalTestServiceModel,
+      { guards: { root: Public, get: Public, cru: Public }, mcp: { cru: false, update: true, root: false } },
+      (init) => ({}),
+    ) {}
+    expect(McpSlice.mcp).toEqual({ get: true, create: false, update: true, remove: false });
+    const serialized = FetchSerializer.serializeDatabaseSignal(McpSlice, RegistryEndpoint);
+    expect(serialized.mcp).toEqual({ create: false, remove: false });
+    // `root` is not a generated verb but the root slice itself, so its answer rides on that slice.
+    expect(serialized.slice?.[""]?.mcp).toBe(false);
+
+    class QuietSlice extends slice(signalTestServiceModel, { guards: { root: Public }, mcp: false }, () => ({})) {}
+    expect(QuietSlice.mcp).toEqual({ get: false, create: false, update: false, remove: false });
+  });
+
   test("serializes database and service signals", () => {
     const databaseSignal = FetchSerializer.serializeDatabaseSignal(RegistrySlice, RegistryEndpoint);
     const serviceEndpoint = endpoint(ServiceModel.from(SignalTestAuxService), (builder) => ({

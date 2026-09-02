@@ -15,13 +15,10 @@ export interface McpResourceTarget {
 export class McpUriTemplate {
   static readonly scheme = "akan";
   /** Reserved second segment: a model id may never take one of these values, and none is a valid ObjectId. */
-  static readonly #reserved = new Set(["light", "list"]);
+  static readonly #reserved = new Set(["list"]);
 
   static model(refName: string) {
     return `${McpUriTemplate.scheme}://${refName}/{${refName}Id}`;
-  }
-  static light(refName: string) {
-    return `${McpUriTemplate.scheme}://${refName}/light/{${refName}Id}`;
   }
   /**
    * The model's own unfiltered list is the bare `…/list`, never `…/list/<token>`. A named slice occupies the
@@ -51,8 +48,6 @@ export class McpUriTemplate {
       return { endpointKey: refName, args: { [`${refName}Id`]: second } };
     if (segments.length === 2 && second === "list")
       return { endpointKey: `${refName}List`, args: McpUriTemplate.#searchArgs(search) };
-    if (segments.length === 3 && second === "light" && third)
-      return { endpointKey: `light${capitalize(refName)}`, args: { [`${refName}Id`]: third } };
     if (segments.length === 3 && second === "list" && third)
       return { endpointKey: `${refName}List${capitalize(third)}`, args: McpUriTemplate.#searchArgs(search) };
     return null;

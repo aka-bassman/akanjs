@@ -447,6 +447,10 @@ export class FetchClient {
     const createGuards = signal.createGuards ?? signal.cruGuards;
     const updateGuards = signal.updateGuards ?? signal.cruGuards;
     const removeGuards = signal.removeGuards ?? signal.cruGuards;
+    // These endpoints exist only from here, so the signal's own answer is stamped on as they are built — the
+    // catalogue and the browser explorer then read one resolved field instead of re-deriving the rule.
+    const mcp = (verb: keyof NonNullable<SerializedSignal["mcp"]>) =>
+      signal.mcp?.[verb] === false ? { mcp: false as const } : {};
     const endpoint: { [key: string]: SerializedEndpoint } = {};
     if (signal.getGuards) {
       endpoint[names.model] = {
@@ -454,12 +458,14 @@ export class FetchClient {
         args: [{ type: "param", name: names.modelId, refName: "ID" }],
         returns: { refName, modelType: "full" },
         guards: signal.getGuards,
+        ...mcp("get"),
       };
       endpoint[names.lightModel] = {
         type: "query",
         args: [{ type: "param", name: names.modelId, refName: "ID" }],
         returns: { refName, modelType: "light" },
         guards: signal.getGuards,
+        ...mcp("get"),
       };
     }
     if (createGuards) {
@@ -468,6 +474,7 @@ export class FetchClient {
         args: [{ type: "body", name: "data", refName, modelType: "input" }],
         returns: { refName, modelType: "full" },
         guards: createGuards,
+        ...mcp("create"),
       };
     }
     if (updateGuards) {
@@ -479,6 +486,7 @@ export class FetchClient {
         ],
         returns: { refName, modelType: "full" },
         guards: updateGuards,
+        ...mcp("update"),
       };
     }
     if (removeGuards) {
@@ -487,6 +495,7 @@ export class FetchClient {
         args: [{ type: "param", name: names.modelId, refName: "ID" }],
         returns: { refName, modelType: "full" },
         guards: removeGuards,
+        ...mcp("remove"),
       };
     }
     return endpoint;
@@ -608,18 +617,23 @@ export class FetchClient {
       list: `${refName}List${capSuffix}`,
       insight: `${refName}Insight${capSuffix}`,
     };
+    // A slice's own answer covers both entries it generates: one `mcp: false` on `init()` takes the list and the
+    // aggregate together, which is what an author writing it means.
+    const mcp = slice.mcp === false ? { mcp: false as const } : {};
     const endpoint: { [key: string]: SerializedEndpoint } = {
       [names.list]: {
         type: "query",
         args: [...slice.args, ...FetchClient.paginationArgs],
         returns: { refName, modelType: "light", arrDepth: 1 },
         guards: slice.guards,
+        ...mcp,
       },
       [names.insight]: {
         type: "query",
         args: [...slice.args],
         returns: { refName, modelType: "insight" },
         guards: slice.guards,
+        ...mcp,
       },
     };
     return endpoint;

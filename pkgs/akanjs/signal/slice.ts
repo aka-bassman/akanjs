@@ -38,7 +38,16 @@ export type SliceCls<
   createGuards: GuardCls[];
   updateGuards: GuardCls[];
   removeGuards: GuardCls[];
+  mcp: ResolvedSliceMcp;
 };
+
+/** The generated verbs, resolved to a plain answer each. `root` is not here: it rides on the root slice itself. */
+export interface ResolvedSliceMcp {
+  get: boolean;
+  create: boolean;
+  update: boolean;
+  remove: boolean;
+}
 
 interface RootSliceOption {
   guards?: {
@@ -49,6 +58,18 @@ interface RootSliceOption {
     update?: GuardCls | GuardCls[];
     remove?: GuardCls | GuardCls[];
   };
+  /**
+   * Which of the entries this call generates belong on an agent's shelf. Keyed exactly like `guards` above and
+   * scoped to exactly what `guards` governs — the root slice and the generated CRUD — so `false` here narrows the
+   * catalogue and nothing else. `create`/`update`/`remove` fall back to `cru` the same way their guards do, and
+   * the bare `false` is every key at once.
+   *
+   * A named slice and a custom endpoint declare their own `mcp` in their own signal option, exactly as they
+   * declare their own guards. This is curation, not authorization: HTTP is unchanged.
+   */
+  mcp?:
+    | boolean
+    | { root?: boolean; get?: boolean; cru?: boolean; create?: boolean; update?: boolean; remove?: boolean };
   prefix?: string;
 }
 
@@ -132,6 +153,15 @@ export function slice<
   const createGuards = option.guards?.create ? toGuards(option.guards.create) : cruGuards;
   const updateGuards = option.guards?.update ? toGuards(option.guards.update) : cruGuards;
   const removeGuards = option.guards?.remove ? toGuards(option.guards.remove) : cruGuards;
+  const mcpOption =
+    typeof option.mcp === "boolean" ? { root: option.mcp, get: option.mcp, cru: option.mcp } : option.mcp;
+  const cruMcp = mcpOption?.cru !== false;
+  const mcp: ResolvedSliceMcp = {
+    get: mcpOption?.get !== false,
+    create: mcpOption?.create ?? cruMcp,
+    update: mcpOption?.update ?? cruMcp,
+    remove: mcpOption?.remove ?? cruMcp,
+  };
   const srvKeys = [
     ...new Set([...Object.keys(srv.srvMap), ...libSlices.flatMap((libSlice) => Object.keys(libSlice.srv.srvMap))]),
   ];
@@ -145,11 +175,12 @@ export function slice<
     static createGuards = createGuards;
     static updateGuards = updateGuards;
     static removeGuards = removeGuards;
+    static mcp = mcp;
     static [SLICE_META] = Object.assign(
       {
         // The root slice names one of the model's own filters instead of carrying a query: an admin API that
         // took a raw descriptor let any caller compose a query the model never declared.
-        [""]: init({ guards: rootGuards })
+        [""]: init({ guards: rootGuards, ...(mcpOption?.root === false ? { mcp: false } : {}) })
           .search<"queryKey", string>("queryKey", String)
           .search<"args", unknown[]>("args", Any)
           .exec((queryKey, args) => {

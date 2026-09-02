@@ -432,7 +432,9 @@ export class Executor {
     const writePath = this.getPath(filePath);
     const dir = path.dirname(writePath);
     if (!(await FileSys.dirExists(dir))) await mkdir(dir, { recursive: true });
-    let contentStr = typeof content === "string" ? content : JSON.stringify(content, null, 2);
+    //? Biome formats every tracked .json and always ends a file with a newline, so a JSON write without one
+    //? loses a byte to `akan lint` and takes it back on the next `akan sync` — a permanent one-line git diff.
+    let contentStr = typeof content === "string" ? content : `${JSON.stringify(content, null, 2)}\n`;
 
     if (await FileSys.fileExists(writePath)) {
       const currentContent = await FileSys.readText(writePath);

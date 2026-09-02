@@ -83,7 +83,7 @@ akan start ignores web and keeps the whole dev surface: the incremental builder 
 
 images
 
-images configures Akan's optimized image pipeline. It controls allowed image sizes, output formats, remote sources, local paths, redirects, timeout, and byte limits.
+images configures Akan's optimized image pipeline. It controls allowed image sizes, output formats, remote sources, local paths, redirects, timeout, byte limits, and how many images encode at once.
 
 Akan merges your image config with defaults. List fields such as deviceSizes, imageSizes, formats, remotePatterns, and localPatterns keep defaults unless you replace them.
 
@@ -295,6 +295,7 @@ const config: AppConfig = {
     formats: ["image/webp"],
     minimumCacheTTL: 86400,
     maxRemoteBytes: 10 * 1024 * 1024,
+    maxConcurrency: 2,
   },
 };
 

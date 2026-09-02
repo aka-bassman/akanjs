@@ -285,8 +285,8 @@ export default config;`}
         <Docs.Description>
           <div>
             {l.trans({
-              en: "images configures Akan's optimized image pipeline. It controls allowed image sizes, output formats, remote sources, local paths, redirects, timeout, and byte limits.",
-              ko: "images는 Akan optimized image pipeline을 설정합니다. 허용 image size, output format, remote source, local path, redirect, timeout, byte limit을 제어합니다.",
+              en: "images configures Akan's optimized image pipeline. It controls allowed image sizes, output formats, remote sources, local paths, redirects, timeout, byte limits, and how many images encode at once.",
+              ko: "images는 Akan optimized image pipeline을 설정합니다. 허용 image size, output format, remote source, local path, redirect, timeout, byte limit, 동시 인코딩 수를 제어합니다.",
             })}
           </div>
           <div>
@@ -309,6 +309,7 @@ const config: AppConfig = {
     formats: ["image/webp"],
     minimumCacheTTL: 86400,
     maxRemoteBytes: 10 * 1024 * 1024,
+    maxConcurrency: 2,
   },
 };
 

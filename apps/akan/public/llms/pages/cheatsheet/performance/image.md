@@ -12,6 +12,7 @@
 - Use Image (#usage)
 - Config (#config)
 - remotePatterns (#remote)
+- Remote Cache (#remote-cache)
 - Cache Hits (#cache-hit)
 
 ## Content
@@ -36,11 +37,29 @@ Config
 
 The default config covers common responsive sizes. Change it only when your UI has clear image sizes that repeat often.
 
+`minimumCacheTTL` is the floor for how long a remote image is served without asking its origin again, and it also sets the response `max-age`.
+
+`maxConcurrency` caps how many images encode at once. `0` sizes it from the CPUs the serving process sees.
+
+Encoding shares a worker pool with file reads and hashing, so raising that cap lets a burst of image requests slow down everything else the server is doing.
+
 remotePatterns
 
 Remote images are blocked unless their host and path match `remotePatterns`. If optimization returns a bad request, check this setting first.
 
 Allow CDN images
+
+Remote Cache
+
+A remote image is downloaded once and then served from disk until its TTL runs out, so a warm image never reaches its origin. The TTL is the upstream `max-age`, floored by `minimumCacheTTL`.
+
+After the TTL the source is fetched again, but an unchanged source reuses the encoded file, so revalidation costs one request and no re-encode.
+
+`akan start` skips this cache and refetches every time, so an upstream edit shows up immediately.
+
+Local images are keyed by file mtime instead, so replacing a file in `public/` takes effect at once.
+
+The cache lives in the build artifact directory, so each replica keeps its own and every deploy starts cold.
 
 Cache Hits
 
@@ -87,6 +106,7 @@ export default {
     formats: ["image/webp"],
     qualities: [75],
     minimumCacheTTL: 14400,
+    maxConcurrency: 0,
   },
 };
 ```

@@ -31,7 +31,7 @@ A slash command the user invokes, not the model.
 
 Never exposed — their arguments read a socket MCP does not have.
 
-Exposure follows the guards. A real guard publishes; no guards at all is refused; a mutation whose only guard is [Public] is refused. A Public read publishes. A refused endpoint answers the same unknown tool as one that does not exist.
+Exposure follows the guards. A real guard publishes; no guards at all is refused; a mutation whose only guard is [Public] is refused. A Public read publishes. A refused endpoint answers the same unknown tool as one that does not exist. Write mcp: false when an endpoint is guarded correctly and still has no business on a shelf.
 
 1. Turn The Server On
 
@@ -57,7 +57,9 @@ Write the dictionary entry at the same time. An agent picks a tool by its descri
 
 Generated CRUD publishes from the slice() guards map — get, cru, and the per-verb entries. A named slice does not inherit that map: write its own guards, or it is refused and named in the boot log.
 
-Every generated read also gets a resource URI. An insight does not — it is an aggregate with nothing to point at. A custom endpoint keeps its tool and gets no template. The root list is the bare .../list, with no third segment, because that segment is the slice key.
+mcp: false keeps an entry off the shelf without touching its guards. On slice() it mirrors the guards map — same keys, same cru fallbacks, and the same scope: the root slice and generated CRUD, never a named slice or a custom endpoint. Those write their own. It is curation, not authorization: HTTP serves the endpoint exactly as before.
+
+Every published read also gets a resource URI. An insight does not — it is an aggregate with nothing to point at. A custom endpoint keeps its tool and gets no template, and the refused lightX read gets neither. The root list is the bare .../list, with no third segment, because that segment is the slice key.
 
 generated resource uris
 
@@ -110,6 +112,8 @@ A missing tool is explained in the boot log: MCP catalogue: tools=… then one v
 Write the model's .desc(). Generated CRUD tools append it to Get X, and the root list borrows the .of() label — those entries have no other text.
 
 An Any or Upload return is refused. A required Any argument is refused too — leave optional Any out of the schema, and send nothing under that name.
+
+The generated lightX read is refused. It returns the same document as X under the same guards, so one read never costs two tools — call X.
 
 A prompt also refuses a list argument and any Any argument: its arguments are one string per name, with no schema beside them.
 
@@ -169,11 +173,29 @@ export class TaskSlice extends slice(
 ) {}
 ```
 
+### task.signal.ts
+
+```ts
+export class TaskSlice extends slice(
+  srv.task,
+  {
+    guards: { root: Admin, get: SignedIn, cru: SignedIn },
+    mcp: { cru: false },
+  },
+  (init) => ({
+    inTodo: init({ guards: [SignedIn], mcp: false }).exec(function () {
+      return this.taskService.queryByStatuses(["todo"]);
+    }),
+  }),
+) {}
+
+requestPhoneCode: mutation(Boolean, { guards: [SignedIn], mcp: false })
+```
+
 ### Code
 
 ```ts
 akan://task/{taskId}
-akan://task/light/{taskId}
 akan://task/list{?skip,limit,sort}
 akan://task/list/inTodo{?skip,limit,sort}
 ```

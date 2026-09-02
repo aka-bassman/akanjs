@@ -14,6 +14,7 @@ import {
   type McpExposedEndpoint,
   type McpJsonRpcRequest,
   McpProgress,
+  type McpSignalCost,
   type McpToolResult,
 } from "../../signal/mcp";
 import type { MiddlewareCls } from "../../signal/middleware";
@@ -94,6 +95,8 @@ const discoverCache: McpCacheHint = { ttlMs: 3_600_000, cacheScope: "public" };
  */
 export class McpRouter {
   static readonly logger = new Logger("McpRouter");
+  /** Past this a listing is a meaningful slice of a model's window, which is where it becomes worth saying so. */
+  static readonly listingWarnBytes = 100 * 1024;
 
   readonly #props: McpRouterProps;
   readonly #dispatcher: McpDispatcher;
@@ -141,9 +144,20 @@ export class McpRouter {
    */
   report() {
     try {
-      const { tools, prompts, resourceTemplates, refusals, undescribed } = this.#getDocument();
+      const document = this.#getDocument();
+      const { tools, prompts, resourceTemplates, refusals, undescribed } = document;
+      const cost = document.listingCost;
       const counts = `tools=${tools.length} prompts=${prompts.length} resourceTemplates=${resourceTemplates.length}`;
-      McpRouter.logger.debug(`MCP catalogue: ${counts}${this.#props.readOnly ? " (read-only deployment)" : ""}`);
+      const readOnly = this.#props.readOnly ? " (read-only deployment)" : "";
+      McpRouter.logger.debug(`MCP catalogue: ${counts}${readOnly} · listing ${McpRouter.#kb(cost.bytes)}`);
+      if (cost.bySignal.length) McpRouter.logger.debug(`MCP catalogue cost: ${McpRouter.#costLine(cost.bySignal)}`);
+      // A catalogue nobody can see the size of is one nobody narrows. Every entry inlines the schema of every
+      // model it mentions, so this grows with models × generated entries and is spent by every agent that
+      // connects, before its first turn.
+      if (cost.bytes > McpRouter.listingWarnBytes)
+        McpRouter.logger.warn(
+          `MCP listing is ${McpRouter.#kb(cost.bytes)}, which every agent that connects pays before its first turn. Narrow it with \`mcp: false\` on an endpoint or the \`mcp\` map on \`slice()\`.`,
+        );
       // Exposure follows the guards, so an empty catalogue on an app that has endpoints means every one of them
       // was refused — the lines below say which rule took each.
       if (!tools.length && !prompts.length)
@@ -160,6 +174,20 @@ export class McpRouter {
         `MCP catalogue could not be built at boot: ${error instanceof Error ? error.message : error}`,
       );
     }
+  }
+
+  static #kb(bytes: number) {
+    return bytes < 1024 ? `${bytes}B` : `${Math.round(bytes / 1024)}KB`;
+  }
+
+  /** The heaviest signals first, capped: a fleet of forty models would otherwise wrap the line off the screen. */
+  static #costLine(bySignal: McpSignalCost[]) {
+    const shown = bySignal.slice(0, 8);
+    const rest = bySignal.length - shown.length;
+    const line = shown
+      .map(({ refName, entries, bytes }) => `${refName} ${entries}/${McpRouter.#kb(bytes)}`)
+      .join(" · ");
+    return rest > 0 ? `${line} · +${rest} more` : line;
   }
 
   /** Rebuilding per request would re-derive every tool schema on a list agents poll; the set is fixed at boot. */

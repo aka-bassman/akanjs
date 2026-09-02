@@ -787,7 +787,7 @@ export class AkanApp {
           `Child ${child.idx}/${child.role} upstream is unreachable (${child.upstream.socketPath}); restarting`,
         );
         this.#scheduleChildRestart(child, child.proc, "upstream-open-failed");
-        return new Response("Federation child upstream is unreachable; restarting", { status: 503 });
+        return AkanApp.#unavailableResponse(req, "Federation child upstream is unreachable; restarting");
       }
       throw error;
     } finally {
@@ -851,13 +851,26 @@ export class AkanApp {
           text: "No healthy federation child is ready",
           note: "A replica is booting or restarting — this page reloads itself as soon as it answers.",
         };
-    if (!req.headers.get("accept")?.includes("text/html")) {
-      return new Response(page.text, { status: 503, headers: { "cache-control": "no-store" } });
+    if (req.headers.get("accept")?.includes("text/html")) {
+      return new Response(AkanApp.#statusPageHtml(page), {
+        status: 503,
+        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+      });
     }
-    return new Response(AkanApp.#statusPageHtml(page), {
-      status: 503,
-      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-    });
+    return AkanApp.#unavailableResponse(req, page.text);
+  }
+
+  /**
+   * An API caller asks for JSON, so it is answered with the payload `HttpClient` restores into an `Err` —
+   * a bare-text 503 reaches the browser as a JSON parse error naming the page body instead of the outage.
+   */
+  static #unavailableResponse(req: Request, detail: string): Response {
+    const headers = { "cache-control": "no-store" };
+    if (!req.headers.get("accept")?.includes("application/json")) return new Response(detail, { status: 503, headers });
+    return Response.json(
+      { error: "base.error.serverUnavailable", statusCode: 503, data: { status: 503 }, details: detail },
+      { status: 503, headers },
+    );
   }
 
   static #statusPageHtml({ heading, detail, note }: { heading: string; detail: string; note: string }) {

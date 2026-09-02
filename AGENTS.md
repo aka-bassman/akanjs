@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.67 -->
+<!-- akan:agent:version 3.0.0-alpha.68 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/devkit, @akanjs/cli
+- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -709,12 +709,26 @@ that declares a real guard is published; one that declares none is refused, and 
 `Public`. The guards are already the authorization decision, so a second switch would say nothing they do not —
 while guaranteeing that every endpoint added later is invisible to agents until somebody remembers it.
 
+- **`mcp: false` keeps an endpoint off the shelf without touching its guards.** Guards answer "may an agent call
+  this"; they cannot answer "does this belong on a shelf", and a step of a UI-driven state machine
+  (`requestPhoneCodeForSignin`) is perfectly guarded and still a mistake for a model to reach. Write it in the
+  signal option (`mutation(Boolean, { guards: [Every], mcp: false })`, `init({ guards: [SignedIn], mcp: false })`
+  — which covers that slice's list and insight together), or as an `mcp` map on `slice()` that **mirrors the
+  `guards` map key for key** (`mcp: { cru: false }`), with the same `cru` fallbacks and the same scope: the root
+  slice and generated CRUD only, never a named slice or a custom endpoint. It is an opt-**out**, so everything
+  added later still publishes. **It is curation, not authorization — HTTP serves the endpoint exactly as before.**
+- **Narrow by cost, and read the boot log first.** MCP has no shared component section and forbids a `$ref` across
+  entries, so every entry inlines the full schema of every model it mentions, and the listing is re-sent whole to
+  every agent that connects. `MCP catalogue: … · listing 214KB` plus a per-signal `MCP catalogue cost:` line says
+  where it went. A plain 21-field model costs 12.6KB over eight entries; `mcp: { cru: false }` takes it to 4.7KB,
+  because the generated writes carry the input *and* the full model.
 - Settings live in the app's `lib/option.ts` — `option.setMcp({ enabled, readOnly, path, version, instructions,
   allowedOrigins, pageSize, language, auth })`, **not `main.ts`**. Every lib's option is read in mount order with
   the app's last, and each field has an `AKAN_MCP_*` env spelling the option overrides.
-- **The refusals are fail-closed**: an endpoint with no `guards`, a mutation with no real guard (`[Public]` is
-  having none), `pubsub` and `message`, an `Any` or `Upload` return, a file upload, and a required `Any` argument.
-  A `prompt` also refuses a list argument and any `Any` argument.
+- **The refusals are fail-closed**: a declared `mcp: false`, an endpoint with no `guards`, a mutation with no real guard (`[Public]` is
+  having none), `pubsub` and `message`, an `Any` or `Upload` return, a file upload, a required `Any` argument, and
+  the generated `light<Model>` read — it is `<Model>` in a smaller shape, so one read never costs two entries of
+  every listing. A `prompt` also refuses a list argument and any `Any` argument.
 - **Every refusal is named in the boot log**, with a `MCP catalogue: tools=… prompts=…` count. Read that line
   first when a tool you expected is missing — with no opt-in to notice, it is the only place the answer exists.
   The boot log also names every published entry with no dictionary `.desc()`: an agent picks a tool by its

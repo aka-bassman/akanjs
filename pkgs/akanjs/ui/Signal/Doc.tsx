@@ -247,7 +247,7 @@ const Zone = ({ refName, fetch, openAll }: ZoneProps) => {
   const desc = dictText(l, `${refName}.modelDesc`);
   const entries = endpointEntriesOf(refName, fetch);
   const wsEntries = entries.filter(({ endpoint }) => isWsEndpoint(endpoint));
-  const mcpEntries = entries.filter(({ endpoint }) => !mcpRefusalOf(endpoint));
+  const mcpEntries = entries.filter(({ key, endpoint }) => !mcpRefusalOf(endpoint, { refName, key }));
   return (
     <div className="flex break-after-page flex-col gap-6">
       <div className="flex flex-col gap-1">

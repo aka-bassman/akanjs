@@ -1,4 +1,4 @@
-import { capitalize, isMcpDescribableArg, mcpHintsOf, mcpRefusalOf } from "akanjs/common";
+import { isMcpDescribableArg, mcpHintsOf, mcpRefusalOf } from "akanjs/common";
 import { FetchClient } from "akanjs/fetch";
 import { type AgentCandidate, AgentCatalogue, type AgentRefusal, type AgentUndescribed } from "../agent";
 import { type JsonSchema, JsonSchemaBuilder } from "../schema";
@@ -29,6 +29,18 @@ export interface McpExposedEndpoint {
  */
 export type McpRefusal = AgentRefusal;
 export type McpUndescribed = AgentUndescribed;
+
+/** What one signal contributes to a listing, so a catalogue that grew can say where it grew. */
+export interface McpSignalCost {
+  refName: string;
+  entries: number;
+  bytes: number;
+}
+
+export interface McpListingCost {
+  bytes: number;
+  bySignal: McpSignalCost[];
+}
 
 /**
  * Turns the serialized signal registry into the three MCP catalogues and answers the lookups `tools/call` and
@@ -62,6 +74,7 @@ export class McpDocument {
   readonly #byPromptName = new Map<string, { exposed: McpExposedEndpoint; prompt: McpPrompt }>();
   /** Keyed by endpoint key: what is addressable, and by exactly which uri. */
   readonly #templates = new Map<string, string>();
+  #cost: McpListingCost | null = null;
 
   constructor(serializedSignal: Record<string, SerializedSignal>, options: McpDocumentOptions = {}) {
     this.#options = options;
@@ -80,6 +93,30 @@ export class McpDocument {
     });
     // Last: every branch above resolves text, and this is what they left behind.
     this.undescribed = this.#catalogue.undescribed;
+  }
+
+  /**
+   * Roughly what a `tools/list` plus `prompts/list` costs the caller, and which signals it went to.
+   *
+   * Worth reporting because the number is nobody's intuition: MCP has no shared component section and forbids a
+   * `$ref` across entries, so every entry inlines the full schema of every model it mentions — a plain 21-field
+   * model with one named slice ships 12KB across its eight entries, three quarters of it the same four schemas
+   * repeated. A catalogue is re-sent whole to every agent that connects, before its first turn.
+   */
+  get listingCost(): McpListingCost {
+    if (this.#cost) return this.#cost;
+    const bySignal = new Map<string, McpSignalCost>();
+    const add = (refName: string, entry: unknown) => {
+      const cost = bySignal.get(refName) ?? { refName, entries: 0, bytes: 0 };
+      cost.entries += 1;
+      cost.bytes += JSON.stringify(entry).length;
+      bySignal.set(refName, cost);
+    };
+    for (const tool of this.tools) add(this.#byToolName.get(tool.name)?.refName ?? tool.name, tool);
+    for (const prompt of this.prompts) add(this.#byPromptName.get(prompt.name)?.exposed.refName ?? prompt.name, prompt);
+    const costs = [...bySignal.values()].sort((a, b) => b.bytes - a.bytes);
+    this.#cost = { bytes: costs.reduce((sum, cost) => sum + cost.bytes, 0), bySignal: costs };
+    return this.#cost;
   }
 
   findTool(name: string): McpExposedEndpoint | undefined {
@@ -134,7 +171,11 @@ export class McpDocument {
         endpoint: candidate.endpoint,
       };
       // Fail-closed and shared with the API explorer, so the reason an author reads is the rule that ran.
-      const reason = mcpRefusalOf(item.endpoint, { readOnly: this.#options.readOnly });
+      const reason = mcpRefusalOf(item.endpoint, {
+        refName: item.refName,
+        key: item.key,
+        readOnly: this.#options.readOnly,
+      });
       if (reason) {
         this.#catalogue.refuse(item.key, reason);
         continue;
@@ -286,7 +327,6 @@ export class McpDocument {
 
   static #uriTemplate(refName: string, key: string, endpoint: SerializedEndpoint) {
     if (key === refName) return McpUriTemplate.model(refName);
-    if (key === `light${capitalize(refName)}`) return McpUriTemplate.light(refName);
     const listPrefix = `${refName}List`;
     if (!key.startsWith(listPrefix)) return undefined;
     const suffix = key.slice(listPrefix.length);

@@ -335,7 +335,7 @@ describe("AkanServer MCP config", () => {
       // none stays quiet about a catalogue it is not serving.
       await server.init({ web: false });
       const log = lines.join("\n");
-      expect(log).toContain("MCP catalogue: tools=5 prompts=0 resourceTemplates=3");
+      expect(log).toContain("MCP catalogue: tools=4 prompts=0 resourceTemplates=2");
       // Nobody wrote an opt-in, so the boot log is the only place a missing tool has an explanation — and this
       // fixture's `[Public]` writes and guardless reads are exactly the two shapes the guarded rule keeps out.
       expect(log).toContain('did not expose "createServerResolverTestItem"');

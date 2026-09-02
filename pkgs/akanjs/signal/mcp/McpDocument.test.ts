@@ -52,9 +52,19 @@ const signal = (): Record<string, SerializedSignal> => ({
         guards: ["Public"],
       },
       internalOnly: { args: [], guards: ["Admin"] },
+      // `init({ mcp: false })`: one declaration covers both entries the slice generates.
+      quietSlice: { args: [], guards: ["Public"], mcp: false },
     },
     endpoint: {
       countMcpPosts: { type: "query", args: [], returns: { refName: "Int" }, guards: ["Public"] },
+      // Perfectly guarded, perfectly callable, and no business on a shelf — a step of a UI-driven state machine.
+      requestMcpPostCode: {
+        type: "mutation",
+        args: [],
+        returns: { refName: "Boolean" },
+        guards: ["Admin"],
+        mcp: false,
+      },
       findMcpPost: {
         type: "query",
         args: [],
@@ -151,7 +161,6 @@ describe("McpDocument", () => {
       "createMcpPost",
       "draftMcpPost",
       "findMcpPost",
-      "lightMcpPost",
       "mcpPost",
       "mcpPostInsight",
       "mcpPostInsightByAuthor",
@@ -167,6 +176,68 @@ describe("McpDocument", () => {
       "summaryMcpPost",
       "updateMcpPost",
     ]);
+  });
+
+  test("publishes one read per model rather than the same document in two shapes", () => {
+    // `lightMcpPost` reads the same row as `mcpPost` under the same guards, trimmed for a page's payload rather
+    // than for a model — so it was one more tool per model in a listing an agent pays for on every turn, told
+    // apart from the full read by the word "light" and nothing else.
+    const doc = new McpDocument(signal());
+    expect(names(doc)).not.toContain("lightMcpPost");
+    expect(names(doc)).toContain("mcpPost");
+    expect(doc.refusals.find(({ key }) => key === "lightMcpPost")?.reason).toContain("`mcpPost`");
+    // Never advertised, so the address it used to hold is unreadable rather than merely guarded.
+    expect(doc.resolveResource("akan://mcpPost/light/6712ab34cd56ef7890123456")).toBeNull();
+    expect(doc.resourceTemplates.map((template) => template.uriTemplate)).not.toContain(
+      "akan://mcpPost/light/{mcpPostId}",
+    );
+  });
+
+  test("keeps out what an author declared `mcp: false` on, at every altitude that declares it", () => {
+    // The question guards cannot answer: `requestMcpPostCode` is perfectly guarded and perfectly callable, and is
+    // a step of a UI-driven state machine that a model would only ever call by mistake. Curation, not
+    // authorization — the reason says so, because somebody will reach for this as a lock.
+    const doc = new McpDocument(signal());
+    const refusals = Object.fromEntries(doc.refusals.map(({ key, reason }) => [key, reason]));
+    expect(names(doc)).not.toContain("requestMcpPostCode");
+    expect(refusals.requestMcpPostCode).toContain("HTTP still serves it");
+    // One `mcp: false` on a slice covers both entries it generates, which is what an author writing it means.
+    expect(names(doc)).not.toContain("mcpPostListQuietSlice");
+    expect(names(doc)).not.toContain("mcpPostInsightQuietSlice");
+    // Nothing else moved: the declaration is per entry, not per model.
+    expect(names(doc)).toContain("mcpPostList");
+    expect(names(doc)).toContain("countMcpPosts");
+  });
+
+  test("takes the generated verbs the module map names off the shelf, and leaves the rest", () => {
+    // The `mcp` map mirrors the `guards` map `slice()` takes, key for key and scope for scope: it narrows the
+    // root slice and the generated CRUD, and never reaches a named slice or a custom endpoint.
+    const withMap = signal();
+    const post = withMap.mcpPost;
+    if (!post) throw new Error("fixture");
+    post.mcp = { create: false, update: false, remove: false };
+    const exposed = names(new McpDocument(withMap));
+    expect(exposed).not.toContain("createMcpPost");
+    expect(exposed).not.toContain("updateMcpPost");
+    expect(exposed).not.toContain("removeMcpPost");
+    // Reads are untouched, and so is a custom mutation that happens to write the same model.
+    expect(exposed).toContain("mcpPost");
+    expect(exposed).toContain("mcpPostList");
+    expect(exposed).toContain("draftMcpPost");
+  });
+
+  test("says what the listing costs, and which signals it went to", () => {
+    // MCP has no shared component section and forbids a `$ref` across entries, so every entry inlines the schema
+    // of every model it mentions. The number is nobody's intuition, and a catalogue nobody can size is one
+    // nobody narrows.
+    const doc = new McpDocument(signal());
+    const cost = doc.listingCost;
+    const entries = [...doc.tools, ...doc.prompts];
+    expect(cost.bytes).toBe(entries.reduce((sum, entry) => sum + JSON.stringify(entry).length, 0));
+    expect(cost.bySignal.map(({ refName }) => refName)).toEqual(["mcpPost"]);
+    expect(cost.bySignal[0]?.entries).toBe(entries.length);
+    // Memoized: the report builds it at boot and a listing is re-derived per caller.
+    expect(doc.listingCost).toBe(cost);
   });
 
   test("readOnly drops every mutation whatever its guards allow", () => {
@@ -196,8 +267,12 @@ describe("McpDocument", () => {
     expect(Object.keys(refusals).sort()).toEqual([
       "bodyPrompt",
       "importMcpPost",
+      "lightMcpPost",
+      "mcpPostInsightQuietSlice",
+      "mcpPostListQuietSlice",
       "rawArgPrompt",
       "rawMcpPost",
+      "requestMcpPostCode",
       "tagsPrompt",
       "undeclaredMcpPost",
       "unguardedMcpPost",
@@ -299,16 +374,13 @@ describe("McpDocument", () => {
       "mcpPost.modelDesc": "An article somebody wrote",
       "mcpPost.signal.mcpPost": "Get Post",
       "mcpPost.signal.mcpPost.desc": "Get Post",
-      "mcpPost.signal.lightMcpPost.desc": "Get light version of Post",
     };
     const doc = new McpDocument(signal(), { resolveDescription: (key) => text[key] });
     expect(doc.tools.find((tool) => tool.name === "mcpPost")).toMatchObject({
       title: "Get Post",
       description: "Get Post — An article somebody wrote",
     });
-    expect(doc.tools.find((tool) => tool.name === "lightMcpPost")?.description).toBe(
-      "Get light version of Post — An article somebody wrote",
-    );
+    expect(doc.tools.find((tool) => tool.name === "removeMcpPost")?.description).toContain("An article somebody wrote");
     // A custom endpoint is the author's own text and is left exactly as written.
     expect(doc.tools.find((tool) => tool.name === "countMcpPosts")?.description).toBeUndefined();
   });
@@ -380,7 +452,6 @@ describe("McpDocument", () => {
   test("addresses the single and list reads but not an aggregate", () => {
     const doc = new McpDocument(signal());
     expect(doc.resourceTemplates.map((template) => template.uriTemplate)).toEqual([
-      "akan://mcpPost/light/{mcpPostId}",
       "akan://mcpPost/{mcpPostId}",
       "akan://mcpPost/list{?queryKey,skip,limit,sort}",
       "akan://mcpPost/list/byAuthor{?authorId,skip,limit,sort}",

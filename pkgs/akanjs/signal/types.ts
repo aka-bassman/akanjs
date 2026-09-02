@@ -93,6 +93,17 @@ export interface SignalOption<Response = any, Nullable extends boolean = false, 
   /** Marks this mutation as the framework file-upload endpoint (see resolveFileUploadCapability). */
   fileUpload?: boolean;
   /**
+   * Whether this endpoint belongs on an agent's shelf. `true` — the default — publishes it to MCP subject to the
+   * guard and shape rules; `false` keeps it out of the catalogue entirely.
+   *
+   * This is curation, not authorization: HTTP serves the endpoint exactly as before, and the guards are still the
+   * only thing deciding who may call it. Write it where an endpoint is perfectly guarded and still has no business
+   * on a shelf — a step of a UI-driven state machine (`requestPhoneCodeForSignin`), or a read a model would only
+   * ever call by mistake. Every catalogue entry carries the model schemas it mentions, so one endpoint dropped
+   * here is kilobytes off every `tools/list`.
+   */
+  mcp?: boolean;
+  /**
    * What a `pubsub(Binary)` does when a subscriber cannot keep up. `"coalesce"` (the default) keeps only the
    * newest frame per room, which is what a telemetry or video stream wants — an old frame is worthless once a
    * newer one exists. Name `"queue"` when the frames are a sequence a subscriber has to see in full, such as
@@ -117,6 +128,13 @@ interface SerializedSignalOption {
   guards?: string[];
   method?: HttpMutationMethod;
   fileUpload?: boolean;
+  /**
+   * Only ever `false`, and only when something declared it: `true` is the default, so serializing it would ship a
+   * field per endpoint that says nothing. Resolved here rather than left to the reader because the browser API
+   * explorer has guard *names* and no classes, and a second implementation of the rule would eventually disagree
+   * with the catalogue.
+   */
+  mcp?: false;
 }
 export interface SerializedSlice extends SerializedSignalOption {}
 
@@ -161,6 +179,19 @@ export interface SerializedSignal {
   createGuards?: string[];
   updateGuards?: string[];
   removeGuards?: string[];
+  /**
+   * Which generated CRUD verbs this model keeps off the agent shelf. Carried on the signal because the endpoints
+   * it names do not exist until `FetchClient.getBaseEndpoint` synthesizes them. Only the `false` keys travel.
+   */
+  mcp?: SerializedSignalMcp;
+}
+
+/** Keyed by generated verb, mirroring the `guards` map `slice()` takes. The root slice's own flag rides on `slice[""]`. */
+export interface SerializedSignalMcp {
+  get?: false;
+  create?: false;
+  update?: false;
+  remove?: false;
 }
 
 export type SignalType = "restapi" | "websocket";

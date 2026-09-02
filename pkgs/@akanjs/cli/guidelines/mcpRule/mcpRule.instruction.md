@@ -14,6 +14,36 @@ authorization decision and `filterForAccount` re-reads them per caller on every 
 switch says nothing the guards do not — while guaranteeing that every endpoint added later is invisible to agents
 until somebody remembers it.
 
+## Keeping An Endpoint Off The Shelf — `mcp: false`
+
+Guards answer "may an agent call this". They do not answer "does this belong on a shelf", and those are different
+questions: a step of a UI-driven state machine (`requestPhoneCodeForSignin`, `setPasswordInPrepareUser`) is
+perfectly guarded, perfectly callable, and a model would only ever call it by mistake. **`mcp: false` is that
+second answer, and it is an opt-*out*: everything still publishes by default, so an endpoint added later is
+visible without anyone remembering it.**
+
+```ts
+requestPhoneCodeForSignin: mutation(Boolean, { guards: [Every], mcp: false }),
+inTodo: init({ guards: [SignedIn], mcp: false }),           // the slice's list and insight together
+export class FileSlice extends slice(srv.file, {
+  guards: { root: Admin, get: SignedIn, cru: SignedIn },
+  mcp: { cru: false },                                       // reads yes, generated writes no
+}) {}
+```
+
+- **It is curation, not authorization.** HTTP serves the endpoint exactly as before and the guards are still the
+  only thing deciding who may call it. Never write `mcp: false` where you meant a guard.
+- **The `mcp` map on `slice()` mirrors the `guards` map above it** — same keys (`root`, `get`, `cru`, `create`,
+  `update`, `remove`), same fallbacks (`create`/`update`/`remove` inherit `cru`), and the same scope: it narrows
+  the root slice and the generated CRUD, and never reaches a named slice or a custom endpoint. Those declare
+  their own `mcp` beside their own `guards`. The bare `mcp: false` is every key at once, still within that scope.
+- **`mcp: true` is the default and is a no-op**; write it only to say out loud that an entry is deliberately on
+  the shelf. It does not override a shape refusal (an `Any` return stays refused) and it cannot publish something
+  the guard rules keep out.
+- **Reach for it by cost, not by taste.** Every entry inlines the schema of every model it mentions, so a plain
+  21-field model with one named slice costs 12.6KB across its eight entries. `mcp: { cru: false }` on that model
+  takes it to 4.7KB — the write entries carry both the input *and* the full model, and are 63% of it.
+
 ## Configuration
 Settings live in the app's `lib/option.ts` — `option.setMcp({ … })`, taking `enabled`, `readOnly`, `path`,
 `version`, `instructions`, `allowedOrigins`, `pageSize`, `language`, `legacyTextBlock`, and `auth`. **Not `main.ts`**: the gateway
@@ -67,13 +97,23 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
 ```
 
 ## Refusals And Wire Behaviour
+- **`mcp: false` is read first**, because it is the one answer nobody had to derive — somebody stated it. Its
+  reason says "HTTP still serves it", because that is the sentence that stops the next reader treating it as a lock.
 - **The refusals are fail-closed**: **an endpoint that declares no `guards` at all** (nobody decided who may reach
   it), **a mutation with no real `guards`** (`[Public]` is having none, spelled out — it answers true
   unconditionally), `pubsub` and `message` (their internal args read a socket an MCP request does not have), an
-  `Any` or `Upload` return, a file upload, and **an argument typed `Any` that must be filled**.
+  `Any` or `Upload` return, a file upload, **an argument typed `Any` that must be filled**, and the generated
+  **`light<Model>` read** — it returns the same document as `<Model>` under the same guards, in a shape trimmed
+  for a page's payload, so publishing both put two entries per model in a listing an agent pays for every turn
+  and gave it nothing but the word "light" to choose between them.
   A `prompt` refuses two more, because its `arguments` is one string per name with no schema beside it: a **list
   argument**, which could never carry a second value, and **any `Any` argument** — a tool leaves that out of its
   schema, and a prompt has no schema to leave it out of.
+- **The boot log sizes the catalogue and says which signals it went to** — `MCP catalogue: tools=48 … · listing
+  214KB` and `MCP catalogue cost: user 27/71KB · file 6/22KB · …`, heaviest first. Read it before narrowing
+  anything: the number is nobody's intuition, because MCP has no shared component section and forbids a `$ref`
+  across entries, so **every entry inlines the full schema of every model it mentions** and a listing is re-sent
+  whole to every agent that connects, before its first turn. Past 100KB it says so as a `warn`.
 - **Every refusal is named in the boot log**: one `warn` per endpoint plus a `MCP catalogue: tools=… prompts=…`
   count. Read that line first when a tool you expected is missing — and it is the *only* place the answer exists,
   because there is no absent opt-in to notice. The API explorer badges the same rule per endpoint (`MCP` /
@@ -144,10 +184,11 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
 - **An expired or wrongly-audienced bearer token is refused up front**, so an agent is told to authenticate rather
   than that the tool does not exist. Its **signature is not checked** — that needs your app's own secret — so a
   token signed wrong, like an opaque one, still degrades to an anonymous caller.
-- **Resource URIs**: `akan://<model>/{id}`, `akan://<model>/light/{id}`, `akan://<model>/list` for the model's own
-  list, and `akan://<model>/list/<sliceKey>` for a slice's. The root list takes no third segment on purpose — any
-  token there is one a slice could also be named. **Those four are the whole set**, so only the generated reads are
-  addressable: a custom endpoint keeps its tool and gets no resource template.
+- **Resource URIs**: `akan://<model>/{id}`, `akan://<model>/list` for the model's own list, and
+  `akan://<model>/list/<sliceKey>` for a slice's. The root list takes no third segment on purpose — any token
+  there is one a slice could also be named. **Those three are the whole set**, so only the generated reads that
+  publish are addressable: a custom endpoint keeps its tool and gets no resource template, and the refused
+  `light<Model>` read has no address either.
 - **The catalogue is one language**, `en` unless `language` says otherwise: it is built once at boot and cached by
   clients, so there is no `Accept-Language` negotiation.
 

@@ -4228,7 +4228,7 @@ A slash command the user invokes, not the model.
 
 Never exposed — their arguments read a socket MCP does not have.
 
-Exposure follows the guards. A real guard publishes; no guards at all is refused; a mutation whose only guard is [Public] is refused. A Public read publishes. A refused endpoint answers the same unknown tool as one that does not exist.
+Exposure follows the guards. A real guard publishes; no guards at all is refused; a mutation whose only guard is [Public] is refused. A Public read publishes. A refused endpoint answers the same unknown tool as one that does not exist. Write mcp: false when an endpoint is guarded correctly and still has no business on a shelf.
 
 1. Turn The Server On
 
@@ -4573,6 +4573,7 @@ Headings:
 - Use Image
 - Config
 - remotePatterns
+- Remote Cache
 - Cache Hits
 
 Image Optimization
@@ -4595,9 +4596,9 @@ Config
 
 The default config covers common responsive sizes. Change it only when your UI has clear image sizes that repeat often.
 
-remotePatterns
+`minimumCacheTTL` is the floor for how long a remote image is served without asking its origin again, and it also sets the response `max-age`.
 
-Remote images are blocked unless their host and path match `remotePatterns`. If optimization returns a bad request, check this setting first.
+`maxConcurrency` caps how many images encode at once. `0` sizes it from the CPUs the serving process sees.
 
 ## Lazy Loading
 
