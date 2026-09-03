@@ -270,6 +270,60 @@ AKAN_SEARCH_TOKENIZER="unicode61 remove_diacritics 2"`}
                 "2000 / 4",
               ],
               [
+                "AKAN_LOG_FORMAT",
+                l.trans({ en: "Log output format", ko: "로그 출력 형식" }),
+                l.trans({
+                  en: "text is the human console line. ndjson makes the container's stdout one JSON record per line, written only by the gateway (or the solo replica): every other server process turns its console off and forwards its records instead, and a child's crash stack is wrapped as a raw record so the stream stays valid JSON. ndjson-only writes the rotating file as JSON too. Give every process the same value.",
+                  ko: "text는 사람이 읽는 콘솔 줄입니다. ndjson은 컨테이너 stdout을 한 줄에 JSON 레코드 하나로 만들며, gateway(또는 단독 replica)만 씁니다. 다른 모든 서버 프로세스는 콘솔을 끄고 레코드를 위로 올리고, child의 크래시 스택은 raw 레코드로 감싸서 스트림이 항상 유효한 JSON으로 남습니다. ndjson-only는 회전 파일도 JSON으로 씁니다. 모든 프로세스에 같은 값을 줍니다.",
+                }),
+                "text | ndjson | ndjson-only",
+              ],
+              [
+                "AKAN_LOG_STDOUT_LEVEL",
+                l.trans({ en: "Container stdout detail", ko: "컨테이너 stdout 상세도" }),
+                l.trans({
+                  en: "What goes to the container's stdout, in either format. Defaults to AKAN_PUBLIC_LOG_LEVEL. kubelet and the docker json-file driver rotate container logs by size, so a stdout at trace can outrun the collector; info is the production recommendation, with the flight recorder promoting detail for failed calls only.",
+                  ko: "형식과 무관하게 컨테이너 stdout으로 나가는 레벨입니다. 기본값은 AKAN_PUBLIC_LOG_LEVEL입니다. kubelet과 docker json-file 드라이버는 컨테이너 로그를 크기로 회전시키므로 trace 수준의 stdout은 수집기보다 빨리 밀려날 수 있습니다. 운영 권장은 info이고, 실패한 호출의 상세는 flight recorder가 올립니다.",
+                }),
+                "trace | debug | info | warn | error",
+              ],
+              [
+                "AKAN_LOG_STREAM_TOKEN",
+                l.trans({ en: "Log stream route", ko: "로그 스트림 라우트" }),
+                l.trans({
+                  en: "Set it and GET /_akan/app/logs serves the ring buffer and live records as text/event-stream to a matching bearer token; the LogQuery is the query string, each event's id is the hub seq, Last-Event-ID resumes and an evicted range arrives as an explicit gap event. Unset, the route does not exist. A session tool for one pod — collection is stdout.",
+                  ko: "설정하면 GET /_akan/app/logs가 링 버퍼와 실시간 레코드를 일치하는 bearer 토큰에게 text/event-stream으로 제공합니다. 쿼리스트링이 LogQuery이고, 각 이벤트의 id는 허브 seq이며, Last-Event-ID로 재개하고 밀려난 구간은 명시적인 gap 이벤트로 옵니다. 미설정이면 라우트 자체가 없습니다. pod 하나를 보는 세션 도구이고, 수집은 stdout입니다.",
+                }),
+                "<random secret>",
+              ],
+              [
+                "AKAN_LOG_CANONICAL",
+                l.trans({ en: "Canonical request line", ko: "요청 요약 줄" }),
+                l.trans({
+                  en: "One record per call at its end: ok or error, the endpoint, ms, status, userId, and under AKAN_TRACE=1 the db and cache figures. 1 or all writes every call; slow keeps only failed calls and those over AKAN_LOG_FLIGHT_MS. Off by default because it grows with QPS.",
+                  ko: "호출이 끝날 때 레코드 하나: ok 또는 error, 엔드포인트, ms, status, userId, 그리고 AKAN_TRACE=1이면 db·cache 수치. 1 또는 all은 모든 호출을, slow는 실패했거나 AKAN_LOG_FLIGHT_MS를 넘은 호출만 씁니다. QPS에 비례해 늘기 때문에 기본은 off입니다.",
+                }),
+                "0 | 1 | slow",
+              ],
+              [
+                "AKAN_LOG_FLIGHT / AKAN_LOG_FLIGHT_MS / AKAN_LOG_FLIGHT_MAX",
+                l.trans({ en: "Flight recorder", ko: "flight recorder" }),
+                l.trans({
+                  en: "AKAN_LOG_FLIGHT=1 keeps each call's own last 64 records that fell below the level and promotes them, marked flight=true, only when the call failed or ran past AKAN_LOG_FLIGHT_MS (default 1000). AKAN_LOG_FLIGHT_MAX (default 65536 records) caps what the process holds at once; a call past the cap runs unrecorded. Measured cost on a clean call: about 190ns.",
+                  ko: "AKAN_LOG_FLIGHT=1이면 호출마다 레벨 아래로 떨어진 자기 레코드 최근 64건을 들고 있다가, 실패했거나 AKAN_LOG_FLIGHT_MS(기본 1000)를 넘긴 경우에만 flight=true로 표시해 올립니다. AKAN_LOG_FLIGHT_MAX(기본 65536건)는 프로세스가 동시에 들고 있을 상한이고, 넘치면 그 호출은 기록 없이 진행합니다. 정상 호출의 측정 비용은 약 190ns입니다.",
+                }),
+                "0 | 1 · 1000 · 65536",
+              ],
+              [
+                "AKAN_LOG_DEBUG_HEADER",
+                l.trans({ en: "Per-request debug header", ko: "요청별 debug 헤더" }),
+                l.trans({
+                  en: "A request carrying x-akan-debug logs at trace for its own duration, whatever the process level. Honoured unconditionally in local; elsewhere only when the header value equals this secret, compared in constant time, because a client that can lower a server's log level is a log-volume vector.",
+                  ko: "x-akan-debug 헤더를 단 요청은 프로세스 레벨과 무관하게 자기 구간 동안 trace로 로그를 남깁니다. local에서는 무조건 허용되고, 그 밖에서는 헤더 값이 이 비밀값과 같을 때만(상수 시간 비교) 허용됩니다. 클라이언트가 서버 로그 레벨을 낮출 수 있다는 것은 로그 폭탄 벡터이기 때문입니다.",
+                }),
+                "<random secret>",
+              ],
+              [
                 "AKAN_LOG_DIR",
                 l.trans({ en: "Log directory", ko: "로그 디렉터리" }),
                 l.trans({

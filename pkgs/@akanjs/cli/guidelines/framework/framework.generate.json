@@ -20,11 +20,12 @@
   ],
   "update": {
     "filePath": "./framework.instruction.md",
-    "contents": ["purpose", "file ownership", "current API patterns", "codegen rules", "validation checklist"],
+    "contents": ["file ownership", "current API patterns", "codegen rules", "theming and UI customization"],
     "rules": [
       "Use current Akan APIs only",
       "Keep output parseable for codegen",
-      "Include ownership boundaries and review checklist"
+      "Include ownership boundaries",
+      "Carry no meta about this document itself — it renders into every workspace's always-loaded AGENTS.md"
     ]
   },
   "page": "apps/akan/page/(docs)/docs/intro/fundamentals.tsx"

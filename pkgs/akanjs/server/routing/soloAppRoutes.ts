@@ -14,7 +14,10 @@ export interface SoloAppStatus {
  * gateway's own shape — a `children` array with this process as its only entry — so a probe, a k8s check and
  * `akan` tooling read one contract whether or not a gateway is in front.
  */
-export const createSoloAppRoutes = (read: () => SoloAppStatus): HttpRoutes => {
+export const createSoloAppRoutes = (
+  read: () => SoloAppStatus,
+  logStream: { handle(req: Request): Response } | null = null,
+): HttpRoutes => {
   const child = () => {
     const { role, running, status, port } = read();
     return {
@@ -42,5 +45,6 @@ export const createSoloAppRoutes = (read: () => SoloAppStatus): HttpRoutes => {
         }),
     },
     "/_akan/bench/ping": { GET: () => new Response("ok") },
+    ...(logStream ? { "/_akan/app/logs": { GET: (req: Request) => logStream.handle(req) } } : {}),
   };
 };

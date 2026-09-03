@@ -1,0 +1,33 @@
+{
+  "title": "Workspace Recipes",
+  "description": "Worked step-by-step recipes for common Akan changes, plus the auto-generated signal/service/store/document API reference",
+  "group": "core",
+  "codegenPriority": 5,
+  "deprecated": false,
+  "scans": [
+    {
+      "type": "example",
+      "description": "Module files a recipe walks through",
+      "path": "{apps,libs}/*/lib/*/*.{constant,document,service,signal,store}.ts",
+      "sample": 5
+    }
+  ],
+  "update": {
+    "filePath": "./workspaceRecipes.instruction.md",
+    "contents": [
+      "add a field",
+      "inject a dependency",
+      "create a slice",
+      "create a mutation",
+      "internal triggers",
+      "insights",
+      "auto-generated API reference"
+    ],
+    "rules": [
+      "Use current Akan APIs only",
+      "Every recipe names the files to edit and the order to edit them in",
+      "Keep the <%= appName %> placeholder so the rendered guide names this workspace's app",
+      "Never duplicate a rule that workspaceOnboarding already states — link to it instead"
+    ]
+  }
+}

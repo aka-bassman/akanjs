@@ -121,6 +121,8 @@ export class SignalContext<
     // A caller that already opened the trace (`SignalContext.run`) owns its life; only a bare construction
     // starts one here, and `exec()` then closes it.
     this.trace = getCurrentTrace() ?? SignalTrace.create(key, endpointInfo.type, origin ?? this.transport);
+    if (this.trace && this.transport === "http")
+      this.trace.applyDebugHeader((reqOrWsReq as { headers?: Headers }).headers?.get?.("x-akan-debug"));
   }
 
   getAdaptor<T extends Adaptor>(adaptorCls: AdaptorCls<T>): T {
@@ -254,8 +256,11 @@ export class SignalContext<
     if (!this.endpointInfo.execFn) throw new Exception.Error("Exec function is not set");
     const coreExec = async () => {
       if (!this.endpointInfo.execFn) throw new Exception.Error("Exec function is not set");
-      if (this.trace) await traceSpan("guards", () => this.#checkGuards());
-      else await this.#checkGuards();
+      if (this.trace) {
+        await traceSpan("guards", () => this.#checkGuards());
+        const account = this.get<{ id?: unknown }>("account");
+        if (typeof account?.id === "string") this.trace.setAttr("userId", account.id);
+      } else await this.#checkGuards();
       if (this.endpointInfo.internalArgs.length > 0) {
         this.internalArgs = await Promise.all(
           this.endpointInfo.internalArgs.map((arg) => {

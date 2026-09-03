@@ -30,8 +30,10 @@ export class LogQueryMatcher {
 
   matches(record: LogRecord): boolean {
     const q = this.query;
-    // A raw line has no level, so it is only excluded when the caller asked for a level at all.
-    if (q.minSev !== undefined && (record.level === null || record.sev < q.minSev)) return false;
+    // A raw line has no level, so it is only excluded when the caller asked for a level at all; a promoted line
+    // (flight recorder, `x-akan-debug`) was asked for below the level and passes it.
+    if (q.minSev !== undefined && (record.level === null || (record.sev < q.minSev && !Logger.isPromoted(record))))
+      return false;
     if (q.text !== undefined && !record.message.includes(q.text)) return false;
     if (this.#name && !this.#name.some((glob) => glob.test(record.name))) return false;
     if (

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import dayjs from "dayjs";
 import { Logger, type LoggerSinkEntry, type LogRecord, logSeverity } from "./Logger";
-import { registerLogContextReader } from "./logContext";
+import { type LogContextSnapshot, registerLogContextReader } from "./logContext";
 
 const resetLoggerLevels = () => {
   Logger.setLevel("info");
@@ -195,6 +195,187 @@ describe("Logger records", () => {
     } finally {
       registerLogContextReader(null);
       removeSink();
+      resetLoggerLevels();
+    }
+  });
+});
+
+const captureStdout = () => {
+  const writes: string[] = [];
+  const original = process.stdout.write;
+  process.stdout.write = ((chunk: unknown) => {
+    writes.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+  return {
+    writes,
+    restore: () => {
+      process.stdout.write = original;
+    },
+  };
+};
+
+const snapshot = (over: Partial<LogContextSnapshot>): LogContextSnapshot => ({
+  traceId: "t-1",
+  endpoint: "query:x",
+  origin: "http",
+  ...over,
+});
+
+describe("Logger attrs", () => {
+  test("emit renders attrs as key=value after the message and redacts secret-named keys", () => {
+    const entries: LoggerSinkEntry[] = [];
+    const removeSink = Logger.addSink((entry) => entries.push(entry));
+    try {
+      Logger.setLevel("error");
+      Logger.emit({
+        level: "info",
+        name: "Signal",
+        message: "ok mutation:refund",
+        attrs: { ms: 12.5, status: 200, err: "not now", apiKey: "k" },
+      });
+      expect(entries[0]?.record.attrs).toEqual({ ms: 12.5, status: 200, err: "not now", apiKey: "[redacted]" });
+      expect(entries[0]?.plainMessage).toContain(
+        'ok mutation:refund ms=12.5 status=200 err="not now" apiKey=[redacted] +',
+      );
+    } finally {
+      removeSink();
+      resetLoggerLevels();
+    }
+  });
+
+  test("a record without attrs keeps the historical line", () => {
+    const entries: LoggerSinkEntry[] = [];
+    const removeSink = Logger.addSink((entry) => entries.push(entry));
+    try {
+      Logger.setLevel("error");
+      Logger.info("plain", "", "LoggerTest");
+      expect(entries[0]?.record.attrs).toBeUndefined();
+      expect(entries[0]?.plainMessage).toMatch(/ plain \+\d+ms\n$/);
+    } finally {
+      removeSink();
+      resetLoggerLevels();
+    }
+  });
+});
+
+describe("Logger context gate", () => {
+  test("a flight recorder receives every record below the gate without it being written", () => {
+    const captured: [string, boolean][] = [];
+    const entries: LoggerSinkEntry[] = [];
+    const removeSink = Logger.addSink((entry) => entries.push(entry), { minLevel: "warn" });
+    registerLogContextReader(() =>
+      snapshot({
+        flight: { minSev: logSeverity.trace, capture: (record, written) => captured.push([record.message, written]) },
+      }),
+    );
+    Logger.contextGate = true;
+    try {
+      Logger.setLevel("error");
+      expect(Logger.shouldLog("trace")).toBe(true);
+      Logger.trace("t", "", "GateTest");
+      Logger.warn("w", "", "GateTest");
+      expect(captured).toEqual([
+        ["t", false],
+        ["w", true],
+      ]);
+      expect(entries.map((entry) => entry.record.message)).toEqual(["w"]);
+    } finally {
+      Logger.contextGate = false;
+      registerLogContextReader(null);
+      removeSink();
+      resetLoggerLevels();
+    }
+  });
+
+  test("the gate is untouched while nothing arms it", () => {
+    registerLogContextReader(() => snapshot({ flight: { minSev: logSeverity.trace, capture: () => undefined } }));
+    try {
+      Logger.setLevel("error");
+      expect(Logger.shouldLog("trace")).toBe(false);
+    } finally {
+      registerLogContextReader(null);
+      resetLoggerLevels();
+    }
+  });
+
+  test("a per-request debug floor writes below the level to the console and through every sink floor, marked debug", () => {
+    const all: LoggerSinkEntry[] = [];
+    const warnOnly: LoggerSinkEntry[] = [];
+    const removeAll = Logger.addSink((entry) => all.push(entry));
+    const removeWarn = Logger.addSink((entry) => warnOnly.push(entry), { minLevel: "warn" });
+    registerLogContextReader(() => snapshot({ debugSev: logSeverity.trace }));
+    Logger.contextGate = true;
+    const stdout = captureStdout();
+    try {
+      Logger.setLevel("error");
+      Logger.debug("d", "", "GateTest");
+      Logger.error("e", "", "GateTest");
+      expect(stdout.writes.length).toBe(1);
+      expect(all.map((entry) => entry.record.message)).toEqual(["d", "e"]);
+      expect(all[0]?.record.attrs).toEqual({ debug: true });
+      expect(all[1]?.record.attrs).toBeUndefined();
+      expect(warnOnly.map((entry) => entry.record.message)).toEqual(["d", "e"]);
+    } finally {
+      stdout.restore();
+      Logger.contextGate = false;
+      registerLogContextReader(null);
+      removeAll();
+      removeWarn();
+      resetLoggerLevels();
+    }
+  });
+});
+
+describe("Logger replay", () => {
+  const record = (level: "trace" | "verbose", message: string): LogRecord => ({
+    at: 1,
+    elapsedMs: 0,
+    level,
+    sev: logSeverity[level],
+    name: "Flight",
+    context: "",
+    message,
+    stream: "stdout",
+    pid: 1,
+    replicaIdx: null,
+    role: null,
+    origin: null,
+    traceId: "t-1",
+    endpoint: null,
+  });
+
+  test("promoted records bypass the console level and every sink floor, and are marked flight", () => {
+    const entries: LoggerSinkEntry[] = [];
+    const removeSink = Logger.addSink((entry) => entries.push(entry), { minLevel: "warn" });
+    const stdout = captureStdout();
+    try {
+      Logger.setLevel("error");
+      Logger.replay([record("trace", "t"), record("verbose", "v")], { evicted: 3 });
+      expect(stdout.writes.length).toBe(2);
+      expect(Logger.stripAnsi(stdout.writes[0] ?? "")).toContain("t flight=true flightEvicted=3");
+      expect(entries.map((entry) => entry.record.message)).toEqual(["t", "v"]);
+      expect(entries[1]?.record.attrs).toEqual({ flight: true });
+    } finally {
+      stdout.restore();
+      removeSink();
+      resetLoggerLevels();
+    }
+  });
+
+  test("consoleOutput off keeps promoted and raw lines off the terminal", () => {
+    const stdout = captureStdout();
+    Logger.consoleOutput = false;
+    try {
+      Logger.replay([record("trace", "t")]);
+      Logger.raw("banner\n");
+      Logger.setLevel("trace");
+      Logger.info("i", "", "LoggerTest");
+      expect(stdout.writes).toEqual([]);
+      expect(Logger.shouldLog("info")).toBe(false);
+    } finally {
+      Logger.consoleOutput = true;
+      stdout.restore();
       resetLoggerLevels();
     }
   });

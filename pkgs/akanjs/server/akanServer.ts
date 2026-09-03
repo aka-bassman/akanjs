@@ -1,6 +1,6 @@
 import type { AkanWebConfig, AkanWebOption } from "akanjs";
 import { type BackendEnv, type BaseEnv, getEnv } from "akanjs/base";
-import { Logger, websocketBinaryFrameContract } from "akanjs/common";
+import { Logger, logSeverity, websocketBinaryFrameContract } from "akanjs/common";
 import { DictionaryLookup } from "akanjs/dictionary";
 import type {
   Adaptor,
@@ -26,9 +26,11 @@ import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { isPortInUseError } from "./lifecycle/portInUse";
 import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
 import { ShutdownManager } from "./lifecycle/shutdownManager";
+import { HubFileSink } from "./logging/hubFileSink";
 import { LogControlSocket } from "./logging/logControlSocket";
 import { LogForwarder } from "./logging/logForwarder";
 import { LogHub } from "./logging/logHub";
+import { LogStreamRoute } from "./logging/logStreamRoute";
 import { RotatingLogWriter } from "./logging/rotatingLogWriter";
 import { type McpAuthOption, McpRouter } from "./mcp";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
@@ -171,8 +173,9 @@ export class AkanServer {
   #removeLogSink: (() => void) | null = null;
   #logHub: LogHub | null = null;
   #logControl: LogControlSocket | null = null;
-  #removeHubSink: (() => void) | null = null;
   #logForwarder: LogForwarder | null = null;
+  #hubFileSink: HubFileSink | null = null;
+  #logStream: LogStreamRoute | null = null;
   #lastMetrics: AkanMetricsReport = {};
   constructor(
     name = "AkanServer",
@@ -362,8 +365,8 @@ export class AkanServer {
     }
     this.status = "starting";
     Logger.role = this.serverMode;
-    this.#startFileLogging();
     await this.#startLogTransport();
+    this.#startFileLogging();
     const port = process.env.AKAN_CHILD_SOCKET
       ? undefined
       : Number(process.env.AKAN_CHILD_WS_PORT || process.env.PORT || 8282);
@@ -522,11 +525,12 @@ export class AkanServer {
 
       this.#prepared?.webRouter?.dispose();
       await this.#withShutdownTimeout(this.#di.destroyAll());
-      await this.#stopLogTransport();
-      await this.#stopFileLogging();
       this.#prepared = null;
       this.status = "stopped";
       this.logger.info(`Shutdown completed successfully in ${Date.now() - now}ms`);
+      // Last, so the line above still has a hub — and in ndjson mode a stdout — to reach.
+      await this.#stopLogTransport();
+      await this.#stopFileLogging();
     } catch (error) {
       this.logger.error(`Error during shutdown: ${error instanceof Error ? error.message : String(error)}`);
       this.status = "stopped";
@@ -642,14 +646,18 @@ export class AkanServer {
           })
         : null;
     const mcpRoutes: HttpRoutes = mcpRouter?.createRoutes() ?? {};
+    this.#logStream ??= this.#solo ? LogStreamRoute.fromEnv(() => this.#logHub) : null;
     const soloRoutes: HttpRoutes = this.#solo
-      ? createSoloAppRoutes(() => ({
-          role: this.serverMode,
-          running: this.status === "running",
-          status: this.status,
-          port: this.#server?.port ?? null,
-          metrics: this.#lastMetrics,
-        }))
+      ? createSoloAppRoutes(
+          () => ({
+            role: this.serverMode,
+            running: this.status === "running",
+            status: this.status,
+            port: this.#server?.port ?? null,
+            metrics: this.#lastMetrics,
+          }),
+          this.#logStream,
+        )
       : {};
     // Builds the catalogue here rather than on the first agent request, so what MCP published — and what it
     // refused despite an author opting in — is in the boot log of the process that decided it.
@@ -673,6 +681,13 @@ export class AkanServer {
     if (!this.#solo || this.#logWriter) return;
     this.#logWriter = RotatingLogWriter.fromRuntimeDir(resolveRuntimeDir());
     if (!this.#logWriter) return;
+    if (this.#logHub && Logger.isNdjson) {
+      this.#hubFileSink = new HubFileSink(this.#logHub, this.#logWriter, {
+        minSev: logSeverity[Logger.fileLevel],
+        json: Logger.format === "ndjson-only",
+      });
+      return;
+    }
     this.#removeLogSink = Logger.addSink((entry) => {
       this.#logWriter?.write(this.serverMode, entry.plainMessage);
     });
@@ -681,6 +696,8 @@ export class AkanServer {
   async #stopFileLogging() {
     this.#removeLogSink?.();
     this.#removeLogSink = null;
+    this.#hubFileSink?.close();
+    this.#hubFileSink = null;
     const writer = this.#logWriter;
     this.#logWriter = null;
     await writer?.close();
@@ -694,11 +711,8 @@ export class AkanServer {
     if (this.#logHub || this.#logForwarder) return;
     const webRouter = this.#prepared?.webRouter ?? null;
     if (this.#solo) {
-      const hub = LogHub.fromEnv();
+      const hub = LogHub.attach();
       this.#logHub = hub;
-      this.#removeHubSink = Logger.addSink((entry) => {
-        hub.ingest(entry.record);
-      });
       hub.onFloorChange((minSev) => webRouter?.setLogLevel(minSev));
       webRouter?.onLogRecords((records, dropped) => {
         hub.ingestMany(records);
@@ -715,6 +729,9 @@ export class AkanServer {
       }
       return;
     }
+    // A child of an ndjson gateway writes no text line the gateway could relay; its forwarder starts at the
+    // stdout level on its own, so nothing is lost before the gateway's `log.level` arrives.
+    if (Logger.isNdjson) Logger.consoleOutput = false;
     const forwarder = new LogForwarder((message) => process.send?.(message));
     this.#logForwarder = forwarder;
     webRouter?.onLogRecords((records) => forwarder.pushMany(records));
@@ -723,8 +740,6 @@ export class AkanServer {
   async #stopLogTransport() {
     await this.#logControl?.stop();
     this.#logControl = null;
-    this.#removeHubSink?.();
-    this.#removeHubSink = null;
     this.#logHub?.close();
     this.#logHub = null;
     this.#logForwarder?.close();

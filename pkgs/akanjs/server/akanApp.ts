@@ -3,7 +3,7 @@
 // 하드코딩 색이 불가피하다. 파일 전체 범위의 명시적 예외.
 import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
-import { Logger } from "akanjs/common";
+import { Logger, logSeverity } from "akanjs/common";
 import type { AkanChildRole, AkanChildStatus, AkanIpcMessage, AkanMetricsReport, AkanUpstream } from "akanjs/service";
 import { isTraceEnabled } from "../signal/trace";
 import { makeAkanChildProxyHeaders } from "./akanAppHeaders";
@@ -12,8 +12,11 @@ import { resolveEncodedSidecar } from "./assetEncoding";
 import { compressResponse } from "./contentEncoding";
 import { isPortInUseError } from "./lifecycle/portInUse";
 import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
+import { ChildOutputReader } from "./logging/childOutputReader";
+import { HubFileSink } from "./logging/hubFileSink";
 import { LogControlSocket } from "./logging/logControlSocket";
 import { LogHub } from "./logging/logHub";
+import { LogStreamRoute } from "./logging/logStreamRoute";
 import { RotatingLogWriter } from "./logging/rotatingLogWriter";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { getWebConfigFromEnv } from "./types";
@@ -142,10 +145,8 @@ export class AkanApp {
   #removeLogSink: (() => void) | null = null;
   #logHub: LogHub | null = null;
   #logControl: LogControlSocket | null = null;
-  #removeHubSink: (() => void) | null = null;
-  readonly #childOutputBuffers = new Map<string, string>();
-  readonly #childStderrBlockBuffers = new Map<string, string[]>();
-  readonly #childStderrBlockTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  #hubFileSink: HubFileSink | null = null;
+  #logStream: LogStreamRoute | null = null;
   static readonly #ansiPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
   #gatewayMetrics: AkanMetricsReport = {};
   #proxyHopCount = 0;
@@ -166,6 +167,7 @@ export class AkanApp {
     this.#openapi = resolvedOptions.openapi;
     this.#modules = resolvedOptions.modules ?? [];
     this.#solo = AkanApp.#resolveSolo(resolvedOptions, this.#replica);
+    this.#logHub = LogHub.attach();
   }
 
   /**
@@ -263,8 +265,8 @@ export class AkanApp {
     if (this.#solo) return await this.#startSolo();
     Logger.role = "gateway";
     await this.#prepareRuntimeDir();
-    this.#startFileLogging();
     await this.#startLogHub();
+    this.#startFileLogging();
     for (let idx = 0; idx < this.#replica.total; idx++) this.#spawn(idx);
     try {
       this.#listen();
@@ -413,8 +415,12 @@ export class AkanApp {
       lastRestartReason: previous?.lastRestartReason,
     });
     this.#invalidateFederationChildCache();
-    this.#pipeOutput(idx, role, proc.stdout, "stdout");
-    this.#pipeOutput(idx, role, proc.stderr, "stderr");
+    const output = new ChildOutputReader({
+      onLine: (line) => this.#writeChildLine(idx, role, proc.pid, "stdout", line),
+      onBlock: (lines) => this.#writeChildStderrBlock(idx, role, proc.pid, lines),
+    });
+    void output.pipe(proc.stdout, "stdout");
+    void output.pipe(proc.stderr, "stderr");
     proc.exited.then((code) => this.#handleChildExit(idx, proc, code));
   }
 
@@ -582,6 +588,13 @@ export class AkanApp {
   #startFileLogging() {
     this.#logWriter = RotatingLogWriter.fromRuntimeDir(this.#runtimeDir);
     if (!this.#logWriter) return;
+    if (this.#logHub && Logger.isNdjson) {
+      this.#hubFileSink = new HubFileSink(this.#logHub, this.#logWriter, {
+        minSev: logSeverity[Logger.fileLevel],
+        json: Logger.format === "ndjson-only",
+      });
+      return;
+    }
     this.#removeLogSink = Logger.addSink((entry) => {
       this.#logWriter?.write("gateway", entry.plainMessage);
     });
@@ -590,6 +603,8 @@ export class AkanApp {
   async #stopFileLogging() {
     this.#removeLogSink?.();
     this.#removeLogSink = null;
+    this.#hubFileSink?.close();
+    this.#hubFileSink = null;
     const writer = this.#logWriter;
     this.#logWriter = null;
     await writer?.close();
@@ -597,12 +612,10 @@ export class AkanApp {
 
   /** The journal every child forwards into, and the socket `akan logs` reads it from. Additive to the text file. */
   async #startLogHub() {
-    const hub = LogHub.fromEnv();
+    const hub = LogHub.attach();
     this.#logHub = hub;
-    this.#removeHubSink = Logger.addSink((entry) => {
-      hub.ingest(entry.record);
-    });
     hub.onFloorChange((minSev) => this.#fanoutToAll({ type: "log.level", minSev }));
+    this.#logStream = LogStreamRoute.fromEnv(() => this.#logHub);
     const control = new LogControlSocket(hub, this.#runtimeDir);
     try {
       await control.start();
@@ -617,8 +630,7 @@ export class AkanApp {
   async #stopLogHub() {
     await this.#logControl?.stop();
     this.#logControl = null;
-    this.#removeHubSink?.();
-    this.#removeHubSink = null;
+    this.#logStream = null;
     this.#logHub?.close();
     this.#logHub = null;
   }
@@ -646,6 +658,7 @@ export class AkanApp {
     const url = new URL(req.url);
     if (url.pathname === "/_akan/app/health") return Response.json(this.#getHealthStatus());
     if (url.pathname === "/_akan/app/metrics") return Response.json(this.#getMetricsStatus());
+    if (url.pathname === LogStreamRoute.path && this.#logStream) return this.#logStream.handle(req);
     if (url.pathname === "/_akan/bench/ping") return new Response("ok");
     if (this.#isWebSocketPath(url.pathname)) return this.#upgradeWebSocket(req, server);
     const assetResponse = await this.#serveImmutableArtifact(req, url);
@@ -1372,99 +1385,30 @@ export class AkanApp {
     }
   }
 
-  async #pipeOutput(
-    idx: number,
-    role: AkanChildRole,
-    stream: ReadableStream<Uint8Array> | null,
-    type: "stdout" | "stderr",
-  ) {
-    if (!stream) return;
-    const bufferKey = `${idx}:${type}`;
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const text = decoder.decode(value, { stream: true });
-        this.#writeChildOutput(idx, role, type, bufferKey, text);
-      }
-      const remaining = decoder.decode();
-      if (remaining) this.#writeChildOutput(idx, role, type, bufferKey, remaining);
-    } finally {
-      this.#flushChildOutput(idx, role, type, bufferKey);
-      if (type === "stderr") this.#flushChildStderrBlock(idx, role, AkanApp.#childStderrBlockKey(idx, role));
+  #writeChildLine(idx: number, role: AkanChildRole, pid: number | null, type: "stdout" | "stderr", line: string) {
+    if (Logger.isNdjson) {
+      this.#logHub?.ingest(ChildOutputReader.toRecord({ type, text: line, name: "child", role, replicaIdx: idx, pid }));
+      return;
     }
-  }
-
-  #writeChildOutput(idx: number, role: AkanChildRole, type: "stdout" | "stderr", bufferKey: string, text: string) {
-    let buffered = `${this.#childOutputBuffers.get(bufferKey) ?? ""}${text}`;
-    for (;;) {
-      const newlineIdx = buffered.indexOf("\n");
-      if (newlineIdx === -1) break;
-      const line = buffered.slice(0, newlineIdx + 1);
-      buffered = buffered.slice(newlineIdx + 1);
-      this.#writeChildOutputLine(idx, role, type, line);
-    }
-    if (buffered) this.#childOutputBuffers.set(bufferKey, buffered);
-    else this.#childOutputBuffers.delete(bufferKey);
-  }
-
-  #flushChildOutput(idx: number, role: AkanChildRole, type: "stdout" | "stderr", bufferKey: string) {
-    const buffered = this.#childOutputBuffers.get(bufferKey);
-    if (!buffered) return;
-    this.#childOutputBuffers.delete(bufferKey);
-    this.#writeChildOutputLine(idx, role, type, `${buffered}\n`);
-  }
-
-  #writeChildOutputLine(idx: number, role: AkanChildRole, type: "stdout" | "stderr", line: string) {
-    if (type === "stderr" && this.#bufferChildStderrLine(idx, role, line)) return;
-    this.#writeChildOutputLineRaw(idx, role, type, line);
-  }
-
-  #writeChildOutputLineRaw(idx: number, role: AkanChildRole, type: "stdout" | "stderr", line: string) {
     const prefixedLine = `[child:${idx} ${role}] [${type}] ${line}`;
     if (type === "stdout" || this.#printChildStderr) process[type].write(prefixedLine);
     this.#logWriter?.write(`${idx}-${role}`, AkanApp.#stripAnsi(prefixedLine));
   }
 
-  #bufferChildStderrLine(idx: number, role: AkanChildRole, line: string): boolean {
-    const key = AkanApp.#childStderrBlockKey(idx, role);
-    const block = this.#childStderrBlockBuffers.get(key) ?? [];
-    block.push(line);
-    this.#childStderrBlockBuffers.set(key, block);
-
-    const existingTimer = this.#childStderrBlockTimers.get(key);
-    if (existingTimer) clearTimeout(existingTimer);
-
-    if (line.trim() === "" || block.length >= 64) {
-      this.#flushChildStderrBlock(idx, role, key);
-      return true;
-    }
-
-    this.#childStderrBlockTimers.set(
-      key,
-      setTimeout(() => this.#flushChildStderrBlock(idx, role, key), 50),
-    );
-    return true;
-  }
-
-  #flushChildStderrBlock(idx: number, role: AkanChildRole, key: string) {
-    const timer = this.#childStderrBlockTimers.get(key);
-    if (timer) clearTimeout(timer);
-    this.#childStderrBlockTimers.delete(key);
-
-    const block = this.#childStderrBlockBuffers.get(key);
-    if (!block?.length) return;
-    this.#childStderrBlockBuffers.delete(key);
-
-    const text = block.join("");
+  /**
+   * In ndjson mode a stack trace is one record, and `AKAN_CHILD_STDERR` does not apply: the line that killed a
+   * child is the one the collector must not miss.
+   */
+  #writeChildStderrBlock(idx: number, role: AkanChildRole, pid: number | null, lines: string[]) {
+    const text = lines.join("");
     if (AkanApp.#isBenignRsdwConnectionClosedBlock(text)) return;
-    for (const blockLine of block) this.#writeChildOutputLineRaw(idx, role, "stderr", blockLine);
-  }
-
-  static #childStderrBlockKey(idx: number, role: AkanChildRole): string {
-    return `${idx}:${role}:stderr`;
+    if (Logger.isNdjson) {
+      this.#logHub?.ingest(
+        ChildOutputReader.toRecord({ type: "stderr", text, name: "child", role, replicaIdx: idx, pid }),
+      );
+      return;
+    }
+    for (const line of lines) this.#writeChildLine(idx, role, pid, "stderr", line);
   }
 
   static #isBenignRsdwConnectionClosedBlock(text: string): boolean {

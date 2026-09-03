@@ -297,6 +297,171 @@ akan:myapp> .tail off`}
       </Scroll.Slide>
       <Divider />
 
+      <Scroll.Slide
+        id="request-line"
+        title={l.trans({ en: "Request Line & Flight Recorder", ko: "요청 요약 줄과 flight recorder" })}
+      >
+        <Docs.Title>
+          {l.trans({ en: "Request Line & Flight Recorder", ko: "요청 요약 줄과 flight recorder" })}
+        </Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Two opt-ins reduce noise instead of filtering it. The canonical request line writes one record per call at its end — ok or error, the endpoint, ms, status, userId, and under AKAN_TRACE=1 the db and cache figures — so a request is one line to grep, not a dozen. The flight recorder keeps each call's own sub-level records and promotes them, marked flight=true, only when the call failed or ran past the threshold: trace-level detail for the request that went wrong, with the process level left at info.",
+              ko: "두 가지 옵트인은 노이즈를 걸러내는 대신 줄입니다. 요청 요약 줄(canonical line)은 호출이 끝날 때 레코드 하나를 씁니다. ok 또는 error, 엔드포인트, ms, status, userId, 그리고 AKAN_TRACE=1이면 db·cache 수치까지 담겨서 요청 하나가 열두 줄이 아니라 grep 한 줄이 됩니다. flight recorder는 호출마다 레벨 아래로 떨어진 자기 레코드를 들고 있다가, 실패했거나 임계를 넘긴 경우에만 flight=true로 표시해 올립니다. 프로세스 레벨은 info로 두고도 잘못된 요청에 대해서만 trace 상세를 얻습니다.",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title=".env"
+            language="bash"
+            code={`# One line per call: "ok mutation:signScContract ms=132.4 status=200 userId=u_abc"
+AKAN_LOG_CANONICAL=1          # slow: only failed calls and those over AKAN_LOG_FLIGHT_MS
+
+# Keep each call's last 64 sub-level lines; promote them only when it failed or ran long
+AKAN_LOG_FLIGHT=1
+AKAN_LOG_FLIGHT_MS=1000
+AKAN_LOG_FLIGHT_MAX=65536     # records held at once; a call past the cap runs unrecorded
+
+# One request at trace, whatever the level: unconditional in local, elsewhere with this secret
+AKAN_LOG_DEBUG_HEADER=<random secret>`}
+          />
+          <Code.Snippet
+            className="w-full"
+            title="x-akan-debug"
+            language="bash"
+            code={`curl -H "x-akan-debug: <secret>" https://api.example.com/api/refundPayment/ord_1
+# stdout now carries that request's trace lines, marked debug=true, and nothing else changes`}
+          />
+          <div className="grid gap-3 lg:grid-cols-3">
+            {[
+              [
+                l.trans({ en: "Structured attrs", ko: "구조화된 attrs" }),
+                l.trans({
+                  en: "Logger.emit({ level, name, message, attrs }) puts values in LogRecord.attrs; they render as key=value after the message and ride the JSON as an object. A key naming a secret is redacted before the record exists.",
+                  ko: "Logger.emit({ level, name, message, attrs })는 값을 LogRecord.attrs에 담습니다. 텍스트에서는 메시지 뒤에 key=value로, JSON에서는 객체로 실립니다. 비밀값을 뜻하는 키는 레코드가 생기기 전에 가려집니다.",
+                }),
+              ],
+              [
+                l.trans({ en: "Promoted lines pass every floor", ko: "승격된 줄은 모든 floor를 통과" }),
+                l.trans({
+                  en: "A flight=true or debug=true record was asked for below the level, so a forwarder's floor, the stdout writer's level and a --level filter all let it through.",
+                  ko: "flight=true 또는 debug=true 레코드는 레벨 아래에서 요청된 것이므로, forwarder의 floor, stdout writer의 레벨, --level 필터가 모두 통과시킵니다.",
+                }),
+              ],
+              [
+                l.trans({ en: "Cost", ko: "비용" }),
+                l.trans({
+                  en: "Measured: the recorder adds about 190ns to a clean call, the gate about 20ns per rejected log call inside a trace. Both are off by default; the memory cap is an operator's decision.",
+                  ko: "측정치: recorder는 정상 호출에 약 190ns, 게이트는 trace 안의 거부된 로그 호출당 약 20ns를 더합니다. 둘 다 기본 off이며, 메모리 상한은 운영자의 결정입니다.",
+                }),
+              ],
+            ].map(([title, desc]) => (
+              <div key={title} className={panelRecipe()}>
+                <div className="font-bold text-foreground">{title}</div>
+                <div className="mt-2 text-foreground/70 text-sm">{desc}</div>
+              </div>
+            ))}
+          </div>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide
+        id="collection"
+        title={l.trans({ en: "Collection: NDJSON stdout & SSE", ko: "수집: NDJSON stdout과 SSE" })}
+      >
+        <Docs.Title>{l.trans({ en: "Collection: NDJSON stdout & SSE", ko: "수집: NDJSON stdout과 SSE" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Collection and live viewing are different problems. Collection must be lossless and restart-safe, so it is the container's stdout: with AKAN_LOG_FORMAT=ndjson the gateway (or the solo replica) is the stream's only writer and emits one JSON record per line for every process it fronts — a child turns its console off and forwards, the RSC worker is piped rather than inherited, and whatever either wrote past its Logger, a crash stack included, is wrapped as a raw=true record. The node agent's parser is json. Live viewing is a session tool: GET /_akan/app/logs serves the hub as text/event-stream to a bearer token, resumable with Last-Event-ID.",
+              ko: "수집과 실시간 조회는 다른 문제입니다. 수집은 무손실이고 재시작에 안전해야 하므로 컨테이너 stdout이 맡습니다. AKAN_LOG_FORMAT=ndjson이면 gateway(또는 단독 replica)가 스트림의 유일한 writer가 되어 자기가 앞세운 모든 프로세스의 레코드를 한 줄에 JSON 하나로 씁니다. child는 콘솔을 끄고 위로 올리고, RSC 워커는 상속 대신 파이프로 읽으며, 둘 중 누가 Logger를 거치지 않고 쓴 것(크래시 스택 포함)도 raw=true 레코드로 감쌉니다. 노드 에이전트의 파서는 json 하나입니다. 실시간 조회는 세션 도구입니다. GET /_akan/app/logs가 허브를 bearer 토큰에게 text/event-stream으로 제공하고 Last-Event-ID로 재개합니다.",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="Deployment env"
+            language="bash"
+            code={`AKAN_LOG_FORMAT=ndjson          # stdout is JSON lines; ndjson-only makes the file JSON too
+AKAN_LOG_TO_FILE=0              # the image default; the writable layer is ephemeral
+AKAN_LOG_STDOUT_LEVEL=info      # kubelet and json-file rotate by size, so trace can outrun the agent
+AKAN_LOG_STREAM_TOKEN=<secret>  # optional: mounts GET /_akan/app/logs`}
+          />
+          <Code.Snippet
+            className="w-full"
+            title="docker-compose.yml"
+            // language="yaml"
+            code={`services:
+  app:
+    environment:
+      AKAN_LOG_FORMAT: ndjson
+      AKAN_LOG_TO_FILE: "0"
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "5" }   # json-file never rotates unless told to`}
+          />
+          <Code.Snippet
+            className="w-full"
+            title="fluent-bit.conf"
+            // language="ini"
+            code={`[INPUT]
+    name    tail
+    path    /var/log/containers/*.log
+    parser  cri
+[FILTER]
+    name          parser
+    match         *
+    key_name      log
+    parser        json
+    reserve_data  true
+# Keep traceId and userId as JSON fields, not Loki labels: labels must stay low-cardinality.`}
+          />
+          <Code.Snippet
+            className="w-full"
+            title="SSE"
+            language="bash"
+            code={`curl -N -H "Authorization: Bearer $AKAN_LOG_STREAM_TOKEN" \\
+     "http://<pod>:8282/_akan/app/logs?level=warn&endpoint=mutation:*"
+
+# Reconnect where you left off; an evicted range arrives as an explicit gap event
+curl -N -H "Authorization: Bearer $AKAN_LOG_STREAM_TOKEN" -H "Last-Event-ID: 84213" \\
+     "http://<pod>:8282/_akan/app/logs?level=warn"`}
+          />
+          <div className="grid gap-3 lg:grid-cols-3">
+            {[
+              [
+                l.trans({ en: "One writer", ko: "writer는 하나" }),
+                l.trans({
+                  en: "Every server process shares the format through the environment. A child forwards from the stdout level on its own before the gateway asks, so a boot line is never lost; text stays the default and the image ships text.",
+                  ko: "모든 서버 프로세스는 환경으로 같은 형식을 봅니다. child는 gateway가 요청하기 전부터 stdout 레벨로 스스로 올리므로 부팅 줄이 사라지지 않습니다. 기본은 text이고 이미지도 text입니다.",
+                }),
+              ],
+              [
+                l.trans({ en: "Gaps are explicit", ko: "갭은 명시" }),
+                l.trans({
+                  en: "Every SSE event's id is the hub seq. A Last-Event-ID the ring no longer reaches answers with a gap event naming the missed range, and one from before a restart with sequence-reset — never a silent skip.",
+                  ko: "SSE 이벤트의 id는 허브 seq입니다. 링이 더 이상 닿지 않는 Last-Event-ID에는 놓친 구간을 적은 gap 이벤트로, 재시작 이전의 id에는 sequence-reset으로 답합니다. 조용히 건너뛰지 않습니다.",
+                }),
+              ],
+              [
+                l.trans({ en: "Not the collection path", ko: "수집 경로가 아님" }),
+                l.trans({
+                  en: "A subscription loses the whole gap of a pod restart and needs a route to every pod. Use it to watch one process now; what must be kept goes through stdout and the node agent.",
+                  ko: "구독은 pod 재시작 구간을 통째로 잃고 모든 pod에 개별로 붙어야 합니다. 지금 프로세스 하나를 보는 용도로 쓰고, 보관해야 하는 것은 stdout과 노드 에이전트로 보냅니다.",
+                }),
+              ],
+            ].map(([title, desc]) => (
+              <div key={title} className={panelRecipe()}>
+                <div className="font-bold text-foreground">{title}</div>
+                <div className="mt-2 text-foreground/70 text-sm">{desc}</div>
+              </div>
+            ))}
+          </div>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
       <Scroll.Slide id="operational-checklist" title={l.trans({ en: "Operational Checklist", ko: "운영 체크리스트" })}>
         <Docs.Title>{l.trans({ en: "Operational Checklist", ko: "운영 체크리스트" })}</Docs.Title>
         <Docs.Description>

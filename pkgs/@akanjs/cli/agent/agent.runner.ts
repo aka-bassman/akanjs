@@ -81,15 +81,14 @@ verified by \`akan lint\`. When working inside an app or lib, consult that file 
   if (recipes.length === 0) return `## Recipes\n\n${scopeIndexPointer}\n\n`;
   return `## Recipes
 
-Framework UI recipes (Tailwind-variant look factories), importable from every app and lib. Consume by exact name —
-\`import { <name> } from "akanjs/ui"\`, then \`<name>(variants?, className?)\`. The second arg merges internally and
-takes **an array too**, so never wrap it in \`cn()\`: \`<name>({}, ["h-full", isWide && "w-full", className])\`.
-Do not guess recipe names, import paths, or variant values; the list below carries
-the full contract (\`*\` marks the default, \`key?\` is a boolean flag), so there is no need to open the recipe file to
-consume one. tsc still reports variant mistakes. **Before inlining a repeated surface (card, box,
-tile, …): reuse a recipe, or add one as \`apps/<app>/ui/Recipe/<name>.ts\` (one recipe per file, re-exported from
-that folder's \`index.ts\`) — never re-implement the same look inline in several places, and never author a
-near-duplicate.** Full authoring/consumption policy: the \`recipeRule\` guideline.
+Framework UI recipes (Tailwind-variant look factories), importable from every app and lib: \`import { <name> } from
+"akanjs/ui"\`, then \`<name>(variants?, className?)\`. The second arg merges internally and takes **an array too**, so
+never wrap it in \`cn()\`: \`<name>({}, ["h-full", isWide && "w-full", className])\`. The list below is the full
+contract (\`*\` marks the default, \`key?\` is a boolean flag) — do not guess a name, path, or variant value, and do
+not open the recipe file to consume one. **Before inlining a repeated surface (card, box, tile, …): reuse a recipe,
+or add one as \`apps/<app>/ui/Recipe/<name>.ts\`, one per file, re-exported from that folder's \`index.ts\` — never
+re-implement the same look inline in several places, and never author a near-duplicate.** Full policy: the
+\`recipeRule\` guideline.
 
 ${renderRecipeEntries(recipes)}
 
@@ -144,15 +143,12 @@ If generated output is stale or broken, update the owning source file and run \`
 
 ${recipeIndex}## MCP Workflow Policy
 
-- Prefer Akan MCP workflows before direct source edits.
-- Direct source edits are denied when an allowlisted Akan workflow or repair tool can perform the change.
-- Use \`akan mcp --mode plan\` to inspect \`list_workflows\`, \`explain_workflow\`, and \`plan_workflow\`.
-- If \`plan_workflow\` returns \`planPath\` or \`next.tool=apply_workflow\`, call \`apply_workflow({ planPath })\` before editing source files directly.
-- Use \`akan mcp --mode apply\` only for allowlisted \`apply_workflow\`, \`run_validation\`, and repair tools.
-- After \`apply_workflow\`, run \`run_validation\` with \`validationTarget\` when present; otherwise use \`applyReportPath\`.
-- If no workflow exists, or apply reports unsupported/no-op/failed diagnostics that require manual action, keep edits scoped to owning source files and never patch generated files directly.
-- For compound requests, split the request into workflows and apply each \`planPath\` in order, such as \`create-module\` followed by \`add-field\`.
-- **CLI-only fallback (MCP not connected):** \`akan mcp\` starts a stdio MCP server, so the \`list_workflows\`/\`plan_workflow\`/\`apply_workflow\` tools exist only when your agent is wired to it as an MCP client. When they are unavailable, the CLI is a first-class equivalent: \`akan workflow list\` / \`explain <name>\` / \`plan <name> ... --format json --out <planPath>\` / \`apply <planPath> --format json\`, \`akan doctor --strict --format json\` for validation, and \`akan repair generated|imports|module-shape --app <app> --format json\` for repairs. Scaffolding primitives (\`create-module\`/\`create-scalar\`/\`create-service\` take the target app/lib as a POSITIONAL arg; \`add-field\`/\`add-enum-field\` use \`--app\`/\`--module\` flags) call the same code the workflows do.
+- **Prefer an Akan workflow to a direct source edit.** A direct edit is denied when an allowlisted workflow or repair tool can make the change.
+- Inspect with \`akan mcp --mode plan\` (\`list_workflows\`, \`explain_workflow\`, \`plan_workflow\`); apply with \`akan mcp --mode apply\`, which allowlists \`apply_workflow\`, \`run_validation\`, and the repair tools.
+- If \`plan_workflow\` returns \`planPath\` or \`next.tool=apply_workflow\`, call \`apply_workflow({ planPath })\` before editing source. Then run \`run_validation\` with \`validationTarget\` when present, otherwise \`applyReportPath\`.
+- Split a compound request into workflows and apply each \`planPath\` in order, such as \`create-module\` followed by \`add-field\`.
+- When no workflow exists, or apply reports unsupported/no-op/failed diagnostics needing manual action, keep edits scoped to owning source files and never patch generated files directly.
+- **MCP not connected?** The CLI is a first-class equivalent — \`akan workflow list\` / \`explain\` / \`plan\` / \`apply\`, \`akan doctor\`, \`akan repair\`. See the onboarding guide's CLI-only fallback for the exact flags.
 
 ## Validation
 

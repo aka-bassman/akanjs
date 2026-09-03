@@ -1,0 +1,31 @@
+{
+  "title": "Query Rule",
+  "description": "Akan data access — filters, slices and hydration, full-text search, and cascade removal",
+  "group": "core",
+  "codegenPriority": 4,
+  "deprecated": false,
+  "scans": [
+    {
+      "type": "example",
+      "description": "Filter and model declarations that drive the generated query surface",
+      "path": "{apps,libs}/*/lib/*/*.document.ts",
+      "sample": 4
+    },
+    {
+      "type": "example",
+      "description": "Slice declarations that expose a query to a client store",
+      "path": "{apps,libs}/*/lib/*/*.signal.ts",
+      "sample": 4
+    }
+  ],
+  "update": {
+    "filePath": "./queryRule.instruction.md",
+    "contents": ["slices and hydration", "generated filter methods", "text search", "cascade removal"],
+    "rules": [
+      "Use current Akan APIs only",
+      "State the rule and the reason it exists, never restate a type signature",
+      "Say which generated methods fire hooks and which do not",
+      "Keep it workspace-neutral — no app or repo names"
+    ]
+  }
+}

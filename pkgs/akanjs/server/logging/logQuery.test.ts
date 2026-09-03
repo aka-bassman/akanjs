@@ -101,3 +101,31 @@ describe("LogQueryMatcher.parse", () => {
     expect(LogQueryMatcher.parse({ level: "loud", since: "yesterday", limit: "-1" })).toEqual({});
   });
 });
+
+describe("LogQueryMatcher promoted records", () => {
+  test("a flight or debug record passes minSev, since it was asked for below the level", () => {
+    const matcher = new LogQueryMatcher({ minSev: logSeverity.warn });
+    const base: LogRecord = {
+      at: 1,
+      elapsedMs: 0,
+      level: "trace",
+      sev: logSeverity.trace,
+      name: "Svc",
+      context: "",
+      message: "m",
+      stream: "stdout",
+      pid: 1,
+      replicaIdx: 0,
+      role: "all",
+      origin: null,
+      traceId: null,
+      endpoint: null,
+    };
+    expect(matcher.matches(base)).toBe(false);
+    expect(matcher.matches({ ...base, attrs: { flight: true } })).toBe(true);
+    expect(matcher.matches({ ...base, attrs: { debug: true } })).toBe(true);
+    expect(
+      new LogQueryMatcher({ minSev: logSeverity.warn, text: "x" }).matches({ ...base, attrs: { flight: true } }),
+    ).toBe(false);
+  });
+});

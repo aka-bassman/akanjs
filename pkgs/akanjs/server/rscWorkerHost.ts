@@ -6,6 +6,7 @@ import type { AkanTheme } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
 import type { ClientManifest } from "./artifact";
 import type { RouteCacheInvalidation, RouteCacheRenderState } from "./cachePolicy";
+import { ChildOutputReader } from "./logging/childOutputReader";
 import { MemoryLimit } from "./memoryLimit";
 import type { RscTraceMetadata, SsrLateRedirect } from "./ssrTypes";
 import type { BaseBuildArtifact, CssAsset } from "./types";
@@ -372,6 +373,8 @@ export interface RscWorkerOptions {
 }
 
 type WorkerStatus = "starting" | "ready" | "restarting" | "stopped";
+/** Piped only in an ndjson deployment, where an inherited stdout would put text lines into the JSON stream. */
+type RscProcess = Bun.Subprocess;
 
 export class RscWorker {
   static readonly #devMaxReloads = 10;
@@ -379,7 +382,7 @@ export class RscWorker {
   readonly ready: Promise<void>;
   #logger = new Logger("RscWorker");
 
-  #proc: Bun.Subprocess<"ignore", "inherit", "inherit">;
+  #proc: RscProcess;
   readonly #pending = new Map<string, RscPending>();
   #clientManifest: ClientManifest;
   #pagesBundlePath: string;
@@ -411,7 +414,7 @@ export class RscWorker {
   #hostPendingChunkOverflowCount = 0;
   #restartTimer: ReturnType<typeof setTimeout> | null = null;
   #recycleTimer: ReturnType<typeof setTimeout> | null = null;
-  #rollingRecycle: { oldProc: Bun.Subprocess<"ignore", "inherit", "inherit">; reason: string } | null = null;
+  #rollingRecycle: { oldProc: RscProcess; reason: string } | null = null;
   readonly #restartOpts: Required<Pick<RscWorkerRestartOptions, "baseDelayMs" | "maxDelayMs">> & {
     maxAttempts: number | undefined;
   };
@@ -653,12 +656,13 @@ export class RscWorker {
     });
   }
 
-  #spawn(): Bun.Subprocess<"ignore", "inherit", "inherit"> {
+  #spawn(): RscProcess {
     this.#status = "starting";
     this.#reloadsSinceSpawn = 0;
     const workerPath = this.#resolveWorkerPath();
-    let proc!: Bun.Subprocess<"ignore", "inherit", "inherit">;
+    let proc!: RscProcess;
     const earlyMessages: RscInMsg[] = [];
+    const piped = Logger.isNdjson;
     proc = Bun.spawn(["bun", "--conditions", "react-server", workerPath], {
       ipc: (message: RscInMsg) => {
         if (!proc) {
@@ -667,10 +671,11 @@ export class RscWorker {
         }
         this.#handleMessage(message, proc);
       },
-      stdio: ["ignore", "inherit", "inherit"],
+      stdio: ["ignore", piped ? "pipe" : "inherit", piped ? "pipe" : "inherit"],
       serialization: "advanced",
       env: { ...process.env },
     });
+    if (piped) this.#readOutput(proc);
     if (earlyMessages.length > 0) {
       setTimeout(() => {
         for (const message of earlyMessages.splice(0)) this.#handleMessage(message, proc);
@@ -678,6 +683,31 @@ export class RscWorker {
     }
     proc.exited.then((code) => this.#handleExit(proc, code));
     return proc;
+  }
+
+  /** The worker's own stdout and stderr as records of this replica, so a crash stack reaches the collector as JSON. */
+  #readOutput(proc: RscProcess) {
+    const replicaIdx = Number(process.env.AKAN_REPLICA_IDX);
+    const record = (type: "stdout" | "stderr", text: string) =>
+      this.onLogRecords?.(
+        [
+          ChildOutputReader.toRecord({
+            type,
+            text,
+            name: "rsc-worker",
+            role: "rsc-worker",
+            replicaIdx: Number.isInteger(replicaIdx) ? replicaIdx : null,
+            pid: proc.pid,
+          }),
+        ],
+        0,
+      );
+    const reader = new ChildOutputReader({
+      onLine: (line) => record("stdout", line),
+      onBlock: (lines) => record("stderr", lines.join("")),
+    });
+    void reader.pipe(proc.stdout instanceof ReadableStream ? proc.stdout : null, "stdout");
+    void reader.pipe(proc.stderr instanceof ReadableStream ? proc.stderr : null, "stderr");
   }
 
   #resolveWorkerPath(): string {
@@ -693,7 +723,7 @@ export class RscWorker {
     }
   }
 
-  #handleMessage(message: RscInMsg, proc: Bun.Subprocess<"ignore", "inherit", "inherit">): void {
+  #handleMessage(message: RscInMsg, proc: RscProcess): void {
     if (proc !== this.#proc) return;
     if (message.type === "cache-state") {
       this.#pending.get(message.requestId)?.onCacheState?.(message.state);
@@ -846,7 +876,7 @@ export class RscWorker {
     this.#lastWorkerMetrics = {};
   }
 
-  #handleExit(proc: Bun.Subprocess<"ignore", "inherit", "inherit">, code: number | null): void {
+  #handleExit(proc: RscProcess, code: number | null): void {
     // Stale exits from a proc we've already replaced can still fire if the
     // old subprocess was slow to cleanup; ignore them so we don't
     // double-schedule a restart.

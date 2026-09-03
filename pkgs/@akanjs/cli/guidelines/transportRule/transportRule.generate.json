@@ -1,0 +1,31 @@
+{
+  "title": "Transport Rule",
+  "description": "How a call reaches an Akan signal — guards across HTTP and websocket, socket identity and cleanup, binary pubsub frames, and mutation HTTP verbs",
+  "group": "core",
+  "codegenPriority": 4,
+  "deprecated": false,
+  "scans": [
+    {
+      "type": "example",
+      "description": "Guard classes and their scope markers",
+      "path": "{apps,libs}/*/srvkit/guards.ts",
+      "sample": 2
+    },
+    {
+      "type": "example",
+      "description": "Signal endpoints declaring guards, pubsub, and message handlers",
+      "path": "{apps,libs}/*/lib/*/*.signal.ts",
+      "sample": 4
+    }
+  ],
+  "update": {
+    "filePath": "./transportRule.instruction.md",
+    "contents": ["guards across transports", "signal body types", "binary pubsub", "mutation HTTP verbs"],
+    "rules": [
+      "Use current Akan APIs only",
+      "State the rule and the reason it exists, never restate a type signature",
+      "Say what leaks or breaks when a rule is ignored",
+      "Keep it workspace-neutral — no app or repo names"
+    ]
+  }
+}

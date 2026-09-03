@@ -19,6 +19,25 @@
 - Prefer established nearby patterns over introducing a new abstraction.
 - Add new abstractions only when they remove real duplication or match an existing project pattern.
 
+## Deep-Dive Guidelines
+
+This file carries the rules. The reasoning, the measurements, and the per-feature edge cases live in guidelines
+you fetch on demand — `get_guideline` with the name, or `akan guideline show <name>`. Fetch the relevant one
+**before** a deep pass on that area; a section below that points at one is a summary, not the whole contract.
+
+| name | covers |
+|---|---|
+| `ssrRule` | server-share targets, the `akan.ssr.*` warnings, the client-boundary playbook |
+| `runtimeRule` | `web` / `csr` surfaces, gateway vs solo processes, logging, the generated image, shipped assets |
+| `queryRule` | slices and hydration, the generated filter methods, full-text search, cascade removal |
+| `transportRule` | guards across HTTP and websocket, socket identity and cleanup, binary pubsub, mutation verbs |
+| `mcpRule` | MCP configuration, wire behaviour, resource URIs, OAuth metadata, protocol revisions |
+| `agentRule` | the in-page agent's chat options, zones, slash commands, transcript compaction |
+| `cssRule` | the full semantic token set for a theme pass |
+| `componentRule` | the `_overrides.tsx` slot list and drop-in component patterns |
+| `recipeRule` | authoring and consuming Tailwind-variant recipes |
+| `workspaceRecipes` | worked step-by-step recipes and the auto-generated API reference |
+
 ## Lint-Enforced Rules (These Break The Build)
 
 Enforced by `biome.json`, which extends `@akanjs/devkit/biome.base.json` — that file scopes every grit plugin in
@@ -26,60 +45,54 @@ Enforced by `biome.json`, which extends `@akanjs/devkit/biome.base.json` — tha
 back.
 
 - **Never hand-order Tailwind classes.** `nursery/useSortedClasses` is an error and also sorts the string
-  arguments to `cn()`. Sorter output such as `font-bold text-2xl text-foreground` or
-  `border-foreground/5 border-t` is correct. Write the classes in any order, run the formatter, leave the result.
-- **Stay inside the color vocabulary.** Vocabulary closure strips the raw Tailwind palette, so these render as
-  no CSS and fail lint (`no-raw-palette-class.grit`, `no-arbitrary-color.grit`, `no-daisyui-legacy-class.grit`, `no-inline-color.grit`,
-  `no-interpolated-arbitrary-class.grit`): raw palette classes (`bg-blue-500`), arbitrary color values
-  (`bg-[#3b82f6]`), an arbitrary class built by interpolation, daisyUI legacy classes (`btn-primary`, `card-body`)
-  and its dropped color slots (`bg-base-100`, `text-base-content`, `text-primary-content`, `bg-error` — use
-  `background`/`muted`/`border`, `foreground`, `<color>-foreground`, `destructive`), and color literals in
-  `style={{...}}`. Use semantic tokens (`bg-primary`, `text-foreground/70`). A legitimate
-  fixed color (OS-chrome mockups, data-viz) takes a `// biome-ignore lint/plugin: <reason>` with the reason
-  spelled out.
+  arguments to `cn()`. Sorter output such as `font-bold text-2xl text-foreground` or `border-foreground/5 border-t`
+  is correct. Write the classes in any order, run the formatter, leave the result.
+- **Stay inside the color vocabulary.** Vocabulary closure strips the raw Tailwind palette, so these render as no
+  CSS and fail lint: raw palette classes (`bg-blue-500`), arbitrary color values (`bg-[#3b82f6]`), an arbitrary
+  class built by interpolation, daisyUI legacy classes (`btn-primary`, `card-body`) and its dropped color slots
+  (`bg-base-100`, `text-base-content`, `text-primary-content`, `bg-error` — use `background`/`muted`/`border`,
+  `foreground`, `<color>-foreground`, `destructive`), and color literals in `style={{...}}`. Use semantic tokens
+  (`bg-primary`, `text-foreground/70`). A legitimate fixed color (OS-chrome mockups, data-viz) takes a
+  `// biome-ignore lint/plugin: <reason>`. (`no-raw-palette-class`, `no-arbitrary-color`, `no-daisyui-legacy-class`,
+  `no-inline-color`, `no-interpolated-arbitrary-class`)
 - **Never `throw new Error`.** Throw `new Err("<module>.error.<key>")` and register the key as `[en, ko]` in that
   module's dictionary `.error({})`. Import `Err` from `"../dict"` on the server and from `"@libs/<lib>/client"` or
-  `"@apps/<app>/client"` in UI. `no-throw-raw-error.grit` exempts tests, `*.constant.ts`, `common/**`, and
-  `env/**` — `common/` and `env/` have no legal `Err` import path, so keep throwing code out of them.
+  `"@apps/<app>/client"` in UI. `no-throw-raw-error.grit` exempts tests, `*.constant.ts`, `common/**`, and `env/**`
+  — the last two have no legal `Err` import path, so keep throwing code out of them.
 - **Never import a third-party package** from `page/**`, from any barrel, or from any
   `*.{constant,dictionary,document,service,signal,store}.ts` / `*.{Template,Unit,Util,View,Zone}.tsx`
   (`no-import-external-library.grit`). Re-export the symbol through a lib first. One-line re-export shims in a lib's
-  `common/`, `webkit/`, or `ui/` exist for exactly this reason — they are load-bearing, not cruft. Do not delete
-  them.
+  `common/`, `webkit/`, or `ui/` exist for exactly this reason — they are load-bearing, not cruft.
 - **`#private` is banned in exactly four file suffixes:** `*.constant.ts`, `*.document.ts`, `*.service.ts`, and
   `*.store.ts` (`no-js-private-class-method.grit`). The rule is scoped by file path, not by class shape, so
   `#private` remains the house style everywhere under `srvkit/`, including `adapt()` adapter classes.
 - **No `console.log` / `console.debug`.** Only `assert`, `error`, `info`, and `warn` are allowed. Server code uses
   the injected `this.logger.*` or `new Logger("ClassName")`.
-- **Never call `logger.log()` / `Logger.log()`** (`no-deprecated-log-level.grit`). The level ladder is `trace
-  verbose debug info warn error`; `log` was a seventh tier *below* `info` that `AKAN_PUBLIC_LOG_LEVEL=info`
-  silently dropped. The method is kept and emits at `info`, so a call reads like a distinct level and is not one —
-  write `.info()`. `AKAN_PUBLIC_LOG_LEVEL=log` still boots, normalized to `info` with one warning.
+- **Never call `logger.log()` / `Logger.log()`** (`no-deprecated-log-level.grit`). The ladder is `trace verbose
+  debug info warn error`; `log` was a seventh tier *below* `info` that `AKAN_PUBLIC_LOG_LEVEL=info` silently
+  dropped. The method is kept and emits at `info`, so a call reads like a distinct level and is not one — write
+  `.info()`.
 - **Never write a `//!` marker in browser-reachable code** — `ui/`, `webkit/`, `common/`, `page/**/*.tsx`,
   `*.constant.ts`, `*.store.ts`, and the five module component suffixes (`no-bang-comment-in-client.grit`). Bun
   classifies `//!` and `/*!` as legal comments and keeps them through minification, so the note ships to every
   visitor. Use `// FIXME:` there; `//!` stays legal in server, `srvkit/`, and CLI files.
 - **Never return a value from a store action** (`no-return-in-store-action.grit`). Every method of a `store(...)`
-  class dispatches through `st.do.<action>()`, which is typed `void` / `Promise<void>`, so the value is
-  unreachable — write it into state with `this.set({ ... })`. A bare `return;` guard, a `return` inside a nested
-  callback, a getter, and a `static` helper are all still fine.
+  class dispatches through `st.do.<action>()`, typed `void` / `Promise<void>`, so the value is unreachable — write
+  it into state with `this.set({ ... })`. A bare `return;` guard, a `return` inside a nested callback, a getter,
+  and a `static` helper are all still fine.
 - **Never redeclare a generated CRUD endpoint name** in `*.signal.ts` (`no-redeclare-predefined-endpoint.grit`).
 - **Never type a `*.Util.tsx` / `*.Zone.tsx` prop as a `cnst` model** (`no-model-type-in-util-zone.grit`). Those two
-  roles are always client components, so a `cnst.Banner` / `cnst.LightBanner` prop is a class instance the server has
-  to hand across the boundary; take `bannerId: string` and read the model from the store instead. **Only prop
-  positions are read** — a `*Props` interface or type alias, and the inline object type on the component's own
-  parameter — and only shapes that are actually an instance are flagged. Exempt: an indexed enum access
-  (`cnst.<Enum>["value"]`, a string union), a `ClientInit` / `ClientView` / `ClientEdit` type argument (plain
-  `GetStateObject<…>` data), a `ModelsProps<…>` type argument, a function-typed prop, and any `cnst` type that
-  never leaves the file. `ModelProps<"setting", cnst.LightSetting>` and any other indexed access
-  (`cnst.Banner["image"]` is a `File`) stay flagged.
+  roles are always client components, so a `cnst.Banner` / `cnst.LightBanner` prop is a class instance the server
+  has to hand across the boundary; take `bannerId: string` and read the model from the store instead. Only prop
+  positions are read, and only shapes that are actually an instance. Exempt: an indexed enum access
+  (`cnst.<Enum>["value"]`), a `ClientInit` / `ClientView` / `ClientEdit` or `ModelsProps<…>` type argument, a
+  function-typed prop, and any `cnst` type that never leaves the file. Other indexed accesses
+  (`ModelProps<"setting", cnst.LightSetting>`, `cnst.Banner["image"]`) stay flagged.
 - **Never wrap a form setter in a pass-through arrow** (`no-unpublished-form-setter.grit`).
   `onChange={(type) => st.do.setTypeOnTicket(type)}` runs identically to `onChange={st.do.setTypeOnTicket}`, but
   the arrow is a fresh anonymous closure, so the control emits no `data-akan-action` and publishes no agent tool
   for the field — a silent failure in two lines that read the same. A wrapper that transforms the value, adds a
   statement, or writes a nested path with `writeOnX` stays legal; publish that one with an explicit `st.tool`.
-  Scoped to `{apps,libs}/**/*.tsx`, and a typed parameter is not matched, so it under-reports rather than
-  misfiring.
 - **No deep imports past a barrel** (`no-deep-internal-import.grit`). Cross-module constant references such as
   `../map/map.constant` are the sanctioned exception.
 - **Never import across the client/server boundary.** Client files (`ui/`, `webkit/`, `page/`, `*.store.ts`, every
@@ -89,41 +102,33 @@ back.
   `*.store.ts`, a module component, `ui/`, `webkit/`, a package `client` entrypoint, or the `st` / `store` /
   `useClient` barrels (`no-import-client-in-server.grit`). Shared files — `common/` and `*.constant.ts` — are held
   to **both**, so they reach neither side. `import type` is erased before bundling and stays legal in every
-  direction; a mixed value-and-type import is not exempt. Scoped to `apps/**` and `libs/**`: `pkgs/akanjs/**`
-  implements the boundary and is where the two graphs legitimately meet.
+  direction; a mixed value-and-type import is not exempt. Scoped to `apps/**` and `libs/**`.
 - **Server-component discipline** is enforced on `page/**`, `*.Unit.tsx`, and `*.View.tsx`
   (`no-import-client-functions.grit`, `no-use-client-in-server.grit`, `non-scalar-props-restricted.grit`).
 - **Never write an async component outside `page/`** (`no-async-component-in-ui.grit`, scoped to
   `{apps,libs}/**/ui/**/*.tsx`). React has no async client component, so a `ui/` component that awaits breaks as
   soon as a client parent renders it, and the load drops below the route, which could have started it before the
   first byte. Await in the page — or hand an unawaited `fetch.*` to a `Zone` as an `init` / `view` prop — and take
-  the resolved data as a prop. A component is a PascalCase binding whose own initializer is `async`, so an async
-  handler declared inside a synchronous component, an inline `onClick={async () => …}`, and
-  `lazy(async () => import(…))` are all untouched.
+  the resolved data as a prop. Only a PascalCase binding whose own initializer is `async` is matched, so an async
+  handler inside a synchronous component and `lazy(async () => import(…))` are untouched.
 - **Never call `fetch.init*` from a client file** (`no-init-fetch-in-client.grit`). `fetch.init<Model><Suffix>` and
   `fetch.get<Model>Init<Suffix>` compose the slice's list and insight queries into the hydration snapshot that
-  `Load.Units` / `Load.View` seed the store from. From a route it resolves before the first byte; after hydration it
-  is two extra round-trips for a shell the browser already painted, landing in a value nothing reads. Load it in the
-  page and pass the result down as an `init` prop — or hand the unawaited promise across — and reload from the client
-  through the generated `st.do.init<Model><Suffix>()`. The gate is the file: the real `"use client"` directive (the
-  same text as a string literal or inside sample code is not one) plus `*.store.ts`, which is client-only by role and
-  carries no directive. The name is matched by shape, since a lint rule cannot know which slices exist: the
-  generated one always carries two capital-led segments (`init` + `Capitalize<refName>` + `Capitalize<suffix>`), so
-  a hand-written `initPayment` is out and `initializeSomething` was never in. `view` / `edit` hydrate alike but are
-  left unmatched — `edit<X>` is a plausible custom endpoint name.
+  `Load.Units` / `Load.View` seed the store from. From a route it resolves before the first byte; after hydration
+  it is two extra round-trips for a shell the browser already painted. Load it in the page and pass the result
+  down as an `init` prop — or hand the unawaited promise across — and reload from the client through the generated
+  `st.do.init<Model><Suffix>()`. Gated on the real `"use client"` directive plus `*.store.ts`, and matched by shape
+  (`init` + `Capitalize<refName>` + `Capitalize<suffix>`), so a hand-written `initPayment` is out.
 - `noArrayIndexKey` and `useExhaustiveDependencies` are **off** on purpose: `key={idx}` for embedded scalars and
   short dependency arrays are intentional, not oversights.
 - **A grit plugin diagnostic is suppressed as `lint/plugin`, not `plugin`** — `// biome-ignore lint/plugin: <reason>`
-  for one line, `// biome-ignore-all lint/plugin: <reason>` for a file. The bare `// biome-ignore plugin:` form Biome's
-  own category name suggests does nothing. Suppress a plugin only where the rule is genuinely wrong for the file, and
-  say why: the module-convention plugins (`no-import-external-library`, `no-deep-internal-import`, the store/signal
-  ones) apply to `apps/**` and `libs/**` only, so a plain package under `pkgs/` never needs the escape hatch.
+  for one line, `// biome-ignore-all lint/plugin: <reason>` for a file. The bare `// biome-ignore plugin:` form
+  Biome's own category name suggests does nothing. The module-convention plugins apply to `apps/**` and `libs/**`
+  only, so a plain package under `pkgs/` never needs the escape hatch.
 - **`biome.json` is strict JSON — a comment in it breaks config resolution.** Biome does not report the parse
   error; it falls back to discovery and aborts on whatever nested config the walk finds. Rename the file to
-  `biome.jsonc` to document a disabled rule; `akan lint` pins the config path either way, so it reports the parse
-  error on the offending line.
-- **`akan lint` prints up to 200 diagnostics** (`--max-diagnostics <n>`, `0` for no limit). Biome's own default is 20
-  with no count, which reads as progress when the mix of findings merely changed.
+  `biome.jsonc` to document a disabled rule.
+- **`akan lint` prints up to 200 diagnostics** (`--max-diagnostics <n>`, `0` for no limit). Biome's own default is
+  20 with no count, which reads as progress when the mix of findings merely changed.
 
 ## Coding Style (`**/*.{ts,tsx}`)
 
@@ -251,194 +256,69 @@ are, because those are the ones the server could have done.
 1. **Wrap the interaction, not the UI.** The smallest useful client component adds one behaviour and renders
    `children` untouched, so the markup inside never reaches the bundle.
 2. **Split compound components so panels stay on the server.** `Tab` / `Tab.Menus` / `Tab.Menu` / `Tab.Panel` in
-   `akanjs/ui` is the shape: only the provider and menu hold state, and `<Tab.Panel>` renders children as-is.
-   Never one `"use client"` file with a mode `useState` and every panel body inlined.
-3. **Sync state instead of fetching it.** The route calls `fetch.initXInY(...)` / `fetch.viewX(...)` and passes
-   the result into a `Zone` as an `init` / `view` prop; `Load.Units` / `Load.View` hydrate the store from it.
-   Never a `useEffect(…, [])` that fetches on mount.
+   `akanjs/ui` is the shape: only the provider and menu hold state. Never one `"use client"` file with a mode
+   `useState` and every panel body inlined.
+3. **Sync state instead of fetching it.** The route calls `fetch.initXInY(...)` / `fetch.viewX(...)` and passes the
+   result into a `Zone` as an `init` / `view` prop; `Load.Units` / `Load.View` hydrate the store from it. Never a
+   `useEffect(…, [])` that fetches on mount.
 4. **Push the boundary down to the leaf that needs it.** A store-reading `Zone` should hold zero markup and
    delegate to a server `View`.
 5. **Hand the promise across, not the awaited value.** `ClientInit` / `ClientView` are `PromiseOrObject<T>`, so a
    route may pass an unawaited `fetch.initX(...)` and `Load.*` resolves it behind a skeleton.
-6. **Use named `ReactNode` slots, not just `children`.** `Layout.Navbar` takes `title`, `back`, `left`, `right`,
+6. **Use named `ReactNode` slots, not just `children`** — `Layout.Navbar` takes `title`, `back`, `left`, `right`,
    and `children`, so a client shell composes server content in five places instead of absorbing it.
 7. **Let the server do the derived work.** Display and predicate logic belongs on `Light<Model>`; enum→class
    lookups belong in a module-scope `as const` map.
-8. **Gate auth on the server.** `getSelf({ unauthorize: "/signin" })` in `_layout.tsx` redirects before any HTML
-   is sent.
+8. **Gate auth on the server** — `getSelf({ unauthorize: "/signin" })` in `_layout.tsx`, before any HTML is sent.
 9. **Prefer CSS over client state for pure visibility.** A `data-*` attribute plus `group-data-[…]` variants, or
    `<details>`/`<summary>`, keeps both branches server-rendered.
-10. **Keep the heavy island out of the first load.** A large client-only widget goes behind the
-    `ui/<Folder>/index_.tsx` + `lazy()` pair. `usePage()` and `l()` work in server components, so translation
-    never forces a boundary.
+10. **Keep the heavy island out of the first load** — behind the `ui/<Folder>/index_.tsx` + `lazy()` pair.
+    `usePage()` and `l()` work in server components, so translation never forces a boundary.
 
-Full version with code, the `Tab` composition example, and a review checklist: `get_guideline` with `ssrRule`, or
-`akan guideline show ssrRule`.
+Full version with code, the `Tab` composition example, and a review checklist: `get_guideline` with `ssrRule`.
 
-## Web Surfaces — Building And Serving Without SSR/CSR
+## Runtime & Build Configuration
 
-An app serves three things: the API, the SSR/RSC web renderer, and the CSR single-file bundle. The API is always
-on; the other two are declared in `akan.config.ts` as **`web: true | false | { csr: boolean }`** and can be
-narrowed again per deployment.
+What an app serves, how many processes it runs, where its logs go, and what ships in its image. All of it is
+declared in `akan.config.ts` and narrowed — never widened — by an env at boot. Domain code reaches none of it.
+Full contract: `get_guideline` with `runtimeRule`, or `akan guideline show runtimeRule`.
 
-```ts
-const config: AppConfig = { web: { csr: false } }; // web without the mobile bundle
-const config: AppConfig = { web: false }; // api only
-```
-
-- **`web: { csr: false }`** drops the CSR build phase and the `/__csr` + `?csr=true` routes. The CSR bundle is
-  what the Capacitor mobile build ships, so a web-only deployment never needs it — and an app that declares a
-  `mobile` section is refused, because `akan build-ios` copies `dist/apps/<app>/csr/<target>.html` into the
-  native project.
-- **`web: false`** is an API-only build: no base artifact, no pages or client bundles, no RSC worker
-  entrypoint, and no `public/` in the image (the web router's catch-all is its only reader). Nothing under
-  `page/` is served, including routes a lib contributed through `syncPageLibs`.
-- **There is no CSR-without-SSR option, by type.** The CSR bundle inlines the stylesheet the SSR base artifact
-  compiles, so it would ship an unstyled app — the object form therefore carries only `csr`, and SSR goes off
-  only through the whole-surface `false`.
-- **At runtime, `AKAN_SSR` and `AKAN_CSR` narrow further and never widen** — `false` or `0` turns one off, and
-  `AKAN_SSR=false` takes CSR with it for the same reason the option has no such pair. A surface the build left
-  out cannot be switched back on, and the boot log names what the process ended up serving. The generated
-  Dockerfile writes the build's own answer as the image default.
-- **A build with no web artifact boots the API instead of crashing.** `WebRouter.create` returns `null` when
-  `.akan/artifact/base-artifact.json` is absent — an api-only build, or a workspace with no `page/` at all.
-- `akan start` ignores `web` and keeps the whole dev surface: the incremental builder is also the file watcher,
-  so switching it off would take server-code HMR with it. It warns once when the config and the dev server
-  disagree.
-- The saving is mostly the RSC worker, which is a **separate process per web-serving replica**. Measured on
-  `apps/akan` at boot plus one render: 350MB across 3 processes with SSR on, 120MB across 2 with
-  `AKAN_SSR=false`, and the built image goes 86MB → 6.2MB when the artifacts are left out of it too.
-- **The generated image installs `ca-certificates` and `tzdata` and nothing else.** It used to carry the whole
-  Chromium runtime, ffmpeg, `build-essential`, `python3` and `redis` in every app's image whether or not the app
-  reached for any of them. An app that needs one declares it in `docker.preRuns` / `docker.postRuns`, which are
-  emitted around the `bun install` — that is the migration for a `puppeteer` or `ffmpeg` app.
-
-## The Process Model — Gateway And Solo
-
-A container runs one process per replica, a gateway in front of them when there is more than one, and one RSC
-worker per web-serving replica.
-
-- **One traffic replica runs in the container's only process.** `AKAN_REPLICA=0,0,1` — the default, and what
-  every environment in `infra/app/values` sets — means there is nothing to balance and nothing to fan pubsub out
-  to, so `AkanApp` starts that replica in-process rather than spawning it. Measured on `apps/akan`: 28MB less RSS
-  and twice the requests per second, because every request used to cross a unix-socket proxy hop. Declare two or
-  more and the gateway is back, spawning and proxying them.
-- **`AKAN_SOLO=false` forces the gateway** for a single replica. Like `AKAN_SSR`, the env only narrows — it
-  cannot fold a real gateway's replicas into one process. Passing `replica` to `new AkanApp(...)` also keeps the
-  gateway: code that states a topology is asking for the thing that serves it.
-- **`akan start` always runs the gateway**, whatever the replica count. It is also the dev host's builder relay,
-  its crash page, and what holds the port across a child restart.
-- **A batch-only replica (`0,1,0`) keeps the gateway too**, because a batch server never listens and the gateway
-  is then the only thing bound to answer `/_akan/app/health`.
-- **The RSC worker is never folded in.** It runs under `--conditions react-server`, which resolves the same
-  module graph differently, so it cannot share a process with the server that renders client components.
-- **A solo process answers `/_akan/app/health`, `/_akan/app/metrics` and `/_akan/bench/ping` itself**, in the
-  gateway's own shape — a `children` array with one entry — so a probe reads one contract either way. It owns the
-  rotating log file the gateway would otherwise write, in the same `runtime/logs` directory.
-- **Nothing supervises a solo process but the orchestrator**, since the gateway's crash-restart-with-backoff went
-  with it. `infra/app/templates/app.yaml` carries the liveness, readiness and startup probes that replace it.
-- **`main.ts` imports `AkanApp` from `akanjs/server/akanApp`, not the barrel.** The barrel re-exports
-  `AkanServer`, whose graph the gateway never runs; through it the process evaluated 35MB of SSR renderer and
-  SQLite driver to spawn children and relay bytes. Keep entrypoint imports at the leaf.
-
-## Logging — Records, Request Context And Live Tail
-
-Every `Logger` call builds a `LogRecord` before any text exists: `at`, `level`, OTel `sev`, `name`, `message`,
-`pid`, `replicaIdx`, `role` (`gateway` / `all` / `batch` / `rsc-worker`) and — inside a call — `traceId`,
-`endpoint` (`mutation:signScContract`, `internal:cleanupJob`, `page:/org/[orgId]`) and `origin` (`http`,
-`websocket`, `mcp`, `internal`, `page`). The console line is rendered from the record and is byte-identical to
-what it was; a sink reads `entry.record` and renders only if it touches `entry.message`.
-
-- **Request context is on by default, production included.** `SignalContext.try` / `SignalContext.run` own the
-  `AsyncLocalStorage` scope for the whole call, including the 500 log, so every line of one request shares a
-  `traceId`. Internal triggers get `internal:<key>`, the RSC worker gets `page:<route>`, MCP calls are the
-  endpoint's own type with `origin: "mcp"`. `AKAN_LOG_CONTEXT=0` is the escape hatch; `AKAN_TRACE=1` is a
-  different switch that adds span and query aggregation. Measured cost: ~25ns per call.
-- **Not everything carries context, by design.** The primitive query fast path (an unauthenticated GET of a
-  primitive with no args, guards or middlewares) skips it; the schedule adaptor's own `started/finished/error`
-  lines wrap the traced handler from outside; gateway-internal lines have none. `akan logs --endpoint` says so.
-- **`Logger.addSink(sink, { minLevel })` — give a sink its floor.** A sink with none follows `AKAN_LOG_FILE_LEVEL`
-  (default `trace`), which is why a registered sink used to make every `verbose` call render (1,294ns against an
-  11ns reject). The IPC forwarder and any sink that never reads the text pass a floor and cost a record literal.
-- **The hub lives with whoever owns the surface**: the gateway when there is one, the replica itself under solo
-  (`AKAN_REPLICA=0,0,1`), the same rule as the rotating log file and `/_akan/app/*`. It keeps a ring
-  (`AKAN_LOG_BUFFER` records / `AKAN_LOG_BUFFER_MB`, default 2000 / 4), suppresses a line repeating more than 20
-  times a second into one counted line, and serves `<runtimeDir>/akan-control.sock` (`0600`, NDJSON). A child
-  forwards records only while a subscriber wants that level (`log.level` IPC), so an unwatched process sends
-  nothing; `AKAN_LOG_STREAM=1` keeps it on. The RSC worker forwards to its replica the same way.
-- **`akan logs <app>`** is the client: `--level --grep --endpoint --trace --child --role --origin --since`
-  AND together, comma lists OR, `*` is the only glob; `--replay N` first, `--follow false` for history only,
-  `--json` for NDJSON, `--runtime-dir` for a built app. Inside `akan console`, `.tail level=warn grep=payment`,
-  `.tail off`, `.trace <id>` — the console is its own `listen: false` process, so these attach to the running
-  server's socket rather than reading their own logs.
-- **The generated Dockerfile sets `AKAN_LOG_TO_FILE=0`.** A container's writable layer is ephemeral and nothing
-  collects a file from it; stdout is the collection path. A deployment that wants the files back sets
-  `AKAN_LOG_TO_FILE=1`.
-- **Never log per delivered record in anything that delivers records.** The control socket and the hub do not,
-  and a subscriber asking for everything is the test.
-
-## The Generated Image — `docker` In `akan.config.ts`
-
-**`docker` is `string | { image, preRuns, postRuns, command }`** — a whole Dockerfile, or the parts Akan
-assembles one from. There is no `content` field; the string *is* the content.
-
-```ts
-const config: AppConfig = {
-  docker: { preRuns: ["apt-get update && apt-get install -y --no-install-recommends ffmpeg"] },
-};
-const config: AppConfig = { docker: "FROM oven/bun:1-slim\n…" }; // verbatim, nothing merged in
-```
-
-- `image` and each run entry take `string | { amd64?, arm64? }`; the object form compiles to a
-  `RUN if [ "$TARGETARCH" = "<arch>" ]` guard, so a multi-arch build runs it on one leg only. `preRuns` land
-  before `bun install --production` (where a native dependency's build tools have to be), `postRuns` after it
-  and before the app files are copied.
-- **A lib declares the steps its own runtime needs**, and every app that mounts it inherits them:
-  `libs/<lib>/akan.config.ts` takes `docker: { preRuns, postRuns }` and nothing else — the base image and the
-  command belong to the app. Lib steps are emitted before the app's own, and an identical step declared twice
-  becomes one layer.
-- **The string form takes no contributions.** A Dockerfile handed over whole is used exactly as written, so a
-  lib's `preRuns` are dropped rather than spliced into a file Akan does not own. An app that needs both writes
-  the parts instead.
-- Like `externalLibs`, lib steps are collected from **every lib in the workspace**, not just this app's
-  dependency closure — narrowing that set needs the dependency scan, and this config is re-read on every file
-  change in dev. Keep a lib's steps to what its runtime genuinely requires.
-- `AkanAppConfig.docker` is the resolved declaration; `AkanAppConfig.dockerfile` is the text `akan build` writes
-  to `dist/apps/<app>/Dockerfile`.
-
-## Shipped Assets — `assets` In `akan.config.ts`
-
-`akan build` copies the whole `public/` tree into `dist`, lib assets dereferenced, and that copy is the image.
-**`assets: { pruneFonts, keepFonts }`** trims the fonts out of it that nothing reads. **Source trees are never
-touched** — an app's and a lib's own `public/` keep every file, because one shared font folder is picked over
-differently by every app that mounts it and by other repos.
-
-```ts
-const config: LibConfig = { assets: { keepFonts: ["fonts/Assistant-*.woff2"] } }; // libs/<lib>/akan.config.ts
-const config: AppConfig = { assets: { pruneFonts: false } }; // emergency valve, not the normal escape hatch
-```
-
-- **A font with `optimize` on is a build input, not a runtime asset.** `FontOptimizer` subsets it into
-  `.akan/artifact/fonts` and the emitted CSS points at `/_akan/fonts/*`, which `WebRouter` serves from the
-  artifact — so the source in `public/` is never opened again. That is the bulk of what this drops, and it
-  applies to the fonts the app *does* use, not only the ones it does not.
-- **The keep-set is derived per app, per build; there is no list of fonts to drop.** An exclude list would rot
-  the moment another app or repo started using one of them, and nobody would know to update it. A font survives
-  because ① its font declares `optimize: false`, so `FontCss.getRuntimeCss` emits the raw src; ② something
-  references its filename — anything under `public/`, the compiled stylesheet, a client/server bundle, the CSR
-  shell; or ③ a `keepFonts` glob names it.
-- **`keepFonts` belongs to the `akan.config.ts` that owns the font**, written against that lib's or app's own
-  `public/` (`"fonts/X.woff2"`, resolved to `libs/<lib>/fonts/X.woff2`). A lib shared across repos carries the
-  reason its own CSS needs a font, instead of every mounting app rediscovering it in production.
-- **A reference from a build bundle is ignored for an already-subset font.** Every route file's `fonts`
-  declaration is inlined into the pages bundle, the client chunks and the CSR shell, so a declared source is in
-  all three whether or not anything loads it. `public/` and the compiled CSS are read as authoritative.
-- **A generated manifest that lists every public asset keeps every font it names** — a service-worker precache
-  file is the usual one. That is a real reference, not a false positive, so the build reports it at `info`:
-  read the `[font-prune] kept …` line before concluding the prune does nothing.
-- Matching is by filename, including the percent-encoded spelling, so a `url()` survives however it is written.
-- The phase is `assets`, between `csr` and `compress`. An api-only build (`web: false`) copies no `public/` and
-  the phase finds nothing to do.
+- **Web surfaces are `web: true | false | { csr: boolean }`.** `{ csr: false }` drops the mobile/CSR bundle,
+  `false` is an API-only build that serves nothing under `page/`. There is no CSR-without-SSR option, by type —
+  the CSR bundle inlines the stylesheet the SSR base artifact compiles. `AKAN_SSR` / `AKAN_CSR` narrow further at
+  runtime and can never switch a surface the build left out back on. `akan start` ignores `web` and keeps the
+  whole dev surface.
+- **One traffic replica runs in the container's only process.** `AKAN_REPLICA=0,0,1` — the default everywhere —
+  has nothing to balance, so there is no gateway and no unix-socket proxy hop. Two or more replicas, a batch-only
+  replica, `AKAN_SOLO=false`, passing `replica` to `new AkanApp(...)`, or `akan start` all bring the gateway back.
+  The RSC worker is always its own process (`--conditions react-server`). A solo process answers
+  `/_akan/app/health`, `/_akan/app/metrics` and `/_akan/bench/ping` in the gateway's own shape, and owns the
+  rotating log file; nothing supervises it but the orchestrator's probes.
+- **`main.ts` imports `AkanApp` from `akanjs/server/akanApp`, not the barrel** — the barrel re-exports
+  `AkanServer`, whose graph the gateway never runs. Keep entrypoint imports at the leaf.
+- **Every `Logger` call builds a `LogRecord`** carrying `traceId`, `endpoint` and `origin` alongside the message,
+  so one request's lines share a trace. Request context is on by default, production included
+  (`AKAN_LOG_CONTEXT=0` opts out). **Give every sink a floor** — `Logger.addSink(sink, { minLevel })`; a sink with
+  none makes every `verbose` call render. **Never log per delivered record in anything that delivers records.**
+  Tail a running server with `akan logs <app>` (`--level --grep --endpoint --trace --child --role --origin
+  --since`, `--json`) or `.tail` / `.trace <id>` inside `akan console`.
+- **`AKAN_LOG_FORMAT=ndjson` makes the container's stdout one JSON record per line, and the hub owner (gateway or
+  solo replica) its only writer** — every other server process turns its console off and forwards from
+  `AKAN_LOG_STDOUT_LEVEL` (default: the console level); a child's or the RSC worker's crash stack is wrapped as a
+  `raw=true` record instead of breaking the stream. Text stays the default; turn it on in the deployment.
+  `AKAN_LOG_STREAM_TOKEN` mounts `/_akan/app/logs` (SSE, `Last-Event-ID` resume, explicit `gap` events); unset,
+  the route does not exist. `AKAN_LOG_CANONICAL=1|slow` writes one `ok|error <endpoint> ms= status=` line per call;
+  `AKAN_LOG_FLIGHT=1` keeps each call's last 64 sub-level records and promotes them (`flight=true`) only when it
+  failed or ran past `AKAN_LOG_FLIGHT_MS`; `x-akan-debug` lowers one request to `trace` — in `local`, or with the
+  `AKAN_LOG_DEBUG_HEADER` secret. Structured values go in `LogRecord.attrs` via `Logger.emit(...)`; a key naming a
+  secret is `[redacted]` before the record exists.
+- **`docker` is `string | { image, preRuns, postRuns, command }`** — a whole Dockerfile, or the parts Akan
+  assembles one from; the string form takes no contributions. The generated image installs `ca-certificates` and
+  `tzdata` and nothing else, so an app needing `ffmpeg` or Chromium declares it in `preRuns` / `postRuns`. A lib
+  declares the steps its own runtime needs and every mounting app inherits them.
+- **`assets: { pruneFonts, keepFonts }`** trims from the `dist` copy of `public/` the fonts nothing reads; source
+  trees are never touched. A font with `optimize` on is a build input, not a runtime asset. `keepFonts` belongs to
+  the `akan.config.ts` that owns the font, written against that scope's own `public/`.
 
 ## React Components And Styling (`**/*.tsx`)
 
@@ -480,14 +360,13 @@ const config: AppConfig = { assets: { pruneFonts: false } }; // emergency valve,
 **`<model>.constant.ts`** — five classes in order with one blank line between them and `enumOf("camelName", [...] as const)`
 classes above: `XInput → XObject → LightX → X → XInsight`. Write `XInsight` even when it is empty. Put display and
 predicate logic on `LightX` (`isNew()`, `canWrite(user?)`, `formatTimes()`) — the Light class is the one both server
-and client hold, so shared logic belongs there instead of in a util module. This is the most commonly missed rule in
-the codebase. Collection-level helpers go `static` on the full model. Give any field whose business meaning is not
-obvious a short trailing comment.
+and client hold, so shared logic belongs there instead of in a util module. **This is the most commonly missed rule
+in the codebase.** Collection-level helpers go `static` on the full model. Give any field whose business meaning is
+not obvious a short trailing comment.
 
 **A model instance's `Date` fields are prototype accessors, not own properties.** `user.createdAt` is still a `Dayjs`,
-but it is built on first read from a native `Date` the instance holds under a symbol — a listing carries every
-row's dates and reads a few, and a dayjs object costs seven times a `Date`. So `Object.keys(user)` and
-`{ ...user }` do not include them; `"createdAt" in user`, `for...in`, `JSON.stringify(user)`, `plainFieldsOf(user)`
+built on first read from a native `Date` the instance holds under a symbol. So `Object.keys(user)` and `{ ...user }`
+do **not** include them, while `"createdAt" in user`, `for...in`, `JSON.stringify(user)`, `plainFieldsOf(user)`
 (`akanjs/common`), `immerify`, and `deepObjectify` all do. To copy a model, `new cnst.X().set(user)`, never a spread.
 
 **`<model>.document.ts`** — fixed order: `XFilter extends from(...)` → `X extends by(...)` → `XModel extends into(...)`,
@@ -496,9 +375,8 @@ so chains compose (`org.removeUser(id).removeInvite(id).save()`). Put a one-line
 transition. Atomic counters live on the Model class with the updater-callback form, returning `!!modifiedCount`.
 Indexes and derived totals go in `static override _onSchema`, not in the service. **Removal is always soft** — the
 framework has no hard delete for a model table, and `delete` is deliberately left unused so it can mean one later.
-The facade spells `Many`/`One` out on its writes (`updateOne` / `updateMany` / `removeOne` / `removeMany`), because a
-bare `update`/`remove` would read like the document-path `update(id)` / `doc.remove()` while hitting every match; only
-the count was shortened to `count(query)`, with `countDocuments` kept as `@deprecated`. `updateById(id, update)` and
+The facade spells `Many`/`One` out on its writes (`updateOne` / `updateMany` / `removeOne` / `removeMany`); only the
+count was shortened to `count(query)`, with `countDocuments` kept as `@deprecated`. `updateById(id, update)` and
 `removeById(id)` are those same query-level writes narrowed to one id, **not** the document path: they fire no hooks,
 so a model whose removal cascades or carries a `_postRemove` still goes through `remove<Model>(id)`.
 
@@ -516,8 +394,8 @@ stores need none, because state and CRUD actions are generated. The body is thre
 `this.setX(...)` → toast. The optimistic shape is mutate the client model, `void fetch.*`, then commit. Use
 `this.pick(...)` when the value must exist, `this.get()` when it may not, and `this.set({...})` to write. Mutate lists
 through the collection API (`this.set({ xList: xList.set(x).save() })`), not array spread. **An action returns
-nothing** (`no-return-in-store-action.grit`) — hand the result to `this.set({...})`; a bare `return;` guard stays
-fine. **Never `import type { RootStore } from "../st"`** — it crashes `akan build` with a Bun SSR segfault.
+nothing** (`no-return-in-store-action.grit`). **Never `import type { RootStore } from "../st"`** — it crashes
+`akan build` with a Bun SSR segfault.
 
 **`<model>.dictionary.ts`** — fixed chain, with empty stages still written:
 `.of() → .model() → .insight() → .query() → .sort() → .enum() → .slice() → .endpoint() → .error() → .translate()`.
@@ -540,27 +418,25 @@ workflow changes.
 
 ### Guards And Transports
 
-- Guards run on both HTTP and websocket calls. Read the caller with `context.get<T>("account")` (`pkgs/akanjs/signal/signalContext.ts`) instead of branching on `getHttpContext()` / `getWebSocketContext()`.
-- Slice-level `guards` only reach the generated query/mutation endpoints. A `pubsub`/`message` endpoint is unguarded unless it declares its own `guards` in its signal option.
-- A pubsub room is authorized once, at subscribe. When a socket's credential changes the framework re-runs each room's guards and unsubscribes the ones that now fail (`SignalResolver.revalidateWsRooms`), so guards must stay side-effect free and safe to re-run.
-- A websocket carries its credential in the handshake snapshot on `ws.data` (`AppWsData`); clients that hold the token in memory send it with `fetch.setJwt(...)`, which forwards an auth frame over the socket.
-- **Never read the caller's IP off the socket or the request peer — take `.with(Ip)`.** Whenever a federation
-  gateway is in front, `ws.remoteAddress` and the child's own peer are the *gateway* (`127.0.0.1`) for every
-  caller and for the whole life of every socket. `Ip` reads what a proxy recorded (`x-real-ip`, then the first
-  `x-forwarded-for` entry) and falls back to the peer only when nothing proxied the call — which is the answer
-  for a solo process behind an ingress that sets neither; `context.getClientIp()` is the same answer inside a
-  guard or middleware. It arrives unwrapped from
-  its `::ffff:` IPv4-mapped form, so it can address a `udp4` socket as well as identify a caller, and it is
-  `null` rather than a placeholder when genuinely unknown — a loopback-looking address for an unknown caller
-  is the failure this replaced. The gateway also forwards the client port (`x-forwarded-port`, read with
-  `context.getClientPort()`) along with host and protocol.
-- **Every socket carries a `socketId`, and only the framework mints one.** `AppWsData` assigns it at the handshake, and a `message` / `pubsub` handler reads it off the `Ws` internal arg — `.with(Ws)` hands `{ ws, socketId, subscribe, on, off }`. Never mint your own from `ws.data`: the room bookkeeping keys on the framework's id, and a second one fails to match it silently. It identifies a **connection**, not a caller — a reconnect gets a new id and the federation gateway's own socket is a different one — so per-user state keys on the account, never on this.
+Full contract — credential handshake, room revalidation, socket cleanup scoping: `get_guideline` with
+`transportRule`, or `akan guideline show transportRule`.
 
-- **A cleanup registered with `ws.on("disconnect" | "unsubscribe", fn)` is scoped to the call that registered it.**
-  From a `pubsub` subscribe it belongs to that room — `unsubscribe` runs when the client leaves it or a credential
-  change revokes it, `disconnect` when the socket closes while still subscribed — so a room already left runs
-  neither again, and cleanup that must happen either way registers for both. From a `message` handler it belongs to
-  the socket and runs at close. A handler that throws is logged and never blocks the rest of the teardown.
+- Guards run on both HTTP and websocket calls. Read the caller with `context.get<T>("account")` instead of
+  branching on `getHttpContext()` / `getWebSocketContext()`, and keep them side-effect free and safe to re-run —
+  a pubsub room's guards are re-run whenever the socket's credential changes.
+- Slice-level `guards` only reach the generated query/mutation endpoints. A `pubsub`/`message` endpoint is
+  unguarded unless it declares its own `guards` in its signal option.
+- **Never read the caller's IP off the socket or the request peer — take `.with(Ip)`** (`context.getClientIp()`
+  inside a guard or middleware). Behind a federation gateway, `ws.remoteAddress` and the child's own peer are the
+  *gateway* (`127.0.0.1`) for every caller and for the whole life of every socket. `Ip` reads what a proxy
+  recorded, is unwrapped from its `::ffff:` form, and is `null` rather than a placeholder when genuinely unknown.
+- **Every socket carries a `socketId`, and only the framework mints one** — read it off the `Ws` internal arg
+  (`.with(Ws)` hands `{ ws, socketId, subscribe, on, off }`). Never mint your own from `ws.data`: the room
+  bookkeeping keys on the framework's id and a second one fails to match it silently. It identifies a
+  **connection**, not a caller, so per-user state keys on the account.
+- **A cleanup registered with `ws.on("disconnect" | "unsubscribe", fn)` is scoped to the call that registered it**
+  — a room for a `pubsub` subscribe, the socket for a `message` handler. Cleanup that must happen either way
+  registers for both.
 
 ### Authorization Defaults
 
@@ -582,35 +458,21 @@ workflow changes.
 - `Upload` is valid only inside a mutation flagged for file upload: `mutation([cnst.File], { fileUpload: true }).body("files", [Upload])`, as the `file` module does. It is not a model field type.
 - Bytes are `Binary`, never `Any` — see Scalar & Field Type Reference.
 
-### Binary Pubsub
+### Binary Pubsub And Mutation Verbs
 
-- **`pubsub(Binary)` sends its payload in a websocket binary frame**, skipping the JSON `{ type: "pub" }`
-  envelope and the base64 a JSON wire would need. The client's subscribe callback receives a `Uint8Array`.
-  Nothing else is declared: the return type is the whole switch, and text and binary frames coexist on one
-  socket, so every JSON endpoint is untouched. The optimization applies only when the **whole** return is
-  `Binary` — `[Binary]`, or a `Binary` inside a model, falls back to base64.
-- **A declared `Binary` room coalesces under backpressure**: while a socket cannot keep up the room keeps only
-  its newest frame and drops the rest, which is what a telemetry or video stream wants. Declare
-  `pubsub(Binary, { backpressure: "queue" })` when the frames are a sequence a subscriber must see in full, such
-  as deltas against a base it already holds; the send buffer then grows with the slowest subscriber. Coalescing
-  is keyed by the endpoint, not carried with the frame, so this process, an IPC deliver and a Redis fan-out all
-  reach the same answer. Coalesced frames are counted in `pubsubCoalesceCount` on the replica's metrics report.
-- **A `pubsub(Any)` that happens to carry bytes is framed too, and warns once.** `Any` passes a `Buffer` through
-  untouched, so the transport sees bytes and sends them whole rather than as a number array — an undeclared
-  publisher is fixed rather than left corrupt. It is still not the contract: it queues rather than coalescing
-  (nobody declared lossy delivery for that room), and a Redis fan-out still JSON-stringifies it. Declare
-  `Binary`.
-- The federation gateway relays a binary frame unchanged, and Bun IPC carries bytes as bytes, so the only hop
-  that needed teaching was the socket itself. A cross-server (Redis) fan-out encodes it as protobuf `bytes`.
+Full contract — backpressure modes, the `Any`-carrying-bytes fallback, multi-verb paths: `get_guideline` with
+`transportRule`.
 
-### Mutation HTTP Verb
-
-- A `mutation` is `POST`. `{ method: "PATCH" | "PUT" | "DELETE" }` moves it, and one path may carry several verbs
-  — a `query` GET and a `mutation` POST on the same custom `path` are mounted side by side. Two endpoints claiming
-  the same path **and** verb fail the boot rather than silently shadowing one another.
-- Reach for it only when a foreign wire protocol forces the verb (a client you cannot change that sends
-  `PATCH /rest/v1/<table>`). Akan's own `fetch.*` client, the OpenAPI document, and the API explorer all follow
-  whatever is declared, so nothing needs restating per caller.
+- **`pubsub(Binary)` sends its payload in a websocket binary frame**, skipping the JSON envelope and the base64 a
+  JSON wire would need; the client's subscribe callback receives a `Uint8Array`. The optimization applies only
+  when the **whole** return is `Binary`. A declared `Binary` room **coalesces under backpressure** — keeping only
+  the newest frame — which is what telemetry and video want; declare `{ backpressure: "queue" }` when the frames
+  are a sequence a subscriber must see in full. A `pubsub(Any)` carrying bytes is framed too and warns once;
+  declare `Binary`.
+- **A `mutation` is `POST`.** `{ method: "PATCH" | "PUT" | "DELETE" }` moves it, and one path may carry several
+  verbs; two endpoints claiming the same path **and** verb fail the boot. Reach for it only when a foreign wire
+  protocol forces the verb — Akan's own `fetch.*` client, the OpenAPI document, and the API explorer all follow
+  whatever is declared.
 
 ### Reserved Endpoint Names
 
@@ -619,74 +481,49 @@ workflow changes.
 
 ### Slices, Queries, and Hydration
 
+Full contract — filter-arg `ref` pickers, `getQueryMeta` summary counters, `labelOf`, and the `q.exists` /
+`q.missing` / `q.empty` split: `get_guideline` with `queryRule`, or `akan guideline show queryRule`.
+
 - **The root slice (`""`, generated by `slice()`) takes `queryKey` and `args`, not a query.** `initX("byOwner",
   [ownerId])` names one of the model's own filters and passes that filter's args; no key at all is the `any`
-  filter every model carries. A raw query descriptor let a caller compose a query the model never declared, and
-  could not survive the query string at all — `String(value)` sends `[object Object]`. Args are parsed by the type
-  the filter declared, a missing required one is refused, and args past the declared ones are dropped
-  (`resolveFilterQuery`, `pkgs/akanjs/document/filterMeta.ts`). It is an admin API: `root:` is always `Admin`.
-- **Give an id filter arg a `ref` and the admin panel stops asking for hex.** `filter().arg("ownerId", ID, { ref:
-  "user" })` names the model the id points at; the arg then renders a picker that runs the same query maker against
-  that model's own filters, so a ref of a ref keeps nesting. The picker holds its rows in local state rather than the
-  ref model's store — that store is a singleton, and loading into it would overwrite whatever listing of the same
-  model is already on screen. `ref` is the only UI hint a filter arg carries; there is no render callback, because a
-  function cannot cross to the client.
-- **A summary counter names the listing it counts, on the field itself.** `field(Int).meta(getQueryMeta("user")
-  .query("byStatuses").args([["prepare"]]))` is what makes the dashboard tile clickable: clicking it applies that
-  filter to the listing in place — one request, no navigation — and fills the arg controls under the toolbar, so
-  the filter is visible and editable rather than opaque. `args` may be a thunk (`() => [dayjs().subtract(1,
-  "hour")]`), read at the click so a relative time is current. A meta naming a different model counts a different
-  listing, so its tile stays inert here. `AdminPanel`'s `queryMap` still overrides per column, and is now only for
-  a column whose field cannot declare one.
-- **A picker row is labelled by `labelOf`, which reads `Light<Model>.label()` first.** Then the field carrying
-  `text: "title"`, then `title` / `name`, with the id as the floor. Write the method on the Light class — that is
-  where display logic belongs, and the same label is what `Load.Units` and the in-page agent's screen scope show.
-  A model with none renders ids and says so in the picker.
-- A slice's `exec` returns a `QueryOf` (an opaque query descriptor, `pkgs/akanjs/constant/types.ts`); you **cannot** chain `.sort()`/`.limit()` on it.
-- Apply ordering/paging via the store `init` fetch option instead: `initX(..., { sort, page, limit })` (`pkgs/akanjs/fetch/fetchType/sliceFetch.type.ts`).
-- Generated list accessors like `listBy(...)` return `Promise<Doc[]>`. For a chainable builder (`.sort().skip().limit().select()`) use the model facade's `findMany`/`findOne` (`FindManyChain`, `pkgs/akanjs/document/into.ts`).
-- **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`); client fetch results are raw `GetStateObject` plain data (functions stripped, `pkgs/akanjs/base/types.ts`).
+  filter every model carries. A raw query descriptor could not survive the query string — `String(value)` sends
+  `[object Object]`. It is an admin API: `root:` is always `Admin`.
+- A slice's `exec` returns a `QueryOf` (an opaque query descriptor); you **cannot** chain `.sort()`/`.limit()` on
+  it. Apply ordering/paging via the store `init` fetch option instead: `initX(..., { sort, page, limit })`. For a
+  chainable builder use the model facade's `findMany`/`findOne`.
+- **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`);
+  client fetch results are raw `GetStateObject` plain data, functions stripped.
 - Every filter generates fourteen methods: `list` · `listIds` · `find` · `findId` · `pick` · `pickId` · `exists` ·
-  `count` · `insight` · `query` · **`remove`** · **`removeOne`** · **`update`** · **`updateOne`**. The last four are
-  query-level writes — one atomic UPDATE, **no hooks**, and therefore no `_postRemove` and no cascade. Use them on a
-  model that carries no removal side effect; otherwise remove documents one at a time.
+  `count` · `insight` · `query` · **`remove`** · **`removeOne`** · **`update`** · **`updateOne`**. The last four
+  are query-level writes — one atomic UPDATE, **no hooks**, and therefore no `_postRemove` and no cascade. Use
+  them on a model that carries no removal side effect; otherwise remove documents one at a time.
 - **`update<Filter>` / `updateOne<Filter>` are chains, not calls:** `await updateInRoot(rootId).set({ status:
-  "archived" })`. The patch cannot trail the filter args — a filter's own args may be optional and no tuple type
-  puts a required element after those — so it lands on a terminal `.set()`, mirroring the `UPDATE … SET …` it
-  compiles to. Building the chain touches nothing; only `.set()` runs a query.
-- `removeOne` / `updateOne` hit the **newest** match — the subquery they compile to is ordered `createdAt` descending
-  and there is no way to change that. They also report only counts, never which row they touched, so they are for
-  "there is at most one of these", not for claiming the next item off a queue. Pass a query that matches one row.
-- **A filter may not be keyed after its own model.** Filter methods are assigned after CRUD, so a filter `chat` on
-  model `chat` would silently swap the single-document `removeChat`/`updateChat` for a hookless query-level one. It
-  throws at boot instead (`assertFilterFitsCrud`).
-- **"Has no value" is `q.empty`, never `q.missing`.** The three absence operators are distinct: `q.exists` is the
-  key being present, `q.missing` is the key being *absent from the stored JSON*, and `q.empty` is either — absent,
-  or present and null. An optional field is written both ways over its life: an insert that omits it leaves the key
-  out, while a document read back and saved carries the explicit `null` that the read materialized. So `q.missing`
-  matches a freshly inserted row and silently stops matching that same row after its first round-trip save. Reach
-  for it only to find rows written before the field was declared.
+  "archived" })`. The patch cannot trail the filter args, so it lands on a terminal `.set()`; building the chain
+  touches nothing.
+- `removeOne` / `updateOne` hit the **newest** match, always, and report only counts — they are for "there is at
+  most one of these", not for claiming the next item off a queue.
+- **A filter may not be keyed after its own model.** A filter `chat` on model `chat` would silently swap the
+  single-document `removeChat`/`updateChat` for a hookless query-level one; it throws at boot instead.
+- **"Has no value" is `q.empty`, never `q.missing`.** `q.missing` is the key being *absent from the stored JSON*,
+  which a document written once and saved again no longer is. Reach for it only to find rows written before the
+  field was declared.
 
 ### Text Search In A Filter — `q.search()`
+
+Full contract — relevance ordering, `columns` / `weights`: `get_guideline` with `queryRule`.
 
 - Text search is a filter query node like any other: `bySearch: filter().arg("text", String).query((text, q) =>
   q.search(text, { prefix: true }))`. The generated `listBySearch` / `countBySearch` / `queryBySearch` /
   `insightBySearch` come for free — you do **not** need a slice to make search usable.
 - **Only add a search slice when the model's data is safe to enumerate.** A filter is server-side; a slice is a
-  client-callable endpoint, so on a model whose slice `get:` is `Public` a search slice hands anyone a way to walk the
-  table. Leave that decision to the mounting app.
+  client-callable endpoint, so on a model whose slice `get:` is `Public` a search slice hands anyone a way to walk
+  the table. Leave that decision to the mounting app.
 - `q.search()` compiles to a JOIN, not a WHERE fragment, so it **must sit at an AND position**. Nesting it under
-  `q.any()` or `q.not()` throws, and it is rejected in `updateOneByQuery` / `updateManyByQuery` — a query-level write
-  takes no join, so ignoring the node would silently widen the write to every other matching row.
+  `q.any()` or `q.not()` throws, and it is rejected in `updateOneByQuery` / `updateManyByQuery`.
 - Blank or whitespace-only input matches **nothing**. Never "fix" that into a passthrough: a passthrough turns a
   search endpoint into a full listing.
-- Order by relevance with the built-in `relevance` sort key. It is an empty sort map, which the store reads as
-  "unspecified": score order when a search join is present, `createdAt` descending otherwise. That fallback is the
-  compiler's own, not a model-defined default — redefining `latest` on the model does not change it.
-- **A slice endpoint never reaches "unspecified".** The resolver fills `latest` before the query is built, so a
-  client asking for the score order has to name `relevance`; leaving `sort` off gets `latest`, not relevance.
-- Scope a search with `columns` (`q.search(text, { columns: ["title"] })`) and re-weight with `weights`, a tuple of
-  finite numbers positional over `["title", "desc", "tag", "filter"]`.
+- Order by relevance with the built-in `relevance` sort key. A slice endpoint never reaches the unspecified
+  fallback — leaving `sort` off gets `latest`, so a client wanting score order has to name `relevance`.
 
 ### Service / Signal Injection
 
@@ -710,8 +547,8 @@ export class AdminNoti extends adapt("adminNoti" as const, ({ use, env, plug, me
 - Inject it with `plug(TheClass)` from a service or from another adapter. Destructure only the injectors you use, and write the registration key `as const`.
 - **Do not register an `adapt()` class in `lib/option.ts`.** It self-registers, and `plug(Class)` uses the class itself as the token. `option.ts` is now only for legacy constructor-style adapters and for widening the options type.
 - `this.logger` is provided; never construct a `Logger` inside an `adapt()` class. Lifecycle work goes in `override async onInit()`.
-- **`adapt()` is for singletons only.** A per-use value object stays a plain class you `new` at the call site. Ask whether there is exactly one per process that a service needs injected; if not, it is a plain class.
-- **Legacy shape — recognise it, do not copy it.** Plain classes with `constructor(options: XOptions)`, registered in `lib/option.ts` as `options.x ? new XApi(options.x) : null` and injected with `use<T>()`, still work. Migrate one to `adapt()` only when you are already changing it.
+- **`adapt()` is for singletons only.** A per-use value object stays a plain class you `new` at the call site. If there is not exactly one per process that a service needs injected, it is a plain class.
+- **Legacy shape — recognise it, do not copy it.** Plain classes with `constructor(options: XOptions)`, registered in `lib/option.ts` and injected with `use<T>()`, still work. Migrate one to `adapt()` only when you are already changing it.
 
 Conventions that hold for both shapes:
 
@@ -732,51 +569,41 @@ Conventions that hold for both shapes:
 ### MCP Exposure
 
 Every signal is served to AI agents as an MCP server on `POST /mcp`. **`/mcp` is mounted by default and exposure
-follows an endpoint's guards — there is no per-endpoint opt-in, and nothing to write in a signal file.** An endpoint
-that declares a real guard is published; one that declares none is refused, and so is a mutation whose only guard is
-`Public`. The guards are already the authorization decision, so a second switch would say nothing they do not —
-while guaranteeing that every endpoint added later is invisible to agents until somebody remembers it.
+follows an endpoint's guards — there is no per-endpoint opt-in, and nothing to write in a signal file.** An
+endpoint that declares a real guard is published; one that declares none is refused, and so is a mutation whose
+only guard is `Public`. The guards are already the authorization decision, so a second switch would say nothing
+they do not — while guaranteeing that every endpoint added later is invisible to agents until somebody remembers
+it.
 
 - **`mcp: false` keeps an endpoint off the shelf without touching its guards.** Guards answer "may an agent call
   this"; they cannot answer "does this belong on a shelf", and a step of a UI-driven state machine
   (`requestPhoneCodeForSignin`) is perfectly guarded and still a mistake for a model to reach. Write it in the
-  signal option (`mutation(Boolean, { guards: [Every], mcp: false })`, `init({ guards: [SignedIn], mcp: false })`
-  — which covers that slice's list and insight together), or as an `mcp` map on `slice()` that **mirrors the
-  `guards` map key for key** (`mcp: { cru: false }`), with the same `cru` fallbacks and the same scope: the root
-  slice and generated CRUD only, never a named slice or a custom endpoint. It is an opt-**out**, so everything
-  added later still publishes. **It is curation, not authorization — HTTP serves the endpoint exactly as before.**
-- **Narrow by cost, and read the boot log first.** MCP has no shared component section and forbids a `$ref` across
-  entries, so every entry inlines the full schema of every model it mentions, and the listing is re-sent whole to
-  every agent that connects. `MCP catalogue: … · listing 214KB` plus a per-signal `MCP catalogue cost:` line says
-  where it went. A plain 21-field model costs 12.6KB over eight entries; `mcp: { cru: false }` takes it to 4.7KB,
-  because the generated writes carry the input *and* the full model.
+  signal option (`mutation(Boolean, { guards: [Every], mcp: false })`, `init({ guards: [SignedIn], mcp: false })`),
+  or as an `mcp` map on `slice()` that **mirrors the `guards` map key for key** (`mcp: { cru: false }`) — root
+  slice and generated CRUD only, never a named slice or a custom endpoint. It is an opt-**out**, and it is
+  curation, not authorization: HTTP serves the endpoint exactly as before.
+- **Narrow by cost, and read the boot log first.** MCP forbids a `$ref` across entries, so every entry inlines the
+  full schema of every model it mentions and the listing is re-sent whole to every agent that connects. A plain
+  21-field model costs 12.6KB over eight entries; `mcp: { cru: false }` takes it to 4.7KB. `MCP catalogue: … ·
+  listing 214KB` plus a per-signal `MCP catalogue cost:` line says where it went.
 - Settings live in the app's `lib/option.ts` — `option.setMcp({ enabled, readOnly, path, version, instructions,
-  allowedOrigins, pageSize, language, auth })`, **not `main.ts`**. Every lib's option is read in mount order with
-  the app's last, and each field has an `AKAN_MCP_*` env spelling the option overrides.
-- **The refusals are fail-closed**: a declared `mcp: false`, an endpoint with no `guards`, a mutation with no real guard (`[Public]` is
-  having none), `pubsub` and `message`, an `Any` or `Upload` return, a file upload, a required `Any` argument, and
-  the generated `light<Model>` read — it is `<Model>` in a smaller shape, so one read never costs two entries of
-  every listing. A `prompt` also refuses a list argument and any `Any` argument.
-- **Every refusal is named in the boot log**, with a `MCP catalogue: tools=… prompts=…` count. Read that line
-  first when a tool you expected is missing — with no opt-in to notice, it is the only place the answer exists.
-  The boot log also names every published entry with no dictionary `.desc()`: an agent picks a tool by its
-  description, so write the model `.desc()` the generated entries borrow.
-- A refused endpoint answers the *same* "unknown tool" as one that does not exist, and a guard's refusal is
-  generalized to `You are not permitted to perform this action.` Never make either message more helpful — the
-  difference is what enumerates your private surface.
-- **A `field.visual` field is stripped from every MCP result**, and from the readable schema so the two agree — the
-  model-level answer to a field the page needs and an agent does not. `resolveReturn` leaves it alone, so the
-  browser still receives it.
-- **A structured result ships twice by default** — once as `structuredContent`, once as the same JSON in the text
-  block, which is what the spec asks for clients predating the structured field and is also a flat doubling of what
-  every model-returning tool costs. `option.setMcp({ legacyTextBlock: false })` leaves a pointer there instead.
-- `AKAN_MCP_READONLY=true` is the read-only-deployment valve, not the exposure switch; `AKAN_MCP=false` takes the
+  allowedOrigins, pageSize, language, auth })`, **not `main.ts`**. Each field has an `AKAN_MCP_*` env spelling.
+  `AKAN_MCP_READONLY=true` is the read-only-deployment valve, not the exposure switch; `AKAN_MCP=false` takes the
   whole surface off.
+- **The refusals are fail-closed**: a declared `mcp: false`, an endpoint with no `guards`, a mutation with no real
+  guard, `pubsub` and `message`, an `Any` or `Upload` return, a file upload, a required `Any` argument, and the
+  generated `light<Model>` read. A `prompt` also refuses a list argument and any `Any` argument. **Every refusal
+  is named in the boot log**, along with every published entry missing a dictionary `.desc()` — an agent picks a
+  tool by its description.
+- A refused endpoint answers the *same* "unknown tool" as one that does not exist, and a guard's refusal is
+  generalized. Never make either message more helpful — the difference is what enumerates your private surface.
+- **A `field.visual` field is stripped from every MCP result** and from the readable schema so the two agree.
+- **A structured result ships twice by default** — as `structuredContent` and as the same JSON in the text block.
+  `option.setMcp({ legacyTextBlock: false })` leaves a pointer there instead.
 - **`prompt()`** is invoked by the *user* as a slash command, never chosen by the model. `exec` returns
   `PromptMessage[]` built with `Msg.user` / `Msg.assistant` / `Msg.resource` / `Msg.image`; an embedded payload is
-  masked by the model you name (`Msg.resource(uri, task, { model: cnst.LightTask })`), and one whose
-  `hidden`/`secret` fields are populated with no model named is refused. It is also mounted as a plain HTTP `GET`
-  whether or not MCP is enabled, so guard it like any other read.
+  masked by the model you name, and one whose `hidden`/`secret` fields are populated with no model named is
+  refused. It is also mounted as a plain HTTP `GET` whether or not MCP is enabled, so guard it like any other read.
 
 Full contract — configuration, wire behaviour, resource URIs, OAuth metadata, protocol revisions, and
 `McpProgress.report`: `get_guideline` with `mcpRule`, or `akan guideline show mcpRule`.
@@ -790,63 +617,33 @@ screen does not offer the user is not one an agent may pull in their place. The 
 package; apps and libs never import it directly (`no-import-external-library`) — everything reaches them through
 `st.*` and `akanjs/ui`.
 
+Read the full contract before building an agent surface — the chat's own options, `st.tool` / `st.expose` /
+`st.useState` in full, zones and namespaces, attachments and speech, slash commands, transcript compaction, and
+the built-in tool semantics: `get_guideline` with `agentRule`, or `akan guideline show agentRule`. What follows is
+what every developer must know even when not building one.
+
 - **Mount `<Agent.Chat />` once in a layout.** The endpoint is a stateless relay that **never executes tools**:
   every tool runs in the caller's own browser session, gated by guards and the approval card. Its guard is
   `AgentRelayAccess`, which refuses every call until the app names a guard of its own —
-  `option.setAgentAccess(SignedIn)`.
-- **The LLM is configured in `option.ts`, never through the environment.** `option.setLlm({ apiKey, model, host })`
-  fills whichever adaptor holds `LlmAdaptorRole`; swap providers with `option.applyAdaptor(LlmAdaptorRole, X)`.
-- **Declare the tool beside the control that already does it.**
-  `st.tool("x").desc("…").arg("id", ID).opt("force", Boolean).exec(fn)` publishes one action and returns the
-  callable to hand to `onClick` — one handler for the person and the agent. `.desc()` is required and comes first,
-  `.arg()` is an argument the caller must pass and `.opt()` one it may, and `.exec()` is the only hook. Reach a
-  store action from the body (`.exec((id) => st.do.removeX(id))`); `st.do` on its own reaches nobody.
-- **Publish a tool only where the screen already renders the control.** A falsy name declares the tool without
-  publishing it, which is how a conditional surface stays legal — `.exec()` is a hook, so withhold the name, not
-  the call. A `disabled` control publishes nothing.
-- **A component that renders once per row takes the row id as an argument**, never a closure over it — fifty
-  registrations of one name leave forty-nine shadowed. The description is what makes the repeats one declaration:
-  same name and same `.desc()` is the same tool registered fifty times, and only a second description under that
-  name warns.
-- **`{ settle: false }` is the read that returns what is already there.** Every other tool is waited out before
-  what it did to the screen is reported, because a write may still be landing when `exec` resolves. `{ confirm }`
-  and `{ guard }` ride the same object; a `remove*` name confirms by default.
-- **A component that can render twice on one screen takes a `namespace` prop** (`Tab`, `Dialog`, `Dropdown`,
-  `ScreenNavigator`) and publishes nothing without one.
+  `option.setAgentAccess(SignedIn)`. **The LLM is configured in `option.ts`, never through the environment**
+  (`option.setLlm({ apiKey, model, host })`).
+- **Declare the tool beside the control that already does it**, never as a separate surface:
+  `st.tool("x").desc("…").arg("id", ID).exec(fn)` returns the callable to hand to `onClick` — one handler for the
+  person and the agent. Publish it only where the screen already renders the control; a falsy name declares the
+  tool without publishing it, and a `disabled` control publishes nothing.
 - **Forms publish themselves**: a `Field.*` / `Input.*` / `Select` / `Switch` handed `onChange={st.do.setXOnY}`
   **by reference** publishes that setter, and `st.use.yForm()` adds `fillYForm(patch)`. An inline arrow publishes
   nothing — normalize with the control's `transform` prop, and multi-write with a `_postSet<Field>` store method.
-- **Reading is per key, not per store.** `st.use.x({ agent: false })` keeps a subscribed key off the surface;
-  a key no component reads is unreadable. A value with populated `hidden`/`secret` fields is refused at read.
-- **A component's own value is published by its declared type.** `st.expose("taskId", ID).desc("…").value(v)` for
-  a derived value and `st.useState("tab", String, { set: true }).desc("…").init("all")` for local state — the type
-  typechecks what is handed over and decides how it is read, so a model class masks by that model. `Any` is the
-  escape hatch: no typecheck, and the value passes untouched. `.value()` also takes a thunk, read when the agent
-  reads.
+  This is the same rule `no-unpublished-form-setter.grit` enforces.
+- **Reading is per key, not per store.** `st.use.x({ agent: false })` keeps a subscribed key off the surface; a key
+  no component reads is unreadable. A value with populated `hidden`/`secret` fields is refused at read.
 - **Return what answers the question, not the record.** A tool's value is capped at 20,000 characters before it
-  enters the transcript and clipped with a note the model reads (`ToolOutput.limit`), because a store key is sized
-  for a screen and not for a model's window: one `readState` of a list whose rows carry inlined bytes is megabytes,
-  and from there it rides *every* later turn. Each tool row in the chat carries its own estimated token cost and
-  opens onto the value the model was handed — that row is where a conversation that filled up in four messages
-  explains itself. A field that is bulky and useless to a model is fixed once at the model instead:
-  `field.visual(String)` keeps it on the page and out of every agent-facing read and MCP result.
-- **`<Agent.Skip label="site footer">` leaves a region out of the default `readScreen`** — a footer, a cookie
-  banner, a nav that repeats on every route. `[skipped: site footer]` stands in its place rather than nothing, since
-  a deleted region reads as an absent one, and the marker's name is a `section` that reads the region on request.
-  Put `data-agent-skip="<name>"` on the element the page already renders where a wrapper div would move the layout.
-  It hides **text, not behaviour**: an `st.tool` inside is published as before. Narrowing from the other side —
-  `Agent.Zone`, `readScreen({ section })` — is the better move on a screen that is mostly chrome.
+  enters the transcript, and once there it rides *every* later turn. A field that is bulky and useless to a model
+  is fixed once at the model instead: `field.visual(String)`.
 - **Route guidance is `<Agent.Guide instructions="..." />`** rendered from a `_layout.tsx` or page — the render
   tree is the cascade. It is a component, not a `pageConfig` field, and `*.abstract.md` is never served to agents.
-- The framework publishes five built-ins on every store surface — `navigate`, `goBack`, `readScreen`,
-  `readState(key)`, `highlight(target)` — plus `askUser`, which the session owns. **There is no general-purpose
-  wait**: publish an `st.tool` beside the control that starts the work and let it await the work.
 - **Model-facing text is English, always** — every `.desc()`, `instructions`, Guide text. The `l()` rule covers
   strings a *user* reads.
-
-Full contract — the chat's own options, attachments and speech, zones, what `akanjs/ui` publishes for you, slash
-commands, transcript compaction, and the built-in tool semantics: `get_guideline` with `agentRule`, or
-`akan guideline show agentRule`.
 
 ## Scalar Modeling (`**/*.constant.ts`)
 
@@ -876,34 +673,22 @@ commands, transcript compaction, and the built-in tool semantics: `get_guideline
 
 ### Text Search Fields — the `text` role
 
-- A field joins the full-text index by declaring one of five roles: `field(String, { text: "title" })`, and likewise
-  `"desc"`, `"tag"`, `"thumb"`, `"filter"`. Nothing else opts a field in, and there is no per-model switch.
+Full contract — the trigger-maintained mirror, tokenizer changes, `AKAN_SEARCH_ENABLED`: `get_guideline` with
+`queryRule`.
+
+- A field joins the full-text index by declaring one of five roles: `field(String, { text: "title" })`, and
+  likewise `"desc"`, `"tag"`, `"thumb"`, `"filter"`. Nothing else opts a field in, and there is no per-model
+  switch. Declaring roles is all the wiring there is.
 - Pick the role by what the value *is*, because `bm25` weights them positionally (`title` 10, `tag` 3, `desc` 1,
   `filter` 0): `title` is the one line a human scans for, `desc` is prose, `tag` is a keyword list, `filter` is a
-  scoping value (status, owner, role) that must be matchable but must never outrank a real title hit.
-- `thumb` is mirrored for rendering a hit and is **not** indexed — never expect it to match.
+  scoping value (status, owner, role) that must be matchable but must never outrank a real title hit. `thumb` is
+  mirrored for rendering a hit and is **not** indexed — never expect it to match.
 - **`field.secret`, `field.hidden` and `resolve()` take no `text` role — it is a compile error**, because the
-  mirror is plaintext and an indexed secret would leak through search. The class build throws the same refusal as
-  a backstop, for an option object the excess-property check cannot see through, and names the way out: drop the
-  role, or leave the field unmasked. Do not work around either. The throw also covers a `text` field *underneath*
-  one of those — a scalar's own field is reachable through its parent, so `f.secret(Noti)` where `Noti.label`
-  carries a role is rejected at the parent, not silently indexed; that one is only reachable at runtime, since the
-  pairing spans two files.
-- The role works on a relation too (`image: field(File, { text: "thumb" })`) and on an array (`playing: field([String],
-  { text: "tag" })`); an array of objects indexes by leaf key, including an array leaf (`works[*].tags`). A field
-  inside a `Map` indexes nothing: there is no fixed path to extract it from.
-- Declaring roles is all the wiring there is. Mirror rows are maintained by SQL triggers — not document hooks —
-  because `updateOneByQuery` and friends fire no hooks, and most searchable-field mutations go through exactly that
-  path.
+  mirror is plaintext and an indexed secret would leak through search. The same refusal throws at runtime as a
+  backstop, including for a `text` field *underneath* one of those. Do not work around either.
+- The role works on a relation (`image: field(File, { text: "thumb" })`) and on an array; an array of objects
+  indexes by leaf key. A field inside a `Map` indexes nothing — there is no fixed path to extract it from.
 - Search runs on sqlite/libsql only. `q.search()` against Postgres throws, loudly, rather than returning every row.
-- `AKAN_SEARCH_ENABLED=0` switches the index off process-wide; unset means on. It never deletes mirror data, and
-  re-enabling reconciles every ref. **Give every process the same value** — a process cannot drop triggers for models
-  it does not mount, so a mixed fleet leaves stale triggers behind.
-- The tokenizer is `AKAN_SEARCH_TOKENIZER` (or `database.search.tokenizer`, which wins), defaulting to
-  `unicode61 remove_diacritics 2`. Changing it rebuilds the index from the mirror on the next boot — the model
-  tables are never re-read — so it is a safe knob, unlike a `text` role change, which re-reads every row. The
-  rebuild takes no cross-process claim, so a fleet restarted at once repeats it in every process; stagger the
-  restart when the mirror is large.
 
 ### Image & File Fields
 
@@ -914,37 +699,28 @@ commands, transcript compaction, and the built-in tool semantics: `get_guideline
 
 ### Cascade Remove — the `cascade` option
 
+Full contract — bulk planning, the auto-created index, cycle cutting, boot-time validation: `get_guideline` with
+`queryRule`.
+
 **The value names the direction, and getting it wrong is a data loss.** The two actions can sit on the same field
 shape, so `cascade` never means "related" — it means one of exactly these:
 
 - `removeRef` — *when I am removed, remove what this field points at.* Declared on the relation the owner holds:
-  `image: field(File, { cascade: "removeRef" })`, arrays included. Only a relation accepts it; a primitive, a bare
-  `ID`, and a scalar each fail the class build.
+  `image: field(File, { cascade: "removeRef" })`, arrays included. Only a relation accepts it.
 - `removeWith` — *when what this field points at is removed, remove me.* Declared on the child's own reference to
-  its owner, so the owner never learns about its children and a lib model can be extended by an app's. Three forms:
-  a relation (`field(AgentSession, { cascade: "removeWith" })`), an id with `ref`, or a polymorphic id with
-  `refPath`. An array, a Map, `ref` together with `refPath`, and a field naming no owner each fail the class build.
-- **A `refPath` must name an `enumOf` field** — a free-form owner type is unknowable at build time, so every
-  model's removal would have to sweep the polymorphic table on the chance it is the owner.
+  its owner, so the owner never learns about its children and a lib model can be extended by an app's. Three
+  forms: a relation, an id with `ref`, or a polymorphic id with `refPath`. An array, a Map, `ref` together with
+  `refPath`, and a field naming no owner each fail the class build.
+- **A `refPath` must name an `enumOf` field** — a free-form owner type is unknowable at build time.
 - **A cascade goes through the target's service, never its model** — that path is what runs the target's
   `_postRemove`, where a module puts the side effect the removal has to carry.
-- **Bulk is decided at boot, per target model, for both directions.** A target with no `remove` schema hook, no
-  `_pre`/`_postRemove`, no cascade of its own, and no children takes one `removeManyByQuery`. Adding a
-  `_postRemove` silently flips it back to one document at a time — the boot log is the only place that shows.
-- **The plan is sealed after every service is live**, so a `listenPost("remove")` registered in `onInit` counts,
-  and an unmounted `removeRef` target or `removeWith` owner fails the boot rather than the first removal. An
-  unmounted `refPath` candidate only warns, since that list spans optional modules by design.
-- **Nothing checks whether another document still references the same target.** `File` in particular is deduped
-  by `origin`, so two parents can share one row; `removeRef` claims the field owns its target exclusively.
+- **Nothing checks whether another document still references the same target.** `File` in particular is deduped by
+  `origin`, so two parents can share one row; `removeRef` claims the field owns its target exclusively.
 - Removal is soft (`removedAt`), but the storage delete a `_postRemove` performs is not — a cascade is not
   restorable, and reviving the owner does not revive what went with it.
-- A `removeWith` declaration **auto-creates its index** (`{ removedAt, fk }`, or `{ removedAt, typeKey, fk }` when
-  polymorphic); every non-base field lives in the `_doc` JSON column, so the lookup would otherwise scan the table.
 - **Query-level removes fire no hooks and therefore no cascade** — `removeManyByQuery` / `updateManyByQuery`, the
   generated `remove<Filter>` / `update<Filter>`, and the facade's `removeById` / `updateById`. Remove one document
   at a time when it cascades.
-- Cascades are **idempotent**: `removedAt IS NULL` is ANDed into every query-level write. Cycles are cut by a
-  visited set carried down the whole chain, with a depth cap of 16.
 
 ## Akan Page Routing (`apps/**/page/**`)
 

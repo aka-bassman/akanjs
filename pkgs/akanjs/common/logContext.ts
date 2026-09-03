@@ -1,7 +1,18 @@
+import type { LogRecord } from "./Logger";
+
+/** A per-request ring the Logger hands every record to; the trace decides at its end whether any of it is shown. */
+export interface LogFlightRecorder {
+  minSev: number;
+  capture(record: LogRecord, written: boolean): void;
+}
+
 export interface LogContextSnapshot {
   traceId: string | null;
   endpoint: string | null;
   origin: string | null;
+  flight?: LogFlightRecorder | null;
+  /** A per-request floor below the process level (`x-akan-debug`); `null` when the request asked for nothing. */
+  debugSev?: number | null;
 }
 
 export type LogContextReader = () => LogContextSnapshot | undefined;

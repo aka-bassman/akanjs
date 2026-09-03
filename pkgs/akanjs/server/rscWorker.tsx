@@ -22,7 +22,7 @@ import {
 } from "akanjs/fetch";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-server-dom-webpack/server.node";
-import { runTraced, SignalTrace } from "../signal/trace";
+import { getCurrentTrace, runTraced, SignalTrace } from "../signal/trace";
 import type { ClientManifest } from "./artifact";
 import {
   LruTtlCache,
@@ -233,6 +233,7 @@ export class RscRenderer {
     }
     this.#send = process.send.bind(process) as (message: unknown) => void;
     Logger.role = "rsc-worker";
+    if (Logger.isNdjson) Logger.consoleOutput = false;
     this.#logForwarder = new LogForwarder((message) => this.#send(message));
     process.on("message", (msg: InMsg) => this.#handleMessage(msg));
     // The IPC channel closes when the parent replica dies (including SIGKILL); exit instead of
@@ -907,6 +908,10 @@ export class RscRenderer {
     const sendMeta = () => {
       if (!options.requestId || sentMeta) return;
       sentMeta = true;
+      if (options.status !== undefined) {
+        const trace = getCurrentTrace();
+        if (trace) trace.status = options.status;
+      }
       this.#send({
         type: "meta",
         requestId: options.requestId,

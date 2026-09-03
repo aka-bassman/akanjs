@@ -126,3 +126,45 @@ describe("LogForwarder", () => {
     forwarder.close();
   });
 });
+
+describe("LogForwarder in an ndjson deployment", () => {
+  afterEach(() => {
+    Logger.format = "text";
+  });
+
+  test("starts forwarding at the stdout level on its own, and a subscriber can only lower that", () => {
+    Logger.format = "ndjson";
+    const sent: AkanIpcMessage[] = [];
+    const forwarder = new LogForwarder((message) => sent.push(message), { flushMs: 1 });
+    try {
+      expect(forwarder.active).toBe(true);
+      expect(forwarder.minSev).toBe(logSeverity[Logger.level]);
+      forwarder.setMinSev(logSeverity.error);
+      expect(forwarder.minSev).toBe(logSeverity[Logger.level]);
+      forwarder.setMinSev(0);
+      expect(forwarder.minSev).toBe(0);
+      forwarder.setMinSev(null);
+      expect(forwarder.minSev).toBe(logSeverity[Logger.level]);
+      expect(forwarder.active).toBe(true);
+    } finally {
+      forwarder.close();
+    }
+  });
+});
+
+describe("LogForwarder promoted records", () => {
+  test("a flight or debug record passes the floor a subscriber set", () => {
+    const sent: LogBatch[] = [];
+    const forwarder = new LogForwarder((message) => sent.push(message as LogBatch), { flushMs: 1 });
+    try {
+      forwarder.setMinSev(logSeverity.warn);
+      forwarder.push(record("dropped", { level: "trace", sev: logSeverity.trace }));
+      forwarder.push(record("promoted", { level: "trace", sev: logSeverity.trace, attrs: { flight: true } }));
+      forwarder.push(record("asked", { level: "debug", sev: logSeverity.debug, attrs: { debug: true } }));
+      forwarder.flush();
+      expect(sent.flatMap((batch) => batch.records.map((entry) => entry.message))).toEqual(["promoted", "asked"]);
+    } finally {
+      forwarder.close();
+    }
+  });
+});

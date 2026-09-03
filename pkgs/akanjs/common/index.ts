@@ -25,13 +25,18 @@ export { isThenable } from "./isThenable";
 export { isValidDate } from "./isValidDate";
 export { decodeJwtPayload } from "./jwtDecode";
 export {
+  type LogAttrs,
+  type LogAttrValue,
+  type LogFormat,
   Logger,
+  type LoggerEmitInput,
   type LoggerSink,
   type LoggerSinkEntry,
   type LoggerSinkOptions,
   type LogLevel,
   type LogLevelInput,
   type LogRecord,
+  logFormats,
   logLevels,
   logSeverity,
 } from "./Logger";
@@ -42,7 +47,13 @@ export {
   parseAkanI18nEnv,
   resolveAkanI18nConfig,
 } from "./localeConfig";
-export { type LogContextReader, type LogContextSnapshot, readLogContext, registerLogContextReader } from "./logContext";
+export {
+  type LogContextReader,
+  type LogContextSnapshot,
+  type LogFlightRecorder,
+  readLogContext,
+  registerLogContextReader,
+} from "./logContext";
 export { lowerlize } from "./lowerlize";
 export {
   isMcpDescribableArg,

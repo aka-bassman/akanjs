@@ -1,5 +1,13 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { registerLogContextReader } from "akanjs/common";
+import { timingSafeEqual } from "node:crypto";
+import {
+  type LogAttrs,
+  type LogFlightRecorder,
+  Logger,
+  type LogRecord,
+  logSeverity,
+  registerLogContextReader,
+} from "akanjs/common";
 
 /**
  * Request tracing for Akan signals, in two modes.
@@ -8,6 +16,10 @@ import { registerLogContextReader } from "akanjs/common";
  * (`traceId`, endpoint, origin) and costs one `als.run` per call (~25ns measured). `AKAN_LOG_CONTEXT=0` is
  * the emergency exit. `full` adds the per-stage spans, query counts and cache ratio the metrics endpoint
  * aggregates, and stays behind `AKAN_TRACE=1` because those are for performance work, not for every request.
+ *
+ * Two opt-ins ride the same trace: the canonical request line (`AKAN_LOG_CANONICAL`) summarizes every call as
+ * one record at its end, and the flight recorder (`AKAN_LOG_FLIGHT`) keeps the call's own sub-level records
+ * and promotes them only when the call failed or ran long.
  */
 
 let traceEnabledCache: boolean | null = null;
@@ -34,6 +46,58 @@ export const setLogContextEnabled = (enabled: boolean): void => {
   logContextEnabledCache = enabled;
 };
 
+export type CanonicalLineMode = "off" | "all" | "slow";
+
+const isOn = (value: string | undefined) => value === "1" || value === "true";
+
+let canonicalModeCache: CanonicalLineMode | null = null;
+/** `AKAN_LOG_CANONICAL`: `1`/`all` writes one line per call, `slow` only for a failed or over-threshold call. */
+export const getCanonicalLineMode = (): CanonicalLineMode => {
+  if (canonicalModeCache === null) {
+    const value = process.env.AKAN_LOG_CANONICAL;
+    canonicalModeCache = value === "slow" ? "slow" : isOn(value) || value === "all" ? "all" : "off";
+  }
+  return canonicalModeCache;
+};
+export const setCanonicalLineMode = (mode: CanonicalLineMode): void => {
+  canonicalModeCache = mode;
+};
+
+let flightEnabledCache: boolean | null = null;
+export const isFlightRecorderEnabled = (): boolean => {
+  if (flightEnabledCache === null) flightEnabledCache = isOn(process.env.AKAN_LOG_FLIGHT);
+  return flightEnabledCache;
+};
+export const setFlightRecorderEnabled = (enabled: boolean): void => {
+  flightEnabledCache = enabled;
+  refreshLoggerContextGate();
+};
+
+let flightThresholdCache: number | null = null;
+/** `AKAN_LOG_FLIGHT_MS`: a call at least this long is "slow" for both the recorder and the `slow` canonical mode. */
+export const getFlightThresholdMs = (): number => {
+  if (flightThresholdCache === null) {
+    const value = Number(process.env.AKAN_LOG_FLIGHT_MS);
+    flightThresholdCache = Number.isFinite(value) && value > 0 ? value : 1_000;
+  }
+  return flightThresholdCache;
+};
+export const setFlightThresholdMs = (ms: number): void => {
+  flightThresholdCache = ms;
+};
+
+/**
+ * `x-akan-debug` lowers one request's log floor to `trace`. Honoured in `local` unconditionally, and elsewhere only
+ * when the header carries the value of `AKAN_LOG_DEBUG_HEADER`: a client that can lower a server's log level is a
+ * log-volume vector, so outside development it has to prove it was told the secret.
+ */
+export const isDebugHeaderAllowed = (): boolean =>
+  process.env.AKAN_PUBLIC_ENV === "local" || !!process.env.AKAN_LOG_DEBUG_HEADER;
+
+const refreshLoggerContextGate = () => {
+  Logger.contextGate = isFlightRecorderEnabled() || isDebugHeaderAllowed();
+};
+
 export interface SpanRecord {
   name: string;
   durationMs: number;
@@ -44,9 +108,22 @@ export type TraceOrigin = "http" | "websocket" | "mcp" | "internal" | "page";
 export type TraceOutcome = "ok" | "error";
 
 const MAX_SPANS_PER_TRACE = 64;
+/** Per call; 64 lines is a whole request at `trace` for anything short of a loop that logs per row. */
+const FLIGHT_RING_SIZE = 64;
+const CANONICAL_ERROR_CHARS = 200;
+
+interface FlightEntry {
+  record: LogRecord;
+  written: boolean;
+}
 
 /** Per-request trace context. Threaded via {@link AsyncLocalStorage}. */
 export class SignalTrace {
+  /** Total captured records the process holds at once (`AKAN_LOG_FLIGHT_MAX`); a call past it runs unrecorded. */
+  static readonly defaultFlightMaxRecords = 65_536;
+  static #activeFlights = 0;
+  static #flightMaxTraces: number | null = null;
+
   readonly traceId: string;
   readonly endpointKey: string;
   readonly endpointType: string;
@@ -54,6 +131,8 @@ export class SignalTrace {
   readonly mode: TraceMode;
   readonly startedAt: number;
   readonly spans: SpanRecord[] = [];
+  /** What the canonical line carries beyond timing — `userId` once the caller is known. */
+  readonly attrs: LogAttrs = {};
   dbQueryCount = 0;
   dbQueryMs = 0;
   cacheHits = 0;
@@ -61,7 +140,12 @@ export class SignalTrace {
   dataLoaderBatchCount = 0;
   dataLoaderKeyCount = 0;
   outcome: TraceOutcome | null = null;
+  status: number | null = null;
   error: unknown = null;
+  debugSev: number | null = null;
+  flight: LogFlightRecorder | null = null;
+  #flightRing: FlightEntry[] | null = null;
+  #flightEvicted = 0;
   #finalized = false;
 
   constructor(
@@ -79,13 +163,56 @@ export class SignalTrace {
 
   /** The trace a call runs under given what is switched on, or `null` when both modes are off. */
   static create(endpointKey: string, endpointType: string, origin: TraceOrigin): SignalTrace | null {
-    if (isTraceEnabled()) return new SignalTrace(endpointKey, endpointType, { mode: "full", origin });
-    if (isLogContextEnabled()) return new SignalTrace(endpointKey, endpointType, { mode: "context", origin });
-    return null;
+    const trace = isTraceEnabled()
+      ? new SignalTrace(endpointKey, endpointType, { mode: "full", origin })
+      : isLogContextEnabled()
+        ? new SignalTrace(endpointKey, endpointType, { mode: "context", origin })
+        : null;
+    if (trace && isFlightRecorderEnabled()) trace.startFlightRecorder();
+    return trace;
+  }
+
+  static get activeFlights() {
+    return SignalTrace.#activeFlights;
+  }
+
+  static #flightMaxTracesFromEnv() {
+    if (SignalTrace.#flightMaxTraces === null) {
+      const value = Number(process.env.AKAN_LOG_FLIGHT_MAX);
+      const max = Number.isFinite(value) && value > 0 ? value : SignalTrace.defaultFlightMaxRecords;
+      SignalTrace.#flightMaxTraces = Math.max(1, Math.floor(max / FLIGHT_RING_SIZE));
+    }
+    return SignalTrace.#flightMaxTraces;
   }
 
   get endpoint() {
     return `${this.endpointType}:${this.endpointKey}`;
+  }
+
+  /** Attaches the ring unless the process is already holding its cap; a trace past the cap simply is not recorded. */
+  startFlightRecorder(): boolean {
+    if (this.#flightRing || this.#finalized) return !!this.#flightRing;
+    if (SignalTrace.#activeFlights >= SignalTrace.#flightMaxTracesFromEnv()) return false;
+    SignalTrace.#activeFlights += 1;
+    this.#flightRing = [];
+    this.flight = { minSev: logSeverity.trace, capture: (record, written) => this.#capture(record, written) };
+    return true;
+  }
+
+  /** Honours `x-akan-debug` for this call when the deployment allows it; anything else is ignored, not refused. */
+  applyDebugHeader(value: string | null | undefined): boolean {
+    if (!value) return false;
+    const secret = process.env.AKAN_LOG_DEBUG_HEADER;
+    const allowed =
+      process.env.AKAN_PUBLIC_ENV === "local" ||
+      (!!secret && value.length === secret.length && timingSafeEqual(Buffer.from(value), Buffer.from(secret)));
+    if (!allowed) return false;
+    this.debugSev = logSeverity.trace;
+    return true;
+  }
+
+  setAttr(key: string, value: LogAttrs[string]): void {
+    this.attrs[key] = value;
   }
 
   recordSpan(name: string, durationMs: number): void {
@@ -114,17 +241,71 @@ export class SignalTrace {
   fail(error: unknown): void {
     this.outcome = "error";
     this.error = error;
+    const statusCode = (error as { statusCode?: unknown } | null)?.statusCode;
+    this.status = typeof statusCode === "number" ? statusCode : 500;
   }
 
   finalize(): void {
     if (this.#finalized) return;
     this.#finalized = true;
     this.outcome ??= "ok";
-    if (this.mode !== "full") return;
+    this.status ??= 200;
     const totalMs = performance.now() - this.startedAt;
+    // The narrative first, then its summary, so a `--trace <id>` reads in the order things happened.
+    this.#flushFlight(totalMs);
+    this.#emitCanonicalLine(totalMs);
+    if (this.mode !== "full") return;
     this.recordSpan("total", totalMs);
     traceAggregator.ingest(this);
     maybeFlushTraceFile();
+  }
+
+  #capture(record: LogRecord, written: boolean) {
+    const ring = this.#flightRing;
+    if (!ring || this.#finalized) return;
+    if (ring.length >= FLIGHT_RING_SIZE) {
+      ring.shift();
+      this.#flightEvicted += 1;
+    }
+    ring.push({ record, written });
+  }
+
+  #flushFlight(totalMs: number) {
+    const ring = this.#flightRing;
+    if (!ring) return;
+    this.#flightRing = null;
+    this.flight = null;
+    SignalTrace.#activeFlights -= 1;
+    if (this.outcome !== "error" && totalMs < getFlightThresholdMs()) return;
+    const pending = ring.filter((entry) => !entry.written).map((entry) => entry.record);
+    if (pending.length) Logger.replay(pending, { evicted: this.#flightEvicted });
+  }
+
+  #emitCanonicalLine(totalMs: number) {
+    const mode = getCanonicalLineMode();
+    if (mode === "off") return;
+    const failed = this.outcome === "error";
+    if (mode === "slow" && !failed && totalMs < getFlightThresholdMs()) return;
+    const attrs: LogAttrs = { ms: Math.round(totalMs * 10) / 10, status: this.status ?? 200, ...this.attrs };
+    if (this.mode === "full") {
+      attrs.db = this.dbQueryCount;
+      attrs.dbMs = Math.round(this.dbQueryMs * 10) / 10;
+      const lookups = this.cacheHits + this.cacheMisses;
+      if (lookups) attrs.cacheHit = Math.round((this.cacheHits / lookups) * 100) / 100;
+    }
+    if (failed) attrs.err = SignalTrace.#describeError(this.error);
+    Logger.emit({
+      level: failed ? "warn" : "info",
+      name: "Signal",
+      message: `${this.outcome} ${this.endpoint}`,
+      attrs,
+    });
+  }
+
+  static #describeError(error: unknown): string {
+    const text = error instanceof Error ? error.message : String(error);
+    const line = text.split("\n")[0] ?? "";
+    return line.length > CANONICAL_ERROR_CHARS ? `${line.slice(0, CANONICAL_ERROR_CHARS)}…` : line;
   }
 }
 
@@ -172,8 +353,16 @@ export const runTraced = async <T>(trace: SignalTrace | null, fn: () => Promise<
 
 registerLogContextReader(() => {
   const trace = als.getStore();
-  return trace ? { traceId: trace.traceId, endpoint: trace.endpoint, origin: trace.origin } : undefined;
+  if (!trace) return undefined;
+  return {
+    traceId: trace.traceId,
+    endpoint: trace.endpoint,
+    origin: trace.origin,
+    flight: trace.flight,
+    debugSev: trace.debugSev,
+  };
 });
+refreshLoggerContextGate();
 
 /**
  * Time an async stage under the current trace. When tracing is off (or no trace is

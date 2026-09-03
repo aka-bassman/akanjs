@@ -1,6 +1,6 @@
 {
   "name": "akanjs",
-  "version": "3.0.0-alpha.70",
+  "version": "3.0.0-alpha.71",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -124,6 +124,16 @@
       "import": "./server/lifecycle/portInUse.ts",
       "types": "./server/lifecycle/portInUse.ts",
       "default": "./server/lifecycle/portInUse.ts"
+    },
+    "./server/logging/logQuery": {
+      "import": "./server/logging/logQuery.ts",
+      "types": "./server/logging/logQuery.ts",
+      "default": "./server/logging/logQuery.ts"
+    },
+    "./server/logging/logTailClient": {
+      "import": "./server/logging/logTailClient.ts",
+      "types": "./server/logging/logTailClient.ts",
+      "default": "./server/logging/logTailClient.ts"
     }
   },
   "dependencies": {

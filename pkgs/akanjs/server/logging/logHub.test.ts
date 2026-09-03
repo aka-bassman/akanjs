@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type LogRecord, logSeverity } from "akanjs/common";
+import { Logger, type LogRecord, logSeverity } from "akanjs/common";
 import { LogHub, type LogHubEntry } from "./logHub";
 
 const record = (message: string, overrides: Partial<LogRecord> = {}): LogRecord => ({
@@ -112,5 +112,53 @@ describe("LogHub suppression", () => {
     for (let idx = 0; idx < 3; idx += 1) hub.ingest(record("banner", { level: null, sev: 0 }));
     expect(hub.size).toBe(3);
     hub.close();
+  });
+});
+
+describe("LogHub.attach", () => {
+  test("is one hub per process, fed by the Logger until closed, and a fresh one after", () => {
+    const hub = LogHub.attach();
+    try {
+      expect(LogHub.attach()).toBe(hub);
+      Logger.setLevel("error");
+      Logger.info("boot line", "", "AttachTest");
+      expect(hub.history({ text: "boot line" }).entries.length).toBe(1);
+    } finally {
+      hub.close();
+      Logger.setLevel("info");
+    }
+    expect(hub.closed).toBe(true);
+    Logger.info("after close", "", "AttachTest");
+    const next = LogHub.attach();
+    try {
+      expect(next).not.toBe(hub);
+      expect(next.history({ text: "after close" }).entries).toEqual([]);
+    } finally {
+      next.close();
+    }
+  });
+
+  test("in ndjson mode it silences the console and writes the JSON stream itself", () => {
+    const writes: string[] = [];
+    const original = process.stdout.write;
+    process.stdout.write = ((chunk: unknown) => {
+      writes.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write;
+    Logger.format = "ndjson";
+    Logger.setLevel("info");
+    const hub = LogHub.attach();
+    try {
+      expect(Logger.consoleOutput).toBe(false);
+      Logger.info("as json", "", "AttachTest");
+      Logger.debug("below", "", "AttachTest");
+      expect(writes.length).toBe(1);
+      expect(JSON.parse(writes[0] ?? "")).toMatchObject({ seq: 1, level: "info", message: "as json" });
+    } finally {
+      hub.close();
+      Logger.format = "text";
+      Logger.consoleOutput = true;
+      process.stdout.write = original;
+    }
   });
 });
