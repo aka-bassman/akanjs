@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { PassThrough } from "node:stream";
-import { AkanConsoleSession } from "./consoleSession";
+import { type AkanConsoleCommand, AkanConsoleSession } from "./consoleSession";
 
 const pasteStart = "\u001b[200~";
 const pasteEnd = "\u001b[201~";
@@ -12,15 +12,18 @@ class Harness {
   readonly #chunks: string[] = [];
   readonly #done: Promise<void>;
 
-  constructor() {
+  readonly session: AkanConsoleSession;
+
+  constructor(commands?: Record<string, AkanConsoleCommand>) {
     this.#output.on("data", (chunk: Buffer | string) => this.#chunks.push(String(chunk)));
-    const session = new AkanConsoleSession({
+    this.session = new AkanConsoleSession({
       context: this.context,
       prompt: "akan> ",
       input: this.#input as unknown as typeof process.stdin,
       output: this.#output as unknown as typeof process.stdout,
+      commands,
     });
-    this.#done = session.run();
+    this.#done = this.session.run();
   }
 
   get output() {
@@ -124,5 +127,44 @@ describe("Akan console session", () => {
     await closing.close();
 
     expect(closing.output).toContain("akan> ");
+  });
+
+  test("dispatches an extension dot-command with its arguments and lists it in help", async () => {
+    const calls: string[] = [];
+    harness = new Harness({
+      ".echo": { desc: "Echo the arguments", run: (args, session) => session.write(`echo:${args}\n`) },
+      ".record": { desc: "Record", run: (args) => void calls.push(args) },
+    });
+    await harness.send(".echo level=warn grep=payment\n", ".record a b\n", ".help\n");
+
+    expect(harness.output).toContain("echo:level=warn grep=payment");
+    expect(calls).toEqual(["a b"]);
+    expect(harness.output).toContain(".echo       Echo the arguments");
+  });
+
+  test("a failing extension command is reported and the session keeps going", async () => {
+    harness = new Harness({
+      ".boom": {
+        desc: "Throw",
+        run: () => {
+          throw new Error("kaboom");
+        },
+      },
+    });
+    await harness.send(".boom\n", "return seven()\n");
+
+    expect(harness.output).toContain("kaboom");
+    expect(harness.output).toContain("7");
+  });
+
+  test("close disposers run when the session ends", async () => {
+    let disposed = 0;
+    harness = new Harness();
+    harness.session.onClose(() => {
+      disposed += 1;
+    });
+    await harness.close();
+    expect(disposed).toBe(1);
+    harness = null;
   });
 });

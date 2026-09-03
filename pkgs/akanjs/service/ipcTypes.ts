@@ -1,3 +1,5 @@
+import type { LogRecord } from "akanjs/common";
+
 export type AkanChildRole = "all" | "federation" | "batch";
 
 export type AkanChildStatus = "starting" | "ready" | "healthy" | "draining" | "unhealthy" | "exited" | "crashed";
@@ -155,6 +157,9 @@ export type AkanIpcMessage =
   | { type: "ws.opened"; socketId: string; roomId?: string; pid?: number }
   | { type: "ws.closed"; socketId: string; roomId?: string; pid?: number }
   | { type: "metrics.report"; metrics: AkanMetricsReport; pid?: number }
+  | { type: "log.records"; records: LogRecord[]; dropped?: number; pid?: number }
+  /** Hub → child: the lowest severity any subscriber wants; `null` tells the child to stop forwarding. */
+  | { type: "log.level"; minSev: number | null }
   | { type: "shutdown"; signal?: string }
   | { type: "error"; message: string; stack?: string; pid?: number };
 

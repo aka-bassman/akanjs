@@ -6,6 +6,7 @@ import {
   isQueryEqual,
   Logger,
   pathSet,
+  plainFieldsOf,
   resolveFileUploadCapability,
 } from "akanjs/common";
 import {
@@ -737,9 +738,10 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       };
       const currentState = this.get() as { [key: string]: any };
       const defaultModel = currentState[namesOfSlice.defaultModel] as Full;
+      const merged = { ...plainFieldsOf(defaultModel), ...partial };
       this.set({
-        [names.modelForm]: immerify(modelRef, { ...defaultModel, ...partial }),
-        [namesOfSlice.defaultModel]: setDefault ? immerify(modelRef, { ...defaultModel, ...partial }) : defaultModel,
+        [names.modelForm]: immerify(modelRef, merged),
+        [namesOfSlice.defaultModel]: setDefault ? immerify(modelRef, merged) : defaultModel,
         [names.model]: null,
         [names.modelModal]: modal ?? "edit",
         [names.modelFormLoading]: false,
@@ -816,10 +818,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         const crystalizedModel = new cnst.full().set(firstModel) as unknown as Full;
         this.set({ [names.model]: crystalizedModel });
       } else if (model?.id === firstModel.id) {
-        const crystalizedModel = new cnst.full().set({
-          ...model,
-          ...firstModel,
-        }) as unknown as Full;
+        const crystalizedModel = new cnst.full().set(model).set(firstModel) as unknown as Full;
         this.set({ [names.model]: crystalizedModel });
       }
 

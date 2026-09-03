@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { type AkanI18nConfig, DEFAULT_AKAN_I18N, Logger } from "akanjs/common";
+import { type AkanI18nConfig, DEFAULT_AKAN_I18N, Logger, type LogRecord } from "akanjs/common";
 import type { AkanTheme } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
 import type { ClientManifest } from "./artifact";
@@ -326,6 +326,7 @@ type RscInMsg =
     }
   | { type: "not-found"; requestId: string }
   | { type: "metrics"; metrics: AkanMetricsReport }
+  | { type: "log.records"; records: LogRecord[]; dropped?: number }
   | { type: "error"; requestId: string; message: string; buildId?: number };
 
 export interface RscWorkerReloadInput {
@@ -404,6 +405,9 @@ export class RscWorker {
   #lastRecycleAtMono: number | null = null;
   #lastRecycleReason: string | undefined;
   #lastWorkerMetrics: AkanMetricsReport = {};
+  /** Set by the replica: where the worker's forwarded log records go (its hub, or up to the gateway). */
+  onLogRecords: ((records: LogRecord[], dropped: number) => void) | null = null;
+  #logLevel: number | null = null;
   #hostPendingChunkOverflowCount = 0;
   #restartTimer: ReturnType<typeof setTimeout> | null = null;
   #recycleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -531,6 +535,20 @@ export class RscWorker {
     this.#rollingRecycle?.oldProc.kill();
     this.#rollingRecycle = null;
     this.#proc.kill();
+  }
+
+  setLogLevel(minSev: number | null) {
+    this.#logLevel = minSev;
+    this.#sendLogLevel();
+  }
+
+  #sendLogLevel() {
+    if (this.#status !== "ready") return;
+    try {
+      this.#proc.send({ type: "log-level", minSev: this.#logLevel });
+    } catch {
+      // The worker is gone; the `ready` of its replacement re-sends the level.
+    }
   }
 
   getMetrics(): AkanMetricsReport {
@@ -703,6 +721,7 @@ export class RscWorker {
         this.#resolveReady();
         this.#finishRollingRecycle();
         this.#flushQueuedSends();
+        if (this.#logLevel !== null) this.#sendLogLevel();
         return;
       case "reloaded":
         if (this.#pendingReload && this.#pendingReload.targetBuildId === message.buildId) {
@@ -737,6 +756,9 @@ export class RscWorker {
       case "metrics":
         this.#lastWorkerMetrics = message.metrics;
         this.#maybeRecycleFromMetrics(message.metrics);
+        return;
+      case "log.records":
+        this.onLogRecords?.(message.records, message.dropped ?? 0);
         return;
       case "error":
         if (message.requestId === "__init__") {

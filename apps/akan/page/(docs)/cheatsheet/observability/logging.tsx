@@ -101,8 +101,8 @@ export class BillingService {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Terminal output and file output are intentionally separated. A production server can keep the terminal at info or warn while still writing trace-level Logger records to files.",
-              ko: "터미널 출력과 파일 출력은 의도적으로 분리되어 있습니다. 운영 서버는 터미널을 info 또는 warn으로 유지하면서도 파일에는 trace 수준의 Logger 기록을 남길 수 있습니다.",
+              en: "Terminal output and file output are intentionally separated. A production server can keep the terminal at info or warn while still writing trace-level Logger records to files. The ladder is trace, verbose, debug, info, warn, error; logger.log() is kept for compatibility and emits at info, and AKAN_PUBLIC_LOG_LEVEL=log means info.",
+              ko: "터미널 출력과 파일 출력은 의도적으로 분리되어 있습니다. 운영 서버는 터미널을 info 또는 warn으로 유지하면서도 파일에는 trace 수준의 Logger 기록을 남길 수 있습니다. 레벨은 trace, verbose, debug, info, warn, error 순서이며, logger.log()는 호환을 위해 남아 info로 출력되고 AKAN_PUBLIC_LOG_LEVEL=log는 info와 같습니다.",
             })}
           </div>
           <Code.Snippet
@@ -225,6 +225,73 @@ rg "invoice-sync|ERROR" /var/log/akan`}
               en: "Direct console.log calls from child servers are captured through stdout/stderr pipes. Direct console.log calls from the gateway process are not part of Logger sink capture, so prefer Logger in runtime code.",
               ko: "child server의 직접 console.log 호출은 stdout/stderr pipe를 통해 저장됩니다. gateway process의 직접 console.log 호출은 Logger sink 캡처 대상이 아니므로 runtime code에서는 Logger 사용을 권장합니다.",
             })}
+          </div>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="live-tail" title={l.trans({ en: "Live Tail", ko: "실시간 조회" })}>
+        <Docs.Title>{l.trans({ en: "Live Tail", ko: "실시간 조회" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Every Logger call is a record before it is a line: level, logger name, process role, replica index, and — inside a request — the traceId, the endpoint (mutation:signScContract) and the origin (http, websocket, mcp, internal, page). The running gateway, or the replica itself when it runs alone, keeps a ring buffer of them and serves a unix control socket in the runtime directory. akan logs attaches to it, and so does .tail inside akan console.",
+              ko: "모든 Logger 호출은 문자열이 되기 전에 레코드입니다. 레벨, 로거 이름, 프로세스 역할, replica 번호, 그리고 요청 안에서는 traceId, 엔드포인트(mutation:signScContract), origin(http, websocket, mcp, internal, page)이 함께 실립니다. 실행 중인 gateway(단독 replica라면 replica 자신)가 링 버퍼에 이를 담아 runtime 디렉터리의 unix 제어 소켓으로 제공하고, akan logs와 akan console의 .tail이 여기에 붙습니다.",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="akan logs"
+            language="bash"
+            code={`# Only warn and above whose message mentions payment, from any mutation
+akan logs myapp --level warn --grep payment --endpoint "mutation:*"
+
+# One request, start to finish
+akan logs myapp --trace m8x1k2-a9f3c1
+
+# What the RSC worker rendered, with the last 50 buffered records first
+akan logs myapp --role rsc-worker --origin page --replay 50
+
+# History only, as NDJSON
+akan logs myapp --since 5m --follow false --json`}
+          />
+          <Code.Snippet
+            className="w-full"
+            title="akan console"
+            language="bash"
+            code={`akan:myapp> .tail level=warn grep=payment endpoint=mutation:*
+akan:myapp> .trace m8x1k2-a9f3c1
+akan:myapp> .tail off`}
+          />
+          <div className="grid gap-3 lg:grid-cols-3">
+            {[
+              [
+                l.trans({ en: "Filters combine", ko: "필터는 결합됩니다" }),
+                l.trans({
+                  en: "Every flag ANDs with the others; a comma-separated list inside a flag is an OR. Globs use * only.",
+                  ko: "모든 플래그는 AND로 결합되고, 플래그 안의 쉼표 목록은 OR입니다. 글롭은 *만 지원합니다.",
+                }),
+              ],
+              [
+                l.trans({ en: "Zero cost when nobody is watching", ko: "구독자가 없으면 비용 0" }),
+                l.trans({
+                  en: "A child forwards records over IPC only while a subscriber wants that level. AKAN_LOG_STREAM=1 keeps forwarding on; AKAN_LOG_BUFFER and AKAN_LOG_BUFFER_MB size the ring.",
+                  ko: "child는 구독자가 그 레벨을 원하는 동안만 IPC로 레코드를 올립니다. AKAN_LOG_STREAM=1은 항상 전송하고, AKAN_LOG_BUFFER와 AKAN_LOG_BUFFER_MB가 링 버퍼 크기를 정합니다.",
+                }),
+              ],
+              [
+                l.trans({ en: "What carries no context", ko: "문맥이 붙지 않는 경로" }),
+                l.trans({
+                  en: "Gateway-internal lines, the scheduler's own started/finished lines, and unauthenticated primitive GET queries served by the fast path have no traceId or endpoint. AKAN_LOG_CONTEXT=0 switches request context off everywhere.",
+                  ko: "gateway 내부 로그, 스케줄러 자체의 started/finished 줄, fast path로 처리되는 비인증 primitive GET 쿼리는 traceId와 엔드포인트가 없습니다. AKAN_LOG_CONTEXT=0은 요청 문맥을 전부 끕니다.",
+                }),
+              ],
+            ].map(([title, desc]) => (
+              <div key={title} className={panelRecipe()}>
+                <div className="font-bold text-foreground">{title}</div>
+                <div className="mt-2 text-foreground/70 text-sm">{desc}</div>
+              </div>
+            ))}
           </div>
         </Docs.Description>
       </Scroll.Slide>

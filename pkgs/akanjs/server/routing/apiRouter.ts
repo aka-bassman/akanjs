@@ -1,7 +1,7 @@
 import { dayjs } from "akanjs/base";
 import { type Logger, websocketAuthContract } from "akanjs/common";
 import type { InjectRegistry } from "akanjs/service";
-import { Exception, type WebsocketReqData } from "akanjs/signal";
+import { Exception, SignalContext, type WebsocketReqData } from "akanjs/signal";
 import { compressResponse } from "../contentEncoding";
 import type { HmrWsData, HmrWsHub } from "../hmr/wsHub";
 import { copyBunRequestFields, type WebProxyRunner } from "../proxy";
@@ -170,8 +170,10 @@ export class ApiRouter {
             return;
           }
           const errMsg = error instanceof Error ? error.message : String(error);
-          logger.error(errMsg);
-          console.error(error);
+          if (!SignalContext.wasReported(error)) {
+            logger.error(errMsg);
+            console.error(error);
+          }
           ws.send(JSON.stringify({ error: errMsg, statusCode: 500, timestamp: new Date().toISOString(), at: dayjs() }));
         }
       },

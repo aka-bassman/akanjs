@@ -1,8 +1,11 @@
 import type { BaseEnv } from "akanjs/base";
+import { Logger } from "akanjs/common";
 import type { Adaptor, Service } from "akanjs/service";
 import type { ServerSignal } from "akanjs/signal";
 import type { AkanServer } from "./akanServer";
-import { AkanConsoleSession } from "./consoleSession";
+import { type AkanConsoleCommand, AkanConsoleSession } from "./consoleSession";
+import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
+import { LogControlUnavailableError, LogTailClient } from "./logging/logTailClient";
 
 export * from "./consoleEvaluator";
 
@@ -11,7 +14,104 @@ export interface AkanConsoleOptions {
   globals?: Record<string, unknown>;
   input?: typeof process.stdin;
   output?: typeof process.stdout;
+  /** Where the running server keeps `akan-control.sock`; the console is its own process and has to be told. */
+  runtimeDir?: string;
 }
+
+/** `level=warn grep="payment failed" endpoint=mutation:*` → a query object the socket parses. */
+export const parseAkanConsoleQuery = (args: string): Record<string, string> => {
+  const query: Record<string, string> = {};
+  for (const match of args.matchAll(/([A-Za-z]+)=(?:"([^"]*)"|'([^']*)'|(\S+))/g)) {
+    const [, key, doubleQuoted, singleQuoted, bare] = match;
+    if (key) query[key] = doubleQuoted ?? singleQuoted ?? bare ?? "";
+  }
+  return query;
+};
+
+/**
+ * `.tail` and `.trace` attach to the *running* server's control socket — the console booted its own
+ * `listen: false` server, whose logs are not the ones anybody is looking for.
+ */
+export const createAkanConsoleLogCommands = (
+  appName: string,
+  runtimeDir: string,
+): Record<string, AkanConsoleCommand> => {
+  const socketPath = LogTailClient.socketPath(runtimeDir);
+  let tail: { client: LogTailClient; id: string; summary: string } | null = null;
+  const connect = async (
+    session: AkanConsoleSession,
+    onRecord: (record: Parameters<typeof Logger.render>[0]) => void,
+  ) => {
+    try {
+      return await LogTailClient.connect(socketPath, {
+        onRecord: (entry) => onRecord(entry.record),
+        onEvent: (response) => {
+          if (response.type === "dropped") session.write(`tail: ${response.count} records dropped (slow reader)\n`);
+        },
+        onClose: () => {
+          if (tail) session.write("tail: connection closed\n");
+          tail = null;
+        },
+      });
+    } catch (error) {
+      if (error instanceof LogControlUnavailableError) {
+        session.write(`${appName} is not running (no akan-control.sock in ${runtimeDir})\n`);
+        return null;
+      }
+      throw error;
+    }
+  };
+  const stopTail = () => {
+    const current = tail;
+    tail = null;
+    current?.client.close();
+  };
+  return {
+    ".tail": {
+      desc: "Follow the running server: .tail level=warn grep=payment endpoint=mutation:* | .tail off",
+      run: async (args, session) => {
+        if (args === "off") {
+          if (!tail) session.write("tail: not running\n");
+          stopTail();
+          return;
+        }
+        if (!args) {
+          session.write(tail ? `tail: following ${tail.summary}\n` : "tail: not running; try .tail level=warn\n");
+          return;
+        }
+        stopTail();
+        const client = await connect(session, (record) => session.write(Logger.render(record)));
+        if (!client) return;
+        const query = parseAkanConsoleQuery(args);
+        const subscribed = await client.subscribe(query);
+        tail = { client, id: subscribed.id, summary: args };
+        session.onClose(stopTail);
+        session.write(`tail: following ${args} (${LogTailClient.describeCoverage(subscribed.coverage)})\n`);
+        if (query.endpoint)
+          session.write("tail: primitive query fast-path requests carry no endpoint and are not shown\n");
+      },
+    },
+    ".trace": {
+      desc: "Print every buffered record of one request: .trace <traceId>",
+      run: async (args, session) => {
+        if (!args) {
+          session.write("usage: .trace <traceId>\n");
+          return;
+        }
+        const client = await connect(session, () => undefined);
+        if (!client) return;
+        try {
+          const { entries, coverage } = await client.history({ trace: args });
+          if (!entries.length)
+            session.write(`no records for trace ${args} (${LogTailClient.describeCoverage(coverage)})\n`);
+          for (const entry of entries) session.write(Logger.render(entry.record));
+        } finally {
+          client.close();
+        }
+      },
+    },
+  };
+};
 
 export interface AkanConsoleContext extends Record<string, unknown> {
   server: AkanServer;
@@ -92,6 +192,7 @@ export const startAkanConsole = async (server: AkanServer, options: AkanConsoleO
     banner: `Akan console started for ${server.name}. Type .help for commands.\n`,
     input: options.input,
     output: options.output,
+    commands: createAkanConsoleLogCommands(server.name, options.runtimeDir ?? resolveRuntimeDir()),
   });
   await session.run();
 };

@@ -1,7 +1,12 @@
-import { createInterface, type Interface } from "node:readline";
+import { clearLine, createInterface, cursorTo, type Interface } from "node:readline";
 import { inspect } from "node:util";
 import { evaluateAkanConsoleInput, isAkanConsoleInputComplete } from "./consoleEvaluator";
 import { ConsolePasteFilter } from "./consolePasteFilter";
+
+export interface AkanConsoleCommand {
+  desc: string;
+  run: (args: string, session: AkanConsoleSession) => Promise<void> | void;
+}
 
 export interface AkanConsoleSessionOptions {
   context: Record<string, unknown>;
@@ -9,6 +14,8 @@ export interface AkanConsoleSessionOptions {
   banner?: string;
   input?: typeof process.stdin;
   output?: typeof process.stdout;
+  /** Dot-commands beyond the built-ins, keyed with their leading dot (`.tail`). */
+  commands?: Record<string, AkanConsoleCommand>;
 }
 
 const commandNames = new Set([".help", ".globals", ".clear", ".exit", ".quit"]);
@@ -21,6 +28,8 @@ export class AkanConsoleSession {
   readonly #input: typeof process.stdin;
   readonly #output: typeof process.stdout;
   readonly #filter = new ConsolePasteFilter(() => this.#onBoundary());
+  readonly #commands: Record<string, AkanConsoleCommand>;
+  readonly #disposers: (() => void)[] = [];
   #interface: Interface | null = null;
   #lines: string[] = [];
   #lineSeen = false;
@@ -35,6 +44,24 @@ export class AkanConsoleSession {
     this.#banner = options.banner ?? "";
     this.#input = options.input ?? process.stdin;
     this.#output = options.output ?? process.stdout;
+    this.#commands = options.commands ?? {};
+  }
+
+  /** Runs when the session closes; what a command that holds a connection uses to let go of it. */
+  onClose(dispose: () => void) {
+    this.#disposers.push(dispose);
+  }
+
+  /** Output that arrives between keystrokes: the prompt line is cleared, the text lands, the prompt redraws. */
+  write(text: string) {
+    if (this.#closed || !this.#interface) {
+      this.#output.write(text);
+      return;
+    }
+    clearLine(this.#output, 0);
+    cursorTo(this.#output, 0);
+    this.#output.write(text);
+    this.#interface.prompt(true);
   }
 
   async run() {
@@ -63,6 +90,7 @@ export class AkanConsoleSession {
       await this.#chain;
     } finally {
       this.#disableTerminal();
+      for (const dispose of this.#disposers.splice(0)) dispose();
     }
   }
 
@@ -80,7 +108,8 @@ export class AkanConsoleSession {
 
   async #consume(line: string) {
     const trimmed = line.trim();
-    if (!commandNames.has(trimmed)) {
+    const word = trimmed.split(/\s+/, 1)[0] ?? "";
+    if (!commandNames.has(trimmed) && !(word.startsWith(".") && word in this.#commands)) {
       if (!this.#lines.length && !trimmed) return;
       this.#lines.push(line);
       return;
@@ -90,7 +119,7 @@ export class AkanConsoleSession {
       return;
     }
     if (this.#lines.length) await this.#flush(true);
-    this.#runCommand(trimmed);
+    await this.#runCommand(trimmed);
   }
 
   async #flush(force: boolean) {
@@ -115,7 +144,7 @@ export class AkanConsoleSession {
     this.#reprompt();
   }
 
-  #runCommand(command: string) {
+  async #runCommand(command: string) {
     if (command === ".exit" || command === ".quit") {
       this.#interface?.close();
       return;
@@ -128,7 +157,21 @@ export class AkanConsoleSession {
       );
       return;
     }
-    this.#printHelp();
+    if (command === ".help") {
+      this.#printHelp();
+      return;
+    }
+    const word = command.split(/\s+/, 1)[0] ?? "";
+    const extension = this.#commands[word];
+    if (!extension) {
+      this.#printHelp();
+      return;
+    }
+    try {
+      await extension.run(command.slice(word.length).trim(), this);
+    } catch (error) {
+      this.#report(error);
+    }
   }
 
   #printHelp() {
@@ -139,6 +182,7 @@ export class AkanConsoleSession {
         "  .globals    Show available global names",
         "  .clear      Discard the pending multi-line input",
         "  .exit       Close the console",
+        ...Object.entries(this.#commands).map(([name, command]) => `  ${name.padEnd(11)} ${command.desc}`),
         "",
         "Multi-line input:",
         "  A pasted block runs as one command, and an unfinished line keeps reading at the ... prompt.",

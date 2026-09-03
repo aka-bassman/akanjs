@@ -237,10 +237,37 @@ AKAN_SEARCH_TOKENIZER="unicode61 remove_diacritics 2"`}
                 "AKAN_LOG_TO_FILE",
                 l.trans({ en: "File logging", ko: "파일 로그" }),
                 l.trans({
-                  en: "AkanApp writes gateway and child process logs to runtime/logs by default. Set this to 0 to disable file logging.",
-                  ko: "AkanApp은 기본적으로 gateway와 child process 로그를 runtime/logs에 저장합니다. 파일 로그를 끄려면 0으로 설정합니다.",
+                  en: "AkanApp writes gateway and child process logs to runtime/logs by default. Set this to 0 to disable file logging. The generated Dockerfile sets 0: a container's writable layer is ephemeral and stdout is the collection path.",
+                  ko: "AkanApp은 기본적으로 gateway와 child process 로그를 runtime/logs에 저장합니다. 파일 로그를 끄려면 0으로 설정합니다. 생성되는 Dockerfile은 0을 넣습니다. 컨테이너의 쓰기 레이어는 휘발성이고 수집 경로는 stdout이기 때문입니다.",
                 }),
                 "0 | 1",
+              ],
+              [
+                "AKAN_LOG_CONTEXT",
+                l.trans({ en: "Request context on log records", ko: "로그 레코드의 요청 문맥" }),
+                l.trans({
+                  en: "Every request, websocket call, MCP call, internal trigger and page render runs under a lightweight trace, so its log records carry traceId, endpoint and origin. On by default; 0 switches it off. Independent from AKAN_TRACE, which adds span and query aggregation.",
+                  ko: "모든 요청, 웹소켓 호출, MCP 호출, 내부 트리거, 페이지 렌더는 가벼운 trace 아래에서 실행되어 로그 레코드에 traceId, 엔드포인트, origin이 붙습니다. 기본 on이며 0으로 끕니다. 스팬·쿼리 집계를 켜는 AKAN_TRACE와는 별개입니다.",
+                }),
+                "1 | 0",
+              ],
+              [
+                "AKAN_LOG_STREAM",
+                l.trans({ en: "Always forward records", ko: "레코드 상시 전송" }),
+                l.trans({
+                  en: "A child forwards log records to the gateway over IPC only while akan logs or a console .tail is subscribed at that level. 1 keeps forwarding on regardless.",
+                  ko: "child는 akan logs나 console .tail이 그 레벨을 구독하는 동안만 IPC로 gateway에 레코드를 올립니다. 1이면 항상 전송합니다.",
+                }),
+                "0 | 1",
+              ],
+              [
+                "AKAN_LOG_BUFFER / AKAN_LOG_BUFFER_MB",
+                l.trans({ en: "Log ring buffer", ko: "로그 링 버퍼" }),
+                l.trans({
+                  en: "How many records, and how many megabytes, the gateway (or solo replica) keeps for akan logs --replay and .trace. Both limits apply; the older record goes first.",
+                  ko: "gateway(또는 단독 replica)가 akan logs --replay와 .trace를 위해 보관하는 레코드 수와 메가바이트입니다. 두 상한이 함께 적용되고 오래된 레코드부터 밀려납니다.",
+                }),
+                "2000 / 4",
               ],
               [
                 "AKAN_LOG_DIR",

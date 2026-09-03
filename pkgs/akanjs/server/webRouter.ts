@@ -8,6 +8,7 @@ import {
   DEFAULT_AKAN_I18N,
   getBasePathFromPathname,
   Logger,
+  type LogRecord,
   parseAkanI18nEnv,
   resolveSubRouteHosts,
 } from "akanjs/common";
@@ -733,6 +734,14 @@ export class WebRouter {
     this.#rsc.kill();
     this.#hub = null;
   }
+  setLogLevel(minSev: number | null) {
+    this.#rsc.setLogLevel(minSev);
+  }
+
+  onLogRecords(listener: (records: LogRecord[], dropped: number) => void) {
+    this.#rsc.onLogRecords = listener;
+  }
+
   getMetrics(): AkanMetricsReport {
     const ssrStats = SsrFromRscRenderer.getChunkRegistryStats();
     return {

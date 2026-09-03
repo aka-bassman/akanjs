@@ -1,17 +1,19 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { registerLogContextReader } from "akanjs/common";
 
 /**
- * Lightweight request tracing for Akan signals.
+ * Request tracing for Akan signals, in two modes.
  *
- * Everything here is gated behind the `AKAN_TRACE=1` environment flag so that the
- * production hot path pays nothing when tracing is disabled (see {@link isTraceEnabled}).
- * The goal is internal performance work (per-stage latency breakdown, query counts,
- * cache hit ratio) rather than full distributed tracing.
+ * `context` is on by default, production included: it carries only the identity a log record needs
+ * (`traceId`, endpoint, origin) and costs one `als.run` per call (~25ns measured). `AKAN_LOG_CONTEXT=0` is
+ * the emergency exit. `full` adds the per-stage spans, query counts and cache ratio the metrics endpoint
+ * aggregates, and stays behind `AKAN_TRACE=1` because those are for performance work, not for every request.
  */
 
 let traceEnabledCache: boolean | null = null;
+let logContextEnabledCache: boolean | null = null;
 
-/** Whether request tracing is enabled. Cached after first read. */
+/** Whether full request tracing (`AKAN_TRACE=1`) is enabled. Cached after first read. */
 export const isTraceEnabled = (): boolean => {
   if (traceEnabledCache === null) traceEnabledCache = process.env.AKAN_TRACE === "1";
   return traceEnabledCache;
@@ -22,10 +24,24 @@ export const setTraceEnabled = (enabled: boolean): void => {
   traceEnabledCache = enabled;
 };
 
+export const isLogContextEnabled = (): boolean => {
+  if (logContextEnabledCache === null)
+    logContextEnabledCache = !(process.env.AKAN_LOG_CONTEXT === "0" || process.env.AKAN_LOG_CONTEXT === "false");
+  return logContextEnabledCache;
+};
+
+export const setLogContextEnabled = (enabled: boolean): void => {
+  logContextEnabledCache = enabled;
+};
+
 export interface SpanRecord {
   name: string;
   durationMs: number;
 }
+
+export type TraceMode = "context" | "full";
+export type TraceOrigin = "http" | "websocket" | "mcp" | "internal" | "page";
+export type TraceOutcome = "ok" | "error";
 
 const MAX_SPANS_PER_TRACE = 64;
 
@@ -34,6 +50,8 @@ export class SignalTrace {
   readonly traceId: string;
   readonly endpointKey: string;
   readonly endpointType: string;
+  readonly origin: TraceOrigin;
+  readonly mode: TraceMode;
   readonly startedAt: number;
   readonly spans: SpanRecord[] = [];
   dbQueryCount = 0;
@@ -42,38 +60,67 @@ export class SignalTrace {
   cacheMisses = 0;
   dataLoaderBatchCount = 0;
   dataLoaderKeyCount = 0;
+  outcome: TraceOutcome | null = null;
+  error: unknown = null;
   #finalized = false;
 
-  constructor(endpointKey: string, endpointType: string) {
+  constructor(
+    endpointKey: string,
+    endpointType: string,
+    { mode = "full", origin = "http" }: { mode?: TraceMode; origin?: TraceOrigin } = {},
+  ) {
     this.endpointKey = endpointKey;
     this.endpointType = endpointType;
+    this.mode = mode;
+    this.origin = origin;
     this.startedAt = performance.now();
     this.traceId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
+  /** The trace a call runs under given what is switched on, or `null` when both modes are off. */
+  static create(endpointKey: string, endpointType: string, origin: TraceOrigin): SignalTrace | null {
+    if (isTraceEnabled()) return new SignalTrace(endpointKey, endpointType, { mode: "full", origin });
+    if (isLogContextEnabled()) return new SignalTrace(endpointKey, endpointType, { mode: "context", origin });
+    return null;
+  }
+
+  get endpoint() {
+    return `${this.endpointType}:${this.endpointKey}`;
+  }
+
   recordSpan(name: string, durationMs: number): void {
-    if (this.spans.length >= MAX_SPANS_PER_TRACE) return;
+    if (this.mode !== "full" || this.spans.length >= MAX_SPANS_PER_TRACE) return;
     this.spans.push({ name, durationMs });
   }
 
   countDbQuery(durationMs: number): void {
+    if (this.mode !== "full") return;
     this.dbQueryCount += 1;
     this.dbQueryMs += durationMs;
   }
 
   countCache(hit: boolean): void {
+    if (this.mode !== "full") return;
     if (hit) this.cacheHits += 1;
     else this.cacheMisses += 1;
   }
 
   countDataLoaderBatch(keyCount: number): void {
+    if (this.mode !== "full") return;
     this.dataLoaderBatchCount += 1;
     this.dataLoaderKeyCount += keyCount;
+  }
+
+  fail(error: unknown): void {
+    this.outcome = "error";
+    this.error = error;
   }
 
   finalize(): void {
     if (this.#finalized) return;
     this.#finalized = true;
+    this.outcome ??= "ok";
+    if (this.mode !== "full") return;
     const totalMs = performance.now() - this.startedAt;
     this.recordSpan("total", totalMs);
     traceAggregator.ingest(this);
@@ -106,12 +153,35 @@ export const getCurrentTrace = (): SignalTrace | undefined => als.getStore();
 export const runWithTrace = <T>(trace: SignalTrace, fn: () => T): T => als.run(trace, fn);
 
 /**
+ * Run `fn` as the whole life of `trace`: a throw marks the outcome before it propagates, and the trace is
+ * finalized after the caller's own catch has run — which is what lets an error log carry the traceId.
+ */
+export const runTraced = async <T>(trace: SignalTrace | null, fn: () => Promise<T>): Promise<T> => {
+  if (!trace) return await fn();
+  return await als.run(trace, async () => {
+    try {
+      return await fn();
+    } catch (error) {
+      trace.fail(error);
+      throw error;
+    } finally {
+      trace.finalize();
+    }
+  });
+};
+
+registerLogContextReader(() => {
+  const trace = als.getStore();
+  return trace ? { traceId: trace.traceId, endpoint: trace.endpoint, origin: trace.origin } : undefined;
+});
+
+/**
  * Time an async stage under the current trace. When tracing is off (or no trace is
  * active) this is a thin passthrough with no measurement overhead.
  */
 export const traceSpan = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
   const trace = getCurrentTrace();
-  if (!trace) return await fn();
+  if (trace?.mode !== "full") return await fn();
   const start = performance.now();
   try {
     return await fn();
@@ -255,8 +325,8 @@ const round = (value: number, digits = 3): number => {
 
 // The akan build can bundle this module into more than one chunk (e.g. the signal layer
 // that writes spans vs. the metrics collector that reads them). A plain module-level
-// singleton would then diverge per chunk, so pin it to globalThis to guarantee that every
-// copy of this module shares one aggregator within the process.
+// singleton would then diverge per chunk, so pin it to `process` (see above) to guarantee
+// that every copy of this module shares one aggregator within the process.
 let aggregatorInstance = traceProcessStore.__akanTraceAggregator;
 if (!aggregatorInstance) {
   aggregatorInstance = new TraceAggregator();

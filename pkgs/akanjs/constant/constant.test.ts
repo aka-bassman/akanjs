@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { Binary, dayjs, enumOf, FIELD_META, Float, ID, Int, type PrimitiveScalar } from "akanjs/base";
-import { immerable } from "immer";
+import { Binary, type Dayjs, dayjs, enumOf, FIELD_META, Float, ID, Int, type PrimitiveScalar } from "akanjs/base";
+import { deepObjectify } from "akanjs/common";
+import { immerable, produce } from "immer";
 import {
   type ConstantCls,
   ConstantField,
@@ -547,6 +548,65 @@ describe("serialize, deserialize, purify, and immerify", () => {
     expect((immered as unknown as Record<symbol, unknown>)[immerable]).toBe(true);
     const address = immerify(AddressInput as never, { city: "Seoul", zip: 12345 });
     expect((address as Record<symbol, unknown>)[immerable]).toBe(true);
+  });
+
+  test("keeps a Date field behind a prototype accessor that every field reader still reaches", () => {
+    const user = createUser();
+    const iso = "2026-01-01T00:00:00.000Z";
+
+    expect(dayjs.isDayjs(user.createdAt)).toBe(true);
+    expect(user.createdAt).toBe(user.createdAt);
+    expect("createdAt" in user).toBe(true);
+    expect(Object.keys(user)).not.toContain("createdAt");
+    expect((JSON.parse(JSON.stringify(user)) as { createdAt: string }).createdAt).toBe(iso);
+    expect(immerify(UserFull as never, user).createdAt.toISOString()).toBe(iso);
+    expect((deepObjectify(user) as { createdAt: Dayjs }).createdAt.toISOString()).toBe(iso);
+    expect(new UserFull().set(user as never).createdAt.toISOString()).toBe(iso);
+
+    user.set({ createdAt: "2027-01-01T00:00:00.000Z" as never });
+    expect(user.createdAt.toISOString()).toBe("2027-01-01T00:00:00.000Z");
+    user.createdAt = dayjs("2028-01-01T00:00:00.000Z");
+    expect(user.createdAt.toISOString()).toBe("2028-01-01T00:00:00.000Z");
+  });
+
+  test("writes a Date field on an immer draft copy-on-write and leaves a read-only draft as is", () => {
+    const user = createUser();
+    const untouched = produce(user, (draft) => {
+      void draft.createdAt.format();
+    });
+    expect(untouched).toBe(user);
+
+    const next = produce(user, (draft) => {
+      draft.createdAt = dayjs("2030-01-01T00:00:00.000Z");
+      draft.name = "Grace";
+    });
+    expect(next).toBeInstanceOf(UserFull);
+    expect(next.createdAt.toISOString()).toBe("2030-01-01T00:00:00.000Z");
+    expect(next.name).toBe("Grace");
+    expect(user.createdAt.toISOString()).toBe("2026-01-01T00:00:00.000Z");
+    expect(user.name).toBe("Ada");
+  });
+
+  test("evaluates a default thunk only for a field the source leaves out", () => {
+    let calls = 0;
+    const Stamp = via((f) => ({
+      at: f(Date, {
+        default: () => {
+          calls += 1;
+          return dayjs("2026-05-05T00:00:00.000Z");
+        },
+      }),
+      label: f(String, { default: "x" }),
+    }));
+
+    const given = new Stamp({ at: "2026-01-01T00:00:00.000Z" } as never);
+    expect(calls).toBe(0);
+    expect(given.at.toISOString()).toBe("2026-01-01T00:00:00.000Z");
+
+    const defaulted = new Stamp();
+    expect(calls).toBe(1);
+    expect(defaulted.at.toISOString()).toBe("2026-05-05T00:00:00.000Z");
+    expect(defaulted.label).toBe("x");
   });
 });
 

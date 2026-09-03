@@ -26,6 +26,9 @@ import type { HmrWsData, HmrWsHub } from "./hmr/wsHub";
 import { isPortInUseError } from "./lifecycle/portInUse";
 import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
 import { ShutdownManager } from "./lifecycle/shutdownManager";
+import { LogControlSocket } from "./logging/logControlSocket";
+import { LogForwarder } from "./logging/logForwarder";
+import { LogHub } from "./logging/logHub";
 import { RotatingLogWriter } from "./logging/rotatingLogWriter";
 import { type McpAuthOption, McpRouter } from "./mcp";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
@@ -166,6 +169,10 @@ export class AkanServer {
   readonly #solo = !process.env.AKAN_CHILD_SOCKET;
   #logWriter: RotatingLogWriter | null = null;
   #removeLogSink: (() => void) | null = null;
+  #logHub: LogHub | null = null;
+  #logControl: LogControlSocket | null = null;
+  #removeHubSink: (() => void) | null = null;
+  #logForwarder: LogForwarder | null = null;
   #lastMetrics: AkanMetricsReport = {};
   constructor(
     name = "AkanServer",
@@ -354,7 +361,9 @@ export class AkanServer {
       throw new Error("AkanServer is not able to listen. Call `init` first.");
     }
     this.status = "starting";
+    Logger.role = this.serverMode;
     this.#startFileLogging();
+    await this.#startLogTransport();
     const port = process.env.AKAN_CHILD_SOCKET
       ? undefined
       : Number(process.env.AKAN_CHILD_WS_PORT || process.env.PORT || 8282);
@@ -474,9 +483,11 @@ export class AkanServer {
       if (websocket) SignalResolver.setLocalPublish((roomId, data) => this.#localPublish?.(roomId, data), websocket);
       this.status = "running";
       if (!isNoListenCommand) {
+        Logger.role = this.serverMode;
         this.#startMetricsReporting();
         this.#di.registerSchedule(this.serverMode);
         this.#registerParentIpc();
+        await this.#startLogTransport();
         process.send?.({
           type: "ready",
           pid: process.pid,
@@ -511,6 +522,7 @@ export class AkanServer {
 
       this.#prepared?.webRouter?.dispose();
       await this.#withShutdownTimeout(this.#di.destroyAll());
+      await this.#stopLogTransport();
       await this.#stopFileLogging();
       this.#prepared = null;
       this.status = "stopped";
@@ -550,7 +562,10 @@ export class AkanServer {
         sentAt: message.sentAt,
         pid: process.pid,
       } satisfies AkanIpcMessage);
-    else if (message.type === "shutdown") {
+    else if (message.type === "log.level") {
+      this.#logForwarder?.setMinSev(message.minSev);
+      this.#prepared?.webRouter?.setLogLevel(message.minSev);
+    } else if (message.type === "shutdown") {
       void this.stop()
         .then(() => process.exit(0))
         .catch(() => process.exit(1));
@@ -669,6 +684,51 @@ export class AkanServer {
     const writer = this.#logWriter;
     this.#logWriter = null;
     await writer?.close();
+  }
+
+  /**
+   * Solo owns the hub and the control socket the gateway would have owned; a spawned child forwards its own
+   * records — and the RSC worker's, which reach it over the worker IPC — up to the gateway instead.
+   */
+  async #startLogTransport() {
+    if (this.#logHub || this.#logForwarder) return;
+    const webRouter = this.#prepared?.webRouter ?? null;
+    if (this.#solo) {
+      const hub = LogHub.fromEnv();
+      this.#logHub = hub;
+      this.#removeHubSink = Logger.addSink((entry) => {
+        hub.ingest(entry.record);
+      });
+      hub.onFloorChange((minSev) => webRouter?.setLogLevel(minSev));
+      webRouter?.onLogRecords((records, dropped) => {
+        hub.ingestMany(records);
+        if (dropped) this.logger.warn(`RSC worker dropped ${dropped} log records (ipc backpressure)`);
+      });
+      const control = new LogControlSocket(hub, resolveRuntimeDir());
+      try {
+        await control.start();
+        this.#logControl = control;
+      } catch (error) {
+        this.logger.warn(
+          `Log control socket unavailable at ${control.path}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      return;
+    }
+    const forwarder = new LogForwarder((message) => process.send?.(message));
+    this.#logForwarder = forwarder;
+    webRouter?.onLogRecords((records) => forwarder.pushMany(records));
+  }
+
+  async #stopLogTransport() {
+    await this.#logControl?.stop();
+    this.#logControl = null;
+    this.#removeHubSink?.();
+    this.#removeHubSink = null;
+    this.#logHub?.close();
+    this.#logHub = null;
+    this.#logForwarder?.close();
+    this.#logForwarder = null;
   }
 
   /**

@@ -173,15 +173,18 @@ export class McpDispatcher {
     args: Record<string, unknown>,
     req: Request,
   ) {
-    // Deliberately not wrapped in `SignalContext.try`: that helper puts the stack trace into its 500 body, and
-    // a stack is the last thing to hand an agent that will quote it back into a transcript.
-    const context = await new SignalContext(key, req as Bun.BunRequest, {
-      ...this.#props,
-      endpointInfo,
-      adaptor: endpoint,
-      ctx: new McpExecutionContext(req, args),
-    }).init();
-    return (await context.exec()) as unknown;
+    // `SignalContext.run` rather than `.try`: that helper puts the stack trace into its 500 body, and a stack
+    // is the last thing to hand an agent that will quote it back into a transcript. `run` logs it, traced.
+    return await SignalContext.run(endpoint, endpointInfo, key, "mcp", async () => {
+      const context = await new SignalContext(key, req as Bun.BunRequest, {
+        ...this.#props,
+        endpointInfo,
+        adaptor: endpoint,
+        ctx: new McpExecutionContext(req, args),
+        origin: "mcp",
+      }).init();
+      return (await context.exec()) as unknown;
+    });
   }
 
   /**
@@ -222,7 +225,8 @@ export class McpDispatcher {
     }
     // An unexpected failure is logged in full and described in one flat sentence: the detail an agent would
     // quote back into a transcript is the same detail an attacker would read.
-    McpDispatcher.logger.error(`MCP call failed: ${error instanceof Error ? (error.stack ?? error.message) : error}`);
+    if (!SignalContext.wasReported(error))
+      McpDispatcher.logger.error(`MCP call failed: ${error instanceof Error ? (error.stack ?? error.message) : error}`);
     return "The server failed to complete this request.";
   }
 

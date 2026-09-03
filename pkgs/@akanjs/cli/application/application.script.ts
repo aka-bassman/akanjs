@@ -8,7 +8,7 @@ import { LibExecutor, PkgExecutor } from "@akanjs/devkit/executors";
 import { confirm } from "@inquirer/prompts";
 import { Logger } from "akanjs/common";
 import { LibraryScript } from "../library/library.script";
-import { ApplicationRunner } from "./application.runner";
+import { ApplicationRunner, type LogsOptions } from "./application.runner";
 
 type MobileOperation = "local" | "release";
 type MobileCommandOptions = {
@@ -146,6 +146,10 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   async console(app: App) {
     await app.scanSync();
     await this.applicationRunner.runConsole(app);
+  }
+
+  async logs(app: App, options: LogsOptions) {
+    await this.applicationRunner.runLogs(app, options);
   }
 
   async build(

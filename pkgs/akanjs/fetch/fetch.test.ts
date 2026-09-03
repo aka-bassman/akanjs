@@ -1198,6 +1198,7 @@ describe("FetchClient database signal helpers", () => {
     expect(list[0]).toBeInstanceOf(FetchTestLight);
     expect(insight).toBeInstanceOf(FetchTestInsight);
     expect(init.fetchTestItemListByOwner).toBeInstanceOf(DataList);
+    expect(init.fetchTestItemListByOwner).toBe(init.fetchTestItemListByOwner);
     expect(init.fetchTestItemInsightByOwner).toBeInstanceOf(FetchTestInsight);
     expect(defaultInit.fetchTestItemInit.queryArgsOfFetchTestItem).toEqual([]);
     expect(Object.keys(client.handler)).toEqual(

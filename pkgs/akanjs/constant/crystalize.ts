@@ -8,8 +8,10 @@ import {
 } from "akanjs/base";
 
 import type { FieldProps } from ".";
+import { ConstantRegistry } from "./constantRegistry";
 
 export type CrystalizeFunc<Model> = (self: GetStateObject<Model>, isChild?: boolean) => Model;
+export type Converter = (value: unknown) => unknown;
 
 /**
  * The relation instances one hydration pass has already built, by model class and then document id.
@@ -34,60 +36,78 @@ export const withSharedInstances = <T>(hydrate: () => T): T => {
   }
 };
 
-type ModelCls = Cls<{ set: (obj: object) => object }>;
+type ModelCls = new (obj?: object) => object;
 
 const relationIdOf = (value: object): string | null => {
   const id = (value as { id?: unknown }).id;
   return typeof id === "string" && id ? id : null;
 };
 
-const crystalizeModel = (field: FieldProps, value: object): object => {
-  const modelRef = field.modelRef as ModelCls;
+const modelConverterOf = (props: FieldProps): Converter => {
+  const modelRef = props.modelRef as unknown as ModelCls;
   // Already one of these — a shared relation coming back around, or a model handed straight to `set()`. Copying
   // it would only produce a value equal to the one in hand.
-  if (value instanceof modelRef) return value;
-  // Only a relation has a document identity to share on; an embedded scalar's `id`, where it has one, names
-  // whatever the scalar wanted it to.
-  const id = field.isScalar ? null : relationIdOf(value);
-  if (!sharedInstances || !id) return new modelRef().set(value);
-  const byId = sharedInstances.get(modelRef) ?? new Map<string, object>();
-  if (!sharedInstances.has(modelRef)) sharedInstances.set(modelRef, byId);
-  const shared = byId.get(id) ?? new modelRef().set(value);
-  byId.set(id, shared);
-  return shared;
+  if (props.isScalar) return (value) => (value instanceof modelRef ? value : new modelRef(value as object));
+  return (value) => {
+    if (value instanceof modelRef) return value;
+    // Only a relation has a document identity to share on; an embedded scalar's `id`, where it has one, names
+    // whatever the scalar wanted it to.
+    const id = relationIdOf(value as object);
+    if (!sharedInstances || !id) return new modelRef(value as object);
+    const byId = sharedInstances.get(modelRef as unknown as Cls) ?? new Map<string, object>();
+    if (!sharedInstances.has(modelRef as unknown as Cls)) sharedInstances.set(modelRef as unknown as Cls, byId);
+    const shared = byId.get(id) ?? new modelRef(value as object);
+    byId.set(id, shared);
+    return shared;
+  };
 };
 
-export const crystalize = (field: FieldProps, value: unknown): unknown => {
-  if (value === undefined || value === null) return value as undefined | null;
-  if (field.isArray && Array.isArray(value))
-    return value.map((v: unknown) =>
-      crystalize({ ...field, isArray: field.arrDepth > 1, arrDepth: field.arrDepth - 1 }, v),
-    );
-  const crystalizeValue = PrimitiveRegistry.has(field.modelRef)
-    ? (value: unknown) => (field.modelRef as unknown as typeof PrimitiveScalar)._parse(value as never)
-    : (value: unknown) => value as object;
-  if (field.isMap) {
-    const mapValueField = {
-      ...field,
-      modelRef: field.of ?? field.modelRef,
-      isMap: false,
-      isClass: !!field.of && !PrimitiveRegistry.has(field.of),
-      isScalar: !!field.of && PrimitiveRegistry.has(field.of),
-      isArray: false,
-      arrDepth: 0,
-    };
+const mapConverterOf = (props: FieldProps): Converter => {
+  const of = props.of as Cls | undefined;
+  const valueConverter: Converter = of
+    ? singleConverterOf({
+        ...props,
+        modelRef: of as FieldProps["modelRef"],
+        isMap: false,
+        isClass: !PrimitiveRegistry.has(of),
+        isScalar: PrimitiveRegistry.has(of) || ConstantRegistry.isScalar(of),
+        isArray: false,
+        arrDepth: 0,
+      })
+    : (value) => value;
+  return (value) => {
     // An already-crystalized value arrives as a Map, whose entries are not own enumerable keys.
     const entries = value instanceof Map ? [...value.entries()] : Object.entries(value as Record<string, unknown>);
     return new Map(
-      entries.map(([key, val]: [string, unknown]) => [
-        key,
-        field.of
-          ? applyFnToArrayObjects(val, (v: never) => crystalize(mapValueField, v))
-          : applyFnToArrayObjects(val, crystalizeValue),
-      ]),
+      entries.map(([key, val]: [string, unknown]) => [key, applyFnToArrayObjects(val, valueConverter as never)]),
     );
-  }
-  if (field.isClass) return crystalizeModel(field, value as object);
-  if (field.modelRef === Date) return dayjs(value as Date);
-  return crystalizeValue(value);
+  };
 };
+
+const singleConverterOf = (props: FieldProps): Converter => {
+  if (props.isMap) return mapConverterOf(props);
+  if (props.isClass) return modelConverterOf(props);
+  // A date inside an array or a map has no slot to be lazy in, so it is a dayjs from the start as before.
+  if ((props.modelRef as unknown) === Date) return (value) => dayjs(value as Date);
+  if (PrimitiveRegistry.has(props.modelRef as Cls))
+    return (value) => (props.modelRef as unknown as typeof PrimitiveScalar)._parse(value as never);
+  return (value) => value;
+};
+
+const converters = new WeakMap<FieldProps, Converter>();
+
+/** The converter for one field, compiled once per `FieldProps` — which `getProps()` freezes and shares per field. */
+export const converterOf = (props: FieldProps): Converter => {
+  const cached = converters.get(props);
+  if (cached) return cached;
+  const single = singleConverterOf(props);
+  let convert: Converter = (value) => (value === null || value === undefined ? value : single(value));
+  for (let depth = props.arrDepth; depth > 0; depth--) {
+    const inner: Converter = convert;
+    convert = (value: unknown): unknown => (Array.isArray(value) ? value.map(inner) : inner(value));
+  }
+  converters.set(props, convert);
+  return convert;
+};
+
+export const crystalize = (field: FieldProps, value: unknown): unknown => converterOf(field)(value);

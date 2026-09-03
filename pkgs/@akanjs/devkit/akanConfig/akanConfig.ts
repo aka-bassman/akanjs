@@ -419,6 +419,9 @@ export class AkanAppConfig implements AppConfigResult {
     const imageScript = this.#getDockerImageScript(image, DEFAULT_DOCKER_IMAGE);
     // The image default matches what the build actually produced; a deployment narrows it further with its
     // own env, and can never widen it past the artifacts that are in the image.
+    // File logging is off in the image: a container's writable layer is ephemeral and nothing collects a
+    // file from it, so the rotating files would only fill the node disk (50MB x 100 at `trace`). stdout is
+    // the collection path; a deployment that wants the files back sets `AKAN_LOG_TO_FILE=1`.
     const webEnvLines = [
       ...(this.web.ssr ? [] : ["ENV AKAN_SSR=false"]),
       ...(this.web.csr ? [] : ["ENV AKAN_CSR=false"]),
@@ -444,6 +447,7 @@ ${this.basePaths.size ? `ENV AKAN_PUBLIC_BASE_PATHS=${[...this.basePaths].join("
 ENV AKAN_PUBLIC_DEFAULT_LOCALE=${this.i18n.defaultLocale}
 ENV AKAN_PUBLIC_LOCALES=${this.i18n.locales.join(",")}
 ENV AKAN_PUBLIC_OPERATION_MODE=cloud
+ENV AKAN_LOG_TO_FILE=0
 ${webEnvLines}
 CMD [${command.map((c) => `"${c}"`).join(",")}]`;
   }

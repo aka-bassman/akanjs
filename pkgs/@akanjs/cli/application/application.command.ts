@@ -53,6 +53,45 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .exec(async function (app) {
       await this.applicationScript.console(app);
     }),
+  logs: target({ desc: "Tail the running application's logs, filtered (attaches to akan-control.sock)" })
+    .with(App)
+    .option("level", String, { desc: "minimum level: trace, verbose, debug, info, warn, error", nullable: true })
+    .option("grep", String, { desc: "substring the message must contain", nullable: true })
+    .option("endpoint", String, {
+      desc: "endpoint glob(s), comma-separated: mutation:*, query:userList",
+      nullable: true,
+    })
+    .option("trace", String, { desc: "one request's traceId", nullable: true })
+    .option("child", String, { desc: "replica index(es), comma-separated", nullable: true })
+    .option("role", String, { flag: "R", desc: "process role(s): gateway, all, batch, rsc-worker", nullable: true })
+    .option("origin", String, { desc: "call origin(s): http, websocket, mcp, internal, page", nullable: true })
+    .option("since", String, { desc: "only records newer than this: 5m, 30s, or epoch ms", nullable: true })
+    .option("replay", Number, { flag: "n", desc: "records to replay from the buffer before following", default: 0 })
+    .option("json", Boolean, { desc: "print NDJSON records instead of rendered lines", default: false })
+    .option("follow", Boolean, { desc: "keep streaming; pass --follow false for history only", default: true })
+    .option("runtimeDir", String, {
+      flag: "d",
+      desc: "runtime dir holding akan-control.sock (default: local/apps/<app>/runtime)",
+      nullable: true,
+    })
+    .exec(
+      async function (app, level, grep, endpoint, trace, child, role, origin, since, replay, json, follow, runtimeDir) {
+        await this.applicationScript.logs(app, {
+          level,
+          grep,
+          endpoint,
+          trace,
+          child,
+          role,
+          origin,
+          since,
+          replay,
+          json,
+          follow,
+          runtimeDir,
+        });
+      },
+    ),
   build: target({ short: true, desc: "Build the application for production (frontend + backend)" })
     .with(App)
     .option("write", Boolean, { desc: "write code generation", default: true })

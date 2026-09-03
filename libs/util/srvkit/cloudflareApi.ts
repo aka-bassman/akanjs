@@ -89,7 +89,7 @@ export class CloudflareApi {
       if (!data.success)
         throw new Err("util.error.cloudflareDnsRecordUpdateFailed", { errors: JSON.stringify(data.errors) });
     }
-    this.#logger.log(`${toCreate.length} records created, ${toUpdate.length} records updated`);
+    this.#logger.info(`${toCreate.length} records created, ${toUpdate.length} records updated`);
     return true;
   }
   async deleteDnsRecords(zoneId: string, records: DnsInput[]) {

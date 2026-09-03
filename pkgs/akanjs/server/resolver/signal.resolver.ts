@@ -32,6 +32,7 @@ import type { ServerSignal, ServerSignalCls } from "../../signal/serverSignal";
 import { SignalContext, type WebSocketExecutionContext } from "../../signal/signalContext";
 import type { SliceCls } from "../../signal/slice";
 import type { SliceInfo } from "../../signal/sliceInfo";
+import { runTraced, SignalTrace } from "../../signal/trace";
 import type { WebsocketMessageData, WebsocketSubscribeAck } from "../../signal/types";
 import type { HttpRoutes, LocalPublish, SignalRoutes, WebsocketRoutes } from "../types";
 
@@ -135,15 +136,24 @@ export class SignalResolver {
           // Spread it back onto the `msg` args so the `exec` signature (...msgArgs, job) holds at runtime.
           internal.queue.registerProcessWorker(
             key,
-            async (job) => await execFn(...SignalResolver.#getJobArgs(key, internalInfo, job), job),
+            SignalResolver.#traced(
+              key,
+              async (job) => await execFn(...SignalResolver.#getJobArgs(key, internalInfo, job), job),
+            ),
           );
           break;
         }
         case "init":
-          internal.schedule.registerInit(key, () => internalInfo.execFn?.bind(internal)());
+          internal.schedule.registerInit(
+            key,
+            SignalResolver.#traced(key, () => internalInfo.execFn?.bind(internal)()),
+          );
           break;
         case "destroy":
-          internal.schedule.registerDestroy(key, () => internalInfo.execFn?.bind(internal)());
+          internal.schedule.registerDestroy(
+            key,
+            SignalResolver.#traced(key, () => internalInfo.execFn?.bind(internal)()),
+          );
           break;
         case "interval":
           if (!internalInfo.signalOption.scheduleTime) throw new Error(`Schedule time is not set for ${key}`);
@@ -151,7 +161,7 @@ export class SignalResolver {
           internal.schedule.registerInterval(
             key,
             internalInfo.signalOption.scheduleTime,
-            internalInfo.execFn.bind(internal),
+            SignalResolver.#traced(key, internalInfo.execFn.bind(internal)),
             { lock: internalInfo.signalOption.lock },
           );
           break;
@@ -161,7 +171,7 @@ export class SignalResolver {
           internal.schedule.registerTimeout(
             key,
             internalInfo.signalOption.scheduleTime,
-            internalInfo.execFn.bind(internal),
+            SignalResolver.#traced(key, internalInfo.execFn.bind(internal)),
           );
           break;
         case "cron":
@@ -170,12 +180,20 @@ export class SignalResolver {
           internal.schedule.registerCron(
             key,
             internalInfo.signalOption.scheduleCron,
-            internalInfo.execFn.bind(internal),
+            SignalResolver.#traced(key, internalInfo.execFn.bind(internal)),
             { lock: internalInfo.signalOption.lock },
           );
           break;
       }
     });
+  }
+  /**
+   * Every run of an internal is one `internal:<key>` trace, so the handler's own logs carry a traceId. The
+   * schedule adaptor's started/finished/error lines wrap this call from outside and stay uncorrelated.
+   */
+  static #traced<A extends unknown[], R>(key: string, fn: (...args: A) => R) {
+    return async (...args: A) =>
+      await runTraced(SignalTrace.create(key, "internal", "internal"), async () => await fn(...args));
   }
   /** Why an internal is not scheduled on this server, or null when it is. `placement` marks a deliberate role split. */
   static getScheduleSkipReason(
@@ -447,10 +465,18 @@ export class SignalResolver {
               ? {
                   GET: async (req) => {
                     if (SignalResolver.#hasAuthCredential(req)) return await normalHttpHandler(req);
-                    return await SignalContext.try(endpoint, endpointInfo, key, async () => {
-                      const result = await endpointInfo.execFn?.call(endpoint);
-                      return result instanceof Response ? result : Response.json(result);
-                    });
+                    // No trace on this path by design: it exists to skip per-request work, and its logs
+                    // carry no traceId or endpoint as a result.
+                    return await SignalContext.try(
+                      endpoint,
+                      endpointInfo,
+                      key,
+                      async () => {
+                        const result = await endpointInfo.execFn?.call(endpoint);
+                        return result instanceof Response ? result : Response.json(result);
+                      },
+                      { trace: false },
+                    );
                   },
                 }
               : {
@@ -485,53 +511,55 @@ export class SignalResolver {
           SignalResolver.#mountHttpRoute(routes, path, { GET: normalHttpHandler }, key);
           break;
         case "pubsub":
-          wsRoutes[key] = async (ws, message, event) => {
-            const websocket = SignalResolver.#getWebsocket(registry);
-            const context = await new SignalContext(
-              key,
-              { ws, data: message, eventType: event ?? "unsubscribe" },
-              { endpointInfo, adaptor: endpoint, registry, env, live, middleware },
-            ).init();
-            const subscribe = event === "subscribe";
-            const roomId = context.getRoomId(key);
-            if (subscribe) {
-              await context.exec();
-              ws.subscribe(roomId);
-              const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws) ?? new Map();
-              roomCtxMap.set(roomId, context);
-              SignalResolver.#liveWsPubsubRoomCtx.set(ws, roomCtxMap);
-              // Track room membership in Redis for cross-server awareness
-              websocket.joinRoom(ws, roomId);
-              SignalResolver.logger.verbose(`WebSocket subscribed to room ${roomId}`);
-            } else {
-              ws.unsubscribe(roomId);
-              const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws);
-              if (roomCtxMap) {
-                const roomCtx = roomCtxMap.get(roomId);
-                if (roomCtx) await SignalResolver.#runLifecycleHandlers([roomCtx], ["unsubscribe"]);
-                roomCtxMap.delete(roomId);
-                if (roomCtxMap.size === 0) SignalResolver.#liveWsPubsubRoomCtx.delete(ws);
-                // Remove room membership from Redis
-                websocket.leaveRoom(ws, roomId);
-                SignalResolver.logger.verbose(`WebSocket unsubscribed from room ${roomId}`);
+          wsRoutes[key] = async (ws, message, event) =>
+            await SignalContext.run(endpoint, endpointInfo, key, "websocket", async () => {
+              const websocket = SignalResolver.#getWebsocket(registry);
+              const context = await new SignalContext(
+                key,
+                { ws, data: message, eventType: event ?? "unsubscribe" },
+                { endpointInfo, adaptor: endpoint, registry, env, live, middleware },
+              ).init();
+              const subscribe = event === "subscribe";
+              const roomId = context.getRoomId(key);
+              if (subscribe) {
+                await context.exec();
+                ws.subscribe(roomId);
+                const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws) ?? new Map();
+                roomCtxMap.set(roomId, context);
+                SignalResolver.#liveWsPubsubRoomCtx.set(ws, roomCtxMap);
+                // Track room membership in Redis for cross-server awareness
+                websocket.joinRoom(ws, roomId);
+                SignalResolver.logger.verbose(`WebSocket subscribed to room ${roomId}`);
+              } else {
+                ws.unsubscribe(roomId);
+                const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws);
+                if (roomCtxMap) {
+                  const roomCtx = roomCtxMap.get(roomId);
+                  if (roomCtx) await SignalResolver.#runLifecycleHandlers([roomCtx], ["unsubscribe"]);
+                  roomCtxMap.delete(roomId);
+                  if (roomCtxMap.size === 0) SignalResolver.#liveWsPubsubRoomCtx.delete(ws);
+                  // Remove room membership from Redis
+                  websocket.leaveRoom(ws, roomId);
+                  SignalResolver.logger.verbose(`WebSocket unsubscribed from room ${roomId}`);
+                }
               }
-            }
-            const subscribeAck: WebsocketSubscribeAck = { type: "sub", roomId, subscribe };
-            return subscribeAck;
-          };
+              const subscribeAck: WebsocketSubscribeAck = { type: "sub", roomId, subscribe };
+              return subscribeAck;
+            });
           break;
         case "message":
-          wsRoutes[key] = async (ws, message) => {
-            const context = await new SignalContext(
-              key,
-              { ws, data: message, eventType: "message" },
-              { endpointInfo, adaptor: endpoint, registry, env, live, middleware },
-            ).init();
-            const result = (await context.exec()) as object | object[];
-            SignalResolver.#retainWsContext(ws, context as SignalContext<WebSocketExecutionContext>);
-            const messageData: WebsocketMessageData = { type: "msg", key, data: result };
-            return messageData;
-          };
+          wsRoutes[key] = async (ws, message) =>
+            await SignalContext.run(endpoint, endpointInfo, key, "websocket", async () => {
+              const context = await new SignalContext(
+                key,
+                { ws, data: message, eventType: "message" },
+                { endpointInfo, adaptor: endpoint, registry, env, live, middleware },
+              ).init();
+              const result = (await context.exec()) as object | object[];
+              SignalResolver.#retainWsContext(ws, context as SignalContext<WebSocketExecutionContext>);
+              const messageData: WebsocketMessageData = { type: "msg", key, data: result };
+              return messageData;
+            });
           break;
         default:
           throw new Error(`Endpoint ${key} is not a valid endpoint type`);

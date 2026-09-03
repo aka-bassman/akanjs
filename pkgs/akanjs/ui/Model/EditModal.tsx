@@ -263,7 +263,7 @@ export default function EditModal<Full extends { id: string }>({
 
   const handleCancel = useCallback(() => {
     const modelForm = (st.get() as any)[names.modelForm] as Full;
-    const form = deepObjectify({ ...modelForm });
+    const form = deepObjectify(modelForm);
     // await st.do[names.resetModel]();
     void storeDo[names.setModelModal](null);
     if (typeof onCancel === "function") onCancel(form);

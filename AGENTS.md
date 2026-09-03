@@ -69,6 +69,10 @@ back.
   `#private` remains the house style everywhere under `srvkit/`, including `adapt()` adapter classes.
 - **No `console.log` / `console.debug`.** Only `assert`, `error`, `info`, and `warn` are allowed. Server code uses
   the injected `this.logger.*` or `new Logger("ClassName")`.
+- **Never call `logger.log()` / `Logger.log()`** (`no-deprecated-log-level.grit`). The level ladder is `trace
+  verbose debug info warn error`; `log` was a seventh tier *below* `info` that `AKAN_PUBLIC_LOG_LEVEL=info`
+  silently dropped. The method is kept and emits at `info`, so a call reads like a distinct level and is not one —
+  write `.info()`. `AKAN_PUBLIC_LOG_LEVEL=log` still boots, normalized to `info` with one warning.
 - **Never write a `//!` marker in browser-reachable code** — `ui/`, `webkit/`, `common/`, `page/**/*.tsx`,
   `*.constant.ts`, `*.store.ts`, and the five module component suffixes (`no-bang-comment-in-client.grit`). Bun
   classifies `//!` and `/*!` as legal comments and keeps them through minification, so the note ships to every
@@ -354,6 +358,42 @@ worker per web-serving replica.
 - **`main.ts` imports `AkanApp` from `akanjs/server/akanApp`, not the barrel.** The barrel re-exports
   `AkanServer`, whose graph the gateway never runs; through it the process evaluated 35MB of SSR renderer and
   SQLite driver to spawn children and relay bytes. Keep entrypoint imports at the leaf.
+
+## Logging — Records, Request Context And Live Tail
+
+Every `Logger` call builds a `LogRecord` before any text exists: `at`, `level`, OTel `sev`, `name`, `message`,
+`pid`, `replicaIdx`, `role` (`gateway` / `all` / `batch` / `rsc-worker`) and — inside a call — `traceId`,
+`endpoint` (`mutation:signScContract`, `internal:cleanupJob`, `page:/org/[orgId]`) and `origin` (`http`,
+`websocket`, `mcp`, `internal`, `page`). The console line is rendered from the record and is byte-identical to
+what it was; a sink reads `entry.record` and renders only if it touches `entry.message`.
+
+- **Request context is on by default, production included.** `SignalContext.try` / `SignalContext.run` own the
+  `AsyncLocalStorage` scope for the whole call, including the 500 log, so every line of one request shares a
+  `traceId`. Internal triggers get `internal:<key>`, the RSC worker gets `page:<route>`, MCP calls are the
+  endpoint's own type with `origin: "mcp"`. `AKAN_LOG_CONTEXT=0` is the escape hatch; `AKAN_TRACE=1` is a
+  different switch that adds span and query aggregation. Measured cost: ~25ns per call.
+- **Not everything carries context, by design.** The primitive query fast path (an unauthenticated GET of a
+  primitive with no args, guards or middlewares) skips it; the schedule adaptor's own `started/finished/error`
+  lines wrap the traced handler from outside; gateway-internal lines have none. `akan logs --endpoint` says so.
+- **`Logger.addSink(sink, { minLevel })` — give a sink its floor.** A sink with none follows `AKAN_LOG_FILE_LEVEL`
+  (default `trace`), which is why a registered sink used to make every `verbose` call render (1,294ns against an
+  11ns reject). The IPC forwarder and any sink that never reads the text pass a floor and cost a record literal.
+- **The hub lives with whoever owns the surface**: the gateway when there is one, the replica itself under solo
+  (`AKAN_REPLICA=0,0,1`), the same rule as the rotating log file and `/_akan/app/*`. It keeps a ring
+  (`AKAN_LOG_BUFFER` records / `AKAN_LOG_BUFFER_MB`, default 2000 / 4), suppresses a line repeating more than 20
+  times a second into one counted line, and serves `<runtimeDir>/akan-control.sock` (`0600`, NDJSON). A child
+  forwards records only while a subscriber wants that level (`log.level` IPC), so an unwatched process sends
+  nothing; `AKAN_LOG_STREAM=1` keeps it on. The RSC worker forwards to its replica the same way.
+- **`akan logs <app>`** is the client: `--level --grep --endpoint --trace --child --role --origin --since`
+  AND together, comma lists OR, `*` is the only glob; `--replay N` first, `--follow false` for history only,
+  `--json` for NDJSON, `--runtime-dir` for a built app. Inside `akan console`, `.tail level=warn grep=payment`,
+  `.tail off`, `.trace <id>` — the console is its own `listen: false` process, so these attach to the running
+  server's socket rather than reading their own logs.
+- **The generated Dockerfile sets `AKAN_LOG_TO_FILE=0`.** A container's writable layer is ephemeral and nothing
+  collects a file from it; stdout is the collection path. A deployment that wants the files back sets
+  `AKAN_LOG_TO_FILE=1`.
+- **Never log per delivered record in anything that delivers records.** The control socket and the hub do not,
+  and a subscriber asking for everything is the test.
 
 ## The Generated Image — `docker` In `akan.config.ts`
 

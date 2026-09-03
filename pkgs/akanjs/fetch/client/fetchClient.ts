@@ -19,7 +19,12 @@ import type {
 } from "akanjs/signal";
 import { agentTurnConstant } from "../agentTurn";
 import type { ClientSignal, FetchClientType, FetchSignalInput, MergeAllFetchTypes, SliceMeta } from "../fetchType";
-import { memoizeRequestQuery, cookies as requestCookies, headers as requestHeaders } from "../requestStorage";
+import {
+  getRequestStore,
+  memoizeRequestQuery,
+  cookies as requestCookies,
+  headers as requestHeaders,
+} from "../requestStorage";
 import type { GetSliceMetaObjFromDatabaseSignals } from "../types";
 import { type ErrorConstructor, HttpClient } from "./httpClient";
 import { WsClient } from "./wsClient";
@@ -315,8 +320,10 @@ export class FetchClient {
           const response = baseUrl
             ? await requestQuery()
             : await memoizeRequestQuery(FetchClient.#makeRequestQueryCacheKey(this.origin, url, headers), requestQuery);
-          const parsedReturn = parseReturn(FetchClient.#deepCopy(response), { crystalize: option?.crystalize ?? true });
-          return parsedReturn;
+          // The request-scoped memo hands one response object to every caller in the request, so each parses a
+          // copy. Nothing memoizes outside a request store — the browser parses what it received.
+          const payload = !baseUrl && getRequestStore() ? FetchClient.#deepCopy(response) : response;
+          return parseReturn(payload, { crystalize: option?.crystalize ?? true });
         };
         return queryFn;
       }
@@ -673,10 +680,6 @@ export class FetchClient {
         listFn(...fetchQueryArgs, skip, limit, sort, { ...option, crystalize: false }),
         fetchInsight ? insightFn(...fetchQueryArgs, { ...option, crystalize: false }) : null,
       ])) as unknown as [BaseObject[], BaseInsight];
-      const modelList = new DataList(
-        withSharedInstances(() => modelObjList.map((modelObj) => new cnst.light(modelObj))),
-      );
-      const modelInsight = new cnst.insight(modelObjInsight);
       const lastPage = modelObjInsight?.count
         ? Math.max(Math.floor((modelObjInsight.count - 1) / (limit || 20)) + 1, 1)
         : 1;
@@ -694,11 +697,27 @@ export class FetchClient {
         [`sortOf${capRefName}`]: sort,
         [`${refName}InitAt`]: new Date(),
       };
-      return {
-        [`${refName}Init${capSuffix}`]: serverInit,
-        [`${refName}List${capSuffix}`]: modelList,
-        [`${refName}Insight${capSuffix}`]: modelInsight,
-      };
+      // A route hands `xInit` down and never reads the list, so the instances are built only for a caller that does.
+      let modelList: DataList<BaseObject> | undefined;
+      let modelInsight: object | undefined;
+      return Object.defineProperties({ [`${refName}Init${capSuffix}`]: serverInit } as Record<string, unknown>, {
+        [`${refName}List${capSuffix}`]: {
+          enumerable: true,
+          get: () => {
+            modelList ??= new DataList(
+              withSharedInstances(() => modelObjList.map((modelObj) => new cnst.light(modelObj) as BaseObject)),
+            );
+            return modelList;
+          },
+        },
+        [`${refName}Insight${capSuffix}`]: {
+          enumerable: true,
+          get: () => {
+            modelInsight ??= new cnst.insight(modelObjInsight);
+            return modelInsight;
+          },
+        },
+      });
     });
     this.#setHandlerFactory(names.getInit, () => async (...args: unknown[]) => {
       const initFn = this.#requireHandler<(...args: unknown[]) => Promise<Record<string, unknown>>>(

@@ -167,13 +167,13 @@ class Router {
   #instance: InternalRouterInstance = {
     push: (href: string) => {
       const { href: fullHref } = this.#getPathInfo(href);
-      Logger.log(`push to:${fullHref}`);
+      Logger.info(`push to:${fullHref}`);
       // ! need to revive
       // if (getEnv().side === "server") void redirect(fullHref);
     },
     replace: (href: string) => {
       const { pathname } = this.#getPathInfo(href);
-      Logger.log(`replace to:${pathname}`);
+      Logger.info(`replace to:${pathname}`);
       // ! need to revive
       // if (getEnv().side === "server") void redirect(fullHref);
     },
@@ -195,7 +195,7 @@ class Router {
     );
     this.#indexPath = splitHref(options.indexPath ?? "/").path;
     if (this.#routePaths.size > 0 && !this.#routePaths.has(this.#indexPath)) {
-      Logger.log(`[router] indexPath '${this.#indexPath}' was not found in route manifest. Falling back to '/'.`);
+      Logger.info(`[router] indexPath '${this.#indexPath}' was not found in route manifest. Falling back to '/'.`);
       this.#indexPath = "/";
     }
     this.#ensureHistoryState();
@@ -323,7 +323,7 @@ class Router {
     return getPathInfo(href, lang, shouldExposeBasePath() ? this.#prefix : "");
   }
   #postPathChange({ path, pathname, hash }: { path: string; pathname: string; hash: string }) {
-    Logger.log(`pathChange-start:${path}${hash ? `#${hash}` : ""}`);
+    Logger.info(`pathChange-start:${path}${hash ? `#${hash}` : ""}`);
     window.parent.postMessage({ type: "pathChange", path, pathname, hash }, "*");
   }
   #postDevSyncNavigation(kind: "push" | "replace", href: string) {
@@ -343,7 +343,7 @@ class Router {
     const normalizedHref = normalizeDeepLinkHref(href);
     const { path, search, hash } = splitHref(normalizedHref);
     if (this.#routePaths.size > 0 && !this.#routePaths.has(path)) {
-      Logger.log(`[router] deep link target '${path}' was not found in route manifest.`);
+      Logger.info(`[router] deep link target '${path}' was not found in route manifest.`);
       return [];
     }
     const stack = this.#routePaths.size > 0 ? this.#getExistingSegmentStack(path) : [path];
@@ -421,7 +421,7 @@ class Router {
       const lang = (h.get("x-locale") ?? langFromPath ?? this.#lang) as string;
       const basePath = getServerBasePath(reqPathname, lang, h.get("x-base-path") ?? undefined, this.#prefix);
       const { pathname, href: fullHref } = getPathInfo(href, lang, shouldExposeBasePath() ? basePath : "");
-      Logger.log(`redirect to:${pathname}`);
+      Logger.info(`redirect to:${pathname}`);
       throw new AkanRedirectError(fullHref, method, status);
     } else {
       this.#instance[method](href);
@@ -430,7 +430,7 @@ class Router {
   }
   notFound(): never {
     if (getEnv().side === "server") {
-      Logger.log(`redirect to:/404`);
+      Logger.info(`redirect to:/404`);
       throw new AkanNotFoundError();
     }
     this.#checkInitialized();

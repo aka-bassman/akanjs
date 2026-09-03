@@ -33,7 +33,8 @@
         "./node_modules/@akanjs/devkit/lint/no-arbitrary-color.grit",
         "./node_modules/@akanjs/devkit/lint/no-daisyui-legacy-class.grit",
         "./node_modules/@akanjs/devkit/lint/no-inline-color.grit",
-        "./node_modules/@akanjs/devkit/lint/no-interpolated-arbitrary-class.grit"
+        "./node_modules/@akanjs/devkit/lint/no-interpolated-arbitrary-class.grit",
+        "./node_modules/@akanjs/devkit/lint/no-deprecated-log-level.grit"
       ]
     }
   ]

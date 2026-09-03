@@ -12,6 +12,8 @@ import { resolveEncodedSidecar } from "./assetEncoding";
 import { compressResponse } from "./contentEncoding";
 import { isPortInUseError } from "./lifecycle/portInUse";
 import { resolveRuntimeDir } from "./lifecycle/runtimeDir";
+import { LogControlSocket } from "./logging/logControlSocket";
+import { LogHub } from "./logging/logHub";
 import { RotatingLogWriter } from "./logging/rotatingLogWriter";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { getWebConfigFromEnv } from "./types";
@@ -138,6 +140,9 @@ export class AkanApp {
   #metricsTimer: Timer | null = null;
   #logWriter: RotatingLogWriter | null = null;
   #removeLogSink: (() => void) | null = null;
+  #logHub: LogHub | null = null;
+  #logControl: LogControlSocket | null = null;
+  #removeHubSink: (() => void) | null = null;
   readonly #childOutputBuffers = new Map<string, string>();
   readonly #childStderrBlockBuffers = new Map<string, string[]>();
   readonly #childStderrBlockTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -256,8 +261,10 @@ export class AkanApp {
 
   async start() {
     if (this.#solo) return await this.#startSolo();
+    Logger.role = "gateway";
     await this.#prepareRuntimeDir();
     this.#startFileLogging();
+    await this.#startLogHub();
     for (let idx = 0; idx < this.#replica.total; idx++) this.#spawn(idx);
     try {
       this.#listen();
@@ -337,6 +344,7 @@ export class AkanApp {
     for (const child of stragglers) child.proc.kill("SIGKILL");
     await Promise.all(stragglers.map((child) => child.proc.exited.catch(() => undefined)));
     this.#children.clear();
+    await this.#stopLogHub();
     await this.#stopFileLogging();
     this.#resolveStopped?.();
     this.#resolveStopped = null;
@@ -557,7 +565,7 @@ export class AkanApp {
     const entries = await readdir(this.#runtimeDir).catch(() => []);
     await Promise.all(
       entries
-        .filter((name) => /^akan-child-.*\.sock$/.test(name))
+        .filter((name) => /^akan-(child-.*|control)\.sock$/.test(name))
         .map((name) => rm(path.join(this.#runtimeDir, name), { force: true }).catch(() => undefined)),
     );
   }
@@ -585,6 +593,34 @@ export class AkanApp {
     const writer = this.#logWriter;
     this.#logWriter = null;
     await writer?.close();
+  }
+
+  /** The journal every child forwards into, and the socket `akan logs` reads it from. Additive to the text file. */
+  async #startLogHub() {
+    const hub = LogHub.fromEnv();
+    this.#logHub = hub;
+    this.#removeHubSink = Logger.addSink((entry) => {
+      hub.ingest(entry.record);
+    });
+    hub.onFloorChange((minSev) => this.#fanoutToAll({ type: "log.level", minSev }));
+    const control = new LogControlSocket(hub, this.#runtimeDir);
+    try {
+      await control.start();
+      this.#logControl = control;
+    } catch (error) {
+      this.logger.warn(
+        `Log control socket unavailable at ${control.path}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  async #stopLogHub() {
+    await this.#logControl?.stop();
+    this.#logControl = null;
+    this.#removeHubSink?.();
+    this.#removeHubSink = null;
+    this.#logHub?.close();
+    this.#logHub = null;
   }
 
   #listen() {
@@ -1062,6 +1098,10 @@ export class AkanApp {
       case "metrics.report":
         this.#updateMetrics(idx, message.metrics);
         return;
+      case "log.records":
+        this.#logHub?.ingestMany(message.records);
+        if (message.dropped) this.logger.warn(`Child ${idx} dropped ${message.dropped} log records (ipc backpressure)`);
+        return;
       case "health.pong":
         this.#markHealthy(idx);
         return;
@@ -1108,6 +1148,9 @@ export class AkanApp {
     child.healthPath = message.healthPath;
     child.lastPongAtMono = performance.now();
     child.restartAttempts = 0;
+    // A child that (re)spawned after subscribers arrived has never heard the floor.
+    if (this.#logHub && this.#logHub.floor !== null)
+      this.#sendToChild(child, { type: "log.level", minSev: this.#logHub.floor });
     child.restartPending = false;
     child.lastErrorMessage = undefined;
     this.#invalidateFederationChildCache();
@@ -1298,6 +1341,10 @@ export class AkanApp {
       if (child.idx === exceptIdx) continue;
       if (child.role === "federation" || child.role === "all") this.#sendToChild(child, message);
     }
+  }
+
+  #fanoutToAll(message: AkanIpcMessage) {
+    for (const child of this.#children.values()) this.#sendToChild(child, message);
   }
 
   #fanoutToBatch(message: AkanIpcMessage) {

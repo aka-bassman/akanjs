@@ -24,7 +24,7 @@ import { guardOf } from "./guard";
 // Deliberately past the barrel: `./mcp` re-exports `McpDocument`, which would drag `akanjs/fetch` into the
 // signal graph. `Msg` itself imports nothing.
 import { Msg } from "./mcp/Msg";
-import { isTraceEnabled, runWithTrace, SignalTrace, traceSpan } from "./trace";
+import { getCurrentTrace, runTraced, SignalTrace, type TraceOrigin, traceSpan } from "./trace";
 
 export type SignalTransportType = "http" | "websocket";
 
@@ -77,6 +77,7 @@ export class SignalContext<
   #env: Env;
   #live: LiveRegistry;
   #middleware: Map<string, MiddlewareCls>;
+  static #reported = new WeakSet<object>();
   constructor(
     key: string,
     reqOrWsReq: Bun.BunRequest | WebSocketRequest,
@@ -88,6 +89,7 @@ export class SignalContext<
       live,
       middleware,
       ctx,
+      origin,
     }: {
       endpointInfo: EndpointInfo;
       adaptor: Adaptor;
@@ -101,6 +103,8 @@ export class SignalContext<
        * internalArg reads the request through this context, so the transport has to stay the same one.
        */
       ctx?: Ctx;
+      /** Who is calling, for the log record; defaults to the transport, and MCP names itself. */
+      origin?: TraceOrigin;
     },
   ) {
     this.key = key;
@@ -114,7 +118,9 @@ export class SignalContext<
     this.#env = env;
     this.#live = live;
     this.#middleware = middleware;
-    if (isTraceEnabled()) this.trace = new SignalTrace(key, endpointInfo.type);
+    // A caller that already opened the trace (`SignalContext.run`) owns its life; only a bare construction
+    // starts one here, and `exec()` then closes it.
+    this.trace = getCurrentTrace() ?? SignalTrace.create(key, endpointInfo.type, origin ?? this.transport);
   }
 
   getAdaptor<T extends Adaptor>(adaptorCls: AdaptorCls<T>): T {
@@ -241,14 +247,8 @@ export class SignalContext<
     return handler;
   }
   async exec() {
-    if (!this.trace) return await this.#exec();
-    return await runWithTrace(this.trace, async () => {
-      try {
-        return await this.#exec();
-      } finally {
-        this.trace?.finalize();
-      }
-    });
+    if (!this.trace || getCurrentTrace() === this.trace) return await this.#exec();
+    return await runTraced(this.trace, async () => await this.#exec());
   }
   async #exec() {
     if (!this.endpointInfo.execFn) throw new Exception.Error("Exec function is not set");
@@ -302,14 +302,45 @@ export class SignalContext<
     );
     return await traceSpan("serialize", async () => this.ctx.makeResponse(resolved, this.endpointInfo));
   }
+  /** Whether `run` already logged this failure, so a transport's catch does not log it a second time. */
+  static wasReported(error: unknown) {
+    return typeof error === "object" && error !== null && SignalContext.#reported.has(error);
+  }
+  /**
+   * Runs `fn` as one traced call of `key`, so every log it writes — the 500 log included, which is why the
+   * catch is in here and not in the transport — carries the same traceId. Rethrows after logging.
+   */
+  static async run<T>(
+    endpoint: Adaptor,
+    endpointInfo: EndpointInfo,
+    key: string,
+    origin: TraceOrigin,
+    fn: () => Promise<T>,
+    { trace = true }: { trace?: boolean } = {},
+  ): Promise<T> {
+    return await runTraced(trace ? SignalTrace.create(key, endpointInfo.type, origin) : null, async () => {
+      try {
+        return await fn();
+      } catch (error) {
+        if (!isExceptionLike(error)) {
+          const message = error instanceof Error ? error.message : String(error);
+          const stack = error instanceof Error ? error.stack : undefined;
+          endpoint.logger.error(`Error ${endpointInfo.type}-${key}:\n${stack ?? message}`);
+          if (typeof error === "object" && error !== null) SignalContext.#reported.add(error);
+        }
+        throw error;
+      }
+    });
+  }
   static async try(
     endpoint: Adaptor,
     endpointInfo: EndpointInfo,
     key: string,
     fn: () => Promise<Response | undefined>,
+    options: { trace?: boolean } = {},
   ): Promise<Response | undefined> {
     try {
-      return await fn();
+      return await SignalContext.run(endpoint, endpointInfo, key, "http", fn, options);
     } catch (error) {
       if (endpointInfo.type === "message" || endpointInfo.type === "pubsub") throw error;
       if (isExceptionLike(error)) {
@@ -323,8 +354,6 @@ export class SignalContext<
         );
       }
       const message = error instanceof Error ? error.message : String(error);
-      const stack = error instanceof Error ? error.stack : undefined;
-      endpoint.logger.error(`Error ${endpointInfo.type}-${key}:\n${stack ?? message}`);
       return new Response(
         JSON.stringify({
           error: message,

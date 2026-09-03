@@ -24,7 +24,7 @@ export default function Page() {
         ko: "stdout 로깅을 위한 내장 로거 모듈",
       }),
       example: `async initialize() {
-  this.logger.log("Product module initialized");
+  this.logger.info("Product module initialized");
 }`,
     },
   ];

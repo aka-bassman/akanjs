@@ -304,7 +304,7 @@ export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId, wsConnect
 
   useEffect(() => {
     setCookie("path", path);
-    Logger.log(`pathChange-finished:${path}`);
+    Logger.info(`pathChange-finished:${path}`);
   }, [pathname]);
   return gaTrackingId && <Gtag trackingId={gaTrackingId} />;
 };

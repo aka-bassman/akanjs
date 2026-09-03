@@ -24,7 +24,17 @@ export { isQueryEqual } from "./isQueryEqual";
 export { isThenable } from "./isThenable";
 export { isValidDate } from "./isValidDate";
 export { decodeJwtPayload } from "./jwtDecode";
-export { Logger, type LoggerSink, type LoggerSinkEntry, type LogLevel } from "./Logger";
+export {
+  Logger,
+  type LoggerSink,
+  type LoggerSinkEntry,
+  type LoggerSinkOptions,
+  type LogLevel,
+  type LogLevelInput,
+  type LogRecord,
+  logLevels,
+  logSeverity,
+} from "./Logger";
 export {
   type AkanI18nConfig,
   type AkanI18nConfigInput,
@@ -32,6 +42,7 @@ export {
   parseAkanI18nEnv,
   resolveAkanI18nConfig,
 } from "./localeConfig";
+export { type LogContextReader, type LogContextSnapshot, readLogContext, registerLogContextReader } from "./logContext";
 export { lowerlize } from "./lowerlize";
 export {
   isMcpDescribableArg,
@@ -47,6 +58,7 @@ export { objectify } from "./objectify";
 export { pathGet } from "./pathGet";
 export { pathGetLoose } from "./pathGetLoose";
 export { pathSet } from "./pathSet";
+export { plainFieldsOf } from "./plainFieldsOf";
 export { randomPick } from "./randomPick";
 export { randomPicks } from "./randomPicks";
 export {

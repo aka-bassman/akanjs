@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { AbstractCompactOptions } from "@akanjs/devkit/abstractCompactor";
 import { AkanAppHost } from "@akanjs/devkit/akanApp";
 import type { DatabaseMode, MobileEnv } from "@akanjs/devkit/akanConfig";
@@ -7,9 +8,24 @@ import { resolveSignalTestPreloadPath } from "@akanjs/devkit/applicationTestPrel
 import { type App, type Exec, runner, type Sys, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, LibExecutor } from "@akanjs/devkit/executors";
 import { type ResolvedMobileTarget, resolveMobileTargets } from "@akanjs/devkit/mobile";
-import { Logger } from "akanjs/common";
+import { Logger, type LogRecord } from "akanjs/common";
 import ora from "ora";
 import { openBrowser } from "../openBrowser";
+
+export interface LogsOptions {
+  level?: string | null;
+  grep?: string | null;
+  endpoint?: string | null;
+  trace?: string | null;
+  child?: string | null;
+  role?: string | null;
+  origin?: string | null;
+  since?: string | null;
+  replay?: number;
+  json?: boolean;
+  follow?: boolean;
+  runtimeDir?: string | null;
+}
 
 // `akan start` is the hot path and must not pay for the build, mobile, release and AI stacks:
 // `applicationBuildRunner` pulls tailwind + fonteditor + typescript (~140MB), `capacitorApp` pulls
@@ -63,9 +79,77 @@ export class ApplicationRunner extends runner("application") {
       stdio: "inherit",
     });
   }
+  /** Where the gateway (or solo replica) of this app keeps its sockets and logs: the same answer `resolveRuntimeDir` gives from the workspace root. */
+  #runtimeDirOf(app: App, override?: string | null) {
+    return path.resolve(
+      override ??
+        process.env.AKAN_RUNTIME_DIR ??
+        path.join(app.workspace.workspaceRoot, "local", "apps", app.name, "runtime"),
+    );
+  }
+  async runLogs(app: App, options: LogsOptions) {
+    const { LogControlUnavailableError, LogTailClient } = await import("akanjs/server/logging/logTailClient");
+    const { LogQueryMatcher } = await import("akanjs/server/logging/logQuery");
+    const runtimeDir = this.#runtimeDirOf(app, options.runtimeDir);
+    const socketPath = LogTailClient.socketPath(runtimeDir);
+    const { level, grep, endpoint, trace, child, role, origin, since } = options;
+    const query = Object.fromEntries(
+      Object.entries({ level, grep, endpoint, trace, child, role, origin, since }).filter(
+        ([, value]) => value !== undefined && value !== null && value !== "",
+      ),
+    ) as Record<string, string>;
+    const print = (record: LogRecord) =>
+      process.stdout.write(options.json ? `${JSON.stringify(record)}\n` : Logger.render(record));
+    const note = (text: string) => process.stderr.write(`[akan logs] ${text}\n`);
+    let finish: (() => void) | null = null;
+    const closed = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let client: Awaited<ReturnType<typeof LogTailClient.connect>>;
+    try {
+      client = await LogTailClient.connect(socketPath, {
+        onRecord: (entry) => print(entry.record),
+        onEvent: (response) => {
+          if (response.type === "dropped") note(`${response.count} records dropped (reader too slow)`);
+        },
+        onClose: () => finish?.(),
+      });
+    } catch (error) {
+      if (error instanceof LogControlUnavailableError)
+        throw new Error(
+          `${app.name} is not running (no ${path.basename(socketPath)} in ${runtimeDir}). Start it with \`akan start ${app.name}\`, or pass --runtime-dir for a built app.`,
+        );
+      throw error;
+    }
+    const sinceMs = since ? LogQueryMatcher.parseSince(since) : undefined;
+    const noteCoverage = (coverage: { from: number | null; count: number }) => {
+      if (sinceMs !== undefined && coverage.from !== null && sinceMs < coverage.from)
+        note(
+          `${LogTailClient.describeCoverage(coverage as Parameters<typeof LogTailClient.describeCoverage>[0])}; older records are not retained`,
+        );
+    };
+    if (endpoint) note("requests served by the primitive query fast path carry no endpoint and are not shown");
+    if (options.follow === false) {
+      const { entries, coverage } = await client.history({
+        ...query,
+        ...(options.replay ? { limit: options.replay } : {}),
+      });
+      for (const entry of entries) print(entry.record);
+      noteCoverage(coverage);
+      client.close();
+      return;
+    }
+    const subscribed = await client.subscribe(query, { replay: options.replay });
+    noteCoverage(subscribed.coverage);
+    const stop = () => client.close();
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+    await closed;
+  }
   async runConsole(app: App) {
     const serverPath = `${app.cwdPath}/server.ts`;
     if (!(await app.exists("server.ts"))) throw new Error(`Server file not found: apps/${app.name}/server.ts`);
+    const runtimeDir = this.#runtimeDirOf(app);
     const code = `
 const serverModule = await import(${JSON.stringify(serverPath)});
 const { assertAkanConsoleAllowed, startAkanConsole } = await import("akanjs/server");
@@ -75,6 +159,7 @@ assertAkanConsoleAllowed(server.env);
 await server.start({ listen: false, web: false });
 try {
   await startAkanConsole(server, {
+    runtimeDir: ${JSON.stringify(runtimeDir)},
     globals: {
       srv: serverModule.srv,
       sig: serverModule.sig,

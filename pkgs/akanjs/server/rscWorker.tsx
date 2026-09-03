@@ -22,6 +22,7 @@ import {
 } from "akanjs/fetch";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-server-dom-webpack/server.node";
+import { runTraced, SignalTrace } from "../signal/trace";
 import type { ClientManifest } from "./artifact";
 import {
   LruTtlCache,
@@ -34,6 +35,7 @@ import {
   resolveRouteCacheStoreTtl,
   shouldStoreRouteCache,
 } from "./cachePolicy";
+import { LogForwarder } from "./logging/logForwarder";
 import {
   createAkanLocaleAlternateHeadSnapshot,
   mergeAkanHeadSnapshots,
@@ -110,7 +112,11 @@ interface InvalidateCacheMsg {
   tags?: string[];
   paths?: string[];
 }
-type InMsg = InitMsg | RenderMsg | CancelMsg | ReloadMsg | UpdateCssAssetsMsg | InvalidateCacheMsg;
+interface LogLevelMsg {
+  type: "log-level";
+  minSev: number | null;
+}
+type InMsg = InitMsg | RenderMsg | CancelMsg | ReloadMsg | UpdateCssAssetsMsg | InvalidateCacheMsg | LogLevelMsg;
 type RenderControl =
   | { type: "redirect"; location: string; method: "replace" | "push"; status: RedirectStatus }
   | { type: "not-found" }
@@ -179,7 +185,8 @@ export function isAkanNotFoundError(error: unknown): error is AkanNotFoundError 
 }
 
 export class RscRenderer {
-  readonly #logger = new Logger("scWorker");
+  readonly #logger = new Logger("RscWorker");
+  readonly #logForwarder: LogForwarder;
   #clientManifest: ClientManifest = {};
   #pathRoutes: PathRoute[] = [];
   #fallbackRoutes: LayoutFallbackRoute[] = [];
@@ -225,6 +232,8 @@ export class RscRenderer {
       throw new Error("rscWorker must be run as a Bun subprocess with ipc enabled");
     }
     this.#send = process.send.bind(process) as (message: unknown) => void;
+    Logger.role = "rsc-worker";
+    this.#logForwarder = new LogForwarder((message) => this.#send(message));
     process.on("message", (msg: InMsg) => this.#handleMessage(msg));
     // The IPC channel closes when the parent replica dies (including SIGKILL); exit instead of
     // lingering as an orphaned renderer.
@@ -266,6 +275,9 @@ export class RscRenderer {
       case "invalidate-cache":
         this.#logger.verbose(`received invalidate-cache reason=${msg.reason ?? "(none)"}`);
         this.#invalidateResultCache(msg);
+        return;
+      case "log-level":
+        this.#logForwarder.setMinSev(msg.minSev);
         return;
     }
   }
@@ -391,13 +403,13 @@ export class RscRenderer {
     } = { url: null, match: null };
     try {
       const request = new Request(url, { method, headers });
-      await this.#runWithRequest(request, async () => {
-        const urlObj = new URL(url);
+      const urlObj = new URL(url);
+      const match = RouteTreeBuilder.match(urlObj.pathname, this.#pathRoutes);
+      const routeId = match?.pathRoute.path ?? "__not_found__";
+      await this.#runWithRequest(request, routeId, async () => {
         activeRoute.url = urlObj;
         this.#stats.lastRenderedPath = urlObj.pathname;
-        const match = RouteTreeBuilder.match(urlObj.pathname, this.#pathRoutes);
         activeRoute.match = match;
-        const routeId = match?.pathRoute.path ?? "__not_found__";
         updateRequestPolicy({ routeId });
         this.#stats.lastRenderRouteId = routeId;
         this.#stats.lastRenderKind = match ? "route" : "not-found";
@@ -1189,15 +1201,16 @@ export class RscRenderer {
     );
   }
 
-  #runWithRequest<T>(request: Request, fn: () => Promise<T>): Promise<T> {
+  #runWithRequest<T>(request: Request, routeId: string, fn: () => Promise<T>): Promise<T> {
     // The flight render executes components while its stream pumps, where Bun's ALS arrives empty even though
     // run() wraps the whole handler — so keep a request fallback pushed until the render settles, the same
     // discipline ssrFromRscRenderer's runPump uses. The stack is global and last-push-wins, so concurrent
     // renders can shadow each other; the real fix is pumping the flight render inside the ALS scope itself.
     const cleanup = pushRequestFallback(request);
     const run = () => Promise.resolve(fn()).finally(() => cleanup());
-    if (requestStorage) return Promise.resolve(requestStorage.run(request, run));
-    return run();
+    const traced = () => runTraced(SignalTrace.create(routeId, "page", "page"), run);
+    if (requestStorage) return Promise.resolve(requestStorage.run(request, traced));
+    return traced();
   }
 
   async #renderFallbackDocument({
