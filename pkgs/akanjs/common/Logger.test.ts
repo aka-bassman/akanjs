@@ -11,7 +11,7 @@ const resetLoggerLevels = () => {
 describe("Logger sinks", () => {
   test("emits file sink entries independently from terminal log level", () => {
     const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => entries.push(entry));
+    const removeSink = Logger.addSink((entry) => void entries.push(entry));
 
     try {
       Logger.setLevel("error");
@@ -29,7 +29,7 @@ describe("Logger sinks", () => {
 
   test("filters sink entries with AKAN_LOG_FILE_LEVEL semantics", () => {
     const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => entries.push(entry));
+    const removeSink = Logger.addSink((entry) => void entries.push(entry));
 
     try {
       Logger.setLevel("error");
@@ -48,8 +48,8 @@ describe("Logger sinks", () => {
   test("a sink's own minLevel floors it independently of the file level", () => {
     const fileEntries: LoggerSinkEntry[] = [];
     const warnEntries: LoggerSinkEntry[] = [];
-    const removeFile = Logger.addSink((entry) => fileEntries.push(entry));
-    const removeWarn = Logger.addSink((entry) => warnEntries.push(entry), { minLevel: "warn" });
+    const removeFile = Logger.addSink((entry) => void fileEntries.push(entry));
+    const removeWarn = Logger.addSink((entry) => void warnEntries.push(entry), { minLevel: "warn" });
 
     try {
       Logger.setLevel("error");
@@ -68,7 +68,7 @@ describe("Logger sinks", () => {
 
   test("nothing is built when every sink and the console reject the level", () => {
     const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => entries.push(entry), { minLevel: "warn" });
+    const removeSink = Logger.addSink((entry) => void entries.push(entry), { minLevel: "warn" });
 
     try {
       Logger.setLevel("error");
@@ -83,7 +83,7 @@ describe("Logger sinks", () => {
 
   test("raw lines reach every sink regardless of its floor", () => {
     const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => entries.push(entry), { minLevel: "error" });
+    const removeSink = Logger.addSink((entry) => void entries.push(entry), { minLevel: "error" });
 
     try {
       Logger.raw("banner\n", "console");
@@ -100,7 +100,7 @@ describe("Logger sinks", () => {
 describe("Logger levels", () => {
   test("log() emits at info and the legacy level name normalizes", () => {
     const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => entries.push(entry));
+    const removeSink = Logger.addSink((entry) => void entries.push(entry));
 
     try {
       Logger.setLevel("error");
@@ -159,7 +159,7 @@ describe("Logger records", () => {
 
   test("sink entries expose the record and render text on demand", () => {
     const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => entries.push(entry));
+    const removeSink = Logger.addSink((entry) => void entries.push(entry));
 
     try {
       Logger.setLevel("error");
@@ -185,7 +185,7 @@ describe("Logger records", () => {
 
   test("records carry whatever the registered context reader returns", () => {
     const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => entries.push(entry));
+    const removeSink = Logger.addSink((entry) => void entries.push(entry));
     registerLogContextReader(() => ({ traceId: "t-1", endpoint: "mutation:signScContract", origin: "http" }));
 
     try {
@@ -225,7 +225,7 @@ const snapshot = (over: Partial<LogContextSnapshot>): LogContextSnapshot => ({
 describe("Logger attrs", () => {
   test("emit renders attrs as key=value after the message and redacts secret-named keys", () => {
     const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => entries.push(entry));
+    const removeSink = Logger.addSink((entry) => void entries.push(entry));
     try {
       Logger.setLevel("error");
       Logger.emit({
@@ -246,7 +246,7 @@ describe("Logger attrs", () => {
 
   test("a record without attrs keeps the historical line", () => {
     const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => entries.push(entry));
+    const removeSink = Logger.addSink((entry) => void entries.push(entry));
     try {
       Logger.setLevel("error");
       Logger.info("plain", "", "LoggerTest");
@@ -263,7 +263,7 @@ describe("Logger context gate", () => {
   test("a flight recorder receives every record below the gate without it being written", () => {
     const captured: [string, boolean][] = [];
     const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => entries.push(entry), { minLevel: "warn" });
+    const removeSink = Logger.addSink((entry) => void entries.push(entry), { minLevel: "warn" });
     registerLogContextReader(() =>
       snapshot({
         flight: { minSev: logSeverity.trace, capture: (record, written) => captured.push([record.message, written]) },
@@ -302,8 +302,8 @@ describe("Logger context gate", () => {
   test("a per-request debug floor writes below the level to the console and through every sink floor, marked debug", () => {
     const all: LoggerSinkEntry[] = [];
     const warnOnly: LoggerSinkEntry[] = [];
-    const removeAll = Logger.addSink((entry) => all.push(entry));
-    const removeWarn = Logger.addSink((entry) => warnOnly.push(entry), { minLevel: "warn" });
+    const removeAll = Logger.addSink((entry) => void all.push(entry));
+    const removeWarn = Logger.addSink((entry) => void warnOnly.push(entry), { minLevel: "warn" });
     registerLogContextReader(() => snapshot({ debugSev: logSeverity.trace }));
     Logger.contextGate = true;
     const stdout = captureStdout();
@@ -347,7 +347,7 @@ describe("Logger replay", () => {
 
   test("promoted records bypass the console level and every sink floor, and are marked flight", () => {
     const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => entries.push(entry), { minLevel: "warn" });
+    const removeSink = Logger.addSink((entry) => void entries.push(entry), { minLevel: "warn" });
     const stdout = captureStdout();
     try {
       Logger.setLevel("error");

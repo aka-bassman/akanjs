@@ -48,7 +48,9 @@ export class AgentBridge {
 
   /** The keys one view may read right now: subscribed by a mounted component and catalogued. */
   readableKeys(viewKey = ""): string[] {
-    return [...this.#instance.liveKeysIn(viewKey).keys()].filter((key) => !!this.#state[key]).sort();
+    return [...this.#instance.liveKeysIn(viewKey).keys()]
+      .filter((key) => !!this.#state[key])
+      .sort((a, b) => a.localeCompare(b));
   }
 
   /**

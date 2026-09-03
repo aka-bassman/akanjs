@@ -198,10 +198,10 @@ class TimerController {
         delay: delay ?? 0,
       });
       return id as unknown as ReturnType<typeof setTimeout>;
-    }) as typeof setTimeout;
+    }) as unknown as typeof setTimeout;
     globalThis.clearTimeout = ((id?: ReturnType<typeof setTimeout>) => {
       this.timeouts.delete(Number(id));
-    }) as typeof clearTimeout;
+    }) as unknown as typeof clearTimeout;
     globalThis.setInterval = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
       const id = this.nextId++;
       this.intervals.set(id, {
@@ -211,10 +211,10 @@ class TimerController {
         delay: delay ?? 0,
       });
       return id as unknown as ReturnType<typeof setInterval>;
-    }) as typeof setInterval;
+    }) as unknown as typeof setInterval;
     globalThis.clearInterval = ((id?: ReturnType<typeof setInterval>) => {
       this.intervals.delete(Number(id));
-    }) as typeof clearInterval;
+    }) as unknown as typeof clearInterval;
   }
 
   flushTimeouts() {

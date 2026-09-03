@@ -1,9 +1,5 @@
 import type { QueryOf } from "akanjs/constant";
 
-export const Id = String;
-export const ObjectId = String;
-export const Mixed = Object;
-
 type LoaderItem = Record<string, unknown>;
 type LoaderModel = {
   find: (query: QueryOf<unknown>) => Promise<LoaderItem[]> | { then: Promise<LoaderItem[]>["then"] };

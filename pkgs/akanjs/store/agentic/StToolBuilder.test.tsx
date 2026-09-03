@@ -1,7 +1,7 @@
 import "../../test/registerDom";
 import { describe, expect, test } from "bun:test";
 import { dayjs, enumOf, Float, ID, Int } from "akanjs/base";
-import { act, type ReactNode } from "react";
+import { act, type ReactNode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AgenticSurface, AgentProvider } from "use-agentic";
 import { actionTagOf } from "../actionTag";
@@ -250,6 +250,46 @@ describe("StToolBuilder.exec", () => {
     await tab.switchTab?.("two");
     expect(seen).toEqual(["two"]);
     unmount();
+  });
+
+  test("a name withheld and later offered publishes, and one withdrawn stops being published", async () => {
+    const surface = new AgenticSurface();
+    const held: { flip?: () => void; call?: (id: string) => Promise<void> } = {};
+    const Row = ({ start }: { start: boolean }) => {
+      const [canRemove, setCanRemove] = useState(start);
+      held.flip = () => setCanRemove((value) => !value);
+      held.call = new StToolDraft(canRemove ? "removeThing" : null)
+        .desc("Remove the thing.")
+        .arg("id", String)
+        .exec(() => undefined);
+      return null;
+    };
+
+    // Withheld first: the condition a conditional surface is written against can start false.
+    const unmountHidden = mount(
+      <AgentProvider surface={surface}>
+        <Row start={false} />
+      </AgentProvider>,
+    );
+    expect(surface.snapshot().tools).toHaveLength(0);
+    expect(actionTagOf(held.call)).toBeUndefined();
+    act(() => held.flip?.());
+    expect(surface.snapshot().tools.map((tool) => tool.name)).toEqual(["removeThing"]);
+    expect(actionTagOf(held.call)?.action).toBe("removeThing");
+    unmountHidden();
+
+    // And the direction that matters more: a lever the screen stopped offering must stop being pullable.
+    const withdrawn = new AgenticSurface();
+    const unmountShown = mount(
+      <AgentProvider surface={withdrawn}>
+        <Row start={true} />
+      </AgentProvider>,
+    );
+    expect(withdrawn.snapshot().tools.map((tool) => tool.name)).toEqual(["removeThing"]);
+    act(() => held.flip?.());
+    expect(withdrawn.snapshot().tools).toHaveLength(0);
+    expect(actionTagOf(held.call)).toBeUndefined();
+    unmountShown();
   });
 
   test("opt leaves the argument out of required and hands the exec a null when it is omitted", async () => {

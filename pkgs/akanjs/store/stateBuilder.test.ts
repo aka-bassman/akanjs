@@ -29,7 +29,7 @@ describe("makeDefaultFactory", () => {
 
     const [{ DataList }, { makeDefaultFactory }] = await Promise.all([import("akanjs/base"), import("./stateBuilder")]);
     const original = new DataList([{ id: "project-1", name: "Project 1" }]);
-    const clone = makeDefaultFactory(original)();
+    const clone = makeDefaultFactory(original)() as typeof original;
 
     expect(clone).toBeInstanceOf(DataList);
     expect(clone).not.toBe(original);
@@ -48,7 +48,7 @@ describe("makeDefaultFactory", () => {
       }
     }
     const original = new BrowserResource();
-    const clone = makeDefaultFactory(original)();
+    const clone = makeDefaultFactory(original)() as BrowserResource;
 
     expect(clone).toBe(original);
     expect(clone.getTracks()).toEqual(["audio"]);

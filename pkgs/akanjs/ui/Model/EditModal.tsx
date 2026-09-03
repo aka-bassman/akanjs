@@ -1,6 +1,6 @@
 "use client";
 import { cn, isRscNavigationFromCache, router, usePage } from "akanjs/client";
-import { capitalize, deepObjectify, lowerlize } from "akanjs/common";
+import { capitalize, type DynamicRecord, deepObjectify, lowerlize } from "akanjs/common";
 import { ConstantRegistry, immerify } from "akanjs/constant";
 import type { ClientEdit, ServerEdit, SliceMeta } from "akanjs/fetch";
 import { type CreateOption, type Submit, st } from "akanjs/store";
@@ -183,7 +183,7 @@ export default function EditModal<Full extends { id: string }>({
     (state: unknown) => (state as { [key: string]: { id: string | null } })[names.modelForm].id,
   );
   const modelFormLoading = storeUse[names.modelFormLoading]() as string | boolean;
-  const modalId = id ?? ((modelEdit as any)?.[names.modelObj] as Full | undefined)?.id ?? undefined;
+  const modalId = id ?? ((modelEdit as DynamicRecord)?.[names.modelObj] as Full | undefined)?.id ?? undefined;
   const isModalOpen =
     modelModal === (modal ?? "edit") &&
     (modelFormLoading === false || modelFormLoading === modalId) &&
@@ -199,12 +199,12 @@ export default function EditModal<Full extends { id: string }>({
   useEffect(() => {
     if (!modelEdit) return;
     const refName = (modelEdit as ServerEdit<string, Full>).refName;
-    const editType: "edit" | "new" = refName && (modelEdit as any)[names.modelObj] ? "edit" : "new";
+    const editType: "edit" | "new" = refName && (modelEdit as DynamicRecord)[names.modelObj] ? "edit" : "new";
     const cnst = ConstantRegistry.getDatabase(modelName);
     const modelRef = cnst.full;
     if (editType === "edit") {
-      const modelObj = (modelEdit as any)[names.modelObj] as Full;
-      const viewAt = (modelEdit as any)[names.modelViewAt] as Date;
+      const modelObj = (modelEdit as DynamicRecord)[names.modelObj] as Full;
+      const viewAt = (modelEdit as DynamicRecord)[names.modelViewAt] as Date;
       const crystal = new modelRef().set(modelObj) as unknown as Full;
       st.set({
         [names.model]: crystal,
@@ -262,7 +262,7 @@ export default function EditModal<Full extends { id: string }>({
   }, []);
 
   const handleCancel = useCallback(() => {
-    const modelForm = (st.get() as any)[names.modelForm] as Full;
+    const modelForm = (st.get() as DynamicRecord)[names.modelForm] as Full;
     const form = deepObjectify(modelForm);
     // await st.do[names.resetModel]();
     void storeDo[names.setModelModal](null);
@@ -281,7 +281,7 @@ export default function EditModal<Full extends { id: string }>({
       ? null
       : renderTitle
         ? typeof renderTitle === "string"
-          ? `${l(`${modelName}.modelName` as "base.success")}${renderTitle === "default" ? "" : ` - ${(modelForm as any)[renderTitle] ?? l("base.new")}`}`
+          ? `${l(`${modelName}.modelName` as "base.success")}${renderTitle === "default" ? "" : ` - ${(modelForm as DynamicRecord)[renderTitle] ?? l("base.new")}`}`
           : renderTitle(modelForm)
         : null;
   };

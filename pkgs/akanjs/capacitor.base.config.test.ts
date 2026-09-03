@@ -43,7 +43,7 @@ const appInfo = (name: string): AppScanResult =>
         },
       },
     },
-  }) as AppScanResult;
+  }) as unknown as AppScanResult;
 
 afterEach(async () => {
   process.chdir(originalCwd);

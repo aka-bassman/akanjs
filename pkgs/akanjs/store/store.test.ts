@@ -397,6 +397,56 @@ describe("signal generated store contract", () => {
     });
   });
 
+  test("keeps the newest page request and drops a slower one that answers after it", async () => {
+    setupEnv();
+    const signal = makeSignal();
+    const gates: Array<() => void> = [];
+    signal.calls.storeTestItemListByTitle = mock(
+      async () =>
+        await new Promise<InstanceType<typeof StoreTestLight>[]>((resolve) => {
+          const page = gates.length + 1;
+          gates.push(() => resolve([new StoreTestLight({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: `page${page}` })]));
+        }),
+    );
+    class RaceStore extends store(signal, () => ({})) {}
+    StoreRegistry.register(RaceStore);
+    const instance = new StoreInstance(makeRoot("raceRoot", RaceStore));
+
+    const first = instance.do.initStoreTestItemByTitle("Ada");
+    gates[0]?.();
+    await first;
+
+    // Page 2 then page 3, and page 2 answers last — the slower response must not become the visible list.
+    const toPage2 = instance.do.setPageOfStoreTestItemByTitle(2);
+    const toPage3 = instance.do.setPageOfStoreTestItemByTitle(3);
+    gates[2]?.();
+    await toPage3;
+    gates[1]?.();
+    await toPage2;
+
+    expect(instance.get().pageOfStoreTestItemByTitle).toBe(3);
+    const rows = [...(instance.get().storeTestItemListByTitle as DataList<InstanceType<typeof StoreTestLight>>)];
+    expect(rows.map((row) => row.title)).toEqual(["page3"]);
+    expect(instance.get().storeTestItemListLoadingByTitle).toBe(false);
+  });
+
+  test("clears the list spinner when a page request fails", async () => {
+    setupEnv();
+    const signal = makeSignal();
+    class FailStore extends store(signal, () => ({})) {}
+    StoreRegistry.register(FailStore);
+    const instance = new StoreInstance(makeRoot("failRoot", FailStore));
+
+    await instance.do.initStoreTestItemByTitle("Ada");
+    signal.calls.storeTestItemListByTitle = mock(async () => {
+      throw new Error("network gone");
+    });
+
+    await expect(instance.do.setPageOfStoreTestItemByTitle(2)).rejects.toThrow("network gone");
+    // The framework toasts the error; what must not survive it is a spinner nothing will ever turn off.
+    expect(instance.get().storeTestItemListLoadingByTitle).toBe(false);
+  });
+
   test("seeds the edit form with a cloned map, not an empty object", async () => {
     setupEnv();
     const signal = makeSignal();

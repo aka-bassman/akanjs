@@ -391,10 +391,31 @@ export const applyMcpTools: McpToolDefinition[] = [
   },
 ];
 
-export const listAkanMcpTools = (mode: "readonly" | "plan" | "apply" = "readonly") => {
-  if (mode === "readonly") return readonlyMcpTools;
-  if (mode === "plan") return [...readonlyMcpTools, ...planMcpTools];
-  return [...readonlyMcpTools, ...planMcpTools, ...applyMcpTools];
+/**
+ * `guidelineNames` fills the `get_guideline` enum. Without it the argument is a bare string and a model
+ * has to guess one of the ~30 directory names, which it cannot see from here — the names are a
+ * filesystem listing, so they can only arrive from a caller that already read it.
+ */
+export const listAkanMcpTools = (
+  mode: "readonly" | "plan" | "apply" = "readonly",
+  { guidelineNames = [] }: { guidelineNames?: readonly string[] } = {},
+) => {
+  const tools =
+    mode === "readonly"
+      ? readonlyMcpTools
+      : mode === "plan"
+        ? [...readonlyMcpTools, ...planMcpTools]
+        : [...readonlyMcpTools, ...planMcpTools, ...applyMcpTools];
+  if (guidelineNames.length === 0) return tools;
+  return tools.map((tool) =>
+    tool.name === "get_guideline"
+      ? {
+          ...tool,
+          description: `${tool.description ?? ""} One of: ${guidelineNames.join(", ")}.`.trim(),
+          inputSchema: { ...tool.inputSchema, properties: { name: { type: "string", enum: [...guidelineNames] } } },
+        }
+      : tool,
+  );
 };
 
 export const createAkanValidationContract = (listTools = listAkanMcpTools) => ({

@@ -200,14 +200,21 @@ export function getFramePlatformProfile(): FramePlatformProfile {
   return isStandalone || hasCssSafeArea ? "mobileWeb" : "web";
 }
 
+/** Zeroes, for the render that has no window: a `useState` initializer runs during render, server included. */
+const emptyViewport = { width: 0, height: 0, visualWidth: 0, visualHeight: 0, visualOffsetTop: 0 };
+
 export function useFrameViewport() {
-  const [viewport, setViewport] = useState(() => ({
-    width: window.innerWidth,
-    height: window.innerHeight,
-    visualWidth: window.visualViewport?.width ?? window.innerWidth,
-    visualHeight: window.visualViewport?.height ?? window.innerHeight,
-    visualOffsetTop: window.visualViewport?.offsetTop ?? 0,
-  }));
+  const [viewport, setViewport] = useState(() =>
+    typeof window === "undefined"
+      ? emptyViewport
+      : {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          visualWidth: window.visualViewport?.width ?? window.innerWidth,
+          visualHeight: window.visualViewport?.height ?? window.innerHeight,
+          visualOffsetTop: window.visualViewport?.offsetTop ?? 0,
+        },
+  );
 
   const updateViewport = useCallback(
     (reason = "viewport.change") => {

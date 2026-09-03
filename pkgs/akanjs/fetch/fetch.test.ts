@@ -36,6 +36,12 @@ import {
 
 type Equal<Left, Right> =
   (<Type>() => Type extends Left ? 1 : 2) extends <Type>() => Type extends Right ? 1 : 2 ? true : false;
+/**
+ * Mutual assignability, for a guard about what a type *carries* rather than how it is spelled. `Equal` above is
+ * identity, which tells an intersection apart from the object it resolves to — a distinction that matters for a
+ * marker type and not for "does this return carry the app's own fields".
+ */
+type Mutual<Left, Right> = [Left] extends [Right] ? ([Right] extends [Left] ? true : false) : false;
 type Expect<Type extends true> = Type;
 type TypeRegressionBaseFetch = {
   sharedEndpoint: () => "base";
@@ -79,6 +85,8 @@ type TypeRegressionAppUser = TypeRegressionSharedUser & { githubInfo: { login: s
 type TypeRegressionUserEndpoint = EndpointCls<
   never,
   {
+    // The trailing `false` is `Nullable`, which defaults to `boolean` — i.e. nullable — and made this
+    // regression guard assert against `TypeRegressionSharedUser | null` instead of the app's full model.
     getSelf: EndpointInfo<
       "query",
       Record<string, unknown>,
@@ -87,11 +95,13 @@ type TypeRegressionUserEndpoint = EndpointCls<
       [],
       [],
       StringConstructor,
-      TypeRegressionSharedUser
+      TypeRegressionSharedUser,
+      TypeRegressionSharedUser,
+      false
     >;
   }
 >;
-type TypeRegressionUserSlice = SliceCls<never> & {
+type TypeRegressionUserSlice = SliceCls & {
   srv: {
     cnst: {
       _Full: TypeRegressionAppUser;
@@ -104,7 +114,7 @@ type TypeRegressionUserFetch = FetchTypeOfSignal<
   DatabaseSignal<never, TypeRegressionUserEndpoint, TypeRegressionUserSlice, never>
 >;
 type _DatabaseEndpointReturnExtendsToAppFullRegression = Expect<
-  Equal<Awaited<ReturnType<TypeRegressionUserFetch["getSelf"]>>, TypeRegressionAppUser>
+  Mutual<Awaited<ReturnType<TypeRegressionUserFetch["getSelf"]>>, TypeRegressionAppUser>
 >;
 
 type FetchCall = { url: string; init?: RequestInit };
@@ -361,6 +371,43 @@ const databaseSignal: SerializedSignal = {
 };
 
 describe("HttpClient", () => {
+  test("gives up on a request nothing answers, as the slow-server error rather than a bare abort", async () => {
+    const client = new HttpClient("http://127.0.0.1:1");
+    const original = globalThis.fetch;
+    // Never resolves unless the signal fires, which is exactly the request the old client waited out.
+    globalThis.fetch = ((_url: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject((init.signal as AbortSignal).reason));
+      })) as typeof globalThis.fetch;
+    try {
+      const failure = await client.get("/slow", { timeout: 10 }).catch((error: unknown) => error);
+      expect((failure as { statusCode?: number }).statusCode).toBe(408);
+      expect((failure as Error).message).toBe("base.error.gatewayTimeout");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  test("leaves an upload without a deadline, since a large body on a slow uplink is working", async () => {
+    const client = new HttpClient("http://127.0.0.1:1");
+    const original = globalThis.fetch;
+    const signals: (AbortSignal | null | undefined)[] = [];
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      signals.push(init?.signal);
+      return Promise.resolve(new Response("{}", { headers: { "content-type": "application/json" } }));
+    }) as typeof globalThis.fetch;
+    try {
+      const form = new FormData();
+      form.set("files", new Blob(["x"]));
+      await client.post("/upload", form);
+      await client.post("/plain", { title: "x" });
+      expect(signals[0]).toBeUndefined();
+      expect(signals[1]).toBeInstanceOf(AbortSignal);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   test("builds paths, urls, and bodies", () => {
     const argMap = new Map<string, unknown>([
       ["id", "id-1"],
@@ -1081,8 +1128,7 @@ describe("FetchClient HTTP generation", () => {
 
   test("shares one browser client across app and lib builds so a lib subscribe lands on the connected socket", () => {
     setFakeWebSocket();
-    const globalWithWindow = globalThis as typeof globalThis & { window?: unknown };
-    globalWithWindow.window = {};
+    Object.assign(globalThis, { window: {} });
     try {
       const appSignal: SerializedSignal = {
         prefix: "appThing",
@@ -1105,7 +1151,7 @@ describe("FetchClient HTTP generation", () => {
       (lib.fetch as Record<string, (...args: unknown[]) => unknown>).subscribeLibRoom("r1", () => undefined);
       expect(JSON.parse(ws.sent.at(-1) ?? "{}")).toEqual({ key: "libRoom", data: ["r1"], subscribe: true });
     } finally {
-      delete globalWithWindow.window;
+      Reflect.deleteProperty(globalThis, "window");
     }
   });
 

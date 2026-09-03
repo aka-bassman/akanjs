@@ -400,13 +400,4 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       "error",
     );
   }
-  async testSys(sys: Sys) {
-    if (sys.type === "app") await this.testApplication(sys as App);
-    else await this.libraryScript.testLibrary(sys as Lib);
-  }
-  async testApplication(app: App) {
-    const spinner = app.spinning("Testing application...");
-    await this.applicationRunner.test(app);
-    spinner.succeed(`Application ${app.name} (apps/${app.name}) test is successful`);
-  }
 }

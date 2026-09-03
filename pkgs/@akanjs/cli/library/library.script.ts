@@ -29,10 +29,4 @@ export class LibraryScript extends script("library", [LibraryRunner]) {
     await this.libraryRunner.mergeLibraryDependencies(lib);
     mergeSpinner.succeed(`${libName} library (libs/${libName}) dependencies merged to root package.json`);
   }
-
-  async testLibrary(lib: Lib) {
-    const spinner = lib.spinning("Testing library...");
-    await this.libraryRunner.testLibrary(lib);
-    spinner.succeed(`Library ${lib.name} (libs/${lib.name}) test is successful`);
-  }
 }

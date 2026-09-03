@@ -280,23 +280,25 @@ export class WorkspaceRunner extends runner("workspace") {
   }
 
   /**
-   * CI=error: WCAG 콘트라스트(themeValidator) 계약을 lint 에서 강제한다. 어휘 폐쇄(구 styleGuard)는
-   * 위의 biome 실행이 grit 플러그인(devkit/lint/no-raw-palette-class.grit 외 3종)으로 잡으므로 여기서
-   * 다시 스캔하지 않는다 — 콘트라스트는 토큰 값 계산이라 lint 규칙로 표현할 수 없어 이곳이 유일한 집이다.
+   * Enforces the WCAG contrast contract, at error level, as part of lint.
+   *
+   * Only contrast. The vocabulary closure is caught by the grit plugins in the biome run above, so it is
+   * not re-scanned here; contrast is arithmetic over resolved token values, which no lint pattern can
+   * express, so this is its only home.
    */
   async #enforceStyleContract(exec: Exec) {
     const cwdPath = exec.cwdPath;
     if (!cwdPath) return;
     const stylesCssPath = path.join(cwdPath, "page", "styles.css");
-    const theme = (await Bun.file(stylesCssPath).exists())
-      ? new ThemeValidator().validate(await Bun.file(stylesCssPath).text())
-      : [];
-    const violations: StyleContractViolations = { style: [], theme };
+    if (!(await Bun.file(stylesCssPath).exists())) return;
+    const violations: StyleContractViolations = {
+      theme: new ThemeValidator().validate(await Bun.file(stylesCssPath).text()),
+    };
     const blocking = countBlocking(violations);
     if (blocking === 0) return;
     throw new Error(
       `[themeValidator] ${blocking} blocking contrast violation(s):\n${formatStyleContract(violations)}\n\n` +
-        "테마 토큰 값의 전경/배경 콘트라스트를 WCAG 기준 이상으로 조정하세요.",
+        "Raise the foreground/background contrast of these theme token values to the WCAG threshold.",
     );
   }
   async writeTopLevelEnv(workspace: Workspace, devProjectId: string) {

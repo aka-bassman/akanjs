@@ -1,6 +1,7 @@
 "use client";
-import { Device, isMobileDevice } from "akanjs/client";
+import { Device, isMobileDevice, Translator } from "akanjs/client";
 import { type CapacitorPermissionState, loadCapacitorCamera } from "akanjs/client/capacitor";
+import { parseAkanI18nEnv } from "akanjs/common";
 import { useEffect, useState } from "react";
 
 type PermissionStatus = {
@@ -8,8 +9,23 @@ type PermissionStatus = {
   photos: CapacitorPermissionState;
 };
 
+/** The four strings the native picker shows. Omitted ones come from the `base` dictionary. */
+export interface CameraPromptLabels {
+  header?: string;
+  photo?: string;
+  picture?: string;
+  cancel?: string;
+}
+
+/**
+ * The picker sheet is drawn by the OS from strings handed to it, so there is no component to render `l()` in and
+ * no render pass to read it during — the same position `showMessage` is in, and the same answer.
+ */
+const promptLabel = (key: string, override?: string) =>
+  override ?? Translator.translateByLocale(Translator.getActiveLocale() ?? parseAkanI18nEnv().defaultLocale, key);
+
 /** Capacitor camera/photos hook with permission checks and app-settings fallback. */
-export const useCamera = () => {
+export const useCamera = ({ promptLabels = {} }: { promptLabels?: CameraPromptLabels } = {}) => {
   const [permissions, setPermissions] = useState<PermissionStatus>({ camera: "prompt", photos: "prompt" });
 
   /**
@@ -70,10 +86,10 @@ export const useCamera = () => {
         source,
         allowEditing: false,
         resultType: CameraResultType.DataUrl,
-        promptLabelHeader: "프로필 사진을 올려주세요",
-        promptLabelPhoto: "앨범에서 선택하기",
-        promptLabelPicture: "사진 찍기",
-        promptLabelCancel: "취소",
+        promptLabelHeader: promptLabel("base.cameraPromptHeader", promptLabels.header),
+        promptLabelPhoto: promptLabel("base.cameraPromptPhoto", promptLabels.photo),
+        promptLabelPicture: promptLabel("base.cameraPromptPicture", promptLabels.picture),
+        promptLabelCancel: promptLabel("base.cameraPromptCancel", promptLabels.cancel),
       });
       return photo;
     } catch (e) {

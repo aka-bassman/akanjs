@@ -229,7 +229,7 @@ describe("Model.AdminPanel", () => {
     expect(container.querySelector('[data-akan-action="refreshAdminTestItem"]')).not.toBeNull();
     expect(container.querySelector('[data-akan-action="setSortOfAdminTestItem"]')).not.toBeNull();
     const tools = surface.snapshot().tools;
-    expect(tools.map((tool) => tool.name).sort()).toEqual([
+    expect(tools.map((tool) => tool.name).sort((a, b) => a.localeCompare(b))).toEqual([
       "exportCsvOfAdminTestItem",
       "exportJsonOfAdminTestItem",
       "refreshAdminTestItem",
@@ -363,7 +363,7 @@ describe("Model.AdminPanel", () => {
     unmount();
     setState({ searchParams: {} });
   });
-  test("PROBE args ui", async () => {
+  test("a tile click applies its filter and fills the arg controls it takes", async () => {
     makeStore();
     setState({ summary: { recentItem: 3 }, summaryLoading: false });
     const { container, unmount } = await mount(
@@ -376,19 +376,18 @@ describe("Model.AdminPanel", () => {
       />,
       () => calls.adminTestItemList.mock.calls.length > 0,
     );
-    console.info(
-      "BEFORE inputs:",
-      [...container.querySelectorAll("input")].map((i) => i.value),
-    );
+    const inputValues = () => [...container.querySelectorAll("input")].map((input) => input.value);
+    // Nothing to fill yet: the toolbar shows arg controls only once a filter that takes args is applied.
+    expect(inputValues()).toEqual([]);
+
     await act(async () => {
       (tileOf(container, "Recent Item") as HTMLElement).click();
     });
     await waitFor(() => calls.adminTestItemList.mock.calls.length > 1);
-    console.info(
-      "AFTER inputs:",
-      [...container.querySelectorAll("input")].map((i) => i.value),
-    );
-    console.info("CALL:", JSON.stringify(calls.adminTestItemList.mock.calls.at(-1)?.slice(0, 3)));
+
+    // The filter is applied to the listing in place, and its args are visible and editable rather than opaque.
+    expect(calls.adminTestItemList.mock.calls.at(-1)?.slice(0, 3)).toEqual(["byStatuses", [["prepare"]], 0]);
+    expect(inputValues()).toEqual(["prepare"]);
     unmount();
     setState({ summary: undefined });
   });

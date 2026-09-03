@@ -43,7 +43,9 @@ export class FontOptimizer {
   #woff2Ready: Promise<void> | null = null;
 
   static #ksX1001Text: string | null = null;
-  static readonly #cacheVersion = 1;
+  // 2: the key moved to sha256 over a deterministically ordered `auto` text, so v1 entries cannot be
+  // compared against and their subsets were built from `page`/`ui` only.
+  static readonly #cacheVersion = 2;
 
   constructor(app: App, command: FontOptimizerCommand = "start") {
     this.#app = app;
@@ -96,9 +98,18 @@ export class FontOptimizer {
       }
       // `auto` derives the subset from app source text, which no font config hash can capture.
       if (this.#getFontSubsets(font).includes("auto"))
-        sources.push({ autoSubsetText: this.#hashFontConfig(await this.#collectAutoSubsetText()) });
+        sources.push({ autoSubsetText: this.#cacheDigest(await this.#collectAutoSubsetText()) });
     }
-    return this.#hashFontConfig({ version: FontOptimizer.#cacheVersion, fonts, sources });
+    return this.#cacheDigest({ version: FontOptimizer.#cacheVersion, fonts, sources });
+  }
+
+  /**
+   * Cache keys get a cryptographic digest, not the 32-bit FNV `#hashFontConfig` computes for filenames:
+   * a collision there serves a stale subset as if it were current, while a filename only has to be short
+   * and stable.
+   */
+  #cacheDigest(value: unknown) {
+    return new Bun.CryptoHasher("sha256").update(this.#stableStringify(value)).digest("hex");
   }
 
   async #fileStamp(filePath: string): Promise<{ mtimeMs: number; size: number } | null> {
@@ -387,26 +398,34 @@ export class FontOptimizer {
     return "";
   }
 
+  /**
+   * Every source that can put a glyph on screen, concatenated in a **stable** order.
+   *
+   * The order is load-bearing even though a glyph set is not: `#buildCacheKey` hashes this string, so
+   * reading the roots concurrently and pushing as each file resolved made the key depend on i/o
+   * scheduling — measured 8 distinct keys over 8 runs against unchanged sources, which means the cache
+   * never hit and every build re-subset the fonts.
+   *
+   * `lib` is in the roots because that is where user-facing text actually lives: a dictionary's
+   * `[en, ko]` pairs are the Korean in the app, and a subset built from `page` and `ui` alone renders
+   * them as tofu — while hashing the same partial text also stopped a new label from invalidating.
+   */
   async #collectAutoSubsetText() {
     //* Synced lib pages hold app-visible text too, and a glob never crosses the symlink that mounts them.
     const libPageRoots = (await this.#app.getPageRoots()).filter((root) => root.keyPrefix).map((root) => root.dir);
-    const roots = [...["page", "ui"].map((dir) => path.join(this.#app.cwdPath, dir)), ...libPageRoots];
+    const roots = [...["page", "ui", "lib"].map((dir) => path.join(this.#app.cwdPath, dir)), ...libPageRoots];
     const glob = new Bun.Glob("**/*.{ts,tsx,js,jsx,html,md}");
     const parts: string[] = [];
-    await Promise.all(
-      roots.map(async (root) => {
-        if (
-          !(await stat(root).then(
-            (entry) => entry.isDirectory(),
-            () => false,
-          ))
-        )
-          return;
-        for await (const filePath of glob.scan({ cwd: root, absolute: true })) {
-          parts.push(await Bun.file(filePath).text());
-        }
-      }),
-    );
+    for (const root of [...new Set(roots)].sort()) {
+      const isDir = await stat(root).then(
+        (entry) => entry.isDirectory(),
+        () => false,
+      );
+      if (!isDir) continue;
+      const filePaths: string[] = [];
+      for await (const filePath of glob.scan({ cwd: root, absolute: true })) filePaths.push(filePath);
+      for (const filePath of filePaths.sort()) parts.push(await Bun.file(filePath).text());
+    }
     return parts.join("");
   }
 

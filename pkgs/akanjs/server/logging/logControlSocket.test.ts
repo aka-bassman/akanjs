@@ -64,7 +64,7 @@ describe("LogControlSocket", () => {
     // Unix socket paths are capped near 104 bytes on macOS, so the temp dir has to be short.
     dir = await mkdtemp(path.join(os.tmpdir(), "akan-lcs-"));
     hub = new LogHub();
-    removeSink = Logger.addSink((entry) => hub.ingest(entry.record));
+    removeSink = Logger.addSink((entry) => void hub.ingest(entry.record));
     control = new LogControlSocket(hub, dir);
     await control.start();
   });

@@ -153,9 +153,8 @@ export class CliDistBuilder {
       // through `import.meta.dir` (e.g. the `templates/` and `guidelines/` lookups) would otherwise
       // look for them under `chunks/`.
       naming: { entry: "[name].js", chunk: "[name]-[hash].js" },
-      external: Object.keys({ ...packageJson.dependencies, ...packageJson.peerDependencies }).filter(
-        (name) => name !== "@akanjs/devkit",
-      ),
+      // devkit is bundled in rather than resolved at runtime, which it already is by being absent here.
+      external: Object.keys({ ...packageJson.dependencies, ...packageJson.peerDependencies }),
       plugins: [],
     });
     if (!buildResult.success) throw new AggregateError(buildResult.logs, "CLI build failed");
@@ -164,7 +163,7 @@ export class CliDistBuilder {
     await $`cp -R ${this.#cliDir}/guidelines ${this.#outDir}/guidelines`;
     const distPackageJson = {
       ...packageJson,
-      bin: { akan: "./index.js", akan2: "./index.js" },
+      bin: { akan: "./index.js" },
       exports: {
         ".": { import: "./index.js", default: "./index.js" },
         "./package.json": "./package.json",

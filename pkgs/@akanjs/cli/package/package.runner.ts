@@ -48,7 +48,7 @@ export class PackageRunner extends runner("package") {
     await workspace.setPkgTsPaths(pkgName);
   }
   async removePackage(pkg: Pkg) {
-    await pkg.workspace.exec(`rm -rf pkgs/${pkg.name}`);
+    await pkg.workspace.removeDir(`pkgs/${pkg.name}`);
     await pkg.workspace.unsetPkgTsPaths(pkg.name);
   }
   async scanSync(pkg: Pkg) {
@@ -217,7 +217,7 @@ export class PackageRunner extends runner("package") {
       throw new Error(`[package] dist package name mismatch: expected ${pkg.name}, got ${pkgJson.name ?? "(missing)"}`);
     }
     if (!pkgJson.version) throw new Error(`[package] dist package version is missing for ${pkg.name}`);
-    if (!pkgJson.publishConfig || pkgJson.publishConfig.access !== "public") {
+    if (pkgJson.publishConfig?.access !== "public") {
       throw new Error(`[package] ${pkg.name} must publish with publishConfig.access=public`);
     }
     if (!(await Bun.file(`${pkg.dist.cwdPath}/README.md`).exists())) {

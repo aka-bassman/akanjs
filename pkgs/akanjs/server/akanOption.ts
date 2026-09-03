@@ -1,6 +1,6 @@
 import type { BackendEnv, PromiseOrObject } from "akanjs/base";
 import type { Adaptor, AdaptorCls, LlmOption } from "akanjs/service";
-import type { GuardCls, MiddlewareCls } from "akanjs/signal";
+import type { CrossSiteOption, GuardCls, MiddlewareCls } from "akanjs/signal";
 import type { McpServerOption } from "./akanServer";
 import type { WebProxyRegistration } from "./proxy";
 import { HostBasePathWebProxy, LocaleWebProxy } from "./proxy";
@@ -22,6 +22,7 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
   readonly #getLlms: ((env: Env) => LlmOption)[] = [];
   #mcp: boolean | McpServerOption | undefined;
   #agentAccess: GuardCls | GuardCls[] | null | undefined;
+  #crossSite: CrossSiteOption | undefined;
   constructor() {
     this.#getUses = [];
   }
@@ -62,6 +63,15 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
     this.#agentAccess = guards;
     return this;
   }
+  /**
+   * Which other origins may drive a mutation, on top of the one serving the request and the native shells.
+   * Needed only by a browser client hosted somewhere else — a separate admin domain, a partner embed. The gate
+   * itself is on by default and `{ enabled: false }` is for an API no browser reaches.
+   */
+  setCrossSite(crossSite: CrossSiteOption) {
+    this.#crossSite = crossSite;
+    return this;
+  }
   /** Settings for whichever adaptor fills `LlmAdaptorRole`, injected into it as the `llmOption` use. */
   setLlm(llmOrFn: LlmOption | ((env: Env) => LlmOption)) {
     if (typeof llmOrFn === "function") this.#getLlms.push(llmOrFn);
@@ -86,6 +96,9 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
   }
   getAgentAccess(): GuardCls | GuardCls[] | null | undefined {
     return this.#agentAccess;
+  }
+  getCrossSite(): CrossSiteOption | undefined {
+    return this.#crossSite;
   }
   getLlm(env: Env): LlmOption {
     return Object.assign({}, ...this.#getLlms.map((fn) => fn(env)));

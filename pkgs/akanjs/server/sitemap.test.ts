@@ -1,3 +1,4 @@
+import { describe, expect, test } from "bun:test";
 import { createDefaultSitemapUrls, createSitemapXml, getSitemapBasePath } from "./sitemap";
 
 describe("sitemap fallback helpers", () => {

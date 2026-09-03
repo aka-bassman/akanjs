@@ -54,7 +54,8 @@ export const Gtag = ({ trackingId, debugMode = false }: { trackingId: string; de
     <>
       <script async src={`https://www.googletagmanager.com/gtag/js?id=${trackingId}`} />
       <script
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: <explanation>
+        // tracking id this component validated — there is no non-script form of it.
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: gtag's own bootstrap snippet, built from a
         dangerouslySetInnerHTML={{
           __html: `
     window.dataLayer = window.dataLayer || [];

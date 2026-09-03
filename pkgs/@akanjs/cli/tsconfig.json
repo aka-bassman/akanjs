@@ -1,5 +1,8 @@
 {
   "extends": "../../../tsconfig.json",
   "files": [],
-  "include": ["**/*.ts", "**/*.tsx"]
+  // `pkgs/akanjs` is reached through the workspace path aliases, but an ambient declaration nothing
+  // imports is not pulled in that way — so the framework's own `react-server-dom-webpack` shims have to
+  // be named here, or every compile of this package reports the vendor module as implicitly `any`.
+  "include": ["**/*.ts", "**/*.tsx", "../../akanjs/server/types/*.d.ts"]
 }

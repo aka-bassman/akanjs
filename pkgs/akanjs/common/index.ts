@@ -1,5 +1,6 @@
 export { applyMixins } from "./applyMixins";
 export { capitalize } from "./capitalize";
+export { clamp } from "./clamp";
 export {
   clientAddressFromHeaders,
   clientPortFromHeaders,
@@ -7,6 +8,7 @@ export {
   normalizeIpAddress,
 } from "./clientAddress";
 export { deepObjectify } from "./deepObjectify";
+export type { DynamicRecord } from "./dynamicRecord";
 export {
   type FileUploadCapability,
   fileUploadContract,
@@ -16,7 +18,6 @@ export { formatNumber } from "./formatNumber";
 export { formatPhone } from "./formatPhone";
 export { getAllPropertyDescriptors } from "./getAllPropertyDescriptors";
 export { type AkanHmrPhase, getAkanHmrPhase, isAkanHmrApplying } from "./hmrPhase";
-export { HttpClient } from "./httpClient";
 export { isDayjs } from "./isDayjs";
 export { isEmail } from "./isEmail";
 export { isPhoneNumber } from "./isPhoneNumber";
@@ -72,6 +73,8 @@ export { pathSet } from "./pathSet";
 export { plainFieldsOf } from "./plainFieldsOf";
 export { randomPick } from "./randomPick";
 export { randomPicks } from "./randomPicks";
+export { isJsonContentType, originFromRequest } from "./requestOrigin";
+export { RestClient, type RestClientOptions, type RestRequestOptions } from "./restClient";
 export {
   assertUniqueRoutePatterns,
   compareRouteSpecificity,
@@ -99,6 +102,7 @@ export {
 export { sleep } from "./sleep";
 export { splitVersion } from "./splitVersion";
 export { getBasePathFromPathname, parseBasePaths, parseSubRouteHosts, resolveSubRouteHosts } from "./subRoute";
+export { TrustedProxy } from "./TrustedProxy";
 export type * from "./types";
 export {
   type WebsocketAuthAckData,

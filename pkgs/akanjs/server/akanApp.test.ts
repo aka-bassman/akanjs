@@ -237,7 +237,9 @@ describe("makeAkanChildProxyHeaders", () => {
       },
     });
 
-    const headers = makeAkanChildProxyHeaders(req, 2);
+    // A trusted (private) peer, which is what an ingress in front of the gateway is — without one the forwarded
+    // headers are the client's own word for itself and are dropped.
+    const headers = makeAkanChildProxyHeaders(req, 2, { address: "10.0.0.2", port: 443, family: "IPv4" });
 
     expect(headers.get("connection")).toBeNull();
     expect(headers.get("host")).toBe("akan-child");
@@ -297,10 +299,26 @@ describe("makeAkanChildProxyHeaders", () => {
     expect(headers.get("x-forwarded-for")).toBe("203.0.113.10, 203.0.113.10");
   });
 
-  test("falls back to loopback only when there is no peer to read", () => {
+  test("sends no client address at all when there is no peer and nothing proxied the call", () => {
     const req = new Request("http://internal.example/", { headers: { host: "internal.example" } });
 
-    expect(makeAkanChildProxyHeaders(req, 0).get("x-real-ip")).toBe("127.0.0.1");
+    const headers = makeAkanChildProxyHeaders(req, 0);
+
+    // Not `127.0.0.1`: a loopback-looking address for an unknown caller cannot be told from a real local one.
+    expect(headers.get("x-real-ip")).toBeNull();
+    expect(headers.get("x-forwarded-for")).toBeNull();
+  });
+
+  test("ignores a forwarded address from an untrusted peer, which is the client forging its own", () => {
+    const req = new Request("http://internal.example/", {
+      headers: { host: "internal.example", "x-real-ip": "10.0.0.1", "x-forwarded-for": "10.0.0.1" },
+    });
+
+    // A public peer is a client talking to this port directly, so its headers are not a proxy's word for anyone.
+    const headers = makeAkanChildProxyHeaders(req, 0, { address: "198.51.100.7", port: 40_000, family: "IPv4" });
+
+    expect(headers.get("x-real-ip")).toBe("198.51.100.7");
+    expect(headers.get("x-forwarded-for")).toBe("10.0.0.1, 198.51.100.7");
   });
 });
 

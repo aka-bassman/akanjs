@@ -43,14 +43,14 @@ afterEach(() => {
   FetchClient.resetSharedClient();
   FetchClient.resetSharedRegistry();
   globalThis.fetch = originalFetch;
-  delete (globalThis as typeof globalThis & { window?: unknown }).window;
+  Reflect.deleteProperty(globalThis, "window");
 });
 
 describe("client runtime", () => {
   // The reported bug: a lib built its own FetchClient, only the app runtime got connected, and every subscribe
   // issued from lib UI sat on a socket that never opened.
   test("app and lib resolve to one fetch client, whichever registered first", async () => {
-    (globalThis as typeof globalThis & { window?: unknown }).window = {};
+    Object.assign(globalThis, { window: {} });
     const LibErr = makeErrCls("lib");
     const AppErr = makeErrCls("app");
 
@@ -66,12 +66,12 @@ describe("client runtime", () => {
 
     // The lib built the shared instance first, so it seeded its own Err; registration re-points it at the app's.
     globalThis.fetch = (async () =>
-      Response.json({ error: "app.error.boom", statusCode: 400 }, { status: 400 })) as typeof fetch;
+      Response.json({ error: "app.error.boom", statusCode: 400 }, { status: 400 })) as unknown as typeof fetch;
     await expect(appFetch.instance.http.get("/boom")).rejects.toBeInstanceOf(AppErr);
   });
 
   test("a lib registered after the app does not replace the app runtime", () => {
-    (globalThis as typeof globalThis & { window?: unknown }).window = {};
+    Object.assign(globalThis, { window: {} });
     const AppErr = makeErrCls("app");
     const LibErr = makeErrCls("lib");
 

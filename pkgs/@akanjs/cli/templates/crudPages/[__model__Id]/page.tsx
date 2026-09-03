@@ -10,37 +10,34 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dic
     filename: "_index.tsx",
     content: `
 import { ${dict.Model}, fetch, usePage } from "@apps/${dict.appName}/client";
-import { Link } from "akanjs/ui";
 import type { PageConfig } from "akanjs/client";
+import { buttonRecipe, Link } from "akanjs/ui";
 
 interface PageProps {
   params: { ${dict.model}Id: string };
 }
 
-export async function generateHead({ params }: PageProps) {
+export function generateHead({ params }: PageProps) {
   const { ${dict.model}Id } = params;
-  const { ${dict.model} } = await fetch.view${dict.Model}(${dict.model}Id);
   return (
     <>
-      <title>{${dict.model}.id}</title>
-      <meta name="description" content={${dict.model}.id} />
-      <meta property="og:title" content={${dict.model}.id} />
-      <meta property="og:description" content={${dict.model}.id} />
+      <title>{${dict.model}Id}</title>
+      <meta name="description" content={${dict.model}Id} />
+      <meta property="og:title" content={${dict.model}Id} />
+      <meta property="og:description" content={${dict.model}Id} />
     </>
   );
 }
 export default async function Page({ params }: PageProps) {
   const { l } = usePage();
   const { ${dict.model}Id } = params;
-  const { ${dict.model}, ${dict.model}View } = await fetch.view${dict.Model}(${dict.model}Id);
+  const [{ ${dict.model}, ${dict.model}View }] = await Promise.all([fetch.view${dict.Model}(${dict.model}Id)]);
   return (
     <div className="container flex flex-col gap-4">
-      <div className="flex gap-4 font-bold text-lg items-center">
+      <div className="flex items-center gap-4 font-bold text-lg">
         <${dict.Model}.Zone.View view={${dict.model}View} />
-        <Link href={\`/${dict.model}/\${${dict.model}.id}/edit\`}>
-          <button className="inline-flex items-center justify-center gap-2 rounded-field bg-primary px-4 py-2 font-medium text-primary-foreground text-sm transition-colors hover:bg-primary/90">
-            {l("base.updateModel", { model: l("${dict.model}.modelName") })}
-          </button>
+        <Link className={buttonRecipe()} href={\`/${dict.model}/\${${dict.model}.id}/edit\`}>
+          {l("base.updateModel", { model: l("${dict.model}.modelName") })}
         </Link>
       </div>
     </div>

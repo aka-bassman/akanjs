@@ -54,7 +54,7 @@ const hydrate = async (node: ReactNode) => {
   };
 };
 
-const field = () => <Select value="a" options={["a", "b"]} onChange={() => undefined} />;
+const field = () => <Select<"a" | "b"> value="a" options={["a", "b"]} onChange={() => undefined} />;
 
 describe("Select", () => {
   test("hydrates an SSR render without a mismatch", async () => {

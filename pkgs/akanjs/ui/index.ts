@@ -32,7 +32,7 @@ export { fetchRunner } from "./Agent/fetchRunner";
 export type { HistoryProps as AgentHistoryProps } from "./Agent/History";
 export { DefaultLauncher, type LauncherProps } from "./Agent/Launcher";
 export { type CodeProps, DefaultCode, DefaultMarkdown, type MarkdownProps } from "./Agent/Markdown";
-export { DefaultMenu, type MenuProps as AgentMenuProps, type MenuRow } from "./Agent/Menu";
+export { DefaultAgentMenu, type MenuProps as AgentMenuProps, type MenuRow } from "./Agent/Menu";
 export { DefaultQuestion, type QuestionProps } from "./Agent/Question";
 export type { PersistOption } from "./Agent/sessionHistory";
 export type { AgentBuiltin, BuiltinOption } from "./Agent/sessionView";

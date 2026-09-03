@@ -4,13 +4,13 @@ import { compareSemver } from "../semver";
 
 export class LibraryRunner extends runner("library") {
   async createLibrary(libName: string, workspace: Workspace) {
-    await workspace.exec(`mkdir -p libs/${libName}`);
+    await workspace.mkdir(`libs/${libName}`);
     await workspace.applyTemplate({ basePath: `libs/${libName}`, template: "libRoot", dict: { libName } });
     const lib = LibExecutor.from(workspace, libName);
     return lib;
   }
   async removeLibrary(lib: Lib) {
-    await lib.workspace.exec(`rm -rf libs/${lib.name}`);
+    await lib.workspace.removeDir(`libs/${lib.name}`);
   }
 
   async #copyInstalledLibrary(workspace: Workspace, libName: string) {
@@ -60,21 +60,5 @@ export class LibraryRunner extends runner("library") {
     await lib.workspace.setPackageJson(newRootPackageJson);
     await lib.workspace.spawn("bun", ["install"]);
     await lib.workspace.commit(`Merge ${lib.name} library dependencies`);
-  }
-
-  async testLibrary(lib: Lib) {
-    // await lib.workspace.spawn(
-    //   "node",
-    //   ["node_modules/jest/bin/jest.js", `libs/${lib.name}`, "-c", `libs/${lib.name}/jest.config.ts`],
-    //   {
-    //     env: {
-    //       ...this.#getEnv(lib),
-    //       AKAN_PUBLIC_ENV: "testing",
-    //       AKAN_PUBLIC_OPERATION_MODE: "local",
-    //       AKAN_PUBLIC_APP_NAME: lib.name,
-    //       NODE_TLS_REJECT_UNAUTHORIZED: "0",
-    //     },
-    //   }
-    // );
   }
 }

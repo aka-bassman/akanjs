@@ -67,7 +67,9 @@ export class StToolBuilder<Args extends unknown[] = []> {
   readonly #args: StToolArg[];
 
   constructor(name: string | null, desc: string, meta: StToolMeta = {}, args: StToolArg[] = []) {
-    this.#name = name;
+    // Normalized so "withheld" is one value: the render-to-render comparisons below decide whether this tool is
+    // still the one that is registered, and `""` alternating with `null` would read as a different tool.
+    this.#name = name || null;
     this.#desc = desc;
     this.#meta = meta;
     this.#args = args;
@@ -118,21 +120,34 @@ export class StToolBuilder<Args extends unknown[] = []> {
     ]);
   }
 
-  /** The only hook in the chain. `run`, `guard`, and `confirm` stay always-latest; the declaration is mount-static. */
+  /**
+   * The only hook in the chain. `run`, `guard`, and `confirm` stay always-latest, and so does the **name** —
+   * `desc` and `args` are read once per name because a component that renders once per row declares one tool
+   * many times and only its own arguments differ.
+   *
+   * The name has to follow the render, because withholding it is how a conditional surface is written
+   * (`st.tool(canRemove && "removeX")`). Frozen on the first render it failed both ways: a control that appeared
+   * later never published, and — worse — one that went away stayed published, leaving an agent a lever the screen
+   * no longer offers.
+   */
   exec(run: (...args: Args) => unknown): (...args: Args) => Promise<void> {
     const surface = useSurface();
     const scope = useScopePath();
     const live = useRef({ run, meta: this.#meta });
     live.current = { run, meta: this.#meta };
     const declared = useRef<{ name: string | null; desc: string; meta: StToolMeta; args: StToolArg[] } | null>(null);
-    declared.current ??= { name: this.#name, desc: this.#desc, meta: this.#meta, args: this.#args };
-    const callable = useRef<((...args: Args) => Promise<void>) | null>(null);
-    if (!callable.current) {
+    if (declared.current?.name !== this.#name)
+      declared.current = { name: this.#name, desc: this.#desc, meta: this.#meta, args: this.#args };
+    const callable = useRef<{ name: string | null; fn: (...args: Args) => Promise<void> } | null>(null);
+    if (callable.current?.name !== this.#name) {
       const call = async (...args: Args) => {
         await live.current.run(...args);
       };
       // No name, no annotation: `data-akan-action` names a tool an agent can reach, and this one is unreachable.
-      callable.current = this.#name ? tagAction(call, { action: AgenticSurface.fullName(scope, this.#name) }) : call;
+      callable.current = {
+        name: this.#name,
+        fn: this.#name ? tagAction(call, { action: AgenticSurface.fullName(scope, this.#name) }) : call,
+      };
     }
     const scopeKey = scope.join(".");
     useEffect(() => {
@@ -159,7 +174,7 @@ export class StToolBuilder<Args extends unknown[] = []> {
         run: (named) => live.current.run(...(StToolBuilder.positionalOf(name, spec.args, named) as Args)),
       });
     }, [surface, scopeKey, this.#name]);
-    return callable.current;
+    return callable.current.fn;
   }
 
   static parametersOf(args: StToolArg[]): JsonSchema | undefined {

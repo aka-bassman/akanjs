@@ -175,8 +175,18 @@ export class FetchSerializer {
     return { endpoint };
   }
 
-  static serializeRegistry({ endpointCls, sliceCls }: LiveRegistry): { signal: { [key: string]: SerializedSignal } } {
+  /**
+   * A container that never finished initializing has empty registries rather than none, so a caller reaching a
+   * devtools or MCP route before boot completed gets an empty catalogue. Destructuring the registry used to
+   * throw before the loop, which surfaced as `Cannot destructure property 'endpointCls' from null` on a route
+   * whose honest answer is "nothing is registered yet".
+   */
+  static serializeRegistry(live: LiveRegistry | null | undefined): {
+    signal: { [key: string]: SerializedSignal };
+  } {
     const serializedSignals: { [key: string]: SerializedSignal } = {};
+    if (!live) return { signal: serializedSignals };
+    const { endpointCls, sliceCls } = live;
     for (const [baseName, endpoint] of endpointCls.entries()) {
       const cnst = endpoint.srv.cnst;
       if (cnst) {

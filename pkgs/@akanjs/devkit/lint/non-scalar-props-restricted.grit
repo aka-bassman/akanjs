@@ -1,10 +1,19 @@
-`$name={$value}` where {
-  or {
-    $value <: `($$$_) => $_`,
-    $value <: `$_ => $_`,
-    $value <: `function($$$_) { $$$_ }`,
-    $value <: `function $fnName($$$_) { $$$_ }`
-  },
+engine biome(1.0)
+language js(typescript, jsx)
+
+// A function prop cannot cross the RSC boundary: a closure has no serialized form, so a server component
+// handing one down fails at the boundary rather than at the call. `loader`, `render` and `of` are the
+// framework's own slots, which take the function on the client side of the boundary.
+//
+// The attribute is matched by node fields rather than by a `$name={$value}` snippet: Biome's GritQL does
+// not parse a bare snippet in that shape as a JsxAttribute, so the snippet form matches nothing at all.
+// Reading `expression` off the initializer is also what keeps the value anchored to this attribute — a
+// `contains` would reach into nested JSX and report `item={item}` inside `render={(item) => <Row item={item} />}`.
+JsxAttribute(
+  name = $name,
+  initializer = JsxAttributeInitializerClause(value = JsxExpressionAttributeValue(expression = $value))
+) where {
+  $value <: or { JsArrowFunctionExpression(), JsFunctionExpression() },
   not $name <: or { `loader`, `render`, `of` },
   register_diagnostic(
     span = $name,

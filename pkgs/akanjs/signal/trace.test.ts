@@ -39,7 +39,7 @@ const captureStdout = () => {
 
 const collect = () => {
   const entries: LoggerSinkEntry[] = [];
-  const removeSink = Logger.addSink((entry) => entries.push(entry));
+  const removeSink = Logger.addSink((entry) => void entries.push(entry));
   Logger.setLevel("error");
   return {
     entries,
@@ -98,16 +98,16 @@ describe("context mode", () => {
 describe("runTraced", () => {
   test("marks the outcome before the error reaches the caller, and finalizes after", async () => {
     const trace = new SignalTrace("userList", "query", { mode: "context" });
-    let outcomeInCatch: string | null = null;
+    const outcomeInCatch: (string | null)[] = [];
     await expect(
       runTraced(trace, async () => {
         throw new Error("boom");
       }).catch((error: unknown) => {
-        outcomeInCatch = trace.outcome;
+        outcomeInCatch.push(trace.outcome);
         throw error;
       }),
     ).rejects.toThrow("boom");
-    expect(outcomeInCatch).toBe("error");
+    expect(outcomeInCatch).toEqual(["error"]);
     expect(trace.error).toBeInstanceOf(Error);
   });
 
@@ -128,7 +128,7 @@ describe("runTraced", () => {
 describe("log records inside a trace", () => {
   test("carry the traceId, endpoint and origin of the ambient trace", async () => {
     const entries: LoggerSinkEntry[] = [];
-    const removeSink = Logger.addSink((entry) => entries.push(entry));
+    const removeSink = Logger.addSink((entry) => void entries.push(entry));
     const trace = new SignalTrace("signScContract", "mutation", { mode: "context", origin: "mcp" });
     try {
       Logger.setLevel("error");
@@ -249,7 +249,7 @@ describe("flight recorder", () => {
 
   test("a clean fast call discards what it captured; a failed one promotes it to the console", async () => {
     setFlightRecorderEnabled(true);
-    const removeSink = Logger.addSink(() => undefined, { minLevel: "warn" });
+    const removeSink = Logger.addSink(() => void undefined, { minLevel: "warn" });
     const stdout = captureStdout();
     try {
       Logger.setLevel("error");

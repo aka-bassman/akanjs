@@ -202,5 +202,5 @@ export function slice<
     Object.assign(sliceCls.srv.srvMap, libSlice.srv.srvMap);
   });
   applyMixins(sliceCls, libSlices);
-  return sliceCls as any;
+  return sliceCls as any; // the declared return is a generic instantiation built from this call's own type arguments, so there is no `T` to name
 }

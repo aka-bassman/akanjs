@@ -19,7 +19,7 @@ export interface MenuProps {
 }
 
 /** The `/` menu: this chat's own commands first, then the app's `prompt()` endpoints. */
-export const DefaultMenu = ({ className, rows, selected, onPick }: MenuProps) => {
+export const DefaultAgentMenu = ({ className, rows, selected, onPick }: MenuProps) => {
   if (!rows.length) return null;
   return (
     <div
@@ -52,4 +52,4 @@ export const DefaultMenu = ({ className, rows, selected, onPick }: MenuProps) =>
   );
 };
 
-export default createOverridable("AgentMenu", DefaultMenu);
+export default createOverridable("AgentMenu", DefaultAgentMenu);

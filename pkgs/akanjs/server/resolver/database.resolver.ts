@@ -1,6 +1,6 @@
 import type { PromiseOrObject } from "akanjs/base";
 import { applyMixins, capitalize } from "akanjs/common";
-import { type ConstantModel, DEFAULT_PAGE_SIZE, type QueryOf } from "akanjs/constant";
+import { type ConstantModel, type QueryOf, resolvePageLimit, resolvePageSkip } from "akanjs/constant";
 import {
   assertFilterFitsCrud,
   CacheDatabase,
@@ -32,7 +32,7 @@ import {
   DatabaseAdaptorRole,
   type DocumentStore,
 } from "akanjs/service";
-import { getCurrentTrace, traceDataLoaderBatch } from "akanjs/signal";
+import { Exception, getCurrentTrace, traceDataLoaderBatch } from "akanjs/signal";
 
 /**
  * Times a store query and records it against the active request trace (no-op when
@@ -58,13 +58,25 @@ export class DatabaseResolver {
     const [modelName, className]: [string, string] = [database.refName, capitalize(database.refName)];
     // `sort` stays null when the caller named none, so the store can pick relevance order for a text search and
     // its own default otherwise. Defaulting to "latest" here would make every search look explicitly sorted.
-    const resolveSort = (sortKey?: string | null) =>
-      sortKey ? (getFilterSortByKey(database.filter, sortKey) as { [key: string]: 1 | -1 }) : null;
+    //
+    // A key the model does not declare is refused rather than ignored: the answer to an unknown key used to be
+    // `createdAt` descending, so a client typo — and `sortKeys` travels to the client, so typos happen — became
+    // a different order with nothing said. The cast the old line made was a lie for the same reason: the lookup
+    // returns `undefined` for a key that is not there.
+    const resolveSort = (sortKey?: string | null): { [key: string]: 1 | -1 } | null => {
+      if (!sortKey) return null;
+      const sort = getFilterSortByKey(database.filter, sortKey) as { [key: string]: 1 | -1 } | undefined;
+      if (!sort) throw new Exception.BadRequest(`Unknown sort key for ${modelName}: ${sortKey}`);
+      return sort;
+    };
     const getListQuery = (query?: QueryOf<any>, queryOption?: ListQueryOption) => {
       const find = query ?? {};
       const sort = resolveSort(queryOption?.sort);
-      const skip = Number(queryOption?.skip ?? 0);
-      const limit = queryOption?.limit === null ? DEFAULT_PAGE_SIZE : Number(queryOption?.limit ?? 0);
+      const skip = resolvePageSkip(queryOption?.skip);
+      // `undefined` is a server caller that named no page — `list()` inside a service, where the caller is the
+      // code itself and a ceiling is the wrong answer. Every client-reachable path arrives through the slice
+      // endpoint, which has already clamped what it was handed.
+      const limit = queryOption?.limit === undefined ? 0 : resolvePageLimit(queryOption.limit);
       const select = queryOption?.select;
       const sample = queryOption?.sample;
       return { find, sort, skip, limit, select, sample };
@@ -72,7 +84,7 @@ export class DatabaseResolver {
     const getFindQuery = (query?: QueryOf<any>, queryOption?: FindQueryOption) => {
       const find = query ?? {};
       const sort = resolveSort(queryOption?.sort);
-      const skip = Number(queryOption?.skip ?? 0);
+      const skip = resolvePageSkip(queryOption?.skip);
       const select = queryOption?.select;
       const sample = queryOption?.sample ?? false;
       return { find, sort, skip, select, sample };
@@ -318,7 +330,7 @@ export class DatabaseResolver {
         return this.__get(id);
       }
       async __load(id?: string) {
-        return (id ? await this.__loader.load(id) : null) as any | null;
+        return (id ? await this.__loader.load(id) : null) as unknown;
       }
       async [`load${className}`](id?: string) {
         return this.__load(id);

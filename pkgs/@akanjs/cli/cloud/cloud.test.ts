@@ -29,7 +29,7 @@ describe("CloudCommand", () => {
     command.cloudScript.deployAkan = async (...args) => recorder.record("deployAkan", ...args);
 
     try {
-      const [metas] = getArgMetas(CloudCommand, "deployAkan");
+      const [, metas] = getArgMetas(CloudCommand, "deployAkan");
       const registryMeta = metas.find((meta) => meta.name === "registry");
       expect(registryMeta?.argsOption.enum).toContainEqual({ label: "npm", value: "npm" });
       expect(registryMeta?.argsOption.enum).toContainEqual({ label: "local", value: "local" });

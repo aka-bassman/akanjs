@@ -1,6 +1,7 @@
 import "../../test/registerDom";
 import { beforeAll, describe, expect, mock, test } from "bun:test";
 import type { ClientSignal } from "akanjs/fetch";
+import type { SerializedArg } from "akanjs/signal";
 import { act, type ReactNode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -102,9 +103,9 @@ beforeAll(async () => {
   registerClientRuntime({
     usePage: () => ({ path: "/", lang: "en", l }),
     fetch: {
-      filterQueryMap: new Map([
-        ["queryMakerTestItem", filterQuery],
-        ["queryMakerTestOwner", ownerFilterQuery],
+      filterQueryMap: new Map<string, { [queryKey: string]: SerializedArg[] }>([
+        ["queryMakerTestItem", filterQuery as unknown as { [queryKey: string]: SerializedArg[] }],
+        ["queryMakerTestOwner", ownerFilterQuery as unknown as { [queryKey: string]: SerializedArg[] }],
       ]),
       slice: {
         queryMakerTestOwner: { refName: "queryMakerTestOwner", sliceName: "queryMakerTestOwner", argLength: 2 },

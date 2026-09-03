@@ -13,7 +13,7 @@ import {
   SLICE_META,
 } from "akanjs/base";
 import { capitalize, Logger } from "akanjs/common";
-import { deserialize, serialize } from "akanjs/constant";
+import { deserialize, resolvePageLimit, resolvePageSkip, serialize } from "akanjs/constant";
 import { documentQueryHelper } from "akanjs/document";
 import {
   type AkanJob,
@@ -262,6 +262,10 @@ export class SignalResolver {
       return query;
     };
 
+    // Every `(builder as any)` below is deliberate and there is no `as unknown as T` for it: the builder's type
+    // is derived per slice from literal type arguments — the model's own `light`/`insight` classes and each
+    // arg's name — and this resolver holds those only as runtime values. Naming the chain's type would mean
+    // reconstructing the generic instantiation the declaration site already did.
     class SliceEndpoint extends sliceEndpoint(sliceCls.srv, (builder) => {
       const endpointObj: { [key: string]: EndpointInfo } = {};
       Object.entries(sliceMeta).forEach(([key, sliceInfo]) => {
@@ -280,8 +284,8 @@ export class SignalResolver {
           ._addInternalArgs(sliceInfo.internalArgs)
           .exec(async function (this: any, ...requestArgs: any) {
             const args = requestArgs.slice(0, argLength);
-            const skip = Number(requestArgs[argLength] ?? 0);
-            const limit = Number(requestArgs[argLength + 1] ?? 20);
+            const skip = resolvePageSkip(requestArgs[argLength]);
+            const limit = resolvePageLimit(requestArgs[argLength + 1]);
             const sort = requestArgs[argLength + 2] ?? "latest";
             const internalArgs = requestArgs.slice(argLength + 3);
             const query = assertSliceQuery(

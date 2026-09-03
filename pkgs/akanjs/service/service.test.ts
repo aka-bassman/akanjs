@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { dayjs, INJECT_META, Int } from "akanjs/base";
+import { Any, dayjs, INJECT_META, Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { by, type DatabaseCls, DatabaseRegistry, from, getFilterInfoByKey, into } from "akanjs/document";
 import type { ServerSignal, ServerSignalCls } from "akanjs/signal";
@@ -47,8 +47,8 @@ class TestItemFilter extends from(TestItemFull, (filter) => ({
       .opt("category", String)
       .query((category) => ({ category })),
     withMeta: filter()
-      .arg("meta", Object)
-      .query((meta) => ({ meta })),
+      .arg("meta", Any)
+      .query((meta) => ({ meta: meta as string })),
   },
   sort: {
     scoreHigh: { score: -1 },
@@ -65,7 +65,7 @@ const testItemDatabase = DatabaseRegistry.buildModel(
   TestItemDoc,
   TestItemModel,
   TestItemObject,
-  TestItemInsight,
+  TestItemInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   TestItemFilter,
 );
 
@@ -94,7 +94,7 @@ const promoteParentDatabase = DatabaseRegistry.buildModel(
   PromoteParentDoc,
   PromoteParentModel,
   PromoteParentObject,
-  PromoteParentInsight,
+  PromoteParentInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   PromoteParentFilter,
 );
 
@@ -124,7 +124,7 @@ const promoteChildDatabase = DatabaseRegistry.buildModel(
   PromoteChildDoc,
   PromoteChildModel,
   PromoteChildObject,
-  PromoteChildInsight,
+  PromoteChildInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   PromoteChildFilter,
 );
 

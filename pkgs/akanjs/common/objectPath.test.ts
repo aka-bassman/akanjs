@@ -79,19 +79,19 @@ describe("object and path helpers", () => {
       modelLike,
     };
 
-    expect(deepObjectify(source)).toEqual({
+    expect(deepObjectify(source) as unknown).toEqual({
       date,
       day: dayjs(date),
       nested: [{ id: "a" }],
       modelLike,
     });
-    expect(deepObjectify(source, { serializable: true, convertDate: "string" })).toEqual({
+    expect(deepObjectify(source, { serializable: true, convertDate: "string" }) as unknown).toEqual({
       date: "2025-01-01T00:00:00.000Z",
       day: "2025-01-01T00:00:00.000Z",
       nested: [{ id: "a" }],
       modelLike: { __ModelType__: "User", id: "u1" },
     });
-    expect(deepObjectify(date, { convertDate: "number" })).toBe(date.getTime());
+    expect(deepObjectify(date, { convertDate: "number" }) as unknown).toBe(date.getTime());
   });
 
   test("deep objectifies maps and sets into clones, and into plain data when serializable", () => {

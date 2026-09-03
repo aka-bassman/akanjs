@@ -1,6 +1,15 @@
-import { Binary, ID, Int } from "akanjs/base";
+import { Binary, dayjs, ID, Int } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
-import { by, type DatabaseCls, DatabaseRegistry, from, into, type ModelCls, type SchemaOf } from "akanjs/document";
+import {
+  by,
+  type DatabaseCls,
+  DatabaseRegistry,
+  type DataInputOf,
+  from,
+  into,
+  type ModelCls,
+  type SchemaOf,
+} from "akanjs/document";
 import { ServiceModel, serve } from "akanjs/service";
 import { endpoint } from "../../signal/endpoint";
 import { Public } from "../../signal/guards";
@@ -104,24 +113,31 @@ export const serverResolverTestDatabase = DatabaseRegistry.buildModel(
   ServerResolverTestFilter,
 );
 
-class ParentHookService extends serve(serverResolverTestDatabase, () => ({})) {
-  _preCreate(data: Record<string, unknown>) {
-    return { ...data, parentPreCreate: true };
+/** Named so the hook overrides below can extend it: a class expression cannot be extended twice. */
+const ServerResolverTestServe = serve(serverResolverTestDatabase, () => ({}));
+type HookRecord = Record<string, unknown>;
+/** The shape a real service names for these hooks (`DataInputOf<db.XInput, db.X>`). */
+type PreCreateData = DataInputOf<InstanceType<typeof ServerResolverTestInput>, ServerResolverTestDoc>;
+
+class ParentHookService extends ServerResolverTestServe {
+  // The extra key is what the hook-chain assertions look for, so it rides on a cast rather than in the model.
+  // Method syntax, not a property: `serve` collects an extension service's hooks off its **prototype**, so a
+  // class field would be invisible to the chain and silently skipped. The extra key is what the chain
+  // assertions look for, so the value is widened to a record and cast back.
+  override async _preCreate(data: PreCreateData) {
+    return { ...(data as HookRecord), parentPreCreate: true } as unknown as PreCreateData;
   }
-  _postCreate(doc: Record<string, unknown>) {
-    return { ...doc, parentPostCreate: true };
+  override async _postCreate(doc: ServerResolverTestDoc) {
+    return { ...(doc as unknown as HookRecord), parentPostCreate: true } as unknown as ServerResolverTestDoc;
   }
 }
 
 export class ServerResolverTestService extends serve(serverResolverTestDatabase, () => ({}), ParentHookService) {
-  _preCreate(data: Record<string, unknown>) {
-    return { ...data, childPreCreate: true };
+  override async _preCreate(data: PreCreateData) {
+    return { ...(data as HookRecord), childPreCreate: true } as unknown as PreCreateData;
   }
-  _postCreate(doc: Record<string, unknown>) {
-    return { ...doc, childPostCreate: true };
-  }
-  queryInCategory(category: string) {
-    return { category };
+  override async _postCreate(doc: ServerResolverTestDoc) {
+    return { ...(doc as unknown as HookRecord), childPostCreate: true } as unknown as ServerResolverTestDoc;
   }
   categoryEcho(category: string) {
     return category;
@@ -153,6 +169,7 @@ export class ServerResolverTestMiddleware extends middleware("serverResolverTest
 
 export class ServerResolverTestRoomGuard {
   static name = "ServerResolverTestRoomGuard";
+  static scope = "account" as const;
   canPass(context: SignalContext): boolean {
     return context.get<{ role?: string }>("account")?.role === "member";
   }
@@ -177,7 +194,10 @@ export class ServerResolverTestEndpoint extends endpoint(serverResolverTestServi
     .param("id", ID)
     .body("data", ServerResolverTestInput)
     .exec((id, data) => {
-      return { id, ...data, createdAt: new Date(0), updatedAt: new Date(0), removedAt: null, secret: "hidden" };
+      // Through a binding, not a literal: `secret` is deliberately present because the assertions are that the
+      // response drops it, and an object literal would be rejected for carrying it.
+      const row = { id, ...data, createdAt: dayjs(0), updatedAt: dayjs(0), secret: "hidden" };
+      return row;
     }),
   roomFeed: builder
     .pubsub(ServerResolverTestLight)

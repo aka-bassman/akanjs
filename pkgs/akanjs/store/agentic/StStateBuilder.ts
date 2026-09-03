@@ -15,6 +15,8 @@ export interface StStateMeta {
 }
 
 interface StStateDeclaration {
+  /** The name as written this render, which is what says whether the resolution below still applies. */
+  key: string | null;
   name: string | null;
   set: { schema: JsonSchema; type: ParamFieldType } | null;
 }
@@ -52,10 +54,15 @@ export class StStateBuilder<T extends AgentFieldType> {
     const name = this.#name;
     const type = this.#type;
     const declared = useRef<StStateDeclaration | null>(null);
-    declared.current ??= {
-      name: name && AgentValue.publishable(`st.useState("${name}")`, type) ? name : null,
-      set: name && this.#meta.set ? StStateBuilder.#writable(name, type) : null,
-    };
+    // Keyed on the name, not frozen: withholding it is how a conditional surface is written, so a value that
+    // becomes readable later has to publish and one that goes away has to stop. `publishable` still reports once
+    // per name rather than once per render.
+    if (declared.current?.key !== name)
+      declared.current = {
+        key: name,
+        name: name && AgentValue.publishable(`st.useState("${name}")`, type) ? name : null,
+        set: name && this.#meta.set ? StStateBuilder.#writable(name, type) : null,
+      };
     const { set } = declared.current;
     return useAgentState<Value>(declared.current.name, initial, {
       description: this.#desc,

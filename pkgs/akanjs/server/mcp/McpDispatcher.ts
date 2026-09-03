@@ -6,6 +6,7 @@ import { NoDocumentError } from "akanjs/document";
 import type { InjectRegistry, LiveRegistry } from "akanjs/service";
 import type { Endpoint, EndpointCls } from "../../signal/endpoint";
 import type { EndpointInfo } from "../../signal/endpointInfo";
+import { Exception } from "../../signal/exception";
 import type { GuardCls } from "../../signal/guard";
 import {
   McpDocument,
@@ -290,10 +291,18 @@ export class McpDispatcher {
     if (!modelType) return value;
     try {
       return mask(ConstantRegistry.getModelRef(refName, modelType), value);
-    } catch {
-      // A return naming a model this process did not mount is a catalogue that should not have listed it; the
-      // value goes out unmasked rather than the call failing, and the boot log is where that belongs.
-      return value;
+    } catch (error) {
+      // A return naming a model this process did not mount is a catalogue that should not have listed it, and
+      // this is the one place in the file that used to answer such a thing by sending the value anyway. Every
+      // other refusal here is fail-closed; masking is what decides *what* may go out, so it fails closed too.
+      // Only `visual` was actually at stake — `resolveReturn` has already dropped `hidden` and `secret` — but
+      // an unmaskable result is a bug in the catalogue, and reporting it is how it gets fixed.
+      McpDispatcher.logger.error(
+        `MCP could not mask a "${refName}" (${modelType}) result, so it was not sent: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      throw new Exception.Error("The server failed to complete this request.");
     }
   }
 

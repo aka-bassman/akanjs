@@ -83,17 +83,24 @@ const ansiPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`,
 // line can carry it — the record may leave the process over the network.
 const redactedAttrKey = /password|passwd|token|jwt|authorization|cookie|secret|api[-_]?key|private[-_]?key/i;
 
+/**
+ * `process.env?.X` guards only `env` being absent, never `process` itself — an undeclared `process` is a
+ * ReferenceError, and at module scope that takes the whole client bundle with it. This is the most widely
+ * imported file in `common/`, and the unguarded form works today only because the browser build ships a shim.
+ */
+const envValue = (key: string): string | undefined => (typeof process === "undefined" ? undefined : process.env?.[key]);
+
 /** Log-level aware logger used by Akan runtime, CLI, and application services. */
 export class Logger {
   /** `AKAN_LOG_STDOUT_LEVEL` names what the container's stdout carries; without it the console level is that. */
   static level: LogLevel = Logger.#levelFromEnv(
-    process.env?.AKAN_LOG_STDOUT_LEVEL,
-    Logger.#levelFromEnv(process.env?.AKAN_PUBLIC_LOG_LEVEL, "info"),
+    envValue("AKAN_LOG_STDOUT_LEVEL"),
+    Logger.#levelFromEnv(envValue("AKAN_PUBLIC_LOG_LEVEL"), "info"),
   );
-  static fileLevel: LogLevel = Logger.#levelFromEnv(process.env?.AKAN_LOG_FILE_LEVEL, "trace");
-  static format: LogFormat = Logger.#formatFromEnv(process.env?.AKAN_LOG_FORMAT);
+  static fileLevel: LogLevel = Logger.#levelFromEnv(envValue("AKAN_LOG_FILE_LEVEL"), "trace");
+  static format: LogFormat = Logger.#formatFromEnv(envValue("AKAN_LOG_FORMAT"));
   /** Which process this is (`gateway`, `all`, `batch`, `rsc-worker`); the owner sets it at boot. */
-  static role: string | null = process.env?.SERVER_MODE ?? null;
+  static role: string | null = envValue("SERVER_MODE") ?? null;
   /**
    * Whether this process writes its own lines to the terminal. Off in every server process of an ndjson
    * deployment: the hub owner writes the one JSON stream, and a text line from anyone would corrupt it.
@@ -394,7 +401,7 @@ export class Logger {
     else console[outputStream === "error" ? "error" : "log"](msg.trim());
   }
   static {
-    if (process.env?.AKAN_PUBLIC_LOG_LEVEL === "log" && typeof window === "undefined")
+    if (envValue("AKAN_PUBLIC_LOG_LEVEL") === "log" && typeof window === "undefined")
       Logger.warn("AKAN_PUBLIC_LOG_LEVEL=log is deprecated and now means info; set AKAN_PUBLIC_LOG_LEVEL=info.");
   }
 }

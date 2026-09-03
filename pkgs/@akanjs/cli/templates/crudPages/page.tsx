@@ -10,26 +10,26 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dic
     filename: "_index.tsx",
     content: `
 import { ${dict.Model}, fetch, usePage } from "@apps/${dict.appName}/client";
-import { Link } from "akanjs/ui";
 import type { PageConfig } from "akanjs/client";
+import { buttonRecipe, Link } from "akanjs/ui";
 
 export default async function Page() {
   const { l } = usePage();
-  const { ${dict.model}InitInPublic } = await fetch.init${dict.Model}InPublic();
+  const [{ ${dict.model}InitInPublic }] = await Promise.all([fetch.init${dict.Model}InPublic()]);
   return (
     <div className="container flex flex-col gap-4">
-      <div className="w-full mt-5 px-5 h-full ">
+      <div className="mt-5 h-full w-full px-5">
         <div>{l("${dict.model}.modelName")}</div>
-        <div className="animate-fadeIn px-4 pt-4 flex gap-4 items-center">
+        <div className="flex animate-fadeIn items-center gap-4 px-4 pt-4">
           <div className="font-bold text-lg md:text-4xl">${dict.Model}s</div>
-          <Link href={\`/${dict.model}/new\`}>
-            <button className="inline-flex items-center justify-center gap-2 rounded-field bg-primary px-4 py-2 font-medium text-primary-foreground text-sm transition-colors hover:bg-primary/90">+ {l("base.createModel", { model: l("${dict.model}.modelName") })}</button>
+          <Link className={buttonRecipe()} href="/${dict.model}/new">
+            + {l("base.createModel", { model: l("${dict.model}.modelName") })}
           </Link>
         </div>
         <div>{l("${dict.model}.modelDesc")}</div>
-        <div className="flex px-6 mt-3 gap-4">
+        <div className="mt-3 flex gap-4 px-6">
           <${dict.Model}.Zone.Card
-            className="animate-fadeIn grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 justify-center gap-4 w-full"
+            className="grid w-full animate-fadeIn grid-cols-1 justify-center gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
             init={${dict.model}InitInPublic}
           />
         </div>
@@ -38,6 +38,6 @@ export default async function Page() {
   );
 }
 export const pageConfig = { transition: "none" } satisfies PageConfig;
-  `,
+`,
   };
 }

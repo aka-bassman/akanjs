@@ -4,11 +4,11 @@ import { ConstantRegistry, via } from "akanjs/constant";
 import type { SerializedSignal } from "../types";
 import { createOpenApiDocument } from "./openapi";
 
-const OpenApiRole = enumOf("openApiRole", ["admin", "user"] as const);
+class OpenApiRole extends enumOf("openApiRole", ["admin", "user"] as const) {}
 
 class OpenApiItemInput extends via((field) => ({
   title: field(String, { minlength: 2, example: "Hello" }),
-  role: field(String, { enum: OpenApiRole, example: "admin" }),
+  role: field(OpenApiRole, { example: "admin" }),
 })) {}
 
 class OpenApiItemObject extends via(OpenApiItemInput, (field) => ({

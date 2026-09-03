@@ -19,7 +19,7 @@ export class LibraryCommand extends command("library", [LibraryScript], ({ publi
       await this.libraryScript.syncLibrary(lib);
     }),
   installLibrary: target({ desc: "Install pre-built library templates (shared, util, etc.)" })
-    .arg("libName", String, { desc: "name of library", nullable: true })
+    .arg("libName", String, { desc: "name of library" })
     .with(Workspace)
     .exec(async function (libName, workspace) {
       await this.libraryScript.installLibrary(workspace, libName);

@@ -5,7 +5,6 @@ import { select } from "@inquirer/prompts";
 
 import { ApplicationScript } from "./application.script";
 
-const asMobileEnv = (env: string) => env as "local" | "debug" | "develop" | "main";
 const mobileTargetOption = {
   desc: "mobile target name or all",
   ask: "Select mobile target",
@@ -125,7 +124,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .option("write", Boolean, { desc: "write code generation", default: true })
     .option("regenerate", Boolean, { flag: "g", desc: "delete and regenerate native project", default: false })
     .exec(async function (app, target, env, write, regenerate) {
-      await this.applicationScript.buildIos(app, { target, env: asMobileEnv(env), write, regenerate });
+      await this.applicationScript.buildIos(app, { target, env: env, write, regenerate });
     }),
   buildAndroid: target({ short: true, desc: "Build Android app with Capacitor" })
     .with(App)
@@ -138,7 +137,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .option("write", Boolean, { desc: "write code generation", default: true })
     .option("regenerate", Boolean, { flag: "g", desc: "delete and regenerate native project", default: false })
     .exec(async function (app, target, env, write, regenerate) {
-      await this.applicationScript.buildAndroid(app, { target, env: asMobileEnv(env), write, regenerate });
+      await this.applicationScript.buildAndroid(app, { target, env: env, write, regenerate });
     }),
   start: target({ short: true, desc: "Start development server (frontend SSR + backend)" })
     .with(App)
@@ -170,7 +169,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .exec(async function (app, target, env, open, release, write, regenerate, noAllowProvisioningUpdates, device) {
       await this.applicationScript.startIos(app, {
         target,
-        env: asMobileEnv(env),
+        env: env,
         open,
         operation: release ? "release" : "local",
         write,
@@ -194,7 +193,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .exec(async function (app, target, env, release, open, write, regenerate) {
       await this.applicationScript.startAndroid(app, {
         target,
-        env: asMobileEnv(env),
+        env: env,
         open,
         operation: release ? "release" : "local",
         write,
@@ -215,7 +214,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .exec(async function (app, target, env, write, regenerate, allowLocalRelease) {
       await this.applicationScript.releaseIos(app, {
         target,
-        env: asMobileEnv(env),
+        env: env,
         write,
         regenerate,
         allowLocalRelease,
@@ -234,9 +233,9 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .option("regenerate", Boolean, { flag: "g", desc: "delete and regenerate native project", default: false })
     .option("allowLocalRelease", Boolean, { flag: "l", desc: "allow release with --env local", default: false })
     .exec(async function (app, assembleType, target, env, write, regenerate, allowLocalRelease) {
-      await this.applicationScript.releaseAndroid(app, assembleType as "apk" | "aab", {
+      await this.applicationScript.releaseAndroid(app, assembleType, {
         target,
-        env: asMobileEnv(env),
+        env: env,
         write,
         regenerate,
         allowLocalRelease,
@@ -271,7 +270,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
       enum: ["single", "multiple", "cluster"],
     })
     .exec(async function (workspace, mode) {
-      await this.applicationScript.dbup(workspace, mode as "single" | "multiple" | "cluster");
+      await this.applicationScript.dbup(workspace, mode);
     }),
   dbdown: target({ desc: "Stop local database services" })
     .with(Workspace)

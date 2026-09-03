@@ -236,7 +236,7 @@ export function store<Sig extends ClientSignal<any, any, any> | string, State>(
     Object.assign(storeCls[STATE_META], derived.shape);
     storeCls[STATE_DERIVED_META] = mergeDerivedMeta(storeCls[STATE_DERIVED_META], derived.meta);
   }
-  return storeCls as any;
+  return storeCls as any; // the declared return is a generic instantiation built from this call's own type arguments, so there is no `T` to name
 }
 
 const isStoreCls = (value: unknown): value is StoreCls =>

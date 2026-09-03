@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
 import { pathGetLoose } from "../common/pathGetLoose";
+import { parseCookieHeader } from "../fetch/requestStorage";
 
 type Side = "server" | "client";
 type RenderMode = "ssr" | "csr";
@@ -23,20 +24,9 @@ const makeJwt = (payload: Record<string, unknown>) => {
   return `header.${encoded}.signature`;
 };
 
-const requestCookies = () => {
-  const map = new Map<string, { name: string; value: string }>();
-  for (const segment of (requestState.request?.headers.get("cookie") ?? "").split(";")) {
-    const trimmed = segment.trim();
-    if (!trimmed) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    const name = trimmed.slice(0, eq).trim();
-    const raw = trimmed.slice(eq + 1).trim();
-    const value = raw.startsWith("j:") ? (JSON.parse(raw.slice(2)) as string) : raw;
-    map.set(name, { name, value });
-  }
-  return map;
-};
+// The real parser, not a copy of it: `client/cookie.ts` reads through this one on both sides, so a mock that
+// reimplemented it could pass while the two disagreed — which is the bug this indirection removed.
+const requestCookies = () => parseCookieHeader(requestState.request?.headers.get("cookie") ?? "");
 
 const requestHeaders = () => {
   const map = new Map<string, string>();
@@ -75,6 +65,7 @@ beforeAll(() => {
     },
     cookies: requestCookies,
     headers: requestHeaders,
+    parseCookieHeader,
   }));
   mock.module("./useClient", () => ({
     msg: {
@@ -198,7 +189,10 @@ describe("cookies, headers, and auth", () => {
     expect(getCookie("jwt")).toBe("abc");
     expect(headers().get("x-locale")).toBe("ko");
     expect(getHeader("x-locale")).toBe("ko");
-    expect(removeCookie("jwt")).toBe(true);
+    // Nothing, and says so: the response carries a Set-Cookie and this helper has no hold on it. It used to
+    // return the `true` of deleting from a Map built one line earlier and discarded, which read as a removal.
+    expect(removeCookie("jwt")).toBeUndefined();
+    expect(cookies().get("jwt")).toEqual({ name: "jwt", value: "abc" });
   });
 
   test("client cookies and account helpers use document/js-cookie and auth side effects", async () => {
@@ -221,6 +215,19 @@ describe("cookies, headers, and auth", () => {
     resetAuth();
     expect(fetchJwtCalls.at(-1)).toBeNull();
     expect(localStore.has("jwt")).toBe(false);
+  });
+
+  test("getAccount reads the Bearer header the server honours, not a bare jwt header", async () => {
+    envState.side = "server";
+    const jwt = makeJwt({ appName: "test-app", environment: "debug", userId: "u9" });
+    requestState.request = new Request("https://example.test", { headers: { authorization: `Bearer ${jwt}` } });
+    const { getAccount } = await import("./cookie");
+    expect(getAccount()).toMatchObject({ userId: "u9" });
+
+    // Nothing sends this and no guard accepts it, so reading it made the client claim a session the endpoint
+    // would have treated as anonymous.
+    requestState.request = new Request("https://example.test", { headers: { jwt } });
+    expect(getAccount() as unknown).toEqual({ appName: "test-app", environment: "debug" });
   });
 
   test("getAccount rejects mismatched app or environment jwt", async () => {

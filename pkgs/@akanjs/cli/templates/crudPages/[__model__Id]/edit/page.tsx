@@ -9,9 +9,9 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dic
   return {
     filename: "_index.tsx",
     content: `
-import { Load } from "akanjs/ui";
-import { fetch, usePage, ${dict.Model} } from "@apps/${dict.appName}/client";
+import { ${dict.Model}, fetch, usePage } from "@apps/${dict.appName}/client";
 import type { PageConfig } from "akanjs/client";
+import { Load } from "akanjs/ui";
 
 interface PageProps {
   params: { ${dict.model}Id: string };
@@ -20,11 +20,11 @@ interface PageProps {
 export default async function Page({ params }: PageProps) {
   const { l } = usePage();
   const { ${dict.model}Id } = params;
-  const { ${dict.model}, ${dict.model}Edit } = await fetch.edit${dict.Model}(${dict.model}Id);
+  const [{ ${dict.model}Edit }] = await Promise.all([fetch.edit${dict.Model}(${dict.model}Id)]);
   return (
     <div className="container">
-      <div className="flex justify-between m-4 mt-8">
-        <div className="text-xl text-primary flex gap-2 items-center">
+      <div className="m-4 mt-8 flex justify-between">
+        <div className="flex items-center gap-2 text-primary text-xl">
           {l("base.updateModel", { model: l("${dict.model}.modelName") })}
         </div>
       </div>

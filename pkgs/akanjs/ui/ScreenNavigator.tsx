@@ -57,7 +57,7 @@ export const ScreenNavigator = ({
   const bind = useDrag(
     ({ first, last, offset: [x], velocity: [vx], direction: [dx], movement: [mx], cancel }) => {
       if (!ref.current) return;
-      // FIXME: 메뉴가 3개 이상일 경우 고려해야함
+      // FIXME: the indicator geometry below assumes two menus; three or more mispositions it.
       const deviceWidth = ref.current.clientWidth / 2;
       if (x > 0 || x < -deviceWidth) return;
       if (dx < 1) {

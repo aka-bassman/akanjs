@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { chmod, mkdir } from "node:fs/promises";
 import dayjs from "dayjs";
 import { FileSys } from "../fileSys";
 import {
@@ -29,9 +29,16 @@ export class GlobalConfig {
       remoteEnvServers: akanConfig.remoteEnvServers ?? defaultAkanGlobalConfig.remoteEnvServers,
     };
   }
+  /**
+   * This file holds the cloud jwt, a refresh token that does not expire, and the LLM api key, so it is
+   * written owner-only — the same `0600` the runtime gives its control socket. `Bun.write` takes no mode
+   * and lands on `0666 & ~umask` (0644 on a default shell), so the mode is applied after the write; an
+   * existing world-readable file is tightened by the next write rather than left as it was found.
+   */
   static async #setAkanGlobalConfig(akanConfig: AkanGlobalConfig) {
-    await mkdir(basePath, { recursive: true });
+    await mkdir(basePath, { recursive: true, mode: 0o700 });
     await Bun.write(configPath, JSON.stringify(akanConfig, null, 2));
+    await chmod(configPath, 0o600);
   }
   static async getHostConfig(host = GlobalConfig.akanCloudHost): Promise<HostConfig> {
     const akanConfig = await GlobalConfig.#getAkanGlobalConfig();

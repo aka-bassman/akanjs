@@ -1,6 +1,6 @@
 import { ACTION_META, ACTION_OWNER_META, STATE_DERIVED_META, STATE_INIT_META } from "akanjs/base";
 import { Translator } from "akanjs/client";
-import { capitalize, Logger, parseAkanI18nEnv } from "akanjs/common";
+import { capitalize, type DynamicRecord, Logger, parseAkanI18nEnv } from "akanjs/common";
 import { ConstantRegistry } from "akanjs/constant";
 import type { SerializedArg } from "akanjs/signal";
 import { enableMapSet, produce } from "immer";
@@ -373,8 +373,8 @@ export class StoreInstance {
         Logger.verbose(`${k} action loading...`);
         const start = Date.now();
         try {
-          // action can return the result, but it is restricted to undefined, because of maintainability concerns
-          const result = await (this.#ctx[k] as StoreAction)(...args);
+          // An action's return is unreachable by design (`no-return-in-store-action.grit`), so it is not read.
+          await (this.#ctx[k] as StoreAction)(...args);
           Logger.verbose(`=> ${k} action dispatched (${Date.now() - start}ms)`);
         } catch (error) {
           this.#showActionErrorMessage(k, error);
@@ -513,7 +513,7 @@ export class StoreInstance {
       );
     };
 
-    (this.slice as any)[sliceName] = targetSlice;
+    (this.slice as unknown as DynamicRecord)[sliceName] = targetSlice;
   }
 
   #notify() {

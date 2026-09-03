@@ -1,3 +1,24 @@
+/**
+ * The three ways this framework throws, and which one to reach for.
+ *
+ * - **`Exception`** (here) — a request-level answer with a status code. It travels to the caller as it is:
+ *   `{ error, statusCode, path, timestamp }`, with the message intact. Reach for it when the caller did
+ *   something the endpoint can name — a filter that does not exist, an argument that will not parse, a guard's
+ *   refusal. The message is read by whoever called, so it may not say anything the caller may not know.
+ *
+ * - **`Err`** (`akanjs/dictionary`, `new Err("<module>.error.<key>")`) — the same thing for a **domain** rule,
+ *   with the sentence in the module's dictionary in every language. Everything a *user* reads is one of these;
+ *   `Exception` carries English prose and belongs to the protocol rather than to the product.
+ *
+ * - **`Error`** — a bug, an invariant the code holds and something broke, or a misconfiguration a developer has
+ *   to fix. It never reaches a caller: `SignalFailure` generalizes anything without a status code to
+ *   `Internal Server Error` and logs the stack, because a stack names server paths and a driver message quotes
+ *   the statement. Most of the 379 `throw new Error` in this package are boot-time refusals, which is right —
+ *   nobody is holding the connection.
+ *
+ * The test for the first two is whether a caller can act on it. The test for the third is whether *this repo*
+ * has to change for the throw to stop happening.
+ */
 export class Exception extends Error {
   constructor(
     public readonly statusCode: number,
@@ -40,6 +61,11 @@ export class Exception extends Error {
   static Conflict = class ConflictException extends Exception {
     constructor(message = "Conflict", details?: unknown) {
       super(409, message, details);
+    }
+  };
+  static UnsupportedMediaType = class UnsupportedMediaTypeException extends Exception {
+    constructor(message = "Unsupported Media Type", details?: unknown) {
+      super(415, message, details);
     }
   };
   static Error = class InternalServerErrorException extends Exception {

@@ -25,6 +25,8 @@ export interface ErrorConstructor {
 interface FetchOptions {
   headers?: Record<string, string>;
   baseUrl?: string;
+  /** Milliseconds before the request is abandoned; `false` waits as long as the browser will. */
+  timeout?: number | false;
 }
 
 const jsonContentType = /^application\/(?:[\w.+-]+\+)?json\b/i;
@@ -39,6 +41,15 @@ const transportErrorKeyMap = {
 const serverUnreachableKey = "base.error.serverUnreachable";
 const unexpectedResponseKey = "base.error.unexpectedResponse";
 const transportDetailLimit = 200;
+/**
+ * How long a call waits before giving up.
+ *
+ * Nothing else bounds it: a gateway answers a dead upstream with a 504, but a solo process has no gateway and a
+ * severed connection produces no response at all — the request then sits until the browser's own limit, which is
+ * minutes. The dictionary already has the wording for a slow server (`gatewayTimeout`), so this is the client
+ * side of an answer that only existed for one deployment shape.
+ */
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 export class HttpClient {
   readonly baseUrl: string;
@@ -64,9 +75,11 @@ export class HttpClient {
     return { Accept: "application/json", ...headers, ...options.headers };
   }
   async get<Returns = unknown>(url: string, options: FetchOptions = {}): Promise<Returns> {
-    return await this.#request<Returns>(this.#resolveUrl(url, options), {
-      headers: HttpClient.#makeHeaders({ "Content-Type": "application/json" }, options),
-    });
+    return await this.#request<Returns>(
+      this.#resolveUrl(url, options),
+      { headers: HttpClient.#makeHeaders({ "Content-Type": "application/json" }, options) },
+      options,
+    );
   }
   #makeReqContent(data: FormData | Record<string, unknown>): { body: BodyInit; headers: Record<string, string> } {
     // FormData: do not set Content-Type — fetch adds multipart boundary; a bare
@@ -81,11 +94,11 @@ export class HttpClient {
     options: FetchOptions = {},
   ): Promise<Returns> {
     const { body, headers } = this.#makeReqContent(data);
-    return await this.#request<Returns>(this.#resolveUrl(url, options), {
-      method,
-      body,
-      headers: HttpClient.#makeHeaders(headers, options),
-    });
+    return await this.#request<Returns>(
+      this.#resolveUrl(url, options),
+      { method, body, headers: HttpClient.#makeHeaders(headers, options) },
+      options,
+    );
   }
   async put<Returns = unknown>(
     url: string,
@@ -102,15 +115,27 @@ export class HttpClient {
     return await this.send<Returns>("POST", url, data, options);
   }
   async delete<Returns = unknown>(url: string, options: FetchOptions = {}): Promise<Returns> {
-    return await this.#request<Returns>(this.#resolveUrl(url, options), {
-      method: "DELETE",
-      headers: HttpClient.#makeHeaders({ "Content-Type": "application/json" }, options),
-    });
+    return await this.#request<Returns>(
+      this.#resolveUrl(url, options),
+      { method: "DELETE", headers: HttpClient.#makeHeaders({ "Content-Type": "application/json" }, options) },
+      options,
+    );
   }
 
-  async #request<Returns>(url: string, init: RequestInit): Promise<Returns> {
-    const res = await this.#fetch(url, init);
+  async #request<Returns>(url: string, init: RequestInit, options: FetchOptions = {}): Promise<Returns> {
+    const res = await this.#fetch(url, HttpClient.#withTimeout(init, options));
     return await this.#readJsonResponse<Returns>(res);
+  }
+
+  /**
+   * An upload gets no deadline of its own: a large file on a slow uplink is a long request that is working, and
+   * the request body is the only thing this side can tell that from. Everything else takes the default unless
+   * the caller named one.
+   */
+  static #withTimeout(init: RequestInit, options: FetchOptions): RequestInit {
+    const timeout = options.timeout ?? (init.body instanceof FormData ? false : DEFAULT_TIMEOUT_MS);
+    if (timeout === false || !Number.isFinite(timeout) || timeout <= 0) return init;
+    return { ...init, signal: AbortSignal.timeout(timeout) };
   }
 
   /**
@@ -122,6 +147,11 @@ export class HttpClient {
     try {
       return await fetch(url, init);
     } catch (error) {
+      // A caller's own abort — a navigation, a cancelled screen — stays an `AbortError` for the caller to
+      // ignore. `AbortSignal.timeout` rejects with `TimeoutError` instead, which is this client giving up and
+      // is reported as the slow-server answer the dictionary already has wording for.
+      if (error instanceof Error && error.name === "TimeoutError")
+        throw this.#restoreError({ error: transportErrorKeyMap[408], data: { status: 408 } }, 408);
       if (error instanceof Error && error.name === "AbortError") throw error;
       throw this.#restoreError({ error: serverUnreachableKey, details: String(error) }, 503);
     }

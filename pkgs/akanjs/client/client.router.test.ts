@@ -133,18 +133,14 @@ describe("router", () => {
     envState.side = "client";
     installClientWindow("/en/admin/explore");
     let historyState: unknown = null;
-    const windowWithHistory = window as typeof window & {
-      history: { state: unknown; replaceState: (state: unknown) => void };
-      addEventListener: () => void;
-    };
-    windowWithHistory.history = {
-      state: null,
-      replaceState: (state) => {
+    const historyStub = {
+      state: null as unknown,
+      replaceState: (state: unknown) => {
         historyState = state;
-        windowWithHistory.history.state = state;
+        historyStub.state = state;
       },
     };
-    windowWithHistory.addEventListener = () => undefined;
+    Object.assign(window, { history: historyStub, addEventListener: () => undefined });
     const calls: unknown[] = [];
     const originalSetTimeout = globalThis.setTimeout;
     const mockSetTimeout = ((handler: TimerHandler) => {

@@ -3,7 +3,6 @@ import type {
   LayoutModule,
   LayoutProps,
   PageProps,
-  PageState,
   PathRoute,
   ResolveHead,
   Route,
@@ -20,25 +19,12 @@ import {
   routeSegmentToTreePath,
 } from "akanjs/common";
 import { createElement } from "react";
-import { validatePageConfig } from "../client/frameConfig";
+import { defaultPageState, validatePageConfig } from "../client/frameConfig";
 import { resolveHeadExport, resolveMetadataHead } from "./metadata";
 
 type RouteModuleKindWithOverrides = "page" | "layout" | "overrides";
 
 export type PagesContext = Record<string, () => Promise<RouteModule>>;
-
-export const defaultPageState: PageState = {
-  transition: "none",
-  topSafeArea: 0,
-  bottomSafeArea: 0,
-  topInset: 0,
-  bottomInset: 0,
-  gesture: true,
-  cache: false,
-  ssr: "stream",
-  topSafeAreaColor: "transparent",
-  bottomSafeAreaColor: "transparent",
-};
 
 export interface RouteModuleCacheStats {
   moduleCount: number;

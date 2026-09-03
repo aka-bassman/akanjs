@@ -11,8 +11,14 @@ export const createCallRecorder = () => {
   const calls: CallRecord[] = [];
   return {
     calls,
-    record(name: string, ...args: unknown[]) {
+    /**
+     * `Returns` lets one recorder stand in for methods that return a value. Nothing is produced — the
+     * stub resolves to `undefined`, so use it only where the code under test does not read the result;
+     * a test that needs the value should return it from its own closure instead.
+     */
+    record<Returns = void>(name: string, ...args: unknown[]): Returns {
       calls.push({ name, args });
+      return undefined as unknown as Returns;
     },
     names() {
       return calls.map((call) => call.name);

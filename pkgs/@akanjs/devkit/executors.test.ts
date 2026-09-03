@@ -127,6 +127,49 @@ describe("Executor filesystem helpers", () => {
     expect(await readFile(path.join(root, "local/docker-compose.yaml"), "utf8")).toBe("custom");
   });
 
+  test("hands every scaffolded TypeScript file to the formatter, and nothing else", async () => {
+    // A template emits identifiers it cannot sort — `import { fetch, Task, usePage }` is right for a model
+    // named Task and wrong for Zoo — and unsorted imports fail `biome check`. So the scaffold is formatted
+    // on the way out, or it is red for most model names whatever the template says.
+    const root = await makeTempRoot();
+    const exec = new Executor("fixture", root);
+    const formatted: string[] = [];
+    exec.getLinter = () =>
+      ({
+        fixFiles: async (filePaths: string[]) => {
+          formatted.push(...filePaths);
+          return { fixed: [] };
+        },
+      }) as unknown as ReturnType<Executor["getLinter"]>;
+
+    await exec.applyTemplate({
+      basePath: "apps/demo/page/task",
+      template: "crudSinglePage",
+      dict: { model: "task", appName: "demo" },
+    });
+
+    expect(formatted).toEqual([path.join(root, "apps/demo/page/task/_index.tsx")]);
+  });
+
+  test("a formatter that cannot run does not fail the scaffold", async () => {
+    // `create-akan-workspace` scaffolds before `bun install`, so there is no local Biome binary and often
+    // no config above the target. An unformatted file is a lint fix; a failed scaffold is not.
+    const root = await makeTempRoot();
+    const exec = new Executor("fixture", root);
+    exec.getLinter = () => {
+      throw new Error("biome.json not found");
+    };
+
+    const created = await exec.applyTemplate({
+      basePath: "apps/demo/page/task",
+      template: "crudSinglePage",
+      dict: { model: "task", appName: "demo" },
+    });
+
+    expect(created).toHaveLength(1);
+    expect(await readFile(path.join(root, "apps/demo/page/task/_index.tsx"), "utf8")).toContain("Task.Zone.Card");
+  });
+
   test("applies hidden files and directories from CLI templates", async () => {
     const root = await makeTempRoot();
     const exec = new Executor("fixture", root);
@@ -203,6 +246,7 @@ describe("Workspace and app executor environment contracts", () => {
       serveDomain: "example.com",
       env: "local",
       portOffset: 10,
+      workspaceId: undefined,
     });
 
     delete process.env.AKAN_PUBLIC_REPO_NAME;
@@ -233,6 +277,7 @@ describe("Workspace and app executor environment contracts", () => {
       serveDomain: "file.example.com",
       env: "develop",
       portOffset: 7,
+      workspaceId: undefined,
     });
   });
 

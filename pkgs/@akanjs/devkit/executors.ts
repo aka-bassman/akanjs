@@ -690,7 +690,30 @@ export class Executor {
         Object.entries(options.dict ?? {}).map(([key, value]) => [capitalize(key), capitalize(value)]),
       ),
     };
-    return this._applyTemplate({ ...options, dict });
+    const fileContents = await this._applyTemplate({ ...options, dict });
+    await this.#formatAppliedTemplate(fileContents);
+    return fileContents;
+  }
+
+  /**
+   * A template emits identifiers it cannot sort. `import { fetch, Task, usePage }` is correctly ordered for
+   * a model named Task and wrong for one named Zoo, and `organizeImports` fails `biome check` — so a
+   * scaffold that is not formatted on the way out is red for most model names, whatever the template says.
+   *
+   * Best-effort: `create-akan-workspace` scaffolds before `bun install`, so there is no local Biome binary
+   * and often no config above the target yet. An unformatted file is a lint fix; a failed scaffold is not.
+   */
+  async #formatAppliedTemplate(fileContents: FileContent[]) {
+    const filePaths = fileContents
+      .map((fileContent) => fileContent.filePath)
+      .filter((filePath) => filePath.endsWith(".ts") || filePath.endsWith(".tsx"));
+    if (filePaths.length === 0) return;
+    try {
+      const { fixed } = await this.getLinter().fixFiles(filePaths);
+      if (fixed.length > 0) this.logger.verbose(`Formatted ${fixed.length} scaffolded file(s)`);
+    } catch (err) {
+      this.logger.verbose(`Skipped formatting scaffolded files: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
   // Async so `typescript` (~65MB resident) is loaded only by the commands that actually typecheck,
   // not by every process that imports an executor. `typeCheckAsync` below runs in a subprocess and
@@ -913,9 +936,10 @@ export class WorkspaceExecutor extends Executor {
     return await getDirs(basePath);
   }
   async commit(message: string, { init = false, add = true }: { init?: boolean; add?: boolean } = {}) {
-    if (init) await this.exec(`git init --quiet`);
-    if (add) await this.exec(`git add .`);
-    await this.exec(`git commit --quiet -m "${message}"`);
+    if (init) await this.spawn("git", ["init", "--quiet"]);
+    if (add) await this.spawn("git", ["add", "."]);
+    // Argument vector, not a shell string: a message carrying a double quote breaks the interpolated form.
+    await this.spawn("git", ["commit", "--quiet", "-m", message]);
   }
   async #getDirHasFile(basePath: string, targetFilename: string) {
     const AVOID_DIRS = ["node_modules", "dist", "public", "webkit"];
@@ -1369,7 +1393,7 @@ export class AppExecutor extends SysExecutor {
       //* generated against and typechecked. Drop the cache so the build phases re-read it without them.
       this.#excludeDevOnlyPages = true;
       this.#pageKeys = null;
-      if (await this.exists(this.dist.cwdPath)) await this.dist.exec(`rm -rf ${this.dist.cwdPath}`);
+      await this.dist.removeDir(this.dist.cwdPath);
       await Promise.all([this.dist.mkdir("private"), this.dist.mkdir("public")]);
       //* Lib assets are symlinks in the app dir (see syncAssets). dist is the docker build context and the
       //* release tarball root, neither of which follows a link out of itself, so materialize them here.

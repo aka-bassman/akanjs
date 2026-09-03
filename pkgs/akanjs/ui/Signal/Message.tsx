@@ -1,7 +1,7 @@
 "use client";
 import { PrimitiveRegistry } from "akanjs/base";
 import { fetch, usePage } from "akanjs/client";
-import { capitalize } from "akanjs/common";
+import { capitalize, type DynamicRecord } from "akanjs/common";
 import { type ConstantCls, ConstantRegistry } from "akanjs/constant";
 import type { SerializedEndpoint } from "akanjs/signal";
 import { useEffect, useMemo, useState } from "react";
@@ -127,16 +127,16 @@ const MessageTry = ({ endpointKey, endpoint }: MessageTryProps) => {
   const onSend = async () => {
     const request = JSON.parse(gqlRequest) as { [key: string]: string | number | boolean | null };
     const argData = endpoint.args.map((arg) => request[arg.refName]);
-    const fetchFn = ((fetch as any)[endpointKey] as (...args: any[]) => Promise<any>).bind(fetch) as (
-      ...args: any[]
-    ) => Promise<any>;
+    const fetchFn = ((fetch as unknown as DynamicRecord)[endpointKey] as (...args: any[]) => Promise<any>).bind(
+      fetch,
+    ) as (...args: any[]) => Promise<any>;
     await fetchFn(...argData);
   };
   const onListen = () => {
     setResponse({ status: "loading", data: null });
-    const fetchFn = ((fetch as any)[`listen${capitalize(endpointKey)}`] as (...args: any[]) => Promise<any>).bind(
-      fetch,
-    ) as (data: (data: any) => void) => Promise<() => void>;
+    const fetchFn = (
+      (fetch as unknown as DynamicRecord)[`listen${capitalize(endpointKey)}`] as (...args: any[]) => Promise<any>
+    ).bind(fetch) as (data: (data: any) => void) => Promise<() => void>;
     setResponse({ status: "loading", data: messages });
     const stopListen = fetchFn((data: any) => {
       setMessages((prev) =>

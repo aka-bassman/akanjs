@@ -104,6 +104,26 @@ const select = ((config, context) => prompts().then((m) => m.select(config, cont
 const confirm = ((config, context) => prompts().then((m) => m.confirm(config, context))) as typeof inquirerConfirm;
 const input = ((config, context) => prompts().then((m) => m.input(config, context))) as typeof inquirerInput;
 
+/**
+ * Rejects a value that is not one of the declared choices, in commander's own wording.
+ *
+ * Only a static choice list can be checked: a `DynamicEnum` resolves against the command context, which
+ * is not populated until the internal args are resolved, and it is the interactive `select` that consumes
+ * it. Comparison is stringly on purpose — the value still carries commander's raw string here, while a
+ * numeric choice list holds numbers.
+ */
+const assertEnumChoice = (argMeta: ArgMeta, value: unknown) => {
+  const enumChoices = argMeta.argsOption.enum;
+  if (!enumChoices || typeof enumChoices === "function") return;
+  const choices = normalizeEnumChoices(enumChoices);
+  if (choices.some((choice) => String(choice.value) === String(value))) return;
+  const label =
+    argMeta.type === "Option" ? `option '--${camelToKebabCase(argMeta.name)}'` : `argument '${argMeta.name}'`;
+  throw new Error(
+    `${label} argument '${String(value)}' is invalid. Allowed choices are ${choices.map((choice) => choice.name).join(", ")}.`,
+  );
+};
+
 const resolveEnumChoices = async (argMeta: ArgMeta, context: CommandContext) => {
   const enumChoices = argMeta.argsOption.enum;
   if (!enumChoices) return null;
@@ -111,13 +131,15 @@ const resolveEnumChoices = async (argMeta: ArgMeta, context: CommandContext) => 
   return enumChoices;
 };
 
-const getOptionValue = async (argMeta: ArgMeta, opt: Record<string, unknown>, context: CommandContext) => {
+export const getOptionValue = async (argMeta: ArgMeta, opt: Record<string, unknown>, context: CommandContext) => {
   const {
     name,
     argsOption: { enum: enumChoices, default: defaultValue, type, desc, nullable, example, ask },
   } = argMeta;
-  if (opt[argMeta.name] !== undefined) return convertArgValue(opt[argMeta.name] as string, type ?? "string");
-  else if (defaultValue !== undefined) return defaultValue;
+  if (opt[argMeta.name] !== undefined) {
+    assertEnumChoice(argMeta, opt[argMeta.name]);
+    return convertArgValue(opt[argMeta.name] as string, type ?? "string");
+  } else if (defaultValue !== undefined) return defaultValue;
 
   if (enumChoices) {
     const choices = normalizeEnumChoices((await resolveEnumChoices(argMeta, context)) ?? []);
@@ -139,13 +161,15 @@ const getOptionValue = async (argMeta: ArgMeta, opt: Record<string, unknown>, co
   }
 };
 
-const getArgumentValue = async (argMeta: ArgMeta, value: string | undefined) => {
+export const getArgumentValue = async (argMeta: ArgMeta, value: string | undefined) => {
   const {
     name,
     argsOption: { default: defaultValue, type, desc, nullable, example, ask },
   } = argMeta;
-  if (value !== undefined) return convertArgValue(value, type ?? "string");
-  else if (defaultValue !== undefined) return defaultValue;
+  if (value !== undefined) {
+    assertEnumChoice(argMeta, value);
+    return convertArgValue(value, type ?? "string");
+  } else if (defaultValue !== undefined) return defaultValue;
   else if (nullable) return null;
 
   const message = ask

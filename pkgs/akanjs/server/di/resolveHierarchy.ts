@@ -37,8 +37,8 @@ export function topologicalStages<T extends DependencyNode>(graph: Map<string, T
 
     const next: string[] = [];
     for (const key of queue) {
-      for (const dependent of dependents.get(key)!) {
-        const newDegree = inDegree.get(dependent)! - 1;
+      for (const dependent of dependents.get(key) ?? []) {
+        const newDegree = (inDegree.get(dependent) ?? 0) - 1;
         inDegree.set(dependent, newDegree);
         if (newDegree === 0) next.push(dependent);
       }
@@ -47,7 +47,7 @@ export function topologicalStages<T extends DependencyNode>(graph: Map<string, T
   }
 
   if (processed !== graph.size) {
-    const remaining = [...graph.keys()].filter((k) => inDegree.get(k)! > 0);
+    const remaining = [...graph.keys()].filter((k) => (inDegree.get(k) ?? 0) > 0);
     const cycle = traceCycle(graph, remaining);
     throw new Error(`Circular dependency detected: ${cycle.join(" → ")}`);
   }

@@ -66,7 +66,14 @@ export class ConstantSerializer {
       values[key] = DevtoolsJson.toSafe(value);
     }
 
-    return { models, scalars, enums, values, primitives: PrimitiveRegistry.getNames().sort(), relations };
+    return {
+      models,
+      scalars,
+      enums,
+      values,
+      primitives: PrimitiveRegistry.getNames().sort((a, b) => a.localeCompare(b)),
+      relations,
+    };
   }
 
   static #serializeView(modelRef: ConstantCls | undefined, modelType: ConstantType): ConstantModelView {

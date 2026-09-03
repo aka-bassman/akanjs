@@ -1,7 +1,7 @@
 "use client";
 import { DataList } from "akanjs/base";
 import { cn } from "akanjs/client";
-import { capitalize, isQueryEqual, lowerlize } from "akanjs/common";
+import { capitalize, type DynamicRecord, isQueryEqual, lowerlize } from "akanjs/common";
 import type { BaseInsight } from "akanjs/constant";
 import { ConstantRegistry, labelOf, withSharedInstances } from "akanjs/constant";
 import type { ClientInit, ServerInit } from "akanjs/fetch";
@@ -108,11 +108,11 @@ function Render<RefName extends string, Light extends { id: string }>({
   };
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
-  const initQueryArgs = (init as any)[names.queryArgsOfModel] as object[];
-  const initModelInitAt = (init as any)[names.modelInitAt] as Date;
-  const initModelObjInsight = (init as any)[names.modelObjInsight] as BaseInsight;
-  const initLimitOfModel = (init as any)[names.limitOfModel] as number;
-  const initPageOfModel = (init as any)[names.pageOfModel] as number;
+  const initQueryArgs = (init as DynamicRecord)[names.queryArgsOfModel] as object[];
+  const initModelInitAt = (init as DynamicRecord)[names.modelInitAt] as Date;
+  const initModelObjInsight = (init as DynamicRecord)[names.modelObjInsight] as BaseInsight;
+  const initLimitOfModel = (init as DynamicRecord)[names.limitOfModel] as number;
+  const initPageOfModel = (init as DynamicRecord)[names.pageOfModel] as number;
 
   const useCache =
     !modelListLoading &&
@@ -122,7 +122,7 @@ function Render<RefName extends string, Light extends { id: string }>({
 
   const modelInitList = useMemo<DataList<Light>>(() => {
     if (loaded.current) return modelList;
-    const initModelObjList = (init as any)[names.modelObjList] as Light[];
+    const initModelObjList = (init as DynamicRecord)[names.modelObjList] as Light[];
     return new DataList<Light>(
       withSharedInstances(() => initModelObjList.map((model) => new cnst.light().set(model) as unknown as Light)),
     );
@@ -130,13 +130,13 @@ function Render<RefName extends string, Light extends { id: string }>({
 
   useEffect(() => {
     if (loaded.current) return;
-    const modelObjInsight = (init as any)[names.modelObjInsight] as BaseInsight;
+    const modelObjInsight = (init as DynamicRecord)[names.modelObjInsight] as BaseInsight;
     const insight = new cnst.insight().set(modelObjInsight) as unknown as BaseInsight;
-    const initPageOfModel = (init as any)[names.pageOfModel] as number;
-    const initLastPageOfModel = (init as any)[names.lastPageOfModel] as number;
-    const initLimitOfModel = (init as any)[names.limitOfModel] as number;
-    const initQueryArgsOfModel = (init as any)[names.queryArgsOfModel] as object[];
-    const initSortOfModel = (init as any)[names.sortOfModel] as string;
+    const initPageOfModel = (init as DynamicRecord)[names.pageOfModel] as number;
+    const initLastPageOfModel = (init as DynamicRecord)[names.lastPageOfModel] as number;
+    const initLimitOfModel = (init as DynamicRecord)[names.limitOfModel] as number;
+    const initQueryArgsOfModel = (init as DynamicRecord)[names.queryArgsOfModel] as object[];
+    const initSortOfModel = (init as DynamicRecord)[names.sortOfModel] as string;
     st.set({
       [namesOfSlice.modelList]: modelInitList,
       [namesOfSlice.modelInitList]: modelInitList,

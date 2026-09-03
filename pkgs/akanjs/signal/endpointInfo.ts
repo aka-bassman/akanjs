@@ -352,9 +352,9 @@ export class EndpointInfo<
   }
 }
 
-// TODO: signal type 에 따라 기본 internal arg들 배정해주기
-// TODO: pubsub은 exec 없어도 되게하기
-// TODO: exec 없으면 타입에러 뜨게하기
+// TODO: assign the default internal args per endpoint type, so a `pubsub` need not name `Ws` by hand
+// TODO: let a `pubsub` declare no `exec` — subscribing is the whole behaviour for a room with no query
+// TODO: make a missing `exec` a type error rather than a null `execFn` the resolver skips at boot
 export type BuildEndpoint<SrvModule extends ServiceModel = ServiceModel> = {
   query: <Returns extends ConstantFieldTypeInput = ConstantFieldTypeInput, Nullable extends boolean = false>(
     returnRef: Returns,

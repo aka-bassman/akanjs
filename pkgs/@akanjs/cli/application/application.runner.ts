@@ -49,7 +49,7 @@ export class ApplicationRunner extends runner("application") {
     return AppExecutor.from(workspace, appName);
   }
   async removeApplication(app: App) {
-    await app.workspace.exec(`rm -rf apps/${app.name}`);
+    await app.workspace.removeDir(`apps/${app.name}`);
   }
   async getConfig(app: App) {
     return await app.getConfig();

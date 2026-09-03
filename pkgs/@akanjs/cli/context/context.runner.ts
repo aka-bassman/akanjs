@@ -4,6 +4,7 @@ import {
   type AkanMcpInstallTarget,
   type AkanMcpMode,
   akanMcpInstallConfigPaths,
+  buildResourceList,
   type CursorMcpConfig,
   codexMcpConfigPath,
   createAkanCodexMcpServerBlock,
@@ -11,7 +12,6 @@ import {
   type JsonRpcRequest,
   type McpFraming,
   renderDoctorText,
-  resourceList,
   upsertCodexMcpServerBlock,
 } from "@akanjs/devkit/akanContext";
 import {
@@ -34,6 +34,16 @@ import { createWorkflowBaselineSummary, jsonText, type WorkflowDiagnostic } from
 import { RepairRunner } from "../repair/repair.runner";
 import { WorkflowRunner } from "../workflow/workflow.runner";
 import { createCliWorkflowStepRegistry } from "./context.workflowRegistry";
+
+/**
+ * What a failed tool tells the model. Absolute paths are folded to a workspace-relative form: the
+ * message crosses to whoever is driving the agent, and a host path names a filesystem the model has no
+ * business enumerating.
+ */
+const toolErrorText = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/\/(?:[^\s"'/]+\/)*(?=(?:pkgs|apps|libs|infra)\/)/g, "<workspace>/");
+};
 
 const workflowDiagnosticFromContext = (diagnostic: {
   severity: "warning" | "error";
@@ -183,8 +193,8 @@ export class ContextRunner extends runner("context") {
     return codexMcpConfigPath;
   }
 
-  listMcpTools(mode: AkanMcpMode = "readonly") {
-    return listAkanMcpTools(mode);
+  listMcpTools(mode: AkanMcpMode = "readonly", { guidelineNames = [] }: { guidelineNames?: readonly string[] } = {}) {
+    return listAkanMcpTools(mode, { guidelineNames });
   }
 
   async callMcpTool(
@@ -342,18 +352,23 @@ export class ContextRunner extends runner("context") {
       if (framing === "newline") process.stdout.write(`${payload}\n`);
       else process.stdout.write(`Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`);
     };
+    // `id` is spelled `?? null` in both: JSON-RPC 2.0 §5 requires the member on every response, and
+    // `JSON.stringify` drops an `undefined` one silently, which produced an id-less error object that
+    // strict clients reject as malformed.
     const respond = (id: JsonRpcRequest["id"], result: unknown, framing: McpFraming) => {
-      writeMessage({ jsonrpc: "2.0", id, result }, framing);
+      writeMessage({ jsonrpc: "2.0", id: id ?? null, result }, framing);
     };
     const respondError = (id: JsonRpcRequest["id"], code: number, message: string, framing: McpFraming) => {
-      writeMessage({ jsonrpc: "2.0", id, error: { code, message } }, framing);
+      writeMessage({ jsonrpc: "2.0", id: id ?? null, error: { code, message } }, framing);
     };
+    const guidelineNames = await Prompter.listGuidelines();
+    const resources = buildResourceList(guidelineNames);
     const readResource = async (uri: string) => {
-      const context = await AkanContextAnalyzer.analyze(workspace);
-      if (uri === "akan://docs/framework" || uri === "akan://guidelines/framework")
+      if (uri === "akan://docs/framework")
         return { uri, mimeType: "text/markdown", text: await Prompter.getInstruction("framework") };
-      if (uri === "akan://guidelines/modelSignal")
-        return { uri, mimeType: "text/markdown", text: await Prompter.getInstruction("modelSignal") };
+      const guideline = /^akan:\/\/guidelines\/(.+)$/.exec(uri)?.[1];
+      if (guideline) return { uri, mimeType: "text/markdown", text: await Prompter.getInstruction(guideline) };
+      const context = await AkanContextAnalyzer.analyze(workspace);
       if (uri === "akan://workspace/summary")
         return { uri, mimeType: "application/json", text: jsonText(context, { trailingNewline: false }) };
       if (uri === "akan://workspace/apps")
@@ -375,7 +390,13 @@ export class ContextRunner extends runner("context") {
       }
       throw new Error(`Unknown resource: ${uri}`);
     };
-    const handle = async (request: JsonRpcRequest, framing: McpFraming) => {
+    /**
+     * One request, answered or deliberately not. Every throw below is converted into a JSON-RPC error
+     * rather than propagated: the only caller is the stdin loop, so an escaping rejection took the whole
+     * server down on one bad `resources/read` uri — and the CLI's `unhandledRejection` printer wrote the
+     * message to *stdout*, which is the protocol channel, before exiting.
+     */
+    const handleRequest = async (request: JsonRpcRequest, framing: McpFraming) => {
       const params = request.params ?? {};
       if (request.method === "initialize") {
         respond(
@@ -391,7 +412,7 @@ export class ContextRunner extends runner("context") {
         respond(
           request.id,
           {
-            tools: this.listMcpTools(mode),
+            tools: this.listMcpTools(mode, { guidelineNames }),
           },
           framing,
         );
@@ -413,15 +434,50 @@ export class ContextRunner extends runner("context") {
             framing,
           );
         } catch (error) {
-          respondError(request.id, -32602, error instanceof Error ? error.message : String(error), framing);
+          // A tool that ran and failed reports `isError` in its *result*, not a JSON-RPC error: a
+          // protocol error is delivered to the client, not to the model, so the model never learns why
+          // its call failed and repeats it. Host paths are stripped for the same reason they are not
+          // published in a catalogue.
+          respond(request.id, { content: [{ type: "text", text: toolErrorText(error) }], isError: true }, framing);
         }
       } else if (request.method === "resources/list") {
-        respond(request.id, { resources: resourceList }, framing);
+        respond(request.id, { resources }, framing);
       } else if (request.method === "resources/read") {
         respond(request.id, { contents: [await readResource(params.uri as string)] }, framing);
-      } else if (!request.method.endsWith("/initialized")) {
+      } else {
         respondError(request.id, -32601, `Unknown method: ${request.method}`, framing);
       }
+    };
+    /**
+     * A message with no `id` is a notification, and JSON-RPC 2.0 §4.1 forbids answering one at all —
+     * `notifications/cancelled` arrives whenever a client times out a call, so replying turned routine
+     * traffic into a stream of malformed error objects.
+     */
+    const handle = async (request: JsonRpcRequest, framing: McpFraming) => {
+      if (request.id === undefined || request.id === null) return;
+      try {
+        await handleRequest(request, framing);
+      } catch (error) {
+        respondError(request.id, -32603, error instanceof Error ? error.message : String(error), framing);
+      }
+    };
+    /**
+     * Undecodable input is answered, never thrown. The framing is known but the id is not, so §5 puts
+     * `null` there; a client that crashed mid-write is otherwise enough to end the session.
+     */
+    const handleFrame = async (payload: string, framing: McpFraming) => {
+      let request: JsonRpcRequest;
+      try {
+        request = JSON.parse(payload) as JsonRpcRequest;
+      } catch (error) {
+        respondError(null, -32700, error instanceof Error ? error.message : String(error), framing);
+        return;
+      }
+      if (!request || typeof request !== "object" || typeof request.method !== "string") {
+        respondError(null, -32600, "Invalid Request: expected a JSON-RPC 2.0 object with a method", framing);
+        return;
+      }
+      await handle(request, framing);
     };
     const parseContentLengthMessage = async () => {
       const headerEnd = buffer.indexOf("\r\n\r\n");
@@ -438,7 +494,7 @@ export class ContextRunner extends runner("context") {
       if (buffer.length < bodyEnd) return false;
       const body = buffer.slice(bodyStart, bodyEnd);
       buffer = buffer.slice(bodyEnd);
-      await handle(JSON.parse(body) as JsonRpcRequest, "content-length");
+      await handleFrame(body, "content-length");
       return true;
     };
     const parseLineMessage = async () => {
@@ -447,7 +503,7 @@ export class ContextRunner extends runner("context") {
       const line = buffer.slice(0, lineEnd).trim();
       buffer = buffer.slice(lineEnd + 1);
       if (!line) return true;
-      await handle(JSON.parse(line) as JsonRpcRequest, "newline");
+      await handleFrame(line, "newline");
       return true;
     };
     const parse = async () => {

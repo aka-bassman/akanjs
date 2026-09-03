@@ -2,6 +2,7 @@
 import { config, useSprings } from "@react-spring/web";
 import { useGesture } from "@use-gesture/react";
 import { cn } from "akanjs/client";
+import { clamp } from "akanjs/common";
 import { useFieldTool } from "akanjs/store";
 import { animated } from "akanjs/ui";
 import { type ReactElement, type ReactNode, useContext, useRef } from "react";
@@ -11,8 +12,6 @@ import { sharedContext } from "../client/sharedContext";
 import { agentAttrs } from "./agentAttrs";
 import { buttonRecipe } from "./Button";
 import { useUiRecipe } from "./UiOverride";
-
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 const swap = (arr: number[], from: number, to: number): number[] => {
   const result = [...arr];

@@ -118,7 +118,10 @@ const extractVariants = (config: ts.ObjectLiteralExpression) => {
         if (!ts.isPropertyAssignment(variant) || !isNamed(variant.name)) continue;
         if (!ts.isObjectLiteralExpression(variant.initializer)) continue;
         variants[propName(variant.name)] = variant.initializer.properties
-          .filter((option): option is ts.PropertyAssignment => ts.isPropertyAssignment(option) && isNamed(option.name))
+          .filter(
+            (option): option is ts.PropertyAssignment & { name: ts.Identifier | ts.StringLiteral } =>
+              ts.isPropertyAssignment(option) && isNamed(option.name),
+          )
           .map((option) => propName(option.name));
       }
     } else if (key === "defaultVariants" && ts.isObjectLiteralExpression(property.initializer)) {

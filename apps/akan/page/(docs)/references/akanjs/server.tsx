@@ -106,18 +106,18 @@ class ExternalApi {
 }`,
     },
     {
-      name: "Transaction / Cache",
+      name: "Transaction / CacheMethod",
       desc: l.trans({
-        en: "Legacy method decorators for server-side service/document helpers. `Transaction` wraps execution in the detected database transaction and `Cache` memoizes method results for a timeout window.",
-        ko: "server-side service/document helper를 위한 legacy method decorator입니다. `Transaction`은 detected database transaction으로 실행을 감싸고, `Cache`는 timeout window 동안 method result를 memoize합니다.",
+        en: "Legacy method decorators for server-side service/document helpers. `Transaction` wraps execution in the detected database transaction and `CacheMethod` memoizes method results for a timeout window.",
+        ko: "server-side service/document helper를 위한 legacy method decorator입니다. `Transaction`은 detected database transaction으로 실행을 감싸고, `CacheMethod`는 timeout window 동안 method result를 memoize합니다.",
       }),
-      code: `import { Cache, Transaction } from "akanjs/server";
+      code: `import { CacheMethod, Transaction } from "akanjs/server";
 
 class UserService {
   @Transaction()
   async updateUser() {}
 
-  @Cache(1000)
+  @CacheMethod(1000)
   async findUser(id: string) {}
 }`,
     },

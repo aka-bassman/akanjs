@@ -250,6 +250,10 @@ export class AutoImportSync {
     const parts = rel.split(path.sep).filter(Boolean);
     const [scope, project, facet] = parts;
     if ((scope !== "apps" && scope !== "libs") || !project || !facet) return null;
+    //* `lib/__lib/` holds the generated per-lib re-export stubs — gitignored, and rewritten by every
+    //* `akan sync`, which is also what makes the watcher report them. An edit there is churn at best and
+    //* silently discarded at worst. `lib/__scalar/` is real source and stays in scope.
+    if (facet === "lib" && parts[3] === "__lib") return null;
     const role = roleFor(facet, base);
     if (!role) return null;
 

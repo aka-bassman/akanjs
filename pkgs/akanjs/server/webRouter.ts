@@ -55,6 +55,7 @@ import { type RscRedirectMethod, type RscRedirectStatus, type RscRenderResult, R
 import { createDefaultSitemapXml, getSitemapBasePath } from "./sitemap";
 import { SsrFromRscRenderer } from "./ssrFromRscRenderer";
 import type { RscTraceMetadata, SsrManifest } from "./ssrTypes";
+import { resolveStaticPath } from "./staticPath";
 import { createSubRouteIndexResponse, createSystemPageResponse, getSystemPageHomeHref } from "./systemPages";
 import { type BaseBuildArtifact, type HttpRoutes, type RenderState, resolveWebConfig } from "./types";
 
@@ -417,16 +418,14 @@ export class WebRouter {
     <script type="module" src="/csr.js"></script>
   </body>
 </html>`;
-              return new Response(this.#withCsrHmr(htmlText), {
-                headers: { "Content-Type": "text/html; charset=utf-8" },
-              });
+              return new Response(this.#withCsrHmr(htmlText), { headers: WebRouter.#htmlResponseHeaders(200) });
             },
           }
         : {}),
       [`${clientServePrefix}/*`]: async (req) => {
         this.#requestStats.staticAsset += 1;
         const url = new URL(req.url);
-        const filePath = WebRouter.#safeResolve(clientOutputDir, url.pathname.slice(clientServePrefix.length + 1));
+        const filePath = resolveStaticPath(clientOutputDir, url.pathname.slice(clientServePrefix.length + 1));
         if (!filePath) return new Response("Not Found", { status: 404 });
         return WebRouter.#fileResponse(req, filePath, {
           contentType: Bun.file(filePath).type || "application/javascript",
@@ -437,7 +436,7 @@ export class WebRouter {
         this.#requestStats.staticAsset += 1;
         const url = new URL(req.url);
         if (this.#prodMode) {
-          const filePath = WebRouter.#safeResolve(this.#artifactDir, url.pathname.slice("/_akan/".length));
+          const filePath = resolveStaticPath(this.#artifactDir, url.pathname.slice("/_akan/".length));
           if (filePath) {
             return WebRouter.#fileResponse(req, filePath, {
               contentType: "text/css; charset=utf-8",
@@ -455,7 +454,7 @@ export class WebRouter {
       "/_akan/fonts/*": (req) => {
         this.#requestStats.staticAsset += 1;
         const url = new URL(req.url);
-        const filePath = WebRouter.#safeResolve(this.#artifactDir, url.pathname.slice("/_akan/".length));
+        const filePath = resolveStaticPath(this.#artifactDir, url.pathname.slice("/_akan/".length));
         if (!filePath) return new Response("Not Found", { status: 404 });
         return WebRouter.#fileResponse(req, filePath, {
           contentType: Bun.file(filePath).type || "font/woff2",
@@ -530,10 +529,10 @@ export class WebRouter {
         this.#requestStats.staticAsset += 1;
         const firebaseConfig = await WebRouter.#resolveFirebaseClientConfig();
         return new Response(WebRouter.#createFirebaseMessagingServiceWorker(firebaseConfig), {
-          headers: {
-            "Content-Type": "application/javascript; charset=utf-8",
-            "Cache-Control": "no-store",
-          },
+          headers: WebRouter.#baseAssetHeaders({
+            contentType: "application/javascript; charset=utf-8",
+            cacheControl: "no-store",
+          }),
         });
       },
       "/*": async (req) => {
@@ -550,12 +549,10 @@ export class WebRouter {
             const csrHtml = await this.#resolveCsrHtml(csrOutputDir, url.pathname);
             if (!csrHtml) return this.#csrUnavailableResponse(url.pathname);
             const html = await Bun.file(csrHtml).text();
-            return new Response(this.#withCsrHmr(html), {
-              headers: { "Content-Type": "text/html; charset=utf-8" },
-            });
+            return new Response(this.#withCsrHmr(html), { headers: WebRouter.#htmlResponseHeaders(200) });
           }
 
-          const csrAssetPath = path.extname(url.pathname) ? WebRouter.#safeResolve(csrOutputDir, url.pathname) : null;
+          const csrAssetPath = path.extname(url.pathname) ? resolveStaticPath(csrOutputDir, url.pathname) : null;
           if (csrAssetPath && (await Bun.file(csrAssetPath).exists())) {
             this.#requestStats.staticAsset += 1;
             return WebRouter.#fileResponse(req, csrAssetPath, {
@@ -565,7 +562,7 @@ export class WebRouter {
           }
         }
 
-        const filePath = WebRouter.#safeResolve(publicDir, url.pathname);
+        const filePath = resolveStaticPath(publicDir, url.pathname);
         if (filePath) {
           if (await Bun.file(filePath).exists()) {
             this.#requestStats.staticAsset += 1;
@@ -613,12 +610,9 @@ export class WebRouter {
           const htmlCacheEntry = htmlCacheDecision.entry;
           const cachedHtml = htmlCacheEntry ? this.#getCachedHtml(htmlCacheEntry.key) : null;
           if (cachedHtml) {
-            return new Response(cachedHtml, {
-              headers: {
-                "Content-Type": "text/html; charset=utf-8",
-                "X-Akan-Cache": "HIT",
-              },
-            });
+            const cachedHeaders = WebRouter.#htmlResponseHeaders(200);
+            cachedHeaders.set("X-Akan-Cache", "HIT");
+            return new Response(cachedHtml, { headers: cachedHeaders });
           }
           const rscResult = await this.#rsc.renderWithMeta(req, {
             clientManifest: manifest.clientManifest,
@@ -999,7 +993,7 @@ export class WebRouter {
   static #htmlResponseHeaders(status: number): Headers {
     const headers = new Headers({ "Content-Type": "text/html; charset=utf-8" });
     if (status >= 400) headers.set("Cache-Control", "no-store");
-    return headers;
+    return WebRouter.#applySecurityHeaders(headers, { html: true });
   }
   #withCsrHmr(html: string): string {
     if (this.#prodMode) return html;
@@ -1256,7 +1250,7 @@ self.addEventListener("notificationclick", (event) => {
       i18n: artifact.i18n,
     });
     const filename = basePath ? `${basePath}.html` : "index.html";
-    const filePath = WebRouter.#safeResolve(csrOutputDir, filename);
+    const filePath = resolveStaticPath(csrOutputDir, filename);
     return filePath && fs.existsSync(filePath) ? filePath : null;
   }
 
@@ -1341,10 +1335,27 @@ self.addEventListener("notificationclick", (event) => {
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   }
 
+  /**
+   * Headers every response carries, whatever it is.
+   *
+   * `nosniff` because `Bun.file().type` falls back to `application/octet-stream` for an extension it does not
+   * know, and a sniffing browser then guesses again — on a `public/` tree the app serves from its own origin,
+   * that guess is script execution. `Referrer-Policy` because route paths carry ids.
+   *
+   * `X-Frame-Options` is on the HTML only: framing an image or a stylesheet means nothing, and the header is
+   * what stops a page authenticated by a `SameSite=None` cookie from being clickjacked inside somebody else's.
+   */
+  static #applySecurityHeaders(headers: Headers, { html = false } = {}): Headers {
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    if (html) headers.set("X-Frame-Options", "SAMEORIGIN");
+    return headers;
+  }
+
   static #baseAssetHeaders(options: { contentType: string; cacheControl?: string }): Headers {
     const headers = new Headers({ "Content-Type": options.contentType });
     if (options.cacheControl) headers.set("Cache-Control", options.cacheControl);
-    return headers;
+    return WebRouter.#applySecurityHeaders(headers);
   }
 
   static #weakEtag(size: number, mtimeMs: number): string {
@@ -1365,22 +1376,5 @@ self.addEventListener("notificationclick", (event) => {
     if (!ifModifiedSince) return false;
     const sinceMs = Date.parse(ifModifiedSince);
     return Number.isFinite(sinceMs) && sinceMs >= lastModifiedMs;
-  }
-
-  static #safeResolve(baseDir: string, urlPath: string): string | null {
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(urlPath);
-    } catch {
-      return null;
-    }
-    if (decoded.includes("\0")) return null;
-    const normalizedBase = path.resolve(baseDir);
-    const rel = decoded.replace(/^[/\\]+/, "");
-    const resolved = path.resolve(normalizedBase, rel);
-    if (resolved === normalizedBase) return resolved;
-    const baseWithSep = normalizedBase.endsWith(path.sep) ? normalizedBase : normalizedBase + path.sep;
-    if (!resolved.startsWith(baseWithSep)) return null;
-    return resolved;
   }
 }

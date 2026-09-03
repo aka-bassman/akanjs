@@ -1,7 +1,7 @@
 import { dayjs } from "akanjs/base";
 import { type Logger, websocketAuthContract } from "akanjs/common";
 import type { InjectRegistry } from "akanjs/service";
-import { Exception, SignalContext, type WebsocketReqData } from "akanjs/signal";
+import { Exception, SignalContext, SignalFailure, type WebsocketReqData } from "akanjs/signal";
 import { compressResponse } from "../contentEncoding";
 import type { HmrWsData, HmrWsHub } from "../hmr/wsHub";
 import { copyBunRequestFields, type WebProxyRunner } from "../proxy";
@@ -169,12 +169,11 @@ export class ApiRouter {
             ws.send(JSON.stringify({ ...error.toJSON(), timestamp: new Date().toISOString() }));
             return;
           }
-          const errMsg = error instanceof Error ? error.message : String(error);
           if (!SignalContext.wasReported(error)) {
-            logger.error(errMsg);
-            console.error(error);
+            logger.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
           }
-          ws.send(JSON.stringify({ error: errMsg, statusCode: 500, timestamp: new Date().toISOString(), at: dayjs() }));
+          // The same generalization the HTTP 500 makes: a socket frame is no less readable by the caller.
+          ws.send(JSON.stringify({ ...SignalFailure.body(error), at: dayjs() }));
         }
       },
       close: (ws) => {

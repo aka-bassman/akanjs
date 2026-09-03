@@ -1,6 +1,6 @@
 "use client";
 import { cn } from "akanjs/client";
-import { capitalize, lowerlize } from "akanjs/common";
+import { capitalize, type DynamicRecord, lowerlize } from "akanjs/common";
 import type { BaseInsight } from "akanjs/constant";
 import type { ClientInit, ServerInit } from "akanjs/fetch";
 import { st } from "akanjs/store";
@@ -30,7 +30,7 @@ function Render<RefName extends string, Light>({ className, init, scrollToTop }:
     : init;
   const { refName, sliceName } = modelInit;
   const [modelName, ModelName] = [lowerlize(refName), capitalize(refName)];
-  const initModelInitAt = (modelInit as any)[`${modelName}InitAt`] as Date;
+  const initModelInitAt = (modelInit as DynamicRecord)[`${modelName}InitAt`] as Date;
   const loaded = useRef(storeGet<Date>()[`${modelInit.refName}InitAt`].getTime() >= initModelInitAt.getTime());
   const names = {
     model: modelName,
@@ -54,9 +54,9 @@ function Render<RefName extends string, Light>({ className, init, scrollToTop }:
   const modelInsight = storeUse[namesOfSlice.modelInsight]() as BaseInsight;
   const limitOfModel = storeUse[namesOfSlice.limitOfModel]() as number;
   const pageOfModel = storeUse[namesOfSlice.pageOfModel]() as number;
-  const initModelObjInsight = (modelInit as any)[names.modelObjInsight] as BaseInsight;
-  const initPageOfModel = (modelInit as any)[names.pageOfModel] as number;
-  const initLimitOfModel = (modelInit as any)[names.limitOfModel] as number;
+  const initModelObjInsight = (modelInit as DynamicRecord)[names.modelObjInsight] as BaseInsight;
+  const initPageOfModel = (modelInit as DynamicRecord)[names.pageOfModel] as number;
+  const initLimitOfModel = (modelInit as DynamicRecord)[names.limitOfModel] as number;
   const insight = loaded.current ? modelInsight : initModelObjInsight;
   const page = loaded.current ? pageOfModel : initPageOfModel;
   const limit = loaded.current ? limitOfModel : initLimitOfModel;

@@ -1,6 +1,7 @@
 import { DataList, type Dayjs, FIELD_META, type GetStateObject } from "akanjs/base";
 import {
   capitalize,
+  type DynamicRecord,
   deepObjectify,
   type FetchPolicy,
   isQueryEqual,
@@ -36,6 +37,7 @@ import type {
 } from "akanjs/signal";
 import { tagAction } from "./actionTag";
 import { formSetterNames } from "./formSetterNames";
+import { SliceRequest } from "./SliceRequest";
 import type { SliceActionKey } from "./sliceRole";
 import type { SliceStateKey } from "./state";
 import type { SetGet, StoreSliceArgs, StoreSliceMap, StoreSliceSuffixCap } from "./types";
@@ -54,6 +56,10 @@ type SliceInitForm<S extends SliceCls> = FetchInitForm<_ActionInput<S>, _ActionF
 type SliceRefreshForm<S extends SliceCls, Suffix extends keyof _SliceMap<S>> = SliceInitForm<S> & {
   queryArgs?: StoreSliceArgs<S, Suffix>;
 };
+
+const UPLOAD_POLL_INTERVAL_MS = 3000;
+/** Two minutes of polling. A file still `uploading` after that is a server that will not finish it. */
+const UPLOAD_POLL_ATTEMPTS = 40;
 
 const isNullableSliceArg = (arg: SerializedSlice["args"][number]) => arg.nullable ?? arg.type === "search";
 
@@ -338,7 +344,7 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
               options: { idx?: number; limit?: number } = {},
             ) {
               const form = (this.get() as { [key: string]: any })[names.modelForm] as { [key: string]: any };
-              const length = (form[namesOfField.field] as any[]).length;
+              const length = (form[namesOfField.field] as unknown[]).length;
               if (options.limit && options.limit <= length) return;
               const idx = options.idx ?? length;
               const setValue = field.isClass ? immerify<Light | Light[]>(field.modelRef, value) : value;
@@ -366,8 +372,12 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
             ) {
               const { [names.modelForm]: form } = this.get() as { [key: string]: { [key: string]: any[] } };
               const index = form[namesOfField.field].indexOf(value);
-              if (index === -1) ((this as any)[namesOfField.addFieldOnModel] as (...args: any) => void)(value, options);
-              else ((this as any)[namesOfField.subFieldOnModel] as (...args: any) => void)(index);
+              if (index === -1)
+                ((this as unknown as DynamicRecord)[namesOfField.addFieldOnModel] as (...args: any) => void)(
+                  value,
+                  options,
+                );
+              else ((this as unknown as DynamicRecord)[namesOfField.subFieldOnModel] as (...args: any) => void)(index);
             },
           }
         : {}),
@@ -399,26 +409,41 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
                 });
               }
               files.forEach((file) => {
+                let attemptsLeft = UPLOAD_POLL_ATTEMPTS;
                 const intervalKey = setInterval(() => {
                   void (async () => {
-                    const currentFile = await (
-                      (fetch as { [key: string]: any })[fileUploadRefName as string] as (
-                        id: string,
-                      ) => Promise<ProtoFile>
-                    )(file.id);
-                    if (field.isArray)
-                      this.set((state: { [key: string]: { [key: string]: ProtoFile[] } }) => {
-                        state[names.modelForm][namesOfField.field] = state[names.modelForm][namesOfField.field].map(
-                          (file) => (file.id === currentFile.id ? currentFile : file),
-                        );
-                      });
-                    else
-                      this.set((state: { [key: string]: { [key: string]: ProtoFile | null } }) => {
-                        state[names.modelForm][namesOfField.field] = currentFile;
-                      });
-                    if (currentFile.status !== "uploading") clearInterval(intervalKey);
+                    // The three ways this stops: the file left `uploading`, the poll ran out of attempts, or the
+                    // read threw. Without the last two an interval ran forever on a file the server never
+                    // finished, and a single rejected read — a dropped network, a file removed under us — left an
+                    // unhandled rejection behind an interval nothing would ever clear.
+                    attemptsLeft -= 1;
+                    try {
+                      const currentFile = await (
+                        (fetch as { [key: string]: any })[fileUploadRefName as string] as (
+                          id: string,
+                        ) => Promise<ProtoFile>
+                      )(file.id);
+                      if (field.isArray)
+                        this.set((state: { [key: string]: { [key: string]: ProtoFile[] } }) => {
+                          state[names.modelForm][namesOfField.field] = state[names.modelForm][namesOfField.field].map(
+                            (file) => (file.id === currentFile.id ? currentFile : file),
+                          );
+                        });
+                      else
+                        this.set((state: { [key: string]: { [key: string]: ProtoFile | null } }) => {
+                          state[names.modelForm][namesOfField.field] = currentFile;
+                        });
+                      if (currentFile.status !== "uploading" || attemptsLeft <= 0) clearInterval(intervalKey);
+                    } catch (error) {
+                      clearInterval(intervalKey);
+                      Logger.warn(
+                        `Upload poll for ${fileUploadRefName as string} ${file.id} stopped: ${
+                          error instanceof Error ? error.message : String(error)
+                        }`,
+                      );
+                    }
                   })();
-                }, 3000);
+                }, UPLOAD_POLL_INTERVAL_MS);
               });
             },
           }
@@ -723,8 +748,14 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       const modelForm = currentState[names.modelForm] as Input & { id: string };
       const modelSubmit = currentState[names.modelSubmit] as { loading: boolean; times: number };
       this.set({ [names.modelSubmit]: { ...modelSubmit, loading: true } });
-      if (modelForm.id) await ((this as any)[names.updateModelInForm] as (...args: any[]) => Promise<Full>)(option);
-      else await ((this as any)[names.createModelInForm] as (...args: any[]) => Promise<Full>)(option);
+      if (modelForm.id)
+        await ((this as unknown as DynamicRecord)[names.updateModelInForm] as (...args: any[]) => Promise<Full>)(
+          option,
+        );
+      else
+        await ((this as unknown as DynamicRecord)[names.createModelInForm] as (...args: any[]) => Promise<Full>)(
+          option,
+        );
       this.set({ [names.modelSubmit]: { ...modelSubmit, loading: false, times: modelSubmit.times + 1 } });
     },
     [names.newModel]: function (
@@ -855,6 +886,9 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
   };
   const sliceAction = slices.reduce((acc, { sliceName, slice }) => {
     const SliceName = capitalize(sliceName);
+    // One per slice: every action below writes the same list, so they share the ticket that says which
+    // response is still wanted.
+    const requests = new SliceRequest();
     const namesOfSlice: { [key in SliceActionKey | SliceStateKey | "modelList"]: string } = {
       defaultModel: SliceName.replace(names.Model, names.defaultModel),
       modelInsight: sliceName.replace(names.model, names.modelInsight),
@@ -889,7 +923,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         const queryArgs = new Array(initArgLength).fill(null).map((_, i) => args[i] as object);
         const defaultModel = new cnst.full().set(initForm.default ?? {}) as unknown as Full;
         this.set({ [names.defaultModel]: defaultModel });
-        await ((this as any)[namesOfSlice.refreshModel] as (...args: any[]) => Promise<void>)({
+        await ((this as unknown as DynamicRecord)[namesOfSlice.refreshModel] as (...args: any[]) => Promise<void>)({
           ...initForm,
           queryArgs,
         });
@@ -934,34 +968,41 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         )
           return; // store-level cache hit
         else this.set({ [namesOfSlice.modelListLoading]: true });
+        const ticket = requests.claim();
         const fetchQueryArgs = expandQueryArgs(queryArgs, slice.args);
-        const [modelDataList, modelInsight] = await Promise.all([
-          (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
-            ...fetchQueryArgs,
-            (page - 1) * limit,
-            limit,
-            sort,
-            { ...fetchPolicy, onError: initForm.onError },
-          ),
-          (fetch[namesOfSlice.modelInsight] as (...args: any[]) => Promise<Insight & BaseInsight>)(...fetchQueryArgs, {
-            ...fetchPolicy,
-            onError: initForm.onError,
-          }),
-        ]);
-        const modelList = new DataList(modelDataList);
-        this.set({
-          [namesOfSlice.modelList]: modelList,
-          [namesOfSlice.modelListLoading]: false,
-          [namesOfSlice.modelInsight]: modelInsight,
-          [namesOfSlice.modelInitList]: modelList,
-          [namesOfSlice.modelInitAt]: new Date(),
-          [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / limit) + 1, 1),
-          [namesOfSlice.limitOfModel]: limit,
-          [namesOfSlice.queryArgsOfModel]: queryArgs,
-          [namesOfSlice.sortOfModel]: sort,
-          [namesOfSlice.pageOfModel]: page,
-          [names.modelOperation]: "idle",
-        });
+        // `finally` clears the spinner on both paths, and only for the request that is still the current one:
+        // a failed fetch used to leave it spinning forever, and a slow one used to clear a newer request's.
+        try {
+          const [modelDataList, modelInsight] = await Promise.all([
+            (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
+              ...fetchQueryArgs,
+              (page - 1) * limit,
+              limit,
+              sort,
+              { ...fetchPolicy, onError: initForm.onError },
+            ),
+            (fetch[namesOfSlice.modelInsight] as (...args: any[]) => Promise<Insight & BaseInsight>)(
+              ...fetchQueryArgs,
+              { ...fetchPolicy, onError: initForm.onError },
+            ),
+          ]);
+          if (!requests.isCurrent(ticket)) return;
+          const modelList = new DataList(modelDataList);
+          this.set({
+            [namesOfSlice.modelList]: modelList,
+            [namesOfSlice.modelInsight]: modelInsight,
+            [namesOfSlice.modelInitList]: modelList,
+            [namesOfSlice.modelInitAt]: new Date(),
+            [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / limit) + 1, 1),
+            [namesOfSlice.limitOfModel]: limit,
+            [namesOfSlice.queryArgsOfModel]: queryArgs,
+            [namesOfSlice.sortOfModel]: sort,
+            [namesOfSlice.pageOfModel]: page,
+            [names.modelOperation]: "idle",
+          });
+        } finally {
+          if (requests.isCurrent(ticket)) this.set({ [namesOfSlice.modelListLoading]: false });
+        }
       },
       [namesOfSlice.selectModel]: function (
         this: SetGet,
@@ -988,20 +1029,24 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         const sortOfModel = currentState[namesOfSlice.sortOfModel] as Sort;
         if (pageOfModel === page) return;
         this.set({ [namesOfSlice.modelListLoading]: true });
+        const ticket = requests.claim();
         const fetchQueryArgs = expandQueryArgs(queryArgsOfModel, slice.args);
-        const modelDataList = await (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
-          ...fetchQueryArgs,
-          (page - 1) * limitOfModel,
-          limitOfModel,
-          sortOfModel,
-          options,
-        );
-        const modelList = new DataList(modelDataList);
-        this.set({
-          [namesOfSlice.modelList]: modelList,
-          [namesOfSlice.pageOfModel]: page,
-          [namesOfSlice.modelListLoading]: false,
-        });
+        try {
+          const modelDataList = await (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
+            ...fetchQueryArgs,
+            (page - 1) * limitOfModel,
+            limitOfModel,
+            sortOfModel,
+            options,
+          );
+          if (!requests.isCurrent(ticket)) return;
+          this.set({
+            [namesOfSlice.modelList]: new DataList(modelDataList),
+            [namesOfSlice.pageOfModel]: page,
+          });
+        } finally {
+          if (requests.isCurrent(ticket)) this.set({ [namesOfSlice.modelListLoading]: false });
+        }
       },
       [namesOfSlice.addPageOfModel]: async function (this: SetGet, page: number, options?: FetchPolicy) {
         const currentState = this.get() as { [key: string]: any };
@@ -1012,6 +1057,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         const sortOfModel = currentState[namesOfSlice.sortOfModel] as Sort;
         if (pageOfModel === page) return;
         const addFront = page < pageOfModel;
+        const ticket = requests.claim();
         const fetchQueryArgs = expandQueryArgs(queryArgsOfModel, slice.args);
         const modelDataList = await (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
           ...fetchQueryArgs,
@@ -1020,6 +1066,9 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
           sortOfModel,
           options,
         );
+        // No spinner to clear here — an append leaves what is on screen — but a late page appended after a
+        // newer one lands out of order, and `modelList` was read before the await either way.
+        if (!requests.isCurrent(ticket)) return;
         const newModelList = new DataList(
           addFront ? [...modelDataList, ...modelList] : [...modelList, ...modelDataList],
         );
@@ -1035,21 +1084,27 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         if (limitOfModel === limit) return;
         const skip = (pageOfModel - 1) * limitOfModel;
         const page = Math.max(Math.floor((skip - 1) / limit) + 1, 1);
+        this.set({ [namesOfSlice.modelListLoading]: true });
+        const ticket = requests.claim();
         const fetchQueryArgs = expandQueryArgs(queryArgsOfModel, slice.args);
-        const modelDataList = await (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
-          ...fetchQueryArgs,
-          (page - 1) * limit,
-          limit,
-          sortOfModel,
-          options,
-        );
-        const modelList = new DataList(modelDataList);
-        this.set({
-          [namesOfSlice.modelList]: modelList,
-          [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / limit) + 1, 1),
-          [namesOfSlice.limitOfModel]: limit,
-          [namesOfSlice.pageOfModel]: page,
-        });
+        try {
+          const modelDataList = await (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
+            ...fetchQueryArgs,
+            (page - 1) * limit,
+            limit,
+            sortOfModel,
+            options,
+          );
+          if (!requests.isCurrent(ticket)) return;
+          this.set({
+            [namesOfSlice.modelList]: new DataList(modelDataList),
+            [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / limit) + 1, 1),
+            [namesOfSlice.limitOfModel]: limit,
+            [namesOfSlice.pageOfModel]: page,
+          });
+        } finally {
+          if (requests.isCurrent(ticket)) this.set({ [namesOfSlice.modelListLoading]: false });
+        }
       },
       [namesOfSlice.setQueryArgsOfModel]: async function (
         this: SetGet,
@@ -1074,30 +1129,34 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
           return; // store-level cache hit
         }
         this.set({ [namesOfSlice.modelListLoading]: true });
+        const ticket = requests.claim();
         const fetchQueryArgs = expandQueryArgs(queryArgs, slice.args);
-        const [modelDataList, modelInsight] = await Promise.all([
-          (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
-            ...fetchQueryArgs,
-            0,
-            limitOfModel,
-            sortOfModel,
-            options,
-          ),
-          (fetch[namesOfSlice.modelInsight] as (...args: any[]) => Promise<Insight & BaseInsight>)(
-            ...fetchQueryArgs,
-            options,
-          ),
-        ]);
-        const modelList = new DataList(modelDataList);
-        this.set({
-          [namesOfSlice.queryArgsOfModel]: queryArgs,
-          [namesOfSlice.modelList]: modelList,
-          [namesOfSlice.modelInsight]: modelInsight,
-          [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / limitOfModel) + 1, 1),
-          [namesOfSlice.pageOfModel]: 1,
-          [namesOfSlice.modelSelection]: new Map(),
-          [namesOfSlice.modelListLoading]: false,
-        });
+        try {
+          const [modelDataList, modelInsight] = await Promise.all([
+            (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
+              ...fetchQueryArgs,
+              0,
+              limitOfModel,
+              sortOfModel,
+              options,
+            ),
+            (fetch[namesOfSlice.modelInsight] as (...args: any[]) => Promise<Insight & BaseInsight>)(
+              ...fetchQueryArgs,
+              options,
+            ),
+          ]);
+          if (!requests.isCurrent(ticket)) return;
+          this.set({
+            [namesOfSlice.queryArgsOfModel]: queryArgs,
+            [namesOfSlice.modelList]: new DataList(modelDataList),
+            [namesOfSlice.modelInsight]: modelInsight,
+            [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / limitOfModel) + 1, 1),
+            [namesOfSlice.pageOfModel]: 1,
+            [namesOfSlice.modelSelection]: new Map(),
+          });
+        } finally {
+          if (requests.isCurrent(ticket)) this.set({ [namesOfSlice.modelListLoading]: false });
+        }
       },
       [namesOfSlice.setSortOfModel]: async function (this: SetGet, sort: Sort, options?: FetchPolicy) {
         const currentState = this.get() as { [key: string]: any };
@@ -1106,21 +1165,25 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         const sortOfModel = currentState[namesOfSlice.sortOfModel] as Sort;
         if (sortOfModel === sort) return; // store-level cache hit
         this.set({ [namesOfSlice.modelListLoading]: true });
+        const ticket = requests.claim();
         const fetchQueryArgs = expandQueryArgs(queryArgsOfModel, slice.args);
-        const modelDataList = await (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
-          ...fetchQueryArgs,
-          0,
-          limitOfModel,
-          sort,
-          options,
-        );
-        const modelList = new DataList(modelDataList);
-        this.set({
-          [namesOfSlice.modelList]: modelList,
-          [namesOfSlice.sortOfModel]: sort,
-          [namesOfSlice.pageOfModel]: 1,
-          [namesOfSlice.modelListLoading]: false,
-        });
+        try {
+          const modelDataList = await (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
+            ...fetchQueryArgs,
+            0,
+            limitOfModel,
+            sort,
+            options,
+          );
+          if (!requests.isCurrent(ticket)) return;
+          this.set({
+            [namesOfSlice.modelList]: new DataList(modelDataList),
+            [namesOfSlice.sortOfModel]: sort,
+            [namesOfSlice.pageOfModel]: 1,
+          });
+        } finally {
+          if (requests.isCurrent(ticket)) this.set({ [namesOfSlice.modelListLoading]: false });
+        }
       },
     };
     return Object.assign(acc, singleSliceAction);

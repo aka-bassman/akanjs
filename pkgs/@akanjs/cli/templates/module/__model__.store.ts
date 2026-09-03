@@ -9,8 +9,7 @@ export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dic
   return `
 import { store } from "akanjs/store";
 
-import * as cnst from "../cnst";
-import { fetch, sig } from "../useClient";
+import { sig } from "../useClient";
 
 export class ${dict.Model}Store extends store(sig.${dict.model}, () => ({
   // state

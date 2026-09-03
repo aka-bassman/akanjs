@@ -1,6 +1,8 @@
+import { describe, expect, test } from "bun:test";
 import { getDefaultInjectRegistry } from "akanjs/service";
 import { AkanResponse, WebProxyRunner } from "../proxy";
 import type { HttpRoutes, WebsocketRoutes } from "../types";
+import type { AppWsData as AppWsDataType } from "./appWsData";
 
 type RouteFn = (req: Request) => Response | Promise<Response>;
 const get = (path: string, acceptEncoding = "") =>
@@ -97,7 +99,7 @@ describe("ApiRouter.buildWebsocketHandlers", () => {
     const ws = {
       data: {},
       send: (message: string) => sent.push(message),
-    } as unknown as Bun.ServerWebSocket<unknown>;
+    } as unknown as Bun.ServerWebSocket<{ kind?: string }>;
     const handlers = ApiRouter.buildWebsocketHandlers({
       wsRoutes: {
         echo: async (_ws, data, event) => ({ event, data }),
@@ -118,8 +120,11 @@ describe("ApiRouter.buildWebsocketHandlers", () => {
     }
 
     expect(JSON.parse(sent[0] ?? "{}")).toEqual({ event: "message", data: ["hello"] });
+    // Detailed outside a production build, and generalized inside one — `SignalFailure` owns that split.
     expect(JSON.parse(sent[1] ?? "{}").error).toBe('WebSocket route "missing" is not registered');
-    expect(loggerErrors).toEqual(['WebSocket route "missing" is not registered']);
+    // The log keeps the stack the response no longer carries, which is why generalizing the response loses nothing.
+    expect(loggerErrors).toHaveLength(1);
+    expect(loggerErrors[0]).toContain('WebSocket route "missing" is not registered');
   });
 
   test("keeps HMR websocket traffic separate from app signal routes", async () => {
@@ -131,7 +136,7 @@ describe("ApiRouter.buildWebsocketHandlers", () => {
     const ws = {
       data: { kind: "akan-hmr" },
       send: (message: string) => sent.push(message),
-    } as unknown as Bun.ServerWebSocket<unknown>;
+    } as unknown as Bun.ServerWebSocket<{ kind?: string }>;
     const handlers = ApiRouter.buildWebsocketHandlers({
       wsRoutes: {
         hmrShouldNotRun: () => {
@@ -153,7 +158,7 @@ describe("ApiRouter.buildWebsocketHandlers", () => {
 
     handlers.open?.(ws);
     await handlers.message?.(ws, JSON.stringify({ key: "hmrShouldNotRun" }));
-    handlers.close?.(ws);
+    handlers.close?.(ws, 1000, "");
 
     expect(attached).toBe(true);
     expect(detached).toBe(true);
@@ -166,15 +171,14 @@ describe("ApiRouter websocket authentication", () => {
   test("hands the handshake credential to the upgrade instead of dropping it", async () => {
     process.env.AKAN_PUBLIC_APP_NAME = "test";
     const { ApiRouter } = await import("./apiRouter");
-    const { AppWsData } = await import("./appWsData");
-    let upgradeData: InstanceType<typeof AppWsData> | null = null;
+    const upgraded: AppWsDataType[] = [];
     const routes = ApiRouter.buildRoutes({
       prefix: "/api",
       websocketPrefix: "/ws",
       routes: {} as HttpRoutes,
       renderEnvRoutes: {},
       upgradeAppWs: (_req, data) => {
-        upgradeData = data;
+        upgraded.push(data);
         return true;
       },
     });
@@ -187,8 +191,9 @@ describe("ApiRouter websocket authentication", () => {
     );
 
     expect(response).toBeUndefined();
-    expect(upgradeData?.headers.get("authorization")).toBe("Bearer handshake-token");
-    expect(upgradeData?.cookies.get("jwt")).toBe("cookie-token");
+    expect(upgraded).toHaveLength(1);
+    expect(upgraded[0]?.headers.get("authorization")).toBe("Bearer handshake-token");
+    expect(upgraded[0]?.cookies.get("jwt")).toBe("cookie-token");
   });
 
   test("applies an auth frame before the frames queued behind it and acks the revoked rooms", async () => {
@@ -201,7 +206,7 @@ describe("ApiRouter websocket authentication", () => {
     const ws = {
       data: AppWsData.fromRequest(new Request("http://localhost/api/ws")),
       send: (message: string) => sent.push(message),
-    } as unknown as Bun.ServerWebSocket<unknown>;
+    } as unknown as Bun.ServerWebSocket<{ kind?: string }>;
     const handlers = ApiRouter.buildWebsocketHandlers({
       wsRoutes: {
         room: (socket: Bun.ServerWebSocket<unknown>) => {
@@ -232,7 +237,7 @@ describe("ApiRouter websocket authentication", () => {
     const ws = {
       data: AppWsData.fromRequest(new Request("http://localhost/api/ws", { headers: { cookie: "jwt=cookie-token" } })),
       send: () => undefined,
-    } as unknown as Bun.ServerWebSocket<unknown>;
+    } as unknown as Bun.ServerWebSocket<{ kind?: string }>;
     AppWsData.of(ws).account = { role: "user" };
     const handlers = ApiRouter.buildWebsocketHandlers({
       wsRoutes: {} as WebsocketRoutes,

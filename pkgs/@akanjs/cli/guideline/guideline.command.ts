@@ -11,7 +11,7 @@ export class GuidelineCommand extends command("guideline", [GuidelineScript], ({
       enum: ["markdown", "json"],
     })
     .exec(async function (action, name, format) {
-      await this.guidelineScript.guideline(action, name, format as "markdown" | "json");
+      await this.guidelineScript.guideline(action, name, format);
     }),
   generateInstruction: target({ devOnly: true, desc: "Generate AI development guideline/instruction for your project" })
     .arg("name", String, { ask: "name of the instruction", nullable: true })

@@ -8,7 +8,7 @@ import {
   type PromiseOrObject,
   Upload,
 } from "akanjs/base";
-import { clientAddressFromHeaders, clientPortFromHeaders, normalizeIpAddress } from "akanjs/common";
+import { clientPortFromHeaders, normalizeIpAddress, TrustedProxy } from "akanjs/common";
 import {
   type ConstantCls,
   type ConstantFieldTypeInput,
@@ -18,12 +18,14 @@ import {
 } from "akanjs/constant";
 import type { Adaptor, AdaptorCls, DatabaseService, InjectRegistry, LiveRegistry } from "akanjs/service";
 import type { Internal, InternalCls, InternalInfo, MiddlewareCls } from ".";
+import { CrossSiteGuard } from "./CrossSiteGuard";
 import type { EndpointInfo, EndpointType } from "./endpointInfo";
 import { Exception } from "./exception";
 import { guardOf } from "./guard";
 // Deliberately past the barrel: `./mcp` re-exports `McpDocument`, which would drag `akanjs/fetch` into the
 // signal graph. `Msg` itself imports nothing.
 import { Msg } from "./mcp/Msg";
+import { SignalFailure } from "./SignalFailure";
 import { getCurrentTrace, runTraced, SignalTrace, type TraceOrigin, traceSpan } from "./trace";
 
 export type SignalTransportType = "http" | "websocket";
@@ -138,6 +140,13 @@ export class SignalContext<
     return service as T;
   }
   async init() {
+    // Before the body is read, because a refused request must not have its arguments parsed or its files buffered.
+    // Only a mutation: a query is a GET whose response no cross-origin caller can read, and a websocket frame
+    // rides a socket whose handshake already carried the check the browser makes for it.
+    if (this.endpointInfo.type === "mutation" && this.transport === "http") {
+      const httpCtx = this.getHttpContext();
+      CrossSiteGuard.assertOrigin(httpCtx.req, httpCtx.url, this.key);
+    }
     if (this.trace) {
       const start = performance.now();
       this.args = await this.ctx.getArgs(this.endpointInfo);
@@ -147,15 +156,16 @@ export class SignalContext<
     }
     return this;
   }
+  /**
+   * In declaration order, not in parallel. Every guard has to pass either way, so the only thing concurrency
+   * bought was that a call refused by two of them named whichever lost the race — a log line that changed
+   * between identical requests. Sequential also stops at the first refusal instead of running the rest.
+   */
   async #checkGuards() {
-    const guards = this.endpointInfo.signalOption.guards ?? [];
-    if (guards.length === 0) return;
-    await Promise.all(
-      guards.map(async (GuardCls) => {
-        const canPass = await guardOf(GuardCls).canPass(this);
-        if (!canPass) throw new Exception.Forbidden(`Access denied by guard: ${GuardCls.name}`);
-      }),
-    );
+    for (const GuardCls of this.endpointInfo.signalOption.guards ?? []) {
+      if (!(await guardOf(GuardCls).canPass(this)))
+        throw new Exception.Forbidden(`Access denied by guard: ${GuardCls.name}`);
+    }
   }
   /**
    * Re-checks this context's guards outside of a request, for a websocket room that is already
@@ -358,17 +368,7 @@ export class SignalContext<
           { status: error.statusCode, headers: { "Content-Type": "application/json" } },
         );
       }
-      const message = error instanceof Error ? error.message : String(error);
-      return new Response(
-        JSON.stringify({
-          error: message,
-          statusCode: 500,
-          path: endpointInfo.getPath(key),
-          timestamp: new Date().toISOString(),
-          stack: error instanceof Error ? error.stack : undefined,
-        }),
-        { status: 500, headers: { "Content-Type": "application/json" } },
-      );
+      return SignalFailure.response(error, { path: endpointInfo.getPath(key) });
     }
   }
   static async resolveReturn(
@@ -627,14 +627,11 @@ export class SignalContext<
   getClientIp(): string | null {
     if (this.transport === "http") {
       const { req } = this.getHttpContext();
-      const forwarded = clientAddressFromHeaders(req.headers);
-      if (forwarded) return forwarded;
-      const peer = SignalContext.#httpPeer?.(req);
-      return peer ? normalizeIpAddress(peer.address) : null;
+      return TrustedProxy.clientAddress(req.headers, SignalContext.#httpPeer?.(req)?.address);
     }
     const { ws } = this.getWebSocketContext<{ headers?: Headers }>();
-    const forwarded = ws.data.headers ? clientAddressFromHeaders(ws.data.headers) : null;
-    return forwarded ?? (ws.remoteAddress ? normalizeIpAddress(ws.remoteAddress) : null);
+    if (!ws.data.headers) return ws.remoteAddress ? normalizeIpAddress(ws.remoteAddress) : null;
+    return TrustedProxy.clientAddress(ws.data.headers, ws.remoteAddress);
   }
   /** The caller's source port as the nearest proxy recorded it, else this socket's own. */
   getClientPort(): number | null {
@@ -687,7 +684,6 @@ export class HttpExecutionContext<Appended = unknown> {
   async getArgs(endpointInfo: EndpointInfo): Promise<unknown[]> {
     if (endpointInfo.args.length === 0) return [];
     this.params = this.req.params;
-    // TODO: Optimize the efficiency of this code
     const hasBodyArgs = endpointInfo.args.some((arg) => arg.type === "body");
     const hasUploadArgs = hasBodyArgs && endpointInfo.args.some((arg) => arg.type === "body" && arg.argRef === Upload);
     if (endpointInfo.type === "mutation" && hasBodyArgs && this.req.body) {
@@ -706,7 +702,10 @@ export class HttpExecutionContext<Appended = unknown> {
             this.body[key] = value as string;
           }
         }
-      } else this.body = (await this.req.json()) as RuntimeRecord;
+      } else {
+        CrossSiteGuard.assertJsonBody(this.req.headers.get("content-type"));
+        this.body = (await this.req.json()) as RuntimeRecord;
+      }
     }
 
     const args = endpointInfo.args.map((arg) => {

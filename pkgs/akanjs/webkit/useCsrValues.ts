@@ -23,7 +23,7 @@ import {
   type UseCsrTransition,
 } from "akanjs/client";
 import { loadCapacitorApp } from "akanjs/client/capacitor";
-import { parseAkanI18nEnv, parseBasePaths } from "akanjs/common";
+import { clamp, parseAkanI18nEnv, parseBasePaths } from "akanjs/common";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   createFrameSnapshot,
@@ -65,8 +65,6 @@ const STACK_SETTLE_MIN_DURATION = 90;
 const STACK_SETTLE_MAX_DURATION = 260;
 const ANDROID_SCALE_TRANSITION_DURATION = 220;
 const CSR_RUNTIME_SEARCH_PARAMS = ["csr", "akanMobileTarget", "akanMobileBasePath", "akanMobileIndexPath"] as const;
-
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const getVelocityAwareDuration = (distance: number, velocity: number, fallback: number) => {
   const absVelocity = Math.abs(velocity);

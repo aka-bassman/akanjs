@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type BackendEnv, ID } from "akanjs/base";
+import { type BackendEnv, dayjs, ID } from "akanjs/base";
 import { Logger } from "akanjs/common";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { endpoint } from "../../signal/endpoint";
@@ -101,9 +101,8 @@ class McpItemEndpoint extends endpoint(serverResolverTestServiceModel, (builder)
             id: "507f1f77bcf86cd799439011",
             title,
             category: "all",
-            createdAt: new Date(0),
-            updatedAt: new Date(0),
-            removedAt: null,
+            createdAt: dayjs(0),
+            updatedAt: dayjs(0),
           }
         : null,
     ),
@@ -111,9 +110,8 @@ class McpItemEndpoint extends endpoint(serverResolverTestServiceModel, (builder)
     id: "507f1f77bcf86cd799439011",
     title: "shot",
     preview: "data:image/png;base64,AAAA",
-    createdAt: new Date(0),
-    updatedAt: new Date(0),
-    removedAt: null,
+    createdAt: dayjs(0),
+    updatedAt: dayjs(0),
   })),
   failingTitle: builder.query(String, { guards: [Public] }).exec(() => {
     throw new Error("boom: internal detail that must not travel");
@@ -376,7 +374,7 @@ describe("MCP over a booted container", () => {
     // is not there. `akan quality scan` cannot cover it — it reads source, where a return type and a guard list
     // are names rather than resolved types — so the boot log is the only place an author can be told.
     const lines: string[] = [];
-    const stop = Logger.addSink(({ message }) => lines.push(message));
+    const stop = Logger.addSink(({ message }) => void lines.push(message));
     try {
       mcpRouter().report();
       mcpRouter({ readOnly: true }).report();

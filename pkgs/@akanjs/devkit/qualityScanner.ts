@@ -117,6 +117,8 @@ const RULE_FIXES: Record<string, string> = {
     "Run `akan compact <app-or-lib>` to rewrite the abstract with the AI editor, keeping only the invariants and workflows the source files cannot show.",
   "akan.file.placeholder-export":
     "Remove the placeholder export; generated indexes should only re-export real modules.",
+  "akan.file.bang-comment-in-client":
+    "Rewrite the marker as `// FIXME:` or `// TODO:`. Keep the bang form for server, srvkit, and CLI files.",
   "akan.file.dictionary-stale-text": "Replace the scaffold text with real localized copy for this dictionary entry.",
   "akan.file.global-declaration":
     "Move the global declaration into an approved low-level integration file (e.g. webkit) and keep it isolated.",
@@ -314,6 +316,7 @@ export class AkanQualityScanner {
       });
     }
 
+    warnings.push(...getBangCommentWarnings(sourceFile));
     warnings.push(...getPlaceholderExportWarnings(sourceFile));
     warnings.push(...getDictionaryTextWarnings(sourceFile));
     warnings.push(...getGlobalMutationWarnings(sourceFile));
@@ -596,9 +599,10 @@ function isEnumClassStatement(sourceFile: ts.SourceFile, statement: ts.Statement
 
 function getExportedClassNames(sourceFile: ts.SourceFile) {
   return sourceFile.statements
-    .filter((statement): statement is ts.ClassDeclaration => ts.isClassDeclaration(statement) && !!statement.name)
+    .filter((statement): statement is ts.ClassDeclaration => ts.isClassDeclaration(statement))
     .filter((statement) => isExported(statement))
-    .map((statement) => statement.name!.text);
+    .map((statement) => statement.name?.text)
+    .filter((name): name is string => !!name);
 }
 
 function isComponentDeclarationFile(file: string) {
@@ -678,7 +682,43 @@ function isPascalCaseName(name: string) {
 
 function isDefaultExportStatement(statement: ts.Statement) {
   if (ts.isExportAssignment(statement)) return !statement.isExportEquals;
-  return !!(ts.getCombinedModifierFlags(statement as ts.Declaration) & ts.ModifierFlags.Default);
+  if (!ts.canHaveModifiers(statement)) return false;
+  return !!ts.getModifiers(statement)?.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
+}
+
+/**
+ * Bun's bundler keeps `//!` and `/*!` through minification (it reads them as the `@license` class), so a
+ * bang marker in browser-reachable code ships verbatim to every visitor. `no-bang-comment-in-client.grit`
+ * is the build gate; this exists because that rule cannot see the whole file.
+ *
+ * A comment is trivia, which Biome's GritQL exposes to no node pattern, so the rule matches through
+ * `file($name, $body)` — and `$body` is the module's *token* span. A marker above the first statement or
+ * below the last one sits in leading or trailing trivia and is unreachable from GritQL at all. Reading the
+ * raw text here covers both, and re-reporting the markers grit already catches costs nothing: the two run
+ * from different commands, and a file with one is failing lint either way.
+ */
+function getBangCommentWarnings(sourceFile: SourceFileInfo): QualityWarning[] {
+  if (!isClientReachableFile(sourceFile.file)) return [];
+  // Anchored to line start or to whitespace after code, so a literal like `"https://host//!path"` is not a hit.
+  return findPatternLines(sourceFile.content, /(?:^|[^\s/][ \t]+)\/[*/]!/).map((line) => ({
+    rule: "akan.file.bang-comment-in-client",
+    scope: "file" as const,
+    severity: "warning" as const,
+    file: sourceFile.file,
+    line,
+    message: "A `//!` or `/*!` marker survives minification and ships to the browser.",
+  }));
+}
+
+/** Mirrors the path scope of `no-bang-comment-in-client.grit` in `biome.base.json`. */
+function isClientReachableFile(file: string) {
+  if (/\.(test|spec)\.tsx?$/.test(file)) return false;
+  if (/\.(constant|store)\.ts$/.test(file)) return true;
+  if (/\.(Template|Unit|Util|View|Zone)\.tsx$/.test(file)) return true;
+  const segments = file.split("/");
+  if (segments.includes("ui") || segments.includes("webkit")) return /\.tsx?$/.test(file);
+  if (segments.includes("common")) return file.endsWith(".ts");
+  return segments.includes("page") && file.endsWith(".tsx");
 }
 
 function getPlaceholderExportWarnings(sourceFile: SourceFileInfo): QualityWarning[] {

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { AkanResponse } from "./akanResponse";
+import type { WebProxyReturn } from "./types";
 import { WebProxyRunner } from "./webProxyRunner";
 
 describe("WebProxyRunner", () => {
@@ -25,6 +26,7 @@ describe("WebProxyRunner", () => {
       static refName = "defaultProxy";
       use() {
         calls.push("default");
+        return AkanResponse.next();
       }
     }
     class RewriteProxy {
@@ -53,7 +55,7 @@ describe("WebProxyRunner", () => {
     }
     class NeverProxy {
       static refName = "neverProxy";
-      use() {
+      use(): WebProxyReturn {
         throw new Error("should not run");
       }
     }

@@ -518,7 +518,7 @@ export class LibInfo extends ScanInfo {
 export class PkgInfo {
   readonly exec: PkgExecutor;
   readonly name: string;
-  private scanResult: PkgScanResult;
+  #scanResult: PkgScanResult;
 
   static async scanExecutor(exec: PkgExecutor) {
     const [tsconfig, rootPackageJson] = await Promise.all([exec.getTsConfig(), exec.workspace.getPackageJson()]);
@@ -560,10 +560,10 @@ export class PkgInfo {
   constructor(exec: PkgExecutor, scanResult: PkgScanResult) {
     this.exec = exec;
     this.name = exec.name;
-    this.scanResult = scanResult;
+    this.#scanResult = scanResult;
   }
   getScanResult() {
-    return this.scanResult;
+    return this.#scanResult;
   }
 }
 

@@ -249,7 +249,7 @@ export class AgentRunner extends runner("agent") {
         written.push(`${exec.type}s/${exec.name}/AGENTS.md`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        Logger.rawLog(`Skipped ${exec.type}s/${exec.name}/AGENTS.md (${message})`, undefined, "warn");
+        Logger.rawLog(`Skipped ${exec.type}s/${exec.name}/AGENTS.md (${message})`, undefined, "error");
       }
     };
     for (const name of libNames) await syncScope(LibExecutor.from(workspace, name));

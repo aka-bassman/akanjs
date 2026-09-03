@@ -1,4 +1,8 @@
-// TODO: Deprecate this decorators
+/**
+ * Method decorators for a server class: `@Transaction`, `@Try`, `@CacheMethod`. Kept because `libs/util`'s
+ * storage adaptors use `@Try` on their remote calls; new code follows the adaptor rule instead
+ * (`catch` → `logger.error` → `return null`).
+ */
 
 type DecoratedInstance = {
   logger?: { warn?: (message: string) => void; trace?: (message: string) => void };
@@ -50,8 +54,13 @@ export const Transaction = (): MethodDecorator => {
   }) as MethodDecorator;
 };
 
-/** Method decorator that caches method results for the given timeout in milliseconds. */
-export const Cache = (timeout = 1000, getCacheKey?: (...args: unknown[]) => string): MethodDecorator => {
+/**
+ * Method decorator that caches method results for the given timeout in milliseconds.
+ *
+ * Not `Cache` — `akanjs/signal` exports a `Cache` **middleware class**, and an app importing both barrels got
+ * one name meaning two things.
+ */
+export const CacheMethod = (timeout = 1000, getCacheKey?: (...args: unknown[]) => string): MethodDecorator => {
   return ((_target: unknown, key: string, descriptor: PropertyDescriptor) => {
     const originMethod = descriptor.value as (this: unknown, ...args: unknown[]) => unknown;
     const cacheMap = new Map<string, unknown>();

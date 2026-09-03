@@ -8,11 +8,7 @@ export interface Adaptor {
   onDestroy(): Promise<void> | void;
 }
 
-export type AdaptorCls<
-  Methods = any,
-  // biome-ignore lint/complexity/noBannedTypes: `{}` keeps un-injected adaptor classes assignable.
-  InjectMap extends Record<string, InjectInfo> = {},
-> = Cls<
+export type AdaptorCls<Methods = any, InjectMap extends Record<string, InjectInfo> = Record<never, never>> = Cls<
   Methods & ExtractInjectInfoObject<InjectMap> & Adaptor,
   { readonly [INJECT_META]: InjectMap; readonly refName: string }
 >;

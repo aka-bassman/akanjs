@@ -15,6 +15,7 @@ export interface PackageJson {
   bun?: {
     platform?: "node" | "browser" | "bun";
   };
+  publishConfig?: { access?: "public" | "restricted"; registry?: string; tag?: string };
   [key: string]: unknown;
 }
 

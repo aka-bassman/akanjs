@@ -159,8 +159,6 @@ export const ClientPathWrapper = ({
     [csr.registerFrameSlot, pathRoute.path, pageType],
   );
 
-  // const { initialize, codepush, statManager } = useCodepush({ serverUrl: process.env.AKAN_PUBLIC_SERVER_URL ?? "" });
-
   const [gestureEnabled, setGestureEnabled] = useState(true);
   const frameCssVars = getFrameCssVars(pathRoute.pageState);
   const bindProps = bind && pageType !== "pending" && pathRoute.pageState.gesture && gestureEnabled ? bind() : {};
@@ -230,24 +228,8 @@ export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId, wsConnect
   const searchParams = st.use.searchParams({ agent: false });
   const language = (params.lang as string | undefined) ?? lang;
   const path = `/${pathname.split("/").slice(2).join("/")}`;
-  // const { setTheme, themes, theme: nextTheme } = useTheme();
   useEffect(() => {
     if (uiOperation !== "sleep") return;
-    // const initTheme = async () => {
-    //   console.log("initTheme1", theme);
-    //   if (theme) {
-    //     setTheme(theme);
-    //     return;
-    //   }
-    //   const localTheme = await storage.getItem("theme");
-    //   console.log("localTheme2", localTheme);
-    //   if (typeof localTheme === "string" && themes.includes(localTheme)) {
-    //     console.log("setTheme3", localTheme);
-    //     setTheme(localTheme);
-    //   } else setTheme("system");
-    // };
-
-    // void initTheme();
     setCookie("siteurl", window.location.origin);
     dayjs.locale(language);
     initAuth({ jwt: getBaseSearchParam(searchParams, "jwt") });

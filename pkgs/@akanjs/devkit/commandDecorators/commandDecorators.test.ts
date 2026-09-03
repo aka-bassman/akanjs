@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { AppExecutor, WorkspaceExecutor } from "../executors";
-import { App, getArgMetas, Lib, Module, Pkg, Sys, Workspace } from "./argMeta";
-import { getInternalArgumentValue } from "./command";
+import { App, type ArgMeta, type ArgsOption, getArgMetas, Lib, Module, Pkg, Sys, Workspace } from "./argMeta";
+import { getArgumentValue, getInternalArgumentValue, getOptionValue } from "./command";
 import { command } from "./commandBuilder";
 import {
   assertUniqueDependencies,
@@ -136,7 +136,7 @@ describe("command helper metadata", () => {
 
     const app = await getInternalArgumentValue({ key: "", idx: 0, type: "App" }, undefined, workspace);
 
-    expect(app).toBeInstanceOf(AppExecutor);
+    if (!(app instanceof AppExecutor)) throw new Error(`expected an AppExecutor, got ${app.constructor.name}`);
     expect(app.name).toBe("single-command-test-app");
     expect(app.workspace).toBe(workspace);
   });
@@ -221,5 +221,117 @@ describe("command helper dependency injection", () => {
     const descriptor = Object.getOwnPropertyDescriptor(injected, "directRunner");
     expect(descriptor?.enumerable).toBe(false);
     expect(descriptor?.writable).toBe(false);
+  });
+});
+
+describe("enum arg choices", () => {
+  const optionMeta = (enumChoices: ArgsOption["enum"]): ArgMeta => ({
+    name: "format",
+    argsOption: { type: "string", enum: enumChoices },
+    key: "run",
+    idx: 0,
+    type: "Option",
+  });
+  const argumentMeta = (enumChoices: ArgsOption["enum"]): ArgMeta => ({
+    ...optionMeta(enumChoices),
+    name: "action",
+    type: "Argument",
+  });
+  const context = { values: {} };
+
+  test("passes a declared choice through", async () => {
+    expect(await getOptionValue(optionMeta(["text", "json"]), { format: "json" }, context)).toBe("json");
+  });
+
+  // Before this check `akan quality --format yaml` reached the script as "yaml" while the declaration
+  // claimed the parameter was "text" | "json".
+  test("rejects an undeclared value in commander's wording", async () => {
+    await expect(getOptionValue(optionMeta(["text", "json"]), { format: "yaml" }, context)).rejects.toThrow(
+      "option '--format' argument 'yaml' is invalid. Allowed choices are text, json.",
+    );
+  });
+
+  test("names a positional argument as an argument", async () => {
+    await expect(getArgumentValue(argumentMeta(["scan", "ssr"]), "sssr")).rejects.toThrow(
+      "argument 'action' argument 'sssr' is invalid. Allowed choices are scan, ssr.",
+    );
+  });
+
+  test("kebab-cases a camelCase option name the way the flag is spelled", async () => {
+    await expect(
+      getOptionValue({ ...optionMeta(["apk", "aab"]), name: "assembleType" }, { assembleType: "ipa" }, context),
+    ).rejects.toThrow("option '--assemble-type'");
+  });
+
+  test("compares a labelled choice by its value, not its label", async () => {
+    const labelled = optionMeta([{ label: "JSON output", value: "json" }]);
+    expect(await getOptionValue(labelled, { format: "json" }, context)).toBe("json");
+    await expect(getOptionValue(labelled, { format: "JSON output" }, context)).rejects.toThrow("is invalid");
+  });
+
+  // A DynamicEnum resolves against a context that is not populated yet, and the interactive select is its
+  // only consumer, so an explicit value passes through unchecked rather than being rejected wrongly.
+  test("leaves a dynamic choice list unchecked", async () => {
+    expect(
+      await getOptionValue(
+        optionMeta(() => ["text"]),
+        { format: "anything" },
+        context,
+      ),
+    ).toBe("anything");
+  });
+
+  test("an option with no enum is unaffected", async () => {
+    expect(await getOptionValue(optionMeta(undefined), { format: "whatever" }, context)).toBe("whatever");
+  });
+});
+
+describe("enum arg type inference", () => {
+  afterEach(() => {
+    CommandContainer.clear();
+  });
+
+  /**
+   * Compile-time only. Nothing here can fail at runtime: if `enum` stops narrowing, the parameter widens
+   * to the primitive and these calls stop typechecking, so the regression surfaces in `akan typecheck`
+   * rather than in fifteen `as "a" | "b"` casts creeping back into the command files.
+   */
+  const expectLiteral = <Expected>(_value: Expected) => undefined;
+
+  test("a static enum narrows the exec parameter to its declared choices", () => {
+    class InferenceRunner extends runner("inference") {}
+    class InferenceScript extends script("inference", [InferenceRunner]) {}
+
+    class InferenceCommand extends command("inference", [InferenceScript], ({ public: target }) => ({
+      run: target({ desc: "run" })
+        .arg("action", String, { enum: ["scan", "ssr"] })
+        .option("format", String, { enum: ["text", "json"], default: "text" })
+        .option("count", Number, { enum: [1, 2] })
+        .option("scope", String, { enum: ["all", "one"], nullable: true })
+        .option("label", String, { enum: [{ label: "JSON output", value: "json" }] })
+        .option("plain", String, { desc: "no choices declared" })
+        .option("dynamic", String, { enum: () => ["a", "b"] })
+        .exec(async (action, format, count, scope, label, plain, dynamic) => {
+          expectLiteral<"scan" | "ssr">(action);
+          expectLiteral<"text" | "json">(format);
+          expectLiteral<1 | 2>(count);
+          expectLiteral<"all" | "one" | null>(scope);
+          expectLiteral<"json">(label);
+          expectLiteral<string>(plain);
+          expectLiteral<string>(dynamic);
+        }),
+    })) {}
+
+    const [targetMeta] = getTargetMetas(InferenceCommand);
+    expect(targetMeta?.key).toBe("run");
+    expect(targetMeta?.args.map((arg) => ("name" in arg ? arg.name : arg.type))).toEqual([
+      "action",
+      "format",
+      "count",
+      "scope",
+      "label",
+      "plain",
+      "dynamic",
+    ]);
   });
 });

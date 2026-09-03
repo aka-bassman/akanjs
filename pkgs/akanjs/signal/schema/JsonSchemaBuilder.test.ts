@@ -120,8 +120,9 @@ describe("JsonSchemaBuilder", () => {
     // no answer carries — and on a real model the names are the leak. A request body carries all three
     // legitimately, so the default keeps them and only the caller that publishes a *return* shape asks for this.
     const keys = (value: unknown) => Object.keys((value as { properties: object }).properties);
-    expect(keys(schema.model(SchemaVaultInput))).toEqual(["label", "password", "internalPath", "preview"]);
-    expect(keys(schema.model(SchemaVaultInput, { readable: true }))).toEqual(["label"]);
+    const vaultInput = SchemaVaultInput as unknown as Parameters<typeof schema.model>[0];
+    expect(keys(schema.model(vaultInput))).toEqual(["label", "password", "internalPath", "preview"]);
+    expect(keys(schema.model(vaultInput, { readable: true }))).toEqual(["label"]);
     expect(keys(schema.allModelSchemas({ readable: true }).SchemaVault)).not.toContain("password");
     expect(keys(schema.allModelSchemas().SchemaVault)).toContain("password");
   });
@@ -129,9 +130,10 @@ describe("JsonSchemaBuilder", () => {
   test("a visual field is absent from the readable schema, since it is absent from the value", () => {
     // A schema that promises a field the payload omits is worse than one that never named it: a non-optional
     // visual field would be listed `required` and a validating client would refuse the whole result.
-    const readable = schema.model(SchemaVaultInput, { readable: true }) as { properties: object };
+    const vaultInput = SchemaVaultInput as unknown as Parameters<typeof schema.model>[0];
+    const readable = schema.model(vaultInput, { readable: true }) as { properties: object };
     expect("preview" in readable.properties).toBe(false);
-    expect("preview" in (schema.model(SchemaVaultInput) as { properties: object }).properties).toBe(true);
+    expect("preview" in (schema.model(vaultInput) as { properties: object }).properties).toBe(true);
   });
 
   test("collects referenced models transitively and sorts them by name", () => {

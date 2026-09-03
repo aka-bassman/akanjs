@@ -504,7 +504,7 @@ const DefaultNumber = ({
   const validateResult = validate ? validate(value) : undefined;
   const inputBase = (useUiRecipe("input") ?? inputRecipe)();
   const generateFormat = () => {
-    return isNaN(value ?? 0) ? "" : formatter ? formatter(value?.toString() ?? "") : (value?.toString() ?? "");
+    return Number.isNaN(value ?? 0) ? "" : formatter ? formatter(value?.toString() ?? "") : (value?.toString() ?? "");
   };
 
   const [firstFocus, setFirstFocus] = useState(true);
@@ -538,7 +538,7 @@ const DefaultNumber = ({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const numberValue = parseFloat(e.currentTarget.value.replace(/[^\d-]/g, ""));
     if (e.key === "Enter") {
-      if (isNaN(numberValue)) {
+      if (Number.isNaN(numberValue)) {
         e.currentTarget.value = "";
         setFormatValue("");
         onChange(null);
@@ -561,7 +561,7 @@ const DefaultNumber = ({
       onPressEnter?.(numberValue, e);
     }
     if (e.key === "Escape") {
-      if (isNaN(numberValue)) {
+      if (Number.isNaN(numberValue)) {
         e.currentTarget.value = "";
         setFormatValue("");
         onChange(null);

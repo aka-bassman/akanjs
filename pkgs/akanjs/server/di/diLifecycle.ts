@@ -269,8 +269,28 @@ export class DiLifecycle {
     return selected;
   }
 
-  /** Run every init stage in dependency order and collect the generated routes. */
+  /**
+   * Run every init stage in dependency order and collect the generated routes.
+   *
+   * A stage runs its tasks in parallel and reports every failure, which means the ones that *succeeded*
+   * alongside a failure are live: connections opened, timers armed, `onInit` done. The error then propagates and
+   * the process usually exits, so this rarely mattered — but a caller that catches and retries (a test harness,
+   * a dev restart) accumulated them. `destroyAll` already walks the stages in reverse and skips what was never
+   * registered, so the wind-down is the one that already exists.
+   */
   async initializeAll(): Promise<SignalRoutes> {
+    try {
+      return await this.#initializeAll();
+    } catch (error) {
+      await this.destroyAll().catch((destroyError: unknown) => {
+        // The init failure is the one worth reporting; a failure while unwinding it is a footnote.
+        this.logger.warn(`Failed to unwind a partial init: ${reasonMessage(destroyError)}`);
+      });
+      throw error;
+    }
+  }
+
+  async #initializeAll(): Promise<SignalRoutes> {
     await this.#initializeUses();
     await this.#initializeAdaptor();
     await this.#initializeServerSignal();

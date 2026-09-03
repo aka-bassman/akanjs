@@ -304,6 +304,20 @@ export interface FileConventionScanResult {
   zone: { databases: string[]; services: string[]; scalars: string[] };
 }
 
+/**
+ * What a *live* scan exposes on `AppInfo.file` / `LibInfo.file`: a set per module kind, with every file
+ * type carrying all four kinds. `FileConventionScanResult` above is the serialized form that crosses a
+ * process boundary as JSON, which is why it is arrays and why each file type lists only the kinds it can
+ * hold. The two are not interchangeable — every reader of `.file` calls `.has()`.
+ */
+export interface FileConventionScanSet {
+  all: Set<string>;
+  databases: Set<string>;
+  services: Set<string>;
+  scalars: Set<string>;
+}
+export type FileConventionScanSets = { [key in keyof FileConventionScanResult]: FileConventionScanSet };
+
 export interface ScanResult {
   name: string;
   type: "app" | "lib";
@@ -346,7 +360,7 @@ export interface AppInfo {
   readonly database: Map<string, Set<string>>;
   readonly service: Map<string, Set<string>>;
   readonly scalar: Map<string, Set<string>>;
-  readonly file: FileConventionScanResult;
+  readonly file: FileConventionScanSets;
   getLibs(): string[];
   getLibInfos(): Map<string, LibInfo>;
   getDatabaseModules(): string[];
@@ -360,7 +374,7 @@ export interface LibInfo {
   readonly database: Map<string, Set<string>>;
   readonly service: Map<string, Set<string>>;
   readonly scalar: Map<string, Set<string>>;
-  readonly file: FileConventionScanResult;
+  readonly file: FileConventionScanSets;
   getLibs(): string[];
   getLibInfos(): Map<string, LibInfo>;
   getLibInfo(libName: string): LibInfo | undefined;

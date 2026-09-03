@@ -3,14 +3,14 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import chalk from "chalk";
 
-type BiomeSeverity = "error" | "warning" | "information" | "hint";
+export type BiomeSeverity = "error" | "warning" | "information" | "hint";
 
-interface BiomePosition {
+export interface BiomePosition {
   line: number;
   column: number;
 }
 
-interface BiomeDiagnostic {
+export interface BiomeDiagnostic {
   severity: BiomeSeverity;
   message: string;
   category?: string;
@@ -21,7 +21,7 @@ interface BiomeDiagnostic {
   };
 }
 
-interface BiomeReport {
+export interface BiomeReport {
   summary?: {
     changed?: number;
     errors?: number;
@@ -57,6 +57,56 @@ interface LintResponse {
   errors: LintMessage[];
   warnings: LintMessage[];
 }
+
+/**
+ * Extracts the `--reporter=json` report from Biome's output.
+ *
+ * Biome mixes configuration and IO diagnostics into the same stream as the report, so the output is not
+ * always JSON alone. Slicing from the first `{` to the last `}` mis-parses as soon as that leading text
+ * carries a brace of its own, which is not hypothetical: a config error printed ahead of the report made
+ * one unchanged command alternate between 2 and 10 diagnostics. So every `{` is tried as a start, its
+ * match is found by depth while string literals are skipped, and the first candidate that both parses and
+ * carries a report field wins — a brace in prose parses as nothing, and `{"a":1}` in prose is not a report.
+ */
+export const parseBiomeReport = (output: string): BiomeReport => {
+  for (let start = output.indexOf("{"); start !== -1; start = output.indexOf("{", start + 1)) {
+    const end = objectEndAt(output, start);
+    if (end === -1) break;
+    const report = asBiomeReport(output.slice(start, end + 1));
+    if (report) return report;
+  }
+  throw new Error(output.trim() || "No Biome JSON output");
+};
+
+const objectEndAt = (output: string, start: number): number => {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let idx = start; idx < output.length; idx += 1) {
+    const char = output[idx];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === "{") depth += 1;
+    else if (char === "}" && --depth === 0) return idx;
+  }
+  return -1;
+};
+
+const asBiomeReport = (candidate: string): BiomeReport | null => {
+  try {
+    const parsed = JSON.parse(candidate) as unknown;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!("diagnostics" in parsed) && !("summary" in parsed)) return null;
+    return parsed as BiomeReport;
+  } catch {
+    return null;
+  }
+};
 
 /** Biome reads `biome.json` first and `biome.jsonc` second; only the latter may carry comments. */
 const BIOME_CONFIG_FILES = ["biome.json", "biome.jsonc"] as const;
@@ -121,14 +171,6 @@ export class Linter {
       proc.on("close", (code) => resolve({ stdout, stderr, code }));
       proc.stdin.end(input);
     });
-  }
-
-  #parseBiomeReport(output: string): BiomeReport {
-    const jsonStart = output.indexOf("{");
-    const jsonEnd = output.lastIndexOf("}");
-    if (jsonStart === -1 || jsonEnd === -1 || jsonEnd < jsonStart)
-      throw new Error(output.trim() || "No Biome JSON output");
-    return JSON.parse(output.slice(jsonStart, jsonEnd + 1)) as BiomeReport;
   }
 
   #diagnosticFilePath(diagnostic: BiomeDiagnostic, fallbackFilePath: string) {
@@ -208,7 +250,7 @@ export class Linter {
       this.configPath,
       this.#toBiomePath(filePath),
     ]);
-    const report = this.#parseBiomeReport(stdout || stderr);
+    const report = parseBiomeReport(stdout || stderr);
     const results = this.#toLintResults(report, filePath);
     const { errors, warnings } = this.#splitMessages(results);
     const output = write && existsSync(filePath) ? readFileSync(filePath, "utf8") : undefined;
@@ -414,6 +456,33 @@ export class Linter {
    * @param filePath - Path to the file
    * @returns Biome configuration object
    */
+  /**
+   * Applies Biome's safe fixes to many files in one process.
+   *
+   * One spawn, not one per file: Biome's startup dominates a small file, so the per-file path turns a
+   * fifteen-file scaffold into three seconds of process launches. Paths that do not exist are dropped
+   * rather than thrown on, because the caller is usually reporting what a template just wrote and a
+   * template is allowed to decline a file.
+   */
+  async fixFiles(filePaths: string[]): Promise<{ fixed: string[] }> {
+    const resolved = filePaths.map((filePath) => this.#resolveFilePath(filePath)).filter(existsSync);
+    if (resolved.length === 0) return { fixed: [] };
+    const before = new Map(resolved.map((filePath) => [filePath, readFileSync(filePath, "utf8")]));
+    await this.#runBiome([
+      "check",
+      "--write",
+      "--reporter=json",
+      "--max-diagnostics=none",
+      "--no-errors-on-unmatched",
+      "--config-path",
+      this.configPath,
+      ...resolved.map((filePath) => this.#toBiomePath(filePath)),
+    ]);
+    return {
+      fixed: resolved.filter((filePath) => readFileSync(filePath, "utf8") !== before.get(filePath)),
+    };
+  }
+
   async getConfigForFile(filePath: string): Promise<unknown> {
     const resolvedFilePath = this.#resolveFilePath(filePath);
     if (!existsSync(resolvedFilePath)) throw new Error(`File not found: ${filePath}`);

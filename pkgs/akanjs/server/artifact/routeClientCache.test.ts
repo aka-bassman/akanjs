@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { BuildRouteClientResult } from "./manifestTypes";
 import { RouteClientCache } from "./routeClientCache";
 import type { RoutesManifest } from "./routesManifestStore";
 
@@ -67,25 +68,26 @@ describe("RouteClientCache", () => {
   });
 
   test("invalidates built routes, ignores stale builds, and clears generations", async () => {
-    let resolveBuild:
-      | ((value: Awaited<ReturnType<Parameters<typeof RouteClientCache>[0]["buildRoute"]>>) => void)
-      | null = null;
+    // An array, not a `let`: TS narrows a `let` initialized to `null` to exactly `null` and does not track the
+    // assignment made inside the promise executor, so the call below read as not callable.
+    const resolveBuild: (() => void)[] = [];
     const cache = new RouteClientCache({
       buildRoute: async (routeId, { generation }) =>
         await new Promise((resolve) => {
-          resolveBuild = () =>
+          resolveBuild.push(() =>
             resolve({
               manifestDelta: { [`${routeId}#${generation}`]: { id: "stale.js", chunks: [], name: "default" } },
               ssrManifestDelta: emptySsrManifest,
               newEntries: [`/repo/${routeId}-${generation}.tsx`],
               clientDeps: [],
-            });
+            }),
+          );
         }),
     });
 
     const pending = cache.ensure("/slow", []);
     expect(cache.clear()).toEqual([]);
-    resolveBuild?.({ manifestDelta: {}, ssrManifestDelta: emptySsrManifest, newEntries: [], clientDeps: [] });
+    resolveBuild[0]?.();
     await pending;
 
     expect(cache.snapshot().clientManifest).toEqual({});
@@ -103,7 +105,7 @@ describe("RouteClientCache", () => {
     await immediate.ensure("/b", []);
     expect(immediate.invalidate((routeId) => routeId === "/a")).toEqual(["/a"]);
     expect(immediate.snapshot().knownEntries).toEqual(new Set(["/repo//a.tsx", "/repo//b.tsx"]));
-    expect(immediate.clear().sort()).toEqual(["/b"]);
+    expect(immediate.clear().sort((a, b) => a.localeCompare(b))).toEqual(["/b"]);
     expect(immediate.snapshot().generation).toBe(2);
   });
 
@@ -224,7 +226,7 @@ describe("RouteClientCache", () => {
   test("shared entries can be discovered by later routes without rebuilding the shared entry", async () => {
     const builds: Array<{ routeId: string; knownEntries: string[] }> = [];
     const cache = new RouteClientCache({
-      buildRoute: async (routeId, { knownEntries }) => {
+      buildRoute: async (routeId, { knownEntries }): Promise<BuildRouteClientResult> => {
         builds.push({ routeId, knownEntries: [...knownEntries].sort() });
         if (routeId === "/a") {
           return {

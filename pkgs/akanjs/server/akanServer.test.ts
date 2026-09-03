@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BackendEnv } from "akanjs/base";
 import { Logger } from "akanjs/common";
+import { DatabaseSignal } from "../signal/signalRegistry";
 
 const createEnv = (tmp: string) =>
   ({
@@ -71,12 +72,12 @@ const loadRuntime = async () => {
           constant: serverResolverTestConstant,
           database: serverResolverTestDatabase,
           service: serverResolverTestServiceModel,
-          signal: {
-            endpoint: ServerResolverTestEndpoint,
-            slice: ServerResolverTestSlice,
-            internal: ServerResolverTestInternal,
-            server: ServerResolverTestServerSignal,
-          },
+          signal: new DatabaseSignal(
+            ServerResolverTestInternal,
+            ServerResolverTestEndpoint,
+            ServerResolverTestSlice,
+            ServerResolverTestServerSignal,
+          ),
         },
       ],
       services: [],
@@ -328,7 +329,7 @@ describe("AkanServer MCP config", () => {
     const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-boot-"));
     process.env.AKAN_MCP = "true";
     const lines: string[] = [];
-    const stop = Logger.addSink(({ message }) => lines.push(message));
+    const stop = Logger.addSink(({ message }) => void lines.push(message));
     const server = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
     try {
       // Routes on, web off: the report rides with the builtin routes, so a `script`/`console` command that mounts

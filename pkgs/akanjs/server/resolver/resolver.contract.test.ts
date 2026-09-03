@@ -17,7 +17,7 @@ import {
 } from "akanjs/service";
 import { endpoint } from "../../signal/endpoint";
 import { Public } from "../../signal/guards";
-import { internal } from "../../signal/internal";
+import { type Internal, internal } from "../../signal/internal";
 import { Ws } from "../../signal/internalArg";
 import { CascadeRunner } from "./CascadeRunner";
 import { DatabaseResolver } from "./database.resolver";
@@ -53,6 +53,8 @@ const makeHttpRequest = ({
     url,
     params,
     body: body ? {} : undefined,
+    // The JSON content type `CrossSiteGuard` requires of every body-carrying mutation, as `HttpClient` sends it.
+    headers: new Headers(body ? { "content-type": "application/json" } : {}),
     json: async () => body ?? {},
   }) as unknown as Bun.BunRequest;
 
@@ -67,6 +69,14 @@ class FakeSqliteDatabase extends adapt("fakeSqliteDatabase") {
 }
 
 class FakeSolidCache extends adapt("fakeSolidCache") {}
+
+/** The chainable read the model facade exposes, as much of it as these assertions drive. */
+type FindChain<Result> = Promise<Result> & {
+  sort: (sort: unknown) => FindChain<Result>;
+  skip: (skip: number) => FindChain<Result>;
+  limit: (limit: number) => FindChain<Result>;
+  select: (projection?: unknown) => FindChain<Result>;
+};
 
 const makeFakeStore = () => {
   const calls: { method: string; args: unknown[] }[] = [];
@@ -189,7 +199,8 @@ describe("DatabaseResolver declaration contracts", () => {
       byOwnerCategory: { load: (key: Record<string, string>) => Promise<unknown> };
       ServerResolverTestItem: {
         refName: string;
-        find: (query: unknown) => { sort: (sort: unknown) => Promise<unknown[]> };
+        find: (query: unknown) => FindChain<unknown[]>;
+        findOne: (query: unknown) => FindChain<unknown>;
       };
       listInCategory: (...args: unknown[]) => Promise<unknown[]>;
       findInCategory: (...args: unknown[]) => Promise<unknown>;
@@ -268,6 +279,29 @@ describe("DatabaseResolver declaration contracts", () => {
     expect(instance.__store.calls.at(-1)?.args[0]).toEqual({
       kind: "all",
       queries: [{}, { kind: "any", queries: [{ ownerId: "owner-1", category: "news" }] }],
+    });
+
+    // `find`/`findOne` are the chainable half of the facade — the one thing a generated filter method cannot
+    // give you, since a filter returns an executed list. Each link returns a fresh chain, so nothing is
+    // executed until the chain is awaited, and awaiting it twice runs it twice.
+    const callsBeforeChain = instance.__store.calls.length;
+    const chain = instance.ServerResolverTestItem.find({ category: "news" });
+    // Building the chain touches nothing; the preceding loader calls are the last thing the store saw.
+    expect(instance.__store.calls.length).toBe(callsBeforeChain);
+    await chain.sort({ title: 1 }).skip(2).limit(3).select({ title: true });
+    expect(instance.__store.calls.at(-1)).toEqual({
+      method: "find",
+      args: [{ category: "news" }, { sort: { title: 1 }, skip: 2, limit: 3, select: { title: true } }],
+    });
+
+    // The links do not mutate the chain they came from: this awaits the original, which carries no options.
+    await chain;
+    expect(instance.__store.calls.at(-1)).toEqual({ method: "find", args: [{ category: "news" }, {}] });
+
+    await instance.ServerResolverTestItem.findOne({ category: "news" }).sort({ title: -1 }).skip(1);
+    expect(instance.__store.calls.at(-1)).toEqual({
+      method: "findOne",
+      args: [{ category: "news" }, { sort: { title: -1 }, skip: 1 }],
     });
   });
 
@@ -657,9 +691,9 @@ describe("SignalResolver declaration contracts", () => {
     ]);
     expect(resolved.routeOptions?.["/getTitle/:id"]).toEqual({ globalPrefix: false });
 
-    const response = await resolved.routes?.["/getTitle/:id"]?.GET?.(
-      makeHttpRequest({ url: `http://localhost/getTitle/${validId}?suffix=ok`, params: { id: validId } }),
-    );
+    const response = await (
+      resolved.routes?.["/getTitle/:id"] as { GET?: (req: Bun.BunRequest) => Promise<Response> }
+    )?.GET?.(makeHttpRequest({ url: `http://localhost/getTitle/${validId}?suffix=ok`, params: { id: validId } }));
     expect(await response?.json()).toBe(`${validId}:ok:public`);
     expect(resolverOrder).toEqual([
       "global-before",
@@ -669,7 +703,11 @@ describe("SignalResolver declaration contracts", () => {
       "global-after",
     ]);
 
-    const mutationResponse = await resolved.routes?.["/serverResolverTestItem/updateTitle/:id"]?.POST?.(
+    const mutationResponse = await (
+      resolved.routes?.["/serverResolverTestItem/updateTitle/:id"] as {
+        POST?: (req: Bun.BunRequest) => Promise<Response>;
+      }
+    )?.POST?.(
       makeHttpRequest({
         url: `http://localhost/updateTitle/${validId}`,
         params: { id: validId },
@@ -1093,7 +1131,7 @@ describe("SignalResolver declaration contracts", () => {
       queue: makeFakeQueue(),
     });
 
-    SignalResolver.resolveSchedule(ScheduleInternal, internalInstance, "federation");
+    SignalResolver.resolveSchedule(ScheduleInternal, internalInstance as unknown as Internal, "federation");
 
     expect(internalInstance.schedule.calls.map((call) => call.method)).toEqual(["registerInit", "registerInterval"]);
     // `process` defaults to enabled: placement is governed by serverMode/operationMode, not an extra opt-in flag.
@@ -1123,7 +1161,7 @@ describe("SignalResolver declaration contracts", () => {
       queue: makeFakeQueue(),
     });
 
-    SignalResolver.resolveSchedule(ProcessInternal, internalInstance, "all");
+    SignalResolver.resolveSchedule(ProcessInternal, internalInstance as unknown as Internal, "all");
 
     const handler = internalInstance.queue.calls[0]?.args[1] as (job: AkanJob) => Promise<void>;
     const job: AkanJob = {
@@ -1167,7 +1205,7 @@ describe("SignalResolver declaration contracts", () => {
     const internalInstance = Object.assign(new QueuedInternal(), { schedule: makeFakeSchedule(), queue });
 
     // the worker side: `process` needs no `enabled` flag to be registered
-    SignalResolver.resolveSchedule(QueuedInternal, internalInstance, "all");
+    SignalResolver.resolveSchedule(QueuedInternal, internalInstance as unknown as Internal, "all");
     // the producer side: exactly what resolveServerSignal's generated method calls
     await queue.registerProcessQueue("archiveItem", [validId]);
 
@@ -1219,22 +1257,23 @@ const makeFakeWebsocket = () => {
   return { cls: FakeWebsocket, instance };
 };
 
-const makeWs = () =>
-  ({
+const makeWs = () => {
+  const recorded = { subscribed: [] as string[], unsubscribed: [] as string[] };
+  return {
     data: {} as Record<string, unknown>,
-    subscribed: [] as string[],
-    unsubscribed: [] as string[],
+    ...recorded,
     subscribe(roomId: string) {
-      this.subscribed.push(roomId);
+      recorded.subscribed.push(roomId);
     },
     unsubscribe(roomId: string) {
-      this.unsubscribed.push(roomId);
+      recorded.unsubscribed.push(roomId);
     },
-  }) as unknown as Bun.ServerWebSocket<unknown> & {
+  } as unknown as Bun.ServerWebSocket<{ kind?: string }> & {
     data: Record<string, unknown>;
     subscribed: string[];
     unsubscribed: string[];
   };
+};
 
 const makeFakeSchedule = () => ({
   calls: [] as { method: string; args: unknown[] }[],

@@ -668,6 +668,7 @@ describe("WebRouter RSC stream response", () => {
         navId: "8",
         pathname: "/en/docs",
         routeId: "/:lang/docs",
+        cache: "miss" as const,
         partial: "patch",
         partialReason: "same-route-search-params",
         partialCommonPrefixLength: 3,

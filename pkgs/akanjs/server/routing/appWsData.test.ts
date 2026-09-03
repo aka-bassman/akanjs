@@ -63,13 +63,11 @@ describe("AppWsData", () => {
   test("replaces the credential and drops the cached account", () => {
     const data = AppWsData.fromRequest(new Request("http://localhost/api/ws"));
     data.account = { role: "user" };
-    data.resolvedAuthorization = "";
 
     AppWsData.applyCredential(data, "next-token");
 
     expect(data.headers.get("authorization")).toBe("Bearer next-token");
     expect(data.account).toBeUndefined();
-    expect(data.resolvedAuthorization).toBeUndefined();
   });
 
   test("signing out clears the handshake cookie so it cannot re-authenticate the socket", () => {

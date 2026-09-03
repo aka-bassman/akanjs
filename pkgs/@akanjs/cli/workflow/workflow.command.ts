@@ -50,7 +50,7 @@ export class WorkflowCommand extends command("workflow", [WorkflowScript], ({ pu
           action,
           workflow,
           { app, module, field, type: typeName, values, default: defaultValue, scalar, surface, mutation, slice },
-          { format: format as "markdown" | "json", out, dryRun, workspace },
+          { format: format, out, dryRun, workspace },
         );
       },
     ),

@@ -54,7 +54,7 @@ export class CloudCommand extends command("cloud", [CloudScript], ({ public: tar
     .exec(async function (test, registry, workspace) {
       await this.cloudScript.deployAkan(workspace, {
         test,
-        registryUrl: resolveRegistryUrl(registry as "npm" | "local"),
+        registryUrl: resolveRegistryUrl(registry),
       });
     }),
   update: target({ desc: "Update Akan.js framework to the latest version" })
@@ -75,7 +75,7 @@ export class CloudCommand extends command("cloud", [CloudScript], ({ public: tar
     })
     .exec(async function (workspace, tag, registry) {
       await this.cloudScript.update(workspace, tag, {
-        registryUrl: resolveRegistryUrl(registry as "npm" | "local"),
+        registryUrl: resolveRegistryUrl(registry),
       });
     }),
   downloadEnv: target({

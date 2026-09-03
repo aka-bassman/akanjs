@@ -2,18 +2,20 @@ engine biome(1.0)
 language js(typescript, jsx)
 
 // Color literals inside `style={{ ... }}` bypass the class scanner, the semantic token layer,
-// and theme switching entirely. Grit port of styleGuard's `inline-color` rule
-// (frontendBuild/styleGuard.ts) — keep in sync. `var(--token)` references do not match.
+// and theme switching entirely. `var(--token)` references do not match.
 //
-// Known delta vs the TS guard: color literals inside a `<style>` tag's template body are not
-// matched here (template chunks are not scoped by this pattern); the build-gate styleGuard
-// still covers that case.
-JsStringLiteralExpression() as $s where {
-  $s <: within `style={$obj}`,
+// The `<style>` arm covers the same literal in a tag body, which is the other way a color reaches
+// the page without passing the vocabulary. Both arms are needed because the two sites are different
+// node kinds — a string in an object property, and a chunk of a template literal.
+// Cases: lint/__fixtures__/no-inline-color/{bad,good}.tsx
+or {
+  JsStringLiteralExpression() as $s where { $s <: within `style={$obj}` },
+  JsTemplateChunkElement() as $s where { $s <: within `<style>$body</style>` }
+} where {
   $s <: r"[\s\S]*(?:#[0-9a-fA-F]{3,8}|(?:rgb|rgba|hsl|hsla|oklch|oklab|lab|lch|hwb)\()[\s\S]*",
   register_diagnostic(
     span = $s,
-    message = "Inline color literal in a style object bypasses semantic tokens and theme switching. Use a token class, or style={{ color: 'var(--primary)' }} when a runtime value is unavoidable.",
+    message = "Inline color literal bypasses semantic tokens and theme switching. Use a token class, or style={{ color: 'var(--primary)' }} when a runtime value is unavoidable.",
     severity = "error"
   )
 }

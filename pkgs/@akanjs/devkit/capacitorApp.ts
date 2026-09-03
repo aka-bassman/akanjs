@@ -123,6 +123,16 @@ interface MaterializeCapacitorConfigOptions {
 }
 type MobilePlatform = "ios" | "android";
 
+/**
+ * `AppExecutor.spawn`'s own options plus the two the Capacitor config is written from before the spawn:
+ * the platform the command targets, and — for iOS — whether it targets a device or a simulator, which
+ * decide the `capacitor.config.json` that command reads.
+ */
+type SpawnMobileOptions = Parameters<AppExecutor["spawn"]>[2] & {
+  platform?: MobilePlatform;
+  iosRunTargetKind?: IosRunTargetKind;
+};
+
 export interface LocalDevHostResolution {
   host: string;
   source: "override" | "detected" | "loopback" | "platform";

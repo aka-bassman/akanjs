@@ -453,8 +453,8 @@ describe("RSC navigation state helpers", () => {
     expect(result.status).toBe("patched");
     if (result.status !== "patched") return;
     expect(result.outletKey).toBe("slot:layout:/docs:1:2");
-    expect(result.tree.segment).toEqual(currentTree?.segment);
-    expect(result.tree.children[0]?.segment).toEqual(currentTree?.children[0]?.segment);
+    expect(result.tree.segment as unknown).toEqual(currentTree?.segment);
+    expect(result.tree.children[0]?.segment as unknown).toEqual(currentTree?.children[0]?.segment);
     expect(result.patchedNode.segment.key).toBe("page:/docs:2");
     expect(result.patchedNode.href).toBe("https://example.test/docs?page=2");
     expect(result.patchedNode.thenable).toBe(patchThenable);

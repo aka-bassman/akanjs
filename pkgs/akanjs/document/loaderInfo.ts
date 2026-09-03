@@ -4,7 +4,10 @@ import type { Loader, SchemaOf } from ".";
 
 type LoaderType = "field" | "arrayField" | "query";
 
-export type ModelCls<Statics = {}, LoaderMap extends { [key: string]: LoaderInfo } = {}> = Cls<
+export type ModelCls<
+  Statics = Record<never, never>,
+  LoaderMap extends { [key: string]: LoaderInfo } = Record<never, never>,
+> = Cls<
   Statics & ExtractLoaderInfoObject<LoaderMap>,
   {
     [LOADER_META]: LoaderMap;

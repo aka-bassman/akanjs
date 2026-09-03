@@ -1,7 +1,4 @@
 "use client";
-// FIXME: deprecated, @revenuecat/purchases-capacitor로 대체 필요
-// import { fetch } from "@libs/shared";
-// import "cordova-plugin-purchase/www/store.js";
 import "cordova-plugin-purchase/www/store";
 
 import { loadCapacitorApp } from "akanjs/client/capacitor";
@@ -15,6 +12,10 @@ export interface ProductType {
 
 export type CdvProductType = CdvPurchase.ProductType;
 
+/**
+ * @deprecated Built on `cordova-plugin-purchase`, which is a peer dependency of the whole package because of
+ * this one hook. Replace with `@revenuecat/purchases-capacitor`; this stays only for apps already on it.
+ */
 export const usePurchase = ({
   platform,
   productInfo,

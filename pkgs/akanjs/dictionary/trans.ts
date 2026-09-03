@@ -67,12 +67,31 @@ export type ErrConstructor<ErrorKey extends string> = {
   Conflict: new (key: ErrorKey, data?: TranslationData, option?: ErrRestoreOption) => ErrInstance;
 };
 
+/**
+ * The toast API, before anything has claimed it.
+ *
+ * `<Messages/>` assigns the real implementations onto this object when it mounts, so a call before that — a
+ * store action on the first frame — has nowhere to go. It stays a no-op rather than throwing (a dropped toast
+ * must not take the render with it) and says so once, because a message that silently never appeared is
+ * otherwise indistinguishable from one the user missed. Server code reaches this object too, through
+ * `akanjs/dictionary`, and there nothing ever assigns over it.
+ */
+const unclaimed = (level: string) => () => {
+  if (unclaimed.warned) return null;
+  unclaimed.warned = true;
+  console.warn(
+    `msg.${level}() was called before <Messages/> mounted, so nothing was shown. Mount it in a layout, or move the call into an event handler.`,
+  );
+  return null;
+};
+unclaimed.warned = false;
+
 export const msg = {
-  info: () => null,
-  success: () => null,
-  error: () => null,
-  warning: () => null,
-  loading: () => null,
+  info: unclaimed("info"),
+  success: unclaimed("success"),
+  error: unclaimed("error"),
+  warning: unclaimed("warning"),
+  loading: unclaimed("loading"),
 } as {
   info: (key: TransMessage<Record<string, unknown>>, option?: TransMessageOption) => void;
   success: (key: TransMessage<Record<string, unknown>>, option?: TransMessageOption) => void;

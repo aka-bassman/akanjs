@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { enumOf, FIELD_META, Int } from "akanjs/base";
+import { type EnumInstance, enumOf, FIELD_META, Int } from "akanjs/base";
 import { type ConstantCls, type ConstantField, ConstantRegistry, type FieldInfoObject, field } from "akanjs/constant";
 
 import { databaseModelVariants, getConstantSchemaDoc } from "./schemaDoc";
 
-const ConstantDocRole = enumOf("constantDocRole", ["admin", "user"] as const);
-ConstantRegistry.enum.set("constantDocRole", ConstantDocRole);
+class ConstantDocRole extends enumOf("constantDocRole", ["admin", "user"] as const) {}
+ConstantRegistry.enum.set("constantDocRole", ConstantDocRole as unknown as EnumInstance);
 
 const makeRef = (fields: FieldInfoObject | Record<string, ConstantField>): ConstantCls => {
   class TestConstant {}

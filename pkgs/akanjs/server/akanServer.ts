@@ -13,6 +13,7 @@ import type {
   SolidConfig,
 } from "akanjs/service";
 import type { ServerSignal, ServerSignalCls, WebsocketPublishData } from "akanjs/signal";
+import { CrossSiteGuard } from "../signal/CrossSiteGuard";
 import { AgentRelayAccess } from "../signal/guards";
 import { createOpenApiDocument } from "../signal/openapi";
 import { FetchSerializer } from "../signal/serializer";
@@ -199,6 +200,8 @@ export class AkanServer {
       if (mcp !== undefined) this.setMcp(mcp);
       const agentAccess = lib.option.getAgentAccess();
       if (agentAccess !== undefined) AgentRelayAccess.use(agentAccess);
+      const crossSite = lib.option.getCrossSite();
+      if (crossSite !== undefined) CrossSiteGuard.configure(crossSite);
     });
     this.setMcp(options?.mcp ?? this.mcp);
     this.serverMode = serverMode;

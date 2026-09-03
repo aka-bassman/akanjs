@@ -7,9 +7,10 @@ import { adapt, type LlmAdaptor, LlmAdaptorRole, ServiceModel, SolidPubSub, serv
 import { endpoint } from "../../signal/endpoint";
 import { internal } from "../../signal/internal";
 import { serverSignal } from "../../signal/serverSignal";
+import { DatabaseSignal, ServiceSignal } from "../../signal/signalRegistry";
 import { AkanLib } from "../akanLib";
 import { AkanOption } from "../akanOption";
-import { HostBasePathWebProxy, LocaleWebProxy } from "../proxy";
+import { AkanResponse, HostBasePathWebProxy, LocaleWebProxy, type WebProxy } from "../proxy";
 import {
   ServerResolverTestEndpoint,
   ServerResolverTestInternal,
@@ -32,9 +33,11 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
     process.env.NODE_ENV = "test";
     const { DiLifecycle } = await import("./diLifecycle");
 
-    class CustomWebProxy {
+    class CustomWebProxy implements WebProxy {
       static readonly refName = "CustomWebProxy";
-      use() {}
+      use() {
+        return AkanResponse.next();
+      }
     }
 
     const env = {} satisfies BackendEnv;
@@ -88,12 +91,12 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
           constant: serverResolverTestConstant,
           database: serverResolverTestDatabase,
           service: serverResolverTestServiceModel,
-          signal: {
-            endpoint: ServerResolverTestEndpoint,
-            slice: ServerResolverTestSlice,
-            internal: ServerResolverTestInternal,
-            server: ServerResolverTestServerSignal,
-          },
+          signal: new DatabaseSignal(
+            ServerResolverTestInternal,
+            ServerResolverTestEndpoint,
+            ServerResolverTestSlice,
+            ServerResolverTestServerSignal,
+          ),
         },
       ],
       services: [],
@@ -126,7 +129,7 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
       expect(Object.keys(routes.wsRoutes ?? {})).toEqual(expect.arrayContaining(["roomFeed", "echoMessage"]));
       expect(routes.routeOptions?.["/getTitle/:id"]).toEqual({ globalPrefix: false });
 
-      const service = lifecycle.live.service.get("serverResolverTestItem") as {
+      const service = lifecycle.live.service.get("serverResolverTestItem") as unknown as {
         createServerResolverTestItem(data: Record<string, unknown>): Promise<Record<string, unknown>>;
         listInCategory(...args: unknown[]): Promise<unknown[]>;
       };
@@ -184,11 +187,11 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
       services: [
         {
           service: localBuildServiceModel,
-          signal: { endpoint: LocalBuildEndpoint, internal: LocalBuildInternal, server: LocalBuildSignal },
+          signal: new ServiceSignal(LocalBuildInternal, LocalBuildEndpoint, LocalBuildSignal),
         },
         {
           service: projectBuildServiceModel,
-          signal: { endpoint: ProjectBuildEndpoint, internal: ProjectBuildInternal, server: ProjectBuildSignal },
+          signal: new ServiceSignal(ProjectBuildInternal, ProjectBuildEndpoint, ProjectBuildSignal),
         },
       ],
       scalars: [],
@@ -249,12 +252,12 @@ describe("DiLifecycle declaration-to-runtime contract", () => {
           constant: serverResolverTestConstant,
           database: serverResolverTestDatabase,
           service: disabledServiceModel,
-          signal: {
-            endpoint: ServerResolverTestEndpoint,
-            slice: ServerResolverTestSlice,
-            internal: ServerResolverTestInternal,
-            server: ServerResolverTestServerSignal,
-          },
+          signal: new DatabaseSignal(
+            ServerResolverTestInternal,
+            ServerResolverTestEndpoint,
+            ServerResolverTestSlice,
+            ServerResolverTestServerSignal,
+          ),
         },
       ],
       services: [],
@@ -328,7 +331,7 @@ describe("DiLifecycle adaptor overrides", () => {
     try {
       await lifecycle.initializeAll();
       expect(lifecycle.registry.adaptorRole.get(LlmAdaptorRole)).toBe(FakeLlm);
-      const agentService = lifecycle.live.service.get("agent") as {
+      const agentService = lifecycle.live.service.get("agent") as unknown as {
         runTurn(request: object): Promise<{ text: string }>;
       };
       expect(agentService).toBeDefined();
@@ -462,11 +465,11 @@ describe("DiLifecycle duplicate registrations", () => {
       services: [
         {
           service: duplicateAlphaServiceModel,
-          signal: { endpoint: DuplicateAlphaEndpoint, internal: DuplicateAlphaInternal, server: DuplicateAlphaSignal },
+          signal: new ServiceSignal(DuplicateAlphaInternal, DuplicateAlphaEndpoint, DuplicateAlphaSignal),
         },
         {
           service: duplicateBetaServiceModel,
-          signal: { endpoint: DuplicateBetaEndpoint, internal: DuplicateBetaInternal, server: DuplicateBetaSignal },
+          signal: new ServiceSignal(DuplicateBetaInternal, DuplicateBetaEndpoint, DuplicateBetaSignal),
         },
       ],
       scalars: [],
@@ -506,15 +509,15 @@ describe("DiLifecycle module selection", () => {
       services: [
         {
           service: selectionLeafServiceModel,
-          signal: { endpoint: SelectionLeafEndpoint, internal: SelectionLeafInternal, server: SelectionLeafSignal },
+          signal: new ServiceSignal(SelectionLeafInternal, SelectionLeafEndpoint, SelectionLeafSignal),
         },
         {
           service: selectionRootServiceModel,
-          signal: { endpoint: SelectionRootEndpoint, internal: SelectionRootInternal, server: SelectionRootSignal },
+          signal: new ServiceSignal(SelectionRootInternal, SelectionRootEndpoint, SelectionRootSignal),
         },
         {
           service: selectionAsideServiceModel,
-          signal: { endpoint: SelectionAsideEndpoint, internal: SelectionAsideInternal, server: SelectionAsideSignal },
+          signal: new ServiceSignal(SelectionAsideInternal, SelectionAsideEndpoint, SelectionAsideSignal),
         },
       ],
       scalars: [],

@@ -83,14 +83,12 @@ export const ScrollList = ({ list, ...props }: ScrollListProps) => {
               <Text backgroundColor="green">scrolling... + {scrollPos}</Text>
             </>
           ) : (
-            <>
-              {renderLogs.map((log, index) => (
-                <>
-                  <Text key={index}>{log}</Text>
-                  <Newline />
-                </>
-              ))}
-            </>
+            renderLogs.map((log, index) => (
+              <>
+                <Text key={index}>{log}</Text>
+                <Newline />
+              </>
+            ))
           )}
         </Text>
       </Box>

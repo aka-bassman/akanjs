@@ -8,14 +8,13 @@ interface Dict {
 }
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dict) {
   return `
-import { endpoint, internal, Public, slice } from "akanjs/signal";
+import { endpoint, internal, None, Public, slice } from "akanjs/signal";
 
-import * as cnst from "../cnst";
 import * as srv from "../srv";
 
 export class ${dict.Model}Internal extends internal(srv.${dict.model}, ({ interval }) => ({})) {}
 
-export class ${dict.Model}Slice extends slice(srv.${dict.model}, { guards: { root: Public, get: Public, cru: Public } }, (init) => ({
+export class ${dict.Model}Slice extends slice(srv.${dict.model}, { guards: { root: None, get: Public, cru: Public } }, (init) => ({
   inPublic: init()
     .exec(function () {
       return this.${dict.model}Service.queryAny();

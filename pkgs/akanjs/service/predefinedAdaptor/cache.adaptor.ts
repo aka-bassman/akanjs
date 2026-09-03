@@ -39,8 +39,6 @@ export class RedisCache
         operationMode,
         repoName,
         redis = {
-          // username, // TODO: Implement username and password
-          // password, // TODO: Implement username and password
           sshOptions: {
             host: `${appName}-${environment}.${serveDomain}`,
             port: 32767,
@@ -52,9 +50,16 @@ export class RedisCache
       }: RedisEnv) => {
         const createRedis = async (url: string) => {
           const { Redis } = await import("ioredis");
-          const redis = new Redis(url, { lazyConnect: true });
-          await redis.connect();
-          return redis;
+          // Credentials the app named in `option.ts` win over anything embedded in the URL, and are simply
+          // absent when it named none — an unauthenticated Redis is the local and in-cluster shape. They used
+          // to be declared on the env and read by nothing, so a password set here silently did not apply.
+          const client = new Redis(url, {
+            lazyConnect: true,
+            ...(redis.username ? { username: redis.username } : {}),
+            ...(redis.password ? { password: redis.password } : {}),
+          });
+          await client.connect();
+          return client;
         };
         if (process.env.REDIS_URI) return await createRedis(process.env.REDIS_URI);
         else if (environment === "local") return await createRedis("redis://localhost:6379");

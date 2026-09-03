@@ -177,8 +177,8 @@ export type BaseFilterQueryKey = "any";
 export type BaseFilterKey = BaseFilterSortKey | BaseFilterQueryKey;
 
 export type FilterInstance<
-  Query extends { [key: string]: FilterInfo } = {},
-  Sort extends { [key: string]: unknown } = {},
+  Query extends { [key: string]: FilterInfo } = Record<never, never>,
+  Sort extends { [key: string]: unknown } = Record<never, never>,
 > = {
   query: Query;
   sort: Sort;

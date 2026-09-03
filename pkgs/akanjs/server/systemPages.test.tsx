@@ -113,7 +113,6 @@ describe("system pages", () => {
       entrypoints: [new URL("./rscWorker.tsx", import.meta.url).pathname],
       target: "bun",
       conditions: ["react-server"],
-      write: false,
     });
 
     expect(result.success).toBe(true);

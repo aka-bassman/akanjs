@@ -62,7 +62,7 @@
   },
   "peerDependencies": {
     "@capacitor/cli": "^8.3.4",
-    "react": "19.2.6"
+    "react": "19.2.7"
   },
   "peerDependenciesMeta": {
     "@capacitor/cli": {

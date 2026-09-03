@@ -75,14 +75,6 @@ export class DatabaseRegistry {
     if (!model && !allowEmpty) throw new Error(`No scalar model for ${refName}`);
     return model as AllowEmpty extends true ? DatabaseCls | undefined : DatabaseCls;
   }
-  // TODO: Serialize filter query map to support admin page
-  // getSerializedFilter(refName: string) {
-  //   const database = this.database.get(refName);
-  //   if (!database) return undefined;
-  //   const sortKeys = Object.keys(getFilterSortMap(database.filter));
-  //   const filterQueryMap = getFilterQueryMap(database.filter);
-  //   return { filter: {}, sortKeys };
-  // },
 
   static buildModel<
     T extends string,

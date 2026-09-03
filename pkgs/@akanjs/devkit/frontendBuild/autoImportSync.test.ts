@@ -355,3 +355,61 @@ describe("AutoImportSync.syncForBatch", () => {
     expect(await readFile(indexFile, "utf8")).not.toContain("@libs/shared/client");
   });
 });
+
+describe("AutoImportSync — scope", () => {
+  const writeAt = async (root: string, rel: string, source: string) => {
+    const abs = path.join(root, rel);
+    await mkdir(path.dirname(abs), { recursive: true });
+    await writeFile(abs, source);
+    return abs;
+  };
+
+  // `lib/__lib/` is generated and gitignored: `akan sync` rewrites it, which is also what makes the
+  // watcher hand it to the syncer, so an edit there is churn that the next sync discards.
+  test("leaves the generated lib/__lib stubs alone and still syncs lib/__scalar", async () => {
+    const root = await makeTempRoot();
+    const needsImport = "export class A {\n  count = field(Int);\n}\n";
+    const generated = await writeAt(root, "libs/shared/lib/__lib/lib.constant.ts", needsImport);
+    const scalar = await writeAt(root, "libs/shared/lib/__scalar/money/money.constant.ts", needsImport);
+
+    const result = await new AutoImportSync({ workspaceRoot: root }).syncForBatch([generated, scalar]);
+
+    expect(result.errors).toEqual([]);
+    expect(result.changedFiles).toEqual([scalar]);
+    expect(await readFile(generated, "utf8")).toBe(needsImport);
+    expect(await readFile(scalar, "utf8")).toContain('import { Int } from "akanjs/base";');
+  });
+
+  // The transform is pure and the write is conditional on a difference, so a second pass over its own
+  // output writes nothing — without that the watcher would re-fire on the syncer's own edit.
+  test("a second pass over its own output changes nothing", async () => {
+    const root = await makeTempRoot();
+    const file = await writeAt(
+      root,
+      "libs/shared/lib/task/task.constant.ts",
+      "export class A {\n  count = field(Int);\n}\n",
+    );
+    const sync = new AutoImportSync({ workspaceRoot: root });
+
+    expect((await sync.syncForBatch([file])).changedFiles).toEqual([file]);
+    const afterFirst = await readFile(file, "utf8");
+    expect((await sync.syncForBatch([file])).changedFiles).toEqual([]);
+    expect(await readFile(file, "utf8")).toBe(afterFirst);
+  });
+
+  // One try/catch per file: a file that cannot be read is reported and the rest of the batch still runs.
+  test("a failing file is reported without abandoning the batch", async () => {
+    const root = await makeTempRoot();
+    const missing = path.join(root, "libs/shared/lib/task/gone.constant.ts");
+    const good = await writeAt(
+      root,
+      "libs/shared/lib/task/task.constant.ts",
+      "export class A {\n  count = field(Int);\n}\n",
+    );
+
+    const result = await new AutoImportSync({ workspaceRoot: root }).syncForBatch([missing, good]);
+
+    expect(result.changedFiles).toEqual([good]);
+    expect(result.errors).toEqual([]);
+  });
+});

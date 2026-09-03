@@ -1,7 +1,8 @@
 import type { AppInfo, LibInfo } from "akanjs";
 
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
-  return `import { endpoint, internal, Public, slice } from "akanjs/signal";
+  return `import { SignedIn } from "@apps/${dict.appName}/srvkit";
+import { endpoint, internal, None, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
 import * as srv from "../srv";
@@ -21,20 +22,24 @@ import * as srv from "../srv";
 
 export class TaskInternal extends internal(srv.task, ({ interval }) => ({})) {}
 
-export class TaskSlice extends slice(srv.task, { guards: { root: Public, get: Public, cru: Public } }, (init) => ({
+// Guards, per key: root = the generated admin API (runs any filter with caller-supplied args), get = reads,
+// cru = create/update/remove. root and cru are never Public; None here means "nobody until you name a guard".
+export class TaskSlice extends slice(srv.task, { guards: { root: None, get: Public, cru: SignedIn } }, (init) => ({
   inPublic: init().exec(function () {
     return this.taskService.queryAny();
   }),
 })) {}
 
+// Every custom endpoint names its own guards array — the slice's map above only covers generated CRUD.
+// It is also the MCP decision: an endpoint declaring no guard is not published to agents at all.
 export class TaskEndpoint extends endpoint(srv.task, ({ mutation }) => ({
-  startTask: mutation(cnst.Task)
+  startTask: mutation(cnst.Task, { guards: [SignedIn] })
     .param("taskId", String)
     .exec(async function (taskId) {
       return await this.taskService.startTask(taskId);
     }),
 
-  completeTask: mutation(cnst.Task)
+  completeTask: mutation(cnst.Task, { guards: [SignedIn] })
     .param("taskId", String)
     .exec(async function (taskId) {
       return await this.taskService.completeTask(taskId);
@@ -48,7 +53,7 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation }) => ({
 //   taskEvent: pubsub(cnst.Task).exec(...),
 //   // search: search parameters (optional, URL query string)
 //   searchTask: query(cnst.LightTask).search("keyword", String).exec(...),
-//   // guards: authentication/authorization guards
-//   // export class TaskEndpoint extends endpoint(srv.task, { guards: { root: SignedIn } }, ({ query, mutation }) => ({})) {}
+//   // mcp: false keeps a guarded endpoint off the agent shelf without changing its authorization
+//   startTask: mutation(cnst.Task, { guards: [SignedIn], mcp: false })...
 `;
 }

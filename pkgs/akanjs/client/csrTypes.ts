@@ -268,18 +268,6 @@ export type PageState = CsrState & {
   topInset: number;
   bottomInset: number;
 };
-export const defaultPageState: PageState = {
-  transition: "none",
-  topSafeArea: 0,
-  bottomSafeArea: 0,
-  topInset: 0,
-  bottomInset: 0,
-  gesture: true,
-  cache: false,
-  ssr: "stream",
-  topSafeAreaColor: "var(--color-background, Canvas)",
-  bottomSafeAreaColor: "var(--color-background, Canvas)",
-};
 
 export interface Location {
   href: string;

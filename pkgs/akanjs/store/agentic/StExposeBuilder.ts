@@ -33,10 +33,15 @@ export class StExposeBuilder<T extends AgentFieldType> {
    * the children fill in after this render — computing it here would publish whatever was there before they ran.
    */
   value(value: AgentValueOf<T> | (() => AgentValueOf<T>) | null | undefined): void {
-    const declared = useRef<{ name: string | null } | null>(null);
-    declared.current ??= {
-      name: this.#name && AgentValue.publishable(`st.expose("${this.#name}")`, this.#type) ? this.#name : null,
-    };
+    const declared = useRef<{ key: string | null; name: string | null } | null>(null);
+    // Keyed on the name, not frozen: withholding it is how a conditional surface is written, so a value that
+    // becomes readable later has to publish and one that goes away has to stop. `publishable` still reports once
+    // per name rather than once per render.
+    if (declared.current?.key !== this.#name)
+      declared.current = {
+        key: this.#name,
+        name: this.#name && AgentValue.publishable(`st.expose("${this.#name}")`, this.#type) ? this.#name : null,
+      };
     useAgentResource(declared.current.name, value, {
       description: this.#desc,
       report: this.#meta.report,

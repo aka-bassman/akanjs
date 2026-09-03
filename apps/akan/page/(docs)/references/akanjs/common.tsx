@@ -63,14 +63,14 @@ if (!isEmail(form.email)) {
 }`,
     },
     {
-      name: "HttpClient",
+      name: "RestClient",
       desc: l.trans({
         en: "HTTP wrapper used by srvkit integrations and platform APIs. Use it to centralize request options, logging, auth, and response handling for external services.",
         ko: "srvkit integration과 platform API에서 사용하는 HTTP wrapper입니다. external service의 request option, logging, auth, response handling을 중앙화할 때 사용합니다.",
       }),
-      code: `import { HttpClient, Logger } from "akanjs/common";
+      code: `import { Logger, RestClient } from "akanjs/common";
 
-const api = new HttpClient("https://api.example.com", {
+const api = new RestClient("https://api.example.com", {
   logger: new Logger("ExternalApi"),
 });`,
     },

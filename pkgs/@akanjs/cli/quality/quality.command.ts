@@ -15,8 +15,8 @@ export class QualityCommand extends command("quality", [QualityScript], ({ publi
     })
     .with(Workspace)
     .exec(async function (action, format, workspace) {
-      if (action === "scan") await this.qualityScript.scan(workspace, format as "text" | "json");
-      else if (action === "ssr") await this.qualityScript.ssr(workspace, format as "text" | "json");
+      if (action === "scan") await this.qualityScript.scan(workspace, format);
+      else if (action === "ssr") await this.qualityScript.ssr(workspace, format);
       else throw new Error(`Unknown quality action: ${action}. Use "scan" or "ssr".`);
     }),
 })) {}

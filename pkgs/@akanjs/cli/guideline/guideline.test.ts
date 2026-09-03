@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import type { AiSession } from "@akanjs/devkit/aiEditor";
 import { CommandContainer } from "@akanjs/devkit/commandDecorators";
+import type { GuideGenerateJson } from "@akanjs/devkit/guideline";
 import { Prompter } from "@akanjs/devkit/prompter";
 import { createCallRecorder, createFakeExecutor } from "../testHelpers";
 import { GuidelineScript } from "./guideline.script";
@@ -8,6 +10,19 @@ afterEach(() => {
   CommandContainer.clear();
   mock.restore();
 });
+
+/** `page` is a path string, and its presence is the only thing the script branches on. */
+const guideJsonOf = (page?: string): GuideGenerateJson => ({
+  title: "Testing",
+  description: "a guide",
+  scans: [],
+  update: { filePath: "docs/testing.md", contents: [], rules: [] },
+  ...(page ? { page } : {}),
+});
+
+// The script forwards this object to `updateDocument` untouched, so the assertion is on identity —
+// which is why it stays a bare marker rather than a real session.
+const fakeSession = { id: "session" } as unknown as AiSession;
 
 describe("GuidelineScript", () => {
   test("lists and loads bundled guideline instructions", async () => {
@@ -22,17 +37,20 @@ describe("GuidelineScript", () => {
     const script = CommandContainer.get(GuidelineScript);
     const recorder = createCallRecorder();
     const workspace = createFakeExecutor("workspace", {}, recorder);
-    const session = { id: "session" };
     script.guidelineRunner.updateInstruction = async (...args) => {
       recorder.record("updateInstruction", ...args);
-      return { guideJson: { page: { path: "docs/page.tsx" } }, session };
+      return { guideJson: guideJsonOf("docs/page.tsx"), session: fakeSession };
     };
     script.guidelineRunner.updateDocument = async (...args) => recorder.record("updateDocument", ...args);
 
     await script.updateInstruction(workspace as never, "testing", "make it better");
 
     expect(recorder.names()).toEqual(["updateInstruction", "updateDocument"]);
-    expect(recorder.calls[1]?.args).toEqual([workspace, "testing", { updateRequest: "make it better", session }]);
+    expect(recorder.calls[1]?.args).toEqual([
+      workspace,
+      "testing",
+      { updateRequest: "make it better", session: fakeSession },
+    ]);
   });
 
   test("skips document update when guide has no page", async () => {
@@ -41,7 +59,7 @@ describe("GuidelineScript", () => {
     const workspace = createFakeExecutor("workspace", {}, recorder);
     script.guidelineRunner.updateInstruction = async (...args) => {
       recorder.record("updateInstruction", ...args);
-      return { guideJson: {}, session: { id: "session" } };
+      return { guideJson: guideJsonOf(), session: fakeSession };
     };
     script.guidelineRunner.updateDocument = async (...args) => recorder.record("updateDocument", ...args);
 

@@ -6,14 +6,16 @@ import {
   adapt,
   type DatabaseService,
   getDefaultInjectRegistry,
+  getDefaultLiveRegistry,
   type LiveRegistry,
+  type Service,
   ServiceModel,
   serve,
 } from "akanjs/service";
 import { endpoint } from "./endpoint";
 import { buildEndpoint, type EndpointInfo } from "./endpointInfo";
 import { Exception } from "./exception";
-import type { Guard, GuardCls } from "./guard";
+import type { Guard, GuardCls, GuardScope } from "./guard";
 import { None, Public } from "./guards";
 import { type Internal, internal } from "./internal";
 import type { InternalArg } from "./internalArg";
@@ -141,7 +143,7 @@ const signalTestDatabase = DatabaseRegistry.buildModel(
   SignalTestDoc,
   SignalTestModel,
   SignalTestObject,
-  SignalTestInsight,
+  SignalTestInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   SignalTestFilter,
 );
 
@@ -161,12 +163,14 @@ const signalTestServiceModel = ServiceModel.fromModel(SignalTestService, signalT
 
 class TestAdmin implements Guard {
   static name = "TestAdmin";
+  static scope: GuardScope = "account";
   canPass() {
     return true;
   }
 }
 class TestDeny implements Guard {
   static name = "TestDeny";
+  static scope: GuardScope = "account";
   canPass() {
     return false;
   }
@@ -203,20 +207,9 @@ class EndpointMiddleware extends middleware("endpoint") {
 }
 let signalTestOrder: string[] = [];
 
-const makeLiveRegistry = (): LiveRegistry => ({
-  adaptor: new Map(),
-  adaptorCls: new Map(),
-  service: new Map(),
-  serviceCls: new Map(),
-  endpoint: new Map(),
-  endpointCls: new Map(),
-  slice: new Map(),
-  sliceCls: new Map(),
-  internal: new Map(),
-  internalCls: new Map(),
-  serverSignal: new Map(),
-  serverSignalCls: new Map(),
-});
+// Through the framework's own builder, so a field added to or dropped from `LiveRegistry` reaches the tests
+// instead of leaving a literal that still lists the eight keys it had when it was written.
+const makeLiveRegistry = (): LiveRegistry => getDefaultLiveRegistry();
 
 const makeHttpRequest = ({
   url = "http://localhost/api?ownerId=u1&ids=a&ids=b",
@@ -233,7 +226,9 @@ const makeHttpRequest = ({
     url,
     params,
     body: body ? {} : undefined,
-    headers: new Headers(headers),
+    // What `HttpClient` sends for a JSON body, because `CrossSiteGuard` requires it: a body with any other
+    // content type is a cross-site form post that skipped its preflight.
+    headers: new Headers(body ? { "content-type": "application/json", ...headers } : headers),
     json: async () => body ?? {},
   }) as unknown as Bun.BunRequest;
 
@@ -244,7 +239,7 @@ const makeSignalContext = ({
   live = makeLiveRegistry(),
   middlewareMap = new Map(),
 }: {
-  endpointInfo?: ReturnType<typeof buildEndpoint.query>;
+  endpointInfo?: EndpointInfo;
   request?: Bun.BunRequest;
   adaptor?: InstanceType<ReturnType<typeof adapt>>;
   live?: LiveRegistry;
@@ -281,7 +276,7 @@ describe("signal metadata builders", () => {
       ["search", "tags", 1, true],
       ["body", "input", 0, true],
     ]);
-    expect(endpointInfo.returns.returnRef).toBe(SignalTestFull);
+    expect(endpointInfo.returns.returnRef as unknown).toBe(SignalTestFull);
     expect(endpointInfo.returns.arrDepth).toBe(1);
     expect(endpointInfo.returns.nullable).toBe(true);
     expect(endpointInfo.signalOption.partial).toEqual(["title"]);
@@ -303,7 +298,9 @@ describe("signal metadata builders", () => {
   test("builds slice metadata with query, internal args, and nullable search args", () => {
     const sliceInfo = buildSlice(
       "signalTestItem",
-      SignalTestInput,
+      // `buildSlice` infers `Input` from the class, and a `via()` input does not line up with what it derives —
+      // the same escape `DatabaseRegistry.buildModel` already takes for the same argument.
+      SignalTestInput as unknown as Parameters<typeof buildSlice>[1],
       SignalTestFull,
       SignalTestLight,
       SignalTestInsight,
@@ -326,7 +323,7 @@ describe("signal metadata builders", () => {
     expect(() =>
       buildSlice(
         "signalTestItem",
-        SignalTestInput,
+        SignalTestInput as unknown as Parameters<typeof buildSlice>[1],
         SignalTestFull,
         SignalTestLight,
         SignalTestInsight,
@@ -405,8 +402,9 @@ describe("signal class factories and composition", () => {
     expect(MainEndpoint[ENDPOINT_META].getTitle?.args[0]?.name).toBe("id");
     expect(MainEndpoint[ENDPOINT_META].publish?.type).toBe("pubsub");
     expect(Object.keys(MainEndpoint.srv.srvMap).sort()).toEqual(["signalTestAuxService", "signalTestItemService"]);
-    expect(MainEndpoint[INJECT_META].signalTestItemService.type).toBe("service");
-    expect(MainEndpoint[INJECT_META].signalTestAuxService.type).toBe("service");
+    const mainInjects = MainEndpoint[INJECT_META] as Record<string, { type: string }>;
+    expect(mainInjects.signalTestItemService?.type).toBe("service");
+    expect(mainInjects.signalTestAuxService?.type).toBe("service");
   });
 
   test("creates internal classes and merges lib internals", () => {
@@ -427,8 +425,8 @@ describe("signal class factories and composition", () => {
     expect(MainInternal[INTERNAL_META].hourly?.signalOption.scheduleType).toBe("cron");
     expect(MainInternal[INTERNAL_META].auxProcess?.type).toBe("process");
     expect(Object.keys(MainInternal.srv.srvMap).sort()).toEqual(["signalTestAuxService", "signalTestItemService"]);
-    expect(MainInternal[INJECT_META].schedule.type).toBe("plug");
-    expect(MainInternal[INJECT_META].queue.type).toBe("plug");
+    expect((MainInternal[INJECT_META] as unknown as Record<string, { type: string }>).schedule?.type).toBe("plug");
+    expect((MainInternal[INJECT_META] as unknown as Record<string, { type: string }>).queue?.type).toBe("plug");
   });
 
   test("creates slice classes with default root slice, guards, and lib slice metadata", () => {
@@ -626,7 +624,7 @@ describe("signal serialization and registry", () => {
 
     expect(Object.keys(SignalRef[ENDPOINT_META])).toEqual(["publishItem"]);
     expect(Object.keys(SignalRef[INTERNAL_META])).toEqual(["queueItem"]);
-    expect(SignalRef[INJECT_META].queue.type).toBe("plug");
+    expect((SignalRef[INJECT_META] as unknown as Record<string, { type: string }>).queue?.type).toBe("plug");
   });
 });
 
@@ -638,7 +636,7 @@ describe("SignalContext execution", () => {
       .search("ids", [ID])
       .search("maybe", String)
       .body("title", String)
-      .exec((id, ids, maybe, title) => `${id}:${ids.join(",")}:${maybe ?? "none"}:${title}`);
+      .exec((id, ids, maybe, title) => `${id}:${(ids ?? []).join(",")}:${maybe ?? "none"}:${title}`);
     const context = makeSignalContext({
       endpointInfo,
       request: makeHttpRequest({
@@ -875,7 +873,7 @@ describe("SignalContext execution", () => {
   });
 
   test("passes through raw Response results", async () => {
-    const endpointInfo = buildEndpoint.query(Response as never).exec(() => Response.json({ ok: true }));
+    const endpointInfo = buildEndpoint.query(Response as never).exec(() => Response.json({ ok: true }) as never);
     const context = makeSignalContext({ endpointInfo });
 
     await context.init();
@@ -1042,7 +1040,7 @@ describe("SignalContext return resolution", () => {
     class ResolveInternal extends internal(signalTestServiceModel, (builder) => ({
       resolvedLabel: builder.resolveField(String).exec((parent) => `resolved:${(parent as { title: string }).title}`),
     })) {}
-    live.service.set("signalTestRelated", relatedService);
+    live.service.set("signalTestRelated", relatedService as unknown as Service);
     live.internal.set("signalTestItemInternal", new ResolveInternal() as unknown as Internal);
 
     const resolved = await SignalContext.resolveReturn(
@@ -1108,7 +1106,7 @@ describe("SignalContext return resolution", () => {
         loaded.push(id);
         return { toJSON: () => ({ id, title: `related:${id}` }) };
       },
-    } as unknown as DatabaseService);
+    } as unknown as Service);
     const resolveHolders = async () =>
       (await SignalContext.resolveReturn(
         [
@@ -1126,7 +1124,7 @@ describe("SignalContext return resolution", () => {
 
     const holders = await resolveHolders();
 
-    expect(loaded.toSorted()).toEqual(["rel-1", "rel-2"]);
+    expect(loaded.toSorted((a, b) => a.localeCompare(b))).toEqual(["rel-1", "rel-2"]);
     expect(holders[0].related).toMatchObject({ id: "rel-1", title: "related:rel-1" });
     expect(holders[0].related).toBe(holders[1].related);
     expect(holders[0].relateds[0]).toBe(holders[0].related);
@@ -1141,7 +1139,7 @@ describe("SignalContext return resolution", () => {
     const live = makeLiveRegistry();
     live.service.set("signalTestRelated", {
       __load: async () => null,
-    } as unknown as DatabaseService);
+    } as unknown as Service);
     const resolveHolder = async (holder: object) =>
       await SignalContext.resolveReturn(holder, {
         signalContext: null,
@@ -1242,7 +1240,9 @@ describe("representative signal usage regressions", () => {
       .query(String, { path: "wsl/homes/:dongho/erv", prefix: false })
       .param("dongho", String)
       .exec((dongho) => dongho);
-    const wildcard = buildEndpoint.query(Response as never, { path: "localFile/getBlob/*" }).exec(() => new Response());
+    const wildcard = buildEndpoint
+      .query(Response as never, { path: "localFile/getBlob/*" })
+      .exec(() => new Response() as never);
     const processInternal = buildInternal
       .process(Boolean, { serverMode: "all" })
       .msg("force", Boolean)

@@ -1,6 +1,6 @@
 import { Database, type SQLQueryBindings, type Statement } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
-import { dayjs, ID, Int } from "akanjs/base";
+import { dayjs, ID, Int, type PromiseOrObject } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import {
   by,
@@ -15,6 +15,7 @@ import {
 import {
   type AkanSqlClient,
   type AkanSqlStatement,
+  type DocumentDatabaseOwner,
   PostgresDialect,
   SqlDocumentStore,
   SqliteDialect,
@@ -50,7 +51,7 @@ const insightTestConstant = ConstantRegistry.buildModel(
   InsightTestInsight,
   { InsightTestInput, InsightTestObject, InsightTestFull, InsightTestLight, InsightTestInsight, InsightTestStatus },
 );
-class InsightTestFilter extends from(InsightTestFull, () => ({})) {}
+class InsightTestFilter extends from(InsightTestFull, () => ({ query: {}, sort: {} })) {}
 class InsightTestDoc extends by(InsightTestFull) {}
 class InsightTestModel extends into(InsightTestDoc, InsightTestFilter, insightTestConstant, () => ({})) {}
 const insightTestDatabase = DatabaseRegistry.buildModel(
@@ -59,7 +60,7 @@ const insightTestDatabase = DatabaseRegistry.buildModel(
   InsightTestDoc,
   InsightTestModel,
   InsightTestObject,
-  InsightTestInsight,
+  InsightTestInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   InsightTestFilter,
 );
 
@@ -95,7 +96,7 @@ const ticketTestConstant = ConstantRegistry.buildModel(
   TicketTestInsight,
   { TicketTestInput, TicketTestObject, TicketTestFull, TicketTestLight, TicketTestInsight, TicketHistory },
 );
-class TicketTestFilter extends from(TicketTestFull, () => ({})) {}
+class TicketTestFilter extends from(TicketTestFull, () => ({ query: {}, sort: {} })) {}
 class TicketTestDoc extends by(TicketTestFull) {}
 class TicketTestModel extends into(TicketTestDoc, TicketTestFilter, ticketTestConstant, () => ({})) {}
 const ticketTestDatabase = DatabaseRegistry.buildModel(
@@ -104,7 +105,7 @@ const ticketTestDatabase = DatabaseRegistry.buildModel(
   TicketTestDoc,
   TicketTestModel,
   TicketTestObject,
-  TicketTestInsight,
+  TicketTestInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   TicketTestFilter,
 );
 
@@ -128,7 +129,7 @@ const immutableTestConstant = ConstantRegistry.buildModel(
   ImmutableTestInsight,
   { ImmutableTestInput, ImmutableTestObject, ImmutableTestFull, ImmutableTestLight, ImmutableTestInsight },
 );
-class ImmutableTestFilter extends from(ImmutableTestFull, () => ({})) {}
+class ImmutableTestFilter extends from(ImmutableTestFull, () => ({ query: {}, sort: {} })) {}
 class ImmutableTestDoc extends by(ImmutableTestFull) {}
 class ImmutableTestModel extends into(ImmutableTestDoc, ImmutableTestFilter, immutableTestConstant, () => ({})) {}
 const immutableTestDatabase = DatabaseRegistry.buildModel(
@@ -137,7 +138,7 @@ const immutableTestDatabase = DatabaseRegistry.buildModel(
   ImmutableTestDoc,
   ImmutableTestModel,
   ImmutableTestObject,
-  ImmutableTestInsight,
+  ImmutableTestInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   ImmutableTestFilter,
 );
 
@@ -174,7 +175,7 @@ class TestSqliteClient implements AkanSqlClient {
   }
 }
 
-class TestDatabaseOwner {
+class TestDatabaseOwner implements DocumentDatabaseOwner {
   private readonly meta = new Map<string, string>();
   readonly afterCommitCallbacks: (() => unknown)[] = [];
 
@@ -192,11 +193,11 @@ class TestDatabaseOwner {
     return this.meta.get(key);
   }
 
-  setMeta(key: string, value: string) {
+  async setMeta(key: string, value: string) {
     this.meta.set(key, value);
   }
 
-  async afterCommit(fn: () => unknown) {
+  async afterCommit(fn: () => PromiseOrObject<void>) {
     this.afterCommitCallbacks.push(fn);
     await fn();
   }
@@ -224,7 +225,7 @@ describe("solid sqlite utilities", () => {
     const encodedObj = encodeSolidValue(session);
     expect(encodedObj.type).toBe("json");
     expect(typeof encodedObj.value).toBe("string");
-    expect(decodeSolidValue<typeof session>("json", encodedObj.value)).toEqual({
+    expect(decodeSolidValue<Omit<typeof session, "userAgent">>("json", encodedObj.value)).toEqual({
       id: "s1",
       subject: "admin",
       expiresAt: "2026-01-01T00:00:00.000Z",
