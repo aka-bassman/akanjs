@@ -6,6 +6,7 @@ import {
   encodeInlineRscChunk,
   interleaveRscScriptsWithHtml,
   SsrChunkRegistry,
+  SsrFromRscRenderer,
   sanitizeFlightForClientStream,
   sanitizeFlightForSsrStream,
 } from "./ssrFromRscRenderer";
@@ -466,5 +467,72 @@ describe("late redirect stderr suppression", () => {
       if (previousSuppress === undefined) delete process.env.AKAN_SUPPRESS_LATE_REDIRECT_STDERR;
       else process.env.AKAN_SUPPRESS_LATE_REDIRECT_STDERR = previousSuppress;
     }
+  });
+});
+
+/**
+ * React rejects `stream.allReady` when a render fails after the shell has flushed, and holds no handler of its
+ * own on that path. Nothing in shell-first streaming reads the promise, so before this guard the rejection
+ * reached `process.on("unhandledRejection")` — which `ShutdownManager` answered by exiting, killing a whole
+ * federation replica over one page's boundary error.
+ */
+describe("SsrFromRscRenderer.holdPostShellErrors", () => {
+  const withRejectionWatch = async (fn: () => void | Promise<void>): Promise<unknown[]> => {
+    const seen: unknown[] = [];
+    const collect = (reason: unknown) => seen.push(reason);
+    process.on("unhandledRejection", collect);
+    try {
+      await fn();
+      await sleep(50);
+    } finally {
+      process.off("unhandledRejection", collect);
+    }
+    return seen;
+  };
+
+  test("a post-shell rejection reaches the reporter and never the process", async () => {
+    const reported: unknown[] = [];
+    const boom = new Error("Aborted, errored or already flushed boundaries should not be flushed again.");
+
+    const seen = await withRejectionWatch(() => {
+      SsrFromRscRenderer.holdPostShellErrors({ allReady: Promise.reject(boom) }, (error) => reported.push(error));
+    });
+
+    expect(reported).toEqual([boom]);
+    expect(seen).toEqual([]);
+  });
+
+  test("a resolving allReady reports nothing", async () => {
+    const reported: unknown[] = [];
+
+    const seen = await withRejectionWatch(() => {
+      SsrFromRscRenderer.holdPostShellErrors({ allReady: Promise.resolve() }, (error) => reported.push(error));
+    });
+
+    expect(reported).toEqual([]);
+    expect(seen).toEqual([]);
+  });
+
+  test("a real react-dom stream cancelled mid-flight leaves the process clean", async () => {
+    const { renderToReadableStream } = await import("react-dom/server.browser");
+
+    const seen = await withRejectionWatch(async () => {
+      const stream = await renderToReadableStream(
+        {
+          $$typeof: Symbol.for("react.transitional.element"),
+          type: "div",
+          key: null,
+          props: { children: "shell" },
+          ref: null,
+        } as never,
+        { onError: () => "digest" },
+      );
+      SsrFromRscRenderer.holdPostShellErrors(stream, () => {});
+      const reader = stream.getReader();
+      await reader.read();
+      await reader.cancel("client went away").catch(() => {});
+    });
+
+    expect(seen).toEqual([]);
   });
 });

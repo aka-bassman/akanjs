@@ -98,7 +98,7 @@ export class FetchClient {
     private ErrorCls?: ErrorConstructor,
   ) {
     this.origin = origin;
-    this.http = new HttpClient(origin, ErrorCls);
+    this.http = new HttpClient(origin, { ErrorCls });
     this.ws = new WsClient(FetchClient.#makeWsUri(origin), ErrorCls);
     Object.assign(this.#handlerStore, handler);
     this.handler = this.#makeHandlerProxy();

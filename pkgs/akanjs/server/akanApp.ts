@@ -839,6 +839,13 @@ export class AkanApp {
         this.#scheduleChildRestart(child, child.proc, "upstream-open-failed");
         return AkanApp.#unavailableResponse(req, "Federation child upstream is unreachable; restarting");
       }
+      if (req.signal.aborted) return AkanApp.#clientClosedResponse();
+      if (AkanApp.#isUpstreamMidFlightClose(error)) {
+        this.logger.warn(
+          `Child ${child.idx}/${child.role} closed the connection mid-request (${req.method} ${new URL(req.url).pathname})`,
+        );
+        return AkanApp.#badGatewayResponse(req);
+      }
       throw error;
     } finally {
       child.metrics.activeRequests = Math.max(0, (child.metrics.activeRequests ?? 1) - 1);
@@ -850,6 +857,43 @@ export class AkanApp {
     if (!error || typeof error !== "object") return false;
     const candidate = error as { code?: unknown; message?: unknown };
     return candidate.code === "FailedToOpenSocket" || String(candidate.message ?? "").includes("FailedToOpenSocket");
+  }
+
+  /**
+   * The socket opened and then died under us: the child crashed, or was recycled, while its response was still
+   * in flight. Distinct from `FailedToOpenSocket` — that one means the child was already gone when we dialled,
+   * and only that one implies the socket needs a restart, which the child's own exit handler schedules anyway.
+   * Rethrowing this instead reaches Bun as an unhandled route error, which answers 500 and prints the raw
+   * `TypeError` against whatever URL happened to be in flight — usually a browser background probe, which is
+   * how a dead child gets misread as a bug in the probed route.
+   */
+  static #isUpstreamMidFlightClose(error: unknown): boolean {
+    if (!error || typeof error !== "object") return false;
+    const candidate = error as { code?: unknown; message?: unknown };
+    if (candidate.code === "ECONNRESET" || candidate.code === "ConnectionClosed") return true;
+    return String(candidate.message ?? "").includes("connection was closed");
+  }
+
+  static #clientClosedResponse(): Response {
+    return new Response(null, { status: 499, headers: { "cache-control": "no-store" } });
+  }
+
+  static #badGatewayResponse(req: Request): Response {
+    const detail = "The replica closed the connection before it finished answering.";
+    if (req.headers.get("accept")?.includes("text/html")) {
+      return new Response(
+        AkanApp.#statusPageHtml({
+          heading: "Backend dropped the connection",
+          detail,
+          note: "The replica is restarting — this page reloads itself as soon as it answers.",
+        }),
+        { status: 502, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } },
+      );
+    }
+    return new Response(detail, {
+      status: 502,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+    });
   }
 
   /**

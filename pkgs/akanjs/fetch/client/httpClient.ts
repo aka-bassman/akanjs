@@ -22,11 +22,15 @@ export interface ErrorConstructor {
   fromJSON: (payload: ErrorResponsePayload) => RestoredError;
 }
 
-interface FetchOptions {
+export interface HttpClientOptions {
   headers?: Record<string, string>;
-  baseUrl?: string;
   /** Milliseconds before the request is abandoned; `false` waits as long as the browser will. */
   timeout?: number | false;
+  ErrorCls?: ErrorConstructor;
+}
+
+interface FetchOptions extends Pick<HttpClientOptions, "headers" | "timeout"> {
+  baseUrl?: string;
 }
 
 const jsonContentType = /^application\/(?:[\w.+-]+\+)?json\b/i;
@@ -53,11 +57,14 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 
 export class HttpClient {
   readonly baseUrl: string;
-  constructor(
-    baseUrl: string,
-    private ErrorCls?: ErrorConstructor,
-  ) {
+  #headers: Record<string, string>;
+  #timeout?: number | false;
+  private ErrorCls?: ErrorConstructor;
+  constructor(baseUrl: string, options: HttpClientOptions = {}) {
     this.baseUrl = baseUrl;
+    this.#headers = options.headers ?? {};
+    this.#timeout = options.timeout;
+    this.ErrorCls = options.ErrorCls;
   }
 
   setErrorConstructor(ErrorCls?: ErrorConstructor) {
@@ -71,13 +78,13 @@ export class HttpClient {
   }
   // Accept describes the response, not the body: a proxy that sees no `Accept: application/json` cannot
   // tell this call from a browser navigation, and answers a dead upstream with its own HTML page.
-  static #makeHeaders(headers: Record<string, string>, options: FetchOptions) {
-    return { Accept: "application/json", ...headers, ...options.headers };
+  #makeHeaders(headers: Record<string, string>, options: FetchOptions) {
+    return { Accept: "application/json", ...this.#headers, ...headers, ...options.headers };
   }
   async get<Returns = unknown>(url: string, options: FetchOptions = {}): Promise<Returns> {
     return await this.#request<Returns>(
       this.#resolveUrl(url, options),
-      { headers: HttpClient.#makeHeaders({ "Content-Type": "application/json" }, options) },
+      { headers: this.#makeHeaders({ "Content-Type": "application/json" }, options) },
       options,
     );
   }
@@ -96,7 +103,7 @@ export class HttpClient {
     const { body, headers } = this.#makeReqContent(data);
     return await this.#request<Returns>(
       this.#resolveUrl(url, options),
-      { method, body, headers: HttpClient.#makeHeaders(headers, options) },
+      { method, body, headers: this.#makeHeaders(headers, options) },
       options,
     );
   }
@@ -117,13 +124,13 @@ export class HttpClient {
   async delete<Returns = unknown>(url: string, options: FetchOptions = {}): Promise<Returns> {
     return await this.#request<Returns>(
       this.#resolveUrl(url, options),
-      { method: "DELETE", headers: HttpClient.#makeHeaders({ "Content-Type": "application/json" }, options) },
+      { method: "DELETE", headers: this.#makeHeaders({ "Content-Type": "application/json" }, options) },
       options,
     );
   }
 
   async #request<Returns>(url: string, init: RequestInit, options: FetchOptions = {}): Promise<Returns> {
-    const res = await this.#fetch(url, HttpClient.#withTimeout(init, options));
+    const res = await this.#fetch(url, this.#withTimeout(init, options));
     return await this.#readJsonResponse<Returns>(res);
   }
 
@@ -132,8 +139,8 @@ export class HttpClient {
    * the request body is the only thing this side can tell that from. Everything else takes the default unless
    * the caller named one.
    */
-  static #withTimeout(init: RequestInit, options: FetchOptions): RequestInit {
-    const timeout = options.timeout ?? (init.body instanceof FormData ? false : DEFAULT_TIMEOUT_MS);
+  #withTimeout(init: RequestInit, options: FetchOptions): RequestInit {
+    const timeout = options.timeout ?? (init.body instanceof FormData ? false : (this.#timeout ?? DEFAULT_TIMEOUT_MS));
     if (timeout === false || !Number.isFinite(timeout) || timeout <= 0) return init;
     return { ...init, signal: AbortSignal.timeout(timeout) };
   }

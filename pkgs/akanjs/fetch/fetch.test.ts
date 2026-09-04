@@ -522,6 +522,73 @@ describe("HttpClient", () => {
     for (const call of fetchCalls) expect(call.init?.headers).toMatchObject({ Accept: "application/json" });
   });
 
+  test("merges constructor headers under per-request headers", async () => {
+    setMockFetch();
+    jsonResponses.push({ value: "ok" });
+    const client = new HttpClient("https://api.example", {
+      headers: { Authorization: "Bearer default", "X-Client": "http" },
+    });
+
+    await client.get("/items", { headers: { Authorization: "Bearer override" } });
+
+    expect(fetchCalls[0]?.init?.headers).toMatchObject({
+      Accept: "application/json",
+      Authorization: "Bearer override",
+      "X-Client": "http",
+    });
+  });
+
+  test("uses the constructor timeout when the call does not name one", async () => {
+    const client = new HttpClient("http://127.0.0.1:1", { timeout: 10 });
+    const original = globalThis.fetch;
+    globalThis.fetch = ((_url: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject((init.signal as AbortSignal).reason));
+      })) as typeof globalThis.fetch;
+    try {
+      const failure = await client.get("/slow").catch((error: unknown) => error);
+      expect((failure as { statusCode?: number }).statusCode).toBe(408);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  test("constructor timeout false leaves a json call unbounded", async () => {
+    const client = new HttpClient("http://127.0.0.1:1", { timeout: false });
+    const original = globalThis.fetch;
+    const signals: (AbortSignal | null | undefined)[] = [];
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      signals.push(init?.signal);
+      return Promise.resolve(new Response("{}", { headers: { "content-type": "application/json" } }));
+    }) as typeof globalThis.fetch;
+    try {
+      await client.get("/items");
+      expect(signals[0]).toBeUndefined();
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  test("leaves a constructor timeout off an upload unless the call names one", async () => {
+    const client = new HttpClient("http://127.0.0.1:1", { timeout: 10 });
+    const original = globalThis.fetch;
+    const signals: (AbortSignal | null | undefined)[] = [];
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      signals.push(init?.signal);
+      return Promise.resolve(new Response("{}", { headers: { "content-type": "application/json" } }));
+    }) as typeof globalThis.fetch;
+    try {
+      const form = new FormData();
+      form.set("files", new Blob(["x"]));
+      await client.post("/upload", form);
+      await client.post("/upload", form, { timeout: 10 });
+      expect(signals[0]).toBeUndefined();
+      expect(signals[1]).toBeInstanceOf(AbortSignal);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   test("restores non-ok responses with the provided error constructor", async () => {
     setMockFetch();
     responseStatuses.push(409);
@@ -532,7 +599,7 @@ describe("HttpClient", () => {
       path: "/items/1",
       timestamp: "2026-05-25T00:00:00.000Z",
     });
-    const client = new HttpClient("https://api.example", TestErr);
+    const client = new HttpClient("https://api.example", { ErrorCls: TestErr });
 
     const error = (await client.get("/items/1").catch((error) => error)) as TestErr;
 
@@ -551,7 +618,7 @@ describe("HttpClient", () => {
     setMockFetch();
     const page = "<html>\n<head><title>504 Gateway Time-out</title></head>\n<body></body>\n</html>\n";
     rawResponses.push(new Response(page, { status: 504, headers: { "content-type": "text/html" } }));
-    const client = new HttpClient("https://api.example", TestErr);
+    const client = new HttpClient("https://api.example", { ErrorCls: TestErr });
 
     const error = (await client.get("/items").catch((error: unknown) => error)) as TestErr;
 
@@ -563,7 +630,7 @@ describe("HttpClient", () => {
   test("restores a plain-text gateway 503 as a transport error", async () => {
     setMockFetch();
     rawResponses.push(new Response("No healthy federation child is ready", { status: 503 }));
-    const client = new HttpClient("https://api.example", TestErr);
+    const client = new HttpClient("https://api.example", { ErrorCls: TestErr });
 
     const error = (await client.post("/items", { title: "A" }).catch((error: unknown) => error)) as TestErr;
 
@@ -574,7 +641,7 @@ describe("HttpClient", () => {
   test("caps the transport error detail so a page body never becomes the message", async () => {
     setMockFetch();
     rawResponses.push(new Response("x".repeat(5000), { status: 500, headers: { "content-type": "text/plain" } }));
-    const client = new HttpClient("https://api.example", TestErr);
+    const client = new HttpClient("https://api.example", { ErrorCls: TestErr });
 
     const error = (await client.get("/items").catch((error: unknown) => error)) as TestErr;
 
@@ -585,7 +652,7 @@ describe("HttpClient", () => {
   test("reads a json body a proxy stripped the content-type from", async () => {
     setMockFetch();
     rawResponses.push(new Response(JSON.stringify({ value: "ok" }), { status: 200 }));
-    const client = new HttpClient("https://api.example", TestErr);
+    const client = new HttpClient("https://api.example", { ErrorCls: TestErr });
 
     expect(await client.get<{ value: string }>("/items")).toEqual({ value: "ok" });
   });
@@ -593,7 +660,7 @@ describe("HttpClient", () => {
   test("restores a refused connection as an unreachable server", async () => {
     setMockFetch();
     rawResponses.push(new TypeError("Unable to connect. Is the computer able to access the url?"));
-    const client = new HttpClient("https://api.example", TestErr);
+    const client = new HttpClient("https://api.example", { ErrorCls: TestErr });
 
     const error = (await client.get("/items").catch((error: unknown) => error)) as TestErr;
 
@@ -607,7 +674,7 @@ describe("HttpClient", () => {
     const abort = new Error("The operation was aborted.");
     abort.name = "AbortError";
     rawResponses.push(abort);
-    const client = new HttpClient("https://api.example", TestErr);
+    const client = new HttpClient("https://api.example", { ErrorCls: TestErr });
 
     const error = (await client.get("/items").catch((error: unknown) => error)) as Error;
 

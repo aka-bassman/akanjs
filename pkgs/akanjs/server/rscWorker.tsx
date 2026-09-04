@@ -856,6 +856,32 @@ export class RscRenderer {
     this.#send({ type: "metrics", metrics });
   }
 
+  /**
+   * An error raised after the first Flight chunk has left the worker can no longer become a status code or a
+   * system error page — `sendLateRedirect` is the only control the host can still act on, so the render
+   * control is dropped. Logging here is the only record that the request failed at all; without it a page
+   * whose boundary died mid-stream is indistinguishable from one that rendered.
+   */
+  #reportRenderError(error: unknown, pathname?: string): void {
+    const description = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    const scope = pathname ? ` path=${pathname}` : "";
+    if (RscRenderer.#isExpectedRequestAbort(error)) {
+      this.#logger.debug(`[rsc] render aborted${scope}: ${description}`);
+      return;
+    }
+    this.#logger.error(`[rsc] render failed${scope}: ${description}`);
+  }
+
+  /** A client that navigated away, or a stream the host cancelled: expected, and not the replica's problem. */
+  static #isExpectedRequestAbort(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    return (
+      error.name === "AbortError" ||
+      error.message === "Connection closed." ||
+      error.message.includes("The connection was closed")
+    );
+  }
+
   async #renderFlightElement(
     element: ReactNode,
     clientManifest: ClientManifest,
@@ -894,6 +920,7 @@ export class RscRenderer {
           return error.digest;
         }
         controlRef.current = { type: "error", error };
+        this.#reportRenderError(error, options.trace?.pathname);
         return error instanceof Error ? error.message : String(error);
       },
     });

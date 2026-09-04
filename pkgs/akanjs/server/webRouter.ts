@@ -525,6 +525,16 @@ export class WebRouter {
         WebRouter.#deepLinkAssociationResponse(ANDROID_ASSET_LINKS_PATH, this.#artifact, {
           cacheControl: this.#prodMode ? "public, max-age=3600" : "no-store",
         }) ?? new Response("Not Found", { status: 404 }),
+      // Everything under `/.well-known/` is fetched by a machine reading a fixed document, so the `/*` SSR
+      // fallback's 404 *page* is both useless to the caller and a full route render — Chrome asks for
+      // `appspecific/com.chrome.devtools.json` on every load with DevTools open. Exact well-known routes
+      // (the deep-link pair above, MCP's OAuth metadata in `builtinRoutes`) still win: Bun matches a static
+      // route ahead of a wildcard.
+      "/.well-known/*": () =>
+        new Response("Not Found", {
+          status: 404,
+          headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+        }),
       [FIREBASE_MESSAGING_SW_PATH]: async () => {
         this.#requestStats.staticAsset += 1;
         const firebaseConfig = await WebRouter.#resolveFirebaseClientConfig();

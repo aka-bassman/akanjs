@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { Logger } from "akanjs/common";
 import { type AkanRequestStore, type AkanTheme, pushRequestFallback, requestStorage } from "akanjs/fetch";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server.browser";
@@ -581,6 +582,8 @@ export class SsrFromRscRenderer {
     SsrFromRscRenderer.#installWebpackShims();
   }
 
+  static readonly #logger = new Logger("SsrFromRscRenderer");
+
   static getChunkRegistryStats(): SsrChunkRegistryStats {
     return { ...SsrFromRscRenderer.#chunkRegistryStats };
   }
@@ -612,8 +615,14 @@ export class SsrFromRscRenderer {
       const root = await thenable;
       const stream = await renderToReadableStream(root, {
         bootstrapScriptContent: bootstrap,
+        onError: (error) => SsrFromRscRenderer.#reportRenderError(error, input),
       });
       if (waitForAllReady) await stream.allReady;
+      else {
+        SsrFromRscRenderer.holdPostShellErrors(stream, (error) =>
+          SsrFromRscRenderer.#reportRenderError(error, input, "post-shell"),
+        );
+      }
       return stream;
     };
     const requestContext = input.requestStore ?? input.request;
@@ -687,6 +696,47 @@ export class SsrFromRscRenderer {
       }
       return mod;
     };
+  }
+
+  /**
+   * React rejects `stream.allReady` for any fatal error raised after the shell flushed — an abort landing
+   * mid-flush, a `flushCompletedQueues` invariant — and it attaches a handler to that promise itself only on
+   * the shell-error path, because `completeShell` replaces `onShellError` with a noop. Shell-first streaming
+   * never reads `allReady`, so an unheld rejection reaches `process.on("unhandledRejection")`, and under
+   * federation that took the whole replica down over one request's render.
+   *
+   * Holding it keeps the failure scoped to the stream that raised it. The response cannot become a 5xx — the
+   * shell's headers and markup are already on the wire — so the client gets a truncated document and the stack
+   * goes to the log; every other request and socket on the replica survives.
+   */
+  static holdPostShellErrors(stream: { allReady: Promise<void> }, report: (error: unknown) => void): void {
+    void stream.allReady.catch(report);
+  }
+
+  static #reportRenderError(error: unknown, input: SsrFromRscInput, phase = "render"): void {
+    const description = SsrFromRscRenderer.#describeError(error);
+    if (SsrFromRscRenderer.#isExpectedRequestAbort(error)) {
+      SsrFromRscRenderer.#logger.debug(`[SSR] ${phase} aborted: ${description}`);
+      return;
+    }
+    const path = input.request ? new URL(input.request.url).pathname : "unknown";
+    SsrFromRscRenderer.#logger.error(`[SSR] ${phase} failed path=${path}: ${description}`);
+  }
+
+  static #describeError(error: unknown): string {
+    if (!(error instanceof Error)) return String(error);
+    return error.stack ?? error.message;
+  }
+
+  /** A client that navigated away, or a stream we cancelled ourselves: expected, and not the replica's problem. */
+  static #isExpectedRequestAbort(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    return (
+      error.name === "AbortError" ||
+      error.name === "AkanRedirectError" ||
+      error.message === "Connection closed." ||
+      error.message.includes("The connection was closed")
+    );
   }
 
   static #suppressExpectedLateRedirectError(

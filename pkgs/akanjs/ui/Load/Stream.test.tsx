@@ -149,6 +149,52 @@ describe("Load.Stream", () => {
     expect(rest).toContain("streamed-later");
   });
 
+  /**
+   * The shape the bug report hit: the page's own queries succeed, the shell goes out with the fallback, and the
+   * boundary's data fails afterwards. React can no longer turn that into a status code, so the contract is that
+   * the boundary degrades to a client render and the stream still closes — nothing may escape as a rejection
+   * the process has to answer for.
+   */
+  test("a thenable that rejects after the shell degrades the boundary, not the stream", async () => {
+    const seen: unknown[] = [];
+    const collect = (reason: unknown) => seen.push(reason);
+    process.on("unhandledRejection", collect);
+    try {
+      let fail!: (error: Error) => void;
+      const held = new Promise<{ label: string }>((_, reject) => {
+        fail = reject;
+      });
+      const errors: string[] = [];
+      const stream = await renderToReadableStream(
+        <div>
+          <span>shell-now</span>
+          <Stream of={held} fallback={<span>pending-b</span>}>
+            {(value) => <span>{value.label}</span>}
+          </Stream>
+        </div>,
+        { onError: (error) => void errors.push(error instanceof Error ? error.message : String(error)) },
+      );
+      stream.allReady.catch(() => {});
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      const first = decoder.decode((await reader.read()).value);
+      expect(first).toContain("shell-now");
+      expect(first).toContain("pending-b");
+
+      fail(new Error("slice load failed"));
+      let rest = "";
+      for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read())
+        rest += decoder.decode(chunk.value);
+
+      expect(errors).toContain("slice load failed");
+      expect(rest).toContain("$RX");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(seen).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", collect);
+    }
+  });
+
   test("a rejected thenable reaches the nearest error boundary", async () => {
     const failing = Promise.reject(new Error("load failed"));
     const { container, flush, unmount } = await mountAsync(
