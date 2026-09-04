@@ -54,10 +54,10 @@ describe("PagesEntrySourceGenerator", () => {
     );
   });
 
-  test("generates static import source for single-file CSR bundles", () => {
+  test("generates static import source for single-file CSR bundles", async () => {
     const indexAbs = path.resolve("/repo/apps/demo/page/_index.tsx");
     const adminAbs = path.resolve("/repo/apps/demo/page/admin.tsx");
-    const source = PagesEntrySourceGenerator.generateStatic([
+    const source = await PagesEntrySourceGenerator.generateStatic([
       { key: "./_index.tsx", moduleAbsPath: indexAbs },
       { key: "./admin.tsx", moduleAbsPath: adminAbs },
     ]);
@@ -88,7 +88,7 @@ describe("PagesEntrySourceGenerator", () => {
     await write(expressionPath, "export default async () => null;");
     await write(namedExportPath, "async function NamedExport() { return null; }\nexport { NamedExport as default };");
 
-    const source = PagesEntrySourceGenerator.generateStatic([
+    const source = await PagesEntrySourceGenerator.generateStatic([
       { key: "./_index.tsx", moduleAbsPath: indexPath },
       { key: "./admin.tsx", moduleAbsPath: adminPath },
       { key: "./typed.tsx", moduleAbsPath: typedPath },
@@ -123,7 +123,7 @@ describe("PagesBundleBuilder", () => {
       outdir,
       target: "bun",
       format: "esm",
-      plugins: [PagesBundleBuilder.createServerCssStubPlugin()],
+      plugins: [PagesBundleBuilder.createCssStubPlugin()],
     });
 
     expect(result.success).toBe(true);
@@ -178,14 +178,95 @@ describe("CsrArtifactBuilder", () => {
     expect(inlined).not.toContain("src=");
   });
 
-  test("creates inline stylesheet and strips external stylesheet links", () => {
-    const html =
-      '<head><link rel="stylesheet" href="/_akan/styles/akanjs.css" data-akan-css="active" /><link rel="stylesheet" href="./generated.css" /></head>';
-    const stripped = CsrArtifactBuilder.stripBundledStylesheetLinks(html);
+  test("creates inline stylesheet with the closing tag escaped", () => {
     const style = CsrArtifactBuilder.createInlineStyle("body::before{content:'</style>';}");
 
-    expect(stripped).toBe("<head></head>");
     expect(style).toBe("<style data-akan-css=\"active\">\nbody::before{content:'<\\/style>';}\n</style>");
+  });
+
+  test("injects into the real head even when an inline bundle quotes body and head tags", () => {
+    const bundle = 'console.info("<body>", "</head>", "<!--");';
+    const html = [
+      "<!doctype html>",
+      "<html>",
+      "<head>",
+      `<script type="module">${bundle}</script>`,
+      "</head>",
+      '<body><div id="root"></div></body>',
+      "</html>",
+    ].join("\n");
+
+    const first = CsrArtifactBuilder.injectBeforeHeadEnd(html, "<style>a{}</style>");
+    const second = CsrArtifactBuilder.injectBeforeHeadEnd(first, "<style>b{}</style>");
+
+    expect(second.startsWith("<!doctype html>")).toBe(true);
+    expect(second.indexOf("<style>a{}</style>")).toBeGreaterThan(second.indexOf(bundle));
+    expect(second.indexOf("<style>b{}</style>")).toBeGreaterThan(second.indexOf("<style>a{}</style>"));
+    expect(second.indexOf("<style>b{}</style>")).toBeLessThan(second.indexOf("\n</head>"));
+  });
+
+  test("never prepends: without a head the snippet lands before body, else at the end", () => {
+    expect(CsrArtifactBuilder.injectBeforeHeadEnd("<html><body></body></html>", "<style></style>")).toBe(
+      "<html><style></style>\n<body></body></html>",
+    );
+    expect(CsrArtifactBuilder.injectBeforeHeadEnd("<div></div>", "<style></style>")).toBe(
+      "<div></div>\n<style></style>",
+    );
+  });
+
+  test("gives each basePath its own routes plus the routes outside every basePath", () => {
+    const entries = [
+      { key: "./_layout.tsx", moduleAbsPath: "/repo/page/_layout.tsx" },
+      { key: "./(sign)/signin.tsx", moduleAbsPath: "/repo/page/(sign)/signin.tsx" },
+      {
+        key: "./office/__root_layout.tsx",
+        moduleAbsPath: "/repo/.akan/generated/root-layouts/office__root_layout.tsx",
+      },
+      { key: "./office/_index.tsx", moduleAbsPath: "/repo/page/office/_index.tsx" },
+      {
+        key: "./(user)/soft/__root_layout.tsx",
+        moduleAbsPath: "/repo/.akan/generated/root-layouts/soft__root_layout.tsx",
+      },
+      { key: "./(user)/soft/home.tsx", moduleAbsPath: "/repo/page/(user)/soft/home.tsx" },
+    ];
+    const basePaths = ["office", "soft"];
+
+    expect(CsrArtifactBuilder.pageEntriesForBasePath(entries, "office", basePaths).map((entry) => entry.key)).toEqual([
+      "./_layout.tsx",
+      "./(sign)/signin.tsx",
+      "./office/__root_layout.tsx",
+      "./office/_index.tsx",
+    ]);
+    expect(CsrArtifactBuilder.pageEntriesForBasePath(entries, "soft", basePaths).map((entry) => entry.key)).toEqual([
+      "./_layout.tsx",
+      "./(sign)/signin.tsx",
+      "./(user)/soft/__root_layout.tsx",
+      "./(user)/soft/home.tsx",
+    ]);
+    expect(CsrArtifactBuilder.pageEntriesForBasePath(entries, "", [])).toEqual(entries);
+  });
+
+  test("keeps route stylesheets out of the browser bundle so the HTML links no CSS", async () => {
+    const root = await makeTempRoot();
+    const htmlPath = path.join(root, "src/index.html");
+    await write(
+      htmlPath,
+      '<!doctype html><html><head></head><body><script type="module" src="./index.csr.tsx"></script></body></html>',
+    );
+    await write(path.join(root, "src/index.csr.tsx"), 'import "./styles.css";\nconsole.info("boot");\n');
+    await write(path.join(root, "src/styles.css"), ":root { --foreground: #fff; }\n");
+
+    const result = await Bun.build({
+      target: "browser",
+      entrypoints: [htmlPath],
+      root: path.join(root, "src"),
+      outdir: path.join(root, "out"),
+      plugins: [PagesBundleBuilder.createCssStubPlugin()],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.outputs.some((output) => output.path.endsWith(".css"))).toBe(false);
+    expect(await readFile(path.join(root, "out/index.html"), "utf8")).not.toContain("stylesheet");
   });
 });
 

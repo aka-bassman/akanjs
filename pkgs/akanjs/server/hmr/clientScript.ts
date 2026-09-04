@@ -18,7 +18,9 @@
 // The server-rendered HTML tags the "active" stylesheet with
 // data-akan-css="active" (see rscWorker.tsx) so swapCss can remove the stale
 // one after the new stylesheet has finished loading without a flash of
-// unstyled content.
+// unstyled content. The CSR artifact carries the same sheet as an inline
+// <style data-akan-css="active"> (see csrArtifactBuilder.ts), so the swap
+// removes both shapes or the CSR page keeps two sheets after every CSS save.
 const SYNC_NAVIGATION_ENABLED =
   process.env.AKAN_PUBLIC_SYNC_NAVIGATION === "true" ||
   process.env.AKAN_PUBLIC_SYNC_NAVIGATION === "1" ||
@@ -484,7 +486,7 @@ export const HMR_CLIENT_SCRIPT = `(function(){
     link.href = href;
     link.setAttribute("data-akan-css", "pending");
     link.addEventListener("load", function(){
-      var prev = document.querySelectorAll("link[data-akan-css=active]");
+      var prev = document.querySelectorAll("link[data-akan-css=active], style[data-akan-css=active]");
       for (var i = 0; i < prev.length; i++) prev[i].parentNode && prev[i].parentNode.removeChild(prev[i]);
       link.setAttribute("data-akan-css", "active");
       endHmrOverlay(overlayToken);

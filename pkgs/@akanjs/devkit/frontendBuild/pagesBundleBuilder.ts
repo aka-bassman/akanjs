@@ -64,7 +64,7 @@ export class PagesBundleBuilder {
       define: this.#define(),
       plugins: [
         PagesBundleBuilder.createPagesEntryPlugin(entrySource),
-        PagesBundleBuilder.createServerCssStubPlugin(),
+        PagesBundleBuilder.createCssStubPlugin(),
         PagesBundleBuilder.createServerUseClientFetchPlugin(),
         await createExternalizeFrameworkPlugin({ app: this.#app, extra: akanConfig.externalLibs }),
         akanConfig.barrelImports.length > 0
@@ -137,9 +137,9 @@ export class PagesBundleBuilder {
     };
   }
 
-  static createServerCssStubPlugin(): BunPlugin {
+  static createCssStubPlugin(): BunPlugin {
     return {
-      name: "akan-server-css-stub",
+      name: "akan-css-stub",
       setup(build) {
         build.onLoad({ filter: /\.css$/ }, () => ({
           contents: "",
