@@ -220,9 +220,9 @@ Business Example
 
 On a shopping page, customers should see product names, prices, and the first list quickly. The add-to-cart button, stock filter, and recommendation carousel can become interactive after the first view is already visible.
 
-SSR is not the opposite of client-side UI. It is the first step of the experience: show useful content early, then let client components handle the parts that need interaction.
+Step 01 does not have to wait for every query. fetch.init<Model><Suffix>, fetch.view<Model>, and fetch.edit<Model> return a handle whose fields are promises, so a route can send the shell and hand each section its own promise — the section streams in behind its own boundary as its data lands.
 
-Rendering Boundary
+SSR is not the opposite of client-side UI. It is the first step of the experience: show useful content early, then let client components handle the parts that need interaction.
 
 ## Runtime And Infra
 
@@ -524,6 +524,7 @@ Headings:
 - Document And Service
 - Signal To UI
 - Fetch And Store Instances
+- Streaming Page Data
 - Common Decisions
 
 Data Layer
@@ -1310,13 +1311,15 @@ Headings:
 
 akanjs/fetch
 
-Zone return type for initialized list pages. It contains list objects, insight object, pagination fields, query args, sort state, and init timestamp, and may be returned directly or as a Promise.
+What `fetch.init<Model><Suffix>`, `fetch.view<Model>`, and `fetch.edit<Model>` return. Awaiting the handle gives the object these helpers have always given, so every existing call site reads unchanged. Reading a field off the un-awaited handle gives that field's own promise instead, so a route can hand each one to the section that renders it and let the slowest arrive last rather than holding the whole page. Every request leaves at call time, so splitting the result never serializes the queries.
 
-Zone return type for a single model view. It wraps the server view payload and supports both synchronous server component data and asynchronous client/server fetching.
+Zone prop type for initialized list pages. It contains list objects, insight object, pagination fields, query args, sort state, and init timestamp, and accepts either the resolved payload or the `x<Model>Init<Suffix>` promise the init handle hands out. A pending promise renders behind the Zone's own Suspense boundary.
+
+Zone prop types for a single model. Each wraps the server payload — `x<Model>View` for read, `x<Model>Edit` for a form — and accepts the resolved object or the promise the view/edit handle hands out. `ClientEdit` also accepts a partial form object, which is how a new-record page seeds defaults with no request at all.
 
 Metadata carried with initialized slice data. UI helpers use it to know the ref name, slice name, and number of query arguments behind a list or insight block.
 
-Option shape for list initialization. It controls page, limit, sort, default form values, invalidation, and whether insight data should be fetched together with the list.
+Option shape for list initialization. It controls page, limit, sort, default form values, invalidation, and whether insight data should be fetched together with the list. `insight: false` skips the aggregate query outright, so `x<Model>ObjInsight` is `null` and the rows in hand are the whole count there is — pass it whenever the screen shows no total and no pagination.
 
 Request account shape shared by server middleware and services. It always includes `appName` and `environment`, then allows app-specific account data to be added by generic parameter.
 
@@ -1353,7 +1356,7 @@ Type for server-side web proxy registrations. Libraries use it for locale routin
 
 Legacy method decorator that catches errors and logs a warning instead of throwing. It appears in integration srvkit classes where a best-effort external API call should not crash the caller.
 
-Legacy method decorators for server-side service/document helpers. `Transaction` wraps execution in the detected database transaction and `Cache` memoizes method results for a timeout window.
+Legacy method decorators for server-side service/document helpers. `Transaction` wraps execution in the detected database transaction and `CacheMethod` memoizes method results for a timeout window.
 
 `akanjs/server` contains app startup, server options, web proxy helpers, decorators, runtime artifacts, and operational utilities. Import it from app entrypoints, `lib/option.ts`, and server-only srvkit integrations.
 
@@ -2384,11 +2387,11 @@ Pages should usually pass route params and server data into Zones. Zones handle 
 
 File Convention And Props
 
-Zone files usually use client hooks and Load wrappers, so they start with the use client directive. Their props commonly receive server-prepared ClientInit or ClientView values.
+Zone files usually use client hooks and Load wrappers, so they start with the use client directive. Their props commonly receive server-prepared ClientInit, ClientView, or ClientEdit values — either the resolved payload or the promise the route's fetch handle hands out.
 
 List Zone With Load.Units
 
-Use Load.Units when a Zone receives ClientInit list data from a server page. It hydrates initial list state, handles loading and empty states, and delegates each item to Unit components.
+Use Load.Units when a Zone receives ClientInit list data from a server page. It hydrates initial list state, handles loading and empty states, and delegates each item to Unit components. When the page hands the x<Model>Init<Suffix> promise across instead of awaiting it, Load.Units renders `loading` behind a Suspense boundary of its own and the rest of the page is sent without waiting.
 
 Render one item, usually by delegating to Unit.Card or Unit.Abstract.
 
@@ -3162,7 +3165,7 @@ Don't forget to add the translation labels for the dashboard sections:
 
 Let's break down how this dashboard page works:
 
-The Load.Page component handles data loading before rendering. It fetches both waiting and pickup orders simultaneously using Promise.all for optimal performance.
+Notice there is no await. Both slice queries leave the moment they are called, and destructuring the result gives one promise per field instead of a resolved object. Each promise goes straight to the Zone that renders it, so the pickup board and the waiting board arrive independently — a slow query on one never delays the other, and the page heading is on the wire before either lands.
 
 Zone components connect slice data to UI rendering. By passing the init data and slice, the Zone automatically subscribes to real-time updates for that specific slice.
 
@@ -4461,6 +4464,9 @@ Headings:
 - Log Levels
 - File Logging & Rotation
 - Reading Logs
+- Live Tail
+- Request Line & Flight Recorder
+- Collection: NDJSON stdout & SSE
 - Operational Checklist
 
 Logging

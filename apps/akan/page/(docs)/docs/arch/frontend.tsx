@@ -184,6 +184,12 @@ export default function Page() {
           </div>
           <Docs.Alert type="info">
             {l.trans({
+              en: "Step 01 does not have to wait for every query. fetch.init<Model><Suffix>, fetch.view<Model>, and fetch.edit<Model> return a handle whose fields are promises, so a route can send the shell and hand each section its own promise — the section streams in behind its own boundary as its data lands.",
+              ko: "01 단계가 모든 쿼리를 기다려야 하는 것은 아닙니다. fetch.init<Model><Suffix>, fetch.view<Model>, fetch.edit<Model>는 필드가 promise인 handle을 반환하므로, route는 shell을 먼저 보내고 각 section에 자기 promise를 넘길 수 있습니다 — 그 section은 자기 데이터가 도착하는 대로 자체 boundary 뒤에서 스트리밍됩니다.",
+            })}
+          </Docs.Alert>
+          <Docs.Alert type="info">
+            {l.trans({
               en: "SSR is not the opposite of client-side UI. It is the first step of the experience: show useful content early, then let client components handle the parts that need interaction.",
               ko: "SSR은 클라이언트 UI의 반대 개념이 아닙니다. 사용자 경험의 첫 단계입니다. 유용한 콘텐츠를 먼저 보여주고, 상호작용이 필요한 부분은 클라이언트 컴포넌트가 맡습니다.",
             })}

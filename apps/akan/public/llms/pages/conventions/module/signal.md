@@ -53,9 +53,9 @@ Realtime room key for pubsub subscription channels.
 
 Server-derived context such as Self, Req, Res, Ws, or custom internal args.
 
-Fetch detail-view data generated from the model module.
+Fetch detail-view data generated from the model module. Returns a handle: destructure it for one promise per field, or await it for the resolved object.
 
-Fetch edit-view data generated from the model module.
+Fetch edit-view data generated from the model module. Same handle shape as view[Model].
 
 Create or update model data through the generated module API.
 
@@ -63,9 +63,9 @@ Loads a paginated list for a slice definition.
 
 Loads aggregation data for the same slice query.
 
-Initializes the default model list with list and insight data.
+Initializes the default model list with list and insight data. Both queries leave at call time; the handle hands out storyInit, storyList, and storyInsight as separate promises.
 
-Initializes a named slice list with args declared in signal.ts.
+Initializes a named slice list with args declared in signal.ts. Pass storyInitInRoot to a Zone; consume storyListInRoot on the server, since it holds hydrated model instances.
 
 Signals define the external interface of a module. They connect service logic to generated client APIs, list stores, realtime channels, and server-side jobs.
 
@@ -238,7 +238,10 @@ export class StorySlice extends slice(srv.story, {}, (init) => ({
 ### page.tsx
 
 ```ts
-const data = await fetch.initStoryInRoot(rootId);
+const { storyInitInRoot, storyListInRoot } = fetch.initStoryInRoot(rootId);
+
+<Story.Zone.Card init={storyInitInRoot} />
+<Load.Stream of={storyListInRoot}>{(storyList) => <Story.Unit.Total count={storyList.length} />}</Load.Stream>
 ```
 
 ## Agent Notes

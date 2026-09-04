@@ -5,6 +5,7 @@ import { Logger } from "akanjs/common";
 import { isAnimatedImage } from "./animatedImage";
 import { ImageOptimizerError } from "./imageOptimizerError";
 import { Semaphore } from "./semaphore";
+import { resolveStaticPath } from "./staticPath";
 import {
   type AkanImageConfig,
   type AkanImageFormat,
@@ -260,7 +261,7 @@ export class ImageOptimizer {
 
   async #readLocalImage(href: string): Promise<ImageSource> {
     const url = new URL(href, "http://local.akan");
-    const filePath = ImageOptimizer.#safeResolve(this.#publicDir, url.pathname);
+    const filePath = resolveStaticPath(this.#publicDir, url.pathname);
     if (!filePath) throw new ImageOptimizerError(400, '"url" parameter is not allowed');
     const file = Bun.file(filePath);
     if (!(await file.exists())) throw new ImageOptimizerError(404, "Image not found");
@@ -453,22 +454,6 @@ export class ImageOptimizer {
     } catch {
       return null;
     }
-  }
-
-  static #safeResolve(baseDir: string, urlPath: string): string | null {
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(urlPath);
-    } catch {
-      return null;
-    }
-    if (decoded.includes("\0")) return null;
-    const normalizedBase = path.resolve(baseDir);
-    const rel = decoded.replace(/^[/\\]+/, "");
-    const resolved = path.resolve(normalizedBase, rel);
-    if (resolved === normalizedBase) return resolved;
-    const baseWithSep = normalizedBase.endsWith(path.sep) ? normalizedBase : normalizedBase + path.sep;
-    return resolved.startsWith(baseWithSep) ? resolved : null;
   }
 
   static async #readResponseBuffer(res: Response, maxBytes: number): Promise<Buffer> {

@@ -15,7 +15,7 @@ import type {
   SliceCls,
   SliceInfoArgs,
 } from "akanjs/signal";
-import type { EditReturn, InitReturn, ServerEdit, ServerInit, ServerView, ViewReturn } from "./appliedReturn.type";
+import type { EditHandle, InitHandle, ServerEdit, ServerInit, ServerView, ViewHandle } from "./appliedReturn.type";
 
 // Shortcut accessors — avoids re-typing the long lookup path and lets TS
 // memoize each access once per SlceCls instantiation.
@@ -54,7 +54,7 @@ type SliceInsightFetch<S extends SliceCls> = {
   ) => Promise<_Insight<S>>;
 };
 
-type SliceInit<S extends SliceCls, Suffix extends keyof _SliceMap<S>> = InitReturn<
+type SliceInit<S extends SliceCls, Suffix extends keyof _SliceMap<S>> = InitHandle<
   _RefName<S>,
   Suffix & string,
   _Light<S>,
@@ -74,7 +74,7 @@ type SliceServerInit<S extends SliceCls, Suffix extends keyof _SliceMap<S>> = Se
 type SliceInitFetch<S extends SliceCls> = {
   [Suffix in keyof _SliceMap<S> as Suffix extends string ? `init${_Cap<S>}${Capitalize<Suffix>}` : never]: (
     ...args: [...SliceInfoArgs<_SliceMap<S>[Suffix]>, option?: SliceInitOption<S>]
-  ) => Promise<SliceInit<S, Suffix>>;
+  ) => SliceInit<S, Suffix>;
 };
 
 type SliceGetInitFetch<S extends SliceCls> = {
@@ -137,11 +137,11 @@ type AppliedBaseSliceFetchType<
   _CapitalizedRefName extends string = Capitalize<RefName>,
   _PurifiedInput = PurifiedModel<Input>,
 > = {
-  [K in `view${_CapitalizedRefName}`]: (id: string, option?: FetchPolicy) => Promise<ViewReturn<RefName, Full>>;
+  [K in `view${_CapitalizedRefName}`]: (id: string, option?: FetchPolicy) => ViewHandle<RefName, Full>;
 } & {
   [K in `get${_CapitalizedRefName}View`]: (id: string, option?: FetchPolicy) => Promise<ServerView<RefName, Full>>;
 } & {
-  [K in `edit${_CapitalizedRefName}`]: (id: string, option?: FetchPolicy) => Promise<EditReturn<RefName, Full>>;
+  [K in `edit${_CapitalizedRefName}`]: (id: string, option?: FetchPolicy) => EditHandle<RefName, Full>;
 } & {
   [K in `get${_CapitalizedRefName}Edit`]: (id: string, option?: FetchPolicy) => Promise<ServerEdit<RefName, Full>>;
 } & {

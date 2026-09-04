@@ -6,7 +6,7 @@ import { agentAttrs } from "../agentAttrs";
 import { Input } from "../Input";
 import { Label } from "./Label";
 
-interface NumberProps {
+export interface NumberProps {
   label?: string;
   desc?: string;
   className?: string;
@@ -81,7 +81,7 @@ export const Number = ({
   );
 };
 
-interface DoubleNumberProps {
+export interface DoubleNumberProps {
   label?: string;
   desc?: string;
   labelClassName?: string;

@@ -14,13 +14,15 @@
 
 akanjs/fetch
 
-Zone return type for initialized list pages. It contains list objects, insight object, pagination fields, query args, sort state, and init timestamp, and may be returned directly or as a Promise.
+What `fetch.init<Model><Suffix>`, `fetch.view<Model>`, and `fetch.edit<Model>` return. Awaiting the handle gives the object these helpers have always given, so every existing call site reads unchanged. Reading a field off the un-awaited handle gives that field's own promise instead, so a route can hand each one to the section that renders it and let the slowest arrive last rather than holding the whole page. Every request leaves at call time, so splitting the result never serializes the queries.
 
-Zone return type for a single model view. It wraps the server view payload and supports both synchronous server component data and asynchronous client/server fetching.
+Zone prop type for initialized list pages. It contains list objects, insight object, pagination fields, query args, sort state, and init timestamp, and accepts either the resolved payload or the `x<Model>Init<Suffix>` promise the init handle hands out. A pending promise renders behind the Zone's own Suspense boundary.
+
+Zone prop types for a single model. Each wraps the server payload — `x<Model>View` for read, `x<Model>Edit` for a form — and accepts the resolved object or the promise the view/edit handle hands out. `ClientEdit` also accepts a partial form object, which is how a new-record page seeds defaults with no request at all.
 
 Metadata carried with initialized slice data. UI helpers use it to know the ref name, slice name, and number of query arguments behind a list or insight block.
 
-Option shape for list initialization. It controls page, limit, sort, default form values, invalidation, and whether insight data should be fetched together with the list.
+Option shape for list initialization. It controls page, limit, sort, default form values, invalidation, and whether insight data should be fetched together with the list. `insight: false` skips the aggregate query outright, so `x<Model>ObjInsight` is `null` and the rows in hand are the whole count there is — pass it whenever the screen shows no total and no pagination.
 
 Request account shape shared by server middleware and services. It always includes `appName` and `environment`, then allows app-specific account data to be added by generic parameter.
 

@@ -1,4 +1,5 @@
 "use client";
+import { isThenable } from "akanjs/common";
 import { useEffect, useMemo, useState } from "react";
 
 /** Tracks fulfillment state for a promise or immediate value inside a client component. */
@@ -11,7 +12,7 @@ export const useFetch = <Return>(
     value: null,
   });
   useEffect(() => {
-    if (!(fnOrPromise instanceof Promise)) return;
+    if (!isThenable(fnOrPromise)) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -27,8 +28,8 @@ export const useFetch = <Return>(
       cancelled = true;
     };
   }, []);
-  if (!(fnOrPromise instanceof Promise)) {
-    return { fulfilled: true, value: fnOrPromise };
+  if (!isThenable(fnOrPromise)) {
+    return { fulfilled: true, value: fnOrPromise as Return };
   }
   return asyncState;
 };

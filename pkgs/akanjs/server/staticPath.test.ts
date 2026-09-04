@@ -46,15 +46,23 @@ describe("resolveStaticPath", () => {
     expect(resolveStaticPath(base, "/../public-secrets/keys.txt")).toBeNull();
   });
 
-  test("refuses a symlink that leads out of the tree, and keeps one that stays inside", async () => {
+  test("serves a lib asset through the link akan sync makes out of the tree", async () => {
+    // `akan sync` links `public/libs/<lib>` at `<workspaceRoot>/libs/<lib>/public`, so every lib asset is
+    // reached through a link whose target is outside the app's public dir. Resolving the link and refusing it
+    // 404s all of them under `akan start`; a built app has no link left, because the copy dereferences.
     const { root, base } = await makeTree();
-    await symlink(path.join(root, "secret.txt"), path.join(base, "escape.txt"));
-    await symlink(path.join(base, "img", "logo.png"), path.join(base, "inside.png"));
+    fs.mkdirSync(path.join(root, "libs", "kaiden", "public"), { recursive: true });
+    await writeFile(path.join(root, "libs", "kaiden", "public", "model.glb"), "glb");
+    fs.mkdirSync(path.join(base, "libs"), { recursive: true });
+    await symlink(
+      path.relative(path.join(base, "libs"), path.join(root, "libs", "kaiden", "public")),
+      path.join(base, "libs", "kaiden"),
+      "dir",
+    );
 
-    // `path.resolve` collapses `..` in a string; it never follows a link, so this is the one case the string
-    // check cannot see.
-    expect(resolveStaticPath(base, "/escape.txt")).toBeNull();
-    expect(resolveStaticPath(base, "/inside.png")).toBe(path.join(base, "inside.png"));
+    const resolved = resolveStaticPath(base, "/libs/kaiden/model.glb");
+    expect(resolved).toBe(path.join(base, "libs", "kaiden", "model.glb"));
+    expect(fs.readFileSync(resolved as string, "utf8")).toBe("glb");
   });
 
   test("the base directory itself resolves to the base", async () => {

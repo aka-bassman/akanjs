@@ -6,7 +6,7 @@ import { agentAttrs } from "../agentAttrs";
 import { inputRecipe } from "../recipe";
 import { Label } from "./Label";
 
-interface DateProps<Nullable extends boolean> {
+export interface DateProps<Nullable extends boolean> {
   label?: string;
   desc?: string;
   labelClassName?: string;
@@ -55,7 +55,7 @@ export const Date = <Nullable extends boolean>({
   );
 };
 
-interface DateRangeProps<Nullable extends boolean> {
+export interface DateRangeProps<Nullable extends boolean> {
   label?: string;
   desc?: string;
   labelClassName?: string;

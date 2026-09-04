@@ -83,7 +83,43 @@ Choose how much structured Logger output is written to files. Defaults to trace,
 
 File logging
 
-AkanApp writes gateway and child process logs to runtime/logs by default. Set this to 0 to disable file logging.
+AkanApp writes gateway and child process logs to runtime/logs by default. Set this to 0 to disable file logging. The generated Dockerfile sets 0: a container's writable layer is ephemeral and stdout is the collection path.
+
+Request context on log records
+
+Every request, websocket call, MCP call, internal trigger and page render runs under a lightweight trace, so its log records carry traceId, endpoint and origin. On by default; 0 switches it off. Independent from AKAN_TRACE, which adds span and query aggregation.
+
+Always forward records
+
+A child forwards log records to the gateway over IPC only while akan logs or a console .tail is subscribed at that level. 1 keeps forwarding on regardless.
+
+Log ring buffer
+
+How many records, and how many megabytes, the gateway (or solo replica) keeps for akan logs --replay and .trace. Both limits apply; the older record goes first.
+
+Log output format
+
+text is the human console line. ndjson makes the container's stdout one JSON record per line, written only by the gateway (or the solo replica): every other server process turns its console off and forwards its records instead, and a child's crash stack is wrapped as a raw record so the stream stays valid JSON. ndjson-only writes the rotating file as JSON too. Give every process the same value.
+
+Container stdout detail
+
+What goes to the container's stdout, in either format. Defaults to AKAN_PUBLIC_LOG_LEVEL. kubelet and the docker json-file driver rotate container logs by size, so a stdout at trace can outrun the collector; info is the production recommendation, with the flight recorder promoting detail for failed calls only.
+
+Log stream route
+
+Set it and GET /_akan/app/logs serves the ring buffer and live records as text/event-stream to a matching bearer token; the LogQuery is the query string, each event's id is the hub seq, Last-Event-ID resumes and an evicted range arrives as an explicit gap event. Unset, the route does not exist. A session tool for one pod — collection is stdout.
+
+Canonical request line
+
+One record per call at its end: ok or error, the endpoint, ms, status, userId, and under AKAN_TRACE=1 the db and cache figures. 1 or all writes every call; slow keeps only failed calls and those over AKAN_LOG_FLIGHT_MS. Off by default because it grows with QPS.
+
+Flight recorder
+
+AKAN_LOG_FLIGHT=1 keeps each call's own last 64 records that fell below the level and promotes them, marked flight=true, only when the call failed or ran past AKAN_LOG_FLIGHT_MS (default 1000). AKAN_LOG_FLIGHT_MAX (default 65536 records) caps what the process holds at once; a call past the cap runs unrecorded. Measured cost on a clean call: about 190ns.
+
+Per-request debug header
+
+A request carrying x-akan-debug logs at trace for its own duration, whatever the process level. Honoured unconditionally in local; elsewhere only when the header value equals this secret, compared in constant time, because a client that can lower a server's log level is a log-volume vector.
 
 Log directory
 

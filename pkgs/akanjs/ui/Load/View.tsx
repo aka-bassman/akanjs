@@ -3,11 +3,12 @@ import { cn } from "akanjs/client";
 import { ConstantRegistry, labelOf } from "akanjs/constant";
 import type { ClientView, ServerView } from "akanjs/fetch";
 import { st } from "akanjs/store";
-import { useFetch, useScreenScope } from "akanjs/webkit";
+import { useScreenScope } from "akanjs/webkit";
 import { type ReactNode, useEffect, useMemo, useRef } from "react";
 
 import { Empty } from "../Empty";
 import { Loading } from "../Loading";
+import Stream from "./Stream";
 
 interface DefaultProps<T extends string, M> {
   /** Additional classes for the default wrapping div. */
@@ -102,21 +103,28 @@ export default function View<T extends string, Full extends { id: string }>({
     loading,
     renderView,
   };
-  const { fulfilled, value: promiseView } = useFetch(view);
-
-  return fulfilled ? (
-    promiseView ? (
-      <Render {...props} view={promiseView} />
-    ) : (
-      <div className="size-full">
-        <Empty />
-      </div>
-    )
-  ) : loading ? (
-    <>{loading}</>
-  ) : (
-    <div className="size-full">
-      <Loading.Skeleton active />
-    </div>
+  return (
+    <Stream
+      of={view}
+      fallback={
+        loading === undefined ? (
+          <div className="size-full">
+            <Loading.Skeleton active />
+          </div>
+        ) : (
+          loading
+        )
+      }
+    >
+      {(serverView) =>
+        serverView ? (
+          <Render {...props} view={serverView} />
+        ) : (
+          <div className="size-full">
+            <Empty />
+          </div>
+        )
+      }
+    </Stream>
   );
 }

@@ -35,7 +35,8 @@ type ServerInitShape<
 > = SliceMeta & {
   [K in `${RefName}ObjList`]: LightObj[];
 } & {
-  [K in `${RefName}ObjInsight`]: InsightObj;
+  /** `null` when the caller passed `{ insight: false }`: the aggregate query was never made. */
+  [K in `${RefName}ObjInsight`]: InsightObj | null;
 } & {
   [K in `pageOf${CapRefName}`]: number;
 } & {
@@ -100,6 +101,31 @@ export type EditReturn<RefName extends string, Full> = {
   [K in `${RefName}Edit`]: ServerEdit<RefName, Full>;
 };
 
+/**
+ * What `fetch.view<Model>` / `fetch.edit<Model>` / `fetch.init<Model><Suffix>` return: awaitable for the shape
+ * the helper has always given, and destructurable into one promise per field for a route that wants each
+ * section to render as its own data lands instead of holding the page for the slowest.
+ */
+export type FetchHandleOf<Awaited, Fields> = PromiseLike<Awaited> & Fields;
+
+export type ViewHandle<RefName extends string, Full> = FetchHandleOf<
+  ViewReturn<RefName, Full>,
+  {
+    [K in RefName]: Promise<Full>;
+  } & {
+    [K in `${RefName}View`]: Promise<ServerView<RefName, Full>>;
+  }
+>;
+
+export type EditHandle<RefName extends string, Full> = FetchHandleOf<
+  EditReturn<RefName, Full>,
+  {
+    [K in RefName]: Promise<Full>;
+  } & {
+    [K in `${RefName}Edit`]: Promise<ServerEdit<RefName, Full>>;
+  }
+>;
+
 type InitReturnShape<
   RefName extends string,
   CapSuffix extends string,
@@ -125,6 +151,43 @@ export type InitReturn<
   ServerInit<RefName, Light, Insight, Args, Filter>,
   Light extends { id: string } ? Light : { id: string },
   Insight
+>;
+
+/**
+ * The list resolves without waiting for the aggregate, so `x<Slice>List` lands before `x<Slice>Init` — which
+ * carries `lastPageOf<Model>` and therefore needs the count.
+ *
+ * `x<Slice>List` and `x<Slice>Insight` hold hydrated model instances, which React Flight refuses as props to a
+ * client component: consume them in a server component and hand `x<Slice>Init` to a `Zone`.
+ */
+type InitHandleShape<
+  RefName extends string,
+  CapSuffix extends string,
+  Init,
+  ListItem extends { id: string },
+  Insight,
+> = {
+  [K in `${RefName}Init${CapSuffix}`]: Promise<Init>;
+} & {
+  [K in `${RefName}List${CapSuffix}`]: Promise<DataList<ListItem>>;
+} & { [K in `${RefName}Insight${CapSuffix}`]: Promise<Insight> };
+
+export type InitHandle<
+  RefName extends string,
+  Suffix extends string,
+  Light,
+  Insight,
+  Args,
+  Filter extends FilterInstance,
+> = FetchHandleOf<
+  InitReturn<RefName, Suffix, Light, Insight, Args, Filter>,
+  InitHandleShape<
+    RefName,
+    Capitalize<Suffix>,
+    ServerInit<RefName, Light, Insight, Args, Filter>,
+    Light extends { id: string } ? Light : { id: string },
+    Insight
+  >
 >;
 
 // ============= Method Generators =============

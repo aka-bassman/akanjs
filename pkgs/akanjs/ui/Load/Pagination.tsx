@@ -4,11 +4,12 @@ import { capitalize, type DynamicRecord, lowerlize } from "akanjs/common";
 import type { BaseInsight } from "akanjs/constant";
 import type { ClientInit, ServerInit } from "akanjs/fetch";
 import { st } from "akanjs/store";
-import { useFetch, usePageTool } from "akanjs/webkit";
-import { type Usable, use, useRef } from "react";
+import { usePageTool } from "akanjs/webkit";
+import { useRef } from "react";
 
 import { Empty } from "../Empty";
 import { Pagination as Pagn } from "../Pagination";
+import Stream from "./Stream";
 
 interface PaginationProps<RefName extends string, Light> {
   className?: string;
@@ -25,13 +26,10 @@ function Render<RefName extends string, Light>({ className, init, scrollToTop }:
   const storeUse = st.use as { [key: string]: () => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
   const storeGet = st.get as unknown as <T>() => { [key: string]: T };
-  const modelInit = (init as Promise<any> | { then?: any }).then
-    ? use(init as unknown as Usable<ServerInit<RefName, Light>>)
-    : init;
-  const { refName, sliceName } = modelInit;
+  const { refName, sliceName } = init;
   const [modelName, ModelName] = [lowerlize(refName), capitalize(refName)];
-  const initModelInitAt = (modelInit as DynamicRecord)[`${modelName}InitAt`] as Date;
-  const loaded = useRef(storeGet<Date>()[`${modelInit.refName}InitAt`].getTime() >= initModelInitAt.getTime());
+  const initModelInitAt = (init as DynamicRecord)[`${modelName}InitAt`] as Date;
+  const loaded = useRef(storeGet<Date>()[`${refName}InitAt`].getTime() >= initModelInitAt.getTime());
   const names = {
     model: modelName,
     modelInsight: `${modelName}Insight`,
@@ -54,20 +52,22 @@ function Render<RefName extends string, Light>({ className, init, scrollToTop }:
   const modelInsight = storeUse[namesOfSlice.modelInsight]() as BaseInsight;
   const limitOfModel = storeUse[namesOfSlice.limitOfModel]() as number;
   const pageOfModel = storeUse[namesOfSlice.pageOfModel]() as number;
-  const initModelObjInsight = (modelInit as DynamicRecord)[names.modelObjInsight] as BaseInsight;
-  const initPageOfModel = (modelInit as DynamicRecord)[names.pageOfModel] as number;
-  const initLimitOfModel = (modelInit as DynamicRecord)[names.limitOfModel] as number;
+  const initModelObjInsight = (init as DynamicRecord)[names.modelObjInsight] as BaseInsight | null;
+  const initPageOfModel = (init as DynamicRecord)[names.pageOfModel] as number;
+  const initLimitOfModel = (init as DynamicRecord)[names.limitOfModel] as number;
   const insight = loaded.current ? modelInsight : initModelObjInsight;
   const page = loaded.current ? pageOfModel : initPageOfModel;
   const limit = loaded.current ? limitOfModel : initLimitOfModel;
+  // Nothing to page through without a count: `{ insight: false }` opted out of the aggregate that provides one.
+  const total = insight?.count ?? 0;
 
   if (!loaded.current) loaded.current = true;
   const selectPage = usePageTool({
-    name: insight.count > limit ? namesOfSlice.setPageOfModel : null,
+    name: total > limit ? namesOfSlice.setPageOfModel : null,
     model: modelName,
     page,
-    lastPage: Math.ceil(insight.count / (limit || insight.count || 1)),
-    total: insight.count,
+    lastPage: Math.ceil(total / (limit || total || 1)),
+    total,
     onSelect: (page) => {
       void storeDo[namesOfSlice.setPageOfModel](page);
       if (!scrollToTop) return;
@@ -78,19 +78,19 @@ function Render<RefName extends string, Light>({ className, init, scrollToTop }:
 
   return (
     <div className={cn("mt-4 flex flex-wrap justify-center", className)}>
-      {insight.count > limit && (
-        <Pagn
-          currentPage={page}
-          total={insight.count}
-          itemsPerPage={limit || insight.count}
-          onPageSelect={selectPage}
-        />
-      )}
+      {total > limit ? (
+        <Pagn currentPage={page} total={total} itemsPerPage={limit || total} onPageSelect={selectPage} />
+      ) : null}
     </div>
   );
 }
 
 export default function Pagination<T extends string, L>({ className, init, scrollToTop }: PaginationProps<T, L>) {
-  const { fulfilled, value: promiseInit } = useFetch(init);
-  return fulfilled ? promiseInit ? <Render scrollToTop init={promiseInit} /> : <Empty /> : <></>;
+  return (
+    <Stream of={init} fallback={null}>
+      {(serverInit) =>
+        serverInit ? <Render className={className} init={serverInit} scrollToTop={scrollToTop} /> : <Empty />
+      }
+    </Stream>
+  );
 }

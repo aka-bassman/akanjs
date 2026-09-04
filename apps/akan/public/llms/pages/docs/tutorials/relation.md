@@ -87,7 +87,7 @@ Key features of this integrated page:
 
 Organizes related content into switchable panels. Users can easily navigate between orders and deliveries.
 
-Loads both icecreamOrder and delivery data in parallel for optimal performance.
+Both slice queries leave at call time and each Tab.Panel gets its own promise, so the two tabs load in parallel and neither waits for the other.
 
 Summary
 
@@ -556,10 +556,8 @@ import { Delivery } from "@apps/koyo/client";
 
 export default async function Page() {
   const { l } = usePage();
-  const [{ icecreamOrderInitInPublic }, { deliveryInitInPublic }] = await Promise.all([ // [!code highlight:6]
-    fetch.initIcecreamOrderInPublic(),
-    fetch.initDeliveryInPublic(),
-  ]);
+  const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
+  const { deliveryInitInPublic } = fetch.initDeliveryInPublic(); // [!code highlight]
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
   return (
     <div className="space-y-4">

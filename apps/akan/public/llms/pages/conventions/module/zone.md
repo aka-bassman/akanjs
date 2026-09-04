@@ -29,11 +29,11 @@ Pages should usually pass route params and server data into Zones. Zones handle 
 
 File Convention And Props
 
-Zone files usually use client hooks and Load wrappers, so they start with the use client directive. Their props commonly receive server-prepared ClientInit or ClientView values.
+Zone files usually use client hooks and Load wrappers, so they start with the use client directive. Their props commonly receive server-prepared ClientInit, ClientView, or ClientEdit values — either the resolved payload or the promise the route's fetch handle hands out.
 
 List Zone With Load.Units
 
-Use Load.Units when a Zone receives ClientInit list data from a server page. It hydrates initial list state, handles loading and empty states, and delegates each item to Unit components.
+Use Load.Units when a Zone receives ClientInit list data from a server page. It hydrates initial list state, handles loading and empty states, and delegates each item to Unit components. When the page hands the x<Model>Init<Suffix> promise across instead of awaiting it, Load.Units renders `loading` behind a Suspense boundary of its own and the rest of the page is sent without waiting.
 
 Render one item, usually by delegating to Unit.Card or Unit.Abstract.
 
@@ -43,7 +43,7 @@ Render empty states, often with Model.NewWrapper or a link-style call to action.
 
 View Zone With Load.View
 
-Use Load.View when a Zone receives ClientView detail data. Load.View hydrates the selected model into store state, then passes the full model to View components.
+Use Load.View when a Zone receives ClientView detail data. Load.View hydrates the selected model into store state, then passes the full model to View components. A pending view promise gets its own boundary, so a detail section never blocks the layout around it.
 
 Section Orchestration Zones
 

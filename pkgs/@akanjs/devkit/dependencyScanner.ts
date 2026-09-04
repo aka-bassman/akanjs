@@ -7,6 +7,11 @@ import { FileSys } from "./fileSys";
 import type { PackageJson, TsConfigJson } from "./types";
 
 const testFileRegex = /\.(?:test|spec)\.[cm]?[tj]sx?$/;
+// `__fixtures__` holds deliberately invalid sample sources for the lint-rule suites; tsconfig `exclude` and
+// biome's `!` override already skip them, and their imports are violations rather than real dependencies.
+const skipDirs = ["node_modules", "dist", "build", ".git", ".next", "public", "ios", "android", "__fixtures__"];
+const isSkippedPath = (filePath: string) =>
+  skipDirs.some((dir) => filePath.includes(`/${dir}/`) || filePath.startsWith(`${dir}/`));
 const builtinModuleSet = new Set([...builtinModules, ...builtinModules.map((mod) => `node:${mod}`)]);
 const stripShebang = (source: string) => source.replace(/^#!.*(?:\r?\n|$)/, "");
 
@@ -171,11 +176,10 @@ export class TypeScriptDependencyScanner {
     }: { excludeBuildFiles?: boolean; excludeTestFiles?: boolean } = {},
   ): Promise<string[]> {
     const files: string[] = [];
-    const skipDirs = ["node_modules", "dist", "build", ".git", ".next", "public", "ios", "android"];
 
     const glob = new Bun.Glob("**/*.{ts,tsx}");
     for await (const filePath of glob.scan({ cwd: directory, onlyFiles: true })) {
-      if (skipDirs.some((dir) => filePath.includes(`/${dir}/`) || filePath.startsWith(`${dir}/`))) continue;
+      if (isSkippedPath(filePath)) continue;
       if (excludeBuildFiles && filePath === "build.ts") continue;
       if (excludeTestFiles && testFileRegex.test(filePath)) continue;
 
@@ -190,10 +194,9 @@ export class TypeScriptDependencyScanner {
 
   async #findCssFiles(directory: string): Promise<string[]> {
     const files: string[] = [];
-    const skipDirs = ["node_modules", "dist", "build", ".git", ".next", "public", "ios", "android"];
     const glob = new Bun.Glob("**/*.css");
     for await (const filePath of glob.scan({ cwd: directory, onlyFiles: true })) {
-      if (skipDirs.some((dir) => filePath.includes(`/${dir}/`) || filePath.startsWith(`${dir}/`))) continue;
+      if (isSkippedPath(filePath)) continue;
 
       const fullPath = path.join(directory, filePath);
       const relativePath = path.relative(this.#workspaceRoot, fullPath);

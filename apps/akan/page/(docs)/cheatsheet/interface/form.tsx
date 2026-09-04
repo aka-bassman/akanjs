@@ -99,7 +99,7 @@ export const General = () => {
           title={l.trans({ en: "New article page", ko: "새 article page" })}
           code={`export default async function Page({ params }: PageProps) {
   const { boardId } = params;
-  const board = await fetch.viewBoard(boardId);
+  const { board } = await fetch.viewBoard(boardId);
   const articleForm: Partial<cnst.Article> = {
     board: board.id,
     status: "draft",
@@ -126,8 +126,8 @@ export const General = () => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "For a full edit page, fetch the model on the server and pass it to `Load.Edit`. The Template can stay exactly the same as create.",
-              ko: "별도 수정 page가 필요하다면 서버에서 model을 조회해 `Load.Edit`에 넘기세요. Template은 생성 때와 그대로 재사용할 수 있습니다.",
+              en: "For a full edit page, fetch the model on the server and pass it to `Load.Edit`. The Template can stay exactly the same as create. Await here because the page builds the submit URL from the model; a page that only renders the form can hand the un-awaited `articleEdit` promise across instead.",
+              ko: "별도 수정 page가 필요하다면 서버에서 model을 조회해 `Load.Edit`에 넘기세요. Template은 생성 때와 그대로 재사용할 수 있습니다. 여기서는 page가 model로 submit URL을 만들기 때문에 await합니다. form만 렌더링하는 page라면 await하지 않은 `articleEdit` promise를 그대로 넘길 수 있습니다.",
             })}
           </div>
         </Docs.Description>
@@ -135,7 +135,7 @@ export const General = () => {
           className="w-full"
           title={l.trans({ en: "Edit article page", ko: "Article 수정 page" })}
           code={`export default async function Page({ params }: PageProps) {
-  const articleEdit = await fetch.editArticle(params.articleId);
+  const { article, articleEdit } = await fetch.editArticle(params.articleId);
 
   return (
     <Load.Edit

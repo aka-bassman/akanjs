@@ -6,12 +6,13 @@ import type { BaseInsight } from "akanjs/constant";
 import { ConstantRegistry, labelOf, withSharedInstances } from "akanjs/constant";
 import type { ClientInit, ServerInit } from "akanjs/fetch";
 import { st } from "akanjs/store";
-import { useFetch, usePageTool, useScreenScope } from "akanjs/webkit";
+import { usePageTool, useScreenScope } from "akanjs/webkit";
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef } from "react";
 
 import { Empty } from "../Empty";
 import { Loading } from "../Loading";
 import { More } from "../More";
+import Stream from "./Stream";
 
 interface DefaultProps<L extends { id: string }> {
   containerRef?: RefObject<HTMLDivElement | null>;
@@ -110,7 +111,7 @@ function Render<RefName extends string, Light extends { id: string }>({
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
   const initQueryArgs = (init as DynamicRecord)[names.queryArgsOfModel] as object[];
   const initModelInitAt = (init as DynamicRecord)[names.modelInitAt] as Date;
-  const initModelObjInsight = (init as DynamicRecord)[names.modelObjInsight] as BaseInsight;
+  const initModelObjInsight = (init as DynamicRecord)[names.modelObjInsight] as BaseInsight | null;
   const initLimitOfModel = (init as DynamicRecord)[names.limitOfModel] as number;
   const initPageOfModel = (init as DynamicRecord)[names.pageOfModel] as number;
 
@@ -130,8 +131,11 @@ function Render<RefName extends string, Light extends { id: string }>({
 
   useEffect(() => {
     if (loaded.current) return;
-    const modelObjInsight = (init as DynamicRecord)[names.modelObjInsight] as BaseInsight;
-    const insight = new cnst.insight().set(modelObjInsight) as unknown as BaseInsight;
+    const modelObjInsight = (init as DynamicRecord)[names.modelObjInsight] as BaseInsight | null;
+    // `{ insight: false }` skips the aggregate query, so the rows in hand are the whole count there is to seed.
+    const insight = new cnst.insight().set(
+      modelObjInsight ?? { count: modelInitList.length },
+    ) as unknown as BaseInsight;
     const initPageOfModel = (init as DynamicRecord)[names.pageOfModel] as number;
     const initLastPageOfModel = (init as DynamicRecord)[names.lastPageOfModel] as number;
     const initLimitOfModel = (init as DynamicRecord)[names.limitOfModel] as number;
@@ -166,10 +170,11 @@ function Render<RefName extends string, Light extends { id: string }>({
   const insight = loaded.current ? modelInsight : initModelObjInsight;
   const limit = loaded.current ? limitOfModel : initLimitOfModel;
   const page = loaded.current ? pageOfModel : initPageOfModel;
+  const total = insight?.count ?? (loaded.current ? modelList : modelInitList).length;
   const moreProps = {
-    total: insight.count,
+    total,
     currentPage: page,
-    itemsPerPage: limit || insight.count,
+    itemsPerPage: limit || total,
     onAddPage: async (page: number) => {
       await storeDo[namesOfSlice.addPageOfModel](page);
     },
@@ -185,11 +190,11 @@ function Render<RefName extends string, Light extends { id: string }>({
     reverse,
   };
   usePageTool({
-    name: pagination && insight.count > limit ? namesOfSlice.setPageOfModel : null,
+    name: pagination && total > limit ? namesOfSlice.setPageOfModel : null,
     model: modelName,
     page,
-    lastPage: Math.ceil(insight.count / (limit || insight.count || 1)),
-    total: insight.count,
+    lastPage: Math.ceil(total / (limit || total || 1)),
+    total,
     onSelect: (page) => moreProps.onPageSelect(page, { scrollToTop: false }),
   });
 
@@ -293,23 +298,31 @@ export default function Units<RefName extends string, Light extends { id: string
     staleTime,
   };
 
-  const { fulfilled, value: promiseInit } = useFetch(init);
-  return fulfilled ? (
-    promiseInit ? (
-      <Render {...props} init={promiseInit} />
-    ) : renderEmpty ? (
-      <>{renderEmpty()}</>
-    ) : (
-      <div className="flex size-full items-center justify-center">
-        <Empty />
-      </div>
-    )
-  ) : loading ? (
-    <>{loading}</>
-  ) : (
-    <div className="flex size-full items-center justify-center">
-      <Loading.Skeleton active />
-    </div>
+  return (
+    <Stream
+      of={init}
+      fallback={
+        loading === undefined ? (
+          <div className="flex size-full items-center justify-center">
+            <Loading.Skeleton active />
+          </div>
+        ) : (
+          loading
+        )
+      }
+    >
+      {(serverInit) =>
+        serverInit ? (
+          <Render {...props} init={serverInit} />
+        ) : renderEmpty ? (
+          renderEmpty()
+        ) : (
+          <div className="flex size-full items-center justify-center">
+            <Empty />
+          </div>
+        )
+      }
+    </Stream>
   );
 }
 

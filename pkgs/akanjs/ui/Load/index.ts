@@ -1,6 +1,7 @@
 import Edit from "./Edit";
 import { Pagination, Units, View } from "./index_";
 import Page from "./Page";
+import Stream from "./Stream";
 
 export const Load = {
   Edit,
@@ -8,4 +9,5 @@ export const Load = {
   Units,
   View,
   Page,
+  Stream,
 };

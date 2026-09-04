@@ -6,10 +6,27 @@ export default function Page() {
   const { l } = usePage();
   const symbols = [
     {
+      name: "InitHandle / ViewHandle / EditHandle",
+      desc: l.trans({
+        en: "What `fetch.init<Model><Suffix>`, `fetch.view<Model>`, and `fetch.edit<Model>` return. Awaiting the handle gives the object these helpers have always given, so every existing call site reads unchanged. Reading a field off the un-awaited handle gives that field's own promise instead, so a route can hand each one to the section that renders it and let the slowest arrive last rather than holding the whole page. Every request leaves at call time, so splitting the result never serializes the queries.",
+        ko: "`fetch.init<Model><Suffix>`, `fetch.view<Model>`, `fetch.edit<Model>`의 return type입니다. handle을 await하면 기존과 동일한 객체를 주므로 기존 호출부는 그대로 동작합니다. await하지 않고 field를 읽으면 그 field의 promise를 주므로, route가 각 promise를 해당 section에 넘겨 느린 query가 page 전체를 붙잡지 않게 할 수 있습니다. 모든 request는 호출 시점에 이미 출발하므로 결과를 쪼개도 query가 직렬화되지 않습니다.",
+      }),
+      code: `const { userInitInOrg, userListInOrg } = fetch.initUserInOrg(orgId);
+const { orderView } = fetch.viewOrder(orderId);
+
+return (
+  <>
+    <User.Zone.Card init={userInitInOrg} />
+    <Load.Stream of={userListInOrg}>{(userList) => <User.Unit.Total count={userList.length} />}</Load.Stream>
+    <Order.Zone.View view={orderView} />
+  </>
+);`,
+    },
+    {
       name: "ClientInit",
       desc: l.trans({
-        en: "Zone return type for initialized list pages. It contains list objects, insight object, pagination fields, query args, sort state, and init timestamp, and may be returned directly or as a Promise.",
-        ko: "initialized list page를 위한 Zone return type입니다. list object, insight object, pagination field, query arg, sort state, init timestamp를 포함하며 직접 반환하거나 Promise로 반환할 수 있습니다.",
+        en: "Zone prop type for initialized list pages. It contains list objects, insight object, pagination fields, query args, sort state, and init timestamp, and accepts either the resolved payload or the `x<Model>Init<Suffix>` promise the init handle hands out. A pending promise renders behind the Zone's own Suspense boundary.",
+        ko: "initialized list page를 위한 Zone prop type입니다. list object, insight object, pagination field, query arg, sort state, init timestamp를 포함하며, 해소된 payload 또는 init handle이 주는 `x<Model>Init<Suffix>` promise를 모두 받습니다. 아직 해소되지 않은 promise는 Zone 자체의 Suspense boundary 뒤에서 렌더링됩니다.",
       }),
       code: `import type { ClientInit } from "akanjs/fetch";
 
@@ -18,15 +35,16 @@ export interface Props {
 }`,
     },
     {
-      name: "ClientView",
+      name: "ClientView / ClientEdit",
       desc: l.trans({
-        en: "Zone return type for a single model view. It wraps the server view payload and supports both synchronous server component data and asynchronous client/server fetching.",
-        ko: "single model view를 위한 Zone return type입니다. server view payload를 감싸며 synchronous server component data와 asynchronous client/server fetching을 모두 지원합니다.",
+        en: "Zone prop types for a single model. Each wraps the server payload — `x<Model>View` for read, `x<Model>Edit` for a form — and accepts the resolved object or the promise the view/edit handle hands out. `ClientEdit` also accepts a partial form object, which is how a new-record page seeds defaults with no request at all.",
+        ko: "단일 model을 위한 Zone prop type입니다. 각각 server payload를 감싸며 — 조회는 `x<Model>View`, form은 `x<Model>Edit` — 해소된 객체와 view/edit handle이 주는 promise를 모두 받습니다. `ClientEdit`은 partial form 객체도 받으므로, 새 record page는 request 없이 기본값만 넘길 수 있습니다.",
       }),
-      code: `import type { ClientView } from "akanjs/fetch";
+      code: `import type { ClientEdit, ClientView } from "akanjs/fetch";
 
 export interface Props {
   ticketView: ClientView<"ticket", Ticket>;
+  ticketEdit: ClientEdit<"ticket", Ticket>;
 }`,
     },
     {
@@ -44,15 +62,15 @@ export function Toolbar({ meta }: { meta: SliceMeta }) {
     {
       name: "FetchInitForm",
       desc: l.trans({
-        en: "Option shape for list initialization. It controls page, limit, sort, default form values, invalidation, and whether insight data should be fetched together with the list.",
-        ko: "list initialization을 위한 option shape입니다. page, limit, sort, default form value, invalidation, insight data를 list와 함께 fetch할지 여부를 제어합니다.",
+        en: "Option shape for list initialization. It controls page, limit, sort, default form values, invalidation, and whether insight data should be fetched together with the list. `insight: false` skips the aggregate query outright, so `x<Model>ObjInsight` is `null` and the rows in hand are the whole count there is — pass it whenever the screen shows no total and no pagination.",
+        ko: "list initialization을 위한 option shape입니다. page, limit, sort, default form value, invalidation, insight data를 list와 함께 fetch할지 여부를 제어합니다. `insight: false`는 aggregate query를 아예 보내지 않으므로 `x<Model>ObjInsight`가 `null`이 되고 손에 든 row가 전체 개수가 됩니다 — 총계와 pagination을 표시하지 않는 화면이라면 넘기세요.",
       }),
       code: `import type { FetchInitForm } from "akanjs/fetch";
 
 const option: FetchInitForm<UserInput, UserFilter> = {
   page: 1,
   limit: 20,
-  insight: true,
+  insight: false,
 };`,
     },
     {

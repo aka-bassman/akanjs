@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 
 /**
@@ -9,9 +8,13 @@ import path from "node:path";
  * then a NUL check (a truncating byte in a path), then `path.resolve` to collapse the traversal, then
  * containment against the base **with a separator** — without it `/public-secrets` passes a `/public` check.
  *
- * `path.resolve` works on the string and does not follow links, so a symlink inside the tree can still point
- * out of it. Callers check existence after this, so a path that resolves to nothing is handed back and 404s
- * there; only a link that really leads outside is refused.
+ * Symlinks are followed, like nginx and `serve-static` do: `akan sync` builds `public/libs/<lib>` as a link to
+ * `<workspaceRoot>/libs/<lib>/public`, so a link out of the tree is how a lib ships its assets, not an attack.
+ * Refusing those would 404 every lib asset under `akan start` and nothing else — `akan build` copies `public/`
+ * with `dereference: true`, so a built app has no links left to refuse. Traversal is what the string checks
+ * above stop, and they run before any of this touches the filesystem.
+ *
+ * Callers check existence after this, so a path that resolves to nothing is handed back and 404s there.
  */
 export const resolveStaticPath = (baseDir: string, urlPath: string): string | null => {
   let decoded: string;
@@ -27,17 +30,5 @@ export const resolveStaticPath = (baseDir: string, urlPath: string): string | nu
   if (resolved === normalizedBase) return resolved;
   const baseWithSep = normalizedBase.endsWith(path.sep) ? normalizedBase : normalizedBase + path.sep;
   if (!resolved.startsWith(baseWithSep)) return null;
-  try {
-    // Against the base's *real* path, not its lexical one: an ancestor of the base is very often itself a link
-    // (macOS `/var`, a symlinked release directory, a bind mount), and comparing to the lexical base would then
-    // refuse every file in the tree.
-    const realBase = fs.realpathSync(normalizedBase);
-    const realBaseWithSep = realBase.endsWith(path.sep) ? realBase : realBase + path.sep;
-    const real = fs.realpathSync(resolved);
-    if (real !== realBase && !real.startsWith(realBaseWithSep)) return null;
-  } catch {
-    // The base or the target does not exist, or is unreadable. Either way there is no link to follow out of
-    // the tree, and the lexical containment above already held.
-  }
   return resolved;
 };

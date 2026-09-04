@@ -31,8 +31,8 @@ export default function Page() {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Zone files usually use client hooks and Load wrappers, so they start with the use client directive. Their props commonly receive server-prepared ClientInit or ClientView values.",
-              ko: "Zone 파일은 보통 client hook과 Load wrapper를 사용하므로 use client directive로 시작합니다. props로는 server에서 준비한 ClientInit 또는 ClientView 값을 자주 받습니다.",
+              en: "Zone files usually use client hooks and Load wrappers, so they start with the use client directive. Their props commonly receive server-prepared ClientInit, ClientView, or ClientEdit values — either the resolved payload or the promise the route's fetch handle hands out.",
+              ko: "Zone 파일은 보통 client hook과 Load wrapper를 사용하므로 use client directive로 시작합니다. props로는 server에서 준비한 ClientInit, ClientView, ClientEdit 값을 자주 받습니다 — 해소된 payload든 route의 fetch handle이 주는 promise든 모두 받습니다.",
             })}
           </div>
         </Docs.Description>
@@ -72,8 +72,8 @@ export default function Page() {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Use Load.Units when a Zone receives ClientInit list data from a server page. It hydrates initial list state, handles loading and empty states, and delegates each item to Unit components.",
-              ko: "server page에서 ClientInit list data를 받은 Zone에는 Load.Units를 사용합니다. initial list state를 hydrate하고 loading/empty state를 처리하며 각 item 렌더링은 Unit component에 위임합니다.",
+              en: "Use Load.Units when a Zone receives ClientInit list data from a server page. It hydrates initial list state, handles loading and empty states, and delegates each item to Unit components. When the page hands the x<Model>Init<Suffix> promise across instead of awaiting it, Load.Units renders `loading` behind a Suspense boundary of its own and the rest of the page is sent without waiting.",
+              ko: "server page에서 ClientInit list data를 받은 Zone에는 Load.Units를 사용합니다. initial list state를 hydrate하고 loading/empty state를 처리하며 각 item 렌더링은 Unit component에 위임합니다. page가 await 대신 x<Model>Init<Suffix> promise를 넘기면 Load.Units가 자체 Suspense boundary 뒤에서 `loading`을 렌더링하고, page의 나머지는 기다리지 않고 전송됩니다.",
             })}
           </div>
         </Docs.Description>
@@ -133,8 +133,8 @@ export default function Page() {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Use Load.View when a Zone receives ClientView detail data. Load.View hydrates the selected model into store state, then passes the full model to View components.",
-              ko: "Zone이 ClientView detail data를 받을 때는 Load.View를 사용합니다. Load.View는 선택된 model을 store state에 hydrate한 뒤 full model을 View component에 전달합니다.",
+              en: "Use Load.View when a Zone receives ClientView detail data. Load.View hydrates the selected model into store state, then passes the full model to View components. A pending view promise gets its own boundary, so a detail section never blocks the layout around it.",
+              ko: "Zone이 ClientView detail data를 받을 때는 Load.View를 사용합니다. Load.View는 선택된 model을 store state에 hydrate한 뒤 full model을 View component에 전달합니다. 아직 pending인 view promise는 자체 boundary를 가지므로 detail section이 주변 layout을 막지 않습니다.",
             })}
           </div>
         </Docs.Description>

@@ -13,7 +13,7 @@ import { Input } from "../Input";
 import { useUiRecipe } from "../UiOverride";
 import { Label } from "./Label";
 
-interface ListProps<Item> {
+export interface ListProps<Item> {
   className?: string;
   labelClassName?: string;
   label?: string;
@@ -78,7 +78,7 @@ export const List = <Item,>({
   );
 };
 
-interface TextListProps {
+export interface TextListProps {
   label?: string;
   desc?: string;
   labelClassName?: string;
@@ -190,7 +190,7 @@ export const TextList = ({
   );
 };
 
-interface TagsProps {
+export interface TagsProps {
   label?: string;
   desc?: string;
   labelClassName?: string;

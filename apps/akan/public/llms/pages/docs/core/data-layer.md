@@ -13,6 +13,7 @@
 - Document And Service (#document-and-service)
 - Signal To UI (#signal-to-ui)
 - Fetch And Store Instances (#fetch-and-st)
+- Streaming Page Data (#streaming-page-data)
 - Common Decisions (#common-decisions)
 
 ## Content
@@ -82,6 +83,20 @@ fetch.slice.product is not the product data itself. It is slice metadata that te
 In client components, st.use.* reads the current store value and st.do.* runs the generated action. This keeps form state and business actions consistent across screens.
 
 st is for client components. If a component uses st.use.* or st.do.*, mark it with "use client". Server pages should usually load initial data with fetch instead.
+
+Streaming Page Data
+
+fetch.init<Model><Suffix>, fetch.view<Model>, and fetch.edit<Model> are the three helpers a route uses to load a screen. Each returns a handle that is awaitable and destructurable at the same time: awaiting it gives the payload object, while reading a field off it gives that field's own promise.
+
+The difference is where the page waits. An awaited call holds the whole route until the query lands, so nothing below it is sent. A promise handed to a Zone or to Load.Stream is awaited inside that component instead, behind a Suspense boundary of its own — the rest of the page is already on the wire, and each section fills in as its own data arrives.
+
+Plain list and insight data. This is the one field that may cross into a client Zone as a prop.
+
+Hydrated model instances, which React Flight refuses as client props. Consume them in a server component or a Load.Stream.
+
+The single-model payloads for Load.View and Load.Edit. The sibling x<Model> field is the hydrated model, so it is server-only for the same reason.
+
+Await what the page needs immediately and stream the rest. The shell is what SEO snapshots, prerendering, and pre-hydration E2E read, so a value the first screen depends on — an auth gate, a title, an id used to build a link — belongs in an awaited call.
 
 Common Decisions
 
@@ -264,6 +279,30 @@ export const General = () => {
     </>
   );
 };
+```
+
+### Server page: hand each promise to the section that renders it
+
+```ts
+import { fetch, Order, Product, usePage } from "@apps/shop/client";
+import { Load } from "akanjs/ui";
+
+export default async function Page({ params }: PageProps) {
+  const { l } = usePage();
+  const { productInitInShop, productListInShop } = fetch.initProductInShop(params.shopId);
+  const { orderInitInShop } = fetch.initOrderInShop(params.shopId, { insight: false });
+
+  return (
+    <div className="space-y-4">
+      <h1 className="font-bold text-3xl">{l("shop.modelName")}</h1>
+      <Product.Zone.Card init={productInitInShop} />
+      <Order.Zone.Card init={orderInitInShop} />
+      <Load.Stream of={productListInShop}>
+        {(productList) => <Product.Unit.Total count={productList.length} />}
+      </Load.Stream>
+    </div>
+  );
+}
 ```
 
 ## Agent Notes

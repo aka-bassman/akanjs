@@ -36,7 +36,7 @@ Don't forget to add the translation labels for the dashboard sections:
 
 Let's break down how this dashboard page works:
 
-The Load.Page component handles data loading before rendering. It fetches both waiting and pickup orders simultaneously using Promise.all for optimal performance.
+Notice there is no await. Both slice queries leave the moment they are called, and destructuring the result gives one promise per field instead of a resolved object. Each promise goes straight to the Zone that renders it, so the pickup board and the waiting board arrive independently — a slow query on one never delays the other, and the page heading is on the wire before either lands.
 
 Zone components connect slice data to UI rendering. By passing the init data and slice, the Zone automatically subscribes to real-time updates for that specific slice.
 
@@ -237,10 +237,8 @@ import { fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
 
 export default async function Page() {
   const { l } = usePage();
-  const [{ icecreamOrderInitInWaiting }, { icecreamOrderInitInPickup }] = await Promise.all([
-    fetch.initIcecreamOrderInWaiting(),
-    fetch.initIcecreamOrderInPickup(),
-  ]);
+  const { icecreamOrderInitInWaiting } = fetch.initIcecreamOrderInWaiting();
+  const { icecreamOrderInitInPickup } = fetch.initIcecreamOrderInPickup();
   return (
     <div className="flex size-full gap-2 p-4">
       <div className="w-2/3">

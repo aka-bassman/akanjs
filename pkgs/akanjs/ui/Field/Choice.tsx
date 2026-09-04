@@ -7,7 +7,7 @@ import { Switch as UiSwitch } from "../Switch";
 import { ToggleSelect as UtilToggleSelect } from "../ToggleSelect";
 import { Label } from "./Label";
 
-interface SwitchProps {
+export interface SwitchProps {
   label?: string;
   desc?: string;
   labelClassName?: string;
@@ -51,7 +51,7 @@ export const Switch = ({
   );
 };
 
-interface ToggleSelectProps<I, Nullable extends boolean> {
+export interface ToggleSelectProps<I, Nullable extends boolean> {
   className?: string;
   labelClassName?: string;
   label?: string;
@@ -114,7 +114,7 @@ export const ToggleSelect = <I extends string | number | boolean | null, Nullabl
   );
 };
 
-interface MultiToggleSelectProps<I extends string | number | boolean> {
+export interface MultiToggleSelectProps<I extends string | number | boolean> {
   className?: string;
   labelClassName?: string;
   label?: string;

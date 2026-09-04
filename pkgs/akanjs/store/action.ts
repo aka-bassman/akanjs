@@ -973,7 +973,8 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         // `finally` clears the spinner on both paths, and only for the request that is still the current one:
         // a failed fetch used to leave it spinning forever, and a slow one used to clear a newer request's.
         try {
-          const [modelDataList, modelInsight] = await Promise.all([
+          // `{ insight: false }` opts out of the aggregate query; the rows in hand are then the whole count.
+          const [modelDataList, modelObjInsight] = await Promise.all([
             (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
               ...fetchQueryArgs,
               (page - 1) * limit,
@@ -981,19 +982,24 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
               sort,
               { ...fetchPolicy, onError: initForm.onError },
             ),
-            (fetch[namesOfSlice.modelInsight] as (...args: any[]) => Promise<Insight & BaseInsight>)(
-              ...fetchQueryArgs,
-              { ...fetchPolicy, onError: initForm.onError },
-            ),
+            insight === false
+              ? null
+              : (fetch[namesOfSlice.modelInsight] as (...args: any[]) => Promise<Insight & BaseInsight>)(
+                  ...fetchQueryArgs,
+                  { ...fetchPolicy, onError: initForm.onError },
+                ),
           ]);
           if (!requests.isCurrent(ticket)) return;
           const modelList = new DataList(modelDataList);
+          const modelInsight =
+            modelObjInsight ??
+            (new cnst.insight().set({ count: modelDataList.length }) as unknown as Insight & BaseInsight);
           this.set({
             [namesOfSlice.modelList]: modelList,
             [namesOfSlice.modelInsight]: modelInsight,
             [namesOfSlice.modelInitList]: modelList,
             [namesOfSlice.modelInitAt]: new Date(),
-            [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / limit) + 1, 1),
+            [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / (limit || 20)) + 1, 1),
             [namesOfSlice.limitOfModel]: limit,
             [namesOfSlice.queryArgsOfModel]: queryArgs,
             [namesOfSlice.sortOfModel]: sort,

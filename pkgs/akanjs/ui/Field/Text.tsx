@@ -6,7 +6,7 @@ import { agentAttrs } from "../agentAttrs";
 import { Input } from "../Input";
 import { Label } from "./Label";
 
-interface TextProps {
+export interface TextProps {
   label?: string;
   desc?: string;
   labelClassName?: string;
@@ -73,7 +73,7 @@ export const Text = ({
   );
 };
 
-interface TextAreaProps {
+export interface TextAreaProps {
   label?: string;
   desc?: string;
   labelClassName?: string;
@@ -140,7 +140,7 @@ export const TextArea = ({
   );
 };
 
-interface EmailProps {
+export interface EmailProps {
   label?: string;
   desc?: string;
   labelClassName?: string;
@@ -207,7 +207,7 @@ export const Email = ({
   );
 };
 
-interface PhoneProps {
+export interface PhoneProps {
   label?: string;
   desc?: string;
   labelClassName?: string;
@@ -271,7 +271,7 @@ export const Phone = ({
   );
 };
 
-interface PasswordProps {
+export interface PasswordProps {
   label?: string;
   desc?: string;
   labelClassName?: string;

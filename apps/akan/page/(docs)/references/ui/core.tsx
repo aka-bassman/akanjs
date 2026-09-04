@@ -164,24 +164,24 @@ export const ProductUnit = ({ product }) => (
     {
       name: "Load",
       desc: l.trans({
-        en: "Namespace for data loading bridges between Akan fetch results and React rendering. It is commonly used for model detail pages, edit pages, pagination, and server/client page loading.",
-        ko: "Akan fetch 결과와 React rendering을 연결하는 data loading namespace입니다. model detail page, edit page, pagination, server/client page loading에 자주 사용됩니다.",
+        en: "Namespace for data loading bridges between Akan fetch results and React rendering. It is commonly used for model detail pages, edit pages, pagination, and server/client page loading. Every member takes a resolved value or a promise, and gives a pending promise a Suspense boundary of its own so one slow section never holds the rest of the page.",
+        ko: "Akan fetch 결과와 React rendering을 연결하는 data loading namespace입니다. model detail page, edit page, pagination, server/client page loading에 자주 사용됩니다. 모든 member가 해소된 값과 promise를 모두 받으며, pending promise에는 자체 Suspense boundary를 주어 느린 section 하나가 page 전체를 붙잡지 않게 합니다.",
       }),
       props: [
         {
           name: "Load.View",
           type: "{ view, renderView, loading?, noDiv? }",
           desc: l.trans({
-            en: "Hydrates a full model view and renders it through `renderView`.",
-            ko: "full model view를 hydrate하고 `renderView`로 렌더링합니다.",
+            en: "Hydrates a full model view and renders it through `renderView`. A resolved `view` renders in the shell with no boundary; a pending one renders `loading` behind a Suspense boundary of its own.",
+            ko: "full model view를 hydrate하고 `renderView`로 렌더링합니다. 이미 해소된 `view`는 boundary 없이 shell에 렌더링되고, 아직 pending인 promise는 자체 Suspense boundary 뒤에서 `loading`을 먼저 보여줍니다.",
           }),
         },
         {
           name: "Load.Edit",
-          type: "component",
+          type: "{ edit, slice, type, loading?, ... }",
           desc: l.trans({
-            en: "Loads edit payloads for model edit/new workflows.",
-            ko: "model edit/new workflow를 위한 edit payload를 로드합니다.",
+            en: "Loads edit payloads for model edit/new workflows. Takes the resolved payload, the `x<Model>Edit` promise, or a partial form object.",
+            ko: "model edit/new workflow를 위한 edit payload를 로드합니다. 해소된 payload, `x<Model>Edit` promise, partial form 객체를 모두 받습니다.",
           }),
         },
         {
@@ -194,21 +194,37 @@ export const ProductUnit = ({ product }) => (
         },
         {
           name: "Load.Units",
-          type: "component",
+          type: "{ init, renderItem, renderList?, renderEmpty?, loading?, ... }",
           desc: l.trans({
-            en: "Renders list/unit data from pagination-style results.",
-            ko: "pagination-style 결과에서 list/unit data를 렌더링합니다.",
+            en: "Renders list/unit data from pagination-style results, and seeds the client store so the generated pagination, query, sort, and refresh helpers keep working after hydration.",
+            ko: "pagination-style 결과에서 list/unit data를 렌더링하고, hydration 이후에도 generated pagination, query, sort, refresh helper가 동작하도록 client store를 seed합니다.",
+          }),
+        },
+        {
+          name: "Load.Stream",
+          type: "{ of, fallback?, children }",
+          desc: l.trans({
+            en: "Awaits one promise behind its own Suspense boundary and calls `children` with the value. Use it for data no other `Load.*` covers — a slice's `x<Model>List<Suffix>` promise, or any single promise a section needs. A resolved value renders in the shell with no boundary at all, so the same call site works either way.",
+            ko: "promise 하나를 자체 Suspense boundary 뒤에서 await하고 값을 `children`에 넘깁니다. 다른 `Load.*`가 다루지 않는 data — slice의 `x<Model>List<Suffix>` promise나 section이 필요한 임의의 promise — 에 사용합니다. 이미 해소된 값은 boundary 없이 shell에 렌더링되므로 같은 호출부가 양쪽 모두를 처리합니다.",
           }),
         },
       ],
-      code: `import { Load } from "akanjs/ui";
+      code: `import { fetch, Product } from "@apps/shop/client";
+import { Load, Loading } from "akanjs/ui";
 
-export default function ProductPage({ view }) {
+export default async function ProductPage({ params }) {
+  const { productView } = fetch.viewProduct(params.productId);
+  const { productListInShop } = fetch.initProductInShop(params.shopId);
   return (
-    <Load.View
-      view={view}
-      renderView={(product) => <ProductView product={product} />}
-    />
+    <>
+      <Load.View
+        view={productView}
+        renderView={(product) => <Product.View.General product={product} />}
+      />
+      <Load.Stream of={productListInShop} fallback={<Loading.Skeleton active />}>
+        {(productList) => <Product.Unit.Total count={productList.length} />}
+      </Load.Stream>
+    </>
   );
 }`,
     },

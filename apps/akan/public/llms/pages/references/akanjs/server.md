@@ -28,7 +28,7 @@ Type for server-side web proxy registrations. Libraries use it for locale routin
 
 Legacy method decorator that catches errors and logs a warning instead of throwing. It appears in integration srvkit classes where a best-effort external API call should not crash the caller.
 
-Legacy method decorators for server-side service/document helpers. `Transaction` wraps execution in the detected database transaction and `Cache` memoizes method results for a timeout window.
+Legacy method decorators for server-side service/document helpers. `Transaction` wraps execution in the detected database transaction and `CacheMethod` memoizes method results for a timeout window.
 
 `akanjs/server` contains app startup, server options, web proxy helpers, decorators, runtime artifacts, and operational utilities. Import it from app entrypoints, `lib/option.ts`, and server-only srvkit integrations.
 

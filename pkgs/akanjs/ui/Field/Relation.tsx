@@ -9,7 +9,7 @@ import { agentAttrs } from "../agentAttrs";
 import { Select } from "../Select";
 import { Label } from "./Label";
 
-interface ParentProps<Light> {
+export interface ParentProps<Light> {
   label?: string;
   desc?: string;
   labelClassName?: string;
@@ -116,7 +116,7 @@ export const Parent = <Light extends { id: string }>({
   );
 };
 
-interface ParentIdProps<Light> {
+export interface ParentIdProps<Light> {
   label?: string;
   desc?: string;
   labelClassName?: string;
@@ -206,7 +206,7 @@ export const ParentId = <Light extends { id: string }>({
   );
 };
 
-interface ChildrenProps<Light> {
+export interface ChildrenProps<Light> {
   label?: string;
   desc?: string;
   labelClassName?: string;
@@ -304,7 +304,7 @@ export const Children = <Light extends { id: string }>({
   );
 };
 
-interface ChildrenIdProps<Light> {
+export interface ChildrenIdProps<Light> {
   label?: string;
   desc?: string;
   labelClassName?: string;

@@ -48,15 +48,17 @@ Constrained detail page container.
 
 Section container for feature zones and page blocks.
 
-Namespace for data loading bridges between Akan fetch results and React rendering. It is commonly used for model detail pages, edit pages, pagination, and server/client page loading.
+Namespace for data loading bridges between Akan fetch results and React rendering. It is commonly used for model detail pages, edit pages, pagination, and server/client page loading. Every member takes a resolved value or a promise, and gives a pending promise a Suspense boundary of its own so one slow section never holds the rest of the page.
 
-Hydrates a full model view and renders it through `renderView`.
+Hydrates a full model view and renders it through `renderView`. A resolved `view` renders in the shell with no boundary; a pending one renders `loading` behind a Suspense boundary of its own.
 
-Loads edit payloads for model edit/new workflows.
+Loads edit payloads for model edit/new workflows. Takes the resolved payload, the `x<Model>Edit` promise, or a partial form object.
 
 Shared SSR/CSR page loader wrapper.
 
-Renders list/unit data from pagination-style results.
+Renders list/unit data from pagination-style results, and seeds the client store so the generated pagination, query, sort, and refresh helpers keep working after hydration.
+
+Awaits one promise behind its own Suspense boundary and calls `children` with the value. Use it for data no other `Load.*` covers — a slice's `x<Model>List<Suffix>` promise, or any single promise a section needs. A resolved value renders in the shell with no boundary at all, so the same call site works either way.
 
 Namespace of model workflow shells for generated Akan stores: view wrappers, edit/new modals, removal flows, and admin panels.
 

@@ -1312,6 +1312,148 @@ describe("FetchClient database signal helpers", () => {
     );
     expect(fetchCalls.at(-1)?.url).toBe("https://api.example/fetchTest/updateFetchTestItem/bbbbbbbbbbbbbbbbbbbbbbbb");
   });
+
+  test("parses the response in place for the caller that started it, and a copy for the next", async () => {
+    setMockFetch();
+    setAkanPublicEnv();
+    if (!requestStorage) return;
+    jsonResponses.push({ title: "Shared", count: 1, nested: { label: "N" } });
+    const client = new FetchClient("https://api.example", {}, { fetchTestItem: databaseSignal });
+
+    const [first, second] = await requestStorage.run(new Request("https://example.test/page"), async () => {
+      const owner = (await client.handler.getFetchTestItemView("1234567890abcdef12345678")) as {
+        fetchTestItemObj: object;
+      };
+      const later = (await client.handler.getFetchTestItemView("1234567890abcdef12345678")) as {
+        fetchTestItemObj: object;
+      };
+      return [owner.fetchTestItemObj, later.fetchTestItemObj];
+    });
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(second).toEqual(first);
+    expect(second).not.toBe(first);
+  });
+
+  test("hands out one promise per init field, and awaiting reuses the same instances", async () => {
+    setMockFetch();
+    jsonResponses.push([{ title: "Row", count: 1, nested: { label: "N" } }], { count: 1 });
+    const client = new FetchClient("https://api.example", {}, { fetchTestItem: databaseSignal });
+    const handle = client.handler.initFetchTestItemByOwner("abcdefabcdefabcdefabcdef") as unknown as PromiseLike<
+      Record<string, unknown>
+    > & {
+      fetchTestItemInitByOwner: Promise<Record<string, unknown>>;
+      fetchTestItemListByOwner: Promise<DataList<{ id: string }>>;
+      fetchTestItemInsightByOwner: Promise<unknown>;
+    };
+
+    const list = await handle.fetchTestItemListByOwner;
+    const serverInit = await handle.fetchTestItemInitByOwner;
+    expect(list).toBeInstanceOf(DataList);
+    expect(serverInit.lastPageOfFetchTestItem).toBe(1);
+
+    const awaited = await handle;
+    expect(awaited.fetchTestItemListByOwner).toBe(list);
+    expect(awaited.fetchTestItemInitByOwner).toBe(serverInit);
+    // Reading fields and then awaiting is one round of requests, not two.
+    expect(fetchCalls).toHaveLength(2);
+  });
+
+  test("resolves the list without waiting for the aggregate", async () => {
+    setMockFetch();
+    const mockFetch = globalThis.fetch;
+    let releaseInsight!: () => void;
+    const insightHeld = new Promise<void>((resolve) => {
+      releaseInsight = resolve;
+    });
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).includes("Insight")) await insightHeld;
+      return await mockFetch(url as string, init);
+    }) as typeof fetch;
+    jsonResponses.push([{ title: "Row", count: 1, nested: { label: "N" } }], { count: 1 });
+    const client = new FetchClient("https://api.example", {}, { fetchTestItem: databaseSignal });
+    const handle = client.handler.initFetchTestItemByOwner("abcdefabcdefabcdefabcdef") as unknown as {
+      fetchTestItemInitByOwner: Promise<Record<string, unknown>>;
+      fetchTestItemListByOwner: Promise<DataList<{ id: string }>>;
+    };
+
+    let initSettled = false;
+    void handle.fetchTestItemInitByOwner.then(() => {
+      initSettled = true;
+    });
+    expect(await handle.fetchTestItemListByOwner).toBeInstanceOf(DataList);
+    await new Promise((resolve) => originalSetTimeout(resolve, 5));
+    expect(initSettled).toBe(false);
+
+    releaseInsight();
+    expect((await handle.fetchTestItemInitByOwner).lastPageOfFetchTestItem).toBe(1);
+  });
+
+  test("skips the aggregate query when the caller opts out of the insight", async () => {
+    setMockFetch();
+    jsonResponses.push([{ title: "Row", count: 1, nested: { label: "N" } }]);
+    const client = new FetchClient("https://api.example", {}, { fetchTestItem: databaseSignal });
+    const handle = client.handler.initFetchTestItemByOwner("abcdefabcdefabcdefabcdef", {
+      limit: 0,
+      insight: false,
+    }) as unknown as {
+      fetchTestItemInitByOwner: Promise<Record<string, unknown>>;
+      fetchTestItemInsightByOwner: Promise<unknown>;
+    };
+
+    const serverInit = await handle.fetchTestItemInitByOwner;
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0]?.url).toContain("fetchTestItemListByOwner");
+    expect(serverInit.fetchTestItemObjInsight).toBeNull();
+    expect(serverInit.lastPageOfFetchTestItem).toBe(1);
+    expect(await handle.fetchTestItemInsightByOwner).toBeInstanceOf(FetchTestInsight);
+  });
+
+  test("hands out the view payload and the model as separate promises", async () => {
+    setMockFetch();
+    jsonResponses.push({ title: "View", count: 1, nested: { label: "N" } });
+    const client = new FetchClient("https://api.example", {}, { fetchTestItem: databaseSignal });
+    const handle = client.handler.viewFetchTestItem("1234567890abcdef12345678") as unknown as PromiseLike<
+      Record<string, unknown>
+    > & {
+      fetchTestItem: Promise<unknown>;
+      fetchTestItemView: Promise<Record<string, unknown>>;
+    };
+
+    const view = await handle.fetchTestItemView;
+    expect(view.fetchTestItemObj).toMatchObject({ title: "View" });
+    const awaited = await handle;
+    expect(awaited.fetchTestItemView).toBe(view);
+    expect(awaited.fetchTestItem).toBeInstanceOf(FetchTestFull);
+    expect(fetchCalls).toHaveLength(1);
+  });
+
+  test("does not leave an unhandled rejection when nothing reads a field", async () => {
+    setMockFetch();
+    rawResponses.push(new Error("list down"), new Error("insight down"));
+    const rejections: unknown[] = [];
+    const collect = (reason: unknown) => rejections.push(reason);
+    process.on("unhandledRejection", collect);
+    try {
+      const client = new FetchClient("https://api.example", {}, { fetchTestItem: databaseSignal });
+      client.handler.initFetchTestItemByOwner("abcdefabcdefabcdefabcdef");
+      await new Promise((resolve) => originalSetTimeout(resolve, 10));
+      expect(rejections).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", collect);
+    }
+  });
+
+  test("reports a failed request to whoever awaits the handle", async () => {
+    setMockFetch();
+    rawResponses.push(new Error("list down"), new Error("insight down"));
+    const client = new FetchClient("https://api.example", {}, { fetchTestItem: databaseSignal });
+    const handle = client.handler.initFetchTestItemByOwner("abcdefabcdefabcdefabcdef") as unknown as PromiseLike<
+      Record<string, unknown>
+    >;
+
+    await expect(Promise.resolve(handle)).rejects.toThrow();
+  });
 });
 
 describe("WsClient", () => {

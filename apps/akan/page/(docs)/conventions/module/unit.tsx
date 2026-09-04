@@ -195,8 +195,8 @@ export const Mini = ({ article, className, href }: MiniProps) => (
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Use Load.Units when a slice manages loading, pagination, refresh, and empty states. If the page already has an array, render Units directly with map, which is common in server-rendered pages.",
-              ko: "slice가 loading, pagination, refresh, empty state를 관리해야 하면 Load.Units를 사용합니다. page가 이미 배열을 가지고 있다면 map으로 Unit을 직접 렌더링하며, server-rendered page에서 자주 쓰입니다.",
+              en: "Use Load.Units when a slice manages loading, pagination, refresh, and empty states. If the page already has an array, render Units directly with map, which is common in server-rendered pages. If it holds the slice's x<Model>List<Suffix> promise instead, wrap the map in Load.Stream so the list renders behind its own boundary rather than holding the route.",
+              ko: "slice가 loading, pagination, refresh, empty state를 관리해야 하면 Load.Units를 사용합니다. page가 이미 배열을 가지고 있다면 map으로 Unit을 직접 렌더링하며, server-rendered page에서 자주 쓰입니다. 배열이 아니라 slice의 x<Model>List<Suffix> promise를 들고 있다면 map을 Load.Stream으로 감싸서, route를 붙잡지 않고 자체 boundary 뒤에서 list가 렌더링되게 하세요.",
             })}
           </div>
           <div>
@@ -265,6 +265,19 @@ export const Mini = ({ article, className, href }: MiniProps) => (
     <Article.Unit.Card key={article.id} href={"/article/" + article.id} article={article} />
   ))}
 </div>`}
+        />
+        <Code.Snippet
+          className="w-full"
+          title="Direct SSR rendering from a slice promise"
+          code={`<Load.Stream of={articleListInBoard}>
+  {(articleList) => (
+    <div className="flex flex-col gap-2">
+      {articleList.map((article) => (
+        <Article.Unit.Card key={article.id} href={"/article/" + article.id} article={article} />
+      ))}
+    </div>
+  )}
+</Load.Stream>`}
         />
       </Scroll.Slide>
       <Divider />

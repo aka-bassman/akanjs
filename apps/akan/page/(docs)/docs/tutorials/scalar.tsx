@@ -1073,7 +1073,7 @@ import { Inventory } from "@apps/koyo/client"; // [!code ++]
 
 export default async function Page() {
   const { l } = usePage();
-  const { icecreamOrderInitInPublic } = await fetch.initIcecreamOrderInPublic();
+  const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
         
   return (

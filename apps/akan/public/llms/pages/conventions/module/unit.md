@@ -55,7 +55,7 @@ Units may show small UI actions such as remove, copy, or detail buttons. Keep th
 
 Load.Units And Direct Rendering
 
-Use Load.Units when a slice manages loading, pagination, refresh, and empty states. If the page already has an array, render Units directly with map, which is common in server-rendered pages.
+Use Load.Units when a slice manages loading, pagination, refresh, and empty states. If the page already has an array, render Units directly with map, which is common in server-rendered pages. If it holds the slice's x<Model>List<Suffix> promise instead, wrap the map in Load.Stream so the list renders behind its own boundary rather than holding the route.
 
 Load.Units also hydrates slice state into the client store so generated pagination, query, sort, refresh, and insight helpers can keep working after the first render.
 
@@ -148,6 +148,20 @@ export const Gallery = ({ article, href }: ModelProps<"article", cnst.LightArtic
     <Article.Unit.Card key={article.id} href={"/article/" + article.id} article={article} />
   ))}
 </div>
+```
+
+### Direct SSR rendering from a slice promise
+
+```ts
+<Load.Stream of={articleListInBoard}>
+  {(articleList) => (
+    <div className="flex flex-col gap-2">
+      {articleList.map((article) => (
+        <Article.Unit.Card key={article.id} href={"/article/" + article.id} article={article} />
+      ))}
+    </div>
+  )}
+</Load.Stream>
 ```
 
 ## Agent Notes

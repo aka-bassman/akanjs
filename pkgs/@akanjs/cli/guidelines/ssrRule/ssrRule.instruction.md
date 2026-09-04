@@ -71,17 +71,61 @@ Never collapse this into one client file with a mode `useState` and every panel 
 
 **③ Sync state instead of fetching it.** A server component cannot hold state, so render the initial data on the
 server and hand it across as a serializable object. The route calls `fetch.initXInY(...)` / `fetch.viewX(...)` and
-passes the result into a `Zone`; `Load.Units` / `Load.View` hydrate the store from it. A `useEffect(…, [])` that
-fetches on mount renders an empty shell, hydrates, then round-trips for data the server already had.
+passes `xInitInY` / `xView` into a `Zone`; `Load.Units` / `Load.View` hydrate the store from it. A
+`useEffect(…, [])` that fetches on mount renders an empty shell, hydrates, then round-trips for data the server
+already had.
 
 **④ Push the boundary down to the leaf that needs it.** A store-reading `Zone` should hold zero markup and delegate
 to a server `View` — `User.Zone.Self` is one line, `st.use.self()` into `<User.View.General user={self} />`, so the
 whole detail surface renders server-side wherever a route uses the `View` directly.
 
-**⑤ Hand the promise across, not the awaited value.** `ClientInit` / `ClientView` are `PromiseOrObject<T>`, so a
-route may pass an unawaited `fetch.initX(...)` and `Load.*` resolves it behind a skeleton. `await` blocks the shell
-for data the page needs immediately; the promise streams the rest. Independent fetches still go through one
+**⑤ Hand each promise across, not the awaited value.** `fetch.init<Model><Suffix>`, `fetch.view<Model>` and
+`fetch.edit<Model>` are awaitable *and* destructurable, so a route can split one call into the promises its
+sections actually need:
+
+```tsx
+export default async function Page({ params: { orgId } }: PageProps) {
+  const { taskInitInOrg, taskListInOrg } = fetch.initTaskInOrg(orgId);
+  const { orgView } = fetch.viewOrg(orgId);
+  return (
+    <>
+      <Org.Zone.Header view={orgView} />
+      <Task.Zone.Card init={taskInitInOrg} />
+      <Load.Stream of={taskListInOrg} fallback={<Loading.Skeleton active />}>
+        {(taskList) => taskList.map((task) => <Task.Unit.Row key={task.id} task={task} />)}
+      </Load.Stream>
+    </>
+  );
+}
+```
+
+Both queries leave immediately — splitting the result never serializes them — and each section renders behind its
+own boundary as its own data lands, so one slow query no longer holds the page. `x<Slice>List` does not wait for
+the aggregate the way `x<Slice>Init` must.
+
+**`await` is still the right call for what the page needs immediately.** It returns the shape the helper always
+gave and keeps that markup in the shell, which is what SEO snapshots, prerendering and pre-hydration E2E read; a
+boundary moves its subtree out of the shell and into the stream. Independent awaited fetches still go through one
 `Promise.all`.
+
+Three rules the shape enforces:
+
+- **`x<Slice>List` and `x<Slice>Insight` are server-only.** They hold hydrated model instances, which React Flight
+  refuses as props to a client component. Consume them in a server component; `x<Slice>Init` (plain data) is the
+  one that crosses into a `Zone`.
+- **Never hand the whole handle to a component** — pass the field. `<Zone init={xInitInY} />`, not
+  `<Zone init={fetch.initXInY(id)} />`.
+- **Rendering the list on the server costs one extra hydration.** `Load.Stream` builds the model instances on the
+  server and `Load.Units` builds them again after hydration, so a large list is still better off going through
+  `x<Slice>Init` → `Zone` alone. Reach for `Load.Stream` when the markup is small and static enough that having
+  it in the HTML is worth more than the second pass.
+
+**A failure now surfaces where it happened.** One `Promise.all` in the page body reports nothing about which of
+eight queries threw; per-section boundaries put each rejection at its own boundary.
+
+**Keep the auth gate in the shell.** A redirect thrown after the shell has flushed can only be delivered as a
+soft-redirect script, so `getSelf({ unauthorize: "/signin" })` stays in `_layout.tsx` or the page body — never
+inside a streamed section.
 
 **⑥ Use named `ReactNode` slots, not just `children`.** `Layout.Navbar` accepts `title`, `back`, `left`, `right`,
 and `children`, so a client shell composes server-rendered content in five places instead of absorbing it.

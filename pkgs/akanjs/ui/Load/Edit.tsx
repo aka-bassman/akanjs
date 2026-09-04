@@ -1,4 +1,4 @@
-import { deepObjectify } from "akanjs/common";
+import { deepObjectify, isThenable } from "akanjs/common";
 import type { ServerEdit } from "akanjs/fetch";
 
 import Edit_Client, { type EditProps } from "./Edit_Client";
@@ -12,7 +12,7 @@ export default function Edit<T extends string, Full extends { id: string }>({ ed
         : "new";
     return editType === "edit" ? edit : deepObjectify(edit, { serializable: true });
   };
-  const objEdit = edit instanceof Promise ? edit.then(getObjEdit) : getObjEdit(edit);
+  const objEdit = isThenable(edit) ? Promise.resolve(edit).then(getObjEdit) : getObjEdit(edit);
   return (
     <Edit_Client edit={objEdit as unknown as ServerEdit<T, Full> | Partial<Full> | Promise<Partial<Full>>} {...props} />
   );

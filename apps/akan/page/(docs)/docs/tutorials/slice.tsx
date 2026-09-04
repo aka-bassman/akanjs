@@ -198,10 +198,8 @@ import { fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
 
 export default async function Page() {
   const { l } = usePage();
-  const [{ icecreamOrderInitInWaiting }, { icecreamOrderInitInPickup }] = await Promise.all([
-    fetch.initIcecreamOrderInWaiting(),
-    fetch.initIcecreamOrderInPickup(),
-  ]);
+  const { icecreamOrderInitInWaiting } = fetch.initIcecreamOrderInWaiting();
+  const { icecreamOrderInitInPickup } = fetch.initIcecreamOrderInPickup();
   return (
     <div className="flex size-full gap-2 p-4">
       <div className="w-2/3">
@@ -325,12 +323,12 @@ export const dictionary = modelDictionary(["en", "ko"])
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-primary">📦</span>
-                <strong className="text-primary">Load.Page</strong>
+                <strong className="text-primary">{"fetch.initIcecreamOrderIn*()"}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
                 {l.trans({
-                  en: `The Load.Page component handles data loading before rendering. It fetches both waiting and pickup orders simultaneously using Promise.all for optimal performance.`,
-                  ko: `Load.Page 컴포넌트는 렌더링 전에 데이터 로딩을 처리합니다. Promise.all을 사용하여 대기 중인 주문과 픽업 주문을 동시에 가져와 최적의 성능을 제공합니다.`,
+                  en: `Notice there is no await. Both slice queries leave the moment they are called, and destructuring the result gives one promise per field instead of a resolved object. Each promise goes straight to the Zone that renders it, so the pickup board and the waiting board arrive independently — a slow query on one never delays the other, and the page heading is on the wire before either lands.`,
+                  ko: `await가 없다는 점에 주목하세요. 두 슬라이스 쿼리는 호출되는 순간 이미 출발하고, 결과를 구조분해하면 해소된 객체가 아니라 필드별 promise를 얻습니다. 각 promise는 그것을 렌더링하는 Zone에 그대로 전달되므로 픽업 보드와 대기 보드가 서로 독립적으로 도착합니다 — 한쪽 쿼리가 느려도 다른 쪽이 기다리지 않고, 페이지 제목은 둘 중 어느 것도 도착하기 전에 이미 전송됩니다.`,
                 })}
               </div>
             </div>

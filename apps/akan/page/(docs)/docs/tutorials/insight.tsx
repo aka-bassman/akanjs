@@ -387,7 +387,7 @@ import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@apps/koyo/clien
 
 export default async function Page() {
   const { l } = usePage();
-  const { icecreamOrderInitInPublic } = await fetch.initIcecreamOrderInPublic();
+  const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
   return (
     <div className="space-y-4">
@@ -904,7 +904,7 @@ import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@apps/koyo/clien
 
 export default async function Page() {
   const { l } = usePage();
-  const { icecreamOrderInitInPublic } = await fetch.initIcecreamOrderInPublic();
+  const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
   return (
     <div className="space-y-4">

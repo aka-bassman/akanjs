@@ -410,6 +410,88 @@ export const General = () => {
       </Scroll.Slide>
       <Divider />
 
+      <Scroll.Slide
+        id="streaming-page-data"
+        title={l.trans({ en: "Streaming Page Data", ko: "페이지 데이터 스트리밍" })}
+      >
+        <Docs.Title>{l.trans({ en: "Streaming Page Data", ko: "페이지 데이터 스트리밍" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "fetch.init<Model><Suffix>, fetch.view<Model>, and fetch.edit<Model> are the three helpers a route uses to load a screen. Each returns a handle that is awaitable and destructurable at the same time: awaiting it gives the payload object, while reading a field off it gives that field's own promise.",
+              ko: "fetch.init<Model><Suffix>, fetch.view<Model>, fetch.edit<Model>는 route가 화면 데이터를 불러올 때 쓰는 세 helper입니다. 각각 await도 되고 구조분해도 되는 handle을 반환합니다. await하면 payload 객체를 주고, field를 읽으면 그 field의 promise를 줍니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "The difference is where the page waits. An awaited call holds the whole route until the query lands, so nothing below it is sent. A promise handed to a Zone or to Load.Stream is awaited inside that component instead, behind a Suspense boundary of its own — the rest of the page is already on the wire, and each section fills in as its own data arrives.",
+              ko: "차이는 page가 어디서 기다리는지입니다. await한 호출은 query가 끝날 때까지 route 전체를 붙잡으므로 그 아래 아무것도 전송되지 않습니다. 반면 Zone이나 Load.Stream에 넘긴 promise는 그 component 안에서, 자체 Suspense boundary 뒤에서 await됩니다 — page의 나머지는 이미 전송된 상태이고 각 section은 자기 data가 도착하는 대로 채워집니다.",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="Server page: hand each promise to the section that renders it"
+            code={`import { fetch, Order, Product, usePage } from "@apps/shop/client";
+import { Load } from "akanjs/ui";
+
+export default async function Page({ params }: PageProps) {
+  const { l } = usePage();
+  const { productInitInShop, productListInShop } = fetch.initProductInShop(params.shopId);
+  const { orderInitInShop } = fetch.initOrderInShop(params.shopId, { insight: false });
+
+  return (
+    <div className="space-y-4">
+      <h1 className="font-bold text-3xl">{l("shop.modelName")}</h1>
+      <Product.Zone.Card init={productInitInShop} />
+      <Order.Zone.Card init={orderInitInShop} />
+      <Load.Stream of={productListInShop}>
+        {(productList) => <Product.Unit.Total count={productList.length} />}
+      </Load.Stream>
+    </div>
+  );
+}`}
+          />
+          <div className="space-y-1">
+            {[
+              {
+                title: "x<Model>Init<Suffix>",
+                desc: l.trans({
+                  en: "Plain list and insight data. This is the one field that may cross into a client Zone as a prop.",
+                  ko: "plain list와 insight data입니다. client Zone의 prop으로 넘길 수 있는 유일한 field입니다.",
+                }),
+              },
+              {
+                title: "x<Model>List<Suffix> / x<Model>Insight<Suffix>",
+                desc: l.trans({
+                  en: "Hydrated model instances, which React Flight refuses as client props. Consume them in a server component or a Load.Stream.",
+                  ko: "hydrate된 model instance입니다. React Flight가 client prop으로 거부하므로 server component나 Load.Stream 안에서 사용합니다.",
+                }),
+              },
+              {
+                title: "x<Model>View / x<Model>Edit",
+                desc: l.trans({
+                  en: "The single-model payloads for Load.View and Load.Edit. The sibling x<Model> field is the hydrated model, so it is server-only for the same reason.",
+                  ko: "Load.View, Load.Edit에 넘기는 단일 model payload입니다. 형제 field인 x<Model>은 hydrate된 model이므로 같은 이유로 server 전용입니다.",
+                }),
+              },
+            ].map(({ title, desc }) => (
+              <div key={title} className={panelRecipe({ padding: "row" })}>
+                <span className="font-mono font-semibold text-primary">{title}: </span>
+
+                <span className="text-foreground/70 text-sm">{desc}</span>
+              </div>
+            ))}
+          </div>
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: "Await what the page needs immediately and stream the rest. The shell is what SEO snapshots, prerendering, and pre-hydration E2E read, so a value the first screen depends on — an auth gate, a title, an id used to build a link — belongs in an awaited call.",
+              ko: "page가 즉시 필요한 것은 await하고 나머지는 스트리밍하세요. shell은 SEO 스냅샷, prerendering, hydration 이전 E2E가 읽는 대상이므로, 첫 화면이 의존하는 값 — 인증 게이트, 제목, link를 만드는 데 쓰는 id — 은 await한 호출에 두어야 합니다.",
+            })}
+          </Docs.Alert>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
       <Scroll.Slide id="common-decisions" title={l.trans({ en: "Common Decisions", ko: "자주 하는 판단" })}>
         <Docs.Title>{l.trans({ en: "Common Decisions", ko: "자주 하는 판단" })}</Docs.Title>
         <Docs.Description>

@@ -19,6 +19,7 @@ import { LogHub } from "./logging/logHub";
 import { LogStreamRoute } from "./logging/logStreamRoute";
 import { RotatingLogWriter } from "./logging/rotatingLogWriter";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
+import { resolveStaticPath } from "./staticPath";
 import { getWebConfigFromEnv } from "./types";
 
 interface ChildState {
@@ -674,7 +675,7 @@ export class AkanApp {
     if (!this.#web.ssr) return null;
     const clientPrefix = "/_akan/client/";
     if (url.pathname.startsWith(clientPrefix)) {
-      const filePath = this.#safeResolve(
+      const filePath = resolveStaticPath(
         path.join(this.#artifactDir, "client"),
         url.pathname.slice(clientPrefix.length),
       );
@@ -689,7 +690,7 @@ export class AkanApp {
 
     for (const prefix of ["/_akan/styles/", "/_akan/fonts/"]) {
       if (!url.pathname.startsWith(prefix)) continue;
-      const filePath = this.#safeResolve(this.#artifactDir, url.pathname.slice("/_akan/".length));
+      const filePath = resolveStaticPath(this.#artifactDir, url.pathname.slice("/_akan/".length));
       if (!filePath) return new Response("Not Found", { status: 404 });
       const file = Bun.file(filePath);
       if (!(await file.exists())) return new Response("Not Found", { status: 404 });
@@ -1027,23 +1028,6 @@ export class AkanApp {
     }
 
     return new Response(Bun.file(filePath).stream(), { headers });
-  }
-
-  #safeResolve(baseDir: string, urlPath: string): string | null {
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(urlPath);
-    } catch {
-      return null;
-    }
-    if (decoded.includes("\0")) return null;
-    const normalizedBase = path.resolve(baseDir);
-    const rel = decoded.replace(/^[/\\]+/, "");
-    const resolved = path.resolve(normalizedBase, rel);
-    if (resolved === normalizedBase) return resolved;
-    const baseWithSep = normalizedBase.endsWith(path.sep) ? normalizedBase : `${normalizedBase}${path.sep}`;
-    if (!resolved.startsWith(baseWithSep)) return null;
-    return resolved;
   }
 
   #makeProxyHeaders(req: Request, childIdx: number, server?: Bun.Server<GatewayWsData>) {

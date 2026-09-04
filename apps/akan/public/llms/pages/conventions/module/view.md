@@ -50,7 +50,9 @@ A View can render every field defined on the constant full model because it rece
 
 Using View In Pages
 
-A server page usually fetches full view data, then passes the view object to a Zone wrapper or directly into Load.View.
+A server page starts the view request, then passes the view payload to a Zone wrapper or directly into Load.View. Leaving the call un-awaited hands the promise across instead of the resolved object, so the surrounding page markup is sent while the query is still running and Load.View fills the section in behind its own boundary.
+
+Await the call instead when the page itself reads the model — a title, an id used to build a link, or a redirect decision. `await fetch.viewRelease(id)` returns the same object it always did, and the sibling `release` field is the hydrated model, which stays on the server because React Flight refuses a class instance as a client prop.
 
 Load.View And Store Hydration
 
@@ -131,7 +133,7 @@ export const General = ({ order }: OrderViewProps) => {
 
 ```ts
 export default async function Page({ params }: PageProps) {
-  const { releaseView } = await fetch.viewRelease(params.releaseId);
+  const { releaseView } = fetch.viewRelease(params.releaseId);
   return <Release.Zone.View view={releaseView} />;
 }
 ```

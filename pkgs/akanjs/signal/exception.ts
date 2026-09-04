@@ -19,6 +19,17 @@
  * The test for the first two is whether a caller can act on it. The test for the third is whether *this repo*
  * has to change for the throw to stop happening.
  */
+/**
+ * The shape of every `Exception.<Status>` shorthand below.
+ *
+ * The annotation is not decoration: a `static X = class extends Exception {}` has to be serialized into the
+ * `.d.ts` as a structural type, and that type contains `Exception`, whose statics contain it again — declaration
+ * emit gives up with TS7056 and `akn build-package akanjs` fails. Naming the type breaks the cycle.
+ */
+export interface StatusException {
+  new (message?: string, details?: unknown): Exception;
+}
+
 export class Exception extends Error {
   constructor(
     public readonly statusCode: number,
@@ -38,37 +49,37 @@ export class Exception extends Error {
       ...(this.data !== undefined ? { data: this.data } : {}),
     };
   }
-  static BadRequest = class BadRequestException extends Exception {
+  static BadRequest: StatusException = class BadRequestException extends Exception {
     constructor(message = "Bad Request", details?: unknown) {
       super(400, message, details);
     }
   };
-  static Unauthorized = class UnauthorizedException extends Exception {
+  static Unauthorized: StatusException = class UnauthorizedException extends Exception {
     constructor(message = "Unauthorized", details?: unknown) {
       super(401, message, details);
     }
   };
-  static Forbidden = class ForbiddenException extends Exception {
+  static Forbidden: StatusException = class ForbiddenException extends Exception {
     constructor(message = "Forbidden", details?: unknown) {
       super(403, message, details);
     }
   };
-  static NotFound = class NotFoundException extends Exception {
+  static NotFound: StatusException = class NotFoundException extends Exception {
     constructor(message = "Not Found", details?: unknown) {
       super(404, message, details);
     }
   };
-  static Conflict = class ConflictException extends Exception {
+  static Conflict: StatusException = class ConflictException extends Exception {
     constructor(message = "Conflict", details?: unknown) {
       super(409, message, details);
     }
   };
-  static UnsupportedMediaType = class UnsupportedMediaTypeException extends Exception {
+  static UnsupportedMediaType: StatusException = class UnsupportedMediaTypeException extends Exception {
     constructor(message = "Unsupported Media Type", details?: unknown) {
       super(415, message, details);
     }
   };
-  static Error = class InternalServerErrorException extends Exception {
+  static Error: StatusException = class InternalServerErrorException extends Exception {
     constructor(message = "Internal Server Error", details?: unknown) {
       super(500, message, details);
     }

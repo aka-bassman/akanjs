@@ -179,8 +179,8 @@ export const General = ({ order }: OrderViewProps) => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A server page usually fetches full view data, then passes the view object to a Zone wrapper or directly into Load.View.",
-              ko: "server page는 보통 full view data를 fetch한 뒤 view object를 Zone wrapper 또는 Load.View에 전달합니다.",
+              en: "A server page starts the view request, then passes the view payload to a Zone wrapper or directly into Load.View. Leaving the call un-awaited hands the promise across instead of the resolved object, so the surrounding page markup is sent while the query is still running and Load.View fills the section in behind its own boundary.",
+              ko: "server page는 view request를 시작한 뒤 view payload를 Zone wrapper 또는 Load.View에 전달합니다. await하지 않으면 해소된 객체 대신 promise가 전달되므로, query가 실행되는 동안 주변 page markup이 먼저 전송되고 Load.View가 자체 boundary 뒤에서 그 section을 채웁니다.",
             })}
           </div>
         </Docs.Description>
@@ -188,10 +188,18 @@ export const General = ({ order }: OrderViewProps) => {
           className="w-full"
           title="detail page"
           code={`export default async function Page({ params }: PageProps) {
-  const { releaseView } = await fetch.viewRelease(params.releaseId);
+  const { releaseView } = fetch.viewRelease(params.releaseId);
   return <Release.Zone.View view={releaseView} />;
 }`}
         />
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Await the call instead when the page itself reads the model — a title, an id used to build a link, or a redirect decision. `await fetch.viewRelease(id)` returns the same object it always did, and the sibling `release` field is the hydrated model, which stays on the server because React Flight refuses a class instance as a client prop.",
+              ko: "page가 model을 직접 읽어야 할 때 — 제목, link를 만드는 id, redirect 판단 — 는 await하세요. `await fetch.viewRelease(id)`는 기존과 동일한 객체를 반환하며, 형제 field인 `release`는 hydrate된 model이므로 server에 남습니다. React Flight가 class instance를 client prop으로 거부하기 때문입니다.",
+            })}
+          </div>
+        </Docs.Description>
       </Scroll.Slide>
       <Divider />
 

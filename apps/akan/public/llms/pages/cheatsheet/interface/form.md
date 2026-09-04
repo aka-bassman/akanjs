@@ -43,7 +43,7 @@ New article page
 
 Update Page
 
-For a full edit page, fetch the model on the server and pass it to `Load.Edit`. The Template can stay exactly the same as create.
+For a full edit page, fetch the model on the server and pass it to `Load.Edit`. The Template can stay exactly the same as create. Await here because the page builds the submit URL from the model; a page that only renders the form can hand the un-awaited `articleEdit` promise across instead.
 
 Edit article page
 
@@ -104,7 +104,7 @@ export const General = () => {
 ```ts
 export default async function Page({ params }: PageProps) {
   const { boardId } = params;
-  const board = await fetch.viewBoard(boardId);
+  const { board } = await fetch.viewBoard(boardId);
   const articleForm: Partial<cnst.Article> = {
     board: board.id,
     status: "draft",
@@ -128,7 +128,7 @@ export default async function Page({ params }: PageProps) {
 
 ```ts
 export default async function Page({ params }: PageProps) {
-  const articleEdit = await fetch.editArticle(params.articleId);
+  const { article, articleEdit } = await fetch.editArticle(params.articleId);
 
   return (
     <Load.Edit

@@ -76,6 +76,8 @@ Business Example
 
 On a shopping page, customers should see product names, prices, and the first list quickly. The add-to-cart button, stock filter, and recommendation carousel can become interactive after the first view is already visible.
 
+Step 01 does not have to wait for every query. fetch.init<Model><Suffix>, fetch.view<Model>, and fetch.edit<Model> return a handle whose fields are promises, so a route can send the shell and hand each section its own promise — the section streams in behind its own boundary as its data lands.
+
 SSR is not the opposite of client-side UI. It is the first step of the experience: show useful content early, then let client components handle the parts that need interaction.
 
 Rendering Boundary

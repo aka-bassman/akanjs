@@ -7,7 +7,7 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.70 -->
+<!-- akan:agent:version 3.0.0-alpha.71 -->
 
 ## Workspace
 
@@ -126,16 +126,18 @@ back.
 - **Never write an async component outside `page/`** (`no-async-component-in-ui.grit`, scoped to
   `{apps,libs}/**/ui/**/*.tsx`). React has no async client component, so a `ui/` component that awaits breaks as
   soon as a client parent renders it, and the load drops below the route, which could have started it before the
-  first byte. Await in the page — or hand an unawaited `fetch.*` to a `Zone` as an `init` / `view` prop — and take
-  the resolved data as a prop. Only a PascalCase binding whose own initializer is `async` is matched, so an async
-  handler inside a synchronous component and `lazy(async () => import(…))` are untouched.
+  first byte. Await in the page — or hand an unawaited `fetch.*` field to a `Zone` as an `init` / `view` prop, or
+  to a `<Load.Stream of={…}>` that awaits it behind a boundary of its own — and take the resolved data as a prop.
+  Only a PascalCase binding whose own initializer is `async` is matched, so an async handler inside a synchronous
+  component and `lazy(async () => import(…))` are untouched.
 - **Never call `fetch.init*` from a client file** (`no-init-fetch-in-client.grit`). `fetch.init<Model><Suffix>` and
   `fetch.get<Model>Init<Suffix>` compose the slice's list and insight queries into the hydration snapshot that
   `Load.Units` / `Load.View` seed the store from. From a route it resolves before the first byte; after hydration
   it is two extra round-trips for a shell the browser already painted. Load it in the page and pass the result
-  down as an `init` prop — or hand the unawaited promise across — and reload from the client through the generated
-  `st.do.init<Model><Suffix>()`. Gated on the real `"use client"` directive plus `*.store.ts`, and matched by shape
-  (`init` + `Capitalize<refName>` + `Capitalize<suffix>`), so a hand-written `initPayment` is out.
+  down as an `init` prop — or hand the unawaited `x<Model>Init<Suffix>` promise across — and reload from the client
+  through the generated `st.do.init<Model><Suffix>()`. Gated on the real `"use client"` directive plus
+  `*.store.ts`, and matched by shape (`init` + `Capitalize<refName>` + `Capitalize<suffix>`), so a hand-written
+  `initPayment` is out.
 - `noArrayIndexKey` and `useExhaustiveDependencies` are **off** on purpose: `key={idx}` for embedded scalars and
   short dependency arrays are intentional, not oversights.
 - **A grit plugin diagnostic is suppressed as `lint/plugin`, not `plugin`** — `// biome-ignore lint/plugin: <reason>`
@@ -281,8 +283,14 @@ are, because those are the ones the server could have done.
    `useEffect(…, [])` that fetches on mount.
 4. **Push the boundary down to the leaf that needs it.** A store-reading `Zone` should hold zero markup and
    delegate to a server `View`.
-5. **Hand the promise across, not the awaited value.** `ClientInit` / `ClientView` are `PromiseOrObject<T>`, so a
-   route may pass an unawaited `fetch.initX(...)` and `Load.*` resolves it behind a skeleton.
+5. **Hand each promise across, not the awaited value.** `fetch.init<Model><Suffix>` / `view<Model>` / `edit<Model>`
+   are awaitable *and* destructurable: `const { xInitInY, xListInY } = fetch.initXInY(id)` hands out one promise
+   per field with both queries already in flight. Give `xInitInY` to a `Zone` and `xListInY` to a
+   `<Load.Stream of={…}>`; each renders behind its own boundary as its own data lands, so the page never waits
+   for the slowest. `await` still returns the old shape and keeps the whole section in the shell — which is what
+   SEO snapshots, prerendering and pre-hydration E2E read, so await what the page needs immediately and stream
+   the rest. `xListInY` / `xInsightInY` hold hydrated model instances that React Flight refuses as client props:
+   consume them in a server component, never as a `Zone` prop.
 6. **Use named `ReactNode` slots, not just `children`** — `Layout.Navbar` takes `title`, `back`, `left`, `right`,
    and `children`, so a client shell composes server content in five places instead of absorbing it.
 7. **Let the server do the derived work.** Display and predicate logic belongs on `Light<Model>`; enum→class
@@ -344,7 +352,7 @@ Full contract: `get_guideline` with `runtimeRule`, or `akan guideline show runti
 - Never `React.FC`, never `defaultProps`, never `PropsWithChildren`. Defaults go in the destructuring (`prefix = ""`); children are typed `children: ReactNode`.
 - `"use client"` on line 1 above the imports is mechanical by file role: every `.Zone.tsx`, `.Template.tsx`, and `.Util.tsx` has it; no `.Unit.tsx` or `.View.tsx` ever does. `usePage()` is legal in server files.
 - Conditional render is `cond ? <X/> : null`. Never `{cond && <X/>}` — in a `className` context it renders the literal string `"false"`. Early `return null` is for guard clauses only.
-- Never hand-roll loading, empty, or list states. Use `Load.Units` / `Load.View` / `Load.Edit` with `renderItem`, `renderList`, `renderView`, and `renderEmpty`; `<Empty />` for a bare placeholder; and `Model.New` / `Model.Edit` / `Model.SureToRemove` for CRUD modals.
+- Never hand-roll loading, empty, or list states. Use `Load.Units` / `Load.View` / `Load.Edit` with `renderItem`, `renderList`, `renderView`, and `renderEmpty`; `<Empty />` for a bare placeholder; and `Model.New` / `Model.Edit` / `Model.SureToRemove` for CRUD modals. For data no `Load.*` covers, `<Load.Stream of={promise} fallback={…}>{(value) => …}</Load.Stream>` awaits one promise behind its own Suspense boundary; a resolved value renders in the shell with no boundary at all, so the same call site works either way.
 - Avoid hooks. `useState` is for modal-open, tab, draft-input, and drag state only — never for server data. `useEffect` must be a genuine effect such as subscribe-with-cleanup or one-shot init. Prefer `Tab` over a `useState` mode switch. `.Template.tsx` files contain zero `useState`.
 - Forms are entirely store-driven: `value={xForm.field}` with `onChange={st.do.setFieldOnX}`, the setter passed by reference. Always use `Field.*`, never a bare `<input>` for a model field. Nested rows use `st.do.writeOnX("payments.3.name", v)` plus the generated `add<Field>OnX` / `sub<Field>OnX`. **Passing the setter by reference is also what makes the framework emit `data-akan-action` / `data-akan-state`** on the control — the annotation an in-page agent, an E2E selector, and an external browser agent all read. Wrapping it in an inline arrow (`onChange={(v) => st.do.setFieldOnX(v)}`) silently drops that: a closure the caller wrote says nothing about what it does. Never hand-write a `data-akan-*` attribute.
 - Read with `st.use.*` and write with `st.do.*`. Client components do not call `fetch.*`.

@@ -146,18 +146,18 @@ export default function Page() {
     {
       name: "view[Model](id)",
       desc: l.trans({
-        en: "Fetch detail-view data generated from the model module.",
-        ko: "model module에서 생성된 detail-view 데이터를 불러옵니다.",
+        en: "Fetch detail-view data generated from the model module. Returns a handle: destructure it for one promise per field, or await it for the resolved object.",
+        ko: "model module에서 생성된 detail-view 데이터를 불러옵니다. handle을 반환하므로, 구조분해하면 field별 promise를, await하면 해소된 객체를 얻습니다.",
       }),
-      example: "await fetch.viewStory(storyId)",
+      example: "const { storyView } = fetch.viewStory(storyId)",
     },
     {
       name: "edit[Model](id)",
       desc: l.trans({
-        en: "Fetch edit-view data generated from the model module.",
-        ko: "model module에서 생성된 edit-view 데이터를 불러옵니다.",
+        en: "Fetch edit-view data generated from the model module. Same handle shape as view[Model].",
+        ko: "model module에서 생성된 edit-view 데이터를 불러옵니다. view[Model]과 같은 handle 형태입니다.",
       }),
-      example: "await fetch.editStory(storyId)",
+      example: "const { storyEdit } = fetch.editStory(storyId)",
     },
     {
       name: "merge[Model](id, data)",
@@ -189,18 +189,18 @@ export default function Page() {
     {
       name: "init[Model](query?, option?)",
       desc: l.trans({
-        en: "Initializes the default model list with list and insight data.",
-        ko: "기본 model list를 list와 insight data로 초기화합니다.",
+        en: "Initializes the default model list with list and insight data. Both queries leave at call time; the handle hands out storyInit, storyList, and storyInsight as separate promises.",
+        ko: "기본 model list를 list와 insight data로 초기화합니다. 두 query는 호출 시점에 출발하고, handle은 storyInit, storyList, storyInsight를 각각의 promise로 제공합니다.",
       }),
-      example: "await fetch.initStory()",
+      example: "const { storyInit } = fetch.initStory()",
     },
     {
       name: "init[Model][Suffix](...args)",
       desc: l.trans({
-        en: "Initializes a named slice list with args declared in signal.ts.",
-        ko: "signal.ts에 선언한 arg를 사용해 named slice list를 초기화합니다.",
+        en: "Initializes a named slice list with args declared in signal.ts. Pass storyInitInRoot to a Zone; consume storyListInRoot on the server, since it holds hydrated model instances.",
+        ko: "signal.ts에 선언한 arg를 사용해 named slice list를 초기화합니다. storyInitInRoot는 Zone에 넘기고, storyListInRoot는 hydrate된 model instance를 담고 있으므로 server에서 사용합니다.",
       }),
-      example: "await fetch.initStoryInRoot(rootId)",
+      example: "const { storyInitInRoot } = fetch.initStoryInRoot(rootId)",
     },
   ];
 
@@ -467,7 +467,14 @@ const unsubscribe = fetch.subscribeChatAdded(rootId, (chat) => {
         <Docs.IntroTable type="method" items={sliceAutoMethods} />
 
         <Docs.SubTitle>Client Usage</Docs.SubTitle>
-        <Code.Snippet className="w-full" title="page.tsx" code="const data = await fetch.initStoryInRoot(rootId);" />
+        <Code.Snippet
+          className="w-full"
+          title="page.tsx"
+          code={`const { storyInitInRoot, storyListInRoot } = fetch.initStoryInRoot(rootId);
+
+<Story.Zone.Card init={storyInitInRoot} />
+<Load.Stream of={storyListInRoot}>{(storyList) => <Story.Unit.Total count={storyList.length} />}</Load.Stream>`}
+        />
       </Scroll.Slide>
       <Divider />
 
