@@ -286,6 +286,35 @@ export type AppConfigInput = Omit<DeepPartial<AppConfigResult>, "docker" | "web"
   plugins?: AkanPlugin[];
 };
 export type LibConfigInput = DeepPartial<LibConfigResult> & { plugins?: AkanPlugin[] };
+export interface SubspaceDeclaration {
+  /** Short name used on the command line and as the git remote suffix. */
+  name: string;
+  repo: string;
+  /** Apps this subspace serves. Libraries are never listed — they are derived from each app's closure. */
+  apps: string[];
+}
+
+/**
+ * What `akan.subspace.ts` at a workspace root may write: the customer repos this workspace is mirrored
+ * to. There is no branch field — the branch is whichever one the workspace is on, so one declaration
+ * serves every release branch and each of them holds one akanjs version and one copy of the library
+ * source.
+ */
+export interface SubspaceConfigInput {
+  /**
+   * Branches a push may target. A feature branch is refused, because pushing it would copy this
+   * workspace's branch namespace into every customer repo.
+   */
+  pushableBranches?: string[];
+  /**
+   * Workspace-root entries to keep out of every subspace, on top of the ones that always are. Top-level
+   * names or `dir/` prefixes — a workspace's own infra, release and benchmark trees are the usual
+   * entries.
+   */
+  exclude?: string[];
+  subspaces: SubspaceDeclaration[];
+}
+
 export type AppConfig = AppConfigInput | ((app: AppConfigContext) => AppConfigInput);
 export type LibConfig = LibConfigInput | ((lib: LibConfigContext) => LibConfigInput);
 export type AkanConfigFile = object;

@@ -20,6 +20,7 @@ export const commandModules = {
   page: async () => (await import("./page/page.command")).PageCommand,
   context: async () => (await import("./context/context.command")).ContextCommand,
   cloud: async () => (await import("./cloud/cloud.command")).CloudCommand,
+  subspace: async () => (await import("./subspace/subspace.command")).SubspaceCommand,
   guideline: async () => (await import("./guideline/guideline.command")).GuidelineCommand,
   scalar: async () => (await import("./scalar/scalar.command")).ScalarCommand,
   primitive: async () => (await import("./primitive/primitive.command")).PrimitiveCommand,

@@ -1526,7 +1526,7 @@ Library CLI
 
 Library commands manage shared libraries under the workspace. Use them when creating reusable domain, utility, UI, or platform code that multiple apps can import.
 
-The public library commands are `create-library`, `remove-library`, `sync-library`, and `install-library`.
+The public library commands are `create-library`, `remove-library`, `sync-library`, `install-library`, and `library-status`.
 
 ## Module
 
@@ -1659,7 +1659,7 @@ Workspace CLI
 
 Workspace commands create a new Akan.js workspace and keep the whole repository synchronized. Use them when you are starting a project, fixing generated surfaces, or applying lint across apps and libraries.
 
-The commands below come from `workspace.command.ts`: `create-workspace`, `lint`, `lint-all`, and `sync-all`.
+The commands below come from `workspace.command.ts` — `create-workspace`, `lint`, `lint-all`, `sync-all` — plus `fleet`, which mirrors this workspace out to the customer repos it serves.
 
 ## Assets (public/ private/)
 

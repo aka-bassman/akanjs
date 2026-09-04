@@ -26,7 +26,7 @@ Workspace CLI
 
 Workspace commands create a new Akan.js workspace and keep the whole repository synchronized. Use them when you are starting a project, fixing generated surfaces, or applying lint across apps and libraries.
 
-The commands below come from `workspace.command.ts`: `create-workspace`, `lint`, `lint-all`, and `sync-all`.
+The commands below come from `workspace.command.ts` — `create-workspace`, `lint`, `lint-all`, `sync-all` — plus `fleet`, which mirrors this workspace out to the customer repos it serves.
 
 ## Code Examples
 

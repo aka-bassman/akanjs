@@ -18,7 +18,7 @@ Library CLI
 
 Library commands manage shared libraries under the workspace. Use them when creating reusable domain, utility, UI, or platform code that multiple apps can import.
 
-The public library commands are `create-library`, `remove-library`, `sync-library`, and `install-library`.
+The public library commands are `create-library`, `remove-library`, `sync-library`, `install-library`, and `library-status`.
 
 ## Code Examples
 

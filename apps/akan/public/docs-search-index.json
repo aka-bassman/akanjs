@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-04T00:35:47.966Z",
+  "generatedAt": "2026-09-04T14:31:57.881Z",
   "items": [
     {
       "href": "/references/cli/overview",
@@ -50,8 +50,8 @@
         }
       ],
       "body": {
-        "en": "Workspace CLI Reference Create a new Akan.js workspace and optionally bootstrap the first application in the same step.\nThe command normalizes names to lowercase kebab-case and uses the selected update tag, install-lib choice, and initialization flag to prepare the repository. Run lint and formatting for a selected app, library, or package target.\n`--fix` defaults to true, so the command applies formatter/linter fixes unless the option is explicitly disabled. Run lint and formatting across the workspace instead of a single selected target.\nUse it before broader verification when generated surfaces, app code, and shared libraries should be checked together. Refresh dependency and configuration surfaces for every app and library in the workspace.\nUse it when generated configuration looks stale or after changes that affect shared workspace setup. Workspace CLI Workspace commands create a new Akan.js workspace and keep the whole repository synchronized. Use them when you are starting a project, fixing generated surfaces, or applying lint across apps and libraries. The commands below come from `workspace.command.ts`: `create-workspace`, `lint`, `lint-all`, and `sync-all`.",
-        "ko": "Workspace CLI 레퍼런스 새 Akan.js workspace를 만들고 같은 단계에서 첫 application까지 bootstrap할 수 있습니다.\n이 명령은 이름을 lowercase kebab-case로 정규화하고 선택한 update tag, library 설치 여부, initialization flag로 repository를 준비합니다. 선택한 app, library, package target에 lint와 formatting을 실행합니다.\n`--fix` 기본값은 true이므로 option을 명시적으로 끄지 않으면 formatter/linter fix를 적용합니다. 단일 target이 아니라 workspace 전체 범위에 lint와 formatting을 실행합니다.\ngenerated surface, app code, shared library를 함께 확인해야 하는 넓은 검증 전에 사용합니다. workspace의 모든 app과 library dependency/configuration surface를 갱신합니다.\ngenerated configuration이 오래되었거나 shared workspace setup에 영향을 주는 변경 뒤에 사용합니다. Workspace CLI Workspace command는 새 Akan.js workspace를 만들고 repository 전체를 동기화합니다. 프로젝트를 시작하거나 generated surface를 정리하거나 app/library 전체에 lint를 적용할 때 사용합니다. 아래 명령은 `workspace.command.ts`의 `create-workspace`, `lint`, `lint-all`, `sync-all`에서 옵니다."
+        "en": "Workspace CLI Reference Create a new Akan.js workspace and optionally bootstrap the first application in the same step.\nThe command normalizes names to lowercase kebab-case and uses the selected update tag, install-lib choice, and initialization flag to prepare the repository. Run lint and formatting for a selected app, library, or package target.\n`--fix` defaults to true, so the command applies formatter/linter fixes unless the option is explicitly disabled. Run lint and formatting across the workspace instead of a single selected target.\nUse it before broader verification when generated surfaces, app code, and shared libraries should be checked together. Refresh dependency and configuration surfaces for every app and library in the workspace.\nUse it when generated configuration looks stale or after changes that affect shared workspace setup. Workspace CLI Workspace commands create a new Akan.js workspace and keep the whole repository synchronized. Use them when you are starting a project, fixing generated surfaces, or applying lint across apps and libraries. The commands below come from `workspace.command.ts` — `create-workspace`, `lint`, `lint-all`, `sync-all` — plus `fleet`, which mirrors this workspace out to the customer repos it serves.",
+        "ko": "Workspace CLI 레퍼런스 새 Akan.js workspace를 만들고 같은 단계에서 첫 application까지 bootstrap할 수 있습니다.\n이 명령은 이름을 lowercase kebab-case로 정규화하고 선택한 update tag, library 설치 여부, initialization flag로 repository를 준비합니다. 선택한 app, library, package target에 lint와 formatting을 실행합니다.\n`--fix` 기본값은 true이므로 option을 명시적으로 끄지 않으면 formatter/linter fix를 적용합니다. 단일 target이 아니라 workspace 전체 범위에 lint와 formatting을 실행합니다.\ngenerated surface, app code, shared library를 함께 확인해야 하는 넓은 검증 전에 사용합니다. workspace의 모든 app과 library dependency/configuration surface를 갱신합니다.\ngenerated configuration이 오래되었거나 shared workspace setup에 영향을 주는 변경 뒤에 사용합니다. Workspace CLI Workspace command는 새 Akan.js workspace를 만들고 repository 전체를 동기화합니다. 프로젝트를 시작하거나 generated surface를 정리하거나 app/library 전체에 lint를 적용할 때 사용합니다. 아래 명령은 `workspace.command.ts`의 `create-workspace`, `lint`, `lint-all`, `sync-all`, 그리고 이 workspace를 고객사 repo로 미러링하는 `fleet`입니다."
       }
     },
     {
@@ -96,8 +96,8 @@
         }
       ],
       "body": {
-        "en": "Library CLI Reference Library CLI Library commands manage shared libraries under the workspace. Use them when creating reusable domain, utility, UI, or platform code that multiple apps can import. The public library commands are `create-library`, `remove-library`, `sync-library`, and `install-library`.",
-        "ko": "Library CLI 레퍼런스 Library CLI Library command는 workspace의 shared library를 관리합니다. 여러 app이 import할 reusable domain, utility, UI, platform code를 만들 때 사용합니다. 공개 library command는 `create-library`, `remove-library`, `sync-library`, `install-library`입니다."
+        "en": "Library CLI Reference Library CLI Library commands manage shared libraries under the workspace. Use them when creating reusable domain, utility, UI, or platform code that multiple apps can import. The public library commands are `create-library`, `remove-library`, `sync-library`, `install-library`, and `library-status`.",
+        "ko": "Library CLI 레퍼런스 Library CLI Library command는 workspace의 shared library를 관리합니다. 여러 app이 import할 reusable domain, utility, UI, platform code를 만들 때 사용합니다. 공개 library command는 `create-library`, `remove-library`, `sync-library`, `install-library`, `library-status`입니다."
       }
     },
     {

@@ -1,4 +1,6 @@
 import { type Lib, script, type Workspace } from "@akanjs/devkit/commandDecorators";
+import { formatLibStatuses } from "@akanjs/devkit/libSource";
+import { Logger } from "akanjs/common";
 import { LibraryRunner } from "./library.runner";
 
 export class LibraryScript extends script("library", [LibraryRunner]) {
@@ -21,6 +23,13 @@ export class LibraryScript extends script("library", [LibraryRunner]) {
     spinner.succeed(`Library ${lib.name} (libs/${lib.name}) is removed`);
   }
 
+  async libraryStatus(workspace: Workspace, format: "text" | "json" = "text") {
+    const spinner = workspace.spinning("Checking library sources...");
+    const statuses = await this.libraryRunner.libraryStatuses(workspace);
+    const drifted = statuses.filter((status) => status.drift === "drifted").length;
+    spinner.succeed(`Checked ${statuses.length} libraries (${drifted} drifted)`);
+    Logger.rawLog(format === "json" ? JSON.stringify(statuses, null, 2) : formatLibStatuses(statuses));
+  }
   async installLibrary(workspace: Workspace, libName: string) {
     const installSpinner = workspace.spinning(`Installing ${libName} library`);
     const lib = await this.libraryRunner.installLibrary(workspace, libName);

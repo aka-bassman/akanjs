@@ -118,6 +118,60 @@ akan lint-all --fix false`,
       }),
       examples: "akan sync-all",
     },
+    {
+      name: "subspace",
+      signature: "akan subspace <status|diff|push|pull> [name] [--format <text|json>]",
+      desc: "Mirror apps and libraries between this workspace and the customer repos (subspaces) it serves, declared in `akan.subspace.ts` at the workspace root.\nThe branch is the unit of uniformity: whichever branch the workspace is on is the branch every subspace receives, so one branch holds one akanjs version and one copy of the library source everywhere. Only the branches `akan.subspace.ts` lists are pushable.\nPush is a squashed snapshot of the workspace's git-tracked files, so a subspace's history never carries the workspace's and one customer's commit messages never reach another's repo. The root manifest is rebuilt from the apps that subspace actually serves, keeping the workspace's exact version specs, so no other customer's dependency tree is installed there. Libraries are push-only: pull applies the subspace's app commits and reports its library edits as a patch instead, because the workspace is the one copy every other subspace is pushed from.\nPull compares the subspace against the last push it received — located by the `akan.subspace.json` only a push writes — rather than against the workspace, so the diff is exactly the customer's own work however far the workspace has moved on. It lands uncommitted in the working tree for a person to review.\nEnvironment values under `env/` are subspace-owned in both directions and are never overwritten or pulled.",
+      args: [
+        {
+          name: "action",
+          type: "String",
+          required: "no",
+          defaultValue: "status",
+          desc: "status, diff, push, or pull.",
+        },
+        {
+          name: "name",
+          type: "String",
+          required: "no",
+          defaultValue: "-",
+          desc: "Subspace name. Every subspace when omitted; required for diff and pull, which are reviewed one repo at a time.",
+        },
+        {
+          name: "--format",
+          type: "String",
+          required: "no",
+          defaultValue: "text",
+          desc: "Output format: text or json.",
+        },
+        {
+          name: "--verify",
+          type: "Boolean",
+          required: "no",
+          defaultValue: "true",
+          desc: "Run bun install and akan sync inside the subspace before committing.",
+        },
+        {
+          name: "--adopt-libs",
+          type: "Boolean",
+          required: "no",
+          defaultValue: "false",
+          desc: "pull only: also apply the subspace's library edits instead of reporting them as a patch.",
+        },
+        {
+          name: "--path",
+          type: "String",
+          required: "no",
+          defaultValue: "-",
+          desc: "diff only: limit the comparison to one path.",
+        },
+      ],
+      examples: `akan subspace status
+akan subspace diff acme
+akan subspace push
+akan subspace pull acme
+akan subspace pull acme --adopt-libs`,
+    },
   ];
 
   return (
@@ -133,8 +187,8 @@ akan lint-all --fix false`,
           </div>
           <div>
             {l.trans({
-              en: "The commands below come from `workspace.command.ts`: `create-workspace`, `lint`, `lint-all`, and `sync-all`.",
-              ko: "아래 명령은 `workspace.command.ts`의 `create-workspace`, `lint`, `lint-all`, `sync-all`에서 옵니다.",
+              en: "The commands below come from `workspace.command.ts` — `create-workspace`, `lint`, `lint-all`, `sync-all` — plus `fleet`, which mirrors this workspace out to the customer repos it serves.",
+              ko: "아래 명령은 `workspace.command.ts`의 `create-workspace`, `lint`, `lint-all`, `sync-all`, 그리고 이 workspace를 고객사 repo로 미러링하는 `fleet`입니다.",
             })}
           </div>
         </Docs.Description>

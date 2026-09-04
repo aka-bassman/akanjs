@@ -24,6 +24,12 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .exec(async function (app) {
       await this.applicationScript.removeApplication(app);
     }),
+  planSlice: target({ desc: "List the exact files an app needs to live in a workspace of its own" })
+    .with(App)
+    .option("format", String, { desc: "output format", default: "text", enum: ["text", "json"] })
+    .exec(async function (app, format) {
+      await this.applicationScript.planSlice(app, format as "text" | "json");
+    }),
   sync: target({ desc: "Sync dependencies and configuration for an app or library" })
     .with(Sys)
     .exec(async function (sys) {

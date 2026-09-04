@@ -37,7 +37,7 @@ akan create-library design-system`,
     {
       name: "install-library",
       signature: "akan install-library [libName]",
-      desc: "Install a pre-built library template such as shared or util into the workspace.\nThe library name is optional, allowing the install flow to prompt or choose defaults when the target template is not supplied.",
+      desc: "Install a pre-built library template such as shared or util into the workspace.\nThe library name is optional, allowing the install flow to prompt or choose defaults when the target template is not supplied.\nRe-runnable: the copy overwrites the library source, the existing testing env is left alone, and the origin is recorded as `akan.source` in the library package.json so `library-status` can report later edits.",
       args: [
         {
           name: "libName",
@@ -50,6 +50,22 @@ akan create-library design-system`,
       examples: `akan install-library
 akan install-library util
 akan install-library shared`,
+    },
+    {
+      name: "library-status",
+      signature: "akan library-status [--format <text|json>]",
+      desc: "Report whether each library still matches the source it was installed from.\nEvery library carries an `akan.source` stamp in its own package.json, written by `install-library`, holding the origin, its revision, and a content hash. This command recomputes the hash and reports `clean`, `drifted`, or `unstamped` per library.\nThe hash covers the library's own git-known files and deliberately leaves `env/` out, because env values belong to the workspace the library was installed into rather than to the origin.",
+      args: [
+        {
+          name: "--format",
+          type: "String",
+          required: "no",
+          defaultValue: "text",
+          desc: "Output format: text or json.",
+        },
+      ],
+      examples: `akan library-status
+akan library-status --format json`,
     },
   ];
 
@@ -66,8 +82,8 @@ akan install-library shared`,
           </div>
           <div>
             {l.trans({
-              en: "The public library commands are `create-library`, `remove-library`, `sync-library`, and `install-library`.",
-              ko: "공개 library command는 `create-library`, `remove-library`, `sync-library`, `install-library`입니다.",
+              en: "The public library commands are `create-library`, `remove-library`, `sync-library`, `install-library`, and `library-status`.",
+              ko: "공개 library command는 `create-library`, `remove-library`, `sync-library`, `install-library`, `library-status`입니다.",
             })}
           </div>
         </Docs.Description>

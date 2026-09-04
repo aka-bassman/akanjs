@@ -941,6 +941,26 @@ export class WorkspaceExecutor extends Executor {
     // Argument vector, not a shell string: a message carrying a double quote breaks the interpolated form.
     await this.spawn("git", ["commit", "--quiet", "-m", message]);
   }
+  /** `git commit` exits non-zero on an empty index, so a re-runnable caller has to ask first. */
+  async hasChanges() {
+    return !!(await this.spawn("git", ["status", "--porcelain"])).trim();
+  }
+  /**
+   * Workspace-relative paths git knows about, sorted. `untracked` adds files that exist but are not
+   * committed yet, still honoring `.gitignore` — which is what a freshly copied library looks like.
+   *
+   * Reading the file set from git is what keeps generated barrels, the `page/**` and `public/libs`
+   * symlinks, env values and the lockfile out of it without any caller restating that list.
+   */
+  async listGitFiles(paths: string[], { untracked = false }: { untracked?: boolean } = {}) {
+    if (!paths.length) return [];
+    const mode = untracked ? ["--cached", "--others", "--exclude-standard"] : ["--cached"];
+    const stdout = await this.spawn("git", ["ls-files", "-z", ...mode, "--", ...paths]);
+    return stdout
+      .split("\0")
+      .filter((file) => !!file)
+      .sort();
+  }
   async #getDirHasFile(basePath: string, targetFilename: string) {
     const AVOID_DIRS = ["node_modules", "dist", "public", "webkit"];
     const getDirs = async (dirname: string, maxDepth = 3, results: string[] = [], prefix = "") => {

@@ -18,6 +18,12 @@ export class LibraryCommand extends command("library", [LibraryScript], ({ publi
     .exec(async function (lib) {
       await this.libraryScript.syncLibrary(lib);
     }),
+  libraryStatus: target({ desc: "Report whether each library still matches the source it was installed from" })
+    .with(Workspace)
+    .option("format", String, { desc: "output format", default: "text", enum: ["text", "json"] })
+    .exec(async function (workspace, format) {
+      await this.libraryScript.libraryStatus(workspace, format as "text" | "json");
+    }),
   installLibrary: target({ desc: "Install pre-built library templates (shared, util, etc.)" })
     .arg("libName", String, { desc: "name of library" })
     .with(Workspace)

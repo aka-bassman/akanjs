@@ -8,6 +8,7 @@ import { resolveSignalTestPreloadPath } from "@akanjs/devkit/applicationTestPrel
 import { type App, type Exec, runner, type Sys, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, LibExecutor } from "@akanjs/devkit/executors";
 import { type ResolvedMobileTarget, resolveMobileTargets } from "@akanjs/devkit/mobile";
+import { SlicePlanner } from "@akanjs/devkit/slicePlanner";
 import { Logger, type LogRecord } from "akanjs/common";
 import ora from "ora";
 import { openBrowser } from "../openBrowser";
@@ -47,6 +48,9 @@ export class ApplicationRunner extends runner("application") {
       options: { libs },
     });
     return AppExecutor.from(workspace, appName);
+  }
+  async planSlice(app: App) {
+    return await new SlicePlanner(app).plan();
   }
   async removeApplication(app: App) {
     await app.workspace.removeDir(`apps/${app.name}`);

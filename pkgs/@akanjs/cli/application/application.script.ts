@@ -5,6 +5,7 @@ import type { TypecheckOptions } from "@akanjs/devkit/applicationBuildRunner";
 import type { ReleaseSourceOptions } from "@akanjs/devkit/applicationReleasePackager";
 import { type App, type Exec, type Lib, type Sys, script, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { LibExecutor, PkgExecutor } from "@akanjs/devkit/executors";
+import { formatSlicePlan } from "@akanjs/devkit/slicePlanner";
 import { confirm } from "@inquirer/prompts";
 import { Logger } from "akanjs/common";
 import { LibraryScript } from "../library/library.script";
@@ -119,6 +120,12 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     const spinner = app.spinning("Removing application...");
     await this.applicationRunner.removeApplication(app);
     spinner.succeed(`Application ${app.name} (apps/${app.name}) removed`);
+  }
+  async planSlice(app: App, format: "text" | "json" = "text") {
+    const spinner = app.spinning("Planning distributable slice...");
+    const plan = await this.applicationRunner.planSlice(app);
+    spinner.succeed(`Slice planned (${plan.libs.length} libs, ${plan.warnings.length} warnings)`);
+    Logger.rawLog(format === "json" ? JSON.stringify(plan, null, 2) : formatSlicePlan(plan));
   }
   async sync(sys: Sys) {
     if (sys.type === "app") await (sys as App).scanSync();

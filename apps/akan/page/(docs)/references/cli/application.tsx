@@ -102,6 +102,22 @@ akan create-application blog --start true`,
 akan sync util`,
     },
     {
+      name: "plan-slice",
+      signature: "akan plan-slice <app> [--format <text|json>]",
+      desc: "List the exact files an app needs to live in a workspace of its own: the app, its transitive library closure, the workspace shell around them, and a root package.json for the result.\nThe file set comes from git, so every generated barrel, the page/(libs) and public/libs symlinks, the env values and the lockfile are left out without the command restating that list.\nThe root manifest keeps only what the slice imports, at the workspace's own version specs. Two things ride along because no scan can see them: the `peerDependencies` of the installed akan packages, which the framework imports but does not install, and the `@types/x` companion of every package kept. What was dropped is listed. When no akan package is installed there is no peer list to read, so nothing is pruned and the plan says so.",
+      args: [
+        {
+          name: "--format",
+          type: "String",
+          required: "no",
+          defaultValue: "text",
+          desc: "Output format: text or json.",
+        },
+      ],
+      examples: `akan plan-slice myapp
+akan plan-slice myapp --format json`,
+    },
+    {
       name: "script",
       signature: "akan script <app> [filename]",
       desc: "Run a custom script inside the selected application environment.\nThe filename is optional, so the command can run the app script flow directly or target a specific script file when provided.",
