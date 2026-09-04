@@ -20,8 +20,13 @@ export class SummarySlice extends slice(srv.summary, { guards: { root: Admin, ge
     }),
 })) {}
 
-export class SummaryEndpoint extends endpoint(srv.summary, ({ query }) => ({
+export class SummaryEndpoint extends endpoint(srv.summary, ({ mutation, query }) => ({
   getActiveSummary: query(cnst.Summary, { cache: 1000 }).exec(async function () {
+    return await this.summaryService.getActiveSummary();
+  }),
+  /** The cron only runs on the hour, and only in the cloud — an operator has to be able to ask for the count now. */
+  recountSummary: mutation(cnst.Summary, { guards: [Admin] }).exec(async function () {
+    await this.summaryService.makeSummary();
     return await this.summaryService.getActiveSummary();
   }),
 })) {}

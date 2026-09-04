@@ -402,6 +402,7 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
         "github",
         req.cookies.toJSON() as unknown as SsoCookie,
         req.account as SerAccount | undefined,
+        githubUser.displayName,
       );
       return makeSsoRedirectResponse(redirect, cookie);
     }),
@@ -419,6 +420,7 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
         "google",
         req.cookies.toJSON() as unknown as SsoCookie,
         req.account as SerAccount | undefined,
+        googleUser.displayName,
       );
       return makeSsoRedirectResponse(redirect, cookie);
     }),
@@ -436,6 +438,7 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
         "facebook",
         req.cookies.toJSON() as unknown as SsoCookie,
         req.account as SerAccount | undefined,
+        [facebookUser.name.givenName, facebookUser.name.familyName].filter(Boolean).join(" "),
       );
       return makeSsoRedirectResponse(redirect, cookie);
     }),
@@ -454,12 +457,13 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .with(Req)
     .exec(async function (request) {
       const req = request as Bun.BunRequest & { user?: KakaoResponse; account?: SerAccount };
-      const { email: accountId } = req.user ?? (await extractKakaoProfile(getSsoCode(req), getSsoOrigin(req)));
+      const { email: accountId, name } = req.user ?? (await extractKakaoProfile(getSsoCode(req), getSsoOrigin(req)));
       const { cookie, redirect } = await this.userService.handleSsoCallback(
         accountId,
         "kakao",
         req.cookies.toJSON() as unknown as SsoCookie,
         req.account as SerAccount | undefined,
+        name,
       );
       return makeSsoRedirectResponse(redirect, cookie);
     }),
@@ -470,12 +474,13 @@ export class UserEndpoint extends endpoint(srv.user.with(srv.util.security), ({ 
     .with(Req)
     .exec(async function (request) {
       const req = request as Bun.BunRequest & { user?: NaverResponse; account?: SerAccount };
-      const { email: accountId } = req.user ?? (await extractNaverProfile(getSsoCode(req), getSsoOrigin(req)));
+      const { email: accountId, name } = req.user ?? (await extractNaverProfile(getSsoCode(req), getSsoOrigin(req)));
       const { cookie, redirect } = await this.userService.handleSsoCallback(
         accountId,
         "naver",
         req.cookies.toJSON() as unknown as SsoCookie,
         req.account as SerAccount | undefined,
+        name,
       );
       return makeSsoRedirectResponse(redirect, cookie);
     }),

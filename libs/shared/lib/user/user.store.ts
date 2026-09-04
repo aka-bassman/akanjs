@@ -61,7 +61,8 @@ export class UserStore extends store(sig.user, () => ({
   }
   async setLeaveInfoOfSelf() {
     const { leaveInfo } = this.get();
-    if (!leaveInfo.reason || !leaveInfo.satisfaction || !leaveInfo.voc) return;
+    // voc 는 선택 항목이고 satisfaction 은 1이 유효한 값이라, 빈 값 검사로 설문 전체를 버리면 안 된다.
+    if (!leaveInfo.reason || leaveInfo.satisfaction === null) return;
     await fetch.setLeaveInfoOfSelf({
       type: leaveInfo.type,
       reason: leaveInfo.reason,
@@ -101,7 +102,9 @@ export class UserStore extends store(sig.user, () => ({
     const userId = await fetch.getUserIdHasNickname(nickname);
     this.set({ sameNicknameExists: !!userId });
   }
-  async activateUser(userId: string, { redirect }: { redirect?: string }) {
+  async activateUser(userId: string, { redirect, agreePolicies }: { redirect?: string; agreePolicies?: string[] }) {
+    // 약관 화면이 따로 없는 가입 흐름에서는 활성화 버튼 자체가 동의 표시라, 동의 목록을 함께 넘겨 기록한다.
+    if (agreePolicies?.length) await fetch.setAgreePoliciesOfPrepareUser(userId, agreePolicies);
     const accessToken = await fetch.activateUser(userId);
     setAuth(accessToken);
     await this.getSelf(accessToken);

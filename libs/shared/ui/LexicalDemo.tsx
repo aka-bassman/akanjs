@@ -15,6 +15,8 @@ const LEGACY_YOOPTA_VALUE = {
   },
 };
 const MENTION_ROWS = 8;
+/** Everything the editor can do, minus everything but mentions — a textarea an agent and `@` can write into. */
+const PLAIN_FEATURES = ["mention"] as const;
 
 interface LexicalDemoProps {
   plugins?: EditorPlugin[];
@@ -31,6 +33,7 @@ export const LexicalDemo = ({ plugins = [] }: LexicalDemoProps) => {
   // Attachments reconciled from the live document (proves the fileId walk + reconcile).
   const [attachments, setAttachments] = useState<cnst.File[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [plainJson, setPlainJson] = useState<unknown>(undefined);
   // Mentionable models. `adminListInMention` sits behind the Admin guard, so the
   // menu only returns rows on an admin-authenticated route.
   const editorPlugins = useMemo(
@@ -218,6 +221,29 @@ export const LexicalDemo = ({ plugins = [] }: LexicalDemoProps) => {
             </p>
           )}
         </div>
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="font-semibold text-foreground/80 text-sm">텍스트 + 멘션만 (features={'["mention"]'})</h2>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border border-foreground/15 bg-background p-4">
+            <Editor.Rich
+              features={PLAIN_FEATURES}
+              plugins={editorPlugins}
+              blockActions={false}
+              onChange={(val) => setPlainJson(val)}
+              placeholder="@ 로 멘션, 나머지는 평범한 textarea… (# 제목, - 목록, ⌘B 모두 동작하지 않습니다)"
+              height="8rem"
+            />
+          </div>
+          <pre className="min-h-[8rem] overflow-auto rounded-lg border border-foreground/15 bg-muted p-4 font-mono text-xs leading-5">
+            {plainJson ? JSON.stringify(plainJson, null, 2) : "// 아직 입력이 없습니다"}
+          </pre>
+        </div>
+        <p className="text-foreground/50 text-xs">
+          마크다운 단축키·플로팅 툴바·업로드·표/콜아웃/토글은 모두 사라지고, 붙여넣기는 서식 없이 텍스트만 들어옵니다.
+          슬래시 메뉴에는 멘션 항목만 남습니다.
+        </p>
       </section>
     </div>
   );

@@ -91,10 +91,10 @@ export const LeaveTypeStep = ({ className, value, onChange }: LeaveTypeStepProps
   return (
     <div className={cn("flex h-full flex-col items-center justify-center gap-4", className)}>
       <div className="mb-10 w-full text-xl">
-        탈퇴를 선택하셨습니다.
+        {l("leaveInfo.leaveChosen")}
         <br />
         <br />
-        탈퇴 후 재가입 의향이 있으신가요?
+        {l("leaveInfo.askComeback")}
       </div>
       <Radio
         className="flex flex-col items-start justify-start gap-5 px-2"
@@ -128,25 +128,26 @@ interface ReasonProps {
   value: string | null;
   onChange: (value: string) => void;
 }
-
-export const Reason = ({
-  className,
-  leaveReasons = [
-    "사용해보니 서비스를 사용할 의사가 없어서",
-    "동일한 다른 서비스 앱을 사용하기 위해서",
-    "광고(푸시, 알림)이 번거로워서",
-    "이벤트, 호기심 등으로 일시적으로 가입했기 때문에",
-    "보기에 없음",
-  ],
-  comeBackReasons = ["가입정보를 수정하기 위해서", "시간이 지나고 다시 사용하기 위해서", "보기에 없음"],
-  value,
-  onChange,
-}: ReasonProps) => {
+export const Reason = ({ className, leaveReasons, comeBackReasons, value, onChange }: ReasonProps) => {
   const { l } = usePage();
   const leaveInfo = st.use.leaveInfo();
-  const askText =
-    leaveInfo.type === "comeback" ? "재가입 의향이 있으신 이유는 무엇인가요?" : "탈퇴의 가장 큰 이유는 무엇인가요?";
-  const reasons = leaveInfo.type === "comeback" ? comeBackReasons : leaveReasons;
+  const askText = leaveInfo.type === "comeback" ? l("leaveInfo.askComebackReason") : l("leaveInfo.askLeaveReason");
+  const defaultComebackReasonKeys = [
+    "leaveInfo.comebackReasonEditInfo",
+    "leaveInfo.comebackReasonLater",
+    "leaveInfo.reasonNone",
+  ] as const;
+  const defaultLeaveReasonKeys = [
+    "leaveInfo.leaveReasonNoIntent",
+    "leaveInfo.leaveReasonOtherService",
+    "leaveInfo.leaveReasonAds",
+    "leaveInfo.leaveReasonTemporary",
+    "leaveInfo.reasonNone",
+  ] as const;
+  const reasons =
+    leaveInfo.type === "comeback"
+      ? (comeBackReasons ?? defaultComebackReasonKeys.map((key) => l(key)))
+      : (leaveReasons ?? defaultLeaveReasonKeys.map((key) => l(key)));
   const [reason, setReason] = useState<string | null>(value);
   return (
     <div className={cn("flex flex-col items-center justify-center gap-4", className)}>
@@ -184,11 +185,18 @@ interface SatisfactionProps {
 }
 export const Satisfaction = ({ className, value, onChange }: SatisfactionProps) => {
   const { l } = usePage();
-  const satisfyLevel = ["매우 만족", "만족", "보통", "불만족", "매우 불만족"];
   const [satisfaction, setSatisfaction] = useState<number | null>(value);
+
+  const satisfactionKeys = [
+    "leaveInfo.satisfactionVerySatisfied",
+    "leaveInfo.satisfactionSatisfied",
+    "leaveInfo.satisfactionNeutral",
+    "leaveInfo.satisfactionUnsatisfied",
+    "leaveInfo.satisfactionVeryUnsatisfied",
+  ] as const;
   return (
     <div className={cn("flex flex-col items-center justify-center gap-4", className)}>
-      <div className="mb-10 w-full text-xl">서비스에 대해 얼마나 만족하셨나요?</div>
+      <div className="mb-10 w-full text-xl">{l("leaveInfo.askSatisfaction")}</div>
       <Radio
         className="flex flex-col items-start justify-start gap-5 px-2"
         value={satisfaction}
@@ -196,9 +204,10 @@ export const Satisfaction = ({ className, value, onChange }: SatisfactionProps) 
           if (typeof satisfaction !== "string") setSatisfaction(satisfaction);
         }}
       >
-        {satisfyLevel.map((answer, idx) => (
-          <Radio.Item className="pl-1 text-start" key={idx} value={idx}>
-            {answer}
+        {/* satisfaction is 1–5; a 0-based index would drop the first option */}
+        {satisfactionKeys.map((key, idx) => (
+          <Radio.Item className="pl-1 text-start" key={idx} value={idx + 1}>
+            {l(key)}
           </Radio.Item>
         ))}
       </Radio>
@@ -222,7 +231,8 @@ interface VocProps {
   redirect?: string;
 }
 export const Voc = ({ className, value, onChange, redirect }: VocProps) => {
-  st.tool("leaveService", { confirm: "Close the account permanently? This cannot be undone." })
+  const { l } = usePage();
+  st.tool("leaveService", { confirm: l("leaveInfo.leaveConfirmPermanent") })
     .desc("Close this account for good and submit the leaving survey with it.")
     .exec(async () => {
       await st.do.setLeaveInfoOfSelf();
@@ -231,14 +241,14 @@ export const Voc = ({ className, value, onChange, redirect }: VocProps) => {
     });
   return (
     <div className={cn("flex flex-col items-center justify-center gap-4", className)}>
-      <div className="mb-10 w-full text-xl">운영진에 바라는 개선사항을 알려주세요.</div>
+      <div className="mb-10 w-full text-xl">{l("leaveInfo.askVoc")}</div>
       <Input.TextArea
         autoFocus
         className="w-full"
         inputClassName="p-2 w-full rounded-md h-[300px] resize-none bg-background"
         value={value ?? ""}
         validate={(value) => true}
-        placeholder="기타 의견을 남겨주세요."
+        placeholder={l("leaveInfo.vocPlaceholder")}
         onChange={(voc) => {
           onChange(voc);
         }}
@@ -247,12 +257,12 @@ export const Voc = ({ className, value, onChange, redirect }: VocProps) => {
         className={buttonRecipe({ variant: "secondary" }, "w-full")}
         onClick={async () => {
           await st.do.setLeaveInfoOfSelf();
-          if (!window.confirm("탈퇴하시겠습니까?")) return;
+          if (!window.confirm(l("leaveInfo.leaveConfirm"))) return;
           await st.do.removeSelf({ redirect });
           msg.success("user.leaveSuccess");
         }}
       >
-        제출후 탈퇴하기
+        {l("leaveInfo.submitAndLeave")}
       </button>
     </div>
   );

@@ -6,9 +6,13 @@ import {
   formatSubspaceStatuses,
 } from "@akanjs/devkit/subspace";
 import { Logger } from "akanjs/common";
-import { SubspaceRunner } from "./subspace.runner";
+import { type SubspaceAction, SubspaceRunner } from "./subspace.runner";
 
 export class SubspaceScript extends script("subspace", [SubspaceRunner]) {
+  async select(workspace: Workspace, action: SubspaceAction) {
+    return await this.subspaceRunner.selectNames(workspace, action);
+  }
+
   async status(workspace: Workspace, names: string[], format: "text" | "json" = "text") {
     const spinner = workspace.spinning("Checking subspaces...");
     const statuses = await this.subspaceRunner.status(workspace, names);

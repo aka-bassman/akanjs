@@ -5,6 +5,7 @@ import type { TextNode } from "lexical";
 import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
+import type { EditorFeatureKey } from "../feature";
 import type { MentionSource } from "../mention.type";
 import type { EditorSlashOption } from "../plugin";
 import { useEditorUpload } from "../UploadContext";
@@ -29,17 +30,18 @@ const GROUP_ORDER: SlashGroup[] = ["text", "list", "media", "structure", "refere
  * or media insertion.
  */
 interface SlashMenuPluginProps {
+  features: ReadonlySet<EditorFeatureKey>;
   extraOptions?: readonly EditorSlashOption[];
   mentionSources?: readonly MentionSource[];
 }
 
-export const SlashMenuPlugin = ({ extraOptions = [], mentionSources = [] }: SlashMenuPluginProps) => {
+export const SlashMenuPlugin = ({ features, extraOptions = [], mentionSources = [] }: SlashMenuPluginProps) => {
   const [editor] = useLexicalComposerContext();
   const upload = useEditorUpload();
   const [query, setQuery] = useState<string | null>(null);
   const allOptions = useMemo(
-    () => buildOptions(upload, extraOptions, mentionSources),
-    [upload, extraOptions, mentionSources],
+    () => buildOptions({ upload, features, extraOptions, mentionSources }),
+    [upload, features, extraOptions, mentionSources],
   );
 
   // `/` opens the menu at a word boundary; query is a single token (no spaces),

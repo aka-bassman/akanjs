@@ -7,14 +7,13 @@ import { type ReactNode, useMemo } from "react";
 
 import { type AgentField, AgentFieldProvider } from "../agentField";
 import type { EditorFeature } from "../feature";
-import { AKAN_FEATURES } from "../markdown";
 
 interface AgentFieldPluginProps {
   /** The `set<Field>On<Model>` this editor writes, or null to publish nothing. Frozen at mount. */
   name: string | null;
   /** Whether to offer the block read/edit pair. Off for a field too short to address by block. */
   blocks?: boolean;
-  /** What `plugins` contributed, so a plugin node counts as a loss instead of being overwritten silently. */
+  /** Every capability this editor was given — the enabled built-ins plus what `plugins` contributed, so a plugin node counts as a loss instead of being overwritten silently. */
   features: readonly EditorFeature[];
   /**
    * Commits the pending change immediately — the 300ms debounce would leave the form stale, and on an
@@ -34,7 +33,7 @@ export const AgentFieldPlugin = ({ name, blocks = true, features, flush, childre
     return {
       name,
       blockBase: blocks && ref ? `${capitalize(ref.key)}BlocksOn${capitalize(ref.refName)}` : null,
-      features: [...AKAN_FEATURES, ...features],
+      features,
       content: () => editor.getEditorState().toJSON(),
       commit: async (mutate) => {
         await new Promise<void>((resolve) => {

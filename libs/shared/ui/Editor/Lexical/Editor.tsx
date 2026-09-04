@@ -24,7 +24,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { createEditorConfig } from "./config";
 import type { AddFile } from "./editor.type";
 import { validateLinkUrl } from "./editor.util";
-import { AKAN_TRANSFORMERS } from "./markdown";
+import { type EditorFeatureKey, featuresOf, isPlainOnly, transformersOf } from "./feature";
+import { AKAN_FEATURES } from "./markdown";
 import { reconcileAttachments } from "./media";
 import {
   collectPluginFeatures,
@@ -42,9 +43,11 @@ import { CodeHighlightPlugin } from "./plugins/CodeHighlightPlugin";
 import { CollapsiblePlugin } from "./plugins/CollapsiblePlugin";
 import { DraggableBlockPlugin } from "./plugins/DraggableBlockPlugin";
 import { FloatingToolbarPlugin } from "./plugins/FloatingToolbarPlugin";
+import { FormatGuardPlugin } from "./plugins/FormatGuardPlugin";
 import { HorizontalRulePlugin } from "./plugins/HorizontalRulePlugin";
 import { MentionLinkPlugin } from "./plugins/MentionLinkPlugin";
 import { MentionPlugin } from "./plugins/MentionPlugin";
+import { PlainPastePlugin } from "./plugins/PlainPastePlugin";
 import { SlashMenuPlugin } from "./plugins/SlashMenuPlugin";
 import { TableActionsPlugin } from "./plugins/TableActionsPlugin";
 import { UploadPlugin } from "./plugins/UploadPlugin";
@@ -81,8 +84,16 @@ interface EditorProps {
   toolbar?: boolean;
   blockActions?: boolean;
   slashMenu?: boolean;
-  /** Markdown input shortcuts (`# `, `- `, `> `, …). Turn off for documents that are plain text plus mentions. */
+  /** Markdown input shortcuts, for whichever `features` are on. Turn off to type `# ` and `- ` literally. */
   markdown?: boolean;
+  /**
+   * The capabilities this field offers, out of `editorFeatureKeys`. Omitted, it offers all of them.
+   *
+   * One word takes a capability out of the markdown shortcuts, the slash menu, the floating toolbar, the
+   * keyboard shortcut, the plugin that implements it, and the agent's syntax sentence at once — so
+   * `features={["mention"]}` is a textarea that takes mentions, with no prop left disagreeing with another.
+   */
+  features?: readonly EditorFeatureKey[];
   plugins?: EditorPlugin[];
   /** The `set<Field>On<Model>` an agent may write this field through. Omitted, the field is agent-invisible. */
   agentName?: string | null;
@@ -180,6 +191,7 @@ export default function Editor({
   slashMenu = true,
   blockActions = true,
   markdown = true,
+  features,
   plugins,
   agentName,
   agentBlocks,
@@ -197,6 +209,20 @@ export default function Editor({
   const extraSlashOptions = useMemo(() => collectPluginSlashOptions(plugins), [plugins]);
   const mentionSources = useMemo(() => collectPluginMentionSources(plugins), [plugins]);
   const pluginFeatures = useMemo(() => collectPluginFeatures(plugins), [plugins]);
+
+  // Keyed on the joined names, not on the array: `features` is written inline at most call sites, and a
+  // fresh array every render would re-register `FormatGuardPlugin`'s command listener on each one.
+  const featureKey = features?.join(",") ?? "*";
+  const editorFeatures = useMemo(
+    () => [...featuresOf(AKAN_FEATURES, features), ...pluginFeatures],
+    [featureKey, pluginFeatures],
+  );
+  const enabled = useMemo(
+    () => new Set(editorFeatures.flatMap((feature) => (feature.key ? [feature.key] : []))),
+    [editorFeatures],
+  );
+  const transformers = useMemo(() => transformersOf(editorFeatures), [editorFeatures]);
+  const has = (key: EditorFeatureKey) => enabled.has(key);
 
   // Latest values kept in refs so the change/upload callbacks stay identity-stable.
   const onChangeRef = useRef(onChange);
@@ -305,7 +331,7 @@ export default function Editor({
         <AgentFieldPlugin
           name={editable ? (agentName ?? null) : null}
           blocks={agentBlocks}
-          features={pluginFeatures}
+          features={editorFeatures}
           flush={flush}
         >
           <div ref={setAnchorElem} className={cn("akan-editor relative w-full", className)}>
@@ -330,32 +356,42 @@ export default function Editor({
               ErrorBoundary={LexicalErrorBoundary}
             />
             <HistoryPlugin />
-            <ListPlugin />
-            <CheckListPlugin />
-            <LinkPlugin validateUrl={validateLinkUrl} />
-            <AutoLinkPlugin />
-            <HorizontalRulePlugin />
-            <TabIndentationPlugin />
-            <CodeHighlightPlugin />
-            {markdown ? <MarkdownShortcutPlugin transformers={AKAN_TRANSFORMERS} /> : null}
-            <TablePlugin hasCellMerge hasCellBackgroundColor />
+            {has("list") ? (
+              <>
+                <ListPlugin />
+                <CheckListPlugin />
+              </>
+            ) : null}
+            {has("link") ? (
+              <>
+                <LinkPlugin validateUrl={validateLinkUrl} />
+                <AutoLinkPlugin />
+              </>
+            ) : null}
+            {has("divider") ? <HorizontalRulePlugin /> : null}
+            {has("list") || has("code") ? <TabIndentationPlugin /> : null}
+            {has("code") ? <CodeHighlightPlugin /> : null}
+            {markdown && transformers.length ? <MarkdownShortcutPlugin transformers={transformers} /> : null}
+            {has("table") ? <TablePlugin hasCellMerge hasCellBackgroundColor /> : null}
             <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
             <FlushOnBlurPlugin onBlur={flush} />
             <ExternalValuePlugin value={value} />
+            <FormatGuardPlugin features={enabled} />
             <AgentRichPlugin />
-            <AgentMentionPlugin sources={mentionSources} />
+            {has("mention") ? <AgentMentionPlugin sources={mentionSources} /> : null}
             <EditableSyncPlugin editable={editable} />
             <MentionLinkPlugin />
+            {editable && isPlainOnly(editorFeatures) ? <PlainPastePlugin /> : null}
             {editable && slashMenu ? (
-              <SlashMenuPlugin extraOptions={extraSlashOptions} mentionSources={mentionSources} />
+              <SlashMenuPlugin features={enabled} extraOptions={extraSlashOptions} mentionSources={mentionSources} />
             ) : null}
-            {editable && mentionSources.length ? <MentionPlugin sources={mentionSources} /> : null}
-            {editable && toolbar ? <FloatingToolbarPlugin /> : null}
+            {editable && has("mention") && mentionSources.length ? <MentionPlugin sources={mentionSources} /> : null}
+            {editable && toolbar ? <FloatingToolbarPlugin features={enabled} /> : null}
             {editable && blockActions && anchorElem ? <DraggableBlockPlugin anchorElem={anchorElem} /> : null}
-            {editable ? <CalloutPlugin /> : null}
-            {editable ? <CollapsiblePlugin /> : null}
-            {editable ? <TableActionsPlugin /> : null}
-            {editable && addFilesGql ? <UploadPlugin /> : null}
+            {editable && has("callout") ? <CalloutPlugin /> : null}
+            {editable && has("collapsible") ? <CollapsiblePlugin /> : null}
+            {editable && has("table") ? <TableActionsPlugin /> : null}
+            {editable && addFilesGql && (has("image") || has("video") || has("file")) ? <UploadPlugin /> : null}
             {editable ? plugins?.map((plugin, index) => <Fragment key={index}>{plugin.render?.()}</Fragment>) : null}
           </div>
         </AgentFieldPlugin>

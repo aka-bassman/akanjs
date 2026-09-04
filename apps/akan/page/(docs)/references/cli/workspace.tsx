@@ -120,7 +120,7 @@ akan lint-all --fix false`,
     },
     {
       name: "subspace",
-      signature: "akan subspace <status|diff|push|pull> [name] [--format <text|json>]",
+      signature: "akan subspace <status|status-all|diff|push|push-all|pull> [name] [--format <text|json>]",
       desc: "Mirror apps and libraries between this workspace and the customer repos (subspaces) it serves, declared in `akan.subspace.ts` at the workspace root.\nThe branch is the unit of uniformity: whichever branch the workspace is on is the branch every subspace receives, so one branch holds one akanjs version and one copy of the library source everywhere. Only the branches `akan.subspace.ts` lists are pushable.\nPush is a squashed snapshot of the workspace's git-tracked files, so a subspace's history never carries the workspace's and one customer's commit messages never reach another's repo. The root manifest is rebuilt from the apps that subspace actually serves, keeping the workspace's exact version specs, so no other customer's dependency tree is installed there. Libraries are push-only: pull applies the subspace's app commits and reports its library edits as a patch instead, because the workspace is the one copy every other subspace is pushed from.\nPull compares the subspace against the last push it received — located by the `akan.subspace.json` only a push writes — rather than against the workspace, so the diff is exactly the customer's own work however far the workspace has moved on. It lands uncommitted in the working tree for a person to review.\nEnvironment values under `env/` are subspace-owned in both directions and are never overwritten or pulled.",
       args: [
         {
@@ -128,14 +128,14 @@ akan lint-all --fix false`,
           type: "String",
           required: "no",
           defaultValue: "status",
-          desc: "status, diff, push, or pull.",
+          desc: "status, status-all, diff, push, push-all, or pull. status and push ask which subspaces to act on when no name is given; the -all forms take every declared subspace and accept no name.",
         },
         {
           name: "name",
           type: "String",
           required: "no",
           defaultValue: "-",
-          desc: "Subspace name. Every subspace when omitted; required for diff and pull, which are reviewed one repo at a time.",
+          desc: "Subspace name. When omitted the command asks: a multi-select for status and push, a single choice for diff and pull, which are reviewed one repo at a time. Without a terminal to ask in, pass a name or use status-all / push-all.",
         },
         {
           name: "--format",
@@ -167,8 +167,11 @@ akan lint-all --fix false`,
         },
       ],
       examples: `akan subspace status
+akan subspace status-all
 akan subspace diff acme
 akan subspace push
+akan subspace push acme
+akan subspace push-all
 akan subspace pull acme
 akan subspace pull acme --adopt-libs`,
     },

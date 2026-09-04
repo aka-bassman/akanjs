@@ -274,6 +274,7 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
     ssoType: cnst.SsoType["value"],
     ssoCookie: SsoCookie,
     account?: Account,
+    ssoNickname?: string,
   ): Promise<{ cookie?: { [key: string]: string }; redirect: string }> {
     const { prepareUserId, ssoFor, signinRedirect, signupRedirect, adminRedirect, errorRedirect } = ssoCookie;
     try {
@@ -295,6 +296,11 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
         } else {
           const user = await this.generatePrepareUser(prepareUserId);
           await this.userModel.setSsoInPrepareUser(user.id, accountId, ssoType);
+          // 가입 화면에서 닉네임을 따로 받지 않는다 — SSO 프로필 이름을 그대로 쓰고, 비면 계정 아이디에서 만든다.
+          if (!user.nickname) {
+            const nickname = await this.userModel.makeUniqueNickname(ssoNickname || accountId);
+            await this.userModel.setNickname(user.id, nickname);
+          }
           return { redirect: withRedirectQuery(signupRedirect, { userId: user.id }) };
         }
       }

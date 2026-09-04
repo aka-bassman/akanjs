@@ -23,7 +23,6 @@ export class AdminFilter extends from(cnst.Admin, (filter) => ({
   },
   sort: {},
 })) {}
-
 export class Admin extends by(cnst.Admin) {
   declare isModified: (field?: string) => boolean;
 

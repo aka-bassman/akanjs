@@ -68,7 +68,20 @@ export const dictionary = modelDictionary(["en", "ko"])
       "API to get the active summary",
       "활성 요약을 조회하는 API",
     ]),
+    recountSummary: fn(["Recount summary", "요약 다시 집계"]).desc([
+      "API to recount every summary metric right now",
+      "모든 요약 지표를 지금 다시 집계하는 API",
+    ]),
   }))
   .error({
     queryKeyNotDefined: ["queryKey is not defined for key: {key}", "키에 대한 queryKey가 정의되지 않았습니다: {key}"],
+    queryFnNotDefined: [
+      "query function is not defined for key: {key}",
+      "키에 대한 조회 함수가 정의되지 않았습니다: {key}",
+    ],
+  })
+  .translate({
+    refresh: ["Refresh", "다시 집계"],
+    userGroup: ["Users", "사용자"],
+    activeUserGroup: ["Active users", "활성 사용자"],
   });

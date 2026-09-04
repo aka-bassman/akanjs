@@ -37,6 +37,7 @@ const Rich = memo((props: RichProps) => {
     blockActions,
     slashMenu,
     markdown,
+    features,
     placeholder,
     nullable,
     disabled,
@@ -73,6 +74,7 @@ const Rich = memo((props: RichProps) => {
         blockActions={blockActions}
         slashMenu={slashMenu}
         markdown={markdown}
+        features={features}
         onChange={(val) => {
           onChange(val);
         }}

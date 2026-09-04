@@ -91,9 +91,10 @@ const MERMAID: MultilineElementTransformer = {
  * Every capability of the Akan editor, against the markdown that carries it.
  *
  * A feature with `transformers` survives a markdown round-trip; one without is destroyed by it, and
- * its `label` is the word the agent hears in the refusal. `underline` appears nowhere because it has
- * no markdown form at all (use ⌘U). `AKAN_TRANSFORMERS`, the loss labels and the agent's syntax
- * cheat-sheet are all read off this one table — see `feature.ts` for why that matters.
+ * its `label` is the word the agent hears in the refusal. `underline` carries neither, because it has
+ * no markdown form at all (use ⌘U) — it is in the table only for its `key`. `AKAN_TRANSFORMERS`, the
+ * loss labels, the agent's syntax cheat-sheet and everything the editor's `features` prop switches off
+ * are all read off this one table — see `feature.ts` for why that matters.
  *
  * **Order is load-bearing, twice over.** Element and multiline transformers must precede text-format,
  * which must precede text-match; and within a kind the earlier entry wins a tie — MERMAID before CODE
@@ -106,14 +107,15 @@ const MERMAID: MultilineElementTransformer = {
  * counted. A node contributed through `plugins` declares its own entry — see `EditorPlugin.features`.
  */
 export const AKAN_FEATURES: readonly EditorFeature[] = [
-  { nodeType: "horizontalrule", transformers: [HR], syntax: "`---` dividers" },
-  { nodeType: "heading", transformers: [HEADING], syntax: "`#` headings" },
-  { nodeType: "quote", transformers: [QUOTE], syntax: "`>` quotes" },
-  { nodeType: "akan-mermaid", transformers: [MERMAID], syntax: "```mermaid diagrams" },
-  { nodeType: "code", transformers: [CODE], syntax: "``` code fences" },
+  { key: "divider", nodeType: "horizontalrule", transformers: [HR], syntax: "`---` dividers" },
+  { key: "heading", nodeType: "heading", transformers: [HEADING], syntax: "`#` headings" },
+  { key: "quote", nodeType: "quote", transformers: [QUOTE], syntax: "`>` quotes" },
+  { key: "mermaid", nodeType: "akan-mermaid", transformers: [MERMAID], syntax: "```mermaid diagrams" },
+  { key: "code", nodeType: "code", transformers: [CODE], syntax: "``` code fences" },
   // After CODE so a pipe inside a fence is never read as a row: `$importMultiline` consumes a fence
   // whole and skips its lines, and the multiline transformers are tried in this order.
   {
+    key: "table",
     nodeType: "table",
     label: "merged table cell",
     transformers: [tableTransformer(() => AKAN_TRANSFORMERS)],
@@ -121,11 +123,13 @@ export const AKAN_FEATURES: readonly EditorFeature[] = [
     syntax: "`| a | b |` tables over a `| --- | --- |` row",
   },
   {
+    key: "list",
     nodeType: "list",
     transformers: [UNORDERED_LIST, ORDERED_LIST, CHECK_LIST],
     syntax: "`-` and `1.` lists, `- [ ]` checklists",
   },
   {
+    key: "emphasis",
     transformers: [
       BOLD_ITALIC_STAR,
       BOLD_ITALIC_UNDERSCORE,
@@ -136,24 +140,29 @@ export const AKAN_FEATURES: readonly EditorFeature[] = [
     ],
     syntax: "**bold** and *italic*",
   },
-  { transformers: [STRIKETHROUGH], syntax: "~~strikethrough~~" },
-  { transformers: [INLINE_CODE], syntax: "`inline code`" },
-  { transformers: [HIGHLIGHT], syntax: "==highlight==" },
+  { key: "strikethrough", transformers: [STRIKETHROUGH], syntax: "~~strikethrough~~" },
+  { key: "inlineCode", transformers: [INLINE_CODE], syntax: "`inline code`" },
+  { key: "highlight", transformers: [HIGHLIGHT], syntax: "==highlight==" },
+  // Carried by no transformer and no node — it is here only so `features` can switch ⌘U and its
+  // toolbar button off with the same word as everything else.
+  { key: "underline" },
   // Before LINK — the two end at the same index and the outermost-match tie-break falls back to array
   // order, so behind it every mention would import as a link to `mention:…`. See `markdownMention.ts`.
   {
+    key: "mention",
     nodeType: "akan-mention",
     transformers: [MENTION],
+    plain: true,
     syntax: "`@[label](mention:model/id)` mentions, whose ids come from `searchMentions`",
   },
-  { nodeType: "link", transformers: [LINK], syntax: "[links](url)" },
-  { nodeType: "akan-image", label: "image" },
-  { nodeType: "akan-video", label: "video" },
-  { nodeType: "akan-file", label: "file" },
-  { nodeType: "akan-embed", label: "embed" },
-  { nodeType: "akan-excalidraw", label: "drawing" },
-  { nodeType: "akan-callout", label: "callout" },
-  { nodeType: "akan-collapsible", label: "toggle" },
+  { key: "link", nodeType: "link", transformers: [LINK], syntax: "[links](url)" },
+  { key: "image", nodeType: "akan-image", label: "image" },
+  { key: "video", nodeType: "akan-video", label: "video" },
+  { key: "file", nodeType: "akan-file", label: "file" },
+  { key: "embed", nodeType: "akan-embed", label: "embed" },
+  { key: "excalidraw", nodeType: "akan-excalidraw", label: "drawing" },
+  { key: "callout", nodeType: "akan-callout", label: "callout" },
+  { key: "collapsible", nodeType: "akan-collapsible", label: "toggle" },
 ];
 
 export const AKAN_TRANSFORMERS: Transformer[] = transformersOf(AKAN_FEATURES);

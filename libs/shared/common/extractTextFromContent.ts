@@ -4,10 +4,13 @@ interface ContentNode {
   children?: ContentNode[];
 }
 
-const nodeText = (node: ContentNode): string => {
+const MENTION = "akan-mention";
+
+const nodeText = (node: ContentNode, skipMentions = false): string => {
+  if (skipMentions && node.type === MENTION) return "";
   if (typeof node.text === "string") return node.text;
   const children = Array.isArray(node.children) ? node.children : [];
-  const childText = children.map(nodeText).join("");
+  const childText = children.map((child) => nodeText(child, skipMentions)).join("");
   switch (node.type) {
     case "quote":
     case "blockquote":
@@ -31,17 +34,16 @@ const nodeText = (node: ContentNode): string => {
   }
 };
 
-/**
- * Extracts plain text from stored editor `content` for previews / meta / SEO.
- *
- * Reads the Lexical `SerializedEditorState` (`{ root: { children } }`) shape used
- * by `Editor.Rich`. Stays defensive against wiped (`[]`), legacy Slate-array, or
- * garbage input — returns `""` rather than throwing — so callers can pass raw
- * `content` of any vintage.
- */
 export const extractTextFromContent = (content: unknown): string => {
   if (!content || typeof content !== "object") return "";
   if (Array.isArray(content)) return content.map((node) => nodeText(node as ContentNode)).join("");
   const root = (content as { root?: ContentNode }).root;
   return root ? nodeText(root) : "";
+};
+
+export const extractTextWithoutMentions = (content: unknown): string => {
+  if (!content || typeof content !== "object") return "";
+  if (Array.isArray(content)) return content.map((node) => nodeText(node as ContentNode, true)).join("");
+  const root = (content as { root?: ContentNode }).root;
+  return root ? nodeText(root, true) : "";
 };
