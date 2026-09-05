@@ -350,6 +350,35 @@ describe("AkanServer MCP config", () => {
   });
 });
 
+describe("AkanServer locale coverage", () => {
+  test("names a configured locale the dictionaries never wrote", async () => {
+    setAkanEnv();
+    const { AkanServer, createLib } = await loadRuntime();
+    const { makeTrans, serviceDictionary } = await import("akanjs/dictionary");
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-locale-"));
+    makeTrans({
+      localeCoverageTest: {
+        dict: serviceDictionary(["en", "ko"] as [string, string]).translate({ ready: ["Ready", "준비됨"] }),
+      } as never,
+    });
+    process.env.AKAN_PUBLIC_LOCALES = "en,ko,zhChs";
+    const lines: string[] = [];
+    const stop = Logger.addSink(({ message }) => void lines.push(message));
+    const server = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
+    try {
+      await server.init({ web: false });
+      const log = lines.join("\n");
+      expect(log).toContain('Locale "zhChs" is configured but');
+      expect(log).toContain("localeCoverageTest");
+    } finally {
+      stop();
+      delete process.env.AKAN_PUBLIC_LOCALES;
+      await server.stop();
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("AkanServer agent relay access", () => {
   test("registers the guard an app declares in its option.ts", async () => {
     setAkanEnv();

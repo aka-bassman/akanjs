@@ -387,13 +387,20 @@ describe("WorkspaceRunner", () => {
     ]);
   });
 
-  test("pins the biome config so a malformed one is reported at its own line", async () => {
+  test("pins a generated strict config that adds the batch-only domains, and removes it afterwards", async () => {
     const runner = new WorkspaceRunner();
     const { root } = await createTempApp("demo");
     tempRoots.push(root);
     const workspace = createFakeExecutor("workspace");
     workspace.workspaceRoot = root;
-    const spawn = mock(async () => "");
+    let configPath = "";
+    let configText = "";
+    const spawn = mock(async (...args: unknown[]) => {
+      const commandArgs = (args[1] ?? []) as string[];
+      configPath = commandArgs[commandArgs.indexOf("--config-path") + 1] ?? "";
+      configText = await Bun.file(configPath).text();
+      return "";
+    });
     workspace.spawn = spawn;
     await Bun.write(`${root}/biome.jsonc`, "{}\n");
 
@@ -404,9 +411,15 @@ describe("WorkspaceRunner", () => {
       "--no-errors-on-unmatched",
       `--max-diagnostics=${defaultMaxDiagnostics}`,
       "--config-path",
-      `${root}/biome.jsonc`,
+      `${root}/.biome.strict.${process.pid}.json`,
       `${root}/apps/demo`,
     ]);
+    expect(JSON.parse(configText).extends).toEqual([
+      "@akanjs/devkit/biome.base.json",
+      "./biome.jsonc",
+      "@akanjs/devkit/biome.domains.json",
+    ]);
+    expect(await Bun.file(configPath).exists()).toBe(false);
   });
 
   test("discovers apps/libs/packages through workspace executors", async () => {

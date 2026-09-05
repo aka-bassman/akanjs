@@ -131,6 +131,15 @@ back.
   `biome.jsonc` to document a disabled rule.
 - **`akan lint` prints up to 200 diagnostics** (`--max-diagnostics <n>`, `0` for no limit). Biome's own default is
   20 with no count, which reads as progress when the mix of findings merely changed.
+- **The type-aware rules run in `akan lint` and at pre-commit, not in the editor.** `biome.base.json` pins
+  `linter.domains.types` and `.project` to `none`, so the LSP never builds a type or module graph on save; both
+  batch runners re-apply `@akanjs/devkit/biome.domains.json` through a throwaway `.biome.strict.<pid>.json` they
+  write in the workspace root and delete when the run ends. A finding that `akan lint` reports and your editor
+  does not — `noUnnecessaryConditions`, `useArraySortCompare`, `useArrayFind` — is that split, not a stale editor.
+  **Never add a second committed Biome config to get the same effect:** `plugins` paths resolve from the entry
+  config's own directory, so a config under `.husky/` loads none of the grit rules, and `extends` is one level
+  deep, so a config extending `./biome.json` inherits nothing that `biome.json` itself extends. Spell every domain
+  out in both files — an unspecified domain is inferred from the project's dependencies and turned on, not off.
 
 ## Coding Style (`**/*.{ts,tsx}`)
 

@@ -1,7 +1,7 @@
 import type { AkanWebConfig, AkanWebOption } from "akanjs";
 import { type BackendEnv, type BaseEnv, getEnv } from "akanjs/base";
 import { Logger, logSeverity, websocketBinaryFrameContract } from "akanjs/common";
-import { DictionaryLookup } from "akanjs/dictionary";
+import { DictionaryLookup, DictionaryRegistry } from "akanjs/dictionary";
 import type {
   Adaptor,
   AdaptorCls,
@@ -616,6 +616,24 @@ export class AkanServer {
     );
   }
 
+  /**
+   * Names, once at boot, every configured locale the dictionaries never wrote.
+   *
+   * A dictionary declares its own locale tuple and a lib ships that tuple to every app that mounts it, so an app
+   * that configures a third locale cannot widen it from the outside — the framework's own `base.*` keys included.
+   * Those keys then resolve through the default-locale fallback, which is a readable screen and therefore a
+   * silent one: the only other symptom is text that never turned into the new language.
+   */
+  #reportLocaleCoverage() {
+    for (const { locale, missing, total } of DictionaryRegistry.getLocaleGaps()) {
+      const listed = missing.slice(0, 10).join(", ");
+      const rest = missing.length > 10 ? `, and ${missing.length - 10} more` : "";
+      this.logger.warn(
+        `Locale "${locale}" is configured but ${missing.length}/${total} dictionaries do not declare it, so their keys fall back to the default locale: ${listed}${rest}`,
+      );
+    }
+  }
+
   #createBuiltinRoutes(): HttpRoutes {
     const { appName } = getEnv();
     const openapiRoutes: HttpRoutes = this.openapi
@@ -665,6 +683,7 @@ export class AkanServer {
     // Builds the catalogue here rather than on the first agent request, so what MCP published — and what it
     // refused despite an author opting in — is in the boot log of the process that decided it.
     mcpRouter?.report();
+    this.#reportLocaleCoverage();
     // Registered only when the gate passes, so outside `local` the paths do not exist at all and fall
     // through to the SSR catch-all as a natural 404 rather than a handler that answers "forbidden".
     const devtoolsRoutes = new DevtoolsRouter({

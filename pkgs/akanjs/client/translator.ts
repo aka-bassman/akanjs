@@ -1,4 +1,4 @@
-import { pathGetLoose } from "akanjs/common";
+import { interpolateTranslation, parseAkanI18nEnv, pathGetLoose } from "akanjs/common";
 
 export interface Dictionary {
   [key: string]: {
@@ -66,10 +66,21 @@ export class Translator {
     delete getTranslatorState().activePath;
   }
   static translateByLocale(lang: string, key: string, param?: Record<string, string | number>): string {
+    const msg = Translator.#lookup(lang, key) ?? Translator.#lookupDefault(lang, key) ?? key;
+    return interpolateTranslation(msg, param);
+  }
+  static #lookup(lang: string, key: string) {
     const dictionary = getTranslatorState().langDictionaryMap.get(lang);
-    if (!dictionary) return key;
-    const msg = (pathGetLoose(key, dictionary, ".", { t: key }) as { t: string }).t;
-    return param ? msg.replace(/{([^}]+)}/g, (_, key: string) => param[key] as string) : msg;
+    if (!dictionary) return undefined;
+    const node = pathGetLoose(key, dictionary, ".") as { t?: unknown } | null;
+    return typeof node?.t === "string" ? node.t : undefined;
+  }
+  // Every dictionary declares its own locale tuple, so an app that configures a locale its libs — and the
+  // framework's own dictionaries — never wrote has no entry at all for their keys. Rendering the dotted key as
+  // prose is the one answer that is always wrong.
+  static #lookupDefault(lang: string, key: string) {
+    const { defaultLocale } = parseAkanI18nEnv();
+    return defaultLocale === lang ? undefined : Translator.#lookup(defaultLocale, key);
   }
   // Synchronously merge a single locale's dictionary into the shared map.
   // Idempotent: re-seeding the same locale merges keys without dropping existing ones, and re-seeding

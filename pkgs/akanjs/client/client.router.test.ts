@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { interpolateTranslation } from "../common/interpolateTranslation";
 import { pathGetLoose } from "../common/pathGetLoose";
 
 type Side = "server" | "client";
@@ -49,6 +50,7 @@ beforeAll(() => {
         if (!acc || typeof acc !== "object") return fallback;
         return (acc as Record<string, unknown>)[key] ?? fallback;
       }, obj),
+    interpolateTranslation,
     pathGetLoose,
     getBasePathFromPathname: (
       pathname: string,

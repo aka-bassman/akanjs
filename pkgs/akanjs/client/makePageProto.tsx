@@ -176,12 +176,15 @@ export const makePageProto = <
             }}
           />
         ) as ReactNode;
+      // The record is written per call site, so a locale the app configured later is simply not in it. Walk the
+      // chain a dictionary key walks — asked-for locale, then the configured default — before giving up.
       l.trans = <Returns extends ReactNode>(
         translation: Record<"en" | "ko" | (string & {}), Returns>,
       ): Returns extends string ? string : Returns => {
-        return (translation[lang as "en" | "ko" | (string & {})] ?? "unknown translation") as Returns extends string
-          ? string
-          : Returns;
+        const written = translation[lang as "en" | "ko" | (string & {})];
+        if (written !== undefined) return written as Returns extends string ? string : Returns;
+        const fallback = translation[parseAkanI18nEnv().defaultLocale] ?? Object.values(translation).at(0);
+        return (fallback ?? "") as Returns extends string ? string : Returns;
       };
       return { path, l, lang };
     },

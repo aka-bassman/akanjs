@@ -570,3 +570,36 @@ describe("makeDictionary", () => {
     });
   });
 });
+
+describe("translate locale fallback", () => {
+  const twoLocaleTrans = makeTrans({
+    dictionaryTestNarrow: {
+      dict: serviceDictionary(["en", "ko"] as [string, string]).translate({
+        ready: ["Ready", "준비됨"],
+        greeting: ["Hello {name}", "안녕 {name}"],
+      }),
+    } as never,
+  });
+
+  test("resolves a locale the dictionary never declared through the default locale", () => {
+    expect(twoLocaleTrans.translate("zhChs", "dictionaryTestNarrow.ready" as never)).toBe("Ready");
+    expect(twoLocaleTrans.translate("ko", "dictionaryTestNarrow.ready" as never)).toBe("준비됨");
+  });
+
+  test("returns the key only when no locale carries it", () => {
+    expect(twoLocaleTrans.translate("zhChs", "dictionaryTestNarrow.missing" as never)).toBe(
+      "dictionaryTestNarrow.missing",
+    );
+    expect(twoLocaleTrans.translate("en", "dictionaryTestNarrow.missing" as never)).toBe(
+      "dictionaryTestNarrow.missing",
+    );
+  });
+
+  test("fills placeholders from the data argument", () => {
+    expect(twoLocaleTrans.translate("ko", "dictionaryTestNarrow.greeting" as never, { name: "민" })).toBe("안녕 민");
+    expect(twoLocaleTrans.translate("zhChs", "dictionaryTestNarrow.greeting" as never, { name: "Ada" })).toBe(
+      "Hello Ada",
+    );
+    expect(twoLocaleTrans.translate("en", "dictionaryTestNarrow.greeting" as never)).toBe("Hello {name}");
+  });
+});

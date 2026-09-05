@@ -1,5 +1,5 @@
 import type { GetStateObject, ObjectAssign, Prettify } from "akanjs/base";
-import { pathGetLoose } from "akanjs/common";
+import { interpolateTranslation, parseAkanI18nEnv, pathGetLoose } from "akanjs/common";
 
 import { DictionaryRegistry } from "./dictionaryRegistry";
 import type { DictModule } from "./locale";
@@ -25,9 +25,9 @@ export const makeDictionary = <Dicts extends Record<string, unknown>[]>(
   return Object.assign(...(dicts as unknown as [object, object])) as Prettify<ObjectAssign<Dicts>>;
 };
 
-const languages = ["en", "ko", "zhChs", "zhCht", "ja"] as const;
-
-type Language = (typeof languages)[number];
+// Locales are per-app (`AKAN_PUBLIC_LOCALES`), so the codes the framework ships names for are a hint for
+// autocomplete, not a closed set — an app is free to configure one nothing here lists.
+type Language = "en" | "ko" | "zhChs" | "zhCht" | "ja" | (string & {});
 export interface TransMessageOption {
   key?: string;
   duration?: number;
@@ -191,13 +191,24 @@ export const makeTrans = <
       }
     };
   }
+  const lookup = (lang: string, modelName: string, msgKey: string) => {
+    const model = rootDictionary[lang]?.[modelName];
+    if (!model) return undefined;
+    const node = pathGetLoose(msgKey, model, ".") as { t?: unknown } | null;
+    return typeof node?.t === "string" ? node.t : undefined;
+  };
+  // A dictionary declares its own locale tuple, so an app that configures a third locale gets no node at all for
+  // the keys every lib — and the framework itself — only wrote in two. The dotted key is right only when no
+  // locale carries it.
+  const lookupDefault = (lang: string, modelName: string, msgKey: string) => {
+    const { defaultLocale } = parseAkanI18nEnv();
+    return defaultLocale === lang ? undefined : lookup(defaultLocale, modelName, msgKey);
+  };
   const translate = (lang: Language, key: _DictKey, data?: TranslationData) => {
-    const [modelName, ...msgKeys] = key.split(".");
+    const [modelName = "", ...msgKeys] = key.split(".");
     const msgKey = msgKeys.join(".");
-    const langDict = rootDictionary[lang] ?? {};
-    const model = langDict[modelName as string] ?? {};
-    const message = pathGetLoose(msgKey as string, model, ".", { t: key }) as { t: string };
-    return message.t;
+    const message = lookup(lang, modelName, msgKey) ?? lookupDefault(lang, modelName, msgKey) ?? (key as string);
+    return interpolateTranslation(message, data);
   };
   const getDictionary = (lang: Language) => {
     return rootDictionary[lang];

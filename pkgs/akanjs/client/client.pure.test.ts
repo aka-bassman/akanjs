@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { interpolateTranslation } from "../common/interpolateTranslation";
 import { pathGetLoose } from "../common/pathGetLoose";
 import { cn } from "./cn";
 import { createFont, Inter, Nanum_Gothic_Coding, Noto_Sans_KR, Roboto } from "./createFont";
@@ -23,6 +24,7 @@ beforeAll(() => {
         if (!acc || typeof acc !== "object") return fallback;
         return (acc as Record<string, unknown>)[key] ?? fallback;
       }, obj),
+    interpolateTranslation,
     pathGetLoose,
     Logger: { log: () => undefined, verbose: () => undefined, error: () => undefined },
     parseAkanI18nEnv: () => ({ locales: ["en", "ko"], defaultLocale: "en" }),
@@ -121,7 +123,7 @@ describe("client pure exports and utilities", () => {
 });
 
 describe("Translator", () => {
-  test("merges dictionaries, translates nested paths, replaces params, and falls back to keys", async () => {
+  test("merges dictionaries, translates nested paths, replaces params, and falls back to the default locale", async () => {
     const translator = new Translator({
       en: {
         user: {
@@ -146,8 +148,10 @@ describe("Translator", () => {
     expect(translator.translate("en", "user.greeting", { name: "Ada" })).toBe("Hello Ada");
     expect(translator.translate("en", "user.nested.title")).toBe("Nested title");
     expect(translator.translate("ko", "user.greeting", { name: "민" })).toBe("안녕 민");
-    expect(translator.translate("ja", "user.greeting")).toBe("user.greeting");
+    expect(translator.translate("ja", "user.greeting", { name: "Ada" })).toBe("Hello Ada");
+    expect(translator.translate("ja", "user.missing")).toBe("user.missing");
     expect(translator.translate("en", "user.missing")).toBe("user.missing");
+    expect(translator.translate("en", "user.greeting")).toBe("Hello {name}");
     expect(await translator.getDictionary("en")).toMatchObject({
       user: {
         greeting: { t: "Hello {name}" },

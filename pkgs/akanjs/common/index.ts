@@ -18,6 +18,7 @@ export { formatNumber } from "./formatNumber";
 export { formatPhone } from "./formatPhone";
 export { getAllPropertyDescriptors } from "./getAllPropertyDescriptors";
 export { type AkanHmrPhase, getAkanHmrPhase, isAkanHmrApplying } from "./hmrPhase";
+export { interpolateTranslation } from "./interpolateTranslation";
 export { isDayjs } from "./isDayjs";
 export { isEmail } from "./isEmail";
 export { isPhoneNumber } from "./isPhoneNumber";
