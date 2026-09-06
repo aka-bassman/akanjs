@@ -1,6 +1,6 @@
 "use client";
 
-import { getCookie } from "akanjs/client";
+import { getAuthToken } from "akanjs/client";
 import { decodeJwtPayload, Logger } from "akanjs/common";
 import { useEffect } from "react";
 import type { AuthScope, TokenPayload } from "./tokenRefresh.type";
@@ -27,7 +27,7 @@ export const TokenRefresh = ({ scope }: TokenRefreshProps) => {
 
     const schedule = () => {
       clearRefreshTimeout();
-      const jwt = getCookie("jwt");
+      const jwt = getAuthToken();
       if (!jwt) return;
 
       let payload: TokenPayload;

@@ -11,11 +11,6 @@ LINT_FILES=$(echo "$FILES" | grep -E '(\.ts|\.tsx)$' || true)
 echo "Checking commit files with Biome..."
 # Run Biome autofix if there are lint files. Any remaining errors fail the commit.
 if [ -n "$LINT_FILES" ]; then
-  # biome.json leaves the type- and project-aware domains off so the editor never builds those graphs on save.
-  # This throwaway config puts them back for the commit; it lands in the workspace root because Biome resolves
-  # plugin paths from the config's own directory, and is removed on exit.
-  STRICT_CONFIG=$(bun node_modules/@akanjs/devkit/biomeStrictConfig.ts)
-  trap 'rm -f "$STRICT_CONFIG"' EXIT
-  echo "$LINT_FILES" | xargs ./node_modules/.bin/biome check --write --config-path="$STRICT_CONFIG" --no-errors-on-unmatched --diagnostic-level=error
+  echo "$LINT_FILES" | xargs ./node_modules/.bin/biome check --write --no-errors-on-unmatched --diagnostic-level=error
   echo "$LINT_FILES" | xargs git add --
 fi

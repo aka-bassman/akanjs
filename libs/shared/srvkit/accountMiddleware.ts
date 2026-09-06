@@ -1,5 +1,6 @@
 import { resolveJwt, resolveJwtSecret } from "@libs/util/srvkit";
 import { getEnv } from "akanjs/base";
+import { readAuthToken } from "akanjs/common";
 import type { Account } from "akanjs/fetch";
 import type { Middleware, SignalContext } from "akanjs/signal";
 import type { ModulesOptions } from "../lib/option";
@@ -15,9 +16,10 @@ export class AccountMiddleware implements Middleware {
       const req = (
         context.transport === "http" ? context.getHttpContext().req : context.getWebSocketContext().ws.data
       ) as Partial<ReqType>;
+      const cookieJwt = readAuthToken((key) => req.cookies?.get(key));
       const account = await resolveJwt<AccessAccount>(
         jwtSecret,
-        req.headers?.get("authorization") ?? (req.cookies?.has("jwt") ? `Bearer ${req.cookies.get("jwt")}` : undefined),
+        req.headers?.get("authorization") ?? (cookieJwt ? `Bearer ${cookieJwt}` : undefined),
         { appName, environment } as unknown as AccessAccount,
       );
       Object.assign(req, {

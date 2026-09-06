@@ -3,6 +3,7 @@ import {
   csrContext,
   Device,
   getExplicitPageConfigKeys,
+  getStoredAuthToken,
   initAuth,
   type LayoutModule,
   type PageConfig,
@@ -13,7 +14,6 @@ import {
   type RouteRender,
   readCssSafeAreaInsets,
   resolvePageState,
-  storage,
   validatePageConfig,
 } from "akanjs/client";
 import {
@@ -87,7 +87,7 @@ export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
   if (pathname === "/404") return;
 
   // 1. Collect Device Information
-  const [device, jwt] = await Promise.all([Device.load({ supportLanguages: i18n.locales }), storage.getItem("jwt")]);
+  const [device, jwt] = await Promise.all([Device.load({ supportLanguages: i18n.locales }), getStoredAuthToken()]);
   if (!window.__AKAN_MOBILE_TARGET__ && !pathname.startsWith(`/${device.lang}`))
     window.location.replace(`/${device.lang}${pathname}${window.location.search}${window.location.hash}`);
 

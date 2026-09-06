@@ -9,6 +9,7 @@ let Units: typeof import("./Units").default;
 let View: typeof import("./View").default;
 let makeStore: (state?: Record<string, unknown>) => void;
 let calls: Record<string, ReturnType<typeof mock>>;
+let sliceState: { get: () => Record<string, unknown>; set: (state: Record<string, unknown>) => void };
 
 const l = Object.assign((key: string) => key, {
   _: (key: string) => key,
@@ -25,7 +26,8 @@ beforeAll(async () => {
   const { Int, SLICE_META } = await import("akanjs/base");
   const { ConstantRegistry, via } = await import("akanjs/constant");
   const { registerClientRuntime } = await import("akanjs/client");
-  const { store, StoreRegistry } = await import("akanjs/store");
+  const { st, store, StoreRegistry } = await import("akanjs/store");
+  sliceState = st as unknown as typeof sliceState;
 
   const Input = via((f) => ({ title: f(String) }));
   const Obj = via(Input, () => ({}));
@@ -36,6 +38,7 @@ beforeAll(async () => {
   calls = {
     loadTestItemList: mock(async () => [new Light({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada" })]),
     loadTestItemInsight: mock(async () => new Insight({ count: 1 })),
+    loadTestItem: mock(async (id: string) => new Full({ id, title: "Fresh" })),
   };
   const signalFetch = new Proxy(calls, {
     get(target, key: string) {
@@ -70,36 +73,66 @@ interface Item {
   title: string;
 }
 
-const serverInit = ({ insight = true }: { insight?: boolean } = {}): ServerInit<"loadTestItem", Item> => ({
+interface InitOptions {
+  insight?: boolean;
+  args?: unknown[];
+  id?: string;
+  title?: string;
+  initAt?: Date;
+}
+
+const serverInit = ({
+  insight = true,
+  args = [],
+  id = "aaaaaaaaaaaaaaaaaaaaaaaa",
+  title = "Ada",
+  initAt = new Date(),
+}: InitOptions = {}): ServerInit<"loadTestItem", Item> => ({
   refName: "loadTestItem",
   sliceName: "loadTestItem",
-  argLength: 0,
-  loadTestItemObjList: [{ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada" }],
+  argLength: args.length,
+  loadTestItemObjList: [{ id, title }],
   loadTestItemObjInsight: insight ? { count: 1 } : null,
   pageOfLoadTestItem: 1,
   lastPageOfLoadTestItem: 1,
   limitOfLoadTestItem: 0,
-  queryArgsOfLoadTestItem: [],
+  queryArgsOfLoadTestItem: args,
   sortOfLoadTestItem: "latest",
-  loadTestItemInitAt: new Date(),
+  loadTestItemInitAt: initAt,
 });
 
-const serverView = (): ServerView<"loadTestItem", Item> => ({
+interface ViewOptions {
+  id?: string;
+  title?: string;
+  viewAt?: Date;
+}
+
+const serverView = ({
+  id = "aaaaaaaaaaaaaaaaaaaaaaaa",
+  title = "Ada",
+  viewAt = new Date(),
+}: ViewOptions = {}): ServerView<"loadTestItem", Item> => ({
   refName: "loadTestItem",
-  loadTestItemObj: { id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada" },
-  loadTestItemViewAt: new Date(),
+  loadTestItemObj: { id, title },
+  loadTestItemViewAt: viewAt,
 });
 
-const wrap = (node: ReactNode) => (
-  <AgentProvider surface={new AgenticSurface()}>
+const wrap = (node: ReactNode, surface: AgenticSurface) => (
+  <AgentProvider surface={surface}>
     <Suspense>{node}</Suspense>
   </AgentProvider>
 );
 
-const handleOf = (container: HTMLElement, root: ReturnType<typeof createRoot>) => ({
+const handleOf = (container: HTMLElement, root: ReturnType<typeof createRoot>, surface: AgenticSurface) => ({
   container,
   flush: async () => {
     await act(async () => {});
+  },
+  /** Same root, same surface, same element position — so React updates the mounted instance instead of remounting it. */
+  rerender: async (node: ReactNode) => {
+    await act(async () => {
+      root.render(wrap(node, surface));
+    });
   },
   unmount: async () => {
     await act(async () => {
@@ -114,8 +147,9 @@ const mount = (node: ReactNode) => {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
-  act(() => root.render(wrap(node)));
-  return handleOf(container, root);
+  const surface = new AgenticSurface();
+  act(() => root.render(wrap(node, surface)));
+  return handleOf(container, root, surface);
 };
 
 /** A suspending first render has to settle inside an awaited `act`, or React warns and commits nothing. */
@@ -123,10 +157,11 @@ const mountAsync = async (node: ReactNode) => {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
+  const surface = new AgenticSurface();
   await act(async () => {
-    root.render(wrap(node));
+    root.render(wrap(node, surface));
   });
-  return handleOf(container, root);
+  return handleOf(container, root, surface);
 };
 
 describe("Load.Units", () => {
@@ -168,6 +203,68 @@ describe("Load.Units", () => {
     expect(container.textContent).toContain("Ada");
     await unmount();
   });
+
+  test("rehydrates when a route change hands the mounted instance an init with different query args", async () => {
+    makeStore();
+    const renderItem = (item: Item) => <span>{item.title}</span>;
+    const { container, rerender, unmount } = mount(
+      <Units<"loadTestItem", Item> init={serverInit({ args: ["a"] })} renderItem={renderItem} />,
+    );
+    expect(container.textContent).toContain("Ada");
+
+    await rerender(
+      <Units<"loadTestItem", Item>
+        init={serverInit({ args: ["b"], id: "bbbbbbbbbbbbbbbbbbbbbbbb", title: "Grace" })}
+        renderItem={renderItem}
+      />,
+    );
+    expect(container.textContent).toContain("Grace");
+    expect(container.textContent).not.toContain("Ada");
+    await unmount();
+  });
+
+  test("keeps client-side slice state when the same query args arrive again", async () => {
+    makeStore();
+    const renderItem = (item: Item) => <span>{item.title}</span>;
+    const { container, rerender, unmount } = mount(
+      <Units<"loadTestItem", Item> init={serverInit({ args: ["a"] })} renderItem={renderItem} />,
+    );
+    await act(async () => {
+      sliceState.set({ pageOfLoadTestItem: 3 });
+    });
+
+    await rerender(<Units<"loadTestItem", Item> init={serverInit({ args: ["a"] })} renderItem={renderItem} />);
+    expect(sliceState.get().pageOfLoadTestItem).toBe(3);
+    expect(container.textContent).toContain("Ada");
+    await unmount();
+  });
+
+  /** The RSC navigation cache replays the payload a route was first rendered with, mutation or no mutation. */
+  test("refetches when it re-hydrates from a payload older than the last local write", async () => {
+    makeStore();
+    const renderItem = (item: Item) => <span>{item.title}</span>;
+    const cachedInit = serverInit({ args: ["a"], initAt: new Date(Date.now() - 1000) });
+    const { rerender, flush, unmount } = mount(
+      <Units<"loadTestItem", Item> init={cachedInit} renderItem={renderItem} />,
+    );
+    expect(calls.loadTestItemList).not.toHaveBeenCalled();
+
+    await act(async () => {
+      sliceState.set({ loadTestItemStaleAt: new Date() });
+    });
+    await rerender(
+      <Units<"loadTestItem", Item>
+        init={serverInit({ args: ["b"], id: "bbbbbbbbbbbbbbbbbbbbbbbb", title: "Grace" })}
+        renderItem={renderItem}
+      />,
+    );
+    expect(calls.loadTestItemList).not.toHaveBeenCalled();
+
+    await rerender(<Units<"loadTestItem", Item> init={cachedInit} renderItem={renderItem} />);
+    await flush();
+    expect(calls.loadTestItemList).toHaveBeenCalled();
+    await unmount();
+  });
 });
 
 describe("Load.View", () => {
@@ -198,6 +295,33 @@ describe("Load.View", () => {
     release(serverView());
     await flush();
     expect(container.textContent).toContain("Ada");
+    await unmount();
+  });
+
+  test("refetches when it re-hydrates from a view payload older than the last local write", async () => {
+    makeStore();
+    const renderView = (item: Item) => <span>{item.title}</span>;
+    const cachedView = serverView({ viewAt: new Date(Date.now() - 1000) });
+    const { container, rerender, flush, unmount } = mount(
+      <View<"loadTestItem", Item> view={cachedView} renderView={renderView} />,
+    );
+    expect(calls.loadTestItem).not.toHaveBeenCalled();
+
+    await act(async () => {
+      sliceState.set({ loadTestItemStaleAt: new Date() });
+    });
+    await rerender(
+      <View<"loadTestItem", Item>
+        view={serverView({ id: "bbbbbbbbbbbbbbbbbbbbbbbb", title: "Grace" })}
+        renderView={renderView}
+      />,
+    );
+    expect(calls.loadTestItem).not.toHaveBeenCalled();
+
+    await rerender(<View<"loadTestItem", Item> view={cachedView} renderView={renderView} />);
+    await flush();
+    expect(calls.loadTestItem).toHaveBeenCalled();
+    expect(container.textContent).toContain("Fresh");
     await unmount();
   });
 });

@@ -89,6 +89,10 @@ const makeSignal = () => {
       async (data: Record<string, unknown>) => new StoreTestFull({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", ...data }),
     ),
     updateStoreTestItem: mock(async (id: string, data: Record<string, unknown>) => new StoreTestFull({ id, ...data })),
+    mergeStoreTestItem: mock(
+      async (idOrModel: string | { id: string }, data: Record<string, unknown>) =>
+        new StoreTestFull({ id: typeof idOrModel === "string" ? idOrModel : idOrModel.id, title: "merged", ...data }),
+    ),
     removeStoreTestItem: mock(
       async (id: string) => new StoreTestFull({ id, title: "removed", removedAt: new Date() } as never),
     ),
@@ -468,7 +472,7 @@ describe("signal generated store contract", () => {
     expect(storeTestConstant.input.purify(form() as never)).toMatchObject({ settings: { theme: "light" } });
   });
 
-  test("stamps every sibling slice stale on create and clears it on refresh", async () => {
+  test("stamps every slice stale on every write and clears it on refresh", async () => {
     setupEnv();
     const signal = makeSignal();
     class StaleStore extends store(signal, () => ({})) {}
@@ -476,8 +480,16 @@ describe("signal generated store contract", () => {
     const instance = new StoreInstance(makeRoot("staleRoot", StaleStore));
 
     const staleAtKeys = ["storeTestItemStaleAt", "storeTestItemStaleAtByTitle", "storeTestItemStaleAtByTags"];
-    staleAtKeys.forEach((key) => {
-      expect((instance.get()[key] as Date).getTime()).toBe(0);
+    const staleAts = () => staleAtKeys.map((key) => instance.get()[key] as Date);
+    const expectRestamped = async (previous: Date[], write: () => unknown) => {
+      await write();
+      staleAts().forEach((staleAt, idx) => {
+        expect(staleAt).not.toBe(previous[idx]);
+      });
+      return staleAts();
+    };
+    staleAts().forEach((staleAt) => {
+      expect(staleAt.getTime()).toBe(0);
     });
 
     const before = Date.now();
@@ -485,10 +497,10 @@ describe("signal generated store contract", () => {
       { title: "created", count: 0, tags: [] },
       { sliceName: "storeTestItemByTitle" },
     );
-    // The issuing slice got the optimistic splice, so only its siblings are marked stale.
-    expect((instance.get().storeTestItemStaleAtByTitle as Date).getTime()).toBe(0);
-    expect((instance.get().storeTestItemStaleAt as Date).getTime()).toBeGreaterThanOrEqual(before);
-    expect((instance.get().storeTestItemStaleAtByTags as Date).getTime()).toBeGreaterThanOrEqual(before);
+    // The issuing slice is stamped too: its list took the optimistic splice, but the payload it hydrated from did not.
+    staleAts().forEach((staleAt) => {
+      expect(staleAt.getTime()).toBeGreaterThanOrEqual(before);
+    });
 
     // A refresh restamps initAt past staleAt, which is what Load.Units reads to stop refetching.
     await instance.do.refreshStoreTestItem({ invalidate: true });
@@ -496,11 +508,19 @@ describe("signal generated store contract", () => {
       (instance.get().storeTestItemStaleAt as Date).getTime(),
     );
 
-    const staleAtByTags = instance.get().storeTestItemStaleAtByTags as Date;
-    await instance.do.newStoreTestItem({ title: "formed", tags: [] });
-    await instance.do.createStoreTestItemInForm({ sliceName: "storeTestItemByTags" });
-    expect(instance.get().storeTestItemStaleAtByTags).toBe(staleAtByTags);
-    expect((instance.get().storeTestItemStaleAtByTitle as Date).getTime()).toBeGreaterThanOrEqual(before);
+    let previous = staleAts();
+    previous = await expectRestamped(previous, async () => {
+      await instance.do.newStoreTestItem({ title: "formed", tags: [] });
+      await instance.do.createStoreTestItemInForm({ sliceName: "storeTestItemByTags" });
+    });
+    previous = await expectRestamped(previous, () =>
+      instance.do.updateStoreTestItem("aaaaaaaaaaaaaaaaaaaaaaaa", { title: "updated", count: 0, tags: [] }),
+    );
+    previous = await expectRestamped(previous, () =>
+      instance.do.setStoreTestItem(new StoreTestLight({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "pushed" }) as never),
+    );
+    previous = await expectRestamped(previous, () => instance.do.mergeStoreTestItem("aaaaaaaaaaaaaaaaaaaaaaaa", {}));
+    await expectRestamped(previous, () => instance.do.removeStoreTestItem("aaaaaaaaaaaaaaaaaaaaaaaa"));
   });
 });
 

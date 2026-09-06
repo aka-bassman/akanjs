@@ -32,7 +32,6 @@ apps/*/public/firebase-messaging-sw.js
 dump
 local
 **/tsconfig.tsbuildinfo
-.biome.strict.*.json
 
 # Xcode
 build/

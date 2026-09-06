@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { DataList, Int } from "akanjs/base";
+import { DataList, getEnv, Int } from "akanjs/base";
 import { websocketBinaryFrameContract } from "akanjs/common";
 import { ConstantRegistry, via } from "akanjs/constant";
 import type {
@@ -999,6 +999,36 @@ describe("FetchClient HTTP generation", () => {
       url: "https://clone.example/custom/bbbbbbbbbbbbbbbbbbbbbbbb",
       init: { headers: { "Content-Type": "application/json", Authorization: "Bearer clone-jwt" } },
     });
+  });
+
+  test("reads the SSR credential from the app-scoped cookie, ignoring a neighbouring app's", async () => {
+    if (!requestStorage) return;
+    setMockFetch();
+    jsonResponses.push("Scoped", "Legacy", "Neighbour");
+    const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
+    setAkanPublicEnv();
+    // Read back rather than assume: `getEnv()` caches on its first call anywhere in the process, and the
+    // workspace runner supplies an `AKAN_PUBLIC_ENV` that `setAkanPublicEnv` does not set. A hardcoded
+    // environment made every token read as another app's, so the header vanished under `akan test` only.
+    const { appName, environment } = getEnv();
+    const jwtOf = (tokenApp: string) =>
+      `header.${Buffer.from(JSON.stringify({ appName: tokenApp, environment })).toString("base64url")}.signature`;
+    const own = jwtOf(appName);
+    const neighbour = jwtOf(`${appName}-neighbour`);
+    const call = async (cookie: string) =>
+      await requestStorage.run(new Request("https://example.test", { headers: { cookie } }), async () => {
+        setAkanPublicEnv();
+        return await client.handler.getThing("abcdefabcdefabcdefabcdef", [], null);
+      });
+
+    await call(`jwt:${appName}=${own}; jwt:${appName}-neighbour=${neighbour}`);
+    await call(`jwt=${own}`);
+    await call(`jwt=${neighbour}`);
+
+    expect(fetchCalls[0]?.init?.headers).toMatchObject({ Authorization: `Bearer ${own}` });
+    // The pre-scoping key still works, but only for a token this app minted.
+    expect(fetchCalls[1]?.init?.headers).toMatchObject({ Authorization: `Bearer ${own}` });
+    expect(fetchCalls[2]?.init?.headers).not.toHaveProperty("Authorization");
   });
 
   test("sends requests to the FetchPolicy.origin host instead of the client origin", async () => {

@@ -1,5 +1,6 @@
 "use client";
 import { cn } from "akanjs/client";
+import { capitalize } from "akanjs/common";
 import { ConstantRegistry, labelOf } from "akanjs/constant";
 import type { ClientView, ServerView } from "akanjs/fetch";
 import { st } from "akanjs/store";
@@ -40,6 +41,7 @@ function Render<T extends string, Full extends { id: string }>({
 }: RenderProps<T, Full>) {
   const loadedId = useRef<string | null>(null);
   const storeUse = st.use as { [key: string]: () => unknown };
+  const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
   const storeGet = st.get as unknown as <T>() => { [key: string]: T };
   const { refName } = view;
   const model = storeUse[refName]() as Full | null;
@@ -70,6 +72,16 @@ function Render<T extends string, Full extends { id: string }>({
       [`${refName}ViewAt`]: modelViewAt,
     });
     loadedId.current = modelObj.id;
+  }, [modelViewAt, modelObj.id]);
+
+  useEffect(() => {
+    // A payload older than the last local write is one the RSC navigation cache replayed from before it, so the
+    // model just hydrated above is the pre-write one. `<refName>StaleAt` is the root slice's stamp, absent only on
+    // a model whose signal declares no slice at all.
+    const modelStaleAt = storeGet<Date | undefined>()[`${refName}StaleAt`];
+    if (!modelStaleAt || storeGet<Date>()[`${refName}ViewAt`].getTime() >= modelStaleAt.getTime()) return;
+    if (storeGet<string | boolean>()[`${refName}Loading`]) return;
+    void storeDo[`view${capitalize(refName)}`](modelObj.id);
   }, [modelViewAt, modelObj.id]);
 
   const renderModel = loadedId.current === modelObj.id ? model : modelInit;

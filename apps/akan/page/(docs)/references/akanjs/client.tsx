@@ -88,14 +88,15 @@ const user = await fetch.user(userId);
 const signals = sig;`,
     },
     {
-      name: "getCookie / setCookie / getAccount",
+      name: "getCookie / setCookie / getAccount / getAuthToken",
       desc: l.trans({
-        en: "Cookie and account helpers that work across server and client contexts. `getAccount` decodes the JWT only when it belongs to the current app and environment.",
-        ko: "server/client context 모두에서 동작하는 cookie 및 account helper입니다. `getAccount`는 JWT가 현재 app과 environment에 속할 때만 decode합니다.",
+        en: "Cookie and account helpers that work across server and client contexts. The auth cookie is keyed per app (`authTokenKey()` returns `jwt:<appName>`) because cookies carry no port, so two apps on one host would otherwise share one token. Read it with `getAuthToken()` rather than by name. `getAccount` decodes the JWT only when it belongs to the current app and environment.",
+        ko: "server/client context 모두에서 동작하는 cookie 및 account helper입니다. cookie에는 port가 없어 한 host의 두 app이 token을 공유하게 되므로, auth cookie key는 app별로 분리됩니다(`authTokenKey()`가 `jwt:<appName>`을 반환). 이름으로 직접 읽지 말고 `getAuthToken()`을 사용하세요. `getAccount`는 JWT가 현재 app과 environment에 속할 때만 decode합니다.",
       }),
-      code: `import { getAccount, getCookie, setCookie } from "akanjs/client";
+      code: `import { authTokenKey, getAccount, getAuthToken, setCookie } from "akanjs/client";
 
-const jwt = getCookie("jwt");
+const jwt = getAuthToken();
+const key = authTokenKey();
 const account = getAccount<{ userId: string }>();
 setCookie("theme", "dark");`,
     },

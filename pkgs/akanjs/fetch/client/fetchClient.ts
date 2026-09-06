@@ -1,5 +1,12 @@
 import { getEnv, PrimitiveRegistry, type PromiseOrObject } from "akanjs/base";
-import { capitalize, type FetchPolicy, fileUploadContract, Logger, resolveFileUploadCapability } from "akanjs/common";
+import {
+  capitalize,
+  type FetchPolicy,
+  fileUploadContract,
+  Logger,
+  readAuthToken,
+  resolveFileUploadCapability,
+} from "akanjs/common";
 import { type BaseInsight, type BaseObject, ConstantRegistry, deserialize, serialize } from "akanjs/constant";
 import type {
   DatabaseSignal,
@@ -274,7 +281,7 @@ export class FetchClient {
       if (getEnv().side === "server") {
         const authorization = requestHeaders().get("authorization");
         if (authorization) return { Authorization: authorization };
-        const token = requestCookies().get("jwt")?.value;
+        const token = readAuthToken((key) => requestCookies().get(key)?.value);
         if (token) return { Authorization: `Bearer ${token}` };
       }
     } catch {

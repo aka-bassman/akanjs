@@ -1,4 +1,12 @@
 export { applyMixins } from "./applyMixins";
+export {
+  authTokenKey,
+  cookieHeaderHasAuthToken,
+  isAuthTokenKey,
+  isOwnAuthToken,
+  legacyAuthTokenKey,
+  readAuthToken,
+} from "./authToken";
 export { capitalize } from "./capitalize";
 export { clamp } from "./clamp";
 export {

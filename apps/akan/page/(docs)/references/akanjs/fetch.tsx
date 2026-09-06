@@ -105,7 +105,7 @@ const cloned = client.clone({ connect: false });`,
 
 const req = getRequest();
 const authorization = headers().get("authorization");
-const jwt = cookies().get("jwt")?.value;`,
+const theme = cookies().get("theme")?.value;`,
     },
   ];
 

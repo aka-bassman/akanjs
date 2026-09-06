@@ -125,4 +125,3 @@ libs/*/server.ts
 libs/*/index.ts
 **/.akan
 **/tsconfig.tsbuildinfo
-.biome.strict.*.json

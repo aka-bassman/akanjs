@@ -112,9 +112,7 @@ beforeAll(() => {
         cache: false,
       };
     },
-    storage: {
-      getItem: async (key: string) => (key === "jwt" ? storageState.jwt : null),
-    },
+    getStoredAuthToken: async () => storageState.jwt ?? undefined,
     validatePageConfig: () => undefined,
   }));
   mock.module("react-dom/client", () => ({

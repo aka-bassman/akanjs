@@ -60,10 +60,10 @@
       }
     },
     "domains": {
-      "project": "none",
+      "project": "recommended",
       "react": "recommended",
       "test": "recommended",
-      "types": "none"
+      "types": "all"
     }
   },
   "javascript": {

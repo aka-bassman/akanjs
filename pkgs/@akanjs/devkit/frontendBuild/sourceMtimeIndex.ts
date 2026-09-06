@@ -377,7 +377,7 @@ export class SourceMtimeIndex {
     return !name || name.startsWith(".") || name === "node_modules";
   }
 
-  /** `WatchRootResolver` can return `apps/<app>/page` alongside `apps/`; walking both doubles the work. */
+  /** `WatchRootResolver` can return `apps/<app>/page` alongside `apps/<app>`; walking both doubles the work. */
   static #pruneNestedRoots(roots: string[]): string[] {
     const resolved = [...new Set(roots.map((root) => path.resolve(root)))].sort();
     return resolved.filter(

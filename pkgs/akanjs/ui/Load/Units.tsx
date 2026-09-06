@@ -65,7 +65,7 @@ function Render<RefName extends string, Light extends { id: string }>({
   pagination,
   staleTime,
 }: RenderProps<RefName, Light>) {
-  const loaded = useRef(false);
+  const loadedQueryArgs = useRef<object[] | null>(null);
   const storeUse = st.use as { [key: string]: () => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
   const storeGet = st.get as unknown as <T>() => { [key: string]: T };
@@ -114,23 +114,27 @@ function Render<RefName extends string, Light extends { id: string }>({
   const initModelObjInsight = (init as DynamicRecord)[names.modelObjInsight] as BaseInsight | null;
   const initLimitOfModel = (init as DynamicRecord)[names.limitOfModel] as number;
   const initPageOfModel = (init as DynamicRecord)[names.pageOfModel] as number;
+  const initSignature = JSON.stringify(initQueryArgs);
 
   const useCache =
     !modelListLoading &&
     isQueryEqual(storeGet<object[]>()[namesOfSlice.queryArgsOfModel], initQueryArgs) &&
     storeGet<Date>()[namesOfSlice.modelInitAt].getTime() >= initModelInitAt.getTime();
-  if (useCache) loaded.current = true;
+  if (useCache) loadedQueryArgs.current = initQueryArgs;
+  // Hydration identity is the args, not the mount: one slice store is shared by every route that reads it, and a
+  // route change swaps `init` on the same instance, so a boolean latch would keep rendering the previous args' rows.
+  const loaded = !!loadedQueryArgs.current && isQueryEqual(loadedQueryArgs.current, initQueryArgs);
 
   const modelInitList = useMemo<DataList<Light>>(() => {
-    if (loaded.current) return modelList;
+    if (loaded) return modelList;
     const initModelObjList = (init as DynamicRecord)[names.modelObjList] as Light[];
     return new DataList<Light>(
       withSharedInstances(() => initModelObjList.map((model) => new cnst.light().set(model) as unknown as Light)),
     );
-  }, []);
+  }, [initSignature]);
 
   useEffect(() => {
-    if (loaded.current) return;
+    if (loaded) return;
     const modelObjInsight = (init as DynamicRecord)[names.modelObjInsight] as BaseInsight | null;
     // `{ insight: false }` skips the aggregate query, so the rows in hand are the whole count there is to seed.
     const insight = new cnst.insight().set(
@@ -153,8 +157,8 @@ function Render<RefName extends string, Light extends { id: string }>({
       [namesOfSlice.queryArgsOfModel]: initQueryArgsOfModel,
       [namesOfSlice.sortOfModel]: initSortOfModel,
     });
-    loaded.current = true;
-  }, []);
+    loadedQueryArgs.current = initQueryArgs;
+  }, [initSignature]);
 
   useEffect(() => {
     const modelStaleAt = storeGet<Date>()[namesOfSlice.modelStaleAt];
@@ -162,15 +166,15 @@ function Render<RefName extends string, Light extends { id: string }>({
     if (storeGet<Date>()[namesOfSlice.modelInitAt].getTime() >= staleThreshold) return;
     if (storeGet<boolean>()[namesOfSlice.modelListLoading]) return;
     void storeDo[namesOfSlice.refreshModel]({ invalidate: true });
-  }, []);
+  }, [initSignature]);
 
   const modelInsight = storeUse[namesOfSlice.modelInsight]() as BaseInsight;
   const limitOfModel = storeUse[namesOfSlice.limitOfModel]() as number;
   const pageOfModel = storeUse[namesOfSlice.pageOfModel]() as number;
-  const insight = loaded.current ? modelInsight : initModelObjInsight;
-  const limit = loaded.current ? limitOfModel : initLimitOfModel;
-  const page = loaded.current ? pageOfModel : initPageOfModel;
-  const total = insight?.count ?? (loaded.current ? modelList : modelInitList).length;
+  const insight = loaded ? modelInsight : initModelObjInsight;
+  const limit = loaded ? limitOfModel : initLimitOfModel;
+  const page = loaded ? pageOfModel : initPageOfModel;
+  const total = insight?.count ?? (loaded ? modelList : modelInitList).length;
   const moreProps = {
     total,
     currentPage: page,
@@ -198,7 +202,7 @@ function Render<RefName extends string, Light extends { id: string }>({
     onSelect: (page) => moreProps.onPageSelect(page, { scrollToTop: false }),
   });
 
-  const modelDataList = !loaded.current ? modelInitList.filter(filter).sort(sort) : modelList.filter(filter).sort(sort);
+  const modelDataList = !loaded ? modelInitList.filter(filter).sort(sort) : modelList.filter(filter).sort(sort);
   const scopePath = useScreenScope({
     id: sliceName,
     kind: refName,
@@ -208,7 +212,7 @@ function Render<RefName extends string, Light extends { id: string }>({
         return { id: item.id, ...(label ? { label } : {}) };
       }),
   });
-  const showLoading = loaded.current && modelListLoading;
+  const showLoading = loaded && modelListLoading;
   if (renderList)
     return (
       <>
@@ -343,7 +347,7 @@ interface MoreWrapperProps {
   moreProps: MoreProps;
 }
 const MoreWrapper = ({ children, pagination, moreProps }: MoreWrapperProps) => {
-  return pagination ? <More {...moreProps}>{children}</More> : <>{children}</>;
+  return pagination ? <More {...moreProps}>{children}</More> : children;
 };
 
 interface ContainerWrapperProps {

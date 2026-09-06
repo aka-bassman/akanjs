@@ -1,6 +1,6 @@
 {
   "name": "@akanjs/devkit",
-  "version": "3.0.0-alpha.85",
+  "version": "3.0.0-alpha.88",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -24,7 +24,6 @@
     },
     "./package.json": "./package.json",
     "./biome.base.json": "./biome.base.json",
-    "./biome.domains.json": "./biome.domains.json",
     "./akanApp": "./akanApp/index.ts",
     "./akanConfig": "./akanConfig/index.ts",
     "./artifact": "./artifact/index.ts",
@@ -46,7 +45,7 @@
     "@langchain/openai": "^1.4.6",
     "@tailwindcss/node": "^4.3.0",
     "@trapezedev/project": "^7.1.4",
-    "akanjs": "3.0.0-alpha.85",
+    "akanjs": "3.0.0-alpha.88",
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
     "dayjs": "^1.11.20",

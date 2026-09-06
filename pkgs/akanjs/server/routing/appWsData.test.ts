@@ -86,6 +86,20 @@ describe("AppWsData", () => {
     expect(data.account).toBeUndefined();
   });
 
+  test("signing out clears the app-scoped cookie too, whichever app on the host wrote it", () => {
+    const data = AppWsData.fromRequest(
+      new Request("http://localhost/api/ws", {
+        headers: { cookie: "jwt:alpha=alpha-token; jwt:beta=beta-token; theme=dark" },
+      }),
+    );
+
+    AppWsData.applyCredential(data, null);
+
+    expect(data.cookies.has("jwt:alpha")).toBe(false);
+    expect(data.cookies.has("jwt:beta")).toBe(false);
+    expect(data.headers.get("cookie")).toBe("theme=dark");
+  });
+
   test("removes the cookie header entirely when the jwt was its only entry", () => {
     const data = AppWsData.fromRequest(
       new Request("http://localhost/api/ws", { headers: { cookie: "jwt=cookie-token" } }),

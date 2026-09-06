@@ -1,7 +1,6 @@
 import path from "node:path";
 import { collectScopeRecipeSources, extractAgentBlock, renderScopeAgentBlock } from "@akanjs/devkit/agentsIndex";
 import { biomeVersion } from "@akanjs/devkit/biomeBase";
-import { BiomeStrictConfig } from "@akanjs/devkit/biomeStrictConfig";
 import { type Exec, runner, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { SysExecutor, WorkspaceExecutor } from "@akanjs/devkit/executors";
 import { FileSys } from "@akanjs/devkit/fileSys";
@@ -200,37 +199,32 @@ export class WorkspaceRunner extends runner("workspace") {
     workspace: Workspace,
     { fix = true, maxDiagnostics = defaultMaxDiagnostics }: { fix?: boolean; maxDiagnostics?: number } = {},
   ) {
-    //? The committed biome.json holds the editor profile, whose `types`/`project` domains are off so that
-    //? format-on-save never builds the type and module graphs. Batch runs want them back, so they go through a
-    //? throwaway copy that re-applies biome.base.json — see BiomeStrictConfig for why it cannot be a second
-    //? committed config.
-    const strictConfig = new BiomeStrictConfig(workspace.workspaceRoot);
-    const configPath = await strictConfig.write();
-    try {
-      await workspace.spawn("./node_modules/.bin/biome", [
-        "check",
-        ...(fix ? ["--write"] : []),
-        "--no-errors-on-unmatched",
-        //? Biome caps output at 20 diagnostics by default, which reads as "only 20 problems left" while the
-        //? rest are hidden — a shrinking list then looks like progress when the mix of findings merely changed.
-        `--max-diagnostics=${maxDiagnostics > 0 ? maxDiagnostics : "none"}`,
-        //? Pinning the config makes a malformed biome.json fail as a parse error on the offending line. Without
-        //? it Biome 2.5.12 falls back to discovery and reports whatever nested config the walk finds first —
-        //? typically inside a directory `files.includes` excludes, which names the wrong file entirely.
-        ...(configPath ? ["--config-path", configPath] : []),
-        exec.cwdPath,
-      ]);
-    } finally {
-      await strictConfig.remove();
-    }
+    const configPath = await WorkspaceRunner.resolveBiomeConfigPath(workspace);
+    await workspace.spawn("./node_modules/.bin/biome", [
+      "check",
+      ...(fix ? ["--write"] : []),
+      "--no-errors-on-unmatched",
+      //? Biome caps output at 20 diagnostics by default, which reads as "only 20 problems left" while the
+      //? rest are hidden — a shrinking list then looks like progress when the mix of findings merely changed.
+      `--max-diagnostics=${maxDiagnostics > 0 ? maxDiagnostics : "none"}`,
+      //? Pinning the config makes a malformed biome.json fail as a parse error on the offending line. Without
+      //? it Biome 2.5.12 falls back to discovery and reports whatever nested config the walk finds first —
+      //? typically inside a directory `files.includes` excludes, which names the wrong file entirely.
+      ...(configPath ? ["--config-path", configPath] : []),
+      exec.cwdPath,
+    ]);
     await this.#enforceStyleContract(exec);
     await this.#enforceRecipeGate(exec);
     await this.#enforceAgentsIndex(exec);
   }
 
+  /** `biome.json` first, mirroring Biome's own precedence; `biome.jsonc` is the one that may carry comments. */
   static async resolveBiomeConfigPath(workspace: Workspace): Promise<string | null> {
-    const fileName = await BiomeStrictConfig.resolveConfigName(workspace.workspaceRoot);
-    return fileName ? path.join(workspace.workspaceRoot, fileName) : null;
+    for (const fileName of ["biome.json", "biome.jsonc"]) {
+      const configPath = path.join(workspace.workspaceRoot, fileName);
+      if (await Bun.file(configPath).exists()) return configPath;
+    }
+    return null;
   }
 
   /**

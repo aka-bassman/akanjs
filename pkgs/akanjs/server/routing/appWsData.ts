@@ -1,4 +1,10 @@
-import { clientAddressFromHeaders, clientPortFromHeaders, forwardedHeaders, TrustedProxy } from "akanjs/common";
+import {
+  clientAddressFromHeaders,
+  clientPortFromHeaders,
+  forwardedHeaders,
+  isAuthTokenKey,
+  TrustedProxy,
+} from "akanjs/common";
 
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "user-agent"] as const;
 
@@ -32,7 +38,11 @@ export class AppWsData {
     if (jwt) data.headers.set("authorization", `Bearer ${jwt}`);
     else {
       data.headers.delete("authorization");
-      data.cookies.delete("jwt");
+      // Swept by key shape rather than by this app's own key: the jar the handshake copied is the whole
+      // host's, so it can hold the pre-scoping global key alongside the scoped ones.
+      for (const name of [...data.cookies].map(([name]) => name)) {
+        if (isAuthTokenKey(name)) data.cookies.delete(name);
+      }
       const cookie = [...data.cookies].map(([name, value]) => `${name}=${value}`).join("; ");
       if (cookie) data.headers.set("cookie", cookie);
       else data.headers.delete("cookie");

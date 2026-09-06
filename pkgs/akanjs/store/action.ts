@@ -522,12 +522,14 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
     queryArgsOfModel: `queryArgsOf${className}`,
     sortOfModel: `sortOf${className}`,
   };
-  const staleAtOfOtherSlices = (createdSliceName: string) => {
+  // A write patches the lists this store holds, but the RSC payload each list was hydrated from still carries the
+  // pre-write rows, and a back-navigation replays that payload from the client cache. The stamp is what tells
+  // `Load.Units` to refetch when it re-hydrates from one. It starts no fetch here — the staleness check only runs
+  // when a list re-hydrates — so the slice that just took the optimistic patch is stamped along with the rest.
+  const staleAtOfSlices = () => {
     const staleAt = new Date();
     return Object.fromEntries(
-      slices
-        .filter(({ sliceName }) => sliceName !== createdSliceName)
-        .map(({ sliceName }) => [sliceName.replace(names.model, names.modelStaleAt), staleAt]),
+      slices.map(({ sliceName }) => [sliceName.replace(names.model, names.modelStaleAt), staleAt]),
     );
   };
   const baseAction = {
@@ -568,7 +570,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         [namesOfSlice.modelInsight]: newModelInsight,
         [names.modelViewAt]: new Date(),
         [names.modelModal]: modal ?? null,
-        ...staleAtOfOtherSlices(sliceName),
+        ...staleAtOfSlices(),
         ...(typeof path === "string" && path ? { [path]: model } : {}),
       });
       await onSuccess?.(model);
@@ -599,6 +601,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
           : {}),
         [names.modelForm]: immerify(modelRef, defaultModel),
         [names.modelModal]: modal ?? null,
+        ...staleAtOfSlices(),
         ...(typeof path === "string" && path ? { [path]: updatedModel } : {}),
       });
       const updatedLightModel = new cnst.light().set(updatedModel) as unknown as Light;
@@ -651,7 +654,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         [namesOfSlice.modelInsight]: newModelInsight,
         [names.modelViewAt]: new Date(),
         [names.modelModal]: modal ?? null,
-        ...staleAtOfOtherSlices(sliceName),
+        ...staleAtOfSlices(),
         ...(typeof path === "string" && path ? { [path]: model } : {}),
       });
       await onSuccess?.(model);
@@ -675,6 +678,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
           ? { [names.model]: updatedModel, [names.modelLoading]: false, [names.modelViewAt]: new Date() }
           : {}),
         [names.modelModal]: modal ?? null,
+        ...staleAtOfSlices(),
         ...(typeof path === "string" && path ? { [path]: updatedModel } : {}),
       });
       const updatedLightModel = new cnst.light().set(updatedModel) as unknown as Light;
@@ -735,6 +739,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
           });
         }
       });
+      this.set(staleAtOfSlices());
     },
     [names.checkModelSubmitable]: function (this: SetGet, disabled?: boolean) {
       const currentState = this.get() as { [key: string]: any };
@@ -812,6 +817,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       this.set({
         [names.model]: id === model?.id ? updatedModel : model,
         [names.modelLoading]: false,
+        ...staleAtOfSlices(),
       });
       const updatedLightModel = new cnst.light().set(updatedModel) as unknown as Light;
       slices.forEach(({ sliceName }) => {
@@ -871,6 +877,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         });
         this.set({ [namesOfSlice.modelList]: modelList.save() });
       });
+      this.set(staleAtOfSlices());
     },
     [names.resetModel]: function (this: SetGet, model?: Full) {
       const currentState = this.get() as { [key: string]: any };

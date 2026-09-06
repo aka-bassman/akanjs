@@ -12,7 +12,7 @@ import {
   type PromiseOrObject,
   SLICE_META,
 } from "akanjs/base";
-import { capitalize, Logger } from "akanjs/common";
+import { capitalize, cookieHeaderHasAuthToken, Logger } from "akanjs/common";
 import { deserialize, resolvePageLimit, resolvePageSkip, serialize } from "akanjs/constant";
 import { documentQueryHelper } from "akanjs/document";
 import {
@@ -608,7 +608,7 @@ export class SignalResolver {
   }
 
   static #hasAuthCredential(req: Request) {
-    return Boolean(req.headers.get("authorization") || req.headers.get("cookie")?.includes("jwt="));
+    return Boolean(req.headers.get("authorization") || cookieHeaderHasAuthToken(req.headers.get("cookie")));
   }
 
   /**
