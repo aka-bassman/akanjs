@@ -1,4 +1,5 @@
 export type {
+  AkanApiConfig,
   AkanAssetsConfig,
   AkanConfigFile,
   AkanExecutor,

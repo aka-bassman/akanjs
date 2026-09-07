@@ -72,16 +72,29 @@ export const DefaultComposer = ({
             event.preventDefault();
             onFiles(pasted);
           }}
-          placeholder={session.pendingQuestion ? l("base.agentAnswer") : l("base.agentPlaceholder")}
+          placeholder={
+            session.pendingQuestion
+              ? l("base.agentAnswer")
+              : session.isRunning
+                ? l("base.agentQueuePlaceholder")
+                : l("base.agentPlaceholder")
+          }
           ref={inputRef}
           rows={1}
           value={draft}
         />
         {/* A parked question is not a turn to stop: the loop is waiting on the card, and the card has its own out. */}
         {session.isRunning && !session.pendingQuestion ? (
-          <Button onClick={onStop} size="sm" variant="outline">
-            {l("base.stop")}
-          </Button>
+          <>
+            {draft.trim() || attached.length ? (
+              <Button onClick={onSend} size="sm">
+                {l("base.agentQueue")}
+              </Button>
+            ) : null}
+            <Button onClick={onStop} size="sm" variant="outline">
+              {l("base.stop")}
+            </Button>
+          </>
         ) : (
           <Button disabled={!draft.trim() && !attached.length} onClick={onSend} size="sm">
             {l("base.send")}

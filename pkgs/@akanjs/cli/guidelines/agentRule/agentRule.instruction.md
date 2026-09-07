@@ -46,7 +46,7 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   already titles, and `defaultDraft` opens the composer with text in it without sending it. A panel driven by a
   controlled `open` with **no** `onOpenChange` draws no close button at all rather than an inert one. Then the
   slots: `AgentLauncher`, `AgentBubble`, `AgentComposer`, `AgentApproval`,
-  `AgentQuestion`, `AgentMenu`, `AgentMarkdown` and `AgentCode` each replace one part in `_overrides.tsx`, and
+  `AgentQuestion`, `AgentQueued`, `AgentMenu`, `AgentMarkdown` and `AgentCode` each replace one part in `_overrides.tsx`, and
   `akanjs/ui` exports every default beside them (`DefaultBubble`, `DefaultComposer`, …) so a skin composes the
   one it is replacing. `AgentCode` is where a highlighter binds — the fence's language reaches it — and a
   replacement for `AgentBubble` carries its own `memo`, since the transcript re-renders on every delta. Only then
@@ -59,6 +59,14 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   it scrolls. The vertical arrows still walk what was sent, but only from the first or last line — anywhere else
   the caret is the textarea's own. On a phone the panel is the whole screen (it is a card from `sm:` up) and it
   lifts above the on-screen keyboard, which only `visualViewport` reports.
+  **Enter during a running turn parks the message and sends it the moment the turn ends** — the Queue button
+  beside Stop does the same, and the placeholder says so. One slot, not a list: a second send joins the first on
+  a new line, so the model is handed one user message. The card above the composer (`AgentQueued`) shows what is
+  waiting with two ways out — ✎ takes it back into the composer, ahead of whatever was typed since, and ✕ drops it.
+  **Stop hands a parked message back to the composer rather than opening the next turn with it**, so Stop means
+  stop; `/new` drops it along with the conversation it was written for, the way it drops staged files. A `/prompt`
+  parks like text and runs when its turn comes; the built-ins (`/new`, `/copy`, …) never park, and a question the
+  agent is waiting on still takes the composer as its answer.
 - **The LLM is configured in `option.ts`, never through the environment.** `option.setLlm({ apiKey, model, host })`
   — or `setLlm((options) => …)` to read the key out of the app's own env object, which is where a secret belongs —
   fills whichever adaptor holds `LlmAdaptorRole`, reaching it as the `llmOption` use. The settings are the role's

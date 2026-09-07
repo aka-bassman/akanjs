@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { getApiPrefix, getWsPrefix } from "akanjs/base";
 import { Logger } from "akanjs/common";
 import { type AkanRequestStore, type AkanTheme, pushRequestFallback, requestStorage } from "akanjs/fetch";
 import type { ReactNode } from "react";
@@ -569,6 +570,21 @@ export class SsrFromRscRenderer {
   self.__RSC_CLOSE__ = function(){ self.__RSC_CLOSED__ = true; };
 })();`;
 
+  /**
+   * Where this deployment mounts its endpoints, for the tab's `fetchClient`. It cannot come off the client
+   * bundle: only `AKAN_PUBLIC_*` is inlined there, at build time, and the prefix is a runtime option of the
+   * process serving the page. It cannot come through a React prop either — `FetchClient` fixes its origin when
+   * the module graph initializes, which is before any component renders. So it rides the classic bootstrap,
+   * the one thing guaranteed to run ahead of every module script. Omitted when it matches what the bundle
+   * already assumes, so the default deployment pays no bytes.
+   */
+  static #prefixBootstrap() {
+    const api = getApiPrefix();
+    const ws = getWsPrefix();
+    if (api === "/api" && ws === "/ws") return "";
+    return `\nself.__AKAN_PREFIX__ = ${JSON.stringify({ api, ws })};`;
+  }
+
   static readonly #themeInitScript = `<script>(function(){
   try {
     var m = document.cookie.match(/(?:^|;\\s*)theme=([^;]+)/);
@@ -600,9 +616,8 @@ export class SsrFromRscRenderer {
       input.lateControl,
     );
 
-    const bootstrap = input.extraBootstrapInline
-      ? `${SsrFromRscRenderer.#clientBootstrap}\n${input.extraBootstrapInline}`
-      : SsrFromRscRenderer.#clientBootstrap;
+    const base = `${SsrFromRscRenderer.#clientBootstrap}${SsrFromRscRenderer.#prefixBootstrap()}`;
+    const bootstrap = input.extraBootstrapInline ? `${base}\n${input.extraBootstrapInline}` : base;
 
     // Default to shell-first streaming: `renderToReadableStream` resolves once
     // the shell (everything outside Suspense, including any `Loading` fallback)

@@ -5,6 +5,7 @@ import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { Logger, logSeverity } from "akanjs/common";
 import type { AkanChildRole, AkanChildStatus, AkanIpcMessage, AkanMetricsReport, AkanUpstream } from "akanjs/service";
+import { getApiPrefix, getWsPrefix, normalizeRoutePrefix, resetEnvCache } from "../base/baseEnv";
 import { isTraceEnabled } from "../signal/trace";
 import { makeAkanChildProxyHeaders } from "./akanAppHeaders";
 import type { BuilderCsrReq, BuilderCsrRes, BuilderMessage, BuilderReq, BuilderRes } from "./artifact";
@@ -82,6 +83,16 @@ export interface AkanAppOptions {
   wsBasePort?: number;
   openapi?: boolean;
   /**
+   * Where the signal endpoints are mounted, `/api` by default. Handed down as `AKAN_API_PREFIX`, which every
+   * server process reads — the replicas that build the route table, and the RSC worker, whose page-side
+   * `fetch.*` calls travel over HTTP like any other client's. A server-rendered page also carries it to the
+   * browser, so the tab's `fetchClient` follows the process that rendered it. A prebuilt CSR or mobile bundle
+   * cannot be reached that way and follows `akan.config.ts` instead.
+   */
+  prefix?: string;
+  /** Where the websocket upgrade sits under `prefix`, `/ws` by default. Handed down as `AKAN_WS_PREFIX`. */
+  websocketPrefix?: string;
+  /**
    * Boot only these modules and the ones they reach, in every child. Omitted or empty mounts every enabled
    * module. Handed down as `AKAN_MODULES`, since each replica builds its own container.
    */
@@ -126,6 +137,8 @@ export class AkanApp {
   readonly #port: number;
   readonly #wsBasePort: number;
   readonly #openapi?: boolean;
+  readonly #prefix: string;
+  readonly #websocketPrefix: string;
   /** The gateway hands `/_akan/client|styles|fonts` straight off disk, so it needs the same answer its children do. */
   readonly #web = getWebConfigFromEnv();
   readonly #modules: string[];
@@ -157,8 +170,9 @@ export class AkanApp {
   #exitAfterStop = false;
   #stopping = false;
 
-  constructor(serverPath = "./server", options: AkanAppOptions = {}) {
-    const resolvedOptions = options;
+  constructor(serverPathOrOptions: string | AkanAppOptions = "./server", options: AkanAppOptions = {}) {
+    const resolvedOptions = typeof serverPathOrOptions === "string" ? options : serverPathOrOptions;
+    const serverPath = typeof serverPathOrOptions === "string" ? serverPathOrOptions : "./server";
     this.#serverPath = AkanApp.#resolveServerPath(resolvedOptions.serverPath ?? serverPath);
     this.#artifactDir = path.resolve(path.dirname(this.#serverPath), ".akan", "artifact");
     this.#replica = AkanApp.#parseReplicaConfig(resolvedOptions.replica);
@@ -166,6 +180,8 @@ export class AkanApp {
     this.#port = Number(resolvedOptions.port ?? process.env.PORT ?? 8282);
     this.#wsBasePort = Number(resolvedOptions.wsBasePort ?? process.env.AKAN_WS_BASE_PORT ?? this.#port + 10_000);
     this.#openapi = resolvedOptions.openapi;
+    this.#prefix = normalizeRoutePrefix(resolvedOptions.prefix) ?? getApiPrefix();
+    this.#websocketPrefix = normalizeRoutePrefix(resolvedOptions.websocketPrefix) ?? getWsPrefix();
     this.#modules = resolvedOptions.modules ?? [];
     this.#solo = AkanApp.#resolveSolo(resolvedOptions, this.#replica);
     this.#logHub = LogHub.attach();
@@ -303,9 +319,14 @@ export class AkanApp {
       AKAN_REPLICA_IDX: "0",
       AKAN_APP_DIR: path.dirname(this.#serverPath),
       SERVER_MODE: role,
+      AKAN_API_PREFIX: this.#prefix,
+      AKAN_WS_PREFIX: this.#websocketPrefix,
       ...(this.#openapi === undefined ? {} : { AKAN_OPENAPI: this.#openapi ? "true" : "false" }),
       ...(this.#modules.length ? { AKAN_MODULES: this.#modules.join(",") } : {}),
     });
+    // This process already ran as the gateway, so anything that read the env before the assignment above
+    // cached the prefix this gateway was about to change.
+    resetEnvCache();
     this.logger.info(`Starting ${role} replica in this process (solo); set AKAN_SOLO=false for the gateway`);
     const mod = (await import(this.#serverPath)) as { server?: SoloServer; app?: SoloServer };
     const server = mod.server ?? mod.app;
@@ -391,6 +412,8 @@ export class AkanApp {
         SERVER_MODE: role,
         AKAN_CHILD_SOCKET: upstream.http.socketPath,
         AKAN_CHILD_WS_PORT: upstream.ws ? String(upstream.ws.port) : "",
+        AKAN_API_PREFIX: this.#prefix,
+        AKAN_WS_PREFIX: this.#websocketPrefix,
         ...(this.#openapi === undefined ? {} : { AKAN_OPENAPI: this.#openapi ? "true" : "false" }),
         ...(this.#modules.length ? { AKAN_MODULES: this.#modules.join(",") } : {}),
       },
@@ -668,7 +691,7 @@ export class AkanApp {
   }
 
   #isWebSocketPath(pathname: string) {
-    return pathname === "/api/ws" || pathname === "/_akan/hmr";
+    return pathname === `${this.#prefix}${this.#websocketPrefix}` || pathname === "/_akan/hmr";
   }
 
   async #serveImmutableArtifact(req: Request, url: URL): Promise<Response | null> {

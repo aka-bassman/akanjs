@@ -2,12 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AkanPlugin } from "akanjs";
+import { normalizeRoutePrefix } from "akanjs/base";
 import { type AkanI18nConfig, resolveAkanI18nConfig } from "akanjs/common";
 import type { AkanImageConfig } from "akanjs/server";
 import type { App, Lib } from "../commandDecorators";
 import { LibExecutor, WorkspaceExecutor } from "../executors";
 import type { BaseDevEnv, PackageJson } from "../types";
 import {
+  type AkanApiConfig,
   type AkanAssetsConfig,
   type AkanMobileConfig,
   type AkanMobileTargetConfig,
@@ -216,6 +218,7 @@ export class AkanAppConfig implements AppConfigResult {
   optimizeImports: string[];
   images: AkanImageConfig;
   i18n: AkanI18nConfig;
+  api: AkanApiConfig;
   publicEnv: string[];
   mobile: AkanMobileConfig;
   /** True only when the app's akan.config.ts explicitly declares a `mobile` section (vs. the synthesized default). */
@@ -260,6 +263,12 @@ export class AkanAppConfig implements AppConfigResult {
     this.i18n = resolveAkanI18nConfig(config?.i18n);
     process.env.AKAN_PUBLIC_DEFAULT_LOCALE = this.i18n.defaultLocale;
     process.env.AKAN_PUBLIC_LOCALES = this.i18n.locales.join(",");
+    this.api = {
+      prefix: normalizeRoutePrefix(config?.api?.prefix) ?? "/api",
+      websocketPrefix: normalizeRoutePrefix(config?.api?.websocketPrefix) ?? "/ws",
+    };
+    process.env.AKAN_PUBLIC_API_PREFIX = this.api.prefix;
+    process.env.AKAN_PUBLIC_WS_PREFIX = this.api.websocketPrefix;
     this.publicEnv = (config?.publicEnv as string[] | undefined) ?? ([] as string[]);
     this.secrets = (config?.secrets as string[] | undefined) ?? ([] as string[]);
     this.assets = {
@@ -446,6 +455,8 @@ ENV AKAN_PUBLIC_ENV=${this.baseDevEnv.env}
 ${this.basePaths.size ? `ENV AKAN_PUBLIC_BASE_PATHS=${[...this.basePaths].join(",")}` : ""}
 ENV AKAN_PUBLIC_DEFAULT_LOCALE=${this.i18n.defaultLocale}
 ENV AKAN_PUBLIC_LOCALES=${this.i18n.locales.join(",")}
+ENV AKAN_PUBLIC_API_PREFIX=${this.api.prefix}
+ENV AKAN_PUBLIC_WS_PREFIX=${this.api.websocketPrefix}
 ENV AKAN_PUBLIC_OPERATION_MODE=cloud
 ENV AKAN_LOG_TO_FILE=0
 ${webEnvLines}

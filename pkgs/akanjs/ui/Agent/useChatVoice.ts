@@ -30,8 +30,8 @@ export const useChatVoice = ({ session, engine, version, onTranscript, onFailed 
   reader.current ??= new VoiceReader(() => held.current);
   /** Set while the draft came from the microphone, consumed by the send that carries it. */
   const byVoice = useRef(false);
-  /** The assistant message being read aloud. Null means this turn is not one to read. */
-  const spoken = useRef<{ at: number } | null>(null);
+  /** The assistant message being read aloud, and where its turn began. Null means this turn is not one to read. */
+  const spoken = useRef<{ at: number; from: number } | null>(null);
   /** The parked card already announced, so a question is not re-read on every transcript change. */
   const announced = useRef<string | null>(null);
   const heard = useRef(0);
@@ -53,7 +53,7 @@ export const useChatVoice = ({ session, engine, version, onTranscript, onFailed 
     const reading = spoken.current;
     if (!reading) return;
     const at = session.messages.findLastIndex(
-      (message) => message.role === "assistant" && !message.local && !!message.text,
+      (message, idx) => idx >= reading.from && message.role === "assistant" && !message.local && !!message.text,
     );
     if (at < 0) return;
     // A later answer in the same turn is a new one to read from the start; a tool row between them is skipped.
@@ -86,19 +86,29 @@ export const useChatVoice = ({ session, engine, version, onTranscript, onFailed 
     reader.current?.cancel();
     spoken.current = null;
   };
+  /**
+   * Whether the draft came from the microphone, cleared as it is read: the send consuming the draft takes it, and
+   * an ask parked behind a running turn carries it to the send that finally opens with it.
+   */
+  const lift = () => {
+    const was = byVoice.current;
+    byVoice.current = false;
+    return was;
+  };
   return {
     listening,
     /** A screen that cannot listen renders no microphone — the rule that publishes no tool for a missing control. */
     canListen: !!engine && (engine.available?.() ?? true),
     silence,
-    /** Called by the send that opens a turn: only an ask that arrived by voice is answered out loud. */
-    take: () => {
-      spoken.current = byVoice.current ? { at: -1 } : null;
-      byVoice.current = false;
+    lift,
+    /** Puts a lifted flag back, for a parked ask that returned to the composer instead of opening a turn. */
+    hold: (spokenAsk: boolean) => {
+      byVoice.current ||= spokenAsk;
     },
-    /** The draft was consumed by something that is not a new turn — an answer to a question the agent asked. */
-    drop: () => {
-      byVoice.current = false;
+    /** Called by the send that opens a turn: only an ask that arrived by voice is answered out loud. */
+    take: (spokenAsk = lift()) => {
+      // From the transcript's current end: the last answer on screen belongs to the previous ask, not this one.
+      spoken.current = spokenAsk ? { at: -1, from: session.messages.length } : null;
     },
     toggle: () => {
       if (listener.current) {

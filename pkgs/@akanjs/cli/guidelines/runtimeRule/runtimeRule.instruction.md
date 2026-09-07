@@ -42,6 +42,43 @@ const config: AppConfig = { web: false }; // api only
   reached for any of them. An app that needs one declares it in `docker.preRuns` / `docker.postRuns`, which are
   emitted around the `bun install` — that is the migration for a `puppeteer` or `ffmpeg` app.
 
+## Route Prefixes — Where The API Is Mounted
+
+Signal endpoints hang off `/api` and the websocket upgrade off `/api/ws`. Both move, and both have to move in
+three places at once: the route table the replica builds, the gateway's own upgrade check, and the `fetchClient`
+in every browser tab. That last one is the constraint the design is built around.
+
+```ts
+// apps/<app>/main.ts — the deployment's answer
+await new AkanApp({ prefix: "/backend", websocketPrefix: "/socket" }).start();
+```
+
+```ts
+// apps/<app>/akan.config.ts — the build's answer, for the bundles a server never gets to correct
+const config: AppConfig = { api: { prefix: "/backend", websocketPrefix: "/socket" } };
+```
+
+- **Three sources, narrowest first.** `globalThis.__AKAN_PREFIX__`, then `AKAN_API_PREFIX` / `AKAN_WS_PREFIX`,
+  then `AKAN_PUBLIC_API_PREFIX` / `AKAN_PUBLIC_WS_PREFIX`, then `/api` and `/ws`. Read them through
+  `getApiPrefix()` / `getWsPrefix()` from `akanjs/base`; never write either literal again.
+- **`AKAN_API_PREFIX` is deliberately outside the `AKAN_PUBLIC_*` namespace.** Only that namespace is inlined
+  into client bundles at build time, so a name inside it could never act as a runtime override — and only a name
+  inside it can reach a prebuilt bundle at all. The two jobs need two names.
+- **`new AkanApp({ prefix })` reaches the browser through the page, not through a prop.** `FetchClient` fixes its
+  origin when the module graph initializes, before any component renders, so a React prop — a `System.Provider`
+  value, anything out of `implicitRootLayout` — is always too late. The value rides the SSR classic bootstrap
+  script instead, the one thing guaranteed to run ahead of every module script, and is omitted when it matches
+  what the bundle already assumes. `akan.config.ts` is what a Capacitor bundle or a statically served CSR shell
+  follows, because neither is rendered by a server that could tell it otherwise.
+- **A prefix is a path segment.** A blank value or a bare `/` is refused: `/` would be mounted ahead of the SSR
+  catch-all and swallow every page route. A prefix whose first segment is a declared basePath is refused at
+  `init()` for the same reason in the other direction.
+- **The prefix is fixed before `init()`.** `setPrefix` / `setWebsocketPrefix` throw once the server has started,
+  because `init()` is where the route table and the devtools routes are built.
+- `robots.txt`, the locale redirect's API bypass and the OpenAPI `servers` URL all derive from it. The blob
+  storage default (`/api/localFile/getBlob`) does **not**: those URLs are stored in rows, so moving the prefix
+  does not move what was already written.
+
 ## The Process Model — Gateway And Solo
 
 A container runs one process per replica, a gateway in front of them when there is more than one, and one RSC

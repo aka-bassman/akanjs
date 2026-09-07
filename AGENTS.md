@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.85 -->
+<!-- akan:agent:version 3.0.0-alpha.88 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -320,6 +320,14 @@ Full contract: `get_guideline` with `runtimeRule`, or `akan guideline show runti
   The RSC worker is always its own process (`--conditions react-server`). A solo process answers
   `/_akan/app/health`, `/_akan/app/metrics` and `/_akan/bench/ping` in the gateway's own shape, and owns the
   rotating log file; nothing supervises it but the orchestrator's probes.
+- **Route prefixes move together or not at all.** `new AkanApp({ prefix, websocketPrefix })` in `main.ts` moves
+  the server's routes, the gateway's websocket upgrade and — through the SSR bootstrap script — the
+  `fetchClient` in every tab the server renders. A prebuilt CSR shell or a Capacitor bundle is never rendered by
+  a server, so `api: { prefix, websocketPrefix }` in `akan.config.ts` is what those follow; declare it there too
+  when the app ships either. Read the value with `getApiPrefix()` / `getWsPrefix()` from `akanjs/base` — never
+  write `/api` or `/ws` as a literal, and never try to hand it down as a React prop: `FetchClient` fixes its
+  origin before the first component renders. A blank prefix, a bare `/`, and one that shadows a basePath are all
+  refused.
 - **`main.ts` imports `AkanApp` from `akanjs/server/akanApp`, not the barrel** — the barrel re-exports
   `AkanServer`, whose graph the gateway never runs. Keep entrypoint imports at the leaf.
 - **Every `Logger` call builds a `LogRecord`** carrying `traceId`, `endpoint` and `origin` alongside the message,

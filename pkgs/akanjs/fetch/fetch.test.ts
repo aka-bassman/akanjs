@@ -1725,6 +1725,16 @@ describe("WsClient", () => {
 });
 
 describe("FetchClient websocket generation", () => {
+  test("the socket sits under the configured websocket prefix", () => {
+    process.env.AKAN_WS_PREFIX = "/socket";
+    try {
+      const client = new FetchClient("https://api.example/backend", {}, { service: serviceSignal });
+      expect(client.ws.url).toBe("wss://api.example/backend/socket");
+    } finally {
+      delete process.env.AKAN_WS_PREFIX;
+    }
+  });
+
   test("routes a realtime call with a FetchPolicy origin to a socket for that origin", async () => {
     setFakeWebSocket();
     const client = new FetchClient("https://api.example", {}, { service: serviceSignal });

@@ -1,4 +1,4 @@
-import { getEnv, PrimitiveRegistry, type PromiseOrObject } from "akanjs/base";
+import { getEnv, getWsPrefix, PrimitiveRegistry, type PromiseOrObject } from "akanjs/base";
 import {
   capitalize,
   type FetchPolicy,
@@ -419,7 +419,7 @@ export class FetchClient {
     }
   }
   static #makeWsUri(origin: string) {
-    return `${origin.replace("http://", "ws://").replace("https://", "wss://")}/ws`;
+    return `${origin.replace("http://", "ws://").replace("https://", "wss://")}${getWsPrefix()}`;
   }
 
   static paginationArgs: SerializedArg[] = [

@@ -1405,6 +1405,8 @@ export class AppExecutor extends SysExecutor {
     const databaseMode = process.env.AKAN_DATABASE_MODE ?? akanConfig.defaultDatabaseMode ?? "single";
     const routeEnv = {
       AKAN_PUBLIC_BASE_PATHS: [...akanConfig.basePaths].join(","),
+      AKAN_PUBLIC_API_PREFIX: akanConfig.api.prefix,
+      AKAN_PUBLIC_WS_PREFIX: akanConfig.api.websocketPrefix,
       AKAN_DATABASE_MODE: databaseMode,
     };
     Object.assign(process.env, routeEnv);

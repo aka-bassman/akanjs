@@ -13,4 +13,15 @@ describe("createDefaultRobotsTxt", () => {
       expect(robots).toContain(`User-agent: ${crawler}\nDisallow: /`);
     }
   });
+
+  test("blocks the configured api prefix rather than a literal /api", () => {
+    process.env.AKAN_API_PREFIX = "/backend";
+    try {
+      const robots = createDefaultRobotsTxt();
+      expect(robots).toContain("Disallow: /backend");
+      expect(robots).not.toContain("Disallow: /api");
+    } finally {
+      delete process.env.AKAN_API_PREFIX;
+    }
+  });
 });

@@ -1,6 +1,6 @@
 import type { AkanWebConfig, AkanWebOption } from "akanjs";
-import { type BackendEnv, type BaseEnv, getEnv } from "akanjs/base";
-import { Logger, logSeverity, websocketBinaryFrameContract } from "akanjs/common";
+import { type BackendEnv, type BaseEnv, getApiPrefix, getEnv, getWsPrefix, normalizeRoutePrefix } from "akanjs/base";
+import { Logger, logSeverity, parseBasePaths, websocketBinaryFrameContract } from "akanjs/common";
 import { DictionaryLookup, DictionaryRegistry } from "akanjs/dictionary";
 import type {
   Adaptor,
@@ -146,8 +146,8 @@ export class AkanServer {
   readonly name: string;
   readonly libs: AkanLib[];
   readonly env: BackendEnv;
-  prefix = "/api";
-  websocketPrefix = "/ws";
+  prefix = getApiPrefix();
+  websocketPrefix = getWsPrefix();
   openapi = AkanServer.#isOpenApiEnvEnabled();
   mcp = AkanServer.#isEnvOn("AKAN_MCP", "AKAN_PUBLIC_MCP");
   mcpReadOnly = AkanServer.#isEnvEnabled("AKAN_MCP_READONLY", "AKAN_PUBLIC_MCP_READONLY");
@@ -210,11 +210,13 @@ export class AkanServer {
     this.#di = new DiLifecycle({ env: this.env, modules: this.modules }, ...libs);
   }
   setPrefix(prefix: string) {
-    this.prefix = prefix;
+    if (this.status !== "stopped") throw new Error("Route prefix must be set before app initialization.");
+    this.prefix = AkanServer.#requireRoutePrefix(prefix, "prefix");
     return this;
   }
   setWebsocketPrefix(websocketPrefix: string) {
-    this.websocketPrefix = websocketPrefix;
+    if (this.status !== "stopped") throw new Error("Websocket prefix must be set before app initialization.");
+    this.websocketPrefix = AkanServer.#requireRoutePrefix(websocketPrefix, "websocketPrefix");
     return this;
   }
   setOpenApi(openapi = true) {
@@ -303,6 +305,7 @@ export class AkanServer {
   async init({ routes: initRoutes = true, web }: { routes?: boolean; web?: AkanWebOption } = {}) {
     if (this.status !== "stopped") throw new Error("AkanServer is not able to init. It is already running.");
     this.status = "initializing";
+    this.#assertPrefixClearsBasePaths();
     const { routes, wsRoutes, routeOptions } = await this.#di.initializeAll();
     if (!initRoutes) {
       this.#prepared = null;
@@ -781,7 +784,27 @@ export class AkanServer {
   #getOpenApiServers() {
     const serverHttpUri = (this.env as { serverHttpUri?: string }).serverHttpUri;
     if (!serverHttpUri) return undefined;
-    return [{ url: serverHttpUri.replace(/\/api\/?$/, "") }];
+    const withoutPrefix = serverHttpUri.replace(/\/$/, "");
+    return [{ url: withoutPrefix.endsWith(this.prefix) ? withoutPrefix.slice(0, -this.prefix.length) : withoutPrefix }];
+  }
+
+  static #requireRoutePrefix(value: string, field: string) {
+    const normalized = normalizeRoutePrefix(value);
+    if (!normalized) throw new Error(`${field} must be a path segment such as "/api"; "${value}" is not one.`);
+    return normalized;
+  }
+
+  /**
+   * A basePath is a whole route subtree served by the SSR catch-all, so a signal prefix that shadows one — or that
+   * a basePath shadows — silently loses every route on the losing side rather than failing anywhere a reader
+   * would look.
+   */
+  #assertPrefixClearsBasePaths() {
+    const basePaths = parseBasePaths(process.env.AKAN_PUBLIC_BASE_PATHS);
+    const first = this.prefix.split("/")[1];
+    const collision = basePaths.find((basePath) => basePath === first);
+    if (!collision) return;
+    throw new Error(`Route prefix "${this.prefix}" collides with the "${collision}" basePath; give the API its own.`);
   }
 
   static #splitLibsAndOptions(libsOrOptions: (AkanLib | AkanServerOptions)[]) {

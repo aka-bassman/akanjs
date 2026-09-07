@@ -19,6 +19,10 @@ const envKeys = [
   "SERVER_HTTP_PROTOCOL",
   "SSH_TUNNEL_USERNAME",
   "SSH_TUNNEL_PASSWORD",
+  "AKAN_API_PREFIX",
+  "AKAN_WS_PREFIX",
+  "AKAN_PUBLIC_API_PREFIX",
+  "AKAN_PUBLIC_WS_PREFIX",
 ] as const;
 
 const resetEnv = () => {
@@ -63,6 +67,8 @@ describe("getEnv", () => {
       side: "server",
       renderMode: "csr",
       websocket: true,
+      apiPrefix: "/api",
+      wsPrefix: "/ws",
       clientHost: "localhost",
       clientPort: 443,
       clientHttpProtocol: "http:",
@@ -137,6 +143,67 @@ describe("getEnv", () => {
 
     expect(second).toBe(first);
     expect(second.appName).toBe("minimal");
+  });
+});
+
+describe("route prefixes", () => {
+  const globalWithPrefix = globalThis as typeof globalThis & { __AKAN_PREFIX__?: { api?: string; ws?: string } };
+
+  const load = async () => {
+    resetEnv();
+    delete globalWithPrefix.__AKAN_PREFIX__;
+    return await loadBaseEnv();
+  };
+
+  test("defaults to /api and /ws", async () => {
+    const { getApiPrefix, getWsPrefix } = await load();
+    expect(getApiPrefix()).toBe("/api");
+    expect(getWsPrefix()).toBe("/ws");
+  });
+
+  test("falls back to the build-time public env", async () => {
+    const { getApiPrefix, getWsPrefix } = await load();
+    process.env.AKAN_PUBLIC_API_PREFIX = "backend";
+    process.env.AKAN_PUBLIC_WS_PREFIX = "socket/";
+    expect(getApiPrefix()).toBe("/backend");
+    expect(getWsPrefix()).toBe("/socket");
+  });
+
+  test("the runtime env outranks the build-time one, and the global outranks both", async () => {
+    const { getApiPrefix } = await load();
+    process.env.AKAN_PUBLIC_API_PREFIX = "/built";
+    process.env.AKAN_API_PREFIX = "/deployed";
+    expect(getApiPrefix()).toBe("/deployed");
+    globalWithPrefix.__AKAN_PREFIX__ = { api: "/rendered" };
+    expect(getApiPrefix()).toBe("/rendered");
+    delete globalWithPrefix.__AKAN_PREFIX__;
+  });
+
+  // A prefix of "/" would be mounted ahead of the SSR catch-all and swallow every page route.
+  test("a blank or root value is no prefix and falls through", async () => {
+    const { getApiPrefix, normalizeRoutePrefix } = await load();
+    process.env.AKAN_API_PREFIX = "/";
+    process.env.AKAN_PUBLIC_API_PREFIX = "  ";
+    expect(getApiPrefix()).toBe("/api");
+    expect(normalizeRoutePrefix("///")).toBeUndefined();
+    expect(normalizeRoutePrefix("/nested/path/")).toBe("/nested/path");
+  });
+
+  test("serverHttpUri follows the resolved api prefix", async () => {
+    const { getEnv } = await load();
+    process.env.AKAN_PUBLIC_ENV = "local";
+    process.env.AKAN_API_PREFIX = "/backend";
+    expect(getEnv().serverHttpUri).toBe("http://localhost:8282/backend");
+    expect(getEnv().apiPrefix).toBe("/backend");
+  });
+
+  test("resetEnvCache drops a snapshot taken before the prefix was known", async () => {
+    const { getEnv, resetEnvCache } = await load();
+    expect(getEnv().apiPrefix).toBe("/api");
+    process.env.AKAN_API_PREFIX = "/backend";
+    expect(getEnv().apiPrefix).toBe("/api");
+    resetEnvCache();
+    expect(getEnv().apiPrefix).toBe("/backend");
   });
 });
 

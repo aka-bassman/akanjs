@@ -205,6 +205,46 @@ describe("AkanServer web config", () => {
   });
 });
 
+describe("AkanServer route prefix", () => {
+  test("takes the deployed prefix from env and normalizes what code sets", async () => {
+    setAkanEnv();
+    const { AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-prefix-"));
+    const make = () => new AkanServer("serverPrefix", createEnv(tmp), "all", createLib());
+
+    try {
+      expect([make().prefix, make().websocketPrefix]).toEqual(["/api", "/ws"]);
+
+      process.env.AKAN_API_PREFIX = "backend/";
+      process.env.AKAN_WS_PREFIX = "/socket";
+      expect([make().prefix, make().websocketPrefix]).toEqual(["/backend", "/socket"]);
+
+      expect(make().setPrefix("v2/api/").prefix).toBe("/v2/api");
+      expect(() => make().setPrefix("/")).toThrow('prefix must be a path segment such as "/api"; "/" is not one.');
+      expect(() => make().setWebsocketPrefix("  ")).toThrow("websocketPrefix must be a path segment");
+    } finally {
+      delete process.env.AKAN_API_PREFIX;
+      delete process.env.AKAN_WS_PREFIX;
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses a prefix a basePath would shadow", async () => {
+    setAkanEnv();
+    const { AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-prefix-clash-"));
+
+    try {
+      process.env.AKAN_PUBLIC_BASE_PATHS = "admin,shop";
+      const server = new AkanServer("serverPrefixClash", createEnv(tmp), "all", createLib()).setPrefix("/admin");
+      await expect(server.init()).rejects.toThrow('Route prefix "/admin" collides with the "admin" basePath');
+    } finally {
+      delete process.env.AKAN_PUBLIC_BASE_PATHS;
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("AkanServer MCP config", () => {
   test("reads every option from env and lets code override it", async () => {
     setAkanEnv();

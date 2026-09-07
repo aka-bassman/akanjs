@@ -1,3 +1,4 @@
+import { getApiPrefix } from "akanjs/base";
 import { parseAkanI18nEnv } from "akanjs/common";
 import { AkanResponse } from "./akanResponse";
 import type { WebProxy } from "./types";
@@ -97,7 +98,9 @@ function isWellKnownRequest(pathname: string): boolean {
 }
 
 // API routes must not be locale-redirected: `POST /api/x` should hit the endpoint, not 307 to `/en/api/x`
-// (which 404s and makes raw HTTP endpoint checks impossible). Mirrors AkanServer.prefix = "/api".
+// (which 404s and makes raw HTTP endpoint checks impossible). Read from the env rather than taken from the
+// server, the way this proxy already reads its locales — it runs per request with no handle on either.
 function isApiRequest(pathname: string): boolean {
-  return pathname === "/api" || pathname.startsWith("/api/");
+  const prefix = getApiPrefix();
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }

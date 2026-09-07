@@ -10,6 +10,7 @@ import type { LauncherProps as AgentLauncherProps } from "../Agent/Launcher";
 import type { CodeProps as AgentCodeProps, MarkdownProps as AgentMarkdownProps } from "../Agent/Markdown";
 import type { MenuProps as AgentMenuProps } from "../Agent/Menu";
 import type { QuestionProps as AgentQuestionProps } from "../Agent/Question";
+import type { QueuedProps as AgentQueuedProps } from "../Agent/Queued";
 import type { BadgeProps } from "../Badge";
 import type { ButtonProps } from "../Button";
 import type { DatePickerProps, RangePickerProps, TimePickerProps } from "../DatePicker";
@@ -67,6 +68,7 @@ export interface AkanUiOverrides {
   AgentComposer: ComponentType<AgentComposerProps>;
   AgentApproval: ComponentType<AgentApprovalProps>;
   AgentQuestion: ComponentType<AgentQuestionProps>;
+  AgentQueued: ComponentType<AgentQueuedProps>;
   AgentMenu: ComponentType<AgentMenuProps>;
   AgentMarkdown: ComponentType<AgentMarkdownProps>;
   AgentCode: ComponentType<AgentCodeProps>;

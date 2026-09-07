@@ -1198,4 +1198,247 @@ describe("Agent.Chat", () => {
       await untilFlushed(() => false);
     });
   });
+
+  /** A turn that stays running until `release` — what a parked message has to wait behind. */
+  const runningTurn = (...after: Turn[]) => {
+    const surface = new lib.AgenticSurface();
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    surface.registerTool([], {
+      name: "wait",
+      run: async () => {
+        await held;
+        return "waited";
+      },
+    });
+    const session = new lib.AgentSession(
+      surface,
+      scripted({ toolCall: { id: "c1", name: "wait", args: {} } }, ...after),
+    );
+    return { session, release: () => release() };
+  };
+  const parked = (container: HTMLElement) => container.querySelector('[aria-label="base.agentQueued"]');
+  const labeled = (container: HTMLElement, label: string) =>
+    container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+  const captioned = (container: HTMLElement, text: string) =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === text);
+  /**
+   * Opens the held turn and waits until its tool is the thing the loop is parked on. The turn's own promise comes
+   * back wrapped: returned bare from an async function it would be adopted, and awaited until the release it waits for.
+   */
+  const openHeldTurn = async (session: InstanceType<typeof lib.AgentSession>) => {
+    let first: Promise<void> = Promise.resolve();
+    await act(async () => {
+      first = session.send("do the first thing");
+      await untilFlushed(() => session.messages.length >= 2);
+    });
+    return { first };
+  };
+
+  test("Enter during a turn parks the message and sends it the moment the turn ends", async () => {
+    const { session, release } = runningTurn({ text: "First done." }, { text: "Second done." });
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const { first } = await openHeldTurn(session);
+    const input = composer(container);
+    expect(container.innerHTML).toContain("base.agentQueuePlaceholder");
+    input.type("then the second");
+    // The composer offers to park rather than to send while the turn runs, and Stop stays where it was.
+    expect(captioned(container, "base.agentQueue")).toBeTruthy();
+    expect(captioned(container, "base.stop")).toBeTruthy();
+    input.press("Enter");
+    expect(input.value()).toBe("");
+    expect(parked(container)?.textContent).toContain("then the second");
+    expect(session.messages.some((message) => message.text === "then the second")).toBe(false);
+    await act(async () => {
+      release();
+      await first;
+    });
+    await act(async () => {
+      await untilFlushed(() => !session.isRunning && session.messages.length >= 6);
+    });
+    expect(parked(container)).toBeNull();
+    expect(session.messages[4]).toEqual({ role: "user", text: "then the second" });
+    expect(container.innerHTML).toContain("Second done.");
+    unmount();
+  });
+
+  test("a second send while one is parked joins it, so the model is handed one message", async () => {
+    const { session, release } = runningTurn({ text: "First done." }, { text: "Second done." });
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const { first } = await openHeldTurn(session);
+    const input = composer(container);
+    input.type("then the second");
+    input.press("Enter");
+    input.type("and the third");
+    act(() => captioned(container, "base.agentQueue")?.click());
+    expect(input.value()).toBe("");
+    expect(parked(container)?.textContent).toContain("then the second");
+    expect(parked(container)?.textContent).toContain("and the third");
+    await act(async () => {
+      release();
+      await first;
+    });
+    await act(async () => {
+      await untilFlushed(() => !session.isRunning && session.messages.length >= 6);
+    });
+    expect(session.messages[4]).toEqual({ role: "user", text: "then the second\nand the third" });
+    unmount();
+  });
+
+  test("a parked message is dropped from its card, or taken back into the composer ahead of what was typed since", async () => {
+    const { session, release } = runningTurn({ text: "First done." });
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const { first } = await openHeldTurn(session);
+    const input = composer(container);
+    input.type("then the second");
+    input.press("Enter");
+    act(() => labeled(container, "base.agentQueueCancel")?.click());
+    expect(parked(container)).toBeNull();
+    input.type("something else");
+    input.press("Enter");
+    input.type("and more");
+    act(() => labeled(container, "base.agentQueueEdit")?.click());
+    expect(parked(container)).toBeNull();
+    expect(input.value()).toBe("something else\nand more");
+    await act(async () => {
+      release();
+      await first;
+    });
+    await act(async () => {
+      await untilFlushed(() => !session.isRunning);
+    });
+    // Neither reached the transcript, and the draft taken back is still there to be sent.
+    expect(session.messages.filter((message) => message.role === "user")).toEqual([
+      { role: "user", text: "do the first thing" },
+    ]);
+    expect(input.value()).toBe("something else\nand more");
+    unmount();
+  });
+
+  test("Stop hands the parked message back to the composer instead of opening the next turn with it", async () => {
+    const { session, release } = runningTurn({ text: "First done." });
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const { first } = await openHeldTurn(session);
+    const input = composer(container);
+    input.type("then the second");
+    input.press("Enter");
+    expect(parked(container)).toBeTruthy();
+    await act(async () => {
+      captioned(container, "base.stop")?.click();
+      release();
+      await first;
+    });
+    await act(async () => {
+      await untilFlushed(() => !session.isRunning);
+    });
+    expect(parked(container)).toBeNull();
+    expect(input.value()).toBe("then the second");
+    expect(session.messages.filter((message) => message.role === "user")).toHaveLength(1);
+    unmount();
+  });
+
+  test("/new drops the parked message along with the conversation it was written for", async () => {
+    const { session, release } = runningTurn({ text: "First done." });
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    await openHeldTurn(session);
+    const input = composer(container);
+    input.type("then the second");
+    input.press("Enter");
+    expect(parked(container)).toBeTruthy();
+    input.type("/new");
+    await act(async () => {
+      input.press("Enter");
+      release();
+      await untilFlushed(() => session.messages.length === 0 && !session.isRunning);
+    });
+    await act(async () => {
+      await untilFlushed(() => false);
+    });
+    expect(parked(container)).toBeNull();
+    expect(session.messages).toEqual([]);
+    expect(input.value()).toBe("");
+    unmount();
+  });
+
+  test("files staged with a parked message ride it, and come back to the composer with it", async () => {
+    const { session, release } = runningTurn({ text: "First done." }, { text: "A chart." });
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const { first } = await openHeldTurn(session);
+    const input = composer(container);
+    await act(async () => {
+      input.paste([new File(["abc"], "q3.png", { type: "image/png" })]);
+      await untilFlushed(() => container.innerHTML.includes("q3.png"));
+    });
+    input.type("what does this say?");
+    input.press("Enter");
+    expect(parked(container)?.textContent).toContain("q3.png");
+    expect(labeled(container, "base.agentAttachRemove")).toBeNull();
+    act(() => labeled(container, "base.agentQueueEdit")?.click());
+    expect(labeled(container, "base.agentAttachRemove")).toBeTruthy();
+    expect(input.value()).toBe("what does this say?");
+    input.press("Enter");
+    await act(async () => {
+      release();
+      await first;
+    });
+    await act(async () => {
+      await untilFlushed(() => !session.isRunning && session.messages.length >= 6);
+    });
+    expect(session.messages[4]).toEqual({
+      role: "user",
+      text: "what does this say?",
+      attachments: [{ name: "q3.png", mimeType: "image/png", data: btoa("abc") }],
+    });
+    unmount();
+  });
+
+  test("a spoken ask parked behind a turn is the one answered out loud, and the earlier answer is not re-read", async () => {
+    const voice = voiceOf();
+    const { session, release } = runningTurn({ text: "First done." }, { text: "Second done." });
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen voice={voice.engine} />
+      </lib.AgentProvider>,
+    );
+    const { first } = await openHeldTurn(session);
+    act(() => labeled(container, "base.agentListen")?.click());
+    act(() => voice.say("then the second"));
+    composer(container).press("Enter");
+    expect(parked(container)?.textContent).toContain("then the second");
+    await act(async () => {
+      release();
+      await first;
+    });
+    await act(async () => {
+      await untilFlushed(() => !session.isRunning && session.messages.length >= 6);
+    });
+    expect(voice.spoken).toEqual(["Second done."]);
+    unmount();
+  });
 });

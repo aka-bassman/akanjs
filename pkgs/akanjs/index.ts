@@ -234,9 +234,22 @@ export interface AkanPlugin {
   syncAssets?: (ctx: AkanSyncContext) => Promise<void>;
 }
 
+export interface AkanApiConfig {
+  /** Where signal endpoints are mounted. Defaults to `/api`. */
+  prefix: string;
+  /** Where the websocket upgrade sits under `prefix`. Defaults to `/ws`. */
+  websocketPrefix: string;
+}
+
 export interface AppConfigResult {
   docker: DockerConfig;
   defaultDatabaseMode: DatabaseMode;
+  /**
+   * Where this app mounts its endpoints. Declared here rather than only in `main.ts` because the value is baked
+   * into every client bundle: a prebuilt CSR shell or a mobile bundle never reaches the server that would tell
+   * it otherwise. `new AkanApp({ prefix })` still overrides the server and every server-rendered page.
+   */
+  api: AkanApiConfig;
   /** Web surfaces built into the app and mounted at boot. Both default to `true`. */
   web: AkanWebConfig;
   routes?: AkanRouteConfig[];

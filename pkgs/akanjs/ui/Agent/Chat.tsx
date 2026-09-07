@@ -32,10 +32,12 @@ import { Composer } from "./Composer";
 import { Launcher } from "./Launcher";
 import Menu from "./Menu";
 import Question from "./Question";
+import Queued from "./Queued";
 import type { PersistOption } from "./sessionHistory";
 import type { BuiltinOption } from "./sessionView";
 import { tokenCount } from "./tokenCount";
 import { useChatAttachments } from "./useChatAttachments";
+import { type QueuedMessage, useChatQueue } from "./useChatQueue";
 import { useChatVoice } from "./useChatVoice";
 import { useDraftRecall } from "./useDraftRecall";
 import { useKeyboardInset } from "./useKeyboardInset";
@@ -216,6 +218,8 @@ export const DefaultChat = ({
     onFailed: () => session.note(l("base.agentVoiceFailed")),
   });
   const recall = useDraftRecall(session.messages);
+  // `dispatch` is declared below and only ever called from the flush effect, after this render has finished.
+  const queue = useChatQueue({ session, version, l, onFlush: (message) => dispatch(message) });
   const [hotkey, setHotkey] = useState<{ label: string; keys: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -301,22 +305,53 @@ export const DefaultChat = ({
   const runCommand = (command: ChatCommand) => {
     write("");
     recall.remember(`/${command.name}`);
-    // A staged file belongs to the conversation being cleared, so it leaves with it.
-    if (command.name === "new") files.clear();
+    // A staged file and a parked message belong to the conversation being cleared, so they leave with it — and
+    // the slot empties before the abort, or the dying turn's last notify would send what was just cleared.
+    if (command.name === "new") {
+      files.clear();
+      queue.take();
+    }
     void ChatCommands.run(command, { session, l });
+  };
+  /**
+   * Opens a turn with what the composer held, or parks it behind the turn that is running so it opens the next.
+   * False only when parking refused it — the files would not fit beside what is already waiting.
+   */
+  const dispatch = (message: QueuedMessage): boolean => {
+    if (session.isRunning) return queue.push(message);
+    const command = AgentPrompts.parseCommand(message.text);
+    const prompt = command ? prompts.current?.find(command.name) : null;
+    sticky.current = true;
+    speech.take(message.byVoice);
+    if (command && prompt) void runPrompt(prompt, command.args);
+    else if (!message.attachments.length) void session.send(message.text);
+    else
+      void session.send([
+        { role: "user", ...(message.text ? { text: message.text } : {}), attachments: message.attachments },
+      ]);
+    return true;
+  };
+  /** Hands the parked message back to the composer, ahead of whatever was typed since it was parked. */
+  const unpark = () => {
+    const message = queue.queued;
+    if (!message || !files.restore(message.attachments)) return;
+    queue.take();
+    write([message.text, draft].filter(Boolean).join("\n"));
+    speech.hold(message.byVoice);
   };
   const pick = (prompt: AgentPrompt) => {
     if (prompt.args.some((arg) => arg.required)) {
       write(`/${prompt.name} `);
       return;
     }
-    if (session.isRunning) {
+    // A prompt cannot answer the question the agent is waiting on, so it is refused rather than parked.
+    if (session.pendingQuestion) {
       session.note(l("base.agentBusy"));
       return;
     }
     write("");
     recall.remember(`/${prompt.name}`);
-    void runPrompt(prompt, []);
+    dispatch({ text: `/${prompt.name}`, attachments: [], byVoice: false });
   };
   const menu = useSlashMenu({ draft, prompts: prompts.current, l, onCommand: runCommand, onPrompt: pick });
   const send = () => {
@@ -339,27 +374,18 @@ export const DefaultChat = ({
         return;
       }
       write("");
-      speech.drop();
+      speech.lift();
       question.answer(question.multiple ? [text] : text);
       return;
     }
-    if (session.isRunning) return;
-    const prompt = command ? prompts.current?.find(command.name) : null;
+    const byVoice = speech.lift();
+    if (!dispatch({ text, attachments: files.attached, byVoice })) {
+      speech.hold(byVoice);
+      return;
+    }
     write("");
-    if (text) recall.remember(text);
-    sticky.current = true;
-    speech.take();
-    if (command && prompt) {
-      void runPrompt(prompt, command.args);
-      return;
-    }
-    if (!files.attached.length) {
-      void session.send(text);
-      return;
-    }
-    const attachments = files.attached;
     files.clear();
-    void session.send([{ role: "user", ...(text ? { text } : {}), attachments }]);
+    if (text) recall.remember(text);
   };
   const onKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     const area = event.currentTarget;
@@ -476,6 +502,7 @@ export const DefaultChat = ({
                 className="text-foreground/50 hover:text-foreground"
                 onClick={() => {
                   files.clear();
+                  queue.take();
                   void session.reset();
                 }}
                 type="button"
@@ -521,6 +548,7 @@ export const DefaultChat = ({
       {session.pendingQuestion ? (
         <Question key={session.pendingQuestion.callId} question={session.pendingQuestion} />
       ) : null}
+      {queue.queued ? <Queued message={queue.queued} onCancel={() => queue.take()} onEdit={unpark} /> : null}
       <Menu onPick={(row) => row.pick()} rows={menu.rows} selected={menu.selected} />
       <Composer
         attached={files.attached}
@@ -534,6 +562,8 @@ export const DefaultChat = ({
         onSend={send}
         onStop={() => {
           speech.silence();
+          // Stop means stop: what was parked comes back to the composer instead of opening the next turn at once.
+          unpark();
           session.abort();
         }}
         session={session}

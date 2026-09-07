@@ -74,6 +74,16 @@ export const useChatAttachments = ({ session, attach, l }: ChatAttachmentsSetup)
       void add(files);
     },
   };
+  /** Stages files taken back from a parked message, ahead of what was picked since. False, noted, when they do not fit. */
+  const restore = (list: MessageAttachment[]): boolean => {
+    const next = [...list, ...staged.current];
+    const overflow = Attachment.overflow(next);
+    if (overflow === "tooMany") session.note(l("base.agentAttachTooMany", { count: maxMessageAttachments }));
+    else if (overflow === "tooMuch") session.note(l("base.agentAttachTooMuch", { name: list[0]?.name ?? "" }));
+    if (overflow) return false;
+    stage(next);
+    return true;
+  };
   return {
     attached,
     dragging,
@@ -81,5 +91,6 @@ export const useChatAttachments = ({ session, attach, l }: ChatAttachmentsSetup)
     add,
     clear: () => stage([]),
     remove: (idx: number) => stage(staged.current.filter((_, at) => at !== idx)),
+    restore,
   };
 };

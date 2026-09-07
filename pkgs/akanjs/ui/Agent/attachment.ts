@@ -54,6 +54,13 @@ export class Attachment {
     return Math.max(0, Math.floor((data.length * 3) / 4) - padding) + (attachment.text?.length ?? 0);
   }
 
+  /** Which message ceiling these would pass together, or null when one message can carry them all. */
+  static overflow(attachments: readonly MessageAttachment[]): "tooMany" | "tooMuch" | null {
+    if (attachments.length > maxMessageAttachments) return "tooMany";
+    const bytes = attachments.reduce((sum, one) => sum + Attachment.bytesOf(one), 0);
+    return bytes > maxMessageAttachmentBytes ? "tooMuch" : null;
+  }
+
   /** Same name and same size is the same file picked twice — the shape a re-drop or a double paste produces. */
   static same(one: MessageAttachment, other: MessageAttachment): boolean {
     return one.name === other.name && Attachment.bytesOf(one) === Attachment.bytesOf(other);
