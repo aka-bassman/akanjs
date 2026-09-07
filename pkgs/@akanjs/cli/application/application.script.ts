@@ -1,15 +1,45 @@
 import type { AbstractCompactOptions } from "@akanjs/devkit/abstractCompactor";
+import type { DevHostEvent } from "@akanjs/devkit/akanApp";
 import type { AkanAppConfig, DatabaseMode, MobileEnv } from "@akanjs/devkit/akanConfig";
 import { ApplicationBuildReporter } from "@akanjs/devkit/applicationBuildReporter";
 import type { TypecheckOptions } from "@akanjs/devkit/applicationBuildRunner";
 import type { ReleaseSourceOptions } from "@akanjs/devkit/applicationReleasePackager";
-import { type App, type Exec, type Lib, type Sys, script, type Workspace } from "@akanjs/devkit/commandDecorators";
+import {
+  type App,
+  type Apps,
+  type Exec,
+  type Lib,
+  type Sys,
+  script,
+  type Workspace,
+} from "@akanjs/devkit/commandDecorators";
 import { LibExecutor, PkgExecutor } from "@akanjs/devkit/executors";
+import type { DevStdioMode } from "@akanjs/devkit/incrementalBuilder";
 import { formatSlicePlan } from "@akanjs/devkit/slicePlanner";
 import { confirm } from "@inquirer/prompts";
 import { Logger } from "akanjs/common";
 import { LibraryScript } from "../library/library.script";
 import { ApplicationRunner, type LogsOptions } from "./application.runner";
+import { DevPortReclaimer } from "./devPortReclaimer";
+import { DevStreamView } from "./devStreamView";
+import { DevSupervisor } from "./devSupervisor";
+import { type DevUiMode, resolveDevUi } from "./devUiMode";
+
+interface StartOptions {
+  open?: boolean;
+  dbup?: boolean;
+  write?: boolean;
+  plain?: boolean;
+  kill?: boolean;
+  concurrency?: number;
+}
+interface StartOneOptions {
+  open?: boolean;
+  dbup?: boolean;
+  stdio?: DevStdioMode;
+  write?: boolean;
+  onDevEvent?: (event: DevHostEvent) => void;
+}
 
 type MobileOperation = "local" | "release";
 type MobileCommandOptions = {
@@ -114,7 +144,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     const app = await this.applicationRunner.createApplication(appName, workspace, libs);
     spinner.succeed(`Application created in apps/${app.name}`);
     await app.scanSync();
-    if (start) await this.start(app, { open: true });
+    if (start) await this.startOne(app, { open: true });
   }
   async removeApplication(app: App) {
     const spinner = app.spinning("Removing application...");
@@ -217,18 +247,24 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
   }
 
   async start(
+    apps: Apps,
+    { open = false, dbup = true, write = true, plain = false, kill = false, concurrency = 1 }: StartOptions = {},
+  ) {
+    const first = apps[0];
+    if (!first) throw new Error("No app selected to start");
+    const { mode, downgraded } = resolveDevUi(plain);
+    if (downgraded) first.workspace.log("no sized terminal to draw on; printing prefixed lines instead");
+    if (kill) await this.reclaimDevPorts(apps);
+    //? `--plain` on a single app is the pre-supervisor path, kept whole: no extra process, this
+    //? process's own stdio, and the same Ctrl+C handling it always had.
+    if (mode === "stream" && apps.length === 1)
+      return await this.startOne(first, { open, dbup, write, ...DevSupervisor.childHooks() });
+    await this.#startMany(apps, { open, dbup, write, mode, concurrency });
+  }
+
+  async startOne(
     app: App,
-    {
-      open = false,
-      dbup = true,
-      withInk = false,
-      write = true,
-    }: {
-      open?: boolean;
-      dbup?: boolean;
-      withInk?: boolean;
-      write?: boolean;
-    } = {},
+    { open = false, dbup = true, stdio = "inherit", write = true, onDevEvent }: StartOneOptions = {},
   ) {
     await app.scanSync({ write });
     const akanConfig = await app.getConfig();
@@ -244,9 +280,75 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       onStart: () => {
         spinner.succeed(`${app.name} prepared, ready to start`);
       },
-      withInk,
+      onDevEvent,
+      stdio,
     });
     return akanAppHost;
+  }
+
+  /**
+   * Frees the ports this session is about to bind. Reported line by line rather than silently: the
+   * holder is often another checkout's dev server, and "why did my other terminal die" must be
+   * answerable from this output alone.
+   */
+  async reclaimDevPorts(apps: Apps) {
+    const workspace = apps[0]?.workspace;
+    if (!workspace) return;
+    const ports = await Promise.all(apps.map(async (app) => await app.getDevPort()));
+    const { killed, foreign } = await new DevPortReclaimer().reclaim(ports);
+    for (const holder of killed)
+      workspace.log(`freed port ${holder.port} — killed pid ${holder.pid} (${holder.command})`);
+    for (const holder of foreign)
+      Logger.rawLog(
+        `port ${holder.port} is held by pid ${holder.pid} and was left alone: ${holder.command}`,
+        undefined,
+        "error",
+      );
+    if (killed.length === 0 && foreign.length === 0) workspace.log("dev ports are free; nothing to kill");
+  }
+
+  /**
+   * The supervised session: one `akan start <app>` child per app, and this process owning the database,
+   * the boot order and the terminal. The children are told `--dbup false` because a workspace-level
+   * `docker compose down` on the first Ctrl+C would take the other apps' database with it.
+   */
+  async #startMany(
+    apps: Apps,
+    { open, dbup, write, mode, concurrency }: Required<Omit<StartOptions, "plain" | "kill">> & { mode: DevUiMode },
+  ) {
+    const workspace = apps[0]?.workspace;
+    if (!workspace) throw new Error("No app selected to start");
+    const startedDatabase = dbup ? await this.#prepareSharedDatabase(apps) : false;
+    const supervisor = new DevSupervisor({ apps, mode, concurrency, open, write });
+    const view =
+      mode === "tui"
+        ? await (await import("./devTuiView")).createDevTuiView(supervisor)
+        : new DevStreamView(apps.map((app) => app.name));
+    await supervisor.run(view);
+    //* Only what this session brought up: the compose project is workspace-wide, so tearing down a
+    //* database that was already running would take another checkout's dev servers with it.
+    if (startedDatabase) await this.#stopDatabase(workspace);
+  }
+
+  /**
+   * One `docker compose up` for every app that wants one. Apps may declare different modes, and the
+   * services are a union rather than a choice: they share one compose project, so bringing up the
+   * superset is what lets a `cluster` app and a `multiple` app run side by side.
+   */
+  async #prepareSharedDatabase(apps: Apps): Promise<boolean> {
+    const workspace = apps[0]?.workspace;
+    if (!workspace) return false;
+    const modes = new Set<DatabaseMode>();
+    for (const app of apps) {
+      if (app.getEnv() !== "local") continue;
+      const akanConfig = await app.getConfig();
+      const mode = (process.env.AKAN_DATABASE_MODE ?? akanConfig.defaultDatabaseMode ?? "single") as DatabaseMode;
+      await this.syncDatabaseModeDependencies(app, akanConfig, mode);
+      if (mode !== "single") modes.add(mode);
+    }
+    let started = false;
+    for (const mode of modes) if (!(await this.dbup(workspace, mode))) started = true;
+    return started;
   }
 
   async buildIos(app: App, { write = true, target, env = "debug", regenerate = false }: MobileCommandOptions = {}) {
@@ -396,15 +498,22 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     });
   }
   async #stopDatabase(workspace: Workspace) {
-    const timeout = new Promise<"timeout">((resolve) =>
-      setTimeout(() => resolve("timeout"), ApplicationScript.dbShutdownTimeoutMs),
-    );
-    const result = await Promise.race([this.dbdown(workspace).catch(() => undefined), timeout]);
-    if (result !== "timeout") return;
-    Logger.rawLog(
-      `Local database did not stop within ${ApplicationScript.dbShutdownTimeoutMs}ms; run \`akan dbdown\` once Docker responds.`,
-      undefined,
-      "error",
-    );
+    // Cleared rather than left to fire: the losing timer of this race is a live handle, and it holds the
+    // event loop open for its full budget after a teardown that already succeeded.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const timeout = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), ApplicationScript.dbShutdownTimeoutMs);
+    });
+    try {
+      const result = await Promise.race([this.dbdown(workspace).catch(() => undefined), timeout]);
+      if (result !== "timeout") return;
+      Logger.rawLog(
+        `Local database did not stop within ${ApplicationScript.dbShutdownTimeoutMs}ms; run \`akan dbdown\` once Docker responds.`,
+        undefined,
+        "error",
+      );
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 }

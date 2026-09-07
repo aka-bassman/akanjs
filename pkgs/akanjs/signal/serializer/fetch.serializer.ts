@@ -101,7 +101,7 @@ export class FetchSerializer {
         getFilterArgInfos(filterInfo).map(FetchSerializer.#serializeFilterArg),
       ]),
     );
-    return { filter, sortKeys: Object.keys(filterMeta.sort) };
+    return { filter, sortKeys: Object.keys(filterMeta.sort), sorts: filterMeta.sort as SerializedFilter["sorts"] };
   }
   static #serializeSlice(sliceInfo: SliceInfo): SerializedSlice {
     const guards = sliceInfo.signalOption.guards?.map((g) => g.name);
@@ -110,6 +110,7 @@ export class FetchSerializer {
       ...(sliceInfo.signalOption.path ? { path: sliceInfo.signalOption.path } : {}),
       ...(guards?.length ? { guards } : {}),
       ...(sliceInfo.signalOption.mcp === false ? { mcp: false as const } : {}),
+      ...(sliceInfo.liveOption ? { live: { sort: sliceInfo.liveOption.sort } } : {}),
     };
   }
 

@@ -1,5 +1,5 @@
 import { AbstractDoc } from "@akanjs/devkit/abstractDoc";
-import { App, command, Exec, Sys, Workspace } from "@akanjs/devkit/commandDecorators";
+import { App, Apps, command, Exec, Sys, Workspace } from "@akanjs/devkit/commandDecorators";
 import { getMobileTargetChoices } from "@akanjs/devkit/mobile";
 import { select } from "@inquirer/prompts";
 
@@ -145,12 +145,16 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .exec(async function (app, target, env, write, regenerate) {
       await this.applicationScript.buildAndroid(app, { target, env: env, write, regenerate });
     }),
-  start: target({ short: true, desc: "Start development server (frontend SSR + backend)" })
-    .with(App)
+  start: target({ short: true, desc: "Start development server(s) (frontend SSR + backend)" })
+    .with(Apps)
+    .option("plain", Boolean, { desc: "print prefixed lines instead of the full-screen view", default: false })
+    .option("kill", Boolean, { flag: "k", desc: "free the dev ports first, whoever is holding them", default: false })
+    .option("concurrency", Number, { desc: "apps to boot at a time", default: 1 })
+    .option("dbup", Boolean, { desc: "start the local database first", default: true })
     .option("open", Boolean, { desc: "open web browser?", default: false })
     .option("write", Boolean, { desc: "write code generation", default: true })
-    .exec(async function (app, open, write) {
-      await this.applicationScript.start(app, { open, write });
+    .exec(async function (apps, plain, kill, concurrency, dbup, open, write) {
+      await this.applicationScript.start(apps, { plain, kill, concurrency, dbup, open, write });
     }),
   startIos: target({ short: true, desc: "Start iOS app in simulator or device" })
     .with(App)

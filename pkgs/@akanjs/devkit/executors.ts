@@ -41,6 +41,7 @@ import {
 } from "./agentsIndex";
 import { AkanAppConfig, AkanLibConfig, decreaseBuildNum, increaseBuildNum } from "./akanConfig";
 import { getRootBoundarySegments, isRootBoundarySegments } from "./artifact/implicitRootLayout";
+import { CodegenLock } from "./codegenLock";
 import { FileSys } from "./fileSys";
 import { getDirname } from "./getDirname";
 import { Linter } from "./linter";
@@ -1136,18 +1137,22 @@ export class SysExecutor extends Executor {
         : await LibInfo.fromExecutor(this as unknown as LibExecutor, {
             refresh,
           });
-    if (write) {
-      await Promise.all(this.#getScanTemplateTasks(scanInfo));
-      await this.writeJson(`akan.${this.type}.json`, scanInfo.getScanResult());
-      if (this.type === "lib") this.#updateDependencies(scanInfo);
+    //* `writeLib` regenerates every dependency lib's barrels, and each mounting app's `akan start`
+    //* regenerates the same ones — so this region races the other dev servers in the workspace and the
+    //* builders that watch what it writes.
+    if (write)
+      await CodegenLock.run(this.workspace.workspaceRoot, `scan:${this.name}`, async () => {
+        await Promise.all(this.#getScanTemplateTasks(scanInfo));
+        await this.writeJson(`akan.${this.type}.json`, scanInfo.getScanResult());
+        if (this.type === "lib") this.#updateDependencies(scanInfo);
 
-      if (writeLib) {
-        const libInfos = [...scanInfo.getLibInfos().values()];
-        await this.#updateDependencies(scanInfo);
-        await Promise.all(libInfos.flatMap((libInfo) => libInfo.exec.#getScanTemplateTasks(libInfo)));
-      }
-      await this.syncAgentsIndex(scanInfo);
-    }
+        if (writeLib) {
+          const libInfos = [...scanInfo.getLibInfos().values()];
+          await this.#updateDependencies(scanInfo);
+          await Promise.all(libInfos.flatMap((libInfo) => libInfo.exec.#getScanTemplateTasks(libInfo)));
+        }
+        await this.syncAgentsIndex(scanInfo);
+      });
     this.#scanInfo = scanInfo;
     return scanInfo;
   }

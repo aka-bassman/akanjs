@@ -10,7 +10,9 @@ export type SliceActionKey =
   | "addPageOfModel"
   | "setLimitOfModel"
   | "setQueryArgsOfModel"
-  | "setSortOfModel";
+  | "setSortOfModel"
+  | "applyLiveModel"
+  | "watchLiveModel";
 
 /**
  * What a generated key on `st.do` / `st.use` actually is.

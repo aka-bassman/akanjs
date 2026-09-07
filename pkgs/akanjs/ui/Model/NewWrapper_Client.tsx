@@ -1,6 +1,6 @@
 "use client";
 import type { GetStateObject } from "akanjs/base";
-import { cn } from "akanjs/client";
+import { cn, usePage } from "akanjs/client";
 import { capitalize } from "akanjs/common";
 import { ConstantRegistry } from "akanjs/constant";
 import type { SliceMeta } from "akanjs/fetch";
@@ -8,6 +8,7 @@ import { st } from "akanjs/store";
 import type { ReactNode } from "react";
 
 import { agentAttrs } from "../agentAttrs";
+import { type DraftProp, newDraftScope } from "./draftScope";
 
 interface NewWrapperProps<Full = any> {
   className?: string;
@@ -18,6 +19,7 @@ interface NewWrapperProps<Full = any> {
   modal?: string | null;
   resets?: string[] | null;
   namespace?: string;
+  draft?: DraftProp;
 }
 
 export const NewWrapper_Client = <Full,>({
@@ -29,7 +31,9 @@ export const NewWrapper_Client = <Full,>({
   modal,
   resets,
   namespace,
+  draft,
 }: NewWrapperProps<Full>) => {
+  const { path } = usePage();
   const { refName, sliceName } = slice;
   const modelName = refName;
   const names = {
@@ -51,7 +55,13 @@ export const NewWrapper_Client = <Full,>({
     .exec(() => {
       const cnst = ConstantRegistry.getDatabase(modelName);
       const crystal = new cnst.full().set(partial as unknown as GetStateObject<Full>) as unknown as Full;
-      void storeDo[names.newModel](crystal, { modal, setDefault, sliceName });
+      const draftScope = newDraftScope(draft, {
+        seed: partial,
+        modal: modal ?? "edit",
+        sliceName,
+        routePath: path,
+      });
+      void storeDo[names.newModel](crystal, { modal, setDefault, sliceName, draftScope });
       resets?.forEach((reset) => {
         void storeDo[`reset${capitalize(reset)}`]();
       });

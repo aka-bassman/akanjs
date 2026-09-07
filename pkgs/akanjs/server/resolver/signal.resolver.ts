@@ -1,4 +1,5 @@
 import {
+  Any,
   type BackendEnv,
   Binary,
   type Cls,
@@ -14,7 +15,7 @@ import {
 } from "akanjs/base";
 import { capitalize, cookieHeaderHasAuthToken, Logger } from "akanjs/common";
 import { deserialize, resolvePageLimit, resolvePageSkip, serialize } from "akanjs/constant";
-import { documentQueryHelper } from "akanjs/document";
+import { baseDocumentColumns, documentQueryHelper, getFilterSortByKey, type QueryFieldMap } from "akanjs/document";
 import {
   type AkanJob,
   type AkanJobOptions,
@@ -33,10 +34,16 @@ import { SignalContext, type WebSocketExecutionContext } from "../../signal/sign
 import type { SliceCls } from "../../signal/slice";
 import type { SliceInfo } from "../../signal/sliceInfo";
 import { runTraced, SignalTrace } from "../../signal/trace";
-import type { WebsocketMessageData, WebsocketSubscribeAck } from "../../signal/types";
+import type {
+  LiveEndpointOption,
+  LiveEventPayload,
+  WebsocketMessageData,
+  WebsocketSubscribeAck,
+} from "../../signal/types";
 import type { HttpRoutes, LocalPublish, SignalRoutes, WebsocketRoutes } from "../types";
 
 type HttpRouteHandler = (req: Bun.BunRequest) => Response | Promise<Response | undefined> | undefined;
+type LiveChangeListener = (doc: unknown, type: unknown, previous?: unknown) => void;
 type HttpMethodRoutes = Record<string, HttpRouteHandler>;
 
 export class SignalResolver {
@@ -54,9 +61,17 @@ export class SignalResolver {
     const separator = roomId.indexOf("-");
     return SignalResolver.#coalescingRooms.has(separator >= 0 ? roomId.slice(0, separator) : roomId);
   }
-  static setLocalPublish(localPublish: LocalPublish, websocket: WebsocketAdaptor) {
+  static setLocalPublish(localPublish: LocalPublish, websocket: WebsocketAdaptor, live?: LiveRegistry) {
     SignalResolver.#localPublish = localPublish;
     websocket.setEventHandler((roomId, data) => localPublish(roomId, data as object | object[] | Uint8Array));
+    // A live room that missed events cannot tell which ones, so it says only that it is behind and every
+    // subscriber refetches. Overshooting costs a query; staying quiet leaves a list wrong with no symptom.
+    websocket.onRecovered?.(() => {
+      for (const roomId of live?.syncHub.roomIds() ?? []) {
+        const payload: LiveEventPayload = { op: "invalidate", id: "" };
+        localPublish(roomId, payload);
+      }
+    });
   }
   static resolveServerSignal(
     serverSignalCls: ServerSignalCls,
@@ -119,6 +134,71 @@ export class SignalResolver {
       });
     });
     return serverSignalCls;
+  }
+  /**
+   * Attaches the change listeners that feed live rooms, once per model that declares a `.live()` slice.
+   *
+   * Only the document write paths reach here. A query-level write — `updateManyByQuery`, the generated
+   * `update<Filter>` / `remove<Filter>`, `updateById` / `removeById` — is one atomic statement that fires no
+   * document hooks at all, exactly as it fires no cascade, so a model whose fields move that way will not push
+   * those moves to a live list. It is the same blind spot cascade has and it cannot be closed from here.
+   */
+  static registerLiveSync(
+    sliceCls: SliceCls,
+    { registry, live }: { registry: InjectRegistry; live: LiveRegistry },
+  ): string[] {
+    const sliceMeta = sliceCls[SLICE_META] as { [key: string]: SliceInfo };
+    const cnst = sliceCls.srv.cnst;
+    if (!cnst) return [];
+    const refName = cnst.refName;
+    const liveKeys = Object.entries(sliceMeta)
+      .filter(([, sliceInfo]) => sliceInfo.liveOption && sliceInfo.execFn)
+      .map(([key]) => `${refName}Live${capitalize(key)}`);
+    if (!liveKeys.length) return [];
+    const service = live.service.get(refName) as
+      | { listenPost: (type: "create" | "update" | "remove", listener: LiveChangeListener) => unknown }
+      | undefined;
+    if (!service) throw new Error(`Live slice on "${refName}" has no service to listen to`);
+    const websocket = SignalResolver.#getWebsocket(registry);
+    // The cross-server decoder is keyed by endpoint, and a live envelope rides `Any` — the Light inside it is
+    // masked and serialized before it is put there, not by the transport.
+    for (const liveKey of liveKeys) websocket.registerEndpoint(liveKey, Any, 0);
+    const publish = async (next: Record<string, unknown>, previous?: Record<string, unknown>) => {
+      const targets = live.syncHub.route(refName, next, previous);
+      if (!targets.length) return;
+      const id = String(next.id);
+      const needsLight = targets.some((target) => !target.invalidate && target.payload === "light");
+      // `resolveReturn` rather than `mask`: this value is rendered by a page, and `mask` also drops `visual`
+      // fields, which exist to be rendered and to be kept away from an AI caller only.
+      const light = needsLight
+        ? ((await SignalContext.resolveReturn(next, {
+            signalContext: null,
+            returnRef: cnst.light,
+            arrDepth: 0,
+            registry,
+            live,
+          })) as object)
+        : null;
+      const lightData = light ? (serialize(cnst.light, 0, light, "object", {}) as object | null) : null;
+      for (const target of targets) {
+        const payload: LiveEventPayload = target.invalidate
+          ? { op: "invalidate", id }
+          : { op: target.op, id, light: target.payload === "light" ? lightData : null };
+        websocket.publish(target.roomId, payload);
+        SignalResolver.#localPublish(target.roomId, payload);
+      }
+    };
+    // Fire and forget: a live room is a courtesy on top of a write that has already committed, so a subscriber
+    // that cannot be reached must not fail the write that reached everyone else.
+    const listener: LiveChangeListener = (doc, _type, previous) => {
+      void publish(doc as Record<string, unknown>, previous as Record<string, unknown> | undefined).catch(
+        (error: unknown) => SignalResolver.logger.warn(`Live publish failed for ${refName}: ${String(error)}`),
+      );
+    };
+    service.listenPost("create", listener);
+    service.listenPost("update", listener);
+    service.listenPost("remove", listener);
+    return liveKeys;
   }
   static resolveSchedule(internalCls: InternalCls, internal: Internal, serverMode: "federation" | "batch" | "all") {
     const internalMeta = internalCls[INTERNAL_META] as { [key: string]: InternalInfo };
@@ -300,6 +380,40 @@ export class SignalResolver {
             })) as any;
           });
 
+        // Live room: ${refName}Live${Capitalize<key>}. Subscribing is the whole behaviour — the exec hands the
+        // resolved query back so the router can decide, per write, whether it belongs to this room.
+        if (sliceInfo.liveOption) {
+          if (!key)
+            throw new Error(
+              `The root slice of "${refName}" cannot declare .live(): it is the admin CRUD API, guarded by Admin, ` +
+                `and opening it would put every model on a live socket by default.`,
+            );
+          SignalResolver.#assertLiveSort(refName, key, sliceInfo);
+          const liveKey = `${refName}Live${capitalizedKey}`;
+          const liveBuilder = (builder as any).pubsub(Any, {
+            guards: sliceCls.getGuards,
+            mcp: false,
+            live: {
+              refName,
+              sliceKey: key,
+              sort: sliceInfo.liveOption.sort,
+              fallback: sliceInfo.liveOption.fallback,
+              payload: sliceInfo.liveOption.payload,
+            } satisfies LiveEndpointOption,
+          });
+          endpointObj[liveKey] = liveBuilder
+            ._addRoomArgs(sliceInfo.args)
+            ._addInternalArgs(sliceInfo.internalArgs)
+            .exec(async function (this: any, ...requestArgs: any) {
+              const args = requestArgs.slice(0, argLength);
+              const internalArgs = requestArgs.slice(argLength);
+              return assertSliceQuery(
+                await sliceInfo.execFn?.apply(this, [...args, ...internalArgs, documentQueryHelper]),
+                key,
+              );
+            });
+        }
+
         // Insight endpoint: ${refName}Insight${Capitalize<key>}
         const insightKey = `${refName}Insight${capitalizedKey}`;
         endpointObj[insightKey] = (builder as any)
@@ -360,6 +474,43 @@ export class SignalResolver {
       return endpointObj;
     }) {}
     return SliceEndpoint;
+  }
+  /**
+   * The three things about a declared live sort that can be known without a request.
+   *
+   * A client places a new row itself only for a sort it can reproduce, so a sort key naming a field the row does
+   * not carry produces a list that is quietly in the wrong order — the one failure mode with no symptom. The
+   * `_doc` case is a warning rather than a refusal because it is the slice author's call: the two dialects order
+   * a JSON field differently from each other, so there is no single server answer to match.
+   */
+  static #assertLiveSort(refName: string, key: string, sliceInfo: SliceInfo) {
+    const lightFields = (sliceInfo.light as unknown as { [FIELD_META]?: Record<string, unknown> })[FIELD_META] ?? {};
+    for (const sortKey of sliceInfo.liveOption?.sort ?? []) {
+      const sort = getFilterSortByKey(sliceInfo.filter, sortKey);
+      if (!sort)
+        throw new Error(`Live slice "${refName}.${key}" declares sort "${sortKey}", which the model does not have.`);
+      for (const path of Object.keys(sort)) {
+        if (baseDocumentColumns.has(path)) continue;
+        if (!(path in lightFields))
+          throw new Error(
+            `Live slice "${refName}.${key}" declares sort "${sortKey}" on "${path}", which is not in ` +
+              `Light${capitalize(refName)}. A subscriber cannot order by a field it never receives.`,
+          );
+        SignalResolver.logger.warn(
+          `Live slice "${refName}.${key}" sorts by "${path}", which is stored inside the document rather than in a ` +
+            `column. SQLite and Postgres order those differently, so a client placing a row may disagree with the server.`,
+        );
+      }
+    }
+  }
+  /**
+   * The model's field metadata, which membership routing reads for one thing: whether a path is an array, because
+   * a bare value on an array field means membership rather than equality.
+   */
+  static #queryFieldsOf(live: LiveRegistry, refName: string): QueryFieldMap {
+    const sliceCls = live.sliceCls.get(refName);
+    const doc = sliceCls?.srv.db?.doc as { [FIELD_META]?: QueryFieldMap } | undefined;
+    return doc?.[FIELD_META] ?? {};
   }
   static #liveWsPubsubRoomCtx = new WeakMap<
     Bun.ServerWebSocket<unknown>,
@@ -444,7 +595,7 @@ export class SignalResolver {
       if (endpointInfo.signalOption.globalPrefix !== undefined) {
         routeOptions[path] = { globalPrefix: endpointInfo.signalOption.globalPrefix };
       }
-      const normalHttpHandler = async (req: Bun.BunRequest) =>
+      const normalHttpHandler = async (req: Bun.BunRequest): Promise<Response | undefined> =>
         await SignalContext.try(endpoint, endpointInfo, key, async () => {
           const context = await new SignalContext(key, req, {
             endpointInfo,
@@ -454,7 +605,9 @@ export class SignalResolver {
             live,
             middleware,
           }).init();
-          return await context.exec();
+          // A response on every path that reaches here: `exec` widened its return for the pubsub branch, which
+          // no HTTP route ever takes.
+          return (await context.exec()) as Response | undefined;
         });
       if (endpointInfo.signalOption.method && endpointInfo.type !== "mutation")
         SignalResolver.logger.warn(
@@ -524,9 +677,21 @@ export class SignalResolver {
                 { endpointInfo, adaptor: endpoint, registry, env, live, middleware },
               ).init();
               const subscribe = event === "subscribe";
-              const roomId = context.getRoomId(key);
+              const liveOption = endpointInfo.signalOption.live;
+              // The id the client built from the arguments it sent. It is what the ack is matched against, and for
+              // every room but a live one it is also the room itself.
+              const requestRoomId = context.getRoomId(key);
               if (subscribe) {
-                await context.exec();
+                const query = await context.exec();
+                const roomId = liveOption ? context.getLiveRoomId(key) : requestRoomId;
+                if (liveOption)
+                  live.syncHub.join({
+                    refName: liveOption.refName,
+                    roomId,
+                    query: query as never,
+                    fallback: liveOption.fallback,
+                    fields: SignalResolver.#queryFieldsOf(live, liveOption.refName),
+                  });
                 ws.subscribe(roomId);
                 const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws) ?? new Map();
                 roomCtxMap.set(roomId, context);
@@ -534,21 +699,25 @@ export class SignalResolver {
                 // Track room membership in Redis for cross-server awareness
                 websocket.joinRoom(ws, roomId);
                 SignalResolver.logger.verbose(`WebSocket subscribed to room ${roomId}`);
-              } else {
-                ws.unsubscribe(roomId);
-                const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws);
-                if (roomCtxMap) {
-                  const roomCtx = roomCtxMap.get(roomId);
-                  if (roomCtx) await SignalResolver.#runLifecycleHandlers([roomCtx], ["unsubscribe"]);
-                  roomCtxMap.delete(roomId);
-                  if (roomCtxMap.size === 0) SignalResolver.#liveWsPubsubRoomCtx.delete(ws);
-                  // Remove room membership from Redis
-                  websocket.leaveRoom(ws, roomId);
-                  SignalResolver.logger.verbose(`WebSocket unsubscribed from room ${roomId}`);
-                }
+                const ack: WebsocketSubscribeAck = { type: "sub", roomId, requestRoomId, subscribe };
+                return ack;
               }
-              const subscribeAck: WebsocketSubscribeAck = { type: "sub", roomId, subscribe };
-              return subscribeAck;
+              if (liveOption) await context.resolveInternalArgs();
+              const roomId = liveOption ? context.getLiveRoomId(key) : requestRoomId;
+              ws.unsubscribe(roomId);
+              const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws);
+              if (roomCtxMap) {
+                const roomCtx = roomCtxMap.get(roomId);
+                if (roomCtx) await SignalResolver.#runLifecycleHandlers([roomCtx], ["unsubscribe"]);
+                roomCtxMap.delete(roomId);
+                if (roomCtxMap.size === 0) SignalResolver.#liveWsPubsubRoomCtx.delete(ws);
+                if (liveOption) live.syncHub.leave(roomId);
+                // Remove room membership from Redis
+                websocket.leaveRoom(ws, roomId);
+                SignalResolver.logger.verbose(`WebSocket unsubscribed from room ${roomId}`);
+              }
+              const ack: WebsocketSubscribeAck = { type: "sub", roomId, requestRoomId, subscribe };
+              return ack;
             });
           break;
         case "message":
@@ -616,7 +785,11 @@ export class SignalResolver {
    * longer pass. Called when the socket's credential changes: a pubsub room is authorized once at
    * subscribe time, so without this a signed-out socket would keep receiving its old rooms.
    */
-  static async revalidateWsRooms(ws: Bun.ServerWebSocket<any>, registry: InjectRegistry): Promise<string[]> {
+  static async revalidateWsRooms(
+    ws: Bun.ServerWebSocket<any>,
+    registry: InjectRegistry,
+    live?: LiveRegistry,
+  ): Promise<string[]> {
     const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws);
     if (!roomCtxMap?.size) return [];
     const websocket = SignalResolver.#getWebsocket(registry);
@@ -626,6 +799,7 @@ export class SignalResolver {
       ws.unsubscribe(roomId);
       await SignalResolver.#runLifecycleHandlers([roomCtx], ["unsubscribe"]);
       roomCtxMap.delete(roomId);
+      live?.syncHub.leave(roomId);
       websocket.leaveRoom(ws, roomId);
       revokedRooms.push(roomId);
       SignalResolver.logger.verbose(`WebSocket lost access to room ${roomId}; unsubscribed`);
@@ -638,12 +812,13 @@ export class SignalResolver {
     await SignalResolver.#getWebsocket(registry).registerSocket(ws);
   }
 
-  static async handleWsClose(ws: Bun.ServerWebSocket<any>, registry: InjectRegistry) {
-    const contexts = [
-      ...(SignalResolver.#liveWsPubsubRoomCtx.get(ws)?.values() ?? []),
-      ...(SignalResolver.#liveWsMessageCtx.get(ws) ?? []),
-    ];
+  static async handleWsClose(ws: Bun.ServerWebSocket<any>, registry: InjectRegistry, live?: LiveRegistry) {
+    const roomCtxMap = SignalResolver.#liveWsPubsubRoomCtx.get(ws);
+    const contexts = [...(roomCtxMap?.values() ?? []), ...(SignalResolver.#liveWsMessageCtx.get(ws) ?? [])];
     await SignalResolver.#runLifecycleHandlers(contexts, ["unsubscribe", "disconnect"]);
+    // A room outlives the socket that opened it only for as long as another socket is in it, so the routing table
+    // has to hear about a close as well — a room nobody is in still costs an evaluation on every write.
+    for (const roomId of roomCtxMap?.keys() ?? []) live?.syncHub.leave(roomId);
     SignalResolver.#liveWsPubsubRoomCtx.delete(ws);
     SignalResolver.#liveWsMessageCtx.delete(ws);
 

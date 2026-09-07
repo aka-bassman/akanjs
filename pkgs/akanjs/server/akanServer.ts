@@ -384,6 +384,7 @@ export class AkanServer {
       ...ApiRouter.buildWebsocketHandlers({
         wsRoutes,
         registry: this.#di.registry,
+        live: this.#di.live,
         hmrHub,
         hmrState: webRouter ? { state: webRouter.renderState } : null,
         logger: this.logger,
@@ -461,7 +462,7 @@ export class AkanServer {
       server?.publish(roomId, JSON.stringify(publishData));
       wsServer?.publish(roomId, JSON.stringify(publishData));
     };
-    SignalResolver.setLocalPublish(localPublish, websocket);
+    SignalResolver.setLocalPublish(localPublish, websocket, this.#di.live);
     this.#localPublish = localPublish;
 
     this.status = "running";
@@ -489,7 +490,8 @@ export class AkanServer {
     await this.init({ routes: shouldListen, web });
     if (!shouldListen) {
       const websocket = this.#di.getWebsocketAdaptor();
-      if (websocket) SignalResolver.setLocalPublish((roomId, data) => this.#localPublish?.(roomId, data), websocket);
+      if (websocket)
+        SignalResolver.setLocalPublish((roomId, data) => this.#localPublish?.(roomId, data), websocket, this.#di.live);
       this.status = "running";
       if (!isNoListenCommand) {
         Logger.role = this.serverMode;

@@ -4,6 +4,7 @@ import path from "node:path";
 // barrel reaches `cssCompiler`/`ssrBaseArtifactBuilder`, which pull tailwindcss + @tailwindcss/node
 // (~40MB) into a process that then holds them for the whole dev session. Phase 2 moved css compilation
 // into the batch worker, so this process has no use for them — `entryModuleGraph.test.ts` keeps it that way.
+import { CodegenLock } from "@akanjs/devkit/codegenLock";
 import type { App } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, type PageRoot, WorkspaceExecutor } from "@akanjs/devkit/executors";
 import { AutoImportSync } from "@akanjs/devkit/frontendBuild/autoImportSync";
@@ -299,11 +300,17 @@ class IncrementalBuilder {
     //* Insert framework imports that are used but omitted (e.g. `Int` in *.constant.ts, `fetch` in
     //* *.store.ts) before regenerating barrels. Edits land on files already in this batch, so they
     //* rebuild in this same generation; the write is idempotent so it does not re-trigger the watcher.
-    const autoImport = await this.#autoImportSync.syncForBatch(batch.files);
+    const [autoImport, indexSync] = await CodegenLock.run(
+      this.#app.workspace.workspaceRoot,
+      `hmr-batch:${this.#app.name}`,
+      async () => {
+        const auto = await this.#autoImportSync.syncForBatch(batch.files);
+        return [auto, await this.#generatedIndexSync.syncForBatch(batch.files)] as const;
+      },
+    );
     for (const error of autoImport.errors) this.#logger.error(error);
     if (autoImport.changedFiles.length > 0)
       this.#logger.verbose(`[auto-import] inserted imports into ${autoImport.changedFiles.length} file(s)`);
-    const indexSync = await this.#generatedIndexSync.syncForBatch(batch.files);
     //* Both passes above write source files, and this generation's build consumes what they wrote. Hand
     //* them to the watcher so its verification scan does not read them back as a user edit and spend a
     //* second generation rebuilding identical content.

@@ -92,11 +92,6 @@ export const ProductTemplate = ({ form, setForm }) => (
           }),
         },
         {
-          name: "cacheKey",
-          type: "string",
-          desc: l.trans({ en: "Persists text to sessionStorage.", ko: "text를 sessionStorage에 저장합니다." }),
-        },
-        {
           name: "Input.TextArea / Password / Email",
           type: "subcomponents",
           desc: l.trans({ en: "Specialized input variants.", ko: "특화된 input variant입니다." }),

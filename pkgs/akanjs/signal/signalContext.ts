@@ -289,7 +289,9 @@ export class SignalContext<
     };
     const next = this.#withMiddleware(coreExec);
     const raw = this.trace ? await traceSpan("execChain", () => next()) : await next();
-    if (this.endpointInfo.type === "pubsub") return;
+    // A pubsub's return is not a response — nothing is serialized and nothing is sent. It is handed back for the
+    // one caller that needs it: a live slice's exec returns the resolved query the room is then routed by.
+    if (this.endpointInfo.type === "pubsub") return raw;
     if (raw instanceof Response) return raw;
     // A prompt declares `PromptMessage[]` but rides the `Any` carrier, so `resolveReturn` and `makeResponse` both
     // hand the value straight back and nothing downstream would notice a malformed one. Normalizing here rather
@@ -646,6 +648,56 @@ export class SignalContext<
     if (this.transport !== "websocket") throw new Error("Transport is not websocket");
     else if (this.endpointInfo.type !== "pubsub") throw new Error("Endpoint is not pubsub");
     return `${key}${this.args.length ? "-" : ""}${this.args.join("-")}`;
+  }
+  /**
+   * A live room's id, which appends the caller's resolved internal arguments to the client-visible one.
+   *
+   * Without them every subscriber of an `inSelf` slice shares one room and receives each other's rows. It cannot
+   * be done for pubsub in general: an ordinary room's publisher computes the same id from the arguments it
+   * publishes with and has no access to a subscriber's `Self`, so widening the id there would put subscriber and
+   * publisher in different rooms. A live room's only publisher is the router, which holds this id already.
+   *
+   * The token is the argument's own id where it has one — that is what `Self` yields, and a room name never
+   * leaves the server — and a digest otherwise, so a credential handed in as an internal argument is not spelled
+   * out in a room name that gets logged.
+   */
+  getLiveRoomId(key: string) {
+    const base = this.getRoomId(key);
+    if (!this.internalArgs.length) return base;
+    return `${base}::${this.internalArgs.map((arg) => SignalContext.#liveRoomToken(arg)).join(".")}`;
+  }
+  static #liveRoomToken(value: unknown): string {
+    if (value === null || value === undefined) return "~";
+    if (typeof value === "object") {
+      const id = (value as { id?: unknown }).id;
+      if (typeof id === "string") return id;
+      return `h${SignalContext.#digest(JSON.stringify(value))}`;
+    }
+    const token = String(value);
+    return /^[A-Za-z0-9_@.:+-]{1,64}$/.test(token) ? token : `h${SignalContext.#digest(token)}`;
+  }
+  /** FNV-1a. Not a security boundary — only a stable, short, room-safe token for a value that is not an id. */
+  static #digest(value: string): string {
+    let hash = 0x811c9dc5;
+    for (let idx = 0; idx < value.length; idx += 1) {
+      hash ^= value.charCodeAt(idx);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash.toString(36);
+  }
+  /**
+   * Resolves the declared internal arguments without running guards or the handler.
+   *
+   * An unsubscribe has to name the same room the subscribe joined, and that id depends on these — but there is
+   * nothing to authorize about leaving a room, and re-running the handler to compute a name would issue the
+   * slice's query again for nothing.
+   */
+  async resolveInternalArgs() {
+    if (this.internalArgs.length || !this.endpointInfo.internalArgs.length) return this.internalArgs;
+    this.internalArgs = await Promise.all(
+      this.endpointInfo.internalArgs.map(async (arg) => (await new arg.argRef().getArg(this)) ?? null),
+    );
+    return this.internalArgs;
   }
   getEnv() {
     return this.#env;

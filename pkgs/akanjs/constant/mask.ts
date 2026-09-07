@@ -65,3 +65,30 @@ export const mask = (model: MaskModel, value: unknown): unknown => {
   }
   return masked;
 };
+
+/**
+ * Drops what a model marks `hidden` or `secret`, and nothing else.
+ *
+ * The sibling of `mask()` for the one caller that is not an AI read: a saved form draft. Two differences matter.
+ * It keeps `visual` — a rendered body is exactly the field a user spent twenty minutes on, and dropping it from a
+ * draft loses the work the draft exists to protect. And it is subtractive rather than reconstructive: `mask()`
+ * builds its result from the field metadata, so a key the metadata does not name — `id`, which is what decides
+ * whether a form creates or updates — would not survive the round trip.
+ *
+ * `for...in` rather than `Object.keys`, because a model instance keeps its Date fields as enumerable prototype
+ * accessors.
+ */
+export const stripSecrets = (model: MaskModel, value: unknown): unknown => {
+  if (value === null || value === undefined || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((item: unknown) => stripSecrets(model, item));
+  const fields = maskFieldsOf(model);
+  if (!fields) return value;
+  const source = value as Record<string, unknown>;
+  const stripped: Record<string, unknown> = {};
+  for (const key in source) {
+    const field = fields[key];
+    if (field?.fieldType === "hidden" || field?.fieldType === "secret") continue;
+    stripped[key] = field?.isClass && field.modelRef ? stripSecrets(field.modelRef, source[key]) : source[key];
+  }
+  return stripped;
+};

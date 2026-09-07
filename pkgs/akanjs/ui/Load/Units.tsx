@@ -90,6 +90,7 @@ function Render<RefName extends string, Light extends { id: string }>({
     setPageOfModel: `setPageOf${ModelName}`,
     addPageOfModel: `addPageOf${ModelName}`,
     refreshModel: `refresh${ModelName}`,
+    watchLiveModel: `watchLive${ModelName}`,
   };
   const namesOfSlice = {
     modelList: sliceName.replace(names.model, names.modelList),
@@ -106,6 +107,7 @@ function Render<RefName extends string, Light extends { id: string }>({
     setPageOfModel: sliceName.replace(names.model, names.setPageOfModel),
     addPageOfModel: sliceName.replace(names.model, names.addPageOfModel),
     refreshModel: sliceName.replace(names.model, names.refreshModel),
+    watchLiveModel: sliceName.replace(names.model, names.watchLiveModel),
   };
   const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
   const modelListLoading = storeUse[namesOfSlice.modelListLoading]() as string | boolean;
@@ -158,6 +160,14 @@ function Render<RefName extends string, Light extends { id: string }>({
       [namesOfSlice.sortOfModel]: initSortOfModel,
     });
     loadedQueryArgs.current = initQueryArgs;
+  }, [initSignature]);
+
+  // A no-op on a slice that did not declare `.live()`, which is why it is called without asking first.
+  useEffect(() => {
+    void storeDo[namesOfSlice.watchLiveModel](initQueryArgs);
+    return () => {
+      void storeDo[namesOfSlice.watchLiveModel](null);
+    };
   }, [initSignature]);
 
   useEffect(() => {

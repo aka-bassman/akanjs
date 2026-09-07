@@ -62,6 +62,8 @@ beforeAll(() => {
       setActiveLocale: () => undefined,
       setActivePath: () => undefined,
     },
+    // `akanjs/store` reads the auth token to scope a form draft, so the barrel links this even here.
+    getAuthToken: () => undefined,
     getExplicitPageConfigKeys: () => ({}),
     normalizeDeepLinkHref: (href: string) => href,
     getPathInfo: (requestUrl: string, lang: string, prefix: string) => {

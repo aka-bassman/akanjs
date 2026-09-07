@@ -263,13 +263,19 @@ export class DatabaseResolver {
           bulkWrite: (
             operations: { updateOne: { filter: QueryOf<any>; update: DocumentUpdateInput; upsert?: boolean } }[],
           ) => store.bulkWrite(operations),
-          listenPre: (type: SaveEventType, listener: (doc: any, type: CRUDEventType) => PromiseOrObject<void>) =>
-            schema.pre(type, function (this: any, _next, crudType) {
-              return listener(this, crudType ?? "update");
+          listenPre: (
+            type: SaveEventType,
+            listener: (doc: any, type: CRUDEventType, previous?: any) => PromiseOrObject<void>,
+          ) =>
+            schema.pre(type, function (this: any, _next, crudType, previous) {
+              return listener(this, crudType ?? "update", previous);
             }),
-          listenPost: (type: SaveEventType, listener: (doc: any, type: CRUDEventType) => PromiseOrObject<void>) =>
-            schema.post(type, function (this: any, _next, crudType) {
-              return listener(this, crudType ?? "update");
+          listenPost: (
+            type: SaveEventType,
+            listener: (doc: any, type: CRUDEventType, previous?: any) => PromiseOrObject<void>,
+          ) =>
+            schema.post(type, function (this: any, _next, crudType, previous) {
+              return listener(this, crudType ?? "update", previous);
             }),
         });
       }
@@ -309,15 +315,21 @@ export class DatabaseResolver {
       async __insight(query?: QueryOf<any>): Promise<any> {
         return await this.__store.insight(query);
       }
-      listenPre(type: SaveEventType, listener: (doc: any, type: CRUDEventType) => PromiseOrObject<void>) {
-        schema.pre(type, function (this: any, _next, crudType) {
-          return listener(this, crudType ?? "update");
+      listenPre(
+        type: SaveEventType,
+        listener: (doc: any, type: CRUDEventType, previous?: any) => PromiseOrObject<void>,
+      ) {
+        schema.pre(type, function (this: any, _next, crudType, previous) {
+          return listener(this, crudType ?? "update", previous);
         });
         return () => undefined;
       }
-      listenPost(type: SaveEventType, listener: (doc: any, type: CRUDEventType) => PromiseOrObject<void>) {
-        schema.post(type, function (this: any, _next, crudType) {
-          return listener(this, crudType ?? "update");
+      listenPost(
+        type: SaveEventType,
+        listener: (doc: any, type: CRUDEventType, previous?: any) => PromiseOrObject<void>,
+      ) {
+        schema.post(type, function (this: any, _next, crudType, previous) {
+          return listener(this, crudType ?? "update", previous);
         });
         return () => undefined;
       }

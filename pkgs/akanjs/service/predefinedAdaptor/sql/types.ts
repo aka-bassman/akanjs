@@ -9,6 +9,7 @@ import type {
   DocumentUpdateOperator,
   DocumentUpdateOptions,
 } from "akanjs/document";
+import { baseDocumentColumns, queryOperatorKeys } from "akanjs/document";
 import type { SearchIndex } from "../searchIndex";
 
 export interface SqliteDatabaseConfig {
@@ -124,7 +125,7 @@ export interface TransactionContext {
   afterCommit: (() => PromiseOrObject<void>)[];
 }
 
-export const BASE_COLUMNS = new Set(["id", "createdAt", "updatedAt", "removedAt"]);
+export const BASE_COLUMNS = baseDocumentColumns;
 export const RESERVED_RE = /^sqlite_|^_akan_meta$|^search_doc$|^search_fts$/i;
 export const REF_NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
 export const toSafeRefName = (value: string) => value.replace(/[^A-Za-z0-9_]+/g, "_").replace(/_+/g, "_");
@@ -160,22 +161,7 @@ export interface DocumentDatabaseOwner {
   afterCommit(fn: () => PromiseOrObject<void>): Promise<void>;
 }
 
-export const QUERY_OPERATOR_KEYS = new Set([
-  "eq",
-  "ne",
-  "oneOf",
-  "notOneOf",
-  "gt",
-  "gte",
-  "lt",
-  "lte",
-  "between",
-  "exists",
-  "missing",
-  "empty",
-  "has",
-  "contains",
-]);
+export const QUERY_OPERATOR_KEYS = queryOperatorKeys;
 
 export interface SqlFrag {
   sql: string;

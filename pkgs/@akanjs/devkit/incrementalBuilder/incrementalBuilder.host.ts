@@ -14,11 +14,25 @@ const builderMsgTypeSet = new Set<BuilderMessage["type"]>([
   "build-status",
   "builder-metrics",
 ]);
+/**
+ * Where a dev child process writes. `"pipe"` is not only about keeping a TUI's frame clean: a Bun child
+ * that inherits the controlling terminal snapshots its termios at spawn and writes that snapshot back
+ * when it exits, so a builder spawned while something holds the terminal raw turns it raw again on the
+ * first recycle. See the XXX comment on `Spinner.oraOptions`.
+ */
+export type DevStdioMode = "inherit" | "pipe";
+
 interface IncrementalBuilderHostOptions {
   app: App;
   entry: string;
   env: Record<string, string>;
+  stdio?: DevStdioMode;
   onMessage: (message: BuilderMessage) => void;
+  /**
+   * Required when `stdio` is `"pipe"`: an undrained pipe fills and blocks the builder's next write.
+   * Text arrives as decoded chunks, not lines — a consumer that needs lines splits them itself.
+   */
+  onOutput?: (kind: "stdout" | "stderr", text: string) => void;
 }
 
 /**
@@ -63,7 +77,9 @@ export class IncrementalBuilderHost {
   app: App;
   ready = false;
   readonly #onMessage: (message: BuilderMessage) => void;
-  #proc: Bun.Subprocess<"ignore", "inherit", "inherit"> | null = null;
+  readonly #stdio: DevStdioMode;
+  readonly #onOutput: ((kind: "stdout" | "stderr", text: string) => void) | null;
+  #proc: Bun.Subprocess<"ignore", "inherit" | "pipe", "inherit" | "pipe"> | null = null;
   #status: IncrementalBuilderStatus = "stopped";
   #restartAttempts = 0;
   #restartTimer: ReturnType<typeof setTimeout> | null = null;
@@ -83,11 +99,13 @@ export class IncrementalBuilderHost {
    */
   readonly #inFlight = new Map<number, "build-route" | "build-csr">();
   #startOptions: IncrementalBuilderStartOptions = {};
-  constructor({ app, entry, env, onMessage }: IncrementalBuilderHostOptions) {
+  constructor({ app, entry, env, stdio = "inherit", onMessage, onOutput }: IncrementalBuilderHostOptions) {
     this.app = app;
     this.entry = entry;
     this.env = env;
+    this.#stdio = stdio;
     this.#onMessage = onMessage;
+    this.#onOutput = onOutput ?? null;
   }
   get status() {
     return this.#status;
@@ -115,11 +133,11 @@ export class IncrementalBuilderHost {
     // the flag is what tells it to re-announce what it booted with.
     const afterRecycle = this.#spawnAfterRecycle;
     this.#spawnAfterRecycle = false;
-    let proc!: Bun.Subprocess<"ignore", "inherit", "inherit">;
+    let proc!: Bun.Subprocess<"ignore", "inherit" | "pipe", "inherit" | "pipe">;
     proc = Bun.spawn(["bun", this.entry], {
       cwd: this.app.cwdPath,
       env: { ...this.env, AKAN_WATCH: "1", ...(afterRecycle ? { AKAN_BUILDER_ANNOUNCE_BOOT: "1" } : {}) },
-      stdio: ["ignore", "inherit", "inherit"],
+      stdio: ["ignore", this.#stdio, this.#stdio],
       ipc: (msg: BuilderMessage) => {
         if (this.#proc !== proc) return;
         if (!msg || typeof msg !== "object") return;
@@ -167,7 +185,24 @@ export class IncrementalBuilderHost {
       },
     });
     this.#proc = proc;
+    // Re-attached per spawn, not once per host: a recycle or a crash-restart brings new pipes.
+    if (this.#stdio === "pipe" && this.#onOutput) {
+      void this.#drain(proc.stdout as unknown as ReadableStream<Uint8Array> | undefined, "stdout");
+      void this.#drain(proc.stderr as unknown as ReadableStream<Uint8Array> | undefined, "stderr");
+    }
     this.logger.verbose(`builder spawned pid=${proc.pid} entry=${this.entry}${isRestart ? " restart=1" : ""}`);
+  }
+  async #drain(stream: ReadableStream<Uint8Array> | undefined | null, kind: "stdout" | "stderr") {
+    if (!stream) return;
+    const decoder = new TextDecoder();
+    try {
+      for await (const chunk of stream) {
+        const text = decoder.decode(chunk, { stream: true });
+        if (text) this.#onOutput?.(kind, text);
+      }
+    } catch {
+      // The stream closes when the builder exits; nothing further to surface here.
+    }
   }
   #scheduleRestart() {
     if (this.#manualStop || this.#restartTimer) return;
@@ -278,7 +313,15 @@ export class IncrementalBuilderHost {
     this.ready = false;
     this.#status = "stopped";
   }
-  static async create(app: App, env: Record<string, string>, onMessage: (message: BuilderMessage) => void) {
+  static async create(
+    app: App,
+    env: Record<string, string>,
+    onMessage: (message: BuilderMessage) => void,
+    {
+      stdio = "inherit",
+      onOutput,
+    }: { stdio?: DevStdioMode; onOutput?: (kind: "stdout" | "stderr", text: string) => void } = {},
+  ) {
     const candidates = [
       path.join(app.workspace.workspaceRoot, "pkgs/@akanjs/devkit/incrementalBuilder/incrementalBuilder.proc.ts"),
       path.join(
@@ -289,7 +332,8 @@ export class IncrementalBuilderHost {
       path.join(import.meta.dir, "incrementalBuilder.proc.ts"),
     ];
     for (const c of candidates)
-      if (await Bun.file(c).exists()) return new IncrementalBuilderHost({ app, entry: c, env, onMessage });
+      if (await Bun.file(c).exists())
+        return new IncrementalBuilderHost({ app, entry: c, env, stdio, onMessage, onOutput });
     throw new Error(`[cli] frontend builder entry not found; looked in: ${candidates.join(", ")}`);
   }
 }

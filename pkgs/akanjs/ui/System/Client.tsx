@@ -24,7 +24,7 @@ import {
 import { Logger } from "akanjs/common";
 import type { AkanTheme } from "akanjs/fetch";
 import type { SerializedSignal } from "akanjs/signal";
-import { getBaseSearchParam, st } from "akanjs/store";
+import { DraftStore, getBaseSearchParam, st } from "akanjs/store";
 import { animated } from "akanjs/ui";
 import {
   Children,
@@ -270,6 +270,10 @@ export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId, wsConnect
   useEffect(() => {
     const devMode = localStorage.getItem("devMode");
     if (devMode) st.do.setDevMode(devMode === "true");
+  }, []);
+
+  useEffect(() => {
+    void DraftStore.reconcileIdentity().then(() => DraftStore.sweep());
   }, []);
 
   useEffect(() => {

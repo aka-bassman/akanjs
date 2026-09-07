@@ -575,8 +575,11 @@ export class SqlDocumentStore {
     const prepared = this.prepareDocument({ ...data, id, updatedAt: dayjs() });
     this.#assertImmutableUnchanged(prepared, originalData);
     const doc = this.hydrate(prepared, originalData);
-    if (runSaveHooks) await this.runHooks("save", crudType, doc, "pre");
-    await this.runHooks(crudType, crudType, doc, "pre");
+    // Already the hydrated pre-state: every caller reaches here through `update()`, which re-reads the row rather
+    // than trusting the document the caller mutated, so this is the row as the database still holds it.
+    const previous = originalData;
+    if (runSaveHooks) await this.runHooks("save", crudType, doc, "pre", previous);
+    await this.runHooks(crudType, crudType, doc, "pre", previous);
     const row = this.toRow(doc);
     await this.owner
       .getConnection()
@@ -584,8 +587,8 @@ export class SqlDocumentStore {
         `UPDATE ${quoteIdent(this.table)} SET "createdAt" = ?, "updatedAt" = ?, "removedAt" = ?, "_doc" = ${this.dialect.docValuePlaceholder()} WHERE "id" = ?`,
       )
       .run(row.createdAt, row.updatedAt, row.removedAt, row._doc, id);
-    await this.runHooks(crudType, crudType, doc, "post");
-    if (runSaveHooks) await this.runHooks("save", crudType, doc, "post");
+    await this.runHooks(crudType, crudType, doc, "post", previous);
+    if (runSaveHooks) await this.runHooks("save", crudType, doc, "post", previous);
     return doc;
   }
 
@@ -788,10 +791,11 @@ export class SqlDocumentStore {
     crudType: "create" | "update" | "remove",
     doc: DocumentRecord,
     phase: "pre" | "post",
+    previous?: DocumentRecord,
   ) {
     const hooks = phase === "pre" ? this.schema.preHooks.get(saveType) : this.schema.postHooks.get(saveType);
     for (const hook of hooks ?? []) {
-      const run = () => hook.call(doc, () => undefined, crudType);
+      const run = () => hook.call(doc, () => undefined, crudType, previous);
       if (phase === "post") await this.owner.afterCommit(run);
       else await run();
     }

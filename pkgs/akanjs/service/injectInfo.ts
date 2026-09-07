@@ -16,6 +16,7 @@ import type {
   SliceCls,
 } from "akanjs/signal";
 import type { Adaptor, AdaptorCls, Service, ServiceCls } from ".";
+import { LiveSyncHub } from "./liveSyncHub";
 import type { CacheAdaptor, CacheSetOptions } from "./predefinedAdaptor";
 
 export type InjectType = "database" | "service" | "use" | "signal" | "plug" | "env" | "memory";
@@ -76,6 +77,8 @@ export interface LiveRegistry {
   internal: Map<string, Internal>;
   sliceCls: Map<string, SliceCls>;
   endpointCls: Map<string, EndpointCls>;
+  /** The process's one live-sync router. Rooms are registered on it at subscribe and read from it on every write. */
+  syncHub: LiveSyncHub;
 }
 export const getDefaultLiveRegistry = (): LiveRegistry => ({
   adaptor: new Map<string, Adaptor>(),
@@ -83,6 +86,7 @@ export const getDefaultLiveRegistry = (): LiveRegistry => ({
   internal: new Map<string, Internal>(),
   sliceCls: new Map<string, SliceCls>(),
   endpointCls: new Map<string, EndpointCls>(),
+  syncHub: new LiveSyncHub(),
 });
 
 export class InjectInfo<

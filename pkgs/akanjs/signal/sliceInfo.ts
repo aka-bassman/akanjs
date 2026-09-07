@@ -23,6 +23,36 @@ import {
 import type { InternalArgCls } from "./internalArg";
 import type { CnstFull, CnstInput, CnstInsight, CnstLight, DbFilter, SignalOption, SrvMap, SrvRefName } from "./types";
 
+/**
+ * What a slice declares when it opts into live sync. Nothing here is required — `.live()` on its own is the whole
+ * opt-in, and every default below is the conservative reading.
+ */
+export interface LiveSliceOption {
+  /**
+   * The sort keys a client may reproduce well enough to place a row itself. Anything else falls back to a refetch,
+   * because the client would otherwise have to guess where a new row goes.
+   *
+   * `latest` is `{ createdAt: -1 }` on a real column, which a client compares identically. A key that sorts on a
+   * field inside `_doc` is checked at boot and warned about: SQLite orders those by SQL value and Postgres by
+   * jsonb type, so the two servers do not even agree with each other.
+   */
+  sort?: string[];
+  /**
+   * Downgrades this slice to invalidation only: subscribers are told their list moved and refetch, and no
+   * membership is evaluated. Required for a query holding `q.raw()`, `q.search()`, or `exists`/`missing` on a
+   * `_doc` field, none of which can be answered without the database.
+   */
+  fallback?: "invalidate";
+  /** `light` sends the row and costs nothing to apply; `id` sends the id alone for a room where the row is bulky. */
+  payload?: "light" | "id";
+}
+
+export interface ResolvedLiveSliceOption {
+  sort: string[];
+  fallback: "invalidate" | null;
+  payload: "light" | "id";
+}
+
 export class SliceInfo<
   RefName extends string = string,
   Input = any,
@@ -46,6 +76,7 @@ export class SliceInfo<
   readonly args: ArgInfo<EndpointArgProps<boolean>>[] = [];
   readonly internalArgs: InternalArgInfo<boolean>[] = [];
   readonly signalOption: SignalOption;
+  liveOption: ResolvedLiveSliceOption | null = null;
   execFn: ((...args: [...ServerArgs, ...InternalArgs]) => QueryOf<DocumentModel<Full>>) | null = null;
 
   constructor(
@@ -160,6 +191,17 @@ export class SliceInfo<
       [...InternalArgs, arg: NonNullable<ArgType> | (Optional extends true ? null : never)],
       ServerArgs
     >;
+  }
+  /** Opts this slice into live sync. Declaring nothing at all is what keeps a slice out of it entirely. */
+  live(option: LiveSliceOption = {}) {
+    if (this.execFn) throw new Error("Query function is already set");
+    if (this.liveOption) throw new Error("Live option is already set");
+    this.liveOption = {
+      sort: option.sort ?? ["latest"],
+      fallback: option.fallback ?? null,
+      payload: option.payload ?? "light",
+    };
+    return this;
   }
   exec(
     query: (

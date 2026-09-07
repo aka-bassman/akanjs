@@ -1,5 +1,6 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import { FileSys } from "../fileSys";
 
 const BARREL_FACETS = new Set(["common", "srvkit", "ui", "webkit", "plugin"]);
 const FACET_SOURCE_FILE_RE = /\.(ts|tsx)$/;
@@ -101,7 +102,7 @@ export class DevGeneratedIndexSync {
     const current = await readFile(indexPath, "utf8").catch(() => null);
     if (current === content) return false;
     await mkdir(dir, { recursive: true });
-    await writeFile(indexPath, content);
+    await FileSys.writeTextAtomic(indexPath, content);
     return true;
   }
 

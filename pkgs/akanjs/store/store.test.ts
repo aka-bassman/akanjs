@@ -105,13 +105,25 @@ const makeSignal = () => {
     ]),
     storeTestItemInsight: mock(async () => new StoreTestInsight({ count: 2 })),
     storeTestItemListByTitle: mock(async () => [
-      new StoreTestLight({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada" }),
-      new StoreTestLight({ id: "bbbbbbbbbbbbbbbbbbbbbbbb", title: "Ben" }),
+      new StoreTestLight({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada", createdAt: new Date(300) } as never),
+      new StoreTestLight({ id: "bbbbbbbbbbbbbbbbbbbbbbbb", title: "Ben", createdAt: new Date(100) } as never),
     ]),
     storeTestItemInsightByTitle: mock(async () => new StoreTestInsight({ count: 2 })),
   };
+  const sortValueMap = new Map([["storeTestItem", { latest: { createdAt: -1 as const } }]]);
+  const rooms: { args: unknown[]; handleEvent: (event: unknown) => void; onResync?: () => void; open: boolean }[] = [];
+  calls.subscribeStoreTestItemLiveByTitle = mock((...argData: unknown[]) => {
+    const handleEvent = argData.at(-2) as (event: unknown) => void;
+    const policy = argData.at(-1) as { onResync?: () => void };
+    const room = { args: argData.slice(0, -2), handleEvent, onResync: policy?.onResync, open: true };
+    rooms.push(room);
+    return () => {
+      room.open = false;
+    };
+  }) as never;
   const fetch = new Proxy(calls, {
     get(target, key: string) {
+      if (key === "sortValueMap") return sortValueMap;
       target[key] ??= mock(async () => null);
       return target[key];
     },
@@ -121,11 +133,12 @@ const makeSignal = () => {
     endpoint: {},
     slice: {
       "": { args: [{ type: "search", name: "query", refName: "String", nullable: true }] },
-      byTitle: { args: [{ type: "param", name: "title", refName: "String" }] },
+      byTitle: { args: [{ type: "param", name: "title", refName: "String" }], live: { sort: ["latest"] } },
       byTags: { args: [{ type: "search", name: "tags", refName: "String", arrDepth: 1, nullable: true }] },
     },
   };
   return {
+    rooms,
     refName: "storeTestItem",
     _slice: { [SLICE_META]: {} },
     cnst: storeTestConstant,
@@ -133,7 +146,7 @@ const makeSignal = () => {
     serializedSignal,
     slices: [],
     calls,
-  } as unknown as ClientSignal<"storeTestItem"> & { calls: typeof calls };
+  } as unknown as ClientSignal<"storeTestItem"> & { calls: typeof calls; rooms: typeof rooms };
 };
 
 describe("store factory", () => {
@@ -605,5 +618,162 @@ describe("StoreRegistry and root assembly", () => {
     const setterIsVoid: Exact<ReturnType<typeof built.do.setReturnedValue>, void> = true;
 
     expect([syncIsVoid, asyncIsVoid, argsSurvive, setterIsVoid]).toEqual([true, true, true, true]);
+  });
+});
+
+describe("live sync store action", () => {
+  const liveState = (instance: StoreInstance) => {
+    const state = instance.get() as Record<string, any>;
+    return {
+      ids: [...(state.storeTestItemListByTitle as DataList<{ id: string }>)].map((item) => item.id),
+      titles: [...(state.storeTestItemListByTitle as DataList<{ id: string; title: string }>)].map(
+        (item) => item.title,
+      ),
+      count: (state.storeTestItemInsightByTitle as { count: number }).count,
+      staleAt: (state.storeTestItemStaleAtByTitle as Date).getTime(),
+      lastPage: state.lastPageOfStoreTestItemByTitle as number,
+    };
+  };
+  const arrange = async () => {
+    setupEnv();
+    const signal = makeSignal();
+    class LiveStore extends store(signal, () => ({})) {}
+    StoreRegistry.register(LiveStore);
+    const instance = new StoreInstance(makeRoot(`liveRoot${Math.random()}`, LiveStore));
+    await instance.do.initStoreTestItemByTitle("Ada");
+    return { instance, signal };
+  };
+  const light = (id: string, title: string, createdAt: number) => ({ id, title, createdAt: new Date(createdAt) });
+
+  test("an update replaces a row the window holds and ignores one it does not", async () => {
+    const { instance } = await arrange();
+    await instance.do.applyLiveStoreTestItemByTitle({
+      op: "update",
+      id: "aaaaaaaaaaaaaaaaaaaaaaaa",
+      light: light("aaaaaaaaaaaaaaaaaaaaaaaa", "Ada Lovelace", 300),
+    });
+    expect(liveState(instance).titles).toEqual(["Ada Lovelace", "Ben"]);
+    expect(liveState(instance).count).toBe(2);
+
+    await instance.do.applyLiveStoreTestItemByTitle({
+      op: "update",
+      id: "cccccccccccccccccccccccc",
+      light: light("cccccccccccccccccccccccc", "Cyd", 400),
+    });
+    expect(liveState(instance).titles).toEqual(["Ada Lovelace", "Ben"]);
+  });
+
+  test("a leave drops the row and lowers the count", async () => {
+    const { instance } = await arrange();
+    const before = liveState(instance).staleAt;
+    await instance.do.applyLiveStoreTestItemByTitle({ op: "leave", id: "aaaaaaaaaaaaaaaaaaaaaaaa" });
+    expect(liveState(instance).ids).toEqual(["bbbbbbbbbbbbbbbbbbbbbbbb"]);
+    expect(liveState(instance).count).toBe(1);
+    expect(liveState(instance).staleAt).toBeGreaterThanOrEqual(before);
+
+    // A row the window never held changes nothing, including the count.
+    await instance.do.applyLiveStoreTestItemByTitle({ op: "leave", id: "cccccccccccccccccccccccc" });
+    expect(liveState(instance).count).toBe(1);
+  });
+
+  test("an enter places the row by the declared sort and raises the count", async () => {
+    const { instance } = await arrange();
+    await instance.do.applyLiveStoreTestItemByTitle({
+      op: "enter",
+      id: "cccccccccccccccccccccccc",
+      light: light("cccccccccccccccccccccccc", "Cyd", 200),
+    });
+    expect(liveState(instance).titles).toEqual(["Ada", "Cyd", "Ben"]);
+    expect(liveState(instance).count).toBe(3);
+    expect(liveState(instance).lastPage).toBe(1);
+  });
+
+  test("the same enter twice does not count the row twice", async () => {
+    const { instance } = await arrange();
+    const event = {
+      op: "enter" as const,
+      id: "cccccccccccccccccccccccc",
+      light: light("cccccccccccccccccccccccc", "Cyd", 200),
+    };
+    await instance.do.applyLiveStoreTestItemByTitle(event);
+    await instance.do.applyLiveStoreTestItemByTitle(event);
+    expect(liveState(instance).titles).toEqual(["Ada", "Cyd", "Ben"]);
+    expect(liveState(instance).count).toBe(3);
+  });
+
+  test("an enter on a sort the slice did not allowlist counts and refetches instead of guessing", async () => {
+    const { instance } = await arrange();
+    await instance.do.setSortOfStoreTestItemByTitle("titleAsc");
+    const before = liveState(instance).staleAt;
+    await instance.do.applyLiveStoreTestItemByTitle({
+      op: "enter",
+      id: "cccccccccccccccccccccccc",
+      light: light("cccccccccccccccccccccccc", "Cyd", 200),
+    });
+    expect(liveState(instance).ids).not.toContain("cccccccccccccccccccccccc");
+    expect(liveState(instance).count).toBe(3);
+    expect(liveState(instance).staleAt).toBeGreaterThanOrEqual(before);
+  });
+
+  test("a local create on a live slice places the row and is not counted twice", async () => {
+    const { instance, signal } = await arrange();
+    const created = "cccccccccccccccccccccccc";
+    signal.calls.createStoreTestItem = mock(
+      async (data: Record<string, unknown>) =>
+        new StoreTestFull({ id: created, ...data, createdAt: new Date(200) } as never),
+    );
+    await instance.do.newStoreTestItem({ title: "Cyd", count: 0, tags: [] });
+    await instance.do.createStoreTestItemInForm({ sliceName: "storeTestItemByTitle" });
+    // Placed by the sort rather than at the head, which is what the head insertion used to do.
+    expect(liveState(instance).titles).toEqual(["Ada", "Cyd", "Ben"]);
+    expect(liveState(instance).count).toBe(3);
+
+    // The server publishes this create back into the room the creator is in, so the same row arrives again.
+    await instance.do.applyLiveStoreTestItemByTitle({ op: "enter", id: created, light: light(created, "Cyd", 200) });
+    expect(liveState(instance).count).toBe(3);
+    expect(liveState(instance).ids.filter((id) => id === created)).toHaveLength(1);
+  });
+
+  test("watching a live slice opens its generated room and closes it on release", async () => {
+    const { instance, signal } = await arrange();
+    await instance.do.watchLiveStoreTestItemByTitle(["Ada"]);
+    expect(signal.rooms).toHaveLength(1);
+    expect(signal.rooms[0].args).toEqual(["Ada"]);
+    expect(signal.rooms[0].open).toBe(true);
+
+    // The room is what carries events into the list, so this is the wiring the browser actually exercises.
+    signal.rooms[0].handleEvent({ op: "leave", id: "aaaaaaaaaaaaaaaaaaaaaaaa" });
+    expect(liveState(instance).ids).toEqual(["bbbbbbbbbbbbbbbbbbbbbbbb"]);
+
+    // Same args again shares the one room rather than opening a second that double-applies every event.
+    await instance.do.watchLiveStoreTestItemByTitle(["Ada"]);
+    expect(signal.rooms).toHaveLength(1);
+
+    await instance.do.watchLiveStoreTestItemByTitle(["Ben"]);
+    expect(signal.rooms[0].open).toBe(false);
+    expect(signal.rooms).toHaveLength(2);
+    expect(signal.rooms[1].args).toEqual(["Ben"]);
+
+    await instance.do.watchLiveStoreTestItemByTitle(null);
+    expect(signal.rooms[1].open).toBe(false);
+  });
+
+  test("a room that comes back after a drop reloads the list", async () => {
+    const { instance, signal } = await arrange();
+    await instance.do.watchLiveStoreTestItemByTitle(["Ada"]);
+    signal.calls.storeTestItemListByTitle.mockClear();
+    signal.rooms[0].onResync?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(signal.calls.storeTestItemListByTitle).toHaveBeenCalled();
+  });
+
+  test("an invalidate stamps the list stale and touches nothing else", async () => {
+    const { instance } = await arrange();
+    const before = liveState(instance);
+    await instance.do.applyLiveStoreTestItemByTitle({ op: "invalidate", id: "cccccccccccccccccccccccc" });
+    const after = liveState(instance);
+    expect(after.ids).toEqual(before.ids);
+    expect(after.count).toBe(before.count);
+    expect(after.staleAt).toBeGreaterThanOrEqual(before.staleAt);
   });
 });

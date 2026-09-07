@@ -354,6 +354,11 @@ const databaseSignal: SerializedSignal = {
       ],
     },
     byOwner: { args: [arg("param", "ownerId", { refName: "ID" })], guards: ["Public"] },
+    inRoot: {
+      args: [arg("param", "rootId", { refName: "ID" })],
+      guards: ["Public"],
+      live: { sort: ["latest"] },
+    },
   },
   filter: {
     sortKeys: ["latest", "oldest"],
@@ -1626,6 +1631,52 @@ describe("WsClient", () => {
     }
   });
 
+  test("re-keys a live room to the id the server names and matches its frames", () => {
+    setFakeWebSocket();
+    const client = new WsClient("ws://example/ws");
+    const events: unknown[] = [];
+    client.connect();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    client.subscribe({ key: "taskLiveInOrg", data: ["o1"], handleEvent: (data) => events.push(data) });
+    ws.receive({
+      type: "sub",
+      roomId: "taskLiveInOrg-o1::u1",
+      requestRoomId: "taskLiveInOrg-o1",
+      subscribe: true,
+    });
+
+    // The client never learns the caller's resolved internal args, so the room it publishes into is not the one
+    // the client asked for. Without the ack's pairing, every live frame would be dropped here.
+    ws.receive({ type: "pub", roomId: "taskLiveInOrg-o1::u1", data: { op: "enter", id: "t1" } });
+    expect(events).toEqual([{ op: "enter", id: "t1" }]);
+    ws.receive({ type: "pub", roomId: "someoneElse-o1::u2", data: { op: "enter", id: "t2" } });
+    expect(events).toHaveLength(1);
+  });
+
+  test("tells a resubscribed room it is behind, and says nothing on the first connect", async () => {
+    setFakeWebSocket();
+    const client = new WsClient("ws://example/ws");
+    let resyncs = 0;
+    client.subscribe({
+      key: "taskLiveInOrg",
+      data: ["o1"],
+      handleEvent: () => undefined,
+      handleResync: () => {
+        resyncs += 1;
+      },
+    });
+    client.connect();
+    FakeWebSocket.instances[0].open();
+    expect(resyncs).toBe(0);
+
+    FakeWebSocket.instances[0].close();
+    await new Promise((resolve) => originalSetTimeout(resolve, 3100));
+    FakeWebSocket.instances[1].open();
+    expect(resyncs).toBe(1);
+    client.destroy();
+  }, 10000);
+
   test("manages websocket lifecycle, messages, listeners, and subscriptions", () => {
     setFakeWebSocket();
     const client = new WsClient("ws://example/ws");
@@ -1725,6 +1776,48 @@ describe("WsClient", () => {
 });
 
 describe("FetchClient websocket generation", () => {
+  test("a live slice generates its own room subscriber, keyed and serialized like the list query", async () => {
+    setFakeWebSocket();
+    const client = new FetchClient("https://api.example", {}, { fetchTestItem: databaseSignal });
+    client.connect();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+
+    // The whole reason this exists: a slice's client handlers are derived from the slice metadata, not from the
+    // endpoint class, so a live slice with no entry here has no subscriber at all and the store call throws.
+    const subscribe = client.handler.subscribeFetchTestItemLiveInRoot as (...args: unknown[]) => () => void;
+    expect(typeof subscribe).toBe("function");
+    expect(client.handler.subscribeFetchTestItemLiveByOwner).toBeUndefined();
+
+    const events: unknown[] = [];
+    let resyncs = 0;
+    const dispose = subscribe("1234567890abcdef12345678", (event: unknown) => events.push(event), {
+      crystalize: false,
+      onResync: () => (resyncs += 1),
+    });
+    expect(JSON.parse(ws.sent.at(-1) ?? "{}")).toEqual({
+      key: "fetchTestItemLiveInRoot",
+      data: ["1234567890abcdef12345678"],
+      subscribe: true,
+    });
+
+    // The envelope rides `Any`, so it must arrive exactly as published rather than crystalized into a model.
+    ws.receive({
+      type: "pub",
+      roomId: "fetchTestItemLiveInRoot-1234567890abcdef12345678",
+      data: { op: "enter", id: "abcdefabcdefabcdefabcdef", light: { title: "Live" } },
+    });
+    expect(events).toEqual([{ op: "enter", id: "abcdefabcdefabcdefabcdef", light: { title: "Live" } }]);
+
+    dispose();
+    expect(JSON.parse(ws.sent.at(-1) ?? "{}")).toEqual({
+      key: "fetchTestItemLiveInRoot",
+      data: ["1234567890abcdef12345678"],
+      subscribe: false,
+    });
+    expect(resyncs).toBe(0);
+  });
+
   test("the socket sits under the configured websocket prefix", () => {
     process.env.AKAN_WS_PREFIX = "/socket";
     try {

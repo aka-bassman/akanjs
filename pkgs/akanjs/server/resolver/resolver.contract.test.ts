@@ -19,6 +19,7 @@ import { endpoint } from "../../signal/endpoint";
 import { Public } from "../../signal/guards";
 import { type Internal, internal } from "../../signal/internal";
 import { Ws } from "../../signal/internalArg";
+import { slice } from "../../signal/slice";
 import { CascadeRunner } from "./CascadeRunner";
 import { DatabaseResolver } from "./database.resolver";
 import {
@@ -731,7 +732,12 @@ describe("SignalResolver declaration contracts", () => {
 
     const ws = makeWs();
     const ack = await resolved.wsRoutes?.roomFeed?.(ws, [validId], "subscribe");
-    expect(ack).toEqual({ type: "sub", roomId: `roomFeed-${validId}`, subscribe: true });
+    expect(ack).toEqual({
+      type: "sub",
+      roomId: `roomFeed-${validId}`,
+      requestRoomId: `roomFeed-${validId}`,
+      subscribe: true,
+    });
     expect(ws.subscribed).toEqual([`roomFeed-${validId}`]);
     expect(websocket.instance.calls).toContainEqual({ method: "joinRoom", args: [ws, `roomFeed-${validId}`] });
 
@@ -820,7 +826,7 @@ describe("SignalResolver declaration contracts", () => {
     const member = makeWs();
     member.data.account = { role: "member" };
     const ack = await resolved.wsRoutes?.guardedRoomFeed?.(member, [validId], "subscribe");
-    expect(ack).toEqual({ type: "sub", roomId, subscribe: true });
+    expect(ack).toEqual({ type: "sub", roomId, requestRoomId: roomId, subscribe: true });
     expect(member.subscribed).toEqual([roomId]);
     expect(await SignalResolver.revalidateWsRooms(member, registry)).toEqual([]);
 
@@ -953,6 +959,114 @@ describe("SignalResolver declaration contracts", () => {
     await SignalResolver.handleWsClose(ws, registry);
 
     expect(websocket.instance.calls).toContainEqual({ method: "unregisterSocket", args: [ws] });
+  });
+
+  test("gives a live slice a room, routes a change into it, and lets it go when the socket does", async () => {
+    class LiveTestSlice extends slice(
+      serverResolverTestServiceModel,
+      { guards: { root: Public, get: Public, cru: Public } },
+      (init) => ({
+        inCategory: init()
+          .search("category", String)
+          .live()
+          .exec(function (category) {
+            return this.serverResolverTestItemService.queryInCategory(category ?? "all");
+          }),
+      }),
+    ) {}
+
+    const SliceEndpoint = SignalResolver.resolveSlice(LiveTestSlice);
+    expect(Object.keys(SliceEndpoint[ENDPOINT_META])).toContain("serverResolverTestItemLiveInCategory");
+
+    const sliceEndpoint = new SliceEndpoint() as InstanceType<typeof SliceEndpoint> & Record<string, unknown>;
+    sliceEndpoint.serverResolverTestItemService = { queryInCategory: (category: string) => ({ category }) };
+
+    const registry = getDefaultInjectRegistry();
+    const websocket = makeFakeWebsocket();
+    registry.adaptor.set(SolidPubSub, websocket.instance);
+    const live = getDefaultLiveRegistry();
+    live.sliceCls.set(LiveTestSlice.baseName, LiveTestSlice as never);
+    const listeners: ((doc: unknown, type: string, previous?: unknown) => void)[] = [];
+    live.service.set("serverResolverTestItem", {
+      listenPost: (_type: string, listener: (doc: unknown, type: string, previous?: unknown) => void) =>
+        listeners.push(listener),
+    } as never);
+
+    const published: { roomId: string; data: unknown }[] = [];
+    SignalResolver.setLocalPublish((roomId, data) => published.push({ roomId, data }), websocket.instance, live);
+    const liveKeys = SignalResolver.registerLiveSync(LiveTestSlice, { registry, live });
+    expect(liveKeys).toEqual(["serverResolverTestItemLiveInCategory"]);
+    expect(listeners).toHaveLength(3);
+
+    const resolved = SignalResolver.resolveEndpoint(SliceEndpoint, sliceEndpoint as never, {
+      registry,
+      env: makeEnv(),
+      live,
+      middleware: new Map(),
+    });
+
+    const ws = makeWs();
+    const ack = await resolved.wsRoutes?.serverResolverTestItemLiveInCategory?.(ws, ["news"], "subscribe");
+    expect(ack).toMatchObject({ type: "sub", roomId: "serverResolverTestItemLiveInCategory-news", subscribe: true });
+    expect(live.syncHub.roomCountOf("serverResolverTestItem")).toBe(1);
+
+    const inRoom = { id: validId, category: "news", title: "Alpha", createdAt: dayjs(1000), updatedAt: dayjs(1000) };
+    await listeners[0](inRoom, "create", undefined);
+    expect(published).toHaveLength(1);
+    expect(published[0].roomId).toBe("serverResolverTestItemLiveInCategory-news");
+    expect(published[0].data).toMatchObject({ op: "enter", id: validId });
+
+    // Editing the row out of this slice's own filter has to arrive as a removal from the list it left.
+    published.length = 0;
+    await listeners[1]({ ...inRoom, category: "sports" }, "update", inRoom);
+    expect(published[0].data).toMatchObject({ op: "leave", id: validId });
+
+    // And a change belonging to neither side of the room is not sent at all.
+    published.length = 0;
+    await listeners[1]({ ...inRoom, category: "sports", title: "B" }, "update", { ...inRoom, category: "sports" });
+    expect(published).toEqual([]);
+
+    await SignalResolver.handleWsClose(ws, registry, live);
+    expect(live.syncHub.roomCountOf("serverResolverTestItem")).toBe(0);
+  });
+
+  test("takes a live slice with two optional arguments, which a URL could not", () => {
+    class TwoSearchLiveSlice extends slice(
+      serverResolverTestServiceModel,
+      { guards: { root: Public, get: Public } },
+      (init) => ({
+        inCategory: init()
+          .search("category", String)
+          .search("title", String)
+          .live()
+          .exec(function (category) {
+            return this.serverResolverTestItemService.queryInCategory(category ?? "all");
+          }),
+      }),
+    ) {}
+    const SliceEndpoint = SignalResolver.resolveSlice(TwoSearchLiveSlice);
+    const live = SliceEndpoint[ENDPOINT_META].serverResolverTestItemLiveInCategory;
+    // Both stay nullable: a room's arguments are a positional array with explicit nulls, so an absent one is
+    // unambiguous, and dropping the flag would make it fail to deserialize on the way in.
+    expect(live.args.map((arg) => [arg.type, arg.name, arg.option?.nullable])).toEqual([
+      ["room", "category", true],
+      ["room", "title", true],
+    ]);
+  });
+
+  test("refuses a live root slice and a live sort the model does not have", () => {
+    expect(() =>
+      SignalResolver.resolveSlice(
+        class extends slice(serverResolverTestServiceModel, { guards: { root: Public, get: Public } }, (init) => ({
+          inCategory: init()
+            .search("category", String)
+            .live({ sort: ["noSuchSort"] })
+            .exec(function (category) {
+              return this.serverResolverTestItemService.queryInCategory(category ?? "all");
+            }),
+        })) {},
+      ),
+    ).toThrow(/which the model does not have/);
   });
 
   test("turns slice declarations into CRUD/list/insight endpoint declarations", async () => {

@@ -639,6 +639,7 @@ export class DiLifecycle {
     const routes: SignalRoutes["routes"] = {};
     const routeOptions: NonNullable<SignalRoutes["routeOptions"]> = {};
     const wsRoutes: WebsocketRoutes = {};
+    const liveKeys: string[] = [];
     await runStage(
       "slice",
       sliceClsEntries.map(([refName, sliceCls]) => ({
@@ -663,9 +664,11 @@ export class DiLifecycle {
           this.registry.endpointCls.set(refName, sliceEndpointCls);
           this.registry.endpoint.set(sliceEndpointCls, sliceEndpoint);
           this.live.sliceCls.set(sliceCls.baseName, sliceCls);
+          liveKeys.push(...SignalResolver.registerLiveSync(sliceCls, { registry: this.registry, live: this.live }));
         },
       })),
     );
+    if (liveKeys.length) this.logger.info(`Live sync: ${liveKeys.length} live slice(s) — ${liveKeys.join(", ")}`);
     return { routes, wsRoutes, routeOptions };
   }
 

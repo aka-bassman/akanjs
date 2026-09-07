@@ -90,6 +90,8 @@ export class FetchClient {
   readonly handler: Record<string, FetchHandler>;
   readonly slice: Record<string, SliceMeta> = {};
   readonly sortKeyMap = new Map<string, string[]>();
+  /** refName → sort key → the field map that key orders by. Read by live insertion, which has to place a row. */
+  readonly sortValueMap = new Map<string, { [key: string]: { [path: string]: 1 | -1 } }>();
   readonly filterQueryMap = new Map<string, { [queryKey: string]: SerializedArg[] }>();
   readonly #originWs = new Map<string, WsClient>();
   readonly #handlerStore: Record<string, FetchHandler> = {};
@@ -154,6 +156,7 @@ export class FetchClient {
               ? {
                   filter: { ...current.filter?.filter, ...signal.filter?.filter },
                   sortKeys: [...new Set([...(current.filter?.sortKeys ?? []), ...(signal.filter?.sortKeys ?? [])])],
+                  sorts: { ...current.filter?.sorts, ...signal.filter?.sorts },
                 }
               : undefined,
           getGuards: signal.getGuards ?? current.getGuards,
@@ -191,7 +194,7 @@ export class FetchClient {
         // The merged copy, not the incoming one: a lib signal applied on its own carries only its own
         // filters, and the map a UI reads has to hold every filter the model ended up with.
         const filter = this.serializedSignal[refName]?.filter ?? signal.filter;
-        this.#registerFilterSortKey(refName, filter.sortKeys);
+        this.#registerFilterSortKey(refName, filter.sortKeys, filter.sorts);
         this.#registerFilterQuery(refName, filter.filter);
       }
     }
@@ -289,8 +292,9 @@ export class FetchClient {
     }
     return this.jwt ? { Authorization: `Bearer ${this.jwt}` } : {};
   }
-  #registerFilterSortKey(refName: string, sortKeys: string[]) {
+  #registerFilterSortKey(refName: string, sortKeys: string[], sorts?: { [key: string]: { [path: string]: 1 | -1 } }) {
     this.sortKeyMap.set(refName, sortKeys);
+    if (sorts) this.sortValueMap.set(refName, sorts);
   }
   #registerFilterQuery(refName: string, filter: { [queryKey: string]: SerializedArg[] }) {
     this.filterQueryMap.set(refName, filter);
@@ -375,12 +379,15 @@ export class FetchClient {
             };
             wrappedListeners.set(handleEvent, wrapped);
             const ws = this.#resolveWs(fetchPolicy?.origin);
-            ws.subscribe({
-              key,
-              data,
-              handleEvent: wrapped,
-            });
-            return () => ws.unsubscribe({ key, data, handleEvent: wrappedListeners.get(handleEvent) ?? handleEvent });
+            const handleResync = fetchPolicy?.onResync;
+            ws.subscribe({ key, data, handleEvent: wrapped, handleResync });
+            return () =>
+              ws.unsubscribe({
+                key,
+                data,
+                handleEvent: wrappedListeners.get(handleEvent) ?? handleEvent,
+                handleResync,
+              });
           };
         });
         return;
@@ -629,6 +636,7 @@ export class FetchClient {
     const names = {
       list: `${refName}List${capSuffix}`,
       insight: `${refName}Insight${capSuffix}`,
+      live: `${refName}Live${capSuffix}`,
     };
     // A slice's own answer covers both entries it generates: one `mcp: false` on `init()` takes the list and the
     // aggregate together, which is what an author writing it means.
@@ -649,6 +657,17 @@ export class FetchClient {
         ...mcp,
       },
     };
+    // The live room, when the slice declared one. Its arguments are the slice's own, retyped as room arguments so
+    // the client builds the same room id the server does; the envelope rides `Any` because the Light inside it was
+    // already masked and serialized on the way out.
+    if (slice.live)
+      endpoint[names.live] = {
+        type: "pubsub",
+        args: slice.args.map((arg) => ({ ...arg, type: "room" as const })),
+        returns: { refName: "Any" },
+        guards: slice.guards,
+        mcp: false,
+      };
     return endpoint;
   }
   #registerSlice(refName: string, suffix: string, slice: SerializedSlice, prefix?: string) {
@@ -663,8 +682,10 @@ export class FetchClient {
     };
 
     const endpoint = FetchClient.getEndpointFromSlice(refName, suffix, slice);
+    // Through `#registerEndpoint` rather than `#makeHttpFn` directly: a slice can now generate a pubsub entry as
+    // well, and that one is a socket subscription rather than a request.
     Object.entries(endpoint).forEach(([key, value]) => {
-      this.#setHandlerFactory(key, () => this.#makeHttpFn(key, value, prefix));
+      this.#registerEndpoint(key, value, prefix);
     });
 
     const argLength = slice.args.length;

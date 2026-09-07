@@ -7,7 +7,7 @@ import { WorkspaceExecutor } from "../executors";
 // tailwind stack, which is exactly what a suspended dev host must not be holding.
 import { HmrWatcher } from "../frontendBuild/hmrWatcher";
 import { WatchRootResolver } from "../frontendBuild/watchRootResolver";
-import { IncrementalBuilderHost } from "../incrementalBuilder";
+import { type DevStdioMode, IncrementalBuilderHost } from "../incrementalBuilder";
 import { BuilderRequestRouter } from "../incrementalBuilder/builderRequestRouter";
 import { BackendImportGraph } from "./BackendImportGraph";
 import {
@@ -17,9 +17,12 @@ import {
   backendRestartReasonFromMessage,
   buildStatusReplaySequence,
   createBackendBuildStatus,
+  type DevHostEvent,
+  type DevHostState,
   decideBuilderRssRecycle,
   decideBuilderRssSettle,
   decideIdleSuspend,
+  devHostStateOf,
   filesChangedSince,
   hasAnyBuildFailure,
   hasBuildFailureForGeneration,
@@ -89,9 +92,11 @@ interface LastGoodFrontendState {
 
 export class AkanAppHost {
   logger = new Logger("AkanAppHost");
-  readonly withInk: boolean;
+  readonly stdio: DevStdioMode;
   readonly env: Record<string, string>;
-  #backend: Bun.Subprocess<"ignore", "inherit", "inherit"> | null = null;
+  readonly #onDevEvent: ((event: DevHostEvent) => void) | null;
+  #lastDevState: DevHostState | null = null;
+  #backend: Bun.Subprocess<"ignore", "inherit" | "pipe", "inherit" | "pipe"> | null = null;
   #builder: IncrementalBuilderHost | null = null;
   #backendReady = false;
   #plannedBackendStops = new WeakSet<Bun.Subprocess<"ignore", "inherit", "inherit">>();
@@ -134,11 +139,21 @@ export class AkanAppHost {
   readonly #builderRequests = new BuilderRequestRouter();
   constructor(
     private readonly app: App,
-    { env, withInk = false }: { env: Record<string, string>; withInk?: boolean },
+    {
+      env,
+      stdio = "inherit",
+      onDevEvent,
+    }: { env: Record<string, string>; stdio?: DevStdioMode; onDevEvent?: (event: DevHostEvent) => void },
   ) {
     this.env = env;
-    this.withInk = withInk;
+    this.stdio = stdio;
+    this.#onDevEvent = onDevEvent ?? null;
     this.#backendGraph = new BackendImportGraph(app, this.logger);
+  }
+  #emitDevEvent(state: DevHostState, detail?: string) {
+    if (!this.#onDevEvent || state === this.#lastDevState) return;
+    this.#lastDevState = state;
+    this.#onDevEvent({ app: this.app.name, state, ...(detail ? { detail } : {}) });
   }
   async start() {
     if (this.#backend) await this.#stopBackend();
@@ -195,7 +210,7 @@ export class AkanAppHost {
     this.#backendStderrTail = [];
     const backend = Bun.spawn(["bun", `apps/${this.app.name}/main.ts`], {
       cwd: this.app.workspace.workspaceRoot,
-      stdio: this.withInk ? ["ignore", "pipe", "pipe"] : ["inherit", "inherit", "inherit"],
+      stdio: this.stdio === "pipe" ? ["ignore", "pipe", "pipe"] : ["inherit", "inherit", "inherit"],
       env: this.env,
       ipc: (msg: BuilderMessage) => {
         if (!msg || typeof msg !== "object") return;
@@ -235,9 +250,9 @@ export class AkanAppHost {
     });
     this.#backend = backend;
     this.logger.verbose(`backend spawned pid=${backend.pid}`);
-    if (this.withInk) {
-      // Ink mode pipes backend stdio to keep the TUI clean; drain the pipes and surface
-      // them through the logger so runtime errors are not silently swallowed.
+    if (this.stdio === "pipe") {
+      // A piped backend writes to nobody unless the pipes are drained; surface them through the logger
+      // so a runtime error is not silently swallowed, and so the tail kept for a boot failure still fills.
       void this.#forwardBackendStream(backend.stderr as unknown as ReadableStream<Uint8Array> | undefined, "stderr");
       void this.#forwardBackendStream(backend.stdout as unknown as ReadableStream<Uint8Array> | undefined, "stdout");
     }
@@ -250,19 +265,23 @@ export class AkanAppHost {
       this.#backendStderrTail.splice(0, this.#backendStderrTail.length - BACKEND_STDERR_TAIL_LIMIT);
     }
   }
+  /**
+   * A piped child is written through verbatim rather than re-logged: a level floor here would swallow
+   * what the runtime printed, and re-rendering would double the timestamp the child already wrote. So
+   * `"pipe"` looks exactly like `"inherit"` to whoever owns this process's stdout — the only difference
+   * is `#backendStderrTail`, which is what the crash-loop diagnostic reads.
+   */
   async #forwardBackendStream(stream: ReadableStream<Uint8Array> | undefined | null, kind: "stdout" | "stderr") {
     if (!stream) return;
     const decoder = new TextDecoder();
     try {
       for await (const chunk of stream) {
         const text = decoder.decode(chunk, { stream: true });
-        if (!text.trim()) continue;
+        if (!text) continue;
         if (kind === "stderr") {
           this.#recordBackendStderr(text);
-          this.logger.warn(`[backend] ${text.trimEnd()}`);
-        } else {
-          this.logger.verbose(`[backend] ${text.trimEnd()}`);
-        }
+          process.stderr.write(text);
+        } else process.stdout.write(text);
       }
     } catch {
       // The stream closes when the backend exits; nothing further to surface here.
@@ -315,6 +334,7 @@ export class AkanAppHost {
     const prev = this.#backendLifecycleState;
     this.#backendLifecycleState = next;
     this.logger.verbose(`[backend-lifecycle] ${prev} -> ${next}${detail ? ` ${detail}` : ""}`);
+    this.#emitDevEvent(devHostStateOf(next, this.#backendGaveUp), detail);
   }
   #sendToBackend(message: BuilderMessage) {
     if (!this.#backend || !this.#backendReady) {
@@ -695,6 +715,7 @@ export class AkanAppHost {
       return;
     }
     this.#suspended = true;
+    this.#emitDevEvent("suspended", `idle ${Math.round(idleMs / 1000)}s`);
     this.#stopBuilder();
     this.#openBuilderGap("idle suspend");
     this.logger.info(
@@ -779,6 +800,9 @@ export class AkanAppHost {
       this.#wokeAtMono = performance.now();
       this.#flushPendingBuilderMessages();
       this.#armIdleSuspend();
+      // A wake often leaves the backend's own state untouched, so nothing else would report that the
+      // app came back and a supervisor would show it suspended for the rest of the session.
+      this.#emitDevEvent(devHostStateOf(this.#backendLifecycleState, this.#backendGaveUp));
     }
   }
   async #applyIdleWake(batch: ChangeBatch | null): Promise<void> {
@@ -1221,9 +1245,17 @@ export class AkanAppHost {
     this.app.verbose(`[cli] waiting for builder to complete initial base build…`);
     let lastError: unknown;
     for (let attempt = 1; attempt <= BUILDER_START_MAX_ATTEMPTS; attempt++) {
-      this.#builder = await IncrementalBuilderHost.create(this.app, this.env, (msg) => {
-        this.#enqueueBuilderMessage(msg);
-      });
+      this.#builder = await IncrementalBuilderHost.create(
+        this.app,
+        this.env,
+        (msg) => {
+          this.#enqueueBuilderMessage(msg);
+        },
+        {
+          stdio: this.stdio,
+          onOutput: (kind, text) => void (kind === "stderr" ? process.stderr : process.stdout).write(text),
+        },
+      );
       try {
         await this.#waitForBuilderReady(attempt, { announceBootState });
         this.app.verbose(`[cli] base build ready in ${Date.now() - startTime}ms — starting backend`);

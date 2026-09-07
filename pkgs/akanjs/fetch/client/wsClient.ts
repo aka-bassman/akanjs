@@ -19,6 +19,14 @@ interface SubscribeOption {
   key: string;
   data: unknown[];
   listener: Set<(data: unknown) => void>;
+  /**
+   * Called after this room has been resubscribed following a dropped connection.
+   *
+   * Everything published while the socket was down is gone, and a room has no way to say which messages those
+   * were, so the only honest thing it can report is that it is behind. A plain pubsub subscriber declares none of
+   * these and is unaffected.
+   */
+  resync: Set<() => void>;
 }
 interface Listener {
   callback: (data: unknown) => void;
@@ -38,9 +46,20 @@ export class WsClient {
   #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   #reconnectAttempts = 0;
   #roomSubscribeMap = new Map<string, SubscribeOption>();
+  /**
+   * Server room id → the id this client subscribed under, for the rooms where the two differ.
+   *
+   * A live room's id also carries the caller's resolved internal arguments, which the client cannot know — so the
+   * server names the room it actually joined in the subscribe ack and inbound frames are matched through this.
+   * Keeping the subscription map keyed by the client's own id is what lets resubscribe and unsubscribe stay
+   * exactly as they were.
+   */
+  #roomAliasMap = new Map<string, string>();
   #listenerMap = new Map<string, Set<Listener>>();
   #destroyed = false;
   #connectRequested = false;
+  /** Whether this client has been connected before, so the first open is a start rather than a recovery. */
+  #hadConnection = false;
   #outbox: string[] = [];
   #unconnectedWarnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   #jwt: string | null = null;
@@ -93,9 +112,13 @@ export class WsClient {
       // Ordered before the resubscribes: the server applies the credential synchronously, so every
       // room below is authorized against this token rather than the bare handshake.
       if (this.#jwt) this.#sendAuth();
+      const reconnected = this.#hadConnection;
+      this.#hadConnection = true;
       this.#roomSubscribeMap.forEach((option) => {
         const data: WebsocketReqData = { key: option.key, data: option.data, subscribe: true };
         this.#ws?.send(JSON.stringify(data));
+        if (!reconnected) return;
+        for (const handler of option.resync) handler();
       });
       const queued = this.#outbox;
       this.#outbox = [];
@@ -122,6 +145,10 @@ export class WsClient {
           }
           case "sub": {
             const sub = parsed as unknown as WebsocketSubscribeAck;
+            if (sub.requestRoomId && sub.requestRoomId !== sub.roomId) {
+              if (sub.subscribe) this.#roomAliasMap.set(sub.roomId, sub.requestRoomId);
+              else this.#roomAliasMap.delete(sub.roomId);
+            }
             if (sub.subscribe) this.logger.verbose(`Websocket subscribe accepted: ${sub.roomId}`);
             else this.logger.verbose(`Websocket unsubscribe accepted: ${sub.roomId}`);
             break;
@@ -134,7 +161,8 @@ export class WsClient {
           case "auth": {
             const ack = parsed as WebsocketAuthAck;
             for (const roomId of ack.revokedRooms) {
-              this.#roomSubscribeMap.delete(roomId);
+              this.#roomSubscribeMap.delete(this.#roomAliasMap.get(roomId) ?? roomId);
+              this.#roomAliasMap.delete(roomId);
               this.logger.warn(`Websocket room ${roomId} is no longer authorized`);
             }
             break;
@@ -183,7 +211,7 @@ export class WsClient {
     }
   }
   #handlePubsub(roomId: string, data: unknown) {
-    const roomSubscribe = this.#roomSubscribeMap.get(roomId);
+    const roomSubscribe = this.#roomSubscribeMap.get(this.#roomAliasMap.get(roomId) ?? roomId);
     if (!roomSubscribe) return;
     for (const listener of roomSubscribe.listener) listener(data);
   }
@@ -210,6 +238,7 @@ export class WsClient {
     for (const timer of this.#unconnectedWarnTimers.values()) clearTimeout(timer);
     this.#unconnectedWarnTimers.clear();
     this.#outbox = [];
+    this.#roomAliasMap.clear();
     this.#ws?.close();
     this.#ws = null;
   }
@@ -276,11 +305,16 @@ export class WsClient {
     this.#ws.send(frame);
     return this;
   }
-  subscribe(option: { key: string; data: unknown[]; handleEvent: (data: unknown) => void }) {
+  subscribe(option: { key: string; data: unknown[]; handleEvent: (data: unknown) => void; handleResync?: () => void }) {
     const roomId = WsClient.makeRoomId(option.key, option.data);
     if (!this.#ws) this.#warnUnconnected("subscribe", option.key);
     if (!this.#roomSubscribeMap.has(roomId)) {
-      this.#roomSubscribeMap.set(roomId, { key: option.key, data: option.data, listener: new Set() });
+      this.#roomSubscribeMap.set(roomId, {
+        key: option.key,
+        data: option.data,
+        listener: new Set(),
+        resync: new Set(),
+      });
       if (this.#ws?.readyState === WebSocket.OPEN) {
         this.#sendSubscribe(option.key, option.data, true);
       }
@@ -289,14 +323,21 @@ export class WsClient {
     const roomSubscribe = this.#roomSubscribeMap.get(roomId);
     if (!roomSubscribe) return;
     roomSubscribe.listener.add(option.handleEvent);
+    if (option.handleResync) roomSubscribe.resync.add(option.handleResync);
     this.logger.verbose(`Websocket subscribe pubsub for ${roomId} - ${roomSubscribe.listener.size} listeners added`);
     return this;
   }
-  unsubscribe(option: { key: string; data: unknown[]; handleEvent: (data: unknown) => void }) {
+  unsubscribe(option: {
+    key: string;
+    data: unknown[];
+    handleEvent: (data: unknown) => void;
+    handleResync?: () => void;
+  }) {
     const roomId = WsClient.makeRoomId(option.key, option.data);
     const roomSusbscribe = this.#roomSubscribeMap.get(roomId);
     if (!roomSusbscribe) return;
     roomSusbscribe.listener.delete(option.handleEvent);
+    if (option.handleResync) roomSusbscribe.resync.delete(option.handleResync);
     this.logger.verbose(`Unsubscribe pubsub for ${roomId} - ${roomSusbscribe.listener.size} listeners remaining`);
     if (roomSusbscribe.listener.size === 0) {
       if (this.#ws?.readyState === WebSocket.OPEN) {

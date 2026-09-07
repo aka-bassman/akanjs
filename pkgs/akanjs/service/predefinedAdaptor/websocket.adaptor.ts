@@ -16,6 +16,14 @@ export interface WebsocketAdaptor {
   setEventHandler(handler: WsRedisEventHandler): void;
   /** Unregister the event handler */
   clearEventHandler(): void;
+  /**
+   * Called after the cross-server channel has been down and come back, if this transport can lose one.
+   *
+   * A dropped subscription is the one message loss nothing else notices: the client's own socket stays open the
+   * whole time, so it has no reason to suspect its list is behind. A transport with no channel to lose — the
+   * single-node one, which delivers through the gateway's own IPC — leaves this out.
+   */
+  onRecovered?(handler: () => void): void;
   /** Register endpoint return type info for protobuf encoding */
   registerEndpoint(key: string, returnRef: Cls, arrDepth: number): void;
   /** Register a socket joining a room (tracked in Redis for cross-server awareness) */
@@ -59,7 +67,11 @@ export class WebSocketRedisAdaptor
   readonly #maxBufferSize = 10000;
   readonly #endpointMap = new Map<string, { returnRef: Cls; arrDepth: number }>();
   #eventHandler: WsRedisEventHandler | null = null;
+  #recoveryHandler: (() => void) | null = null;
   #publisherReady = false;
+  #subscriberReady = false;
+  /** Whether the subscriber has ever been up, so the first `ready` is a start rather than a recovery. */
+  #subscriberStarted = false;
   #heartbeatInterval: Timer | null = null;
 
   override async onInit() {
@@ -77,9 +89,24 @@ export class WebSocketRedisAdaptor
       this.logger.warn(`Publisher error: ${err.message}`);
     });
 
-    // Subscriber lifecycle
+    // Subscriber lifecycle. Without the pair below, a dropped subscription is invisible: ioredis reconnects and
+    // resubscribes on its own, the messages published in between are gone for good, and every socket this server
+    // holds stays open — so nothing anywhere knows a list is now behind.
     this.subscriber.on("error", (err: Error) => {
       this.logger.warn(`Subscriber error: ${err.message}`);
+    });
+    this.subscriber.on("close", () => {
+      if (!this.#subscriberReady) return;
+      this.#subscriberReady = false;
+      this.logger.warn("Subscriber disconnected; cross-server events are being missed until it returns");
+    });
+    this.subscriber.on("ready", () => {
+      const recovering = !this.#subscriberReady && this.#subscriberStarted;
+      this.#subscriberReady = true;
+      this.#subscriberStarted = true;
+      if (!recovering) return;
+      this.logger.warn("Subscriber reconnected; asking every room on this server to resynchronize");
+      this.#recoveryHandler?.();
     });
 
     await this.publisher.connect();
@@ -143,7 +170,9 @@ export class WebSocketRedisAdaptor
       this.publisher.disconnect();
     }
     this.#eventHandler = null;
+    this.#recoveryHandler = null;
     this.#publisherReady = false;
+    this.#subscriberReady = false;
     this.logger.verbose("WebSocket Redis adaptor destroyed");
   }
 
@@ -176,6 +205,10 @@ export class WebSocketRedisAdaptor
 
   clearEventHandler(): void {
     this.#eventHandler = null;
+  }
+
+  onRecovered(handler: () => void): void {
+    this.#recoveryHandler = handler;
   }
 
   registerEndpoint(key: string, returnRef: Cls, arrDepth: number): void {

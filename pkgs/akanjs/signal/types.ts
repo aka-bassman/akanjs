@@ -70,6 +70,14 @@ interface TimerOption {
 
 export type HttpMutationMethod = "POST" | "PATCH" | "PUT" | "DELETE";
 
+export interface LiveEndpointOption {
+  refName: string;
+  sliceKey: string;
+  sort: string[];
+  fallback: "invalidate" | null;
+  payload: "light" | "id";
+}
+
 export interface SignalOption<Response = any, Nullable extends boolean = false, _Key = keyof UnCls<Response>>
   extends InitOption,
     TimerOption {
@@ -110,6 +118,11 @@ export interface SignalOption<Response = any, Nullable extends boolean = false, 
    * deltas against a base it already holds; the send buffer then grows with the slowest subscriber.
    */
   backpressure?: "coalesce" | "queue";
+  /**
+   * Set by the resolver on the pubsub endpoint it generates for a `.live()` slice, never by hand. It carries what
+   * the room needs to route a change — which model, and how the slice asked to be treated.
+   */
+  live?: LiveEndpointOption;
 
   // * ==================== Schedule ==================== * //
   scheduleType?: "init" | "destroy" | "cron" | "interval" | "timeout";
@@ -136,7 +149,13 @@ interface SerializedSignalOption {
    */
   mcp?: false;
 }
-export interface SerializedSlice extends SerializedSignalOption {}
+export interface SerializedSlice extends SerializedSignalOption {
+  /**
+   * Present when the slice declared `.live()`. `sort` is the allowlist of sort keys a subscriber may place a new
+   * row under itself; on any other sort an insertion refetches instead of guessing where the row goes.
+   */
+  live?: { sort: string[] };
+}
 
 export interface SerializedReturns {
   refName: Exclude<DefaultPrimitiveName, "Map" | "Upload"> | (string & {});
@@ -167,6 +186,11 @@ export interface SerializedFilter {
   /** Every filter query the model declares, by key, with the args each one takes. */
   filter: { [key: string]: SerializedArg[] };
   sortKeys: string[];
+  /**
+   * The field map behind each sort key, which a live subscriber needs to place a new row without asking the server
+   * where it goes. Only the keys a `.live({ sort })` allowlist names are ever compared against it.
+   */
+  sorts?: { [key: string]: { [path: string]: 1 | -1 } };
 }
 
 export interface SerializedSignal {
@@ -198,7 +222,30 @@ export type SignalType = "restapi" | "websocket";
 
 export type WebsocketReqData = { key: string; data: unknown[]; subscribe?: boolean };
 export type WebsocketMessageData = { type: "msg"; key: string; data: object | object[] };
-export type WebsocketSubscribeAck = { type: "sub"; roomId: string; subscribe: boolean };
+/**
+ * One document change, as one live room sees it.
+ *
+ * The verb is relative to the room and not to the database: a row edited out of a filter arrives as `leave` in the
+ * list it left and `enter` in the one it joined, and a soft delete is a `leave` everywhere. `invalidate` carries no
+ * document at all — it is what a room that cannot be routed in memory sends instead, and it means refetch.
+ */
+export interface LiveEventPayload {
+  op: "enter" | "update" | "leave" | "invalidate";
+  id: string;
+  light?: object | null;
+}
+
+/**
+ * `roomId` is the room the server actually joined; `requestRoomId` is the one the client built from the arguments
+ * it sent. They differ only for a live room, whose id also carries the caller's resolved internal arguments so
+ * that two subscribers of the same `inSelf` slice do not share one room. The client re-keys on the pair.
+ */
+export type WebsocketSubscribeAck = {
+  type: "sub";
+  roomId: string;
+  requestRoomId: string;
+  subscribe: boolean;
+};
 export type WebsocketPublishData = { type: "pub"; roomId: string; data: object | object[] };
 export type WebsocketAuthAck = { type: "auth"; revokedRooms: string[] };
 export type WebsocketResData = WebsocketMessageData | WebsocketSubscribeAck | WebsocketPublishData | WebsocketAuthAck;

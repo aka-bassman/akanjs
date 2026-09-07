@@ -11,6 +11,8 @@ import { AiOutlinePlus, AiOutlineSave } from "react-icons/ai";
 import { agentAttrs } from "../agentAttrs";
 import { Button } from "../Button";
 import { Modal } from "../Modal";
+import DraftBar from "./DraftBar";
+import { type DraftProp, editDraftScope, newDraftScope } from "./draftScope";
 
 const EDIT_PAYLOAD_MAX_AGE_MS = 60_000;
 
@@ -36,6 +38,11 @@ interface EditModelProps<Full> {
   children: ReactNode;
   /** Custom loading overlay wrapper, or false to disable the default overlay. */
   loadingWrapper?: boolean | ((props: { children?: any; className?: string }) => ReactNode);
+  /**
+   * Draft recovery for this form. `false` turns it off; a string names the scope explicitly, for the rare
+   * screen whose context is not in the record id or in the seed the editor was given.
+   */
+  draft?: DraftProp;
 }
 
 interface OpenEditorProps<Full> extends EditModelProps<Full> {
@@ -103,7 +110,12 @@ const EditModel = <Full,>({
   }, []);
 
   // if (type === "empty") return null;
-  return <LoadingWrapper className={cn("w-full", className)}>{children}</LoadingWrapper>;
+  return (
+    <LoadingWrapper className={cn("w-full", className)}>
+      <DraftBar slice={slice} />
+      {children}
+    </LoadingWrapper>
+  );
 };
 
 interface EditModalProps<Full extends { id: string }> extends EditModelProps<Full> {
@@ -147,10 +159,11 @@ export default function EditModal<Full extends { id: string }>({
   submitOption,
   renderSubmit,
   loadingWrapper,
+  draft,
   onSubmit,
   onCancel,
 }: EditModalProps<Full>) {
-  const { l } = usePage();
+  const { l, path } = usePage();
   const storeUse = st.use as { [key: string]: (option?: { agent?: boolean }) => unknown };
   const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
   const storeSel = st.sel as <Ret>(selector: (state: unknown) => Ret) => Ret;
@@ -172,6 +185,7 @@ export default function EditModal<Full extends { id: string }>({
       modelLoading: `${modelName}Loading`,
       modelViewAt: `${modelName}ViewAt`,
       editModel: `edit${ModelName}`,
+      loadModelDraft: `load${ModelName}FormDraft`,
       newModel: `new${ModelName}`,
       crystalizeModel: `crystalize${ModelName}`,
       modelObj: `${modelName}Obj`,
@@ -206,6 +220,7 @@ export default function EditModal<Full extends { id: string }>({
       const modelObj = (modelEdit as DynamicRecord)[names.modelObj] as Full;
       const viewAt = (modelEdit as DynamicRecord)[names.modelViewAt] as Date;
       const crystal = new modelRef().set(modelObj) as unknown as Full;
+      const draftScope = editDraftScope(draft, modelObj.id);
       st.set({
         [names.model]: crystal,
         [names.modelLoading]: false,
@@ -215,13 +230,22 @@ export default function EditModal<Full extends { id: string }>({
         [names.modelViewAt]: viewAt,
       });
       if (isEditPayloadStale(viewAt))
-        void storeDo[names.editModel](modelObj.id, { modal }).catch(() => {
+        void storeDo[names.editModel](modelObj.id, { modal, draftScope }).catch(() => {
           st.set({ [names.modelFormLoading]: false });
         });
+      // A fresh payload is not refetched, so the draft load that `edit<Model>` does at the end of its fetch has
+      // to happen here instead — otherwise exactly the pages that hand their editor a payload recover nothing.
+      else void storeDo[names.loadModelDraft](draftScope);
     } else {
       // new
       const crystal = new modelRef().set(modelEdit as Full) as unknown as Full;
-      void storeDo[names.newModel](crystal, { modal, setDefault: true, sliceName });
+      const draftScope = newDraftScope(draft, {
+        seed: modelEdit as object,
+        modal: modal ?? "edit",
+        sliceName,
+        routePath: path,
+      });
+      void storeDo[names.newModel](crystal, { modal, setDefault: true, sliceName, draftScope });
     }
   }, [modelEdit, isEditPayloadStale]);
 

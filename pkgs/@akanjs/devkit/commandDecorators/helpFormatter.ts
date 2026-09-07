@@ -159,6 +159,7 @@ export const formatCommandHelp = (command: CommandCls, key: string) => {
     .map((arg) => {
       if (arg.type === "Workspace") return "";
       if (arg.type === "Module") return "[sys:module]";
+      if (arg.type === "Apps") return "[apps...]";
       if (arg.type === "Argument") {
         return `[${camelToKebabCase(arg.name)}]`;
       }
@@ -192,6 +193,9 @@ export const formatCommandHelp = (command: CommandCls, key: string) => {
       } else if (arg.type === "Module") {
         argName = "sys:module";
         argDesc = "Module in format: app-name:module-name or lib-name:module-name";
+      } else if (arg.type === "Apps") {
+        argName = "apps...";
+        argDesc = "App names, space- or comma-separated, or all. Omit to pick them interactively";
       } else {
         argName = arg.type.toLowerCase();
         argDesc = `${arg.type} name in this workspace`;

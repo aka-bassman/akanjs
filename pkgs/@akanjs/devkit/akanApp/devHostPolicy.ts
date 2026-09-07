@@ -69,6 +69,36 @@ export const shouldRestartDevHostByDevPlan = (message: Extract<BuilderMessage, {
 
 export type BackendLifecycleState = "starting" | "ready" | "restart-pending" | "stopping" | "recovering" | "stopped";
 
+/**
+ * What a dev host tells a supervising process about itself. Reported rather than scraped: the parent
+ * gets one pipe of interleaved child output, in which "this app is up" is indistinguishable from a line
+ * that merely mentions it.
+ */
+export type DevHostState = "starting" | "ready" | "restarting" | "recovering" | "suspended" | "failed" | "stopped";
+
+export interface DevHostEvent {
+  app: string;
+  state: DevHostState;
+  detail?: string;
+}
+
+const devHostStateByBackendState = {
+  starting: "starting",
+  ready: "ready",
+  "restart-pending": "restarting",
+  recovering: "recovering",
+  stopping: "stopped",
+  stopped: "stopped",
+} as const satisfies { [key in BackendLifecycleState]: DevHostState };
+
+/**
+ * The backend's own lifecycle collapsed to what a supervisor can act on. `stopped` is the one state
+ * that is ambiguous on its own — a planned shutdown and a crash loop that ran out of retries both land
+ * there — so the give-up flag is what separates "gone" from "broken".
+ */
+export const devHostStateOf = (state: BackendLifecycleState, gaveUp: boolean): DevHostState =>
+  state === "stopped" && gaveUp ? "failed" : devHostStateByBackendState[state];
+
 export interface BackendRestartReason {
   generation?: number;
   files: string[];

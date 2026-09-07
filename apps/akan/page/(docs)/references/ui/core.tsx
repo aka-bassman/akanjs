@@ -185,6 +185,14 @@ export const ProductUnit = ({ product }) => (
           }),
         },
         {
+          name: "draft (Load.Edit / Model.EditModal / Model.New)",
+          type: "boolean | string",
+          desc: l.trans({
+            en: "Form recovery, on by default. The shell saves the whole form as the user types and offers it back on the next open, scoped to the record id for an edit and to the seed plus the route for a new form, under the signed-in user. `false` turns it off; a string names the scope when the context is in neither the id nor the seed. Secret and hidden fields are never saved.",
+            ko: "form 복구이며 기본으로 켜져 있습니다. 사용자가 입력하는 동안 form 전체를 저장했다가 다음에 열 때 돌려줍니다. scope는 edit이면 record id, new면 seed와 route이고, 로그인한 사용자별로 분리됩니다. `false`면 끄고, 문자열이면 scope를 직접 지정합니다. secret / hidden field는 저장하지 않습니다.",
+          }),
+        },
+        {
           name: "Load.Page",
           type: "{ loader, render, loading?, noCache? }",
           desc: l.trans({

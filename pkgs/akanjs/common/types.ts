@@ -6,6 +6,13 @@ export interface FetchPolicy<Returns = unknown> {
   token?: string;
   partial?: string[];
   timeout?: number;
+  /**
+   * A `pubsub` subscription only: called after the room has been resubscribed following a dropped connection.
+   *
+   * Whatever was published while the socket was down is gone, and a room cannot say which messages those were, so
+   * a subscriber that has to stay correct reloads here instead of carrying on from a gap it cannot see.
+   */
+  onResync?: () => void;
 }
 
 export type SnakeCase<S extends string> = S extends `${infer T}_${infer U}` ? `${Lowercase<T>}_${SnakeCase<U>}` : S;

@@ -14,7 +14,6 @@ export interface NumberProps {
   placeholder?: string;
   nullable?: boolean;
   disabled?: boolean;
-  cache?: boolean;
   min?: number;
   max?: number;
   unit?: string;
@@ -39,7 +38,6 @@ export const Number = ({
   disabled,
   min,
   max,
-  cache,
   transform = (v) => v,
   validate,
   onPressEnter,
@@ -57,7 +55,6 @@ export const Number = ({
         {...agentAttrs(onChange)}
         min={min}
         max={max}
-        cacheKey={cache ? `${label}-${desc}-number` : undefined}
         value={value}
         nullable={nullable}
         formatter={formatter}
@@ -94,7 +91,6 @@ export interface DoubleNumberProps {
   min?: [number, number] | null;
   max?: [number, number] | null;
   separator?: ReactNode | string;
-  cache?: boolean;
   onChange: (value: [number, number]) => void;
   transform?: (value: number) => number;
   validate?: (text: number) => boolean | string;
@@ -112,7 +108,6 @@ export const DoubleNumber = ({
   min,
   max,
   inputClassName,
-  cache,
   separator,
   onChange,
   transform = (v) => v,
@@ -128,7 +123,6 @@ export const DoubleNumber = ({
         <Input.Number
           value={value ? value[0] : 0}
           nullable={nullable}
-          cacheKey={cache ? `${label}-${desc}-number-[0]` : undefined}
           placeholder={placeholder}
           onChange={(num) => {
             if (num === null) return;
@@ -146,7 +140,6 @@ export const DoubleNumber = ({
         />
         {separator}
         <Input.Number
-          cacheKey={cache ? `${label}-${desc}-number-[1]` : undefined}
           value={value ? value[1] : 0}
           nullable={nullable}
           placeholder={placeholder}

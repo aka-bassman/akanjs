@@ -151,7 +151,14 @@ describe("state builder declarations", () => {
     expect(() =>
       resolveDerivedState({ broken: builder.computed(["missing" as never], () => "bad") }, new Set(["count"])),
     ).toThrow("Computed broken has invalid deps: missing");
-    expect(() => mergeDerivedMeta(resolved.meta, resolved.meta)).toThrow("Duplicate state metadata key: summary");
+    // One declaration reaching the merge twice is the extension chain, not a mistake: a store that lists another
+    // as a lib store carries its entries, and both are registered.
+    expect(mergeDerivedMeta(resolved.meta, resolved.meta).computed.summary).toBe(resolved.meta.computed.summary);
+    const rival = resolveDerivedState(
+      { summary: builder.computed(["count"], (count) => `${count}`) },
+      new Set(["count", "label"]),
+    );
+    expect(() => mergeDerivedMeta(resolved.meta, rival.meta)).toThrow("Duplicate state metadata key: summary");
   });
 
   test("rejects derived declarations that conflict with writable keys", () => {

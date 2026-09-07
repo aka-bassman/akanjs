@@ -1,6 +1,7 @@
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
+import { FileSys } from "../fileSys";
 
 //* Auto-import daemon: a source-editing sibling of DevGeneratedIndexSync. When a domain file changes,
 //* framework symbols that are used but not imported (e.g. `Int` in a *.constant.ts, `fetch` in a *.store.ts)
@@ -267,7 +268,7 @@ export class AutoImportSync {
     const resolveExtra = await this.#extraResolverFor(abs, ctx);
     const next = transformSource(source, abs, ctx, resolveExtra);
     if (next === null || next === source) return false;
-    await writeFile(abs, next);
+    await FileSys.writeTextAtomic(abs, next);
     return true;
   }
 

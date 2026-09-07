@@ -16,7 +16,6 @@ export interface TextProps {
   inputClassName?: string;
   placeholder?: string;
   nullable?: boolean;
-  cache?: boolean;
   disabled?: boolean;
   transform?: (value: string) => string;
   validate?: (text: string) => boolean | string;
@@ -40,7 +39,6 @@ export const Text = ({
   transform = (v) => v,
   validate,
   onPressEnter,
-  cache,
   inputClassName,
   inputStyleType = "bordered",
 }: TextProps) => {
@@ -51,7 +49,6 @@ export const Text = ({
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Input
         {...agentAttrs(onChange)}
-        cacheKey={cache ? `${label}-${desc}-text` : undefined}
         inputStyleType={inputStyleType}
         value={value ?? ""}
         nullable={nullable}
@@ -89,7 +86,6 @@ export interface TextAreaProps {
   rows?: number;
   minlength?: number;
   maxlength?: number;
-  cache?: boolean;
   onPressEnter?: () => void;
 }
 export const TextArea = ({
@@ -108,7 +104,6 @@ export const TextArea = ({
   transform = (v) => v,
   validate,
   onPressEnter,
-  cache,
   inputClassName,
 }: TextAreaProps) => {
   useFieldTool(onChange, { transform, disabled });
@@ -119,7 +114,6 @@ export const TextArea = ({
       <Input.TextArea
         {...agentAttrs(onChange)}
         value={value ?? ""}
-        cacheKey={cache ? `${label}-${desc}-textArea` : undefined}
         nullable={nullable}
         placeholder={placeholder}
         onChange={(value) => {
@@ -146,7 +140,6 @@ export interface EmailProps {
   labelClassName?: string;
   className?: string;
   value: string | null;
-  cache?: boolean;
   onChange: (value: string) => void;
   inputClassName?: string;
   placeholder?: string;
@@ -166,7 +159,6 @@ export const Email = ({
   className,
   value,
   onChange,
-  cache,
   placeholder = "example@email.com",
   nullable,
   disabled,
@@ -186,7 +178,6 @@ export const Email = ({
       <Input.Email
         {...agentAttrs(onChange)}
         value={value ?? ""}
-        cacheKey={cache ? `${label}-${desc}-email` : undefined}
         nullable={nullable}
         placeholder={placeholder}
         onChange={(value) => {
@@ -218,7 +209,6 @@ export interface PhoneProps {
   placeholder?: string;
   nullable?: boolean;
   disabled?: boolean;
-  cache?: boolean;
   transform?: (value: string) => string;
   validate?: (text: string) => boolean | string;
   minlength?: number;
@@ -236,7 +226,6 @@ export const Phone = ({
   nullable,
   disabled,
   maxlength = 13,
-  cache,
   transform = (v) => formatPhone(v),
   validate,
   onPressEnter,
@@ -251,7 +240,6 @@ export const Phone = ({
       <Input
         {...agentAttrs(onChange)}
         value={value ?? ""}
-        cacheKey={cache ? `${label}-${desc}-phone` : undefined}
         nullable={nullable}
         placeholder={placeholder}
         onChange={(value) => {
@@ -284,7 +272,6 @@ export interface PasswordProps {
   placeholder?: string;
   nullable?: boolean;
   disabled?: boolean;
-  cache?: boolean;
   transform?: (value: string) => string;
   validate?: (text: string) => boolean | string;
   minlength?: number;
@@ -299,7 +286,6 @@ export const Password = ({
   className,
   value,
   onChange,
-  cache,
   confirmValue,
   onChangeConfirm,
   placeholder,
@@ -321,7 +307,6 @@ export const Password = ({
       <div className="flex flex-col gap-2">
         <Input.Password
           {...agentAttrs(onChange)}
-          cacheKey={cache ? `${label}-${desc}-password` : undefined}
           value={value ?? ""}
           nullable={nullable}
           placeholder={placeholder ?? l("base.password")}

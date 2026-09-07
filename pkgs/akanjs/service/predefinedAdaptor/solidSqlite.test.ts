@@ -853,6 +853,50 @@ describe("solid sqlite utilities", () => {
 });
 
 describe("sql dialects", () => {
+  test("hands a save hook the document as it was before the write", async () => {
+    const db = new Database(":memory:", { strict: true, create: true });
+    const client = new TestSqliteClient(db);
+    const schema = new DocumentSchema();
+    const seen: { type: string; title: string; previous: string | null; removed: boolean }[] = [];
+    schema.post<Record<string, unknown>>("save", function (_next, type, previous) {
+      seen.push({
+        type: type ?? "update",
+        title: this.title as string,
+        previous: (previous?.title as string) ?? null,
+        removed: !!this.removedAt,
+      });
+    });
+    schema.post<Record<string, unknown>>("remove", function (_next, type, previous) {
+      seen.push({
+        type: type ?? "update",
+        title: this.title as string,
+        previous: (previous?.title as string) ?? null,
+        removed: !!this.removedAt,
+      });
+    });
+    const store = new SqlDocumentStore(new TestDatabaseOwner(client), ticketTestConstant, ticketTestDatabase, schema);
+
+    try {
+      await client.execute(
+        `CREATE TABLE IF NOT EXISTS "_akan_meta" ("key" TEXT PRIMARY KEY NOT NULL, "value" TEXT NOT NULL, "updatedAt" INTEGER NOT NULL)`,
+      );
+      await store.ensure();
+
+      const created = await store.create({ title: "before", histories: [] });
+      await store.update(created.id, { title: "after" });
+      await store.remove(created.id);
+
+      expect(seen).toEqual([
+        { type: "create", title: "before", previous: null, removed: false },
+        { type: "update", title: "after", previous: "before", removed: false },
+        // A soft delete reaches `remove`, and only the pre-state says the row was still visible a moment ago.
+        { type: "remove", title: "after", previous: "after", removed: true },
+      ]);
+    } finally {
+      await client.close();
+    }
+  });
+
   test("sqlite folds update operators into one param-safe json expression", () => {
     const d = new SqliteDialect();
     // Folding must not duplicate the accumulator's placeholders: set + inc => exactly 2 params.

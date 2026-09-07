@@ -1,0 +1,260 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
+import { render } from "ink";
+import type { DevLogLine } from "../application/devLogBuffer";
+import { HOST_SOURCE } from "../application/devLogBuffer";
+import { type DevTuiActions, DevTuiApp, type DevTuiRailRow, type DevTuiSnapshot } from "./DevTuiApp";
+
+/** Ink writes frames here and reads its size from `columns`/`rows`; nothing else of a tty is used. */
+class FakeStdout extends EventEmitter {
+  columns = 100;
+  rows = 14;
+  readonly frames: string[] = [];
+  write = (frame: string) => {
+    this.frames.push(frame);
+    return true;
+  };
+  get lastFrame() {
+    return (this.frames.at(-1) ?? "").replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
+  }
+}
+
+const makeStdin = () => {
+  const stdin = new PassThrough() as PassThrough & {
+    isTTY: boolean;
+    setRawMode: (raw: boolean) => void;
+    ref: () => void;
+    unref: () => void;
+  };
+  stdin.isTTY = true;
+  stdin.setRawMode = () => undefined;
+  stdin.ref = () => undefined;
+  stdin.unref = () => undefined;
+  return stdin;
+};
+
+const lineOf = (seq: number, app: string, text: string, source = HOST_SOURCE): DevLogLine => ({
+  seq,
+  app,
+  source,
+  kind: "stdout",
+  text,
+});
+
+const railOf = (): DevTuiRailRow[] => [
+  { app: null, source: null, label: "all apps", state: null, port: null, depth: 0, appIndex: null },
+  { app: "akan", source: null, label: "akan", state: "ready", port: 8282, depth: 0, appIndex: 1 },
+  { app: "akan", source: HOST_SOURCE, label: HOST_SOURCE, state: null, port: null, depth: 1, appIndex: null },
+  { app: "akan", source: "#0 all", label: "#0 all", state: null, port: null, depth: 1, appIndex: null },
+  { app: "minimal", source: null, label: "minimal", state: "starting", port: 8283, depth: 0, appIndex: 2 },
+];
+
+interface Harness {
+  stdout: FakeStdout;
+  calls: string[];
+  unmount: () => void;
+  press: (input: string) => Promise<void>;
+  setSnapshot: (patch: Partial<DevTuiSnapshot>) => void;
+}
+
+/** Ink throttles frame writes to `maxFps: 30`; anything shorter reads the previous frame. */
+const nextFrame = () => Bun.sleep(80);
+
+const harnesses: Harness[] = [];
+
+const mount = (patch: Partial<DevTuiSnapshot> = {}): Harness => {
+  const stdout = new FakeStdout();
+  const stdin = makeStdin();
+  const calls: string[] = [];
+  let snapshot: DevTuiSnapshot = {
+    rows: railOf(),
+    selected: 1,
+    title: "akan · http://localhost:8282 · ready",
+    lines: [lineOf(1, "akan", "gateway is running"), lineOf(2, "akan", "served", "#0 all")],
+    above: 0,
+    below: 0,
+    following: true,
+    prefix: "app",
+    prefixWidth: 7,
+    grep: "",
+    errorsOnly: false,
+    editingGrep: false,
+    readyCount: 1,
+    appCount: 2,
+    logRows: 10,
+    bodyHeight: 13,
+    railWidth: 22,
+    columns: 100,
+    terminalRows: 14,
+    ...patch,
+  };
+  const listeners = new Set<() => void>();
+  const actions: DevTuiActions = {
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    snapshot: () => snapshot,
+    moveSelection: (delta) => calls.push(`moveSelection:${delta}`),
+    selectApp: (index) => calls.push(`selectApp:${index}`),
+    scroll: (delta) => calls.push(`scroll:${delta}`),
+    follow: () => calls.push("follow"),
+    setGrep: (grep) => calls.push(`setGrep:${grep}`),
+    setEditingGrep: (editing) => calls.push(`setEditingGrep:${editing}`),
+    toggleErrorsOnly: () => calls.push("toggleErrorsOnly"),
+    clear: () => calls.push("clear"),
+    openSelected: () => calls.push("openSelected"),
+    restartSelected: () => calls.push("restartSelected"),
+    quit: () => calls.push("quit"),
+  };
+  const instance = render(<DevTuiApp actions={actions} />, {
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    patchConsole: false,
+    exitOnCtrlC: false,
+  });
+  const harness: Harness = {
+    stdout,
+    calls,
+    unmount: () => instance.unmount(),
+    press: async (input: string) => {
+      stdin.write(input);
+      await nextFrame();
+    },
+    setSnapshot: (next) => {
+      snapshot = { ...snapshot, ...next };
+      for (const listener of listeners) listener();
+    },
+  };
+  harnesses.push(harness);
+  return harness;
+};
+
+afterEach(() => {
+  for (const harness of harnesses.splice(0)) harness.unmount();
+});
+
+describe("DevTuiApp", () => {
+  test("draws the rail as apps with the selected app's processes under it", async () => {
+    const { stdout } = mount();
+    await nextFrame();
+    const frame = stdout.lastFrame;
+    expect(frame).toContain("apps 1/2");
+    expect(frame).toContain("all apps");
+    expect(frame).toContain("8282");
+    expect(frame).toContain("8283");
+    expect(frame).toContain(HOST_SOURCE);
+    expect(frame).toContain("#0 all");
+    // The digit that jumps to each app is shown next to it; replica rows carry none.
+    expect(frame).toMatch(/● 1 akan 8282/);
+    expect(frame).toMatch(/◐ 2 minimal 8283/);
+    expect(frame).not.toMatch(/\d #0 all/);
+  });
+
+  test("a digit jumps to the nth app, not the nth rail row", async () => {
+    const harness = mount();
+    await nextFrame();
+    // Rail row 2 is akan's `host`, but `2` must reach the second *app*.
+    await harness.press("2");
+    await harness.press("1");
+    expect(harness.calls).toEqual(["selectApp:1", "selectApp:0"]);
+  });
+
+  test("fills the terminal height from the first frame, before any log arrives", async () => {
+    const empty = mount({ lines: [] });
+    await nextFrame();
+    const emptyHeight = empty.stdout.lastFrame.replace(/\n$/, "").split("\n").length;
+
+    const full = mount({ lines: Array.from({ length: 40 }, (_, idx) => lineOf(idx + 1, "akan", `line-${idx + 1}`)) });
+    await nextFrame();
+    const fullHeight = full.stdout.lastFrame.replace(/\n$/, "").split("\n").length;
+
+    expect(emptyHeight).toBe(14);
+    expect(fullHeight).toBe(emptyHeight);
+  });
+
+  test("says so while paused, and names what is hidden either side", async () => {
+    const following = mount();
+    await nextFrame();
+    expect(following.stdout.lastFrame).not.toContain("paused");
+
+    const paused = mount({ following: false, above: 12, below: 7 });
+    await nextFrame();
+    expect(paused.stdout.lastFrame).toContain("▲12 ▼7 paused");
+    expect(paused.stdout.lastFrame).toContain("G follow (paused)");
+  });
+
+  test("the line prefix follows the scope: app when merged, source inside an app, none inside one", async () => {
+    // Merged across apps: two apps both have a `host` stream, so the app name is what separates them.
+    const merged = mount({
+      prefix: "app",
+      lines: [lineOf(1, "akan", "one"), lineOf(2, "minimal", "two")],
+    });
+    await nextFrame();
+    expect(merged.stdout.lastFrame).toMatch(/akan\s+│ one/);
+    expect(merged.stdout.lastFrame).toMatch(/minimal\s+│ two/);
+
+    const withinApp = mount({ prefix: "source", prefixWidth: 6, lines: [lineOf(1, "akan", "served", "#0 all")] });
+    await nextFrame();
+    expect(withinApp.stdout.lastFrame).toMatch(/#0 all\s+│ served/);
+
+    const withinSource = mount({ prefix: "none", lines: [lineOf(1, "akan", "served", "#0 all")] });
+    await nextFrame();
+    // The rail still lists `#0 all` as a row; what must be gone is the per-line prefix before `served`.
+    expect(withinSource.stdout.lastFrame).toMatch(/│ served/);
+    expect(withinSource.stdout.lastFrame).not.toMatch(/#0 all\s+│ served/);
+  });
+
+  test("redraws when the store publishes", async () => {
+    const harness = mount();
+    await nextFrame();
+    harness.setSnapshot({ rows: railOf().map((row) => ({ ...row, state: row.state ? "failed" : null })) });
+    await nextFrame();
+    expect(harness.stdout.lastFrame).toContain("✗");
+  });
+
+  test("maps the documented keys to actions", async () => {
+    const harness = mount();
+    await nextFrame();
+    await harness.press("2");
+    await harness.press("e");
+    await harness.press("c");
+    await harness.press("o");
+    await harness.press("r");
+    await harness.press("G");
+    await harness.press("q");
+    expect(harness.calls).toEqual([
+      "selectApp:1",
+      "toggleErrorsOnly",
+      "clear",
+      "openSelected",
+      "restartSelected",
+      "follow",
+      "quit",
+    ]);
+  });
+
+  test("arrows scroll by a line and shift-arrows by a page", async () => {
+    const harness = mount({ logRows: 10 });
+    await nextFrame();
+    const esc = String.fromCharCode(27);
+    await harness.press(`${esc}[A`);
+    await harness.press(`${esc}[B`);
+    await harness.press(`${esc}[5~`);
+    await harness.press(`${esc}[6~`);
+    await harness.press(`${esc}[1;2A`);
+    expect(harness.calls).toEqual(["scroll:-1", "scroll:1", "scroll:-9", "scroll:9", "scroll:-9"]);
+  });
+
+  test("typing goes to the filter while it is open, and never to a command", async () => {
+    const harness = mount({ editingGrep: true, grep: "pay" });
+    await nextFrame();
+    expect(harness.stdout.lastFrame).toContain("grep pay");
+    // `q` would quit outside the filter; here it has to be text.
+    await harness.press("q");
+    expect(harness.calls).toEqual(["setGrep:payq"]);
+  });
+});

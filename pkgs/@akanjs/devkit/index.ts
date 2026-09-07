@@ -45,7 +45,5 @@ export type * from "./spinner";
 export type * from "./transforms";
 export type * from "./typeChecker";
 export type * from "./types";
-export type * from "./ui";
 export type * from "./uploadRelease";
-export type * from "./useStdoutDimensions";
 export type * from "./workflow";

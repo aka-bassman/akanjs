@@ -88,7 +88,6 @@ export interface TextListProps {
   inputClassName?: string;
   placeholder?: string;
   disabled?: boolean;
-  cache?: boolean;
   transform?: (value: string) => string;
   validate?: (text: string) => boolean | string;
   minlength?: number;
@@ -110,7 +109,6 @@ export const TextList = ({
   maxlength = 50,
   minTextlength = 2,
   maxTextlength = 200,
-  cache,
   validate,
   inputClassName,
 }: TextListProps) => {
@@ -142,7 +140,6 @@ export const TextList = ({
                 <div className="flex w-full items-center justify-center gap-5">
                   <Input
                     value={text}
-                    cacheKey={cache ? `${label}-${desc}-textList-[${idx}]` : undefined}
                     onChange={(text) => {
                       const newValue = [...texts];
                       newValue[idx] = transform(text);

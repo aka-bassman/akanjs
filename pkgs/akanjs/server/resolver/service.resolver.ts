@@ -71,14 +71,14 @@ export class ServiceResolver {
       listenPre(
         this: DatabaseService,
         type: SaveEventType,
-        listener: (doc: Doc, type: CRUDEventType) => PromiseOrObject<void>,
+        listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
       ) {
         return this.__databaseModel.listenPre(type, listener);
       },
       listenPost(
         this: DatabaseService,
         type: SaveEventType,
-        listener: (doc: Doc, type: CRUDEventType) => PromiseOrObject<void>,
+        listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
       ) {
         return this.__databaseModel.listenPost(type, listener);
       },

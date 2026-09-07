@@ -1,12 +1,13 @@
 import path from "node:path";
 import type { AbstractCompactOptions } from "@akanjs/devkit/abstractCompactor";
-import { AkanAppHost } from "@akanjs/devkit/akanApp";
+import { AkanAppHost, type DevHostEvent } from "@akanjs/devkit/akanApp";
 import type { DatabaseMode, MobileEnv } from "@akanjs/devkit/akanConfig";
 import type { BuildProgressReporter, BuildResult, TypecheckOptions } from "@akanjs/devkit/applicationBuildRunner";
 import type { ReleaseSourceOptions } from "@akanjs/devkit/applicationReleasePackager";
 import { resolveSignalTestPreloadPath } from "@akanjs/devkit/applicationTestPreload";
 import { type App, type Exec, runner, type Sys, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, LibExecutor } from "@akanjs/devkit/executors";
+import type { DevStdioMode } from "@akanjs/devkit/incrementalBuilder";
 import { type ResolvedMobileTarget, resolveMobileTargets } from "@akanjs/devkit/mobile";
 import { SlicePlanner } from "@akanjs/devkit/slicePlanner";
 import { Logger, type LogRecord } from "akanjs/common";
@@ -218,10 +219,20 @@ try {
   }
   async start(
     app: App,
-    { open = false, onStart, withInk = false }: { open?: boolean; onStart?: () => void; withInk?: boolean } = {},
+    {
+      open = false,
+      onStart,
+      onDevEvent,
+      stdio = "inherit",
+    }: {
+      open?: boolean;
+      onStart?: () => void;
+      onDevEvent?: (event: DevHostEvent) => void;
+      stdio?: DevStdioMode;
+    } = {},
   ) {
     const { env } = await app.prepareCommand("start");
-    const appHost = await new AkanAppHost(app, { env, withInk }).start();
+    const appHost = await new AkanAppHost(app, { env, stdio, onDevEvent }).start();
     onStart?.();
     if (open)
       setTimeout(() => openBrowser(`http://localhost:${env.AKAN_PUBLIC_CLIENT_PORT ?? env.PORT ?? "8282"}`), 3000);

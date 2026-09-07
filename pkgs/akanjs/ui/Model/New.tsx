@@ -3,6 +3,7 @@ import type { SliceMeta } from "akanjs/fetch";
 import type { ReactNode } from "react";
 import { AiOutlinePlus } from "react-icons/ai";
 
+import type { DraftProp } from "./draftScope";
 import EditModal from "./EditModal";
 import NewWrapper from "./NewWrapper";
 
@@ -17,6 +18,8 @@ interface NewProps<Full = any> {
   renderTitle?: ((model: { id: string }) => string | ReactNode) | string;
   /** Suffixes the tool this button publishes. Only a second create button for the same slice needs one. */
   namespace?: string;
+  /** Draft recovery for the form. `false` turns it off; a string names the scope explicitly. */
+  draft?: DraftProp;
 }
 
 export default function New({
@@ -29,6 +32,7 @@ export default function New({
   partial,
   renderTitle,
   namespace,
+  draft,
 }: NewProps) {
   const { l } = usePage();
   return (
@@ -39,10 +43,11 @@ export default function New({
         modal={modal}
         partial={partial}
         namespace={namespace}
+        draft={draft}
       >
         <AiOutlinePlus /> {type === "button" ? l("base.new") : null}
       </NewWrapper>
-      <EditModal renderTitle={renderTitle} slice={slice}>
+      <EditModal renderTitle={renderTitle} slice={slice} draft={draft}>
         {children}
       </EditModal>
     </div>

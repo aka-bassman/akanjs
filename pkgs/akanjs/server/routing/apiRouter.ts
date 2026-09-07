@@ -1,6 +1,6 @@
 import { dayjs } from "akanjs/base";
 import { type Logger, websocketAuthContract } from "akanjs/common";
-import type { InjectRegistry } from "akanjs/service";
+import type { InjectRegistry, LiveRegistry } from "akanjs/service";
 import { Exception, SignalContext, SignalFailure, type WebsocketReqData } from "akanjs/signal";
 import { compressResponse } from "../contentEncoding";
 import type { HmrWsData, HmrWsHub } from "../hmr/wsHub";
@@ -42,6 +42,8 @@ type RouteHandler = (req: Request) => Response | Promise<Response | undefined> |
 export interface WebsocketHandlersInputs {
   wsRoutes: WebsocketRoutes;
   registry: InjectRegistry;
+  /** Only live rooms need it — a room is released from the routing table when its last socket goes. */
+  live?: LiveRegistry;
   hmrHub: HmrWsHub | null;
   hmrState: HmrStateSource | null;
   logger: Logger;
@@ -113,6 +115,7 @@ export class ApiRouter {
   static buildWebsocketHandlers({
     wsRoutes,
     registry,
+    live,
     hmrHub,
     hmrState,
     logger,
@@ -153,7 +156,7 @@ export class ApiRouter {
               // Must stay synchronous: a subscribe frame sent right behind this one is dispatched
               // next and has to see the new credential, not the one it replaced.
               AppWsData.applyCredential(AppWsData.of(ws), websocketAuthContract.readJwt(msg.data));
-              const revokedRooms = await SignalResolver.revalidateWsRooms(ws, registry);
+              const revokedRooms = await SignalResolver.revalidateWsRooms(ws, registry, live);
               ws.send(JSON.stringify(websocketAuthContract.makeAck(revokedRooms)));
               return;
             }
@@ -182,7 +185,7 @@ export class ApiRouter {
           hmrHub.detach(ws as unknown as Bun.ServerWebSocket<HmrWsData>);
           return;
         }
-        SignalResolver.handleWsClose(ws, registry);
+        SignalResolver.handleWsClose(ws, registry, live);
       },
     };
   }

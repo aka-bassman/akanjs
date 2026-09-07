@@ -14,7 +14,7 @@ by `akan agent install`; edit anything outside the markers freely.
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -364,6 +364,15 @@ Full contract: `get_guideline` with `runtimeRule`, or `akan guideline show runti
 - Avoid hooks. `useState` is for modal-open, tab, draft-input, and drag state only — never for server data. `useEffect` must be a genuine effect such as subscribe-with-cleanup or one-shot init. Prefer `Tab` over a `useState` mode switch. `.Template.tsx` files contain zero `useState`.
 - Forms are entirely store-driven: `value={xForm.field}` with `onChange={st.do.setFieldOnX}`, the setter passed by reference. Always use `Field.*`, never a bare `<input>` for a model field. Nested rows use `st.do.writeOnX("payments.3.name", v)` plus the generated `add<Field>OnX` / `sub<Field>OnX`. **Passing the setter by reference is also what makes the framework emit `data-akan-action` / `data-akan-state`** on the control — the annotation an in-page agent, an E2E selector, and an external browser agent all read. Wrapping it in an inline arrow (`onChange={(v) => st.do.setFieldOnX(v)}`) silently drops that: a closure the caller wrote says nothing about what it does. Never hand-write a `data-akan-*` attribute.
 - Read with `st.use.*` and write with `st.do.*`. Client components do not call `fetch.*`.
+- **An edit shell recovers its own form — never persist form values yourself.** `Load.Edit`, `Model.EditModal` and
+  `Model.New` save the whole `<model>Form` as the user types and offer it back on the next open, so a modal closed
+  by accident, a route change, or a killed app costs nothing. The scope is the record id for an edit and the seed
+  plus the route for a new form, both keyed to the signed-in user, so another record or another parent never loads
+  someone else's half-finished form. A new form's draft is applied on open with a "start over" chip; an edit whose
+  record moved in the meantime is *not* applied, and asks. Turn it off with `draft={false}`, or name the scope
+  yourself with `draft="<scope>"` when the context is in neither the id nor the seed. `field.secret` and
+  `field.hidden` values are never saved. The old per-field `cache` / `cacheKey` props are deprecated and store
+  nothing — they covered five control types, keyed on the translated label, and restored over server data.
 - Static class strings stay plain strings. Reach for `cn` only for a conditional or to merge an incoming `className`, and merge the caller last: `cn("base classes", cond && "extra", className)`. `cn` comes from `akanjs/client` (token-aware tailwind-merge) and is the only class-combining function — no `clsx` (removed), no raw `twMerge` imports, no object syntax (`{ x: cond }` → `cond && "x"`).
 - Multi-slot components take extra named props (`wrapperClassName`, `bodyClassName`), never a `classNames` object.
 - Hoist enum→class lookups to a module-scope `as const` map typed `{ [key in cnst.XStatus["value"]]: string }`. Do not use `Record<...>`. Escalate the map to `webkit/` when a second module needs it.
@@ -863,6 +872,19 @@ when two shapes disagree.
 ## Application Test Commands
 
 - After changing application source code, test the app with `bun run akan start <appName>`.
+- **`akan start` takes several apps** — `akan start a,b`, `akan start a b`, `akan start all`, or no argument at
+  all for a checkbox that remembers the last pick.
+- **It opens a full-screen view by default, at any app count.** A rail of apps with the processes inside each
+  one — `host` for the dev host, gateway and RSC worker, plus a row per replica the gateway forwards — and the
+  selected one's log beside it. `Tab` walks every row and `1`-`9` jump to that app (the rail shows each
+  app's digit), `↑↓` scroll (shift for a page, `G` back to following),
+  `/` greps, `e` shows stderr only, `c` clears, `o` opens the browser, `r` restarts that app, `q` quits.
+  **`--plain` prints prefixed interleaved lines instead**, and a pipe, a redirect or an unsized terminal
+  downgrades to that on its own.
+- `--concurrency <n>` boots more than one app at a time; the default of 1 is what keeps two cold builder peaks
+  from overlapping. `--kill` frees the dev ports first — it resolves each port's listener, walks up to the top
+  of that akan dev tree and signals it, so another checkout's server or a stale orphan on the same port is
+  reclaimed. A holder that is not recognisably an akan process is reported and left alone.
 - Test production build generation with `bun run akan build <appName>`.
 - To test a built artifact locally, run it from the generated app directory with the required Akan runtime environment variables.
 

@@ -34,6 +34,7 @@ import {
   createWritableStateBuilder,
   type DerivedStateBuilder,
   type DerivedStateOf,
+  draftMetaOf,
   mergeDerivedMeta,
   resolveDerivedState,
   resolveWritableState,
@@ -217,6 +218,8 @@ export function store<Sig extends ClientSignal<any, any, any> | string, State>(
     };
     Object.assign(storeCls[STATE_META], signalState);
     Object.assign(storeCls[STATE_INIT_META], createStateInitializerMap(signalState));
+    const draftMeta = draftMetaOf(refName);
+    storeCls[STATE_DERIVED_META].drafts[draftMeta.formKey] = draftMeta;
     const actions = {
       ...makeFormSetter(refName, signal.fetch),
       ...makeActions(refName, signal.serializedSignal.slice ?? {}, signal.fetch),

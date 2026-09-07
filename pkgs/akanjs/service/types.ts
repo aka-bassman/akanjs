@@ -128,8 +128,14 @@ export type DatabaseService<
   __libsPostUpdate: (doc: Doc) => Promise<Doc>;
   __libsPreRemove: (id: string) => Promise<void>;
   __libsPostRemove: (doc: Doc) => Promise<Doc>;
-  listenPre: (type: SaveEventType, listener: (doc: Doc, type: CRUDEventType) => PromiseOrObject<void>) => () => void;
-  listenPost: (type: SaveEventType, listener: (doc: Doc, type: CRUDEventType) => PromiseOrObject<void>) => () => void;
+  listenPre: (
+    type: SaveEventType,
+    listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
+  ) => () => void;
+  listenPost: (
+    type: SaveEventType,
+    listener: (doc: Doc, type: CRUDEventType, previous?: Doc) => PromiseOrObject<void>,
+  ) => () => void;
 } & { [key in `${T}Model`]: Model } & {
   [K in `get${_CapitalizedRefName}`]: (id: string) => Promise<Doc>;
 } & {
