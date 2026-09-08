@@ -10,7 +10,48 @@ const hookStates: unknown[] = [];
 let latestObserver: FakeIntersectionObserver | undefined;
 const originalIntersectionObserver = globalThis.IntersectionObserver;
 
-const fakeElement = { nodeType: 1, nodeName: "DIV" } as Element;
+const fakeElement = { nodeType: 1, nodeName: "DIV", parentElement: null } as unknown as Element;
+
+interface FakeScroller {
+  scrollHeight: number;
+  clientHeight: number;
+  scrollTop: number;
+  overflowY: string;
+  parentElement: FakeScroller | null;
+}
+
+const originalDocument = (globalThis as { document?: unknown }).document;
+const originalGetComputedStyle = (globalThis as { getComputedStyle?: unknown }).getComputedStyle;
+
+/**
+ * The walk reads `parentElement`, `scrollHeight`/`clientHeight` and the computed `overflow-y`, so a chain of
+ * plain objects plus a `getComputedStyle` that reads the one back off them is the whole DOM this needs.
+ */
+const stubDom = (chain: FakeScroller[], scrollingElement: unknown = null) => {
+  let parent: FakeScroller | null = null;
+  for (const link of chain) {
+    link.parentElement = parent;
+    parent = link;
+  }
+  (fakeElement as unknown as { parentElement: FakeScroller | null }).parentElement = parent;
+  Object.defineProperty(globalThis, "document", {
+    value: { body: {}, documentElement: {}, scrollingElement },
+    configurable: true,
+  });
+  Object.defineProperty(globalThis, "getComputedStyle", {
+    value: (el: FakeScroller) => ({ overflowY: el.overflowY }),
+    configurable: true,
+  });
+};
+
+const makeScroller = (over: Partial<FakeScroller> = {}): FakeScroller => ({
+  scrollHeight: 1000,
+  clientHeight: 400,
+  scrollTop: 100,
+  overflowY: "auto",
+  parentElement: null,
+  ...over,
+});
 
 const resetHooks = () => {
   hookIndex = 0;
@@ -33,7 +74,10 @@ const tick = async () => {
 class FakeIntersectionObserver {
   observed: Element[] = [];
 
-  constructor(private readonly callback: IntersectionObserverCallback) {
+  constructor(
+    private readonly callback: IntersectionObserverCallback,
+    readonly options?: IntersectionObserverInit,
+  ) {
     latestObserver = this;
   }
 
@@ -108,6 +152,9 @@ afterEach(() => {
   for (const cleanup of effectCleanups.splice(0)) cleanup();
   latestObserver = undefined;
   resetHooks();
+  (fakeElement as unknown as { parentElement: unknown }).parentElement = null;
+  Object.defineProperty(globalThis, "document", { value: originalDocument, configurable: true });
+  Object.defineProperty(globalThis, "getComputedStyle", { value: originalGetComputedStyle, configurable: true });
   Object.defineProperty(globalThis, "IntersectionObserver", {
     value: originalIntersectionObserver,
     configurable: true,
@@ -156,5 +203,75 @@ describe("InfiniteScroll", () => {
     });
 
     expect(latestObserver?.observed).toHaveLength(0);
+  });
+
+  test("anchors reverse loads on the nearest scrolling ancestor, not the document", async () => {
+    const timeline = makeScroller();
+    const clipped = makeScroller({ overflowY: "hidden", scrollHeight: 1000, clientHeight: 1000 });
+    const page = makeScroller({ scrollTop: 0 });
+    stubDom([page, timeline, clipped], page);
+
+    await renderInfiniteScroll({
+      hasMore: true,
+      reverse: true,
+      onLoadMore: async () => {
+        timeline.scrollHeight = 1600;
+      },
+      children: "items",
+    });
+
+    latestObserver?.emit();
+    await tick();
+
+    expect(timeline.scrollTop).toBe(700);
+    expect(page.scrollTop).toBe(0);
+  });
+
+  test("scopes the trigger to the scrolling ancestor so it does not depend on page layout", async () => {
+    const timeline = makeScroller();
+    stubDom([makeScroller({ scrollTop: 0 }), timeline], makeScroller());
+
+    await renderInfiniteScroll({
+      hasMore: true,
+      reverse: true,
+      onLoadMore: async () => undefined,
+      children: "items",
+    });
+
+    expect(latestObserver?.options?.root).toBe(timeline as unknown as Element);
+  });
+
+  test("leaves the observer root implicit when the document is the scroller", async () => {
+    const scrollingElement = makeScroller();
+    stubDom([makeScroller({ overflowY: "visible", scrollHeight: 400, clientHeight: 400 })], scrollingElement);
+
+    await renderInfiniteScroll({
+      hasMore: true,
+      reverse: true,
+      onLoadMore: async () => undefined,
+      children: "items",
+    });
+
+    expect(latestObserver?.options?.root).toBeNull();
+  });
+
+  test("falls back to the document when no ancestor scrolls", async () => {
+    const scrollingElement = makeScroller({ scrollTop: 100 });
+    const plain = makeScroller({ overflowY: "visible", scrollHeight: 400, clientHeight: 400 });
+    stubDom([plain], scrollingElement);
+
+    await renderInfiniteScroll({
+      hasMore: true,
+      reverse: true,
+      onLoadMore: async () => {
+        scrollingElement.scrollHeight = 1600;
+      },
+      children: "items",
+    });
+
+    latestObserver?.emit();
+    await tick();
+
+    expect(scrollingElement.scrollTop).toBe(700);
   });
 });

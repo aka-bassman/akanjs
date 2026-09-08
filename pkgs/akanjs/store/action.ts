@@ -1241,6 +1241,13 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
        * asking for what comes after them cannot drift from what is displayed. It also leaves `pageOf<Model>` at
        * 1, which is what keeps live placement — refused anywhere but the first page — working past the first
        * "more".
+       *
+       * It reads `<model>ListLoading` and never sets it: an append leaves the rows on screen, so raising it
+       * would put the whole-list spinner over one and would make `applyLive<Model>` drop every live event until
+       * the batch lands. So concurrent calls are NOT rejected — two of them fetch the same offset, since the
+       * list they measure has not grown yet. That is a wasted round trip and never a wrong list: the ticket
+       * makes only the newest response apply, and both asked for the same rows. A caller that minds the wasted
+       * request holds its own in-flight flag, the way `InfiniteScroll` does.
        */
       [namesOfSlice.loadMoreOfModel]: async function (this: SetGet, options?: FetchPolicy) {
         const currentState = this.get() as { [key: string]: any };
