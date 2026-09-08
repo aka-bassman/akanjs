@@ -6,7 +6,11 @@ export interface InfiniteScrollProps {
   hasMore: boolean;
   onLoadMore: () => Promise<void>;
   children: React.ReactNode;
-  /** Load earlier rows above the ones in hand, preserving the reading position. Assumes normal column flow. */
+  /**
+   * Load earlier rows above the ones in hand, preserving the reading position across the prepend. Assumes
+   * normal column flow. It does not scroll anywhere at mount, so a list meant to open at its newest row scrolls
+   * itself — and until it does, the sentinel is on screen and loads one window unasked.
+   */
   reverse?: boolean;
 }
 
