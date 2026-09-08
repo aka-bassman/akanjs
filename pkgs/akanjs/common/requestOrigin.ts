@@ -5,8 +5,7 @@
 export const originFromRequest = (headers: Headers, url: URL): string => {
   // A proxy terminates TLS and rewrites the host, so the parsed request origin is the internal one behind it.
   const forwardedProto = headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-  const forwardedHost = headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-  const host = forwardedHost ?? headers.get("host")?.split(",")[0]?.trim();
+  const host = hostFromRequest(headers, url);
   const proto = forwardedProto ?? url.protocol.slice(0, -1);
   if (host && proto) {
     try {
@@ -17,6 +16,14 @@ export const originFromRequest = (headers: Headers, url: URL): string => {
   }
   return url.origin;
 };
+
+/**
+ * The host a caller addressed, which — unlike the scheme — every proxy that rewrites the request still reports.
+ * `Host` is set by the browser from the URL it was told to open, so it names *this* deployment even for a
+ * request some other page initiated.
+ */
+export const hostFromRequest = (headers: Headers, url: URL): string =>
+  headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? headers.get("host")?.split(",")[0]?.trim() ?? url.host;
 
 /**
  * Whether a request body may be read as JSON.

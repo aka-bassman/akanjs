@@ -19,6 +19,7 @@ import { endpoint } from "../../signal/endpoint";
 import { Public } from "../../signal/guards";
 import { type Internal, internal } from "../../signal/internal";
 import { Ws } from "../../signal/internalArg";
+import type { SignalContext } from "../../signal/signalContext";
 import { slice } from "../../signal/slice";
 import { CascadeRunner } from "./CascadeRunner";
 import { DatabaseResolver } from "./database.resolver";
@@ -348,6 +349,21 @@ describe("DatabaseResolver declaration contracts", () => {
       serverResolverTestDatabase,
     );
     expect(polymorphic.schema.indexes).toContainEqual({ fields: { removedAt: 1, parentType: 1, parent: 1 } });
+
+    // A wildcard owner names no candidate, and the index is what keeps its sweep an empty probe rather than a
+    // scan — the whole reason `polymorphic: "any"` is affordable at all.
+    const wildcard = DatabaseResolver.resolveDatabase(
+      constantWith({
+        key: "parent",
+        modelRef: null,
+        refName: null,
+        typeKey: "parentType",
+        typeValues: [],
+        anyOwner: true,
+      }),
+      serverResolverTestDatabase,
+    );
+    expect(wildcard.schema.indexes).toContainEqual({ fields: { removedAt: 1, parentType: 1, parent: 1 } });
   });
 });
 
@@ -380,6 +396,7 @@ describe("ServiceResolver cascade", () => {
 
   const childTarget = (hasHook = false) => {
     const calls: { method: string; arg: unknown }[] = [];
+    const listQueries: unknown[] = [];
     const ids = ["child-1", "child-2"];
     class ChildService {
       async _postRemove(doc: unknown) {
@@ -389,6 +406,7 @@ describe("ServiceResolver cascade", () => {
     class PlainChildService {}
     return {
       calls,
+      listQueries,
       srvRef: (hasHook ? ChildService : PlainChildService) as never,
       service: {
         __remove: async (id: string) => {
@@ -402,7 +420,10 @@ describe("ServiceResolver cascade", () => {
           ids.length = 0;
           return { acknowledged: true, matchedCount: 2, modifiedCount: 2 };
         },
-        __listIds: async () => [...ids],
+        __listIds: async (query: unknown) => {
+          listQueries.push(query);
+          return [...ids];
+        },
         __databaseModel: {
           __remove: async () => {
             throw new Error("cascade reached the target model directly");
@@ -538,6 +559,34 @@ describe("ServiceResolver cascade", () => {
     await service.__remove("parent-1");
 
     expect(child.calls).toEqual([{ method: "__removeMany", arg: { owner: "parent-1", ownerType: parentRef } }]);
+  });
+
+  test("sweeps a wildcard child on every removal, one document at a time", async () => {
+    const child = childTarget();
+    const { service } = buildCascade(
+      constantOf(parentRef, {}),
+      child,
+      constantOf("cascadeChild", {
+        removeWith: new Map([
+          [
+            "owner",
+            { key: "owner", modelRef: null, refName: null, typeKey: "ownerType", typeValues: [], anyOwner: true },
+          ],
+        ]),
+      }),
+    );
+    service.__databaseModel = { __remove: async (id: string) => ({ id }) } as never;
+
+    await service.__remove("parent-1");
+
+    // The owner is unknowable at boot, so the removed model's own refName is what the sweep matches on.
+    expect(child.listQueries.at(0)).toEqual({ owner: "parent-1", ownerType: parentRef });
+    // And the same declaration takes bulk away everywhere: a query-level removal of any model would be one whose
+    // wildcard children were never looked for, so this child goes one document at a time despite carrying no hook.
+    expect(child.calls).toEqual([
+      { method: "__remove", arg: "child-1" },
+      { method: "__remove", arg: "child-2" },
+    ]);
   });
 });
 
@@ -1052,6 +1101,120 @@ describe("SignalResolver declaration contracts", () => {
       ["room", "category", true],
       ["room", "title", true],
     ]);
+  });
+
+  test("gates a live room with the slice's own guards, not the single-document read guard", async () => {
+    // A `Can<Verb><Model>` read guard looks for the model's own id and fails closed without one, which a room's
+    // arguments never carry. Taking `guards.get` here refused every subscribe on a slice that lists by a parent.
+    class NeedsItemId {
+      static name = "User";
+      static scope = "resource" as const;
+      canPass(context: SignalContext) {
+        return !!context.getArg<string>("id");
+      }
+    }
+    class GuardedLiveSlice extends slice(
+      serverResolverTestServiceModel,
+      { guards: { root: Public, get: NeedsItemId, cru: Public } },
+      (init) => ({
+        inCategory: init({ guards: [Public] })
+          .search("category", String)
+          .live()
+          .exec(function (category) {
+            return this.serverResolverTestItemService.queryInCategory(category ?? "all");
+          }),
+      }),
+    ) {}
+
+    const SliceEndpoint = SignalResolver.resolveSlice(GuardedLiveSlice);
+    const liveInfo = SliceEndpoint[ENDPOINT_META].serverResolverTestItemLiveInCategory;
+    expect(liveInfo.signalOption.guards).toEqual([Public]);
+    // The generated single-document read keeps the guard that belongs to it.
+    expect(SliceEndpoint[ENDPOINT_META].serverResolverTestItem.signalOption.guards).toEqual([NeedsItemId]);
+
+    const sliceEndpoint = new SliceEndpoint() as InstanceType<typeof SliceEndpoint> & Record<string, unknown>;
+    sliceEndpoint.serverResolverTestItemService = { queryInCategory: (category: string) => ({ category }) };
+    const registry = getDefaultInjectRegistry();
+    const websocket = makeFakeWebsocket();
+    registry.adaptor.set(SolidPubSub, websocket.instance);
+    const live = getDefaultLiveRegistry();
+    live.sliceCls.set(GuardedLiveSlice.baseName, GuardedLiveSlice as never);
+    live.service.set("serverResolverTestItem", { listenPost: () => undefined } as never);
+    SignalResolver.registerLiveSync(GuardedLiveSlice, { registry, live });
+    const resolved = SignalResolver.resolveEndpoint(SliceEndpoint, sliceEndpoint as never, {
+      registry,
+      env: makeEnv(),
+      live,
+      middleware: new Map(),
+    });
+
+    const ack = await resolved.wsRoutes?.serverResolverTestItemLiveInCategory?.(makeWs(), ["news"], "subscribe");
+    expect(ack).toMatchObject({ type: "sub", subscribe: true });
+    expect(live.syncHub.roomCountOf("serverResolverTestItem")).toBe(1);
+  });
+
+  test("pauses a live room while a declared argument carries a value", async () => {
+    class PausedLiveSlice extends slice(
+      serverResolverTestServiceModel,
+      { guards: { root: Public, get: Public, cru: Public } },
+      (init) => ({
+        inCategory: init({ guards: [Public] })
+          .param("category", String)
+          .search("text", String)
+          .live({ pauseOn: ["text"] })
+          .exec(function (category) {
+            return this.serverResolverTestItemService.queryInCategory(category);
+          }),
+      }),
+    ) {}
+
+    const SliceEndpoint = SignalResolver.resolveSlice(PausedLiveSlice);
+    expect(SliceEndpoint[ENDPOINT_META].serverResolverTestItemLiveInCategory.signalOption.live).toMatchObject({
+      pauseOn: ["text"],
+    });
+
+    const sliceEndpoint = new SliceEndpoint() as InstanceType<typeof SliceEndpoint> & Record<string, unknown>;
+    sliceEndpoint.serverResolverTestItemService = { queryInCategory: (category: string) => ({ category }) };
+    const registry = getDefaultInjectRegistry();
+    const websocket = makeFakeWebsocket();
+    registry.adaptor.set(SolidPubSub, websocket.instance);
+    const live = getDefaultLiveRegistry();
+    live.sliceCls.set(PausedLiveSlice.baseName, PausedLiveSlice as never);
+    live.service.set("serverResolverTestItem", { listenPost: () => undefined } as never);
+    SignalResolver.registerLiveSync(PausedLiveSlice, { registry, live });
+    const resolved = SignalResolver.resolveEndpoint(SliceEndpoint, sliceEndpoint as never, {
+      registry,
+      env: makeEnv(),
+      live,
+      middleware: new Map(),
+    });
+    const subscribeTo = async (args: unknown[]) =>
+      await resolved.wsRoutes?.serverResolverTestItemLiveInCategory?.(makeWs(), args, "subscribe");
+
+    expect(await subscribeTo(["news", null])).toMatchObject({ type: "sub", subscribe: true });
+    expect(live.syncHub.roomCountOf("serverResolverTestItem")).toBe(1);
+
+    // A client that ignores the declaration is refused rather than handed the room the slice said not to open.
+    await expect(subscribeTo(["news", "lovelace"])).rejects.toThrow(/paused while "text" carries a value/);
+    expect(live.syncHub.roomCountOf("serverResolverTestItem")).toBe(1);
+  });
+
+  test("refuses a pauseOn naming an unknown argument or a required one", () => {
+    const build = (pauseOn: string[]) =>
+      class extends slice(serverResolverTestServiceModel, { guards: { root: Public, get: Public } }, (init) => ({
+        inCategory: init()
+          .param("category", String)
+          .search("text", String)
+          .live({ pauseOn: pauseOn as never })
+          .exec(function (category) {
+            return this.serverResolverTestItemService.queryInCategory(category);
+          }),
+      })) {};
+
+    expect(() => SignalResolver.resolveSlice(build(["nope"]))).toThrow(/not one of its arguments/);
+    // A param is never nullable, so pausing on one would switch the room off for good.
+    expect(() => SignalResolver.resolveSlice(build(["category"]))).toThrow(/always present/);
+    expect(() => SignalResolver.resolveSlice(build(["text"]))).not.toThrow();
   });
 
   test("refuses a live root slice and a live sort the model does not have", () => {

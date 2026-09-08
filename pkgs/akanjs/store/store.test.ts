@@ -112,7 +112,7 @@ const makeSignal = () => {
   };
   const sortValueMap = new Map([["storeTestItem", { latest: { createdAt: -1 as const } }]]);
   const rooms: { args: unknown[]; handleEvent: (event: unknown) => void; onResync?: () => void; open: boolean }[] = [];
-  calls.subscribeStoreTestItemLiveByTitle = mock((...argData: unknown[]) => {
+  const recordRoom = (...argData: unknown[]) => {
     const handleEvent = argData.at(-2) as (event: unknown) => void;
     const policy = argData.at(-1) as { onResync?: () => void };
     const room = { args: argData.slice(0, -2), handleEvent, onResync: policy?.onResync, open: true };
@@ -120,7 +120,9 @@ const makeSignal = () => {
     return () => {
       room.open = false;
     };
-  }) as never;
+  };
+  calls.subscribeStoreTestItemLiveByTitle = mock(recordRoom) as never;
+  calls.subscribeStoreTestItemLiveBySearch = mock(recordRoom) as never;
   const fetch = new Proxy(calls, {
     get(target, key: string) {
       if (key === "sortValueMap") return sortValueMap;
@@ -135,6 +137,13 @@ const makeSignal = () => {
       "": { args: [{ type: "search", name: "query", refName: "String", nullable: true }] },
       byTitle: { args: [{ type: "param", name: "title", refName: "String" }], live: { sort: ["latest"] } },
       byTags: { args: [{ type: "search", name: "tags", refName: "String", arrDepth: 1, nullable: true }] },
+      bySearch: {
+        args: [
+          { type: "param", name: "title", refName: "String" },
+          { type: "search", name: "text", refName: "String", nullable: true },
+        ],
+        live: { sort: ["latest"], pauseOn: ["text"] },
+      },
     },
   };
   return {
@@ -756,6 +765,24 @@ describe("live sync store action", () => {
 
     await instance.do.watchLiveStoreTestItemByTitle(null);
     expect(signal.rooms[1].open).toBe(false);
+  });
+
+  test("a filled pauseOn argument opens no room, and clearing it opens one", async () => {
+    const { instance, signal } = await arrange();
+    // Text in the box makes the filter build a query the router cannot answer, so there is no room to open.
+    await instance.do.watchLiveStoreTestItemBySearch(["Ada", "lovelace"]);
+    expect(signal.rooms).toHaveLength(0);
+
+    await instance.do.watchLiveStoreTestItemBySearch(["Ada", null]);
+    expect(signal.rooms).toHaveLength(1);
+    // The trailing null is trimmed and re-expanded, which is what the list query sends too; the fetch handler
+    // serializes the hole to an explicit null so the room id matches the server's.
+    expect(signal.rooms[0].args).toEqual(["Ada", undefined]);
+
+    // And filling it again releases the room rather than leaving one open on stale arguments.
+    await instance.do.watchLiveStoreTestItemBySearch(["Ada", "lovelace"]);
+    expect(signal.rooms[0].open).toBe(false);
+    expect(signal.rooms).toHaveLength(1);
   });
 
   test("a room that comes back after a drop reloads the list", async () => {

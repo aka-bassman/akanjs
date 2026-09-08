@@ -389,9 +389,14 @@ export class SignalResolver {
                 `and opening it would put every model on a live socket by default.`,
             );
           SignalResolver.#assertLiveSort(refName, key, sliceInfo);
+          SignalResolver.#assertLivePauseOn(refName, key, sliceInfo);
           const liveKey = `${refName}Live${capitalizedKey}`;
+          // The slice's own option, exactly as the list and insight endpoints beside it take — a room delivers the
+          // rows that list would, so it has to be gated by the same guards. `getGuards` is the single-document read
+          // (`bizDoc(bizDocId)`), and a resource guard of that shape looks for an id the room's arguments do not
+          // carry, so it fails closed on every subscribe.
           const liveBuilder = (builder as any).pubsub(Any, {
-            guards: sliceCls.getGuards,
+            ...sliceInfo.signalOption,
             mcp: false,
             live: {
               refName,
@@ -399,6 +404,7 @@ export class SignalResolver {
               sort: sliceInfo.liveOption.sort,
               fallback: sliceInfo.liveOption.fallback,
               payload: sliceInfo.liveOption.payload,
+              pauseOn: sliceInfo.liveOption.pauseOn,
             } satisfies LiveEndpointOption,
           });
           endpointObj[liveKey] = liveBuilder
@@ -501,6 +507,44 @@ export class SignalResolver {
             `column. SQLite and Postgres order those differently, so a client placing a row may disagree with the server.`,
         );
       }
+    }
+  }
+  /** Refuses a subscribe carrying an argument the slice named in `pauseOn`, naming the argument it refused on. */
+  static #assertNotPaused(
+    key: string,
+    liveOption: LiveEndpointOption,
+    endpointInfo: EndpointInfo,
+    context: SignalContext,
+  ) {
+    for (const name of liveOption.pauseOn) {
+      const idx = endpointInfo.args.findIndex((arg) => arg.name === name);
+      if (idx < 0 || context.args[idx] == null) continue;
+      throw new Error(
+        `Live room "${key}" is paused while "${name}" carries a value: the slice declared it in ` +
+          `.live({ pauseOn }), so this window updates by refetching instead of subscribing.`,
+      );
+    }
+  }
+  /**
+   * That every argument `pauseOn` names is one this slice has, and one that can actually be empty.
+   *
+   * A name that is not an argument would do nothing at all, and a `param` — which is never nullable, so it is
+   * present on every call — would switch the room off for good rather than while a box is filled. Both are the
+   * kind of mistake whose only symptom is a list that never updates, so neither is allowed to boot.
+   */
+  static #assertLivePauseOn(refName: string, key: string, sliceInfo: SliceInfo) {
+    for (const name of sliceInfo.liveOption?.pauseOn ?? []) {
+      const arg = sliceInfo.args.find((candidate) => candidate.name === name);
+      if (!arg)
+        throw new Error(
+          `Live slice "${refName}.${key}" declares pauseOn "${name}", which is not one of its arguments ` +
+            `(${sliceInfo.args.map((candidate) => candidate.name).join(", ") || "none"}).`,
+        );
+      if (!arg.option?.nullable)
+        throw new Error(
+          `Live slice "${refName}.${key}" declares pauseOn "${name}", which is a required ${arg.type} and is ` +
+            `therefore always present — the room would never open. Only a nullable argument can pause live sync.`,
+        );
     }
   }
   /**
@@ -682,6 +726,9 @@ export class SignalResolver {
               // every room but a live one it is also the room itself.
               const requestRoomId = context.getRoomId(key);
               if (subscribe) {
+                // Before the handler runs: the slice said a room must not exist while this argument is filled, and
+                // a client bundle from before that declaration would otherwise still open one.
+                if (liveOption) SignalResolver.#assertNotPaused(key, liveOption, endpointInfo, context);
                 const query = await context.exec();
                 const roomId = liveOption ? context.getLiveRoomId(key) : requestRoomId;
                 if (liveOption)

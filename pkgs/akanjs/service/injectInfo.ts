@@ -1,4 +1,4 @@
-import { type BackendEnv, type Cls, INJECT_META } from "akanjs/base";
+import { type BackendEnv, type Cls, INJECT_META, PrimitiveRegistry } from "akanjs/base";
 import {
   type ConstantFieldTypeInput,
   ConstantRegistry,
@@ -389,6 +389,11 @@ export const injectionBuilder = (parentRefName: string) => ({
       throw new Error("get and set should be both provided or not provided");
     const isMap = modelRef === Map;
     if (isMap && !opts.of) throw new Error("of should be provided when modelRef is Map");
+    const valueRef = (isMap ? opts.of : modelRef) as Cls;
+    // A cache holds a string, a number or a Buffer. A model or scalar class serializes to an object, which Redis
+    // coerces to "[object Object]" and only the sqlite-backed cache happens to JSON on its own — so the value
+    // travels as text either way and the two adaptors round-trip the same declaration.
+    const isStructured = Array.isArray(valueRef) || !PrimitiveRegistry.has(valueRef);
     type FieldValue = never extends GetFn ? GetFieldValue<ValueRef, ExplicitType, MapValue> : ReturnType<GetFn>;
     type MapFieldValue = never extends GetFn ? FieldToValue<MapValue> : ReturnType<GetFn>;
     type IsNullable = DefaultValue extends never ? true : false;
@@ -425,16 +430,14 @@ export const injectionBuilder = (parentRefName: string) => ({
     >("memory", {
       local: opts.local,
       get: (serializedValue: never) => {
-        const rawValue = serializedValue as object | null;
-        return (
-          ConstantRegistry.deserialize(isMap ? (opts.of as Cls) : (modelRef as Cls), rawValue ?? opts.default, true) ??
-          null
-        );
+        const stored = serializedValue as unknown;
+        // A row written before this encoding, and the sqlite cache's own `json` type, both arrive already parsed.
+        const rawValue = isStructured && typeof stored === "string" ? JSON.parse(stored) : stored;
+        return ConstantRegistry.deserialize(valueRef, (rawValue as object | null) ?? opts.default, true) ?? null;
       },
       set: (value: never) => {
-        return (
-          ConstantRegistry.serialize(isMap ? (opts.of as Cls) : (modelRef as Cls), value, true) ?? opts.default ?? null
-        );
+        const serialized = ConstantRegistry.serialize(valueRef, value, true) ?? opts.default ?? null;
+        return isStructured ? JSON.stringify(serialized) : serialized;
       },
       default: opts.default as unknown,
       isMap,

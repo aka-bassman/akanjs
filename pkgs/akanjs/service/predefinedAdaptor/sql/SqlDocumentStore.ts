@@ -44,6 +44,11 @@ import {
 import { UpdateCompiler } from "./UpdateCompiler";
 import { decodeDateValue, encodeSqlValue, jsonStr } from "./values";
 
+// A field hands out its own literal default — the `[]` every array field is given when it declares no default
+// included. The constant layer copies it on the way into an instance (`crystalize`); this path does not, so
+// without a copy one document's `push` lands in the model default and in every document filled from it after.
+const freshDefault = (value: unknown) => (Array.isArray(value) ? [...(value as unknown[])] : value);
+
 export class SqlDocumentStore {
   readonly schema: DocumentSchema;
   readonly table: string;
@@ -346,7 +351,12 @@ export class SqlDocumentStore {
       const value = data[key];
       if (value === undefined) {
         if (props.default !== undefined && props.default !== null) {
-          doc[key] = typeof props.default === "function" ? props.default(data) : props.default;
+          doc[key] = freshDefault(typeof props.default === "function" ? props.default(data) : props.default);
+        } else if (props.isClass && props.isScalar && !props.nullable) {
+          // A nested scalar owns its own field defaults, so an absent one is constructible rather than missing —
+          // the rule `getDefault` already applies, nullable first. A relation is not constructible: only the
+          // caller knows which row it names, so it keeps failing closed below.
+          doc[key] = getDefault((props.modelRef as { [FIELD_META]: FieldMap })[FIELD_META] as never);
         } else if (!props.nullable && !["removedAt"].includes(key)) {
           if (["id", "createdAt", "updatedAt"].includes(key)) continue;
           throw new Error(`Missing required field: ${key}`);
@@ -619,9 +629,13 @@ export class SqlDocumentStore {
       if (value === undefined) {
         const def = props.default;
         if (def != null) {
-          result[key] = typeof def === "function" ? (def as (data: unknown) => unknown)(payload) : def;
+          result[key] = freshDefault(typeof def === "function" ? (def as (data: unknown) => unknown)(payload) : def);
         } else if (props.nullable) {
           result[key] = null;
+        } else if (props.isClass && props.isScalar) {
+          // A row written before the field was declared carries no value for it. A scalar has no DEFAULT_VALUE to
+          // fall back on, and reading it as `null` makes the next save of that row fail its own not-null check.
+          result[key] = getDefault((props.modelRef as { [FIELD_META]: FieldMap })[FIELD_META] as never);
         } else {
           result[key] =
             ((props as Record<string, unknown>).modelRef as { [DEFAULT_VALUE]?: unknown })?.[DEFAULT_VALUE] ?? null;

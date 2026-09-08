@@ -19,8 +19,10 @@ export interface CascadeWithPath {
   readonly refName: string | null;
   /** Set when the field declares `refPath`: the sibling field holding the owner's refName. */
   readonly typeKey: string | null;
-  /** The refNames `typeKey` may hold. Empty unless the field is polymorphic. */
+  /** The refNames `typeKey` may hold. Empty unless the field is polymorphic over an enum. */
   readonly typeValues: readonly string[];
+  /** Set by `polymorphic: "any"`: `typeKey` is free-form, so the owner is whatever refName the row holds. */
+  readonly anyOwner: boolean;
 }
 
 const idNames = new Set(["ID", "String"]);
@@ -33,12 +35,23 @@ export class CascadePaths {
 
   collect(fieldMap: FieldObject) {
     for (const [key, field] of Object.entries(fieldMap)) {
+      this.#assertPolymorphicIsWiredUp(key, field);
       if (!field.cascade) continue;
       this.#assertKnownAction(key, field.cascade);
       if (field.cascade === "removeRef") this.removeRef.set(key, this.#readOwnedRelation(key, field));
       else this.removeWith.set(key, this.#readOwnerPath(key, field, fieldMap));
     }
     return this;
+  }
+
+  /** `polymorphic` widens one thing and nothing else, so anywhere else it is a declaration that does nothing. */
+  #assertPolymorphicIsWiredUp(key: string, field: ConstantField) {
+    if (!field.polymorphic) return;
+    if (field.cascade === "removeWith" && field.refPath) return;
+    throw new Error(
+      `Field "${key}" declares polymorphic: "${field.polymorphic}", which only widens a ` +
+        `cascade: "removeWith" field that names its owner type with refPath`,
+    );
   }
 
   #assertKnownAction(key: string, action: CascadeAction) {
@@ -66,10 +79,10 @@ export class CascadePaths {
     if (field.refPath) return this.#readPolymorphicOwner(key, field, fieldMap);
     if (field.ref) {
       this.#assertHoldsId(key, field);
-      return { key, modelRef: null, refName: field.ref, typeKey: null, typeValues: [] };
+      return { key, modelRef: null, refName: field.ref, typeKey: null, typeValues: [], anyOwner: false };
     }
     if (field.isClass && !field.isScalar) {
-      return { key, modelRef: field.modelRef, refName: null, typeKey: null, typeValues: [] };
+      return { key, modelRef: field.modelRef, refName: null, typeKey: null, typeValues: [], anyOwner: false };
     }
     throw new Error(
       `Cascade field "${key}" declares cascade: "removeWith" but names no owner; make it a model reference, ` +
@@ -83,24 +96,46 @@ export class CascadePaths {
     const typeKey = field.refPath as string;
     const typeField = fieldMap[typeKey];
     if (!typeField) throw new Error(`Cascade field "${key}" declares refPath: "${typeKey}", which is not a field`);
+    if (field.polymorphic === "any") return this.#readAnyOwner(key, typeKey, typeField);
     // A free-form owner type is unknowable at build time, so every model's removal would have to sweep this table
     // on the chance it is the owner. An enum names the candidates, and the reverse index then reaches only them.
     if (!typeField.enum) {
       throw new Error(
         `Cascade field "${key}" declares refPath: "${typeKey}", which must be an enumOf(...) naming the owner ` +
-          `refNames it may hold`,
+          `refNames it may hold; declare polymorphic: "any" to pay for a sweep on every removal instead`,
       );
     }
     const typeValues = typeField.enum.values.map((value) => String(value));
-    return { key, modelRef: null, refName: null, typeKey, typeValues };
+    return { key, modelRef: null, refName: null, typeKey, typeValues, anyOwner: false };
+  }
+
+  #readAnyOwner(key: string, typeKey: string, typeField: ConstantField): CascadeWithPath {
+    // An enum already names the candidates and gets the reverse index for free, so widening it would only cost.
+    if (typeField.enum) {
+      throw new Error(
+        `Cascade field "${key}" declares polymorphic: "any" and a refPath naming an enumOf(...); keep one`,
+      );
+    }
+    // The sweep matches the removed model's refName against this column, so a column that cannot hold one finds
+    // nothing — and a cascade that finds nothing is indistinguishable from one that was never declared.
+    if (this.#primitiveNameOf(typeField) !== "String") {
+      throw new Error(
+        `Cascade field "${key}" declares polymorphic: "any", so refPath: "${typeKey}" must be a String field ` +
+          `holding the owner's refName`,
+      );
+    }
+    return { key, modelRef: null, refName: null, typeKey, typeValues: [], anyOwner: true };
   }
 
   #assertHoldsId(key: string, field: ConstantField) {
-    const modelRef = field.modelRef as unknown as Cls;
-    const refName = PrimitiveRegistry.has(modelRef)
-      ? PrimitiveRegistry.getName(modelRef as unknown as typeof PrimitiveScalar)
-      : null;
+    const refName = this.#primitiveNameOf(field);
     if (refName && idNames.has(refName)) return;
     throw new Error(`Cascade field "${key}" declares ref or refPath and must hold an ID`);
+  }
+
+  #primitiveNameOf(field: ConstantField) {
+    const modelRef = field.modelRef as unknown as Cls;
+    if (!PrimitiveRegistry.has(modelRef)) return null;
+    return PrimitiveRegistry.getName(modelRef as unknown as typeof PrimitiveScalar);
   }
 }

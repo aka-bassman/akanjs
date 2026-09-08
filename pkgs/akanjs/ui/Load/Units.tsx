@@ -163,12 +163,19 @@ function Render<RefName extends string, Light extends { id: string }>({
   }, [initSignature]);
 
   // A no-op on a slice that did not declare `.live()`, which is why it is called without asking first.
+  //
+  // The room follows the store's arguments rather than the ones this route hydrated with: a filter applied
+  // in the browser writes `queryArgsOf<Model><Slice>` and leaves `init` exactly as it was, so keying on `init`
+  // alone left the room subscribed to the unfiltered list while the screen showed a filtered one. Read inside
+  // the effect, because the hydration effect above runs first in the same commit and this render's value is
+  // still the pre-hydration default.
+  const queryArgsSignature = JSON.stringify(storeUse[namesOfSlice.queryArgsOfModel]());
   useEffect(() => {
-    void storeDo[namesOfSlice.watchLiveModel](initQueryArgs);
+    void storeDo[namesOfSlice.watchLiveModel](storeGet<object[]>()[namesOfSlice.queryArgsOfModel] ?? initQueryArgs);
     return () => {
       void storeDo[namesOfSlice.watchLiveModel](null);
     };
-  }, [initSignature]);
+  }, [initSignature, queryArgsSignature]);
 
   useEffect(() => {
     const modelStaleAt = storeGet<Date>()[namesOfSlice.modelStaleAt];

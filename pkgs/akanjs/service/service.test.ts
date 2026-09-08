@@ -225,6 +225,9 @@ const makeFakeDatabaseModel = () => {
   return model;
 };
 
+const CallStateInput = via((f) => ({ status: f(String), muted: f(Boolean, { default: false }) }));
+ConstantRegistry.buildScalar("serviceTestCallState", CallStateInput, { CallStateInput });
+
 const dbMethods = ServiceModel.getDefaultDbServiceMethods("ServiceTestItem");
 const filterMethods = ServiceModel.getFilterServiceMethods(
   "inCategory",
@@ -655,6 +658,35 @@ describe("dependency injection resolution", () => {
     );
     expect(() => builder.memory(String, { get: (value: string) => value })).toThrow("get and set should be both");
     expect(() => builder.memory(Map)).toThrow("of should be provided");
+  });
+
+  test("carries a structured memory value as text so both caches hold the same thing", async () => {
+    const cache = makeFakeCache();
+    class CacheAdaptorRef extends adapt("solidCache") {}
+    const registry = getDefaultInjectRegistry();
+    registry.adaptorCls.set("solidCache", CacheAdaptorRef);
+    registry.adaptor.set(CacheAdaptorRef, cache as unknown as Adaptor);
+
+    class StateService extends serve("serviceTestState" as const, ({ memory }) => ({
+      participants: memory(Map, { of: CallStateInput }),
+    })) {}
+    const instance = new StateService() as StateService & {
+      participants: {
+        get: (key: string) => Promise<{ status: string; muted: boolean } | undefined>;
+        set: (key: string, value: { status: string; muted: boolean }) => Promise<void>;
+      };
+    };
+    await InjectInfo.resolveInjection(instance, StateService, registry, {} as never);
+
+    await instance.participants.set("user-1", { status: "speaking", muted: false });
+
+    // A cache holds a string, a number or a Buffer. Redis coerces anything else to "[object Object]" while the
+    // sqlite-backed cache JSONs it on its own, so a value that leaves as an object means two different things
+    // per deployment — and the app hand-encodes JSON to get one of them back.
+    const stored = cache.calls.at(-1)?.args[3];
+    expect(typeof stored).toBe("string");
+    expect(JSON.parse(stored as string)).toMatchObject({ status: "speaking", muted: false });
+    expect(await instance.participants.get("user-1")).toMatchObject({ status: "speaking", muted: false });
   });
 
   test("resolves use, env, plug, service, database, signal, and memory injections", async () => {

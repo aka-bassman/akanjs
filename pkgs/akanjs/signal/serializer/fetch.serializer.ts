@@ -110,7 +110,14 @@ export class FetchSerializer {
       ...(sliceInfo.signalOption.path ? { path: sliceInfo.signalOption.path } : {}),
       ...(guards?.length ? { guards } : {}),
       ...(sliceInfo.signalOption.mcp === false ? { mcp: false as const } : {}),
-      ...(sliceInfo.liveOption ? { live: { sort: sliceInfo.liveOption.sort } } : {}),
+      ...(sliceInfo.liveOption
+        ? {
+            live: {
+              sort: sliceInfo.liveOption.sort,
+              ...(sliceInfo.liveOption.pauseOn.length ? { pauseOn: sliceInfo.liveOption.pauseOn } : {}),
+            },
+          }
+        : {}),
     };
   }
 

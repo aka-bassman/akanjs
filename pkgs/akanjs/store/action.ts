@@ -1035,6 +1035,10 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
     // list is one piece of store state, so a second component reading it must not open a second room applying
     // every event to it twice.
     let liveWatch: { signature: string; dispose: () => void } | null = null;
+    // Resolved once per slice: the positions of the arguments whose presence switches the room off (§`pauseOn`).
+    const livePauseIdxs = (slice.live?.pauseOn ?? [])
+      .map((name) => slice.args.findIndex((arg) => arg.name === name))
+      .filter((idx) => idx >= 0);
     const namesOfSlice: { [key in SliceActionKey | SliceStateKey | "modelList"]: string } = {
       defaultModel: SliceName.replace(names.Model, names.defaultModel),
       modelInsight: sliceName.replace(names.model, names.modelInsight),
@@ -1417,12 +1421,15 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       [namesOfSlice.watchLiveModel]: function (this: SetGet, queryArgs: unknown[] | null) {
         if (!slice.live) return;
         const args = queryArgs ? expandQueryArgs(normalizeQueryArgs(queryArgs, slice.args), slice.args) : null;
-        const signature = args ? JSON.stringify(args) : null;
+        // A filled `pauseOn` argument reads exactly like no arguments at all: an open room is closed and none is
+        // opened, so the window falls back to refetching until the argument is cleared again.
+        const paused = !!args && livePauseIdxs.some((idx) => args[idx] != null);
+        const signature = args && !paused ? JSON.stringify(args) : null;
         if (liveWatch && signature !== liveWatch.signature) {
           liveWatch.dispose();
           liveWatch = null;
         }
-        if (!args || liveWatch) return;
+        if (!args || paused || liveWatch) return;
         const self = this as unknown as DynamicRecord;
         const apply = self[namesOfSlice.applyLiveModel] as (event: unknown) => void;
         const refresh = self[namesOfSlice.refreshModel] as (form: object) => Promise<void>;

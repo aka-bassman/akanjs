@@ -76,6 +76,8 @@ export interface LiveEndpointOption {
   sort: string[];
   fallback: "invalidate" | null;
   payload: "light" | "id";
+  /** Room arguments that must be empty for the room to exist at all. Enforced here as well as in the client. */
+  pauseOn: string[];
 }
 
 export interface SignalOption<Response = any, Nullable extends boolean = false, _Key = keyof UnCls<Response>>
@@ -152,9 +154,10 @@ interface SerializedSignalOption {
 export interface SerializedSlice extends SerializedSignalOption {
   /**
    * Present when the slice declared `.live()`. `sort` is the allowlist of sort keys a subscriber may place a new
-   * row under itself; on any other sort an insertion refetches instead of guessing where the row goes.
+   * row under itself; on any other sort an insertion refetches instead of guessing where the row goes. `pauseOn`
+   * names the arguments that switch the room off while they carry a value, and travels only when there are any.
    */
-  live?: { sort: string[] };
+  live?: { sort: string[]; pauseOn?: string[] };
 }
 
 export interface SerializedReturns {

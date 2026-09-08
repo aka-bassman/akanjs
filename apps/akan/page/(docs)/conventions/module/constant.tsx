@@ -318,6 +318,12 @@ type TicketStatusValue = TicketStatus["value"];`}
             </li>
             <li>
               {l.trans({
+                en: 'polymorphic: "any" buys that sweep on purpose, for a child whose owner may be any model in the app. The lookup is one indexed probe, because the declaration creates the same reverse index, but one wildcard edge turns every cascade in the app back to one document at a time — the boot log names the edges in one info line.',
+                ko: 'polymorphic: "any"는 그 훑기를 의도적으로 사는 선언입니다. 소유자가 앱의 어떤 모델이든 될 수 있는 자식에 씁니다. 같은 역인덱스가 걸리므로 조회는 색인 프로브 한 번이지만, 와일드카드 edge 하나가 앱 전체의 캐스케이드를 다시 문서 단위로 되돌립니다. 부팅 로그가 그 edge들을 info 한 줄로 알려줍니다.',
+              })}
+            </li>
+            <li>
+              {l.trans({
                 en: "The removal runs through the target's service, so the target's own _postRemove runs with it — that is how a File cascade also deletes the stored object. When the target provably has no removal side effect, the boot-time plan collapses it into one query instead.",
                 ko: "삭제는 대상의 service를 거치므로 대상의 _postRemove도 함께 실행됩니다. File 캐스케이드가 저장된 객체까지 삭제하는 것이 이 때문입니다. 대상에 삭제 부수효과가 없다는 것이 증명되면 부팅 시점 계획이 한 번의 쿼리로 접습니다.",
               })}
@@ -343,6 +349,14 @@ type TicketStatusValue = TicketStatus["value"];`}
           code={`export class SessionChatInput extends via((field) => ({
   agentSession: field(ID, { ref: "agentSession", cascade: "removeWith" }),
   content: field(String, { default: "", text: "desc" }),
+})) {}`}
+        />
+        <Code.Snippet
+          title="reaction.constant.ts"
+          code={`export class ReactionInput extends via((field) => ({
+  parent: field(ID, { refPath: "parentType", cascade: "removeWith", polymorphic: "any" }),
+  parentType: field(String, { default: "" }),
+  emoji: field(String, { default: "" }),
 })) {}`}
         />
       </Scroll.Slide>

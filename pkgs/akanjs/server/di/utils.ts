@@ -71,7 +71,8 @@ export const getModuleDependencyRefNames = (mod: DatabaseModule | ServiceModule)
 /**
  * The modules a cascade edge forces this one to be mounted with: a `removeRef` target and a monomorphic
  * `removeWith` owner both fail `CascadeRunner.seal` when they are absent, so they are boot dependencies the
- * inject graph cannot see. A polymorphic owner list is exempt — it spans optional modules by design.
+ * inject graph cannot see. A polymorphic owner is exempt — an enum list spans optional modules by design, and
+ * `polymorphic: "any"` names no module at all.
  */
 export const getModuleCascadeRefNames = (mod: DatabaseModule | ServiceModule) => {
   const dependencies = new Set<string>();
@@ -79,7 +80,7 @@ export const getModuleCascadeRefNames = (mod: DatabaseModule | ServiceModule) =>
   const { cascade } = mod.constant.full;
   for (const modelRef of cascade.removeRef.values()) dependencies.add(ConstantRegistry.getRefName(modelRef));
   for (const path of cascade.removeWith.values()) {
-    if (path.typeValues.length) continue;
+    if (path.anyOwner || path.typeValues.length) continue;
     dependencies.add(path.refName ?? ConstantRegistry.getRefName(path.modelRef as never));
   }
   return dependencies;

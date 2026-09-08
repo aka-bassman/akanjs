@@ -108,6 +108,11 @@ export interface ConstantFieldProps<
   text?: TextFieldRole;
   cascade?: CascadeAction;
   /**
+   * Widens a `cascade: "removeWith"` field whose `refPath` names a free-form `String` instead of an `enumOf`:
+   * the owner is whatever refName the row happens to hold, found by sweeping at removal time.
+   */
+  polymorphic?: "any";
+  /**
    * Renders on the page, never reaches an agent. Stripped wherever a value is masked for an AI caller — the
    * in-page agent's reads and every MCP result — and left untouched everywhere else, so a `File`'s blur
    * placeholder still ships to `<Image>`. Unlike `hidden`/`secret` this is about cost, not secrecy: a field
@@ -205,6 +210,7 @@ interface ConstantFieldBuildProps<
   validate?: (value: FieldValue, model: any) => boolean;
   text?: TextFieldRole;
   cascade?: CascadeAction;
+  polymorphic?: "any";
   visual: boolean;
   modelRef: ConstantModelRef;
   arrDepth: number;
@@ -330,6 +336,7 @@ export class ConstantField<
   readonly validate?: (value: FieldValue, model: any) => boolean;
   readonly text?: TextFieldRole;
   readonly cascade?: CascadeAction;
+  readonly polymorphic?: "any";
   readonly visual: boolean;
   readonly modelRef: ConstantModelRef;
   readonly arrDepth: number;
@@ -363,6 +370,7 @@ export class ConstantField<
     this.validate = props.validate;
     this.text = props.text;
     this.cascade = props.cascade;
+    this.polymorphic = props.polymorphic;
     this.visual = props.visual;
     this.modelRef = props.modelRef;
     this.arrDepth = props.arrDepth;
@@ -443,6 +451,7 @@ export class ConstantField<
       validate: option.validate,
       text: option.text,
       cascade: option.cascade,
+      polymorphic: option.polymorphic,
       visual: option.visual ?? false,
       modelRef,
       arrDepth: arrDepth,
@@ -494,6 +503,7 @@ export class ConstantField<
       validate: this.validate,
       text: this.text,
       cascade: this.cascade,
+      polymorphic: this.polymorphic,
       visual: this.visual,
       modelRef: this.modelRef,
       arrDepth: this.arrDepth,

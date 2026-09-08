@@ -1,4 +1,4 @@
-import { isJsonContentType, Logger, originFromRequest } from "akanjs/common";
+import { hostFromRequest, isJsonContentType, Logger } from "akanjs/common";
 import { Exception } from "./exception";
 
 export interface CrossSiteOption {
@@ -62,11 +62,35 @@ export class CrossSiteGuard {
     if (!CrossSiteGuard.#enabled) return;
     const origin = req.headers.get("origin");
     if (origin === null) return;
-    if (origin !== "null" && (origin === originFromRequest(req.headers, url) || CrossSiteGuard.#allowed.has(origin)))
+    if (origin !== "null" && (CrossSiteGuard.#isSameSite(origin, req, url) || CrossSiteGuard.#allowed.has(origin)))
       return;
-    // Logged rather than echoed: the caller learns it may not, and the operator learns which origin tried, which
-    // is the half that says whether an allowlist entry is missing or an attack is underway.
-    CrossSiteGuard.logger.warn(`Refused "${key}" from cross-site origin ${origin}`);
+    // Logged rather than echoed: the caller learns it may not, and the operator learns which origin tried against
+    // which host we thought we were, which is the half that says whether a proxy is misreporting the host, an
+    // allowlist entry is missing, or an attack is underway.
+    CrossSiteGuard.logger.warn(
+      `Refused "${key}" from cross-site origin ${origin} (request host ${hostFromRequest(req.headers, url)})`,
+    );
     throw new Exception.Forbidden("This request was not permitted.");
+  }
+
+  /**
+   * Host, not full origin — the same comparison `McpRouter` makes, for the same reason.
+   *
+   * The host is what the browser wrote from the URL it was told to open, so a page on another site POSTing here
+   * still arrives with *our* host and its own `Origin`: comparing hosts refuses every cross-site caller. The
+   * scheme is the one part of the origin a proxy routinely loses — a TLS-terminating edge (a Cloudflare tunnel,
+   * an ingress without `x-forwarded-proto`) dials us over plain HTTP, so an `https://` caller would be measured
+   * against a computed `http://` self and refused on every mutation. What that costs is a page served over
+   * plaintext on our own host, which is an attacker who already holds the name.
+   */
+  static #isSameSite(origin: string, req: Request, url: URL): boolean {
+    try {
+      const { protocol, host } = new URL(origin);
+      // Re-parsed under the caller's own scheme so an explicit default port (`:443` in a forwarded host) and its
+      // absence in `Origin` compare equal.
+      return host === new URL(`${protocol}//${hostFromRequest(req.headers, url)}`).host;
+    } catch {
+      return false;
+    }
   }
 }

@@ -1,6 +1,6 @@
 import { Database, type SQLQueryBindings, type Statement } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
-import { dayjs, ID, Int, type PromiseOrObject } from "akanjs/base";
+import { dayjs, Float, ID, Int, type PromiseOrObject } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 import {
   by,
@@ -107,6 +107,94 @@ const ticketTestDatabase = DatabaseRegistry.buildModel(
   TicketTestObject,
   TicketTestInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
   TicketTestFilter,
+);
+
+class ScalarDefaultCoordinate extends via((f) => ({
+  type: f(String, { default: "Point" }),
+  coordinates: f([Float], { default: [0, 0] }),
+  altitude: f(Float, { default: 0 }),
+})) {}
+class ScalarDefaultPlace extends via((f) => ({
+  label: f(String, { default: "unnamed" }),
+  coordinate: f(ScalarDefaultCoordinate),
+})) {}
+class ScalarDefaultInput extends via((f) => ({
+  title: f(String),
+  location: f(ScalarDefaultCoordinate),
+  place: f(ScalarDefaultPlace),
+  tags: f([String]),
+  spot: f(ScalarDefaultCoordinate).optional(),
+  owner: f(TicketTestLight).optional(),
+})) {}
+class ScalarDefaultObject extends via(ScalarDefaultInput, () => ({})) {}
+class ScalarDefaultLight extends via(ScalarDefaultObject, ["title"] as const, () => ({})) {}
+class ScalarDefaultFull extends via(ScalarDefaultObject, ScalarDefaultLight, () => ({})) {}
+class ScalarDefaultInsight extends via(ScalarDefaultFull, (f) => ({
+  count: f(Int, { default: 0, accumulate: {} }),
+})) {}
+const scalarDefaultConstant = ConstantRegistry.buildModel(
+  "sqliteScalarDefaultTest",
+  ScalarDefaultInput,
+  ScalarDefaultObject,
+  ScalarDefaultFull,
+  ScalarDefaultLight,
+  ScalarDefaultInsight,
+  { ScalarDefaultInput, ScalarDefaultObject, ScalarDefaultFull, ScalarDefaultLight, ScalarDefaultInsight },
+);
+class ScalarDefaultFilter extends from(ScalarDefaultFull, () => ({ query: {}, sort: {} })) {}
+class ScalarDefaultDoc extends by(ScalarDefaultFull) {}
+class ScalarDefaultModel extends into(ScalarDefaultDoc, ScalarDefaultFilter, scalarDefaultConstant, () => ({})) {}
+const scalarDefaultDatabase = DatabaseRegistry.buildModel(
+  "sqliteScalarDefaultTest",
+  ScalarDefaultInput as unknown as DatabaseCls<InstanceType<typeof ScalarDefaultInput>>,
+  ScalarDefaultDoc,
+  ScalarDefaultModel,
+  ScalarDefaultObject,
+  ScalarDefaultInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
+  ScalarDefaultFilter,
+);
+
+class RelationRequiredInput extends via((f) => ({
+  title: f(String, { default: "relation" }),
+  owner: f(TicketTestLight),
+})) {}
+class RelationRequiredObject extends via(RelationRequiredInput, () => ({})) {}
+class RelationRequiredLight extends via(RelationRequiredObject, ["title"] as const, () => ({})) {}
+class RelationRequiredFull extends via(RelationRequiredObject, RelationRequiredLight, () => ({})) {}
+class RelationRequiredInsight extends via(RelationRequiredFull, (f) => ({
+  count: f(Int, { default: 0, accumulate: {} }),
+})) {}
+const relationRequiredConstant = ConstantRegistry.buildModel(
+  "sqliteRelationRequiredTest",
+  RelationRequiredInput,
+  RelationRequiredObject,
+  RelationRequiredFull,
+  RelationRequiredLight,
+  RelationRequiredInsight,
+  {
+    RelationRequiredInput,
+    RelationRequiredObject,
+    RelationRequiredFull,
+    RelationRequiredLight,
+    RelationRequiredInsight,
+  },
+);
+class RelationRequiredFilter extends from(RelationRequiredFull, () => ({ query: {}, sort: {} })) {}
+class RelationRequiredDoc extends by(RelationRequiredFull) {}
+class RelationRequiredModel extends into(
+  RelationRequiredDoc,
+  RelationRequiredFilter,
+  relationRequiredConstant,
+  () => ({}),
+) {}
+const relationRequiredDatabase = DatabaseRegistry.buildModel(
+  "sqliteRelationRequiredTest",
+  RelationRequiredInput as unknown as DatabaseCls<InstanceType<typeof RelationRequiredInput>>,
+  RelationRequiredDoc,
+  RelationRequiredModel,
+  RelationRequiredObject,
+  RelationRequiredInsight as unknown as Parameters<typeof DatabaseRegistry.buildModel>[5],
+  RelationRequiredFilter,
 );
 
 class ImmutableTestInput extends via((f) => ({
@@ -380,6 +468,131 @@ describe("solid sqlite utilities", () => {
       const fetched = await store.pickById(created.id);
       expect(fetched.histories[0]).toMatchObject({ action: "open", content: [], count: 0, flag: false });
       expect(fetched.histories[1]).toMatchObject({ action: "close", content: [], count: 0, flag: false });
+      expect(fetched.histories[0].content).not.toBe(fetched.histories[1].content);
+      expect(saved.histories[0].content).not.toBe(saved.histories[1].content);
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("constructs an omitted required nested scalar from its own field defaults", async () => {
+    const db = new Database(":memory:", { strict: true, create: true });
+    const client = new TestSqliteClient(db);
+    const owner = new TestDatabaseOwner(client);
+    const store = new SqlDocumentStore(owner, scalarDefaultConstant, scalarDefaultDatabase, new DocumentSchema());
+
+    try {
+      await client.execute(
+        `CREATE TABLE IF NOT EXISTS "_akan_meta" ("key" TEXT PRIMARY KEY NOT NULL, "value" TEXT NOT NULL, "updatedAt" INTEGER NOT NULL)`,
+      );
+      await store.ensure();
+
+      const created = await store.create({ title: "Edge" });
+      expect(created.location).toEqual({ type: "Point", coordinates: [0, 0], altitude: 0 });
+      expect(created.place).toEqual({
+        label: "unnamed",
+        coordinate: { type: "Point", coordinates: [0, 0], altitude: 0 },
+      });
+      expect(created.tags).toEqual([]);
+      expect(created.owner).toBeUndefined();
+      expect(created.spot).toBeUndefined();
+
+      const fetched = await store.pickById(created.id);
+      expect(fetched.location).toEqual({ type: "Point", coordinates: [0, 0], altitude: 0 });
+      expect(fetched.place.coordinate).toEqual({ type: "Point", coordinates: [0, 0], altitude: 0 });
+      // An optional nested scalar is absent, not defaulted — `getDefault` reads `nullable` before `isScalar`.
+      expect(fetched.spot).toBeNull();
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("merges scalar defaults into a partially supplied nested scalar", async () => {
+    const db = new Database(":memory:", { strict: true, create: true });
+    const client = new TestSqliteClient(db);
+    const owner = new TestDatabaseOwner(client);
+    const store = new SqlDocumentStore(owner, scalarDefaultConstant, scalarDefaultDatabase, new DocumentSchema());
+
+    try {
+      await client.execute(
+        `CREATE TABLE IF NOT EXISTS "_akan_meta" ("key" TEXT PRIMARY KEY NOT NULL, "value" TEXT NOT NULL, "updatedAt" INTEGER NOT NULL)`,
+      );
+      await store.ensure();
+
+      const empty = await store.create({ title: "Empty", location: {} });
+      expect(empty.location).toEqual({ type: "Point", coordinates: [0, 0], altitude: 0 });
+
+      const partial = await store.create({ title: "Partial", location: { coordinates: [127, 37] } });
+      expect(partial.location).toEqual({ type: "Point", coordinates: [127, 37], altitude: 0 });
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("gives each document its own copy of an array default", async () => {
+    const db = new Database(":memory:", { strict: true, create: true });
+    const client = new TestSqliteClient(db);
+    const owner = new TestDatabaseOwner(client);
+    const store = new SqlDocumentStore(owner, scalarDefaultConstant, scalarDefaultDatabase, new DocumentSchema());
+
+    try {
+      await client.execute(
+        `CREATE TABLE IF NOT EXISTS "_akan_meta" ("key" TEXT PRIMARY KEY NOT NULL, "value" TEXT NOT NULL, "updatedAt" INTEGER NOT NULL)`,
+      );
+      await store.ensure();
+
+      const first = await store.create({ title: "First" });
+      first.tags.push("mutated");
+      await first.save();
+
+      const second = await store.create({ title: "Second" });
+      expect(second.tags).toEqual([]);
+      expect(second.place).not.toBe(first.place);
+      expect(second.location.coordinates).not.toBe(first.location.coordinates);
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("fills a nested scalar missing from a stored row instead of failing the update", async () => {
+    const db = new Database(":memory:", { strict: true, create: true });
+    const client = new TestSqliteClient(db);
+    const owner = new TestDatabaseOwner(client);
+    const store = new SqlDocumentStore(owner, scalarDefaultConstant, scalarDefaultDatabase, new DocumentSchema());
+
+    try {
+      await client.execute(
+        `CREATE TABLE IF NOT EXISTS "_akan_meta" ("key" TEXT PRIMARY KEY NOT NULL, "value" TEXT NOT NULL, "updatedAt" INTEGER NOT NULL)`,
+      );
+      await store.ensure();
+
+      const created = await store.create({ title: "Legacy" });
+      await client.execute(`UPDATE "sqliteScalarDefaultTest" SET "_doc" = ? WHERE "id" = ?`, [
+        JSON.stringify({ title: "Legacy", tags: [] }),
+        created.id,
+      ]);
+
+      const updated = await store.update(created.id, { title: "Migrated" });
+      expect(updated.title).toBe("Migrated");
+      expect(updated.location).toEqual({ type: "Point", coordinates: [0, 0], altitude: 0 });
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("still refuses a missing required relation", async () => {
+    const db = new Database(":memory:", { strict: true, create: true });
+    const client = new TestSqliteClient(db);
+    const owner = new TestDatabaseOwner(client);
+    const store = new SqlDocumentStore(owner, relationRequiredConstant, relationRequiredDatabase, new DocumentSchema());
+
+    try {
+      await client.execute(
+        `CREATE TABLE IF NOT EXISTS "_akan_meta" ("key" TEXT PRIMARY KEY NOT NULL, "value" TEXT NOT NULL, "updatedAt" INTEGER NOT NULL)`,
+      );
+      await store.ensure();
+
+      await expect(store.create({})).rejects.toThrow("Missing required field: owner");
     } finally {
       await client.close();
     }

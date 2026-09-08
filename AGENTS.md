@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.88 -->
+<!-- akan:agent:version 3.0.0-alpha.92 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -573,6 +573,7 @@ Full contract — relevance ordering, `columns` / `weights`: `get_guideline` wit
 - Injected dependencies resolve by field-name convention: a field named `<refName>Service` resolves to the service registered under `<refName>`, and `<refName>Signal` likewise (`pkgs/akanjs/service/injectInfo.ts`).
 - The `Service`/`Signal` suffix is required — the injector strips it to derive the registry lookup key. Name the field after the target refName plus the suffix, not arbitrarily.
 - Preference order inside a service: `service<srv.XService>()` for another module's service · `plug(AdapterClass)` or `plug(StorageAdaptorRole)` for an adapter · `use<T>()` only to reach an `option.ts`-registered legacy singleton · `env(...)` for config.
+- **`memory(...)` takes a scalar or model class, not only a primitive** — `memory(Map, { of: CallStateInput })` serializes through the constant and travels as JSON text, so the Redis and sqlite-backed caches round-trip the same declaration. Never hand-encode JSON into a `String` memory.
 
 ### Adapters — `adapt()` And `plug()`
 
@@ -754,7 +755,11 @@ shape, so `cascade` never means "related" — it means one of exactly these:
   its owner, so the owner never learns about its children and a lib model can be extended by an app's. Three
   forms: a relation, an id with `ref`, or a polymorphic id with `refPath`. An array, a Map, `ref` together with
   `refPath`, and a field naming no owner each fail the class build.
-- **A `refPath` must name an `enumOf` field** — a free-form owner type is unknowable at build time.
+- **A `refPath` must name an `enumOf` field** — a free-form owner type is unknowable at build time. The one
+  exception is opt-in and priced: `polymorphic: "any"` alongside `cascade: "removeWith"` takes a free-form
+  `String` type field holding the owner's refName, and sweeps for children on **every** model's removal. The
+  sweep is one indexed probe, but a single wildcard edge turns every cascade in the app back to one document at
+  a time; the boot log names the edges in one `info` line.
 - **A cascade goes through the target's service, never its model** — that path is what runs the target's
   `_postRemove`, where a module puts the side effect the removal has to carry.
 - **Nothing checks whether another document still references the same target.** `File` in particular is deduped by

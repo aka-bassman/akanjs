@@ -60,6 +60,11 @@ const SSR_RENDER_EXTERNALS = [
   "react-server-dom-webpack/client.browser",
 ] as const;
 
+// Identifier mangling renames every class, and `this.constructor.name` is what names a service's logger, an
+// `Exception`, a guard, and every frame of a stack trace — for ~2% of boot on server bytes nothing downloads.
+// `minify.keepNames` typechecks and does nothing as of Bun 1.4.2.
+export const AKAN_BACKEND_MINIFY = { whitespace: true, syntax: true, identifiers: false } as const;
+
 export const AKAN_OPTIONAL_BACKEND_EXTERNALS = [
   "@libsql/client",
   "bullmq",
@@ -203,7 +208,7 @@ export class ApplicationBuildRunner {
       entrypoints: backendEntryPoints,
       outdir: this.#app.dist.cwdPath,
       target: "bun",
-      minify: true,
+      minify: AKAN_BACKEND_MINIFY,
       naming: { entry: "[name].[ext]", chunk: "chunk-[hash].[ext]" },
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
       plugins: backendExternals.length > 0 ? [this.#createExternalSpecifiersPlugin(backendExternals)] : [],
@@ -214,7 +219,7 @@ export class ApplicationBuildRunner {
           entrypoints: [this.#resolveRscWorkerBuildEntry()],
           outdir: this.#app.dist.cwdPath,
           target: "bun",
-          minify: true,
+          minify: AKAN_BACKEND_MINIFY,
           naming: { entry: "[name].[ext]", chunk: "chunk-[hash].[ext]" },
           conditions: ["react-server"],
           // `akan build` must embed production react-server-dom regardless of the shell's NODE_ENV.
@@ -226,7 +231,7 @@ export class ApplicationBuildRunner {
       entrypoints: [this.#resolveConsoleRuntimeBuildEntry()],
       outdir: this.#app.dist.cwdPath,
       target: "bun",
-      minify: true,
+      minify: AKAN_BACKEND_MINIFY,
       naming: { entry: "console-runtime.[ext]", chunk: "chunk-[hash].[ext]" },
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
     });

@@ -42,7 +42,14 @@ const buildPlan = (fieldObj: FieldObject): DefaultPlan => {
     if (field.fieldType === "hidden" || field.fieldType === "secret") shared[key] = null;
     else if (field.default !== undefined && field.default !== null) {
       if (typeof field.default === "function") perCall.set(key, field.default as () => unknown);
-      // A literal default is the field's own object, handed out by reference before this cache existed too.
+      // An array default is the field's own array — the `[]` an array field is given when it declares none
+      // included — so handing it out by reference would let one filled object's `push` land in the field default
+      // and in every object filled from it afterwards.
+      else if (Array.isArray(field.default)) {
+        const items = field.default as unknown[];
+        perCall.set(key, () => [...items]);
+      }
+      // Any other literal default is the field's own object, handed out by reference before this cache existed too.
       else shared[key] = field.default as object;
     } else if (field.isArray) perCall.set(key, () => []);
     else if (field.nullable) shared[key] = null;

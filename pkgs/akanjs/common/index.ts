@@ -82,7 +82,7 @@ export { pathSet } from "./pathSet";
 export { plainFieldsOf } from "./plainFieldsOf";
 export { randomPick } from "./randomPick";
 export { randomPicks } from "./randomPicks";
-export { isJsonContentType, originFromRequest } from "./requestOrigin";
+export { hostFromRequest, isJsonContentType, originFromRequest } from "./requestOrigin";
 export { RestClient, type RestClientOptions, type RestRequestOptions } from "./restClient";
 export {
   assertUniqueRoutePatterns,
