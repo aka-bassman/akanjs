@@ -8,6 +8,10 @@ export interface LivePlacementProps {
   /** Which page of the list is on screen. Only the first can place a row. */
   page: number;
   limit: number;
+  /** Whether the list is pages `1..N` concatenated rather than one window. */
+  cumulative: boolean;
+  /** Whether the server still holds rows past the ones in hand. */
+  hasMore: boolean;
   /** The sort key the window is ordered by. */
   sortKey: string;
   /** The sort keys the slice declared a subscriber may reproduce. */
@@ -38,6 +42,8 @@ export const livePlacementIndex = ({
   row,
   page,
   limit,
+  cumulative,
+  hasMore,
   sortKey,
   allowedSorts,
   sorts,
@@ -49,10 +55,12 @@ export const livePlacementIndex = ({
   const paths = Object.entries(sort);
   if (paths.some(([path]) => comparableOf(row[path]) === null)) return null;
   const index = list.findIndex((item) => compareRows(row, item, paths) < 0);
-  // Past the end of a full window the row belongs to a later page, and dropping it there would be a row this
-  // window claims to hold and does not.
-  if (index === -1) return list.length < limit ? list.length : null;
-  return index;
+  if (index !== -1) return index;
+  // Past the end of the rows in hand the row belongs to whatever follows them, and placing it there would be a
+  // row this list claims to hold and does not. What follows differs by mode: a full paged window is followed by
+  // the next page, while a cumulative list is followed only by rows the server said it still has.
+  if (cumulative) return hasMore ? null : list.length;
+  return list.length < limit ? list.length : null;
 };
 
 const compareRows = (left: LiveSortableRow, right: LiveSortableRow, paths: [string, 1 | -1][]): number => {

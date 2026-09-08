@@ -410,7 +410,7 @@ describe("signal generated store contract", () => {
     await instance.do.selectStoreTestItemByTitle(new StoreTestLight({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", title: "Ada" }));
     expect(instance.get().storeTestItemSelectionByTitle).toBeInstanceOf(DataList);
     await instance.do.setPageOfStoreTestItemByTitle(2);
-    await instance.do.addPageOfStoreTestItemByTitle(3);
+    await instance.do.loadMoreOfStoreTestItemByTitle();
     await instance.do.setLimitOfStoreTestItemByTitle(10);
     await instance.do.setQueryArgsOfStoreTestItemByTitle("Ben");
     await instance.do.setQueryArgsOfStoreTestItemByTitle((prev: string) => [`${prev}!`]);
@@ -454,6 +454,50 @@ describe("signal generated store contract", () => {
     const rows = [...(instance.get().storeTestItemListByTitle as DataList<InstanceType<typeof StoreTestLight>>)];
     expect(rows.map((row) => row.title)).toEqual(["page3"]);
     expect(instance.get().storeTestItemListLoadingByTitle).toBe(false);
+  });
+
+  test("loads more from the tail of the list, not from a page number", async () => {
+    setupEnv();
+    const signal = makeSignal();
+    const rowsOf = (from: number, count: number) =>
+      new Array(count)
+        .fill(null)
+        .map((_, i) => new StoreTestLight({ id: `${from + i}`.padStart(24, "0"), title: `row${from + i}` } as never));
+    signal.calls.storeTestItemListByTitle = mock(async (_title: string, skip: number, limit: number) =>
+      rowsOf(skip, Math.min(limit, 5 - skip)),
+    );
+    class MoreStore extends store(signal, () => ({})) {}
+    StoreRegistry.register(MoreStore);
+    const instance = new StoreInstance(makeRoot("moreRoot", MoreStore));
+    const titles = () =>
+      [...(instance.get().storeTestItemListByTitle as DataList<InstanceType<typeof StoreTestLight>>)].map(
+        (row) => row.title,
+      );
+
+    await instance.do.initStoreTestItemByTitle("Ada", { limit: 2 });
+    expect(titles()).toEqual(["row0", "row1"]);
+    expect(instance.get().hasMoreOfStoreTestItemByTitle).toBe(true);
+
+    await instance.do.loadMoreOfStoreTestItemByTitle();
+    expect(signal.calls.storeTestItemListByTitle).toHaveBeenLastCalledWith("Ada", 2, 2, "latest", undefined);
+    expect(titles()).toEqual(["row0", "row1", "row2", "row3"]);
+    // The window did not move, which is what keeps live placement — first page only — working past the first "more".
+    expect(instance.get().pageOfStoreTestItemByTitle).toBe(1);
+    expect(instance.get().isCumulativeOfStoreTestItemByTitle).toBe(true);
+
+    await instance.do.loadMoreOfStoreTestItemByTitle();
+    expect(titles()).toEqual(["row0", "row1", "row2", "row3", "row4"]);
+    expect(instance.get().hasMoreOfStoreTestItemByTitle).toBe(false);
+
+    // Nothing left to ask for, so the action is a no-op rather than a request that returns nothing.
+    signal.calls.storeTestItemListByTitle.mockClear();
+    await instance.do.loadMoreOfStoreTestItemByTitle();
+    expect(signal.calls.storeTestItemListByTitle).not.toHaveBeenCalled();
+
+    // A refresh of an accumulated list refetches all of it, rather than collapsing it back to one window.
+    await instance.do.refreshStoreTestItemByTitle({ invalidate: true });
+    expect(signal.calls.storeTestItemListByTitle).toHaveBeenLastCalledWith("Ada", 0, 5, "latest", expect.any(Object));
+    expect(titles()).toEqual(["row0", "row1", "row2", "row3", "row4"]);
   });
 
   test("clears the list spinner when a page request fails", async () => {
@@ -695,6 +739,68 @@ describe("live sync store action", () => {
     expect(liveState(instance).titles).toEqual(["Ada", "Cyd", "Ben"]);
     expect(liveState(instance).count).toBe(3);
     expect(liveState(instance).lastPage).toBe(1);
+  });
+
+  test("keeps placing rows after the list has loaded more", async () => {
+    setupEnv();
+    const signal = makeSignal();
+    const server = [400, 300, 200, 100].map(
+      (at) =>
+        new StoreTestLight({ id: `${at}`.padStart(24, "0"), title: `row${at}`, createdAt: new Date(at) } as never),
+    );
+    signal.calls.storeTestItemListByTitle = mock(async (_title: string, skip: number, limit: number) =>
+      server.slice(skip, skip + limit),
+    );
+    class LoadMoreLiveStore extends store(signal, () => ({})) {}
+    StoreRegistry.register(LoadMoreLiveStore);
+    const instance = new StoreInstance(makeRoot("loadMoreLiveRoot", LoadMoreLiveStore));
+    await instance.do.initStoreTestItemByTitle("Ada", { limit: 2 });
+    await instance.do.loadMoreOfStoreTestItemByTitle();
+    expect(liveState(instance).titles).toEqual(["row400", "row300", "row200", "row100"]);
+
+    // The bug this replaced: paging by number moved `pageOf<Model>` off 1, and placement is refused anywhere
+    // else — so one "more" used to switch live sync off for good, silently.
+    await instance.do.applyLiveStoreTestItemByTitle({
+      op: "enter",
+      id: "cccccccccccccccccccccccc",
+      light: light("cccccccccccccccccccccccc", "Cyd", 250),
+    });
+    expect(liveState(instance).titles).toEqual(["row400", "row300", "Cyd", "row200", "row100"]);
+
+    // Nothing falls off the end to make room: every one of those rows is on screen.
+    expect(liveState(instance).count).toBe(3);
+  });
+
+  test("a row past the tail waits for the rows the server still holds", async () => {
+    setupEnv();
+    const signal = makeSignal();
+    const server = [400, 300].map(
+      (at) =>
+        new StoreTestLight({ id: `${at}`.padStart(24, "0"), title: `row${at}`, createdAt: new Date(at) } as never),
+    );
+    signal.calls.storeTestItemListByTitle = mock(async (_title: string, skip: number, limit: number) =>
+      server.slice(skip, skip + limit),
+    );
+    class TailStore extends store(signal, () => ({})) {}
+    StoreRegistry.register(TailStore);
+    const instance = new StoreInstance(makeRoot("tailRoot", TailStore));
+    await instance.do.initStoreTestItemByTitle("Ada", { limit: 1 });
+    await instance.do.loadMoreOfStoreTestItemByTitle();
+    expect(instance.get().hasMoreOfStoreTestItemByTitle).toBe(true);
+
+    const oldest = {
+      op: "enter" as const,
+      id: "cccccccccccccccccccccccc",
+      light: light("cccccccccccccccccccccccc", "Cyd", 50),
+    };
+    await instance.do.applyLiveStoreTestItemByTitle(oldest);
+    expect(liveState(instance).titles).toEqual(["row400", "row300"]);
+
+    // Once the server says it has nothing left, the slot past the tail is this list's to fill.
+    await instance.do.loadMoreOfStoreTestItemByTitle();
+    expect(instance.get().hasMoreOfStoreTestItemByTitle).toBe(false);
+    await instance.do.applyLiveStoreTestItemByTitle(oldest);
+    expect(liveState(instance).titles).toEqual(["row400", "row300", "Cyd"]);
   });
 
   test("the same enter twice does not count the row twice", async () => {

@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.92 -->
+<!-- akan:agent:version 3.0.0-alpha.96 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -534,6 +534,13 @@ Full contract — filter-arg `ref` pickers, `getQueryMeta` summary counters, `la
 - A slice's `exec` returns a `QueryOf` (an opaque query descriptor); you **cannot** chain `.sort()`/`.limit()` on
   it. Apply ordering/paging via the store `init` fetch option instead: `initX(..., { sort, page, limit })`. For a
   chainable builder use the model facade's `findMany`/`findOne`.
+- **A slice list is either one window or an accumulated one.** `setPageOf<Model>` swaps the window;
+  `loadMoreOf<Model>()` appends the rows after the ones loaded and takes **no page number** — it skips by
+  `<model>List.length`, so the offset cannot drift from what is on screen when a live insertion moves the server's
+  baseline, and `pageOf<Model>` stays 1, which is what keeps live placement (first page only) working past the
+  first "more". `isCumulativeOf<Model>` is the mode.
+- **"Is there more" is `hasMoreOf<Model>`, never `count > page * limit`.** It comes from the length of the batch
+  the server returned, so it survives `{ insight: false }` and cannot drift from a count a live event moved.
 - **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`);
   client fetch results are raw `GetStateObject` plain data, functions stripped.
 - Every filter generates fourteen methods: `list` · `listIds` · `find` · `findId` · `pick` · `pickId` · `exists` ·
@@ -890,6 +897,11 @@ when two shapes disagree.
   from overlapping. `--kill` frees the dev ports first — it resolves each port's listener, walks up to the top
   of that akan dev tree and signals it, so another checkout's server or a stale orphan on the same port is
   reclaimed. A holder that is not recognisably an akan process is reported and left alone.
+- **A dev server watches its own app directory and the libs it actually depends on**, transitively, resolved
+  once at boot from the synced manifests — so a save under a lib the app never imports rebuilds and reloads
+  nothing, and neither does a save in a sibling app. An import that makes a new lib a dependency needs a
+  fresh `akan start`, because it needs a `sync` first anyway. Before the first `sync` the manifests do not
+  exist yet and the whole `libs/` container is watched, which is the safe direction.
 - Test production build generation with `bun run akan build <appName>`.
 - To test a built artifact locally, run it from the generated app directory with the required Akan runtime environment variables.
 

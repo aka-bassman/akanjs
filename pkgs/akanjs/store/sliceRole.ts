@@ -7,7 +7,7 @@ export type SliceActionKey =
   | "refreshModel"
   | "selectModel"
   | "setPageOfModel"
-  | "addPageOfModel"
+  | "loadMoreOfModel"
   | "setLimitOfModel"
   | "setQueryArgsOfModel"
   | "setSortOfModel"

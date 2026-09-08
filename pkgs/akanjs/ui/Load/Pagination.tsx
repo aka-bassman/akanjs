@@ -39,7 +39,6 @@ function Render<RefName extends string, Light>({ className, init, scrollToTop }:
     lastPageOfModel: `lastPageOf${ModelName}`,
     limitOfModel: `limitOf${ModelName}`,
     setPageOfModel: `setPageOf${ModelName}`,
-    addPageOfModel: `addPageOf${ModelName}`,
   };
   const namesOfSlice = {
     modelInsight: sliceName.replace(names.model, names.modelInsight),
@@ -47,7 +46,6 @@ function Render<RefName extends string, Light>({ className, init, scrollToTop }:
     lastPageOfModel: sliceName.replace(names.model, names.lastPageOfModel),
     pageOfModel: sliceName.replace(names.model, names.pageOfModel),
     setPageOfModel: sliceName.replace(names.model, names.setPageOfModel),
-    addPageOfModel: sliceName.replace(names.model, names.addPageOfModel),
   };
   const modelInsight = storeUse[namesOfSlice.modelInsight]() as BaseInsight;
   const limitOfModel = storeUse[namesOfSlice.limitOfModel]() as number;

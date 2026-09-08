@@ -3,29 +3,16 @@ import { useEffect, useRef, useState } from "react";
 import { BiLoaderAlt } from "react-icons/bi";
 
 export interface InfiniteScrollProps {
-  total: number;
-  currentPage: number;
-  itemsPerPage: number;
-  onAddPage: (page: number) => Promise<void>;
-  onPageSelect: (page: number, option?: { scrollToTop?: boolean }) => void;
+  hasMore: boolean;
+  onLoadMore: () => Promise<void>;
   children: React.ReactNode;
   reverse?: boolean;
 }
 
-export const InfiniteScroll = ({
-  itemsPerPage,
-  currentPage,
-  total,
-  onPageSelect,
-  onAddPage,
-  children,
-  reverse,
-}: InfiniteScrollProps) => {
+export const InfiniteScroll = ({ hasMore, onLoadMore, children, reverse }: InfiniteScrollProps) => {
   const [isFetching, setIsFetching] = useState(false);
   const isFetchingRef = useRef(false);
   const target = useRef<HTMLDivElement>(null);
-  const page = useRef<number>(currentPage);
-  const totalPages = Math.ceil(total / (itemsPerPage || 1));
 
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
@@ -36,13 +23,13 @@ export const InfiniteScroll = ({
     return () => {
       observer.disconnect();
     };
-  }, []);
+  }, [hasMore]);
 
   const fetchMoreItems = async () => {
     if (isFetchingRef.current) return;
-    const nextPage = page.current + 1;
-    if (nextPage > totalPages) return;
 
+    // Prepending rows above the viewport pushes everything down by however tall they turn out to be, so the
+    // offset from the bottom is what has to survive the load — the reading position, in a chat or a log tail.
     const scroller = reverse ? document.scrollingElement : null;
     const prevScrollHeight = scroller?.scrollHeight ?? 0;
     const prevScrollTop = scroller?.scrollTop ?? 0;
@@ -50,9 +37,7 @@ export const InfiniteScroll = ({
     isFetchingRef.current = true;
     setIsFetching(true);
     try {
-      await onAddPage(nextPage);
-      onPageSelect(nextPage, { scrollToTop: false });
-      page.current = nextPage;
+      await onLoadMore();
 
       const restoreScroll = () => {
         if (scroller) {
@@ -76,15 +61,15 @@ export const InfiniteScroll = ({
 
   return (
     <>
-      {reverse ? (
+      {reverse && hasMore ? (
         <div ref={target} className="flex w-full items-end justify-center">
-          {isFetching && <BiLoaderAlt className="h-10 animate-spin pb-4 text-2xl" />}
+          {isFetching ? <BiLoaderAlt className="h-10 animate-spin pb-4 text-2xl" /> : null}
         </div>
       ) : null}
       {children}
-      {!reverse ? (
+      {!reverse && hasMore ? (
         <div ref={target} className="flex h-32 w-full justify-center pt-4">
-          {isFetching && <BiLoaderAlt className="animate-spin text-2xl" />}
+          {isFetching ? <BiLoaderAlt className="animate-spin text-2xl" /> : null}
         </div>
       ) : null}
     </>

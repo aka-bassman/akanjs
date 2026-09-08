@@ -51,7 +51,7 @@ export default function Page() {
     { name: "refresh<Slice>(initForm?): Promise<void>", desc: "Reload list with strict consistency." },
     { name: "select<Slice>(model, options?): void", desc: "Update selection state." },
     { name: "setPageOf<Slice>(page, options?): Promise<void>", desc: "Change page and reload." },
-    { name: "addPageOf<Slice>(page, options?): Promise<void>", desc: "Load next page and append." },
+    { name: "loadMoreOf<Slice>(options?): Promise<void>", desc: "Append the rows after the ones loaded." },
     { name: "setLimitOf<Slice>(limit, options?): Promise<void>", desc: "Change list limit and reload." },
     { name: "setQueryArgsOf<Slice>(...args): Promise<void>", desc: "Change query arguments and reload." },
     { name: "setSortOf<Slice>(sort, options?): Promise<void>", desc: "Change sort and reload." },

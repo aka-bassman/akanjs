@@ -11,10 +11,10 @@ interface LockHolder {
 /**
  * A workspace-wide mutex over the generated source files every dev server in the workspace rewrites.
  *
- * `WatchRootResolver` narrows the `apps/` container to one app but keeps `libs/` whole on purpose, so
- * with two dev servers up a save under `libs/` reaches both builders and both regenerate the same
- * barrel. Whichever watcher is mid-scan then reads a half-written file back as a user edit, which is a
- * rebuild per rewrite. `scanSync` writes the same files at boot for every mounting app.
+ * `WatchRootResolver` narrows each dev server to its own app and its own lib dependencies, but two apps
+ * that share a lib still both watch it, so a save there reaches both builders and both regenerate the
+ * same barrel. Whichever watcher is mid-scan then reads a half-written file back as a user edit, which is
+ * a rebuild per rewrite. `scanSync` writes the same files at boot for every mounting app.
  *
  * A wait that expires proceeds *without* the lock rather than failing: this sits on the dev server's
  * hot path, and stalling the file watcher is worse than the torn read `FileSys.writeTextAtomic` already

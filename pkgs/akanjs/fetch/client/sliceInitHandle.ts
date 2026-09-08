@@ -78,6 +78,9 @@ export class SliceInitHandle {
       [`pageOf${capRefName}`]: page,
       [`lastPageOf${capRefName}`]: lastPage,
       [`limitOf${capRefName}`]: limit,
+      // Read off the batch, not off the count: `{ insight: false }` provides no count, and the store maintains
+      // this the same way from every later fetch so the two never disagree about what "more" means.
+      [`hasMoreOf${capRefName}`]: !!limit && modelObjList.length >= limit,
       [`queryArgsOf${capRefName}`]: queryArgs,
       [`sortOf${capRefName}`]: sort,
       [`${refName}InitAt`]: new Date(),

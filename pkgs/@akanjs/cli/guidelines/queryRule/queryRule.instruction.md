@@ -31,6 +31,18 @@ with it. `conventions` carries the invariants — this is the full contract behi
   A model with none renders ids and says so in the picker.
 - A slice's `exec` returns a `QueryOf` (an opaque query descriptor, `pkgs/akanjs/constant/types.ts`); you **cannot** chain `.sort()`/`.limit()` on it.
 - Apply ordering/paging via the store `init` fetch option instead: `initX(..., { sort, page, limit })` (`pkgs/akanjs/fetch/fetchType/sliceFetch.type.ts`).
+- **A slice list is either one window or an accumulated one, and the store says which.** `setPageOf<Model>` swaps
+  the window and `pageOf<Model>` names it; `loadMoreOf<Model>()` appends the rows *after* the ones already loaded
+  and takes no page number, because in an accumulated list no page number names anything. It skips by
+  `<model>List.length` rather than by `page * limit`, which is what keeps the offset from drifting from what is on
+  screen: a live insertion at the front moves the server's baseline by one, so a page number asks for rows the
+  list already shows. It also leaves `pageOf<Model>` at 1 — live placement is refused anywhere but the first page,
+  so paging by number used to switch live sync off permanently on the first "more", silently. `isCumulativeOf<Model>`
+  is the mode, and it is what stops a live insertion from truncating an accumulated list back to one page's worth.
+- **"Is there more" is `hasMoreOf<Model>`, never `count > page * limit`.** It is set from the length of the batch
+  the server just returned, so it survives `{ insight: false }` — which makes no count query at all — and cannot
+  drift from the count a live event moved. `loadMoreOf<Model>()` is a no-op once it is false, and `Load.Units`
+  draws no infinite-scroll sentinel.
 - Generated list accessors like `listBy(...)` return `Promise<Doc[]>`. For a chainable builder (`.sort().skip().limit().select()`) use the model facade's `findMany`/`findOne` (`FindManyChain`, `pkgs/akanjs/document/into.ts`).
 - **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`); client fetch results are raw `GetStateObject` plain data (functions stripped, `pkgs/akanjs/base/types.ts`).
 - Every filter generates fourteen methods: `list` · `listIds` · `find` · `findId` · `pick` · `pickId` · `exists` ·

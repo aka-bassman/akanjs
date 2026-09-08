@@ -127,19 +127,13 @@ const renderInfiniteScroll = async (props: InfiniteScrollProps) => {
 };
 
 describe("InfiniteScroll", () => {
-  test("loads the next page once when the sentinel intersects", async () => {
-    const addPageCalls: number[] = [];
-    const pageSelections: Array<[number, { scrollToTop?: boolean } | undefined]> = [];
+  test("loads more once when the sentinel intersects", async () => {
+    let loadMoreCalls = 0;
 
     await renderInfiniteScroll({
-      total: 30,
-      currentPage: 1,
-      itemsPerPage: 10,
-      onAddPage: async (page) => {
-        addPageCalls.push(page);
-      },
-      onPageSelect: (page, option) => {
-        pageSelections.push([page, option]);
+      hasMore: true,
+      onLoadMore: async () => {
+        loadMoreCalls += 1;
       },
       children: "items",
     });
@@ -149,7 +143,18 @@ describe("InfiniteScroll", () => {
     latestObserver?.emit();
     await tick();
 
-    expect(addPageCalls).toEqual([2]);
-    expect(pageSelections).toEqual([[2, { scrollToTop: false }]]);
+    expect(loadMoreCalls).toBe(1);
+  });
+
+  test("draws no sentinel once the server has nothing left", async () => {
+    await renderInfiniteScroll({
+      hasMore: false,
+      onLoadMore: async () => {
+        throw new Error("should not load");
+      },
+      children: "items",
+    });
+
+    expect(latestObserver?.observed).toHaveLength(0);
   });
 });

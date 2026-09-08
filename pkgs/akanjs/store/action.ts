@@ -177,7 +177,7 @@ export type SliceAction<
 } & {
   [K in `setPageOf${_CapitalizedRefName}${_CapitalizedSuffix}`]: (page: number, options?: FetchPolicy) => Promise<void>;
 } & {
-  [K in `addPageOf${_CapitalizedRefName}${_CapitalizedSuffix}`]: (page: number, options?: FetchPolicy) => Promise<void>;
+  [K in `loadMoreOf${_CapitalizedRefName}${_CapitalizedSuffix}`]: (options?: FetchPolicy) => Promise<void>;
 } & {
   [K in `setLimitOf${_CapitalizedRefName}${_CapitalizedSuffix}`]: (
     limit: number,
@@ -273,9 +273,12 @@ type DefaultSliceActionFields<
 } & {
   [Suffix in _Suffixes as
     | `setPageOf${_CapRef}${StoreSliceSuffixCap<SlceCls, Suffix>}`
-    | `addPageOf${_CapRef}${StoreSliceSuffixCap<SlceCls, Suffix>}`
     | `setLimitOf${_CapRef}${StoreSliceSuffixCap<SlceCls, Suffix>}`]: (
     value: number,
+    options?: FetchPolicy,
+  ) => Promise<void>;
+} & {
+  [Suffix in _Suffixes as `loadMoreOf${_CapRef}${StoreSliceSuffixCap<SlceCls, Suffix>}`]: (
     options?: FetchPolicy,
   ) => Promise<void>;
 } & {
@@ -535,7 +538,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
     refreshModel: `refresh${className}`,
     selectModel: `select${className}`,
     setPageOfModel: `setPageOf${className}`,
-    addPageOfModel: `addPageOf${className}`,
+    loadMoreOfModel: `loadMoreOf${className}`,
     setLimitOfModel: `setLimitOf${className}`,
     setQueryArgsOfModel: `setQueryArgsOf${className}`,
     setSortOfModel: `setSortOf${className}`,
@@ -544,6 +547,8 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
     lastPageOfModel: `lastPageOf${className}`,
     pageOfModel: `pageOf${className}`,
     limitOfModel: `limitOf${className}`,
+    hasMoreOfModel: `hasMoreOf${className}`,
+    isCumulativeOfModel: `isCumulativeOf${className}`,
     queryArgsOfModel: `queryArgsOf${className}`,
     sortOfModel: `sortOf${className}`,
   };
@@ -1051,7 +1056,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       refreshModel: SliceName.replace(names.Model, names.refreshModel),
       selectModel: SliceName.replace(names.Model, names.selectModel),
       setPageOfModel: SliceName.replace(names.Model, names.setPageOfModel),
-      addPageOfModel: SliceName.replace(names.Model, names.addPageOfModel),
+      loadMoreOfModel: SliceName.replace(names.Model, names.loadMoreOfModel),
       setLimitOfModel: SliceName.replace(names.Model, names.setLimitOfModel),
       setQueryArgsOfModel: SliceName.replace(names.Model, names.setQueryArgsOfModel),
       setSortOfModel: SliceName.replace(names.Model, names.setSortOfModel),
@@ -1060,10 +1065,23 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
       lastPageOfModel: SliceName.replace(names.Model, names.lastPageOfModel),
       pageOfModel: SliceName.replace(names.Model, names.pageOfModel),
       limitOfModel: SliceName.replace(names.Model, names.limitOfModel),
+      hasMoreOfModel: SliceName.replace(names.Model, names.hasMoreOfModel),
+      isCumulativeOfModel: SliceName.replace(names.Model, names.isCumulativeOfModel),
       queryArgsOfModel: SliceName.replace(names.Model, names.queryArgsOfModel),
       sortOfModel: SliceName.replace(names.Model, names.sortOfModel),
       modelSelection: SliceName.replace(names.Model, names.modelSelection),
     };
+    /**
+     * Whether the server still holds rows past the ones just returned.
+     *
+     * Read off the batch rather than off `<model>Insight`, because the count is a second query — absent entirely
+     * under `{ insight: false }`, and one live event out of step with the list the rest of the time. A short
+     * batch is the server saying it had nothing more; a full one costs at most one extra request that comes back
+     * empty when the total happens to be a multiple of the limit.
+     */
+    const hasMoreFrom = (batch: unknown[], askedFor: number) => ({
+      [namesOfSlice.hasMoreOfModel]: batch.length >= askedFor && askedFor > 0,
+    });
     const singleSliceAction = {
       [namesOfSlice.initModel]: async function (
         this: SetGet,
@@ -1074,7 +1092,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
           FetchPolicy;
         const queryArgs = new Array(initArgLength).fill(null).map((_, i) => args[i] as object);
         const defaultModel = new cnst.full().set(initForm.default ?? {}) as unknown as Full;
-        this.set({ [names.defaultModel]: defaultModel });
+        this.set({ [names.defaultModel]: defaultModel, [namesOfSlice.isCumulativeOfModel]: false });
         await ((this as unknown as DynamicRecord)[namesOfSlice.refreshModel] as (...args: any[]) => Promise<void>)({
           ...initForm,
           queryArgs,
@@ -1106,6 +1124,11 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
           ...fetchPolicy
         } = initForm;
         const modelOperation = currentState[names.modelOperation] as string;
+        const isCumulative = currentState[namesOfSlice.isCumulativeOfModel] as boolean;
+        const loadedLength = (currentState[namesOfSlice.modelList] as DataList<Light>).length;
+        // A cumulative list is every page it has loaded, so refetching `limit` rows would silently collapse it
+        // back to the first one. One query for all of them keeps the rows on screen the rows on screen.
+        const fetchLimit = isCumulative ? Math.max(limit, loadedLength) : limit;
         const queryArgsOfModel = currentState[namesOfSlice.queryArgsOfModel] as object[];
         const pageOfModel = currentState[namesOfSlice.pageOfModel] as number;
         const limitOfModel = currentState[namesOfSlice.limitOfModel] as number;
@@ -1130,7 +1153,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
             (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
               ...fetchQueryArgs,
               (page - 1) * limit,
-              limit,
+              fetchLimit,
               sort,
               { ...fetchPolicy, onError: initForm.onError },
             ),
@@ -1152,6 +1175,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
             [namesOfSlice.modelInitList]: modelList,
             [namesOfSlice.modelInitAt]: new Date(),
             [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / (limit || 20)) + 1, 1),
+            ...hasMoreFrom(modelDataList, fetchLimit),
             [namesOfSlice.limitOfModel]: limit,
             [namesOfSlice.queryArgsOfModel]: queryArgs,
             [namesOfSlice.sortOfModel]: sort,
@@ -1201,36 +1225,54 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
           this.set({
             [namesOfSlice.modelList]: new DataList(modelDataList),
             [namesOfSlice.pageOfModel]: page,
+            [namesOfSlice.isCumulativeOfModel]: false,
+            ...hasMoreFrom(modelDataList, limitOfModel),
           });
         } finally {
           if (requests.isCurrent(ticket)) this.set({ [namesOfSlice.modelListLoading]: false });
         }
       },
-      [namesOfSlice.addPageOfModel]: async function (this: SetGet, page: number, options?: FetchPolicy) {
+      /**
+       * Appends the rows after the ones already loaded, turning this slice's window into a cumulative list.
+       *
+       * The offset is the list on screen rather than a page number, and that is the whole point. A page number
+       * assumes the server's ordering baseline has not moved, which a live insertion at the front breaks on the
+       * first event; the rows in hand are the first `n` the query returns whatever has been inserted since, so
+       * asking for what comes after them cannot drift from what is displayed. It also leaves `pageOf<Model>` at
+       * 1, which is what keeps live placement — refused anywhere but the first page — working past the first
+       * "more".
+       */
+      [namesOfSlice.loadMoreOfModel]: async function (this: SetGet, options?: FetchPolicy) {
         const currentState = this.get() as { [key: string]: any };
+        // A refresh in flight is about to replace the whole list, and claiming a ticket over it would strand its
+        // spinner — its `finally` only clears one it still owns.
+        if (currentState[namesOfSlice.modelListLoading] as boolean) return;
+        if (!(currentState[namesOfSlice.hasMoreOfModel] as boolean)) return;
         const modelList = currentState[namesOfSlice.modelList] as DataList<Light>;
         const queryArgsOfModel = currentState[namesOfSlice.queryArgsOfModel] as object[];
         const pageOfModel = currentState[namesOfSlice.pageOfModel] as number;
-        const limitOfModel = currentState[namesOfSlice.limitOfModel] as number;
+        const limitOfModel = (currentState[namesOfSlice.limitOfModel] as number) || 20;
         const sortOfModel = currentState[namesOfSlice.sortOfModel] as Sort;
-        if (pageOfModel === page) return;
-        const addFront = page < pageOfModel;
         const ticket = requests.claim();
         const fetchQueryArgs = expandQueryArgs(queryArgsOfModel, slice.args);
         const modelDataList = await (fetch[namesOfSlice.modelList] as (...args: any[]) => Promise<Light[]>)(
           ...fetchQueryArgs,
-          (page - 1) * limitOfModel,
+          (pageOfModel - 1) * limitOfModel + modelList.length,
           limitOfModel,
           sortOfModel,
           options,
         );
-        // No spinner to clear here — an append leaves what is on screen — but a late page appended after a
-        // newer one lands out of order, and `modelList` was read before the await either way.
+        // No spinner to clear here — an append leaves what is on screen — but a late batch appended after a
+        // newer one lands out of order.
         if (!requests.isCurrent(ticket)) return;
-        const newModelList = new DataList(
-          addFront ? [...modelDataList, ...modelList] : [...modelList, ...modelDataList],
-        );
-        this.set({ [namesOfSlice.modelList]: newModelList, [namesOfSlice.pageOfModel]: page });
+        // Re-read rather than reuse the list captured above: a live event may have placed a row into it while
+        // the batch was in flight, and `DataList` collapses the duplicate that shifted offset then hands back.
+        const currentModelList = (this.get() as { [key: string]: any })[namesOfSlice.modelList] as DataList<Light>;
+        this.set({
+          [namesOfSlice.modelList]: new DataList([...currentModelList.values, ...modelDataList]),
+          [namesOfSlice.isCumulativeOfModel]: true,
+          ...hasMoreFrom(modelDataList, limitOfModel),
+        });
       },
       [namesOfSlice.setLimitOfModel]: async function (this: SetGet, limit: number, options?: FetchPolicy) {
         const currentState = this.get() as { [key: string]: any };
@@ -1259,6 +1301,8 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
             [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / limit) + 1, 1),
             [namesOfSlice.limitOfModel]: limit,
             [namesOfSlice.pageOfModel]: page,
+            [namesOfSlice.isCumulativeOfModel]: false,
+            ...hasMoreFrom(modelDataList, limit),
           });
         } finally {
           if (requests.isCurrent(ticket)) this.set({ [namesOfSlice.modelListLoading]: false });
@@ -1310,6 +1354,8 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
             [namesOfSlice.modelInsight]: modelInsight,
             [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((modelInsight.count - 1) / limitOfModel) + 1, 1),
             [namesOfSlice.pageOfModel]: 1,
+            [namesOfSlice.isCumulativeOfModel]: false,
+            ...hasMoreFrom(modelDataList, limitOfModel),
             [namesOfSlice.modelSelection]: new Map(),
           });
         } finally {
@@ -1338,6 +1384,8 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
             [namesOfSlice.modelList]: new DataList(modelDataList),
             [namesOfSlice.sortOfModel]: sort,
             [namesOfSlice.pageOfModel]: 1,
+            [namesOfSlice.isCumulativeOfModel]: false,
+            ...hasMoreFrom(modelDataList, limitOfModel),
           });
         } finally {
           if (requests.isCurrent(ticket)) this.set({ [namesOfSlice.modelListLoading]: false });
@@ -1348,7 +1396,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
        *
        * The verb already answers membership — the server evaluated this slice's own query against the document
        * before and after the write, so arriving here at all is the proof, and nothing is re-checked. What is left
-       * is the window: `<slice>List` is one page of the list, not the list, so an insertion is only ever attempted
+       * is the window: `<slice>List` is a prefix of the list, not the list, so an insertion is only ever attempted
        * where its position can be known. Everywhere else the list is stamped stale and refetched, which is always
        * correct and merely costs a round trip.
        */
@@ -1363,6 +1411,7 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
         }
         const modelInsight = currentState[namesOfSlice.modelInsight] as Insight & BaseInsight;
         const limit = (currentState[namesOfSlice.limitOfModel] as number) || 20;
+        const isCumulative = currentState[namesOfSlice.isCumulativeOfModel] as boolean;
         const countedTo = (count: number) => ({
           [namesOfSlice.modelInsight]: new cnst.insight().set({ ...modelInsight, count }),
           [namesOfSlice.lastPageOfModel]: Math.max(Math.floor((count - 1) / limit) + 1, 1),
@@ -1393,6 +1442,8 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
                 row: light as unknown as LiveSortableRow,
                 page: currentState[namesOfSlice.pageOfModel] as number,
                 limit,
+                cumulative: isCumulative,
+                hasMore: currentState[namesOfSlice.hasMoreOfModel] as boolean,
                 sortKey: String(currentState[namesOfSlice.sortOfModel]),
                 allowedSorts: slice.live?.sort ?? [],
                 sorts: fetch.sortValueMap?.get(refName),
@@ -1402,9 +1453,11 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
           this.set({ ...(modelList.has(event.id) ? {} : countedTo(modelInsight.count + 1)), ...staleAt });
           return;
         }
-        // The row pushed off the end is not lost — it is the first row of the next page, which the raised count
-        // has just made room for.
-        const placed = [...modelList.slice(0, placement), light, ...modelList.slice(placement)].slice(0, limit);
+        // In a paged window the row pushed off the end is not lost — it is the first row of the next page, which
+        // the raised count has just made room for. A cumulative list has no next page holding it, and the row
+        // that would fall off is on screen, so it keeps every row it had and grows by one.
+        const inserted = [...modelList.slice(0, placement), light, ...modelList.slice(placement)];
+        const placed = isCumulative ? inserted : inserted.slice(0, limit);
         this.set({
           [namesOfSlice.modelList]: new DataList(placed as Light[]),
           ...countedTo(modelInsight.count + 1),

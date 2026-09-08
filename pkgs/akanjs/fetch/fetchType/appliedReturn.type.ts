@@ -44,6 +44,8 @@ type ServerInitShape<
 } & {
   [K in `limitOf${CapRefName}`]: number;
 } & {
+  [K in `hasMoreOf${CapRefName}`]: boolean;
+} & {
   [K in `queryArgsOf${CapRefName}`]: QueryArgs;
 } & {
   [K in `sortOf${CapRefName}`]: Sort;

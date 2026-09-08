@@ -12,6 +12,8 @@ const place = (patch: Partial<Parameters<typeof livePlacementIndex>[0]> = {}) =>
     row: row("new", 250),
     page: 1,
     limit: 5,
+    cumulative: false,
+    hasMore: false,
     sortKey: "latest",
     allowedSorts: ["latest"],
     sorts,
@@ -44,6 +46,12 @@ describe("livePlacementIndex", () => {
     expect(place({ row: row("new", 50), limit: 4 })).toBe(3);
   });
 
+  test("a cumulative list takes a row past its tail only once the server has nothing left", () => {
+    const past = { row: row("new", 50), cumulative: true, limit: 3 };
+    expect(place({ ...past, hasMore: true })).toBeNull();
+    expect(place({ ...past, hasMore: false })).toBe(3);
+  });
+
   test("an empty window takes the first row", () => {
     expect(place({ list: [] })).toBe(0);
   });
@@ -70,6 +78,8 @@ describe("livePlacementIndex", () => {
         row: { id: "new", rank, createdAt: dayjs(createdAt) },
         page: 1,
         limit: 5,
+        cumulative: false,
+        hasMore: false,
         sortKey: "tier",
         allowedSorts: ["tier"],
         sorts: tiered,

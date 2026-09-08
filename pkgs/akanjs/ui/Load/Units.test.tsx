@@ -96,6 +96,7 @@ const serverInit = ({
   pageOfLoadTestItem: 1,
   lastPageOfLoadTestItem: 1,
   limitOfLoadTestItem: 0,
+  hasMoreOfLoadTestItem: false,
   queryArgsOfLoadTestItem: args,
   sortOfLoadTestItem: "latest",
   loadTestItemInitAt: initAt,

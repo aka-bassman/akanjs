@@ -379,8 +379,8 @@ akan sync automatically generates APIs across all layers. Only write custom logi
 | `[model]` (cached full model), `[model]Loading`, `[model]Form`, `[model]Modal` | Base model states |
 | `create[Model](data)`, `update[Model](id, data)`, `remove[Model](id)` | CRUD actions |
 | `new[Model](partial)`, `edit[Model](model)`, `view[Model](model)` | Form/view state actions |
-| `[slice]List`, `[slice]InitList`, `[slice]Insight`, `[slice]Selection` | Slice states |
-| `init[Slice](args)`, `refresh[Slice]()`, `setPageOf[Slice](page)` | Slice actions |
+| `[slice]List`, `[slice]InitList`, `[slice]Insight`, `[slice]Selection`, `hasMoreOf[Slice]` | Slice states |
+| `init[Slice](args)`, `refresh[Slice]()`, `setPageOf[Slice](page)`, `loadMoreOf[Slice]()` | Slice actions |
 | `set[Field]On[Model](value)` | Auto-setters for each model field |
 
 **Rule**: Write custom store actions only for toast messages (`msg.loading`/`msg.success`) or multi-step workflows. State fields and CRUD actions are already auto-generated.

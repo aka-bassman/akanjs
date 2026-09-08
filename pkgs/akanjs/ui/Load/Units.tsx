@@ -85,10 +85,12 @@ function Render<RefName extends string, Light extends { id: string }>({
     pageOfModel: `pageOf${ModelName}`,
     lastPageOfModel: `lastPageOf${ModelName}`,
     limitOfModel: `limitOf${ModelName}`,
+    hasMoreOfModel: `hasMoreOf${ModelName}`,
+    isCumulativeOfModel: `isCumulativeOf${ModelName}`,
     queryArgsOfModel: `queryArgsOf${ModelName}`,
     sortOfModel: `sortOf${ModelName}`,
     setPageOfModel: `setPageOf${ModelName}`,
-    addPageOfModel: `addPageOf${ModelName}`,
+    loadMoreOfModel: `loadMoreOf${ModelName}`,
     refreshModel: `refresh${ModelName}`,
     watchLiveModel: `watchLive${ModelName}`,
   };
@@ -102,10 +104,12 @@ function Render<RefName extends string, Light extends { id: string }>({
     pageOfModel: sliceName.replace(names.model, names.pageOfModel),
     lastPageOfModel: sliceName.replace(names.model, names.lastPageOfModel),
     limitOfModel: sliceName.replace(names.model, names.limitOfModel),
+    hasMoreOfModel: sliceName.replace(names.model, names.hasMoreOfModel),
+    isCumulativeOfModel: sliceName.replace(names.model, names.isCumulativeOfModel),
     queryArgsOfModel: sliceName.replace(names.model, names.queryArgsOfModel),
     sortOfModel: sliceName.replace(names.model, names.sortOfModel),
     setPageOfModel: sliceName.replace(names.model, names.setPageOfModel),
-    addPageOfModel: sliceName.replace(names.model, names.addPageOfModel),
+    loadMoreOfModel: sliceName.replace(names.model, names.loadMoreOfModel),
     refreshModel: sliceName.replace(names.model, names.refreshModel),
     watchLiveModel: sliceName.replace(names.model, names.watchLiveModel),
   };
@@ -116,6 +120,7 @@ function Render<RefName extends string, Light extends { id: string }>({
   const initModelObjInsight = (init as DynamicRecord)[names.modelObjInsight] as BaseInsight | null;
   const initLimitOfModel = (init as DynamicRecord)[names.limitOfModel] as number;
   const initPageOfModel = (init as DynamicRecord)[names.pageOfModel] as number;
+  const initHasMoreOfModel = (init as DynamicRecord)[names.hasMoreOfModel] as boolean;
   const initSignature = JSON.stringify(initQueryArgs);
 
   const useCache =
@@ -156,6 +161,10 @@ function Render<RefName extends string, Light extends { id: string }>({
       [namesOfSlice.pageOfModel]: initPageOfModel,
       [namesOfSlice.lastPageOfModel]: initLastPageOfModel,
       [namesOfSlice.limitOfModel]: initLimitOfModel,
+      // The route rendered one window, so whatever this store accumulated under previous args is not what is
+      // on screen any more.
+      [namesOfSlice.hasMoreOfModel]: initHasMoreOfModel,
+      [namesOfSlice.isCumulativeOfModel]: false,
       [namesOfSlice.queryArgsOfModel]: initQueryArgsOfModel,
       [namesOfSlice.sortOfModel]: initSortOfModel,
     });
@@ -188,6 +197,7 @@ function Render<RefName extends string, Light extends { id: string }>({
   const modelInsight = storeUse[namesOfSlice.modelInsight]() as BaseInsight;
   const limitOfModel = storeUse[namesOfSlice.limitOfModel]() as number;
   const pageOfModel = storeUse[namesOfSlice.pageOfModel]() as number;
+  const hasMoreOfModel = storeUse[namesOfSlice.hasMoreOfModel]() as boolean;
   const insight = loaded ? modelInsight : initModelObjInsight;
   const limit = loaded ? limitOfModel : initLimitOfModel;
   const page = loaded ? pageOfModel : initPageOfModel;
@@ -196,8 +206,9 @@ function Render<RefName extends string, Light extends { id: string }>({
     total,
     currentPage: page,
     itemsPerPage: limit || total,
-    onAddPage: async (page: number) => {
-      await storeDo[namesOfSlice.addPageOfModel](page);
+    hasMore: loaded ? hasMoreOfModel : initHasMoreOfModel,
+    onLoadMore: async () => {
+      await storeDo[namesOfSlice.loadMoreOfModel]();
     },
     onPageSelect: (page: number, option?: { scrollToTop?: boolean }) => {
       void storeDo[namesOfSlice.setPageOfModel](page);
@@ -351,7 +362,8 @@ interface MoreProps {
   total: number;
   itemsPerPage: number;
   currentPage: number;
-  onAddPage: (page: number) => Promise<void>;
+  hasMore: boolean;
+  onLoadMore: () => Promise<void>;
   onPageSelect: (page: number, option?: { scrollToTop?: boolean }) => void;
   children?: React.ReactNode;
   className?: string;
