@@ -17,6 +17,7 @@ interface FakeScroller {
   clientHeight: number;
   scrollTop: number;
   overflowY: string;
+  flexDirection: string;
   parentElement: FakeScroller | null;
 }
 
@@ -39,7 +40,7 @@ const stubDom = (chain: FakeScroller[], scrollingElement: unknown = null) => {
     configurable: true,
   });
   Object.defineProperty(globalThis, "getComputedStyle", {
-    value: (el: FakeScroller) => ({ overflowY: el.overflowY }),
+    value: (el: FakeScroller) => ({ overflowY: el.overflowY, flexDirection: el.flexDirection }),
     configurable: true,
   });
 };
@@ -49,6 +50,7 @@ const makeScroller = (over: Partial<FakeScroller> = {}): FakeScroller => ({
   clientHeight: 400,
   scrollTop: 100,
   overflowY: "auto",
+  flexDirection: "column",
   parentElement: null,
   ...over,
 });
@@ -239,6 +241,34 @@ describe("InfiniteScroll", () => {
     });
 
     expect(latestObserver?.options?.root).toBe(timeline as unknown as Element);
+  });
+
+  test("says so once when a column-reverse parent puts the sentinel at the wrong end", async () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    const originalEnv = process.env.AKAN_PUBLIC_ENV;
+    console.warn = (message: string) => void warnings.push(message);
+    process.env.AKAN_PUBLIC_ENV = "local";
+    stubDom([makeScroller({ overflowY: "visible", scrollHeight: 400, clientHeight: 400 })]);
+    (fakeElement as unknown as { parentElement: FakeScroller }).parentElement = makeScroller({
+      flexDirection: "column-reverse",
+      overflowY: "visible",
+      scrollHeight: 400,
+      clientHeight: 400,
+    });
+
+    try {
+      await renderInfiniteScroll({ hasMore: true, reverse: true, onLoadMore: async () => undefined, children: "x" });
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("flex-col-reverse");
+
+      resetHooks();
+      await renderInfiniteScroll({ hasMore: true, reverse: true, onLoadMore: async () => undefined, children: "x" });
+      expect(warnings).toHaveLength(1);
+    } finally {
+      console.warn = originalWarn;
+      process.env.AKAN_PUBLIC_ENV = originalEnv;
+    }
   });
 
   test("leaves the observer root implicit when the document is the scroller", async () => {

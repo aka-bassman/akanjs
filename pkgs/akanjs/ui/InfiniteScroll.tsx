@@ -6,8 +6,28 @@ export interface InfiniteScrollProps {
   hasMore: boolean;
   onLoadMore: () => Promise<void>;
   children: React.ReactNode;
+  /** Load earlier rows above the ones in hand, preserving the reading position. Assumes normal column flow. */
   reverse?: boolean;
 }
+
+let warnedColumnReverse = false;
+
+/**
+ * The sentinel is positioned by DOM order alone — first child to load earlier, last child to load more — so a
+ * `column-reverse` parent paints it at the opposite end from the rows it controls, and `scrollTop: 0` is then
+ * that same end, so it also fires at mount. `flex-col-reverse` is the usual no-JS way to pin a chat to the
+ * bottom, so a caller reaching for `reverse` may well already have it; the result reads as a control placed
+ * wrongly rather than as an error, which is why it is worth saying out loud once.
+ */
+const warnColumnReverse = (sentinel: Element | null) => {
+  if (warnedColumnReverse || process.env.AKAN_PUBLIC_ENV !== "local") return;
+  const parent = sentinel?.parentElement;
+  if (!parent || getComputedStyle(parent).flexDirection !== "column-reverse") return;
+  warnedColumnReverse = true;
+  console.warn(
+    "<InfiniteScroll> sits in a `flex-col-reverse` parent, which paints its load sentinel at the end opposite the rows it loads, and fires it at mount. Drop `flex-col-reverse` and let `reverse` hold the reading position instead.",
+  );
+};
 
 const scrollableOverflows = new Set(["auto", "scroll", "overlay"]);
 
@@ -46,6 +66,7 @@ export const InfiniteScroll = ({ hasMore, onLoadMore, children, reverse }: Infin
     // there is anything to observe the container is overflowing. A container tall enough to fit a whole window
     // is the exception and keeps the viewport root for the session, since `hasMore` staying true never re-runs
     // this — the behaviour it had before, and only the trigger; anchoring re-resolves on every load.
+    warnColumnReverse(target.current);
     const scroller = scrollerOf(target.current);
     const root = scroller && scroller !== document.scrollingElement ? scroller : null;
     const observer = new IntersectionObserver(
