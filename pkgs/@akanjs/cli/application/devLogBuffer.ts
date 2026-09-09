@@ -22,6 +22,15 @@ const ansi = new RegExp(`${String.fromCharCode(27)}(?:[@-Z\\\\-_]|\\[[\\s\\S]*?[
 export const stripAnsi = (text: string) => text.replace(ansi, "");
 
 /**
+ * Selected lines as text to hand somebody — no ANSI, no pane truncation, no border. The app name is
+ * prefixed only when apps are merged, because within one app the replica tag is already in the text.
+ */
+export const plainTextOf = (lines: DevLogLine[], { withApp = false }: { withApp?: boolean } = {}): string => {
+  const width = withApp ? lines.reduce((max, line) => Math.max(max, line.app.length), 0) : 0;
+  return lines.map((line) => `${withApp ? `${line.app.padEnd(width)} │ ` : ""}${stripAnsi(line.text)}`).join("\n");
+};
+
+/**
  * Where a line came from inside an app.
  *
  * `AkanApp.#writeChildLine` prefixes every line it forwards from a replica with

@@ -7,7 +7,7 @@ import type {
   WebsocketResData,
   WebsocketSubscribeAck,
 } from "akanjs/signal";
-import type { ErrorConstructor, ErrorResponsePayload, RestoredError } from "./httpClient";
+import { type ErrorConstructor, type RestoredError, restoreRemoteError } from "./remoteError";
 
 export interface WsClientReconnectOptions {
   enabled?: boolean;
@@ -217,14 +217,7 @@ export class WsClient {
   }
 
   #restoreError(body: unknown): RestoredError {
-    const payload =
-      body && typeof body === "object" && "error" in body
-        ? (body as ErrorResponsePayload)
-        : ({ error: String(body), statusCode: 500 } satisfies ErrorResponsePayload);
-    if (this.ErrorCls) return this.ErrorCls.fromJSON(payload);
-    const error = new Error(payload.error);
-    Object.assign(error, payload);
-    return error;
+    return restoreRemoteError(body, 500, this.ErrorCls);
   }
 
   destroy() {

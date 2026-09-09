@@ -2,16 +2,18 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { DataList, getEnv, Int } from "akanjs/base";
 import { websocketBinaryFrameContract } from "akanjs/common";
 import { ConstantRegistry, via } from "akanjs/constant";
-import type {
-  DatabaseSignal,
-  EndpointCls,
-  EndpointInfo,
-  SerializedArg,
-  SerializedSignal,
-  SliceCls,
+import {
+  type DatabaseSignal,
+  type EndpointCls,
+  type EndpointInfo,
+  isExceptionLike,
+  type SerializedArg,
+  type SerializedSignal,
+  type SliceCls,
 } from "akanjs/signal";
 import { FetchClient, type FetchProxy } from "./client/fetchClient";
 import { HttpClient } from "./client/httpClient";
+import type { RestoredError } from "./client/remoteError";
 import { WsClient } from "./client/wsClient";
 import type { FetchClientType, FetchTypeOfSignal, MergeAllFetchTypes, SliceMeta } from "./fetchType";
 import {
@@ -617,6 +619,37 @@ describe("HttpClient", () => {
       path: "/items/1",
       timestamp: "2026-05-25T00:00:00.000Z",
     });
+  });
+
+  test("keeps a restored failure rethrowable when the client has no error constructor", async () => {
+    setMockFetch();
+    responseStatuses.push(400);
+    jsonResponses.push({
+      error: "fetchTest.error.applyTimeout",
+      statusCode: 400,
+      data: { name: "drone-1", timeout: 3000 },
+    });
+    const client = new HttpClient("https://api.example");
+
+    const error = (await client.get("/apply").catch((error: unknown) => error)) as RestoredError;
+
+    expect(isExceptionLike(error)).toBe(true);
+    expect(error.toJSON?.()).toEqual({
+      error: "fetchTest.error.applyTimeout",
+      statusCode: 400,
+      data: { name: "drone-1", timeout: 3000 },
+    });
+  });
+
+  test("restores a transport failure as rethrowable too, with the status the transport reported", async () => {
+    setMockFetch();
+    rawResponses.push(new TypeError("Unable to connect. Is the computer able to access the url?"));
+    const client = new HttpClient("https://api.example");
+
+    const error = (await client.get("/items").catch((error: unknown) => error)) as RestoredError;
+
+    expect(isExceptionLike(error)).toBe(true);
+    expect(error.toJSON?.()).toMatchObject({ error: "base.error.serverUnreachable", statusCode: 503 });
   });
 
   test("restores a proxy html page as a transport error instead of a parse failure", async () => {
@@ -1744,6 +1777,36 @@ describe("WsClient", () => {
         statusCode: 403,
         data: { chatRoomId: "room-1" },
         timestamp: "2026-05-25T00:00:00.000Z",
+      });
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  test("keeps a restored websocket failure rethrowable when the client has no error constructor", () => {
+    setFakeWebSocket();
+    const originalConsoleError = console.error;
+    const errors: unknown[] = [];
+    console.error = ((error: unknown) => {
+      errors.push(error);
+    }) as typeof console.error;
+    try {
+      const client = new WsClient("ws://example/ws");
+      client.connect();
+      FakeWebSocket.instances[0].open();
+
+      FakeWebSocket.instances[0].receive({
+        error: "chatRoom.error.notMember",
+        statusCode: 403,
+        data: { chatRoomId: "room-1" },
+      });
+
+      const error = errors[0] as RestoredError;
+      expect(isExceptionLike(error)).toBe(true);
+      expect(error.toJSON?.()).toEqual({
+        error: "chatRoom.error.notMember",
+        statusCode: 403,
+        data: { chatRoomId: "room-1" },
       });
     } finally {
       console.error = originalConsoleError;

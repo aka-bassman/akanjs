@@ -29,6 +29,8 @@ export interface DevTuiSnapshot {
   grep: string;
   errorsOnly: boolean;
   editingGrep: boolean;
+  /** A copy result, holding the footer in place of the key hints until it expires. */
+  notice: string;
   readyCount: number;
   appCount: number;
   logRows: number;
@@ -49,6 +51,8 @@ export interface DevTuiActions {
   setEditingGrep: (editing: boolean) => void;
   toggleErrorsOnly: () => void;
   clear: () => void;
+  copyLines: () => void;
+  copyPath: () => void;
   openSelected: () => void;
   restartSelected: () => void;
   quit: () => void;
@@ -165,6 +169,8 @@ export const DevTuiApp = ({ actions }: { actions: DevTuiActions }) => {
     else if (input === "/") actions.setEditingGrep(true);
     else if (input === "e") actions.toggleErrorsOnly();
     else if (input === "c") actions.clear();
+    else if (input === "y") actions.copyLines();
+    else if (input === "Y") actions.copyPath();
     else if (input === "o") actions.openSelected();
     else if (input === "r") actions.restartSelected();
     else if (/^[1-9]$/.test(input)) actions.selectApp(Number(input) - 1);
@@ -200,9 +206,13 @@ export const DevTuiApp = ({ actions }: { actions: DevTuiActions }) => {
           <Text inverse> </Text>
           <Text dimColor> enter to apply · esc to clear</Text>
         </Text>
+      ) : snapshot.notice ? (
+        <Text color="cyan" wrap="truncate">
+          {snapshot.notice}
+        </Text>
       ) : (
         <Text dimColor wrap="truncate">
-          {`Tab next · 1-9 app · ↑↓ scroll (shift page) · G follow${snapshot.following ? "" : " (paused)"} · / grep${snapshot.grep ? ` (${snapshot.grep})` : ""} · e errors${snapshot.errorsOnly ? " on" : ""} · c clear · o open · r restart · q quit`}
+          {`Tab next · 1-9 app · ↑↓ scroll (shift page) · G follow${snapshot.following ? "" : " (paused)"} · / grep${snapshot.grep ? ` (${snapshot.grep})` : ""} · e errors${snapshot.errorsOnly ? " on" : ""} · c clear · y copy · Y path · o open · r restart · q quit`}
         </Text>
       )}
     </Box>

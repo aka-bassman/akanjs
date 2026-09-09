@@ -85,3 +85,21 @@ export class Exception extends Error {
     }
   };
 }
+
+/**
+ * What a transport forwards to the caller instead of generalizing: a status code and a payload the value can
+ * write itself. An `Exception` is one; so is a dictionary `Err`; so is a failure `restoreRemoteError` rebuilt
+ * from another process, which is what lets a server hop rethrow a remote `Err` and have it travel as that
+ * `Err`. Anything else is this repo's own bug and becomes `SignalFailure`'s 500.
+ */
+export interface ExceptionLike {
+  statusCode: number;
+  toJSON: () => object;
+}
+
+export const isExceptionLike = (error: unknown): error is ExceptionLike =>
+  error instanceof Exception ||
+  (error instanceof Error &&
+    "statusCode" in error &&
+    typeof (error as { statusCode?: unknown }).statusCode === "number" &&
+    typeof (error as { toJSON?: unknown }).toJSON === "function");

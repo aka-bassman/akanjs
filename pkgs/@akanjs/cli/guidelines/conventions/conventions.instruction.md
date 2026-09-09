@@ -598,6 +598,7 @@ Conventions that hold for both shapes:
 - Best-effort code returns a sentinel (`null`, `undefined`, `[0, 0]`, `{}`). There are no Result/Either wrappers.
 - `try/catch` is rare and always converts an exception into a decision, never swallows one. Guards catch → `logger.warn` → `return false`; adapters catch → `logger.error` → `return null`; UI uses `try/finally` to reset a spinner. A bodyless `catch {}` is acceptable only with a one-line reason.
 - Store actions do not `try/catch` — let the framework toast the `Err`. Client-side validation failure is `msg.error("<key>")` plus an early return, never a throw.
+- **A failure another process reported travels as itself.** A server-to-server `fetch.<endpoint>(..., { origin })` restores the remote `Err` — the same class, key and `data` — so a hop that rethrows it answers its own caller with that error and the dictionary translates it. Never wrap the catch in a `new Error`, and never re-key it as a `new Err` of your own: both discard what the endpoint chose to say, and a bare `Error` is generalized to `Internal Server Error` on the way out.
 
 ### MCP Exposure
 
@@ -872,9 +873,18 @@ when two shapes disagree.
   one — `host` for the dev host, gateway and RSC worker, plus a row per replica the gateway forwards — and the
   selected one's log beside it. `Tab` walks every row and `1`-`9` jump to that app (the rail shows each
   app's digit), `↑↓` scroll (shift for a page, `G` back to following),
-  `/` greps, `e` shows stderr only, `c` clears, `o` opens the browser, `r` restarts that app, `q` quits.
+  `/` greps, `e` shows stderr only, `c` clears, `y` copies, `Y` copies the log path, `o` opens the browser,
+  `r` restarts that app, `q` quits.
   **`--plain` prints prefixed interleaved lines instead**, and a pipe, a redirect or an unsized terminal
   downgrades to that on its own.
+- **A supervised session writes `local/apps/<app>/runtime/dev.log`, and that path is how a log gets handed over.**
+  Ink repaints one frame in place, so the full-screen view leaves a bordered screenshot in the scrollback and
+  takes the rest of the session with it — a drag-selection is cleared by the next repaint, and what survives
+  carries borders and lines truncated to the pane. The file is the same output with no ANSI, nothing truncated,
+  and every process of the app in arrival order, including the dev host's own build output, which reaches no
+  other file. The previous session is kept beside it as `dev.prev.log`. Hand somebody — or an agent — the
+  path rather than a paste: it costs one line instead of a transcript, and it can be re-read after a fix.
+  In the view, `y` copies the lines the filters have already narrowed and `Y` copies the path.
 - **How many apps boot at once is the machine's answer, not a constant.** A cold boot build is the builder's
   RSS peak (~900MB per app), so the default wave is what memory and cores allow — half the memory budget
   divided by that peak, and one app per four cores — which boots a laptop's apps together and still staggers

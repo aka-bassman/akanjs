@@ -1,14 +1,25 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { getArgMetas } from "@akanjs/devkit/commandDecorators";
 import { ApplicationCommand } from "./application.command";
 import { DevBootConcurrency } from "./devBootConcurrency";
-import { DevLogBuffer, HOST_SOURCE, sourceOf, stripAnsi } from "./devLogBuffer";
+import { DevLogBuffer, HOST_SOURCE, plainTextOf, sourceOf, stripAnsi } from "./devLogBuffer";
 import { scrollAnchor, windowOf } from "./devLogWindow";
 import { DevPortReclaimer } from "./devPortReclaimer";
+import { DevSessionLog } from "./devSessionLog";
 import { DevSupervisor } from "./devSupervisor";
 import { resolveDevUi } from "./devUiMode";
 
 const tty = { isTty: true, columns: 120 };
+const lineOf = (seq: number, app: string, text: string) => ({
+  seq,
+  app,
+  source: HOST_SOURCE,
+  kind: "stdout" as const,
+  text,
+});
 const camelToKebabCase = (value: string) => value.replace(/([A-Z])/g, "-$1").toLowerCase();
 
 describe("resolveDevUi", () => {
@@ -125,6 +136,114 @@ const linesOf = (count: number) => {
   const buffer = new DevLogBuffer();
   return buffer.push("akan", "stdout", `${Array.from({ length: count }, (_, idx) => `line-${idx + 1}`).join("\n")}\n`);
 };
+
+describe("plainTextOf", () => {
+  const red = `${String.fromCharCode(27)}[31m`;
+  const reset = `${String.fromCharCode(27)}[0m`;
+
+  test("drops the level colour the child rendered, so a paste is plain text", () => {
+    const lines = [lineOf(1, "akan", `${red}boom${reset}`), lineOf(2, "akan", "next")];
+    expect(plainTextOf(lines)).toBe("boom\nnext");
+  });
+
+  test("names the app only when apps are merged, padded so the lines align", () => {
+    const lines = [lineOf(1, "akan", "one"), lineOf(2, "minimal", "two")];
+    expect(plainTextOf(lines, { withApp: true })).toBe("akan    \u2502 one\nminimal \u2502 two");
+  });
+
+  test("is empty for an empty selection rather than a blank line", () => {
+    expect(plainTextOf([])).toBe("");
+  });
+});
+
+describe("DevSessionLog", () => {
+  const openIn = async (root: string, apps: string[]) => {
+    const log = new DevSessionLog({ workspaceRoot: root, apps, now: () => new Date("2026-09-09T14:03:11") });
+    await log.open();
+    return log;
+  };
+  const makeRoot = async () => await mkdtemp(path.join(tmpdir(), "akan-session-log-"));
+
+  test("writes one file per app under that app's runtime dir", async () => {
+    const root = await makeRoot();
+    const log = await openIn(root, ["minimal"]);
+    expect(log.relativePathOf("minimal")).toBe(path.join("local", "apps", "minimal", "runtime", "dev.log"));
+    log.write("minimal", "stdout", "gateway is running\n");
+    await log.close();
+    expect(await readFile(log.pathOf("minimal"), "utf8")).toBe(
+      "\u2500\u2500 akan start \u00b7 minimal \u00b7 2026-09-09 14:03:11 \u2500\u2500\ngateway is running\n",
+    );
+  });
+
+  test("holds a chunk that ends mid-line, and writes the remainder on close", async () => {
+    const root = await makeRoot();
+    const log = await openIn(root, ["minimal"]);
+    log.write("minimal", "stdout", "hello wor");
+    log.write("minimal", "stdout", "ld\nno newline here");
+    await log.close();
+    const written = (await readFile(log.pathOf("minimal"), "utf8")).split("\n").slice(1);
+    expect(written).toEqual(["hello world", "no newline here", ""]);
+  });
+
+  test("strips the ANSI a child rendered, so the file is what a paste would be", async () => {
+    const root = await makeRoot();
+    const log = await openIn(root, ["minimal"]);
+    log.write("minimal", "stderr", `${String.fromCharCode(27)}[31mboom${String.fromCharCode(27)}[0m\n`);
+    await log.close();
+    expect(await readFile(log.pathOf("minimal"), "utf8")).toContain("\nboom\n");
+  });
+
+  test("moves the last session aside rather than writing over it", async () => {
+    const root = await makeRoot();
+    const first = await openIn(root, ["minimal"]);
+    first.write("minimal", "stdout", `${"long line ".repeat(20)}\n`);
+    await first.close();
+
+    const second = await openIn(root, ["minimal"]);
+    second.write("minimal", "stdout", "short\n");
+    await second.close();
+
+    // `Bun.file().writer()` opens at offset 0 without truncating, so a leftover tail is the failure here.
+    expect(await readFile(second.pathOf("minimal"), "utf8")).toEndWith("short\n");
+    expect(await readFile(second.previousPathOf("minimal"), "utf8")).toContain("long line");
+  });
+
+  test("a note is session-level and lands in every app's file", async () => {
+    const root = await makeRoot();
+    const log = await openIn(root, ["akan", "minimal"]);
+    log.note("booting 2 apps at a time");
+    await log.close();
+    for (const app of ["akan", "minimal"])
+      expect(await readFile(log.pathOf(app), "utf8")).toContain("[akan] booting 2 apps at a time");
+  });
+
+  test("records a state transition once, not once per status publish", async () => {
+    const root = await makeRoot();
+    const log = await openIn(root, ["minimal"]);
+    const status = {
+      name: "minimal",
+      url: "http://localhost:8391",
+      state: "ready",
+      detail: "",
+    } as unknown as Parameters<DevSessionLog["status"]>[0][number];
+    log.status([status]);
+    log.status([status]);
+    await log.close();
+    const readyLines = (await readFile(log.pathOf("minimal"), "utf8"))
+      .split("\n")
+      .filter((line) => line.includes("minimal ready"));
+    expect(readyLines).toEqual(["[akan] minimal ready \u2014 http://localhost:8391"]);
+  });
+
+  test("survives an app whose runtime dir does not exist yet", async () => {
+    const root = await makeRoot();
+    await writeFile(path.join(root, "marker"), "");
+    const log = await openIn(root, ["brand-new"]);
+    log.write("brand-new", "stdout", "up\n");
+    await log.close();
+    expect(await readFile(log.pathOf("brand-new"), "utf8")).toContain("up");
+  });
+});
 
 describe("devLogWindow", () => {
   test("follows the tail with no anchor", () => {

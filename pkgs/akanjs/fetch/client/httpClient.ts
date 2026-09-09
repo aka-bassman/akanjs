@@ -1,26 +1,5 @@
 import type { HttpMutationMethod, SerializedArg } from "akanjs/signal";
-
-export interface ErrorResponsePayload {
-  error: string;
-  statusCode?: number;
-  data?: Record<string, unknown>;
-  details?: unknown;
-  path?: string;
-  timestamp?: string;
-}
-
-export interface RestoredError extends Error {
-  error?: string;
-  statusCode?: number;
-  data?: unknown;
-  details?: unknown;
-  path?: string;
-  timestamp?: string;
-}
-
-export interface ErrorConstructor {
-  fromJSON: (payload: ErrorResponsePayload) => RestoredError;
-}
+import { type ErrorConstructor, type RestoredError, restoreRemoteError } from "./remoteError";
 
 export interface HttpClientOptions {
   headers?: Record<string, string>;
@@ -204,14 +183,7 @@ export class HttpClient {
   }
 
   #restoreError(body: unknown, fallbackStatusCode: number): RestoredError {
-    const payload =
-      body && typeof body === "object" && "error" in body
-        ? ({ statusCode: fallbackStatusCode, ...(body as Record<string, unknown>) } as ErrorResponsePayload)
-        : ({ error: String(body), statusCode: fallbackStatusCode } satisfies ErrorResponsePayload);
-    if (this.ErrorCls) return this.ErrorCls.fromJSON(payload);
-    const error = new Error(payload.error);
-    Object.assign(error, payload);
-    return error;
+    return restoreRemoteError(body, fallbackStatusCode, this.ErrorCls);
   }
   static makePath(key: string, paramArgs: SerializedArg[], prefix?: string) {
     const paramPath = paramArgs.length > 0 ? `/${paramArgs.map((arg) => `:${arg.name}`).join("/")}` : "";

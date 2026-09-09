@@ -872,6 +872,31 @@ describe("SignalContext execution", () => {
     expect(await nullableResponse.json()).toBe("nullable");
   });
 
+  test("forwards a rethrown remote failure instead of generalizing it to a 500", async () => {
+    // What `restoreRemoteError` hands a server process that calls another with `{ origin }` and rethrows.
+    const remote = Object.assign(new Error("signalTest.error.applyTimeout"), {
+      statusCode: 400,
+      toJSON: () => ({ error: "signalTest.error.applyTimeout", statusCode: 400, data: { timeout: 3000 } }),
+    });
+    const endpointInfo = buildEndpoint.query(String).exec(() => {
+      throw remote;
+    });
+    const adaptor = new (adapt("signalTestRemoteAdaptor"))();
+
+    const response = (await SignalContext.try(adaptor, endpointInfo, "remote", async () => {
+      const context = makeSignalContext({ endpointInfo, adaptor });
+      await context.init();
+      return (await context.exec()) as Response;
+    })) as Response;
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "signalTest.error.applyTimeout",
+      statusCode: 400,
+      data: { timeout: 3000 },
+    });
+  });
+
   test("passes through raw Response results", async () => {
     const endpointInfo = buildEndpoint.query(Response as never).exec(() => Response.json({ ok: true }) as never);
     const context = makeSignalContext({ endpointInfo });

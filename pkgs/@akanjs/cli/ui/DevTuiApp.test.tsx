@@ -80,6 +80,7 @@ const mount = (patch: Partial<DevTuiSnapshot> = {}): Harness => {
     grep: "",
     errorsOnly: false,
     editingGrep: false,
+    notice: "",
     readyCount: 1,
     appCount: 2,
     logRows: 10,
@@ -106,6 +107,8 @@ const mount = (patch: Partial<DevTuiSnapshot> = {}): Harness => {
     setEditingGrep: (editing) => calls.push(`setEditingGrep:${editing}`),
     toggleErrorsOnly: () => calls.push("toggleErrorsOnly"),
     clear: () => calls.push("clear"),
+    copyLines: () => calls.push("copyLines"),
+    copyPath: () => calls.push("copyPath"),
     openSelected: () => calls.push("openSelected"),
     restartSelected: () => calls.push("restartSelected"),
     quit: () => calls.push("quit"),
@@ -222,6 +225,8 @@ describe("DevTuiApp", () => {
     await harness.press("2");
     await harness.press("e");
     await harness.press("c");
+    await harness.press("y");
+    await harness.press("Y");
     await harness.press("o");
     await harness.press("r");
     await harness.press("G");
@@ -230,11 +235,28 @@ describe("DevTuiApp", () => {
       "selectApp:1",
       "toggleErrorsOnly",
       "clear",
+      "copyLines",
+      "copyPath",
       "openSelected",
       "restartSelected",
       "follow",
       "quit",
     ]);
+  });
+
+  test("a copy result takes the footer, and the hints come back with it", async () => {
+    const harness = mount();
+    await nextFrame();
+    expect(harness.stdout.lastFrame).toContain("y copy");
+
+    harness.setSnapshot({ notice: "copied 42 lines" });
+    await nextFrame();
+    expect(harness.stdout.lastFrame).toContain("copied 42 lines");
+    expect(harness.stdout.lastFrame).not.toContain("y copy");
+
+    harness.setSnapshot({ notice: "" });
+    await nextFrame();
+    expect(harness.stdout.lastFrame).toContain("y copy");
   });
 
   test("arrows scroll by a line and shift-arrows by a page", async () => {

@@ -1,7 +1,8 @@
 import { render } from "ink";
+import { writeClipboard } from "../clipboard";
 import { openBrowser } from "../openBrowser";
 import { DevTuiApp, type DevTuiRailRow, type DevTuiSnapshot } from "../ui/DevTuiApp";
-import { DevLogBuffer, type DevLogTarget, HOST_SOURCE } from "./devLogBuffer";
+import { DevLogBuffer, type DevLogTarget, HOST_SOURCE, plainTextOf } from "./devLogBuffer";
 import { scrollAnchor, windowOf } from "./devLogWindow";
 import type { DevAppStatus, DevSupervisor, DevSupervisorView } from "./devSupervisor";
 
@@ -24,6 +25,8 @@ export class DevTui implements DevSupervisorView {
   static readonly footerRows = 1;
   /** A pane's own border pair plus its title row. */
   static readonly paneChromeRows = 3;
+  /** How long a copy result holds the footer before the key hints come back. */
+  static readonly noticeMs = 4_000;
 
   readonly #buffer = new DevLogBuffer();
   readonly #listeners = new Set<() => void>();
@@ -37,6 +40,8 @@ export class DevTui implements DevSupervisorView {
   #errorsOnly = false;
   #frameTimer: ReturnType<typeof setTimeout> | null = null;
   #cachedSnapshot: DevTuiSnapshot | null = null;
+  #notice = "";
+  #noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(supervisor: DevSupervisor) {
     this.#supervisor = supervisor;
@@ -55,6 +60,8 @@ export class DevTui implements DevSupervisorView {
           setEditingGrep: this.#setEditingGrep,
           toggleErrorsOnly: this.#toggleErrorsOnly,
           clear: this.#clear,
+          copyLines: this.#copyLines,
+          copyPath: this.#copyPath,
           openSelected: this.#openSelected,
           restartSelected: this.#restartSelected,
           quit: this.#quit,
@@ -87,12 +94,17 @@ export class DevTui implements DevSupervisorView {
   close = () => {
     if (this.#frameTimer) clearTimeout(this.#frameTimer);
     this.#frameTimer = null;
+    if (this.#noticeTimer) clearTimeout(this.#noticeTimer);
+    this.#noticeTimer = null;
     process.stdout.off("resize", this.#onResize);
     this.#instance.unmount();
     // Ink leaves its last frame behind, so the only thing still owed is whatever a child wrote without
     // a closing newline plus a summary of how the session ended.
     for (const line of this.#buffer.flushPartials()) process.stdout.write(`${line.app} │ ${line.text}\n`);
     for (const status of this.#statuses) process.stdout.write(`${status.name} ${status.url} — ${status.state}\n`);
+    // The frame left behind is a bordered screenshot of one page; this says where the whole thing is.
+    const log = this.#supervisor.sessionLog;
+    for (const name of log.appNames) process.stdout.write(`${name} log: ${log.relativePathOf(name)}\n`);
   };
 
   #subscribe = (listener: () => void) => {
@@ -169,6 +181,7 @@ export class DevTui implements DevSupervisorView {
       grep: this.#grep,
       errorsOnly: this.#errorsOnly,
       editingGrep: this.#editingGrep,
+      notice: this.#notice,
       readyCount: this.#statuses.filter((candidate) => candidate.state === "ready").length,
       appCount: this.#statuses.length,
       logRows,
@@ -263,6 +276,48 @@ export class DevTui implements DevSupervisorView {
     this.#anchor = null;
     this.#renderNow();
   };
+
+  /**
+   * The pane truncates to its width and the frame carries a border, so a selection dragged off the
+   * screen is neither the whole line nor only the log — and a repaint clears it before it is made.
+   * This copies what the filters already narrowed: every matching line, in full, with no chrome.
+   */
+  #copyLines = () => {
+    const lines = this.#filtered(this.#target);
+    if (lines.length === 0) {
+      this.#setNotice("nothing to copy");
+      return;
+    }
+    const text = plainTextOf(lines, { withApp: this.#target.app === null });
+    void writeClipboard(text).then((copied) => {
+      this.#setNotice(copied ? `copied ${lines.length} lines` : `no clipboard here — ${this.#logPaths().join(" · ")}`);
+    });
+  };
+
+  /** The path is what a reader hands to an editor or an agent, which reads it instead of a paste. */
+  #copyPath = () => {
+    const paths = this.#logPaths();
+    void writeClipboard(paths.join("\n")).then((copied) => {
+      this.#setNotice(copied ? `copied ${paths.join(" · ")}` : paths.join(" · "));
+    });
+  };
+
+  #logPaths(): string[] {
+    const log = this.#supervisor.sessionLog;
+    const app = this.#target.app;
+    return (app ? [app] : log.appNames).map((name) => log.relativePathOf(name));
+  }
+
+  #setNotice(text: string) {
+    this.#notice = text;
+    if (this.#noticeTimer) clearTimeout(this.#noticeTimer);
+    this.#noticeTimer = setTimeout(() => {
+      this.#notice = "";
+      this.#noticeTimer = null;
+      this.#renderNow();
+    }, DevTui.noticeMs);
+    this.#renderNow();
+  }
 
   #openSelected = () => {
     const status = this.#selectedStatus();

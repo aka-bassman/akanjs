@@ -20,7 +20,7 @@ import type { Adaptor, AdaptorCls, DatabaseService, InjectRegistry, LiveRegistry
 import type { Internal, InternalCls, InternalInfo, MiddlewareCls } from ".";
 import { CrossSiteGuard } from "./CrossSiteGuard";
 import type { EndpointInfo, EndpointType } from "./endpointInfo";
-import { Exception } from "./exception";
+import { Exception, isExceptionLike } from "./exception";
 import { guardOf } from "./guard";
 // Deliberately past the barrel: `./mcp` re-exports `McpDocument`, which would drag `akanjs/fetch` into the
 // signal graph. `Msg` itself imports nothing.
@@ -47,21 +47,6 @@ type MiddlewareHandler = (context: SignalContext, next: () => Promise<unknown>) 
  * outermost `resolveReturn` starts it and every recursion threads it down, so nothing survives the response.
  */
 type ResolveCache = Map<ConstantFieldTypeInput, Map<string, Promise<unknown>>>;
-
-interface ExceptionLike {
-  statusCode: number;
-  toJSON(): object;
-}
-
-const isExceptionLike = (error: unknown): error is ExceptionLike => {
-  return (
-    error instanceof Exception ||
-    (error instanceof Error &&
-      "statusCode" in error &&
-      typeof (error as { statusCode?: unknown }).statusCode === "number" &&
-      typeof (error as { toJSON?: unknown }).toJSON === "function")
-  );
-};
 
 export class SignalContext<
   Ctx extends HttpExecutionContext | WebSocketExecutionContext = HttpExecutionContext | WebSocketExecutionContext,

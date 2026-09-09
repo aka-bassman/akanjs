@@ -1,7 +1,7 @@
 import { dayjs } from "akanjs/base";
 import { type Logger, websocketAuthContract } from "akanjs/common";
 import type { InjectRegistry, LiveRegistry } from "akanjs/service";
-import { Exception, SignalContext, SignalFailure, type WebsocketReqData } from "akanjs/signal";
+import { isExceptionLike, SignalContext, SignalFailure, type WebsocketReqData } from "akanjs/signal";
 import { compressResponse } from "../contentEncoding";
 import type { HmrWsData, HmrWsHub } from "../hmr/wsHub";
 import { copyBunRequestFields, type WebProxyRunner } from "../proxy";
@@ -51,20 +51,6 @@ export interface WebsocketHandlersInputs {
 }
 
 type WsTaggedData = { kind?: string };
-interface ExceptionLike {
-  statusCode: number;
-  toJSON(): object;
-}
-
-const isExceptionLike = (error: unknown): error is ExceptionLike => {
-  return (
-    error instanceof Exception ||
-    (error instanceof Error &&
-      "statusCode" in error &&
-      typeof (error as { statusCode?: unknown }).statusCode === "number" &&
-      typeof (error as { toJSON?: unknown }).toJSON === "function")
-  );
-};
 
 export class ApiRouter {
   /**

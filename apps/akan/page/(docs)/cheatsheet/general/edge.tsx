@@ -91,6 +91,34 @@ await fetch.stopJob(jobId, { origin: edgeOrigin });`}
       </Scroll.Slide>
       <Divider />
 
+      <Scroll.Slide id="errors" title={l.trans({ en: "Errors Come Back", ko: "에러는 그대로 돌아옵니다" })}>
+        <Docs.Title>{l.trans({ en: "Errors Come Back", ko: "에러는 그대로 돌아옵니다" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "An `Err` the remote endpoint threw arrives here as that same `Err` — the same key, the same `data`, an `instanceof Err`. Let it go and your own caller receives it, so the browser toasts the sentence the remote server chose.",
+              ko: "원격 endpoint가 던진 `Err`는 이쪽에도 같은 `Err`로 도착합니다 — 같은 key, 같은 `data`, `instanceof Err`까지 그대로입니다. 그대로 흘려보내면 내 호출자에게도 그 에러가 전달되어, 브라우저는 원격 서버가 고른 문장을 toast 합니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "Never wrap the catch in a `new Error`: that throws away the key, and a plain `Error` is generalized to `Internal Server Error` on the way out.",
+              ko: "catch를 `new Error`로 감싸지 마세요. key가 사라지고, 일반 `Error`는 나가는 길에 `Internal Server Error`로 일반화됩니다.",
+            })}
+          </div>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title={l.trans({ en: "One error, two servers", ko: "에러 하나, 서버 둘" })}
+          code={`// edge server
+throw new Err("job.error.applyTimeout", { jobId, timeout: 3000 });
+
+// cloud server — the same Err is thrown by this call
+await fetch.startJob(jobId, { origin: edgeOrigin });`}
+        />
+      </Scroll.Slide>
+      <Divider />
+
       <Scroll.Slide id="subscribe" title={l.trans({ en: "Listen To Status", ko: "상태 듣기" })}>
         <Docs.Title>{l.trans({ en: "Listen To Status", ko: "상태 듣기" })}</Docs.Title>
         <Docs.Description>

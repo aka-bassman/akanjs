@@ -2,6 +2,7 @@ import type { DevHostEvent, DevHostState } from "@akanjs/devkit/akanApp";
 import type { App } from "@akanjs/devkit/commandDecorators";
 import { openBrowser } from "../openBrowser";
 import { DevBootConcurrency } from "./devBootConcurrency";
+import { DevSessionLog } from "./devSessionLog";
 import type { DevUiMode } from "./devUiMode";
 
 export interface DevAppStatus {
@@ -84,28 +85,42 @@ export class DevSupervisor {
 
   readonly #options: DevSupervisorOptions;
   readonly #children = new Map<string, DevChild>();
+  readonly #sessionLog: DevSessionLog;
   #view: DevSupervisorView | null = null;
   #stopping = false;
 
   constructor(options: DevSupervisorOptions) {
     this.#options = options;
+    this.#sessionLog = new DevSessionLog({
+      workspaceRoot: options.apps[0]?.workspace.workspaceRoot ?? process.cwd(),
+      apps: options.apps.map((app) => app.name),
+    });
   }
 
   get statuses(): DevAppStatus[] {
     return [...this.#children.values()].map((child) => child.status);
   }
 
+  /** The session's own log files. Held here rather than by a view so `--plain` keeps them too. */
+  get sessionLog(): DevSessionLog {
+    return this.#sessionLog;
+  }
+
   async run(view: DevSupervisorView) {
     this.#view = view;
+    await this.#sessionLog.open();
     const ports = await this.#assignPorts();
     for (const app of this.#options.apps) this.#children.set(app.name, this.#makeChild(app, ports.get(app.name) ?? 0));
     this.#publishStatus();
+    const logPaths = this.#sessionLog.appNames.map((name) => this.#sessionLog.relativePathOf(name));
+    this.#note(`session log: ${logPaths.join(" · ")}`, "info");
 
     const stopped = this.#installSignalHandlers();
     void this.#bootInOrder();
     await Promise.race([view.waitForExit(), stopped]);
     await this.stop();
     view.close?.();
+    await this.#sessionLog.close();
   }
 
   /**
@@ -264,7 +279,9 @@ export class DevSupervisor {
     try {
       for await (const chunk of stream) {
         const text = decoder.decode(chunk, { stream: true });
-        if (text) this.#view?.onOutput(name, kind, text);
+        if (!text) continue;
+        this.#view?.onOutput(name, kind, text);
+        this.#sessionLog.write(name, kind, text);
       }
     } catch {
       // The stream closes when the child exits; `onExit` already reported that.
@@ -273,10 +290,12 @@ export class DevSupervisor {
 
   #publishStatus() {
     this.#view?.onStatus(this.statuses);
+    this.#sessionLog.status(this.statuses);
   }
 
   #note(text: string, level: "info" | "warn") {
     this.#view?.onNote(text, level);
+    this.#sessionLog.note(text);
   }
 
   /**

@@ -22,7 +22,8 @@ import type { ClientSignal, FetchClientType, FetchSignalInput, MergeAllFetchType
 import { claimRequestQuery, cookies as requestCookies, headers as requestHeaders } from "../requestStorage";
 import type { GetSliceMetaObjFromDatabaseSignals } from "../types";
 import { FetchHandle } from "./fetchHandle";
-import { type ErrorConstructor, HttpClient } from "./httpClient";
+import { HttpClient } from "./httpClient";
+import type { ErrorConstructor } from "./remoteError";
 import { SliceInitHandle } from "./sliceInitHandle";
 import { WsClient } from "./wsClient";
 
