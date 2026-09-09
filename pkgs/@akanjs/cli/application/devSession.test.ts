@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { getArgMetas } from "@akanjs/devkit/commandDecorators";
 import { ApplicationCommand } from "./application.command";
+import { DevBootConcurrency } from "./devBootConcurrency";
 import { DevLogBuffer, HOST_SOURCE, sourceOf, stripAnsi } from "./devLogBuffer";
 import { scrollAnchor, windowOf } from "./devLogWindow";
 import { DevPortReclaimer } from "./devPortReclaimer";
@@ -223,5 +224,59 @@ describe("DevSupervisor.childArgs", () => {
     expect(args).toContain("--plain");
     expect(args.slice(args.indexOf("--dbup"), args.indexOf("--dbup") + 2)).toEqual(["--dbup", "false"]);
     expect(args.slice(args.indexOf("--write"), args.indexOf("--write") + 2)).toEqual(["--write", "true"]);
+  });
+});
+
+describe("DevBootConcurrency", () => {
+  const laptop = { memoryBytes: 48 * 1024 ** 3, cores: 14 };
+  const container = { memoryBytes: 1.2 * 1024 ** 3, cores: 2 };
+
+  test("an explicit number wins, clamped to the app count and to at least one", () => {
+    expect(DevBootConcurrency.resolve(4, 2, container).concurrency).toBe(2);
+    expect(DevBootConcurrency.resolve(2, 9, container).concurrency).toBe(2);
+    expect(DevBootConcurrency.resolve(3, 0, laptop).concurrency).toBe(1);
+    expect(DevBootConcurrency.resolve(3, 2, laptop).reason).toBe("--concurrency 2");
+  });
+
+  test("a small container still staggers the boot", () => {
+    expect(DevBootConcurrency.resolve(3, null, container).concurrency).toBe(1);
+  });
+
+  test("a roomy machine boots them together, up to what its cores can build", () => {
+    expect(DevBootConcurrency.resolve(2, null, laptop).concurrency).toBe(2);
+    expect(DevBootConcurrency.resolve(9, null, laptop).concurrency).toBe(3);
+  });
+
+  test("memory bounds it independently of cores", () => {
+    expect(DevBootConcurrency.resolve(8, null, { memoryBytes: 4 * 1024 ** 3, cores: 64 }).concurrency).toBe(2);
+    expect(DevBootConcurrency.resolve(8, null, { memoryBytes: 256 * 1024 ** 3, cores: 8 }).concurrency).toBe(2);
+  });
+
+  test("the note names the wave size and why", () => {
+    const plan = DevBootConcurrency.resolve(9, null, laptop);
+    expect(DevBootConcurrency.describe(9, plan)).toBe(
+      "booting 3 of 9 apps at a time (14 cores, 48GB memory) — --concurrency raises it",
+    );
+    expect(DevBootConcurrency.describe(2, DevBootConcurrency.resolve(2, null, laptop))).toBe(
+      "booting all 2 apps at once (14 cores, 48GB memory)",
+    );
+  });
+
+  test("start leaves the option unset rather than defaulting it, so the machine gets to answer", () => {
+    const [argMetas] = getArgMetas(ApplicationCommand, "start");
+    const concurrency = argMetas.find((meta) => meta.type === "Option" && meta.name === "concurrency");
+    expect(concurrency?.argsOption.default).toBeUndefined();
+    expect(concurrency?.argsOption.nullable).toBe(true);
+  });
+
+  test("the budget never exceeds the container the session runs in", () => {
+    const previous = process.env.AKAN_MEMORY_LIMIT;
+    process.env.AKAN_MEMORY_LIMIT = "1200mb";
+    try {
+      expect(DevBootConcurrency.budget().memoryBytes).toBe(1200 * 1024 * 1024);
+    } finally {
+      if (previous === undefined) delete process.env.AKAN_MEMORY_LIMIT;
+      else process.env.AKAN_MEMORY_LIMIT = previous;
+    }
   });
 });

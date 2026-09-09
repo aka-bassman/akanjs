@@ -16,6 +16,7 @@ const envKeys = [
   "AKAN_PUBLIC_CLIENT_PORT",
   "SERVER_HOST",
   "AKAN_PUBLIC_SERVER_PORT",
+  "PORT",
   "SERVER_HTTP_PROTOCOL",
   "SSH_TUNNEL_USERNAME",
   "SSH_TUNNEL_PASSWORD",
@@ -130,6 +131,40 @@ describe("getEnv", () => {
     expect(env.serverPort).toBe(9443);
     expect(env.serverHttpUri).toBe("https://api.example.com:9443/api");
     expect(env.serverWsUri).toBe("wss://api.example.com:9443");
+  });
+
+  test("a loopback server origin follows the port the process was run with", async () => {
+    resetEnv();
+    process.env.AKAN_PUBLIC_ENV = "main";
+    process.env.AKAN_PUBLIC_RENDER_ENV = "ssr";
+    process.env.PORT = "80";
+
+    const { getEnv } = await loadBaseEnv();
+    const env = getEnv();
+
+    expect(env.serverHost).toBe("localhost");
+    expect(env.serverPort).toBe(80);
+    expect(env.serverHttpUri).toBe("http://localhost:80/api");
+  });
+
+  test("an explicit server port outranks PORT, and a remote server host ignores it", async () => {
+    resetEnv();
+    process.env.AKAN_PUBLIC_ENV = "main";
+    process.env.AKAN_PUBLIC_RENDER_ENV = "ssr";
+    process.env.PORT = "80";
+    process.env.AKAN_PUBLIC_SERVER_PORT = "9443";
+
+    const explicit = await loadBaseEnv();
+    expect(explicit.getEnv().serverPort).toBe(9443);
+
+    resetEnv();
+    process.env.AKAN_PUBLIC_ENV = "main";
+    process.env.AKAN_PUBLIC_RENDER_ENV = "ssr";
+    process.env.PORT = "80";
+    process.env.SERVER_HOST = "api.example.com";
+
+    const remote = await loadBaseEnv();
+    expect(remote.getEnv().serverPort).toBe(8282);
   });
 
   test("caches the computed environment per module instance", async () => {

@@ -595,6 +595,14 @@ export const makeActions = (refName: string, slice: { [key: string]: SerializedS
     // The editor moved on while the read was in flight — a different row, or closed altogether.
     const current = (this.get() as { [key: string]: any })[names.modelDraft] as DraftState | null;
     if (current?.key !== draft.key) return;
+    // The draft holds what the editor already opened with. A form that saves itself as the user types reaches
+    // this every time — its own save moves `updatedAt`, so the draft reads as stale against a record carrying
+    // the very same values — and offering it back would ask the user to settle a difference that is not there.
+    const openedForm = (this.get() as { [key: string]: any })[names.modelForm] as object;
+    if (DraftStore.contentHash(record.form) === DraftStore.contentHash(DraftStore.encodeForm(refName, openedForm))) {
+      await DraftStore.remove(draft.key);
+      return;
+    }
     let form: object;
     try {
       form = DraftStore.decodeForm(refName, record.form);

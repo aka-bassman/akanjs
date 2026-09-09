@@ -314,6 +314,7 @@ export class AkanApp {
     // The env a spawned child would have been handed, minus `AKAN_CHILD_SOCKET`: its absence is what tells
     // `AkanServer` it owns the whole surface, so it binds `PORT` and answers `/_akan/app/*` itself.
     Object.assign(process.env, {
+      PORT: String(this.#port),
       NODE_ENV: AkanApp.#defaultChildNodeEnv(),
       AKAN_REPLICA: this.#replica.value,
       AKAN_REPLICA_IDX: "0",
@@ -327,7 +328,7 @@ export class AkanApp {
     // This process already ran as the gateway, so anything that read the env before the assignment above
     // cached the prefix this gateway was about to change.
     resetEnvCache();
-    this.logger.info(`Starting ${role} replica in this process (solo); set AKAN_SOLO=false for the gateway`);
+    this.logger.debug(`Starting ${role} replica in this process (solo); set AKAN_SOLO=false for the gateway`);
     const mod = (await import(this.#serverPath)) as { server?: SoloServer; app?: SoloServer };
     const server = mod.server ?? mod.app;
     if (!server?.start) throw new Error("server.ts must export server or app with start()");
@@ -405,6 +406,9 @@ export class AkanApp {
       cwd: process.cwd(),
       env: {
         ...process.env,
+        // The child listens on a unix socket, but its own loopback fetches (SSR, the RSC worker it spawns) go
+        // back through this gateway, so it has to carry the port the gateway resolved rather than the raw env.
+        PORT: String(this.#port),
         NODE_ENV: AkanApp.#defaultChildNodeEnv(),
         AKAN_REPLICA: this.#replica.value,
         AKAN_REPLICA_IDX: String(idx),

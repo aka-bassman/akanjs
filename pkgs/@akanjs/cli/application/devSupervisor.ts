@@ -1,6 +1,7 @@
 import type { DevHostEvent, DevHostState } from "@akanjs/devkit/akanApp";
 import type { App } from "@akanjs/devkit/commandDecorators";
 import { openBrowser } from "../openBrowser";
+import { DevBootConcurrency } from "./devBootConcurrency";
 import type { DevUiMode } from "./devUiMode";
 
 export interface DevAppStatus {
@@ -16,7 +17,8 @@ export interface DevAppStatus {
 export interface DevSupervisorOptions {
   apps: App[];
   mode: DevUiMode;
-  concurrency?: number;
+  /** `null` leaves the wave size to `DevBootConcurrency`; a number is what the session asked for. */
+  concurrency?: number | null;
   open?: boolean;
   write?: boolean;
 }
@@ -149,10 +151,16 @@ export class DevSupervisor {
    * Boots in waves rather than all at once. Two reasons, both measured: a cold boot build is the
    * builder's RSS peak (~490MB on top of its floor), and every app's `scanSync` rewrites the generated
    * barrels of the libs it shares with the others — serialized here as well as locked underneath.
+   *
+   * The wave size is the machine's, not a constant: `DevBootConcurrency` sizes it against memory and
+   * cores, so a laptop boots them together and a small container still staggers them. The note says
+   * which, because a session that waits on one app at a time must be able to see why.
    */
   async #bootInOrder() {
-    const concurrency = Math.max(1, Math.trunc(this.#options.concurrency ?? 1));
     const queue = [...this.#children.values()];
+    const plan = DevBootConcurrency.resolve(queue.length, this.#options.concurrency ?? null);
+    const concurrency = plan.concurrency;
+    if (queue.length > 1) this.#note(DevBootConcurrency.describe(queue.length, plan), "info");
     const waves: DevChild[][] = [];
     for (let idx = 0; idx < queue.length; idx += concurrency) waves.push(queue.slice(idx, idx + concurrency));
     for (const wave of waves) {

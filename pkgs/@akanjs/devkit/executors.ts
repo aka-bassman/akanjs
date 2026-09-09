@@ -1455,7 +1455,15 @@ export class AppExecutor extends SysExecutor {
     // which filters to AKAN_PUBLIC_*) sees AKAN_PUBLIC_APP_NAME — otherwise SSR throws
     // "environment variable AKAN_PUBLIC_APP_NAME is required". Only AKAN_PUBLIC_* is baked into bundles, so
     // this does not leak non-public env.
-    if (type === "build") Object.assign(process.env, env);
+    // The port keys are this machine's dev allocation, and `define` turns an `AKAN_PUBLIC_*` into a literal the
+    // artifact can never be run with a different value for — a baked port would outrank the `PORT` the container
+    // is started with and send every SSR self-call to a port nothing bound.
+    if (type === "build") {
+      const buildEnv = { ...env };
+      delete buildEnv.AKAN_PUBLIC_CLIENT_PORT;
+      delete buildEnv.AKAN_PUBLIC_SERVER_PORT;
+      Object.assign(process.env, buildEnv);
+    }
     return { env };
   }
   #publicEnv: Record<string, string> | null = null;

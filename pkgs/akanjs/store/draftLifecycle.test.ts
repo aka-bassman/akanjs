@@ -49,13 +49,14 @@ class MemoryStorage implements Storage {
 
 const NOTE_ID = "aaaaaaaaaaaaaaaaaaaaaaaa";
 let serverUpdatedAt = new Date("2026-01-01T00:00:00.000Z");
+let serverTitle = "from server";
 
 const makeSignal = () => {
   const calls: Record<string, ReturnType<typeof mock>> = {
     createDraftNote: mock(async (data: Record<string, unknown>) => new NoteFull({ id: NOTE_ID, ...data })),
     updateDraftNote: mock(async (id: string, data: Record<string, unknown>) => new NoteFull({ id, ...data })),
     draftNote: mock(
-      async (id: string) => new NoteFull({ id, title: "from server", updatedAt: serverUpdatedAt } as never),
+      async (id: string) => new NoteFull({ id, title: serverTitle, updatedAt: serverUpdatedAt } as never),
     ),
     draftNoteList: mock(async () => []),
     draftNoteInsight: mock(async () => new NoteInsight({ count: 0 })),
@@ -109,6 +110,7 @@ beforeEach(() => {
   process.env.AKAN_PUBLIC_ENV = "testing";
   resetEnvCache();
   serverUpdatedAt = new Date("2026-01-01T00:00:00.000Z");
+  serverTitle = "from server";
   storage = new MemoryStorage();
   Object.defineProperty(globalThis, "window", {
     value: {
@@ -234,6 +236,27 @@ describe("form draft lifecycle", () => {
     expect(second.get().draftNoteForm.title).toBe("my unsaved edit");
     expect(second.get().draftNoteFormDraft.pending).toBeNull();
     expect(second.get().draftNoteFormDraft.appliedAt).toBeInstanceOf(Date);
+  });
+
+  test("drops a draft the record has caught up with instead of offering it back", async () => {
+    const first = makeInstance();
+    await first.do.editDraftNote(NOTE_ID, { draftScope: DraftStore.editScope(NOTE_ID) });
+    await settle();
+    first.do.setTitleOnDraftNote("autosaved");
+    first.flushDrafts();
+    await settle();
+    expect(draftCount()).toBe(1);
+
+    // What an autosaving form leaves behind: the record now holds the draft's values, under a newer `updatedAt`.
+    serverTitle = "autosaved";
+    serverUpdatedAt = new Date("2026-02-02T00:00:00.000Z");
+    const second = makeInstance();
+    await second.do.editDraftNote(NOTE_ID, { draftScope: DraftStore.editScope(NOTE_ID) });
+    await settle();
+    expect(second.get().draftNoteForm.title).toBe("autosaved");
+    expect(second.get().draftNoteFormDraft.pending).toBeNull();
+    expect(second.get().draftNoteFormDraft.appliedAt).toBeNull();
+    expect(draftCount()).toBe(0);
   });
 
   test("discarding an applied draft puts back the form the editor opened with", async () => {

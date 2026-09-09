@@ -330,7 +330,7 @@ export class AkanServer {
     };
     if (!requestedWeb.ssr) {
       this.web = requestedWeb;
-      this.logger.info("web off: serving api only (AKAN_SSR=false, or a build with `web: false`)");
+      this.logger.debug("web off: serving api only (AKAN_SSR=false, or a build with `web: false`)");
       return noWeb();
     }
     const { WebRouter } = await import("./webRouter");

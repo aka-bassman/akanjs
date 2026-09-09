@@ -265,7 +265,7 @@ export class DiLifecycle {
       for (const dependency of dependencies) if (candidates.has(dependency)) pending.push(dependency);
     }
     const mounted = [...selected].sort((a, b) => a.localeCompare(b)).join(", ");
-    this.logger.info(`Mounting ${selected.size} of ${candidates.size} module(s): ${mounted}`);
+    this.logger.debug(`Mounting ${selected.size} of ${candidates.size} module(s): ${mounted}`);
     return selected;
   }
 
@@ -668,7 +668,7 @@ export class DiLifecycle {
         },
       })),
     );
-    if (liveKeys.length) this.logger.info(`Live sync: ${liveKeys.length} live slice(s) — ${liveKeys.join(", ")}`);
+    if (liveKeys.length) this.logger.verbose(`Live sync: ${liveKeys.length} live slice(s) — ${liveKeys.join(", ")}`);
     return { routes, wsRoutes, routeOptions };
   }
 

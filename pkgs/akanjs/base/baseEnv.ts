@@ -164,9 +164,14 @@ export const getEnv = (): ClientEnv => {
           ? (window.location.host.split(":")[0] ?? "unknown")
           : "localhost");
 
+  // A server-side origin that resolved to `localhost` is this process calling itself over the loopback, so the
+  // port has to be the one it actually bound: `AkanApp` binds `PORT`, and a container run with `PORT=80` left the
+  // 8282 default pointing at nothing — every SSR/RSC fetch then failed with `base.error.serverUnreachable`. A
+  // `SERVER_HOST` naming another host is not a self-call, so it keeps the explicit port.
+  const selfServerPort = serverHost === "localhost" ? process.env.PORT : undefined;
   const serverPort =
     side === "server"
-      ? parseInt(process.env.AKAN_PUBLIC_SERVER_PORT ?? "8282")
+      ? parseInt(process.env.AKAN_PUBLIC_SERVER_PORT ?? selfServerPort ?? "8282")
       : parseInt(window.location.port || (window.location.protocol === "https:" ? "443" : "80"));
 
   const serverHttpProtocol: "http:" | "https:" =

@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.96 -->
+<!-- akan:agent:version 3.0.0-alpha.98 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -893,10 +893,14 @@ when two shapes disagree.
   `/` greps, `e` shows stderr only, `c` clears, `o` opens the browser, `r` restarts that app, `q` quits.
   **`--plain` prints prefixed interleaved lines instead**, and a pipe, a redirect or an unsized terminal
   downgrades to that on its own.
-- `--concurrency <n>` boots more than one app at a time; the default of 1 is what keeps two cold builder peaks
-  from overlapping. `--kill` frees the dev ports first — it resolves each port's listener, walks up to the top
-  of that akan dev tree and signals it, so another checkout's server or a stale orphan on the same port is
-  reclaimed. A holder that is not recognisably an akan process is reported and left alone.
+- **How many apps boot at once is the machine's answer, not a constant.** A cold boot build is the builder's
+  RSS peak (~900MB per app), so the default wave is what memory and cores allow — half the memory budget
+  divided by that peak, and one app per four cores — which boots a laptop's apps together and still staggers
+  them inside a small container. The session says which in one line. `--concurrency <n>` overrides it, and
+  `AKAN_MEMORY_LIMIT` lowers the budget it derives from.
+- `--kill` frees the dev ports first — it resolves each port's listener, walks up to the top of that akan dev
+  tree and signals it, so another checkout's server or a stale orphan on the same port is reclaimed. A holder
+  that is not recognisably an akan process is reported and left alone.
 - **A dev server watches its own app directory and the libs it actually depends on**, transitively, resolved
   once at boot from the synced manifests — so a save under a lib the app never imports rebuilds and reloads
   nothing, and neither does a save in a sibling app. An import that makes a new lib a dependency needs a

@@ -103,6 +103,13 @@ worker per web-serving replica.
   rotating log file the gateway would otherwise write, in the same `runtime/logs` directory.
 - **Nothing supervises a solo process but the orchestrator**, since the gateway's crash-restart-with-backoff went
   with it. `infra/app/templates/app.yaml` carries the liveness, readiness and startup probes that replace it.
+- **`PORT` is the whole tree's port, and a server-side self-call follows it.** `AkanApp` resolves it once
+  (`new AkanApp({ port })`, else `PORT`, else 8282) and publishes it to the replica it runs in-process and to
+  every child it spawns — a federation child listens on a unix socket, but the loopback fetches its SSR and RSC
+  worker make still come back through the gateway. `getEnv().serverPort` reads it whenever the origin resolved to
+  `localhost`, so a container run with `PORT=80` calls itself on 80. Override the origin only when it is genuinely
+  not this process: `AKAN_PUBLIC_SERVER_PORT` outranks `PORT`, and a `SERVER_HOST` naming another host is not a
+  self-call and keeps its explicit port.
 - **`main.ts` imports `AkanApp` from `akanjs/server/akanApp`, not the barrel.** The barrel re-exports
   `AkanServer`, whose graph the gateway never runs; through it the process evaluated 35MB of SSR renderer and
   SQLite driver to spawn children and relay bytes. Keep entrypoint imports at the leaf.

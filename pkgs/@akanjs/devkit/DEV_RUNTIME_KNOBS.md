@@ -97,12 +97,19 @@ sized against idle suspend being on**; setting it to `0` keeps every builder res
 
 Two things bound the peak rather than the floor:
 
-- **`--concurrency` (default 1).** Apps boot in waves, and the next wave starts only once the previous one
-  reports ready. A cold boot build is the builder's peak, so booting `n` apps at once means `n` overlapping
-  peaks — which is what OOM-kills a container that would have been fine with them staggered.
+- **`--concurrency` (default: what the machine allows).** Apps boot in waves, and the next wave starts only
+  once the previous one reports ready. A cold boot build is the builder's peak, so booting `n` apps at once
+  means `n` overlapping peaks — which is what OOM-kills a container that would have been fine with them
+  staggered. Unset, the wave is `min(apps, half the memory budget / 900MB per app, cores / 4)`, never below
+  one, and the session prints which — so a laptop boots its apps together and a 1.2GB container still
+  staggers them. The memory budget is the smaller of the host's RAM and `AKAN_MEMORY_LIMIT` / the cgroup
+  limit; `os.freemem()` is not consulted, because it counts free pages rather than reclaimable ones and
+  reports ~0.3GB on an idle 48GB laptop.
 - **`AKAN_MEMORY_LIMIT` is per process, not per session.** Each dev host derives its builder and RSC-worker
   ceilings from it independently, so a limit sized for one app does not become a budget for four. Divide it
-  yourself, or leave it unset on a laptop.
+  yourself, or leave it unset on a laptop. The one place it is read as a session ceiling is the boot wave
+  above, and only downward: a session cannot outgrow the container it runs in, whatever each process inside
+  it was told it may take.
 
 ## Sizing a small sandbox
 

@@ -315,6 +315,11 @@ describe("Workspace and app executor environment contracts", () => {
     const prepared = await app.prepareCommand("build");
     expect(prepared.env.AKAN_COMMAND_TYPE).toBe("build");
     expect(prepared.env.AKAN_PUBLIC_BASE_PATHS).toBe("admin");
+    // Bundling reads `process.env` through getPublicEnv and `define`s every AKAN_PUBLIC_* into a literal, so a
+    // dev port published here would be baked into the artifact and outrank the PORT the container is run with.
+    expect(process.env.AKAN_PUBLIC_APP_NAME).toBe("demo");
+    expect(process.env.AKAN_PUBLIC_CLIENT_PORT).toBeUndefined();
+    expect(process.env.AKAN_PUBLIC_SERVER_PORT).toBeUndefined();
     expect((await stat(path.join(root, "dist/apps/demo/private"))).isDirectory()).toBe(true);
     expect((await stat(path.join(root, "dist/apps/demo/public"))).isDirectory()).toBe(true);
   });

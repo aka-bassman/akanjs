@@ -24,6 +24,7 @@ import type { SkeletonProps } from "../Loading/Skeleton";
 import type { SpinProps } from "../Loading/Spin";
 import type { MenuProps } from "../Menu";
 import type { ModalProps } from "../Modal";
+import type { DraftBarViewProps } from "../Model/DraftBar";
 import type { PaginationProps } from "../Pagination";
 import type { PopconfirmProps } from "../Popconfirm";
 import type { ItemProps as RadioItemProps, RadioProps } from "../Radio";
@@ -58,6 +59,9 @@ export interface AkanUiOverrides {
   Menu: ComponentType<MenuProps>;
   Tooltip: ComponentType<TooltipProps>;
   Unauthorized: ComponentType<UnauthorizedProps>;
+  // The recovered-form banner an edit shell draws. The shell keeps the draft state and publishes the restore and
+  // discard tools, so a replacement re-skins the notice without reaching into the store or re-declaring those.
+  DraftBar: ComponentType<DraftBarViewProps>;
   AgentChat: ComponentType<AgentChatProps>;
 
   // In-page chat, one slot per part. `AgentChat` replaces the whole panel; these replace what it renders, so an

@@ -1032,7 +1032,7 @@ describe("AkanApp", () => {
 });
 
 describe("AkanApp solo", () => {
-  const soloEnvKeys = ["AKAN_SOLO", "SERVER_MODE", "AKAN_REPLICA", "AKAN_REPLICA_IDX", "AKAN_APP_DIR"] as const;
+  const soloEnvKeys = ["AKAN_SOLO", "SERVER_MODE", "AKAN_REPLICA", "AKAN_REPLICA_IDX", "AKAN_APP_DIR", "PORT"] as const;
 
   /** `#startSolo` writes the child env onto this process, so every case restores what it found. */
   const withSoloEnv = async (env: { [key: string]: string | undefined }, fn: () => Promise<void>) => {
@@ -1064,6 +1064,7 @@ describe("AkanApp solo", () => {
               role: process.env.SERVER_MODE,
               replicaIdx: process.env.AKAN_REPLICA_IDX,
               childSocket: process.env.AKAN_CHILD_SOCKET ?? null,
+              port: process.env.PORT ?? null,
             }));
             if (!process.send) return;
             process.send({
@@ -1152,6 +1153,33 @@ describe("AkanApp solo", () => {
         const report = (await readReport(reportPath)) as { pid: number; role: string };
         expect(report.pid).not.toBe(process.pid);
         expect(report.role).toBe("batch");
+      } finally {
+        await app.stop();
+        await Promise.race([running, wait(1_000)]);
+      }
+    });
+  }, 10_000);
+
+  // The RSC worker fetches the API back over the loopback, and `AKAN_PUBLIC_SERVER_PORT` defaults to 8282 —
+  // so the port this gateway resolved has to reach the tree as `PORT`, whether it came from an option or the env.
+  test("publishes the resolved port to the replica it runs in this process", async () => {
+    const { serverPath, reportPath, runtimeDir } = await makeSoloRoot("akan-app-solo-port-");
+    const port = 24_000 + Math.floor(Math.random() * 10_000);
+    await withSoloEnv({ AKAN_SOLO: undefined, AKAN_REPLICA: undefined, PORT: undefined }, async () => {
+      const app = new AkanApp(serverPath, { runtimeDir, port });
+      await app.start();
+      expect(((await readReport(reportPath)) as { port: string | null }).port).toBe(String(port));
+    });
+  }, 10_000);
+
+  test("publishes the resolved port to a spawned child, which proxies its own fetches back here", async () => {
+    const { serverPath, reportPath, runtimeDir } = await makeSoloRoot("akan-app-child-port-");
+    const port = 24_000 + Math.floor(Math.random() * 10_000);
+    await withSoloEnv({ AKAN_SOLO: "false", AKAN_REPLICA: undefined, PORT: "8282" }, async () => {
+      const app = new AkanApp(serverPath, { runtimeDir, port });
+      const running = app.start();
+      try {
+        expect(((await readReport(reportPath)) as { port: string | null }).port).toBe(String(port));
       } finally {
         await app.stop();
         await Promise.race([running, wait(1_000)]);

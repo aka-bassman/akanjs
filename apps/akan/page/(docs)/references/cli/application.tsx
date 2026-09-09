@@ -216,15 +216,45 @@ akan test util --write false`,
     },
     {
       name: "start",
-      signature: "akan start <app> [--open <boolean>] [--write <boolean>]",
-      desc: "Start the local development server for frontend SSR and backend runtime together.\n`--open` launches the browser after startup, and `--write` keeps generated application surfaces current before serving.",
+      signature:
+        "akan start [apps...] [--plain <boolean>] [--kill <boolean>] [--concurrency <number>] [--dbup <boolean>] [--open <boolean>] [--write <boolean>]",
+      desc: "Start the local development server for frontend SSR and backend runtime together.\nSeveral apps run under one supervised session — name them space- or comma-separated, pass `all`, or omit them to pick interactively — and the full-screen view is the default at every app count.",
       options: [
+        {
+          name: "--plain",
+          type: "Boolean",
+          defaultValue: "false",
+          enumOrFlag: "-",
+          desc: "Print prefixed interleaved lines instead of the full-screen view. A pipe, a redirect, or an unsized terminal downgrades to this on its own.",
+        },
+        {
+          name: "--kill",
+          type: "Boolean",
+          defaultValue: "false",
+          enumOrFlag: "-k",
+          desc: "Free the dev ports first, whoever is holding them. A holder that is not recognisably an akan process is reported and left alone.",
+        },
+        {
+          name: "--concurrency",
+          type: "Number",
+          defaultValue: "-",
+          enumOrFlag: "-",
+          desc: "Apps to boot at a time. Unset, it is derived from the machine — half the memory budget over the cold boot peak of an app, and one app per four cores — so a laptop boots them together and a small container still staggers them.",
+        },
+        {
+          name: "--dbup",
+          type: "Boolean",
+          defaultValue: "true",
+          enumOrFlag: "-",
+          desc: "Start the local database first. The session brings up the union of the modes its apps declare, and takes down only what it started.",
+        },
         { name: "--open", type: "Boolean", defaultValue: "false", enumOrFlag: "-", desc: "Open web browser." },
         writeOption,
       ],
       notes: [{ name: "short", desc: "true" }],
       examples: `akan start myapp
-akan start myapp --open true --write true`,
+akan start myapp,admin --concurrency 2
+akan start all --kill true --plain true`,
     },
     {
       name: "start-ios",

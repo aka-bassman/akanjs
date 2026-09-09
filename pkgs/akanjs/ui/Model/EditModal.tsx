@@ -29,6 +29,8 @@ interface EditModelProps<Full> {
   slice: SliceMeta;
   /** Additional classes for the wrapper. */
   className?: string;
+  /** Additional classes for the recovered-form banner this shell draws above the form. */
+  draftBarClassName?: string;
   /** Re-check submit eligibility when form state changes. */
   checkSubmit?: boolean;
   /** Client edit promise or partial form seed. */
@@ -54,6 +56,7 @@ const EditModel = <Full,>({
   type = "modal",
   slice,
   className,
+  draftBarClassName,
   checkSubmit = true,
   edit,
   modal,
@@ -112,7 +115,7 @@ const EditModel = <Full,>({
   // if (type === "empty") return null;
   return (
     <LoadingWrapper className={cn("w-full", className)}>
-      <DraftBar slice={slice} />
+      <DraftBar className={draftBarClassName} slice={slice} />
       {children}
     </LoadingWrapper>
   );
@@ -147,6 +150,7 @@ export default function EditModal<Full extends { id: string }>({
   slice,
   id,
   className,
+  draftBarClassName,
   disabled,
   checkSubmit = true,
   modalClassName,
@@ -380,6 +384,7 @@ export default function EditModal<Full extends { id: string }>({
             type={type}
             slice={slice}
             className={className}
+            draftBarClassName={draftBarClassName}
             checkSubmit={checkSubmit}
             edit={edit}
             modal={modal}
@@ -397,6 +402,7 @@ export default function EditModal<Full extends { id: string }>({
         type={type}
         slice={slice}
         className={className}
+        draftBarClassName={draftBarClassName}
         checkSubmit={checkSubmit}
         edit={edit}
         modal={modal}

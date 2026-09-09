@@ -149,7 +149,10 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .with(Apps)
     .option("plain", Boolean, { desc: "print prefixed lines instead of the full-screen view", default: false })
     .option("kill", Boolean, { flag: "k", desc: "free the dev ports first, whoever is holding them", default: false })
-    .option("concurrency", Number, { desc: "apps to boot at a time", default: 1 })
+    .option("concurrency", Number, {
+      desc: "apps to boot at a time (default: what this machine's memory and cores allow)",
+      nullable: true,
+    })
     .option("dbup", Boolean, { desc: "start the local database first", default: true })
     .option("open", Boolean, { desc: "open web browser?", default: false })
     .option("write", Boolean, { desc: "write code generation", default: true })

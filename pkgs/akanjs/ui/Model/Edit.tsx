@@ -3,6 +3,7 @@ import type { SliceMeta } from "akanjs/fetch";
 import type { ReactNode } from "react";
 import { AiOutlineEdit } from "react-icons/ai";
 
+import type { DraftProp } from "./draftScope";
 import EditModal from "./EditModal";
 import EditWrapper from "./EditWrapper";
 
@@ -15,6 +16,8 @@ interface EditProps {
   modelId: string;
   modal?: string | null;
   renderTitle?: ((model: { id: string }) => string | ReactNode) | string;
+  /** Draft recovery for the form this opens. `false` turns it off; a string names the scope explicitly. */
+  draft?: DraftProp;
 }
 
 export default function Edit({
@@ -26,6 +29,7 @@ export default function Edit({
   modelId,
   modal,
   renderTitle,
+  draft,
 }: EditProps) {
   const { l } = usePage();
   return (
@@ -35,10 +39,11 @@ export default function Edit({
         slice={slice}
         modelId={modelId}
         modal={modal}
+        draft={draft}
       >
         <AiOutlineEdit /> {type === "button" ? l("base.edit") : null}
       </EditWrapper>
-      <EditModal renderTitle={renderTitle} slice={slice} id={modelId}>
+      <EditModal renderTitle={renderTitle} slice={slice} id={modelId} draft={draft}>
         {children}
       </EditModal>
     </div>

@@ -28,6 +28,7 @@ export default function Page() {
       title: l.trans({ en: "Loading (namespace)", ko: "Loading (namespace)" }),
       slots: ["LoadingSpin", "LoadingSkeleton", "LoadingProgressBar", "LoadingButton", "LoadingInput", "LoadingArea"],
     },
+    { title: l.trans({ en: "Edit shell", ko: "Edit shell" }), slots: ["DraftBar"] },
   ];
 
   const brandComponentCode = `"use client";

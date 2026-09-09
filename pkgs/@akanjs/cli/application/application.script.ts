@@ -31,7 +31,8 @@ interface StartOptions {
   write?: boolean;
   plain?: boolean;
   kill?: boolean;
-  concurrency?: number;
+  /** `null` is "nobody said", which `DevBootConcurrency` answers from the machine. */
+  concurrency?: number | null;
 }
 interface StartOneOptions {
   open?: boolean;
@@ -248,7 +249,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
 
   async start(
     apps: Apps,
-    { open = false, dbup = true, write = true, plain = false, kill = false, concurrency = 1 }: StartOptions = {},
+    { open = false, dbup = true, write = true, plain = false, kill = false, concurrency = null }: StartOptions = {},
   ) {
     const first = apps[0];
     if (!first) throw new Error("No app selected to start");

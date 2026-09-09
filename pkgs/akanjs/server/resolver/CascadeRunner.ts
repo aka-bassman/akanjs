@@ -211,7 +211,7 @@ export class CascadeRunner {
     // declaration that caused it is one word in one model nobody is looking at.
     if (!this.#anyEdges.length) return;
     const wildcards = this.#anyEdges.map((edge) => `${edge.refName}.${edge.key}`).join(", ");
-    this.#logger.info(
+    this.#logger.verbose(
       `${this.#anyEdges.length} wildcard removeWith edge(s) (${wildcards}): every removal probes them, ` +
         `and no cascade removes in one query`,
     );

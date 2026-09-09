@@ -17,6 +17,9 @@ const MAX_DRAFTS_PER_IDENTITY = 30;
  */
 const VOLATILE_CLAIMS = ["iat", "exp", "nbf", "jti"] as const;
 
+/** The fields a form carries from its row rather than from what the user typed. */
+const RECORD_STAMPS = new Set(["createdAt", "updatedAt", "removedAt"]);
+
 export interface DraftRecord {
   v: number;
   /** ISO. Drives both the "n minutes ago" label and the TTL/LRU sweep. */
@@ -141,6 +144,17 @@ export class DraftStore {
   /** What the dirty check compares. Cheap enough to take once per debounce window, not once per keystroke. */
   static formHash(refName: string, form: object): string {
     return DraftStore.#hash8(DraftStore.#stableStringify(DraftStore.encodeForm(refName, form)));
+  }
+
+  /**
+   * What two encoded forms holding the same values hash to, whatever record stamps they carry.
+   *
+   * The stamps come from the row rather than from the user, so a save the form made itself moves `updatedAt` and
+   * would otherwise make a draft look different from the record that already holds it.
+   */
+  static contentHash(encoded: Record<string, unknown>): string {
+    const content = Object.fromEntries(Object.entries(encoded).filter(([key]) => !RECORD_STAMPS.has(key)));
+    return DraftStore.#hash8(DraftStore.#stableStringify(content));
   }
 
   static async read(key: string): Promise<DraftRecord | null> {

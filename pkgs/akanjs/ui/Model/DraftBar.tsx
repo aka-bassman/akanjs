@@ -9,21 +9,75 @@ import { AiOutlineDelete, AiOutlineHistory, AiOutlineRollback } from "react-icon
 import { agentAttrs } from "../agentAttrs";
 import { Button } from "../Button";
 import { RecentTime } from "../RecentTime";
+import { createOverridable } from "../UiOverride";
+
+export interface DraftBarViewProps {
+  className?: string;
+  /** The model the recovered form belongs to. */
+  refName: string;
+  /**
+   * `conflict` is a decision the user has to settle — the record moved since the draft was taken, so the form
+   * shows the server's value and the bar offers the older one. `applied` is a notice: the draft is what is on
+   * screen, and the bar is the way back.
+   */
+  state: "conflict" | "applied";
+  /** When the draft was taken. */
+  savedAt: Date;
+  /** Puts the offered draft into the form. Passed in the `conflict` state only. */
+  onRestore?: () => void;
+  /** Drops the draft and keeps the form as it was opened. */
+  onDiscard: () => void;
+}
+
+const DefaultDraftBar = ({ className, state, savedAt, onRestore, onDiscard }: DraftBarViewProps) => {
+  const { l } = usePage();
+  if (state === "conflict")
+    return (
+      <div
+        className={cn(
+          "mb-4 flex flex-wrap items-center gap-2 rounded-box border border-warning/40 bg-warning/10 p-3",
+          className,
+        )}
+      >
+        <AiOutlineHistory className="text-warning" />
+        <span className="flex-1 text-foreground/80 text-sm">
+          {l("base.draftConflict")} <RecentTime date={savedAt} />
+        </span>
+        <Button {...agentAttrs(onRestore)} size="sm" onClick={() => onRestore?.()}>
+          <AiOutlineRollback /> {l("base.draftRestore")}
+        </Button>
+        <Button {...agentAttrs(onDiscard)} size="sm" variant="ghost" onClick={() => onDiscard()}>
+          <AiOutlineDelete /> {l("base.draftDiscard")}
+        </Button>
+      </div>
+    );
+  return (
+    <div className={cn("mb-4 flex flex-wrap items-center gap-2 text-foreground/60 text-xs", className)}>
+      <AiOutlineHistory />
+      <span className="flex-1">
+        {l("base.draftApplied")} <RecentTime date={savedAt} />
+      </span>
+      <Button {...agentAttrs(onDiscard)} size="xs" variant="ghost" onClick={() => onDiscard()}>
+        {l("base.draftStartOver")}
+      </Button>
+    </div>
+  );
+};
+
+/**
+ * The banner itself, route-overridable through `page/**\/_overrides.tsx` (slot `DraftBar`).
+ *
+ * The shell below keeps the draft state and publishes the two agent tools, so a replacement re-skins the notice
+ * without reaching into the store under string keys or re-declaring what an agent may pull.
+ */
+const DraftBarView = createOverridable("DraftBar", DefaultDraftBar);
 
 interface DraftBarProps {
   className?: string;
   slice: SliceMeta;
 }
 
-/**
- * What the user is told about a recovered form.
- *
- * Two states, and the difference is whether the draft is already in the form. A pending one is a conflict the
- * user has to settle — the record moved since the draft was taken, so the form shows the server's value and this
- * offers the older one. An applied one is just a notice: the draft is what is on screen, and this is the way back.
- */
 export default function DraftBar({ className, slice }: DraftBarProps) {
-  const { l } = usePage();
   const { refName } = slice;
   const [modelName, ModelName] = useMemo(() => [lowerlize(refName), capitalize(refName)], []);
   const names = useMemo(
@@ -51,35 +105,24 @@ export default function DraftBar({ className, slice }: DraftBarProps) {
 
   if (draft?.pending)
     return (
-      <div
-        className={cn(
-          "mb-4 flex flex-wrap items-center gap-2 rounded-box border border-warning/40 bg-warning/10 p-3",
-          className,
-        )}
-      >
-        <AiOutlineHistory className="text-warning" />
-        <span className="flex-1 text-foreground/80 text-sm">
-          {l("base.draftConflict")} <RecentTime date={draft.pending.savedAt} />
-        </span>
-        <Button {...agentAttrs(restoreDraft)} size="sm" onClick={() => restoreDraft()}>
-          <AiOutlineRollback /> {l("base.draftRestore")}
-        </Button>
-        <Button {...agentAttrs(discardDraft)} size="sm" variant="ghost" onClick={() => discardDraft()}>
-          <AiOutlineDelete /> {l("base.draftDiscard")}
-        </Button>
-      </div>
+      <DraftBarView
+        className={className}
+        refName={refName}
+        state="conflict"
+        savedAt={draft.pending.savedAt}
+        onRestore={restoreDraft}
+        onDiscard={discardDraft}
+      />
     );
   if (draft?.appliedAt)
     return (
-      <div className={cn("mb-4 flex flex-wrap items-center gap-2 text-foreground/60 text-xs", className)}>
-        <AiOutlineHistory />
-        <span className="flex-1">
-          {l("base.draftApplied")} <RecentTime date={draft.appliedAt} />
-        </span>
-        <Button {...agentAttrs(discardDraft)} size="xs" variant="ghost" onClick={() => discardDraft()}>
-          {l("base.draftStartOver")}
-        </Button>
-      </div>
+      <DraftBarView
+        className={className}
+        refName={refName}
+        state="applied"
+        savedAt={draft.appliedAt}
+        onDiscard={discardDraft}
+      />
     );
   return null;
 }

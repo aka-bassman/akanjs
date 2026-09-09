@@ -193,6 +193,14 @@ export const ProductUnit = ({ product }) => (
           }),
         },
         {
+          name: "draftBarClassName (Model.EditModal)",
+          type: "string",
+          desc: l.trans({
+            en: "Extra classes for the recovery banner the edit shell draws above the form — enough for a density tweak. Re-skin it entirely with the `DraftBar` override slot instead.",
+            ko: "edit shell이 form 위에 그리는 복구 배너에 클래스를 더합니다. 밀도 조정 정도에 적합하고, 전체를 다시 스킨하려면 `DraftBar` override slot을 사용하세요.",
+          }),
+        },
+        {
           name: "Load.Page",
           type: "{ loader, render, loading?, noCache? }",
           desc: l.trans({
