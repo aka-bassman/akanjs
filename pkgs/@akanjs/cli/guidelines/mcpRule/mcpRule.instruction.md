@@ -1,7 +1,8 @@
 # Akan MCP Exposure Guideline
 
 ## Purpose
-Use this when writing a `*.signal.ts`, configuring `option.setMcp(...)`, or debugging a tool an agent cannot see.
+Use this when writing a `*.signal.ts`, configuring `option.setMcp(...)`, debugging a tool an agent cannot see, or
+opening an app's service to agents end to end — the rollout checklist and the exposure design rules are at the end.
 The always-loaded convention set carries the short version; this is the full contract.
 
 ## Exposure Rule
@@ -42,17 +43,21 @@ export class FileSlice extends slice(srv.file, {
   the guard rules keep out.
 - **Reach for it by cost, not by taste.** Every entry inlines the schema of every model it mentions, so a plain
   21-field model with one named slice costs 12.6KB across its eight entries. `mcp: { cru: false }` on that model
-  takes it to 4.7KB — the write entries carry both the input *and* the full model, and are 63% of it.
+  takes it to 4.7KB — the write entries carry both the input *and* the full model, and are 63% of it. Those figures
+  are for `outputSchema: "full"`; the default names nested models instead of inlining them (below). Measured on a
+  fully open 347-tool catalogue: 1194KB before, 532KB under the default, 194KB under `"none"`, and 1046KB even under
+  `"full"` — the id and nullable savings apply in every mode — before any endpoint was curated.
 
 ## Configuration
 Settings live in the app's `lib/option.ts` — `option.setMcp({ … })`, taking `enabled`, `readOnly`, `path`,
-`version`, `instructions`, `allowedOrigins`, `pageSize`, `language`, `legacyTextBlock`, and `auth`. **Not `main.ts`**: the gateway
+`version`, `instructions`, `allowedOrigins`, `pageSize`, `language`, `legacyTextBlock`, `outputSchema`, `rateLimit`, and `auth`. **Not `main.ts`**: the gateway
 there only spawns children, and `option.ts` is the app-authored file `server.ts` already hands to the process that
 mounts `/mcp`. Every lib's option is read in mount order with the app's last, so an app tightens what a library
 declared without restating it. Each field also has an env spelling (`AKAN_MCP`, `AKAN_MCP_READONLY`,
 `AKAN_MCP_PATH`, `AKAN_MCP_VERSION`, `AKAN_MCP_INSTRUCTIONS`, `AKAN_MCP_ALLOWED_ORIGINS`, `AKAN_MCP_PAGE_SIZE`,
-`AKAN_MCP_LANGUAGE`, `AKAN_MCP_LEGACY_TEXT`, `AKAN_MCP_AUTH_SERVERS`, `AKAN_MCP_SCOPES`, `AKAN_MCP_RESOURCE`) for a
-deployment that configures what the source does not, which the option overrides.
+`AKAN_MCP_LANGUAGE`, `AKAN_MCP_LEGACY_TEXT`, `AKAN_MCP_OUTPUT_SCHEMA`, `AKAN_MCP_RATE_LIMIT`, `AKAN_MCP_CONCURRENT`,
+`AKAN_MCP_AUTH_SERVERS`, `AKAN_MCP_SCOPES`, `AKAN_MCP_RESOURCE`) for a deployment that configures what the source does
+not, which the option overrides.
 The two booleans answer to `AKAN_PUBLIC_MCP` / `AKAN_PUBLIC_MCP_READONLY` too, the same pairing `AKAN_OPENAPI`
 has, and a value written in code wins over the env of the same name — an explicit `undefined` is not a value.
 `AKAN_MCP_PATH` is normalized to a leading `/`, because the route key and the OAuth metadata path are both built by
@@ -142,20 +147,50 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
   `AKAN_MCP_LEGACY_TEXT=false` — leaves a one-line pointer in the text block instead, for a deployment whose
   clients read the structured half. A scalar return is unaffected: it has no structured half to point at, so it
   ships as the value itself either way.
+- **A request schema asks for a relation's id, and a response schema names a nested model.** `serialize` sends a
+  relation field as its id and the server never converts an object back, so publishing the related model's shape
+  asked an agent for what the document layer cannot take. On the response side every entry inlines the transitive
+  closure of every model it mentions (a `$ref` may not cross entries), and on an open catalogue 83% of the bytes
+  were the same schemas repeated — so a nested database model is published as `{ type: "object", description:
+  "<ModelName>" }` and the returned model keeps every field of its own; an embedded scalar stays inline. Measured,
+  that took a 347-tool listing from 1194KB to 532KB, and one user's paged `tools/list` to 320KB.
+  `option.setMcp({ outputSchema: "full" })` (`AKAN_MCP_OUTPUT_SCHEMA`) restores the closure; `"none"` publishes no
+  `outputSchema` at all — results still ship as `structuredContent`, and the text block stays on whatever
+  `legacyTextBlock` said, because a client validates structured content only against a declared schema. Inside a
+  `$defs` an id carries no `pattern` and nullability rides in `type: [T, "null"]` (an enum lists `null` too); a
+  top-level argument keeps the spellings the OpenAPI document uses. **Know which bytes reach the model.** The
+  provider tool definition a client builds from a listing carries the name, the description and the input schema —
+  the Anthropic and OpenAI tool formats have no field for an output schema — so `outputSchema` is a wire and
+  client-memory cost, and the model's context is spent on names, descriptions, input schemas and the number of
+  tools. Curate those (`mcp: false`, `mcp: { cru: false }`, `readOnly`) to cut context; pick `outputSchema` for the
+  transfer.
+  Measured on a 219-tool user listing: the wire carried 366KB, the client reported ≈41.6k tokens for it, and the
+  server's own count of names + descriptions + input schemas was 95KB — the same 41k at 2.4 characters per token.
+  So `outputSchema` (`full` / `shallow` / `none`) moves wire bytes and client memory and **not one model token**;
+  do not tune it expecting a context win. What does cost context: the tool count, and the input model inlined
+  behind every `create*` / `update*` (22 such tools were 8.7k of those 41k; the heaviest single tool was
+  `updateUser` at ~900 tokens) — `mcp: { cru: false }` on a model whose writes an agent has no business with is
+  the lever that pays. A custom mutation whose arguments are plain ids is cheap (nine contract tools, 1.2k). In
+  one line: `Person` for an act reserved for a person, `mcp: { cru: false }` for the tools whose input models cost
+  the model tokens, and `outputSchema` for nothing that reaches the model at all.
 - A refused endpoint answers the *same* "unknown tool" as one that does not exist. Never make that
-  message more helpful — the difference is what enumerates your private surface. A guard's refusal is generalized
-  the same way: the caller reads `You are not permitted to perform this action.`, never `Access denied by guard:
-  Admin`, which names your authorization structure to the one caller barred from it. A domain `Err` resolves
-  through the dictionary first and keeps its own words.
+  message more helpful — the difference is what enumerates your private surface. Every 401 and 403 is generalized
+  the same way, the framework's `Access denied by guard: Admin` and an app's `No authentication with roles: admin`
+  alike: the caller reads `You are not permitted to perform this action.`, because either sentence names your
+  authorization structure to the one caller barred from it. A domain `Err` at any other status resolves through
+  the dictionary and keeps its own words, placeholders filled.
 - The `readOnly` / `destructive` / `idempotent` hints a client renders are derived from the endpoint type and key
   and are not configurable. Clients are told to distrust hints; they are never a gate.
 - **`AKAN_MCP_READONLY=true` is the read-only-deployment valve, not the exposure switch.** It drops every mutation
   whatever it declared, and reports each one in the boot log like any other refusal.
 - OAuth resource metadata is published at `/.well-known/oauth-protected-resource` (and at that path plus the mount
-  path, the spelling most clients try first). `AKAN_MCP_AUTH_SERVERS`, `AKAN_MCP_SCOPES`, and `AKAN_MCP_RESOURCE`
-  configure it; `insufficient_scope` is enforced only once `AKAN_MCP_SCOPES` is set. A token carrying no `aud` at
-  all is refused once `AKAN_MCP_AUTH_SERVERS` names an issuer — that issuer mints tokens for its other resources
-  too — and accepted while none is named, because a first-party Akan token is bound by app and environment.
+  path, the spelling most clients try first). `auth.authorizationServers` / `AKAN_MCP_AUTH_SERVERS`,
+  `auth.scopes` / `AKAN_MCP_SCOPES`, `auth.resource` / `AKAN_MCP_RESOURCE` and `auth.verify` configure it;
+  `insufficient_scope` is enforced only once scopes are declared. Naming an issuer changes three things at once: a
+  request with no credential is answered 401 from `initialize` on (an MCP client starts its OAuth flow on nothing
+  else), a token carrying no `aud` is refused (that issuer mints for its other resources too), and the challenge
+  carries no `error` code (RFC 6750 §3.1 reserves it for a credential that was presented). A server naming no
+  issuer keeps anonymous access and accepts a first-party token, which is bound by app and environment instead.
 - **The boot log names every published entry with no dictionary `.desc()`.** An agent picks a tool by its
   description, so a missing one is a broken tool. What the framework generates has no text of its own and borrows
   the model's: the generated list reads the `.of()` label, and the base CRUD tools append the model's `.desc()` to
@@ -163,9 +198,19 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
   `akan quality scan` rule for this any more: a source scanner found the exposure only as an `mcp:` literal, and
   with exposure derived from the guards the resolved catalogue is the only place that can answer.
 - A browser-hosted client needs `allowedOrigins` **and** the CORS answer the server sends back for those origins.
-  Every other MCP client sends no `Origin` at all, and the one that does is matched against the forwarded host so
-  a proxy does not turn each call into a 403 — which is only as trustworthy as an edge that *overwrites* that
-  header. `AKAN_MCP_RESOURCE` pins the resource identifier where you cannot guarantee it.
+  Every other MCP client sends no `Origin` at all, and the one that does is matched against the server's public
+  origin: the configured `auth.resource`'s when there is one (`libs/shared` derives it from the issuer, so a mounted
+  app is always pinned), and only otherwise the forwarded host — which is as trustworthy as an edge that
+  *overwrites* that header. The same origin names the `resource_metadata` URL in every 401 challenge.
+  `AKAN_MCP_RESOURCE` is the pin for an app that mounts no authorization server.
+- **Every call that executes an endpoint is rate-limited per caller** — `tools/call`, `resources/read` and
+  `prompts/get`, never a listing. A caller is the bearer's session (`sid`), so one connector counts as one however
+  many connections it opens; a credential-less caller is the address the proxy recorded, and callers with none share
+  one bucket. Defaults are 120 calls a minute and 8 in flight, counted per process (N replicas grant N budgets); past
+  either the answer is HTTP 429 with JSON-RPC `-32010` and a `Retry-After`, and an unknown tool name is counted like
+  any other call. `option.setMcp({ rateLimit: { calls, windowMs, concurrent } })`, `rateLimit: false` to turn it off;
+  `AKAN_MCP_RATE_LIMIT=<calls>` or `<calls>/<seconds>` (`off` disables) and `AKAN_MCP_CONCURRENT`. The boot log says
+  which is in force, and warns when it is off.
 - **A `resources/read` uri that does not decode** — a stray `%` — is `Unknown resource`, not a server failure.
 - **A caller's own mistake is reported as one** and never as a server failure: an argument that is missing,
   unparseable or **undeclared** comes back as `isError` naming it — `additionalProperties: false` travels in the
@@ -181,9 +226,13 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
   body names one), and one that leaves a mirror out is refused just like one that contradicts the body: a gateway
   rule keyed on a header never fires for the request that omitted it. Legacy requests are not checked. Capabilities
   are derived from the catalogue, so a server with no prompts does not advertise `prompts`.
-- **An expired or wrongly-audienced bearer token is refused up front**, so an agent is told to authenticate rather
-  than that the tool does not exist. Its **signature is not checked** — that needs your app's own secret — so a
-  token signed wrong, like an opaque one, still degrades to an anonymous caller.
+- **An expired, wrongly-audienced or unverifiable bearer token is refused up front**, so an agent is told to
+  authenticate rather than that the tool does not exist. The signature is checked through `auth.verify`, which the
+  module that mints the tokens supplies (`libs/shared` does, from the app's signing secret); without a verifier the
+  claims are read unverified and a token signed wrong, like an opaque one, degrades to an anonymous caller.
+- **`/mcp` reads the `Authorization` header and nothing else.** The `cookie` header is deleted from the request
+  before the account middleware runs, so a same-site page cannot drive `tools/call` on the visitor's ambient session
+  — the request class `CrossSiteGuard` shields every mutation from, which this route never passes through.
 - **Resource URIs**: `akan://<model>/{id}`, `akan://<model>/list` for the model's own list, and
   `akan://<model>/list/<sliceKey>` for a slice's. The root list takes no third segment on purpose — any token
   there is one a slice could also be named. **Those three are the whole set**, so only the generated reads that
@@ -191,6 +240,78 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
   `light<Model>` read has no address either.
 - **The catalogue is one language**, `en` unless `language` says otherwise: it is built once at boot and cached by
   clients, so there is no `Accept-Language` negotiation.
+
+## Authentication — The Authorization Server Is The Same Process
+
+`libs/shared/lib/_oauth` is an OAuth 2.1 authorization server (RFC 8414 metadata, PKCE `S256` only, RFC 7591
+registration, Client ID Metadata Documents, RFC 9207 `iss`) served by the app that serves `/mcp`. Its `option.ts`
+names the issuer and hands `McpAuth` a verifier, so mounting the lib is all an app does; the protocol engine it
+delegates to lives in `akanjs/server` (`OAuthAuthorize`, `OAuthToken`, `OAuthRegistration`, `OAuthClientIdMetadata`,
+`OAuthPkce`, `OAuthRedirect`, `OAuthMetadata`, `OAuthErrors`) and is unit-tested without a container.
+
+- **Endpoints, at the origin's root:** `GET /.well-known/oauth-authorization-server`, `GET /oauth/authorize`,
+  `POST /oauth/token` (form-encoded), `POST /oauth/register`, `POST /oauth/revoke` (RFC 7009, form-encoded, the
+  same client authentication as the token endpoint). The consent step is `libs/shared/page/oauth/consent`
+  — a server-rendered page whose two forms post to `/api/approveOAuthConsent/<requestId>` and
+  `/api/denyOAuthConsent/<requestId>` and follow the 302 back to the client. The account's own controls are
+  `fetch.listOAuthConnections()` (one entry per live grant: `sessionId`, `clientId`, `clientName`, `userAgent`,
+  `createdAt`, `expiresAt`, `isCurrent`) and `fetch.revokeOAuthConnection(sessionId)`; the app renders the
+  connected-apps page, the lib supplies the two endpoints and the `oauth.connectedApps` / `disconnect` /
+  `noConnectedApps` / `currentConnection` translations. All of it is `mcp: false`.
+- **Revocation closes a grant, not a token.** A refresh token or an access token both name one grant (the access
+  token carries the lineage as `sid`); revoking either closes the refresh lineage and denylists the lineage id for
+  an access token's lifetime, so a stateless token dies early — `/mcp` answers 401 `invalid_token` and
+  `AccountMiddleware` treats it as anonymous, at the next call. `/oauth/revoke` answers an empty 200 whether the token
+  was live, unknown, or another client's (RFC 7009 §2.2 — it must not double as a token oracle); only a failed client
+  authentication is 401. Changing a password still revokes every session, browser ones included; disconnecting an
+  app revokes that one.
+- **A person may, a model may not.** The one honest marker of "a model is driving this call" is on the token: an
+  access token minted here names its `client_id` and the MCP resource as `aud`, and a browser session carries
+  neither; `SerAccount` declares those claims, so nothing casts to read them. Read it three ways, all in
+  `@libs/shared/srvkit`: `.with(AgentCall)` hands the endpoint a boolean (drop `sendEmails` on an agent's say-so);
+  `guards: [Every, Person]` refuses a model outright and, being `account`-scoped, hides the entry from every MCP
+  listing (signing, paying, anything the page treats as a deliberate act); `isAgentCall(context)` inside a guard or
+  service. All three read `context.origin === "mcp"` first — a field on `SignalContext`, never the trace, which can
+  be absent — and the token second, so an agent's token used over plain HTTP is still an agent. `Person` also
+  declares **`static agents = false`**, the guard-level marker the catalogue reads: an endpoint it guards is refused
+  from the document itself (named in the boot log like `mcp: false`, with the guards' `static name`s — the explorer's
+  filter labels, which need not be the class names), not merely
+  hidden per caller at listing time — so the boot count, the size line and every agent's listing agree, and no
+  second flag is needed. Any guard that admits no model may declare the marker; a listing still evaluates
+  `account`-scoped guards per caller, so the two mechanisms compose.
+- **The flow:** `POST /mcp` with no token → 401 with `resource_metadata` → the client reads the PRM, then the AS
+  metadata, registers (or uses a pre-registered / URL `client_id`), opens `/oauth/authorize` in a browser → the
+  server parks the request and redirects to the consent page (via `signinPath?redirect=` when anonymous) → the user
+  allows → `redirect_uri?code&state&iss` → the client posts the code and its PKCE verifier to `/oauth/token` → an
+  access token (1h, `aud` = the MCP resource, `iss`, `client_id`, `sub`, and the account's `self`/`me`) plus a
+  rotating refresh token (30d; reuse revokes the family). The token is the app's own access JWT, so
+  `AccountMiddleware` and every guard read it exactly as a browser session; nothing is scoped.
+- **Invariants:** an authorization request lives ten minutes, binds to the first signed-in account that opens it,
+  and is decided once; a code lives sixty seconds and is consumed on first exchange even if that exchange fails; a
+  redirect URI must be registered and match exactly, loopback ports excepted (RFC 8252 §7.3); a refresh token is
+  bound to the client it was issued to. A `client_id` that is an HTTPS URL with a path is fetched as a metadata
+  document: the name is judged first (no address literal, no reserved suffix, no port), then resolved, and refused
+  when any address is private, loopback, link-local, CGNAT or multicast — the rebinding window between lookup and
+  fetch is what the deployment's egress policy still owns.
+- **Per-app configuration** goes in `env.server.*` under `oauth`: `consentPath` and `signinPath` (with the basePath
+  when the app has one — `/office/oauth/consent`), `clients` (pre-registered, with an optional `clientSecret`),
+  `dynamicRegistration` (on by default: Claude Code and claude.ai register themselves), `allowedRedirectSchemes`
+  (`["cursor"]` by default, for Cursor's desktop callback), `accessTokenSeconds` (3600, also how long a revoked
+  access token can outlive its grant), `clientIdMetadata: { enabled, refusePrivateAddresses }` (both on; `enabled:
+  false` turns Client ID Metadata Documents off and the metadata stops advertising them — Claude Code then registers
+  dynamically instead), `issuer` and `resource` (only when a tunnel or an edge makes the derived origin wrong),
+  `enabled: false` to take the server and the `/mcp` credential requirement away together. The signin page must
+  honour `?redirect=` to return the user to the consent page.
+- **Clients:** Claude Code — `claude mcp add --transport http <name> <origin>/mcp` and nothing else; it registers,
+  opens the browser to `http://localhost:<port>/callback`, refreshes on 401. claude.ai — a custom connector by URL
+  (needs public HTTPS; DCR or the Advanced-settings client id/secret; callback
+  `https://claude.ai/api/mcp/auth_callback`). Cursor — the URL alone (DCR with a `cursor://` redirect), or a
+  pre-registered client in `mcp.json` `auth` with `http://localhost:8787/callback` /
+  `https://www.cursor.com/agents/mcp/oauth/callback` registered. A first-party browser token no longer opens `/mcp`
+  once the issuer is named; `--header "Authorization: Bearer …"` needs a token minted with `aud`.
+- **`JWT_SECRET`** (or `security.jwtSecret`) is required outside `local`; the boot refuses without it, because the
+  derived fallback is seeded from the app, environment and repo names and forges an admin token for anyone who
+  knows them. `AKAN_ALLOW_DERIVED_JWT_SECRET=1` accepts that risk explicitly.
 
 ## `prompt()`
 **`prompt()`** is invoked by the *user* — a client renders it as a slash command — not chosen by the model. `exec`
@@ -215,3 +336,103 @@ over the ask.
 frames down included, and is a no-op when nobody is streaming — so the same code runs unchanged over HTTP, a
 websocket, and in tests. `McpProgress.streaming` says whether anyone is reading, for a report whose message
 costs something to assemble.
+
+## Rolling MCP Out To An App
+
+The goal of exposing a service over MCP is that a person uses it through an agent instead of through the page:
+one browser consent (the app's own sign-in included), then an hour-long access token and a thirty-day rotating
+refresh token stand in for every later sign-in. The token is the app's own access JWT, so what an agent may do is
+exactly what that person may do over HTTP — nothing is widened and nothing is scoped. Do these in order; steps 2
+and 3 are the ones whose omission shows up as a 404 or a doubled basePath on the consent page.
+
+1. **Mount the lib that carries the authorization server** (`libs/shared`) and confirm `lib/_oauth`,
+   `page/oauth/consent` and `srvkit/oauthServer.ts` are present. Its `option.ts` declares `auth` for `setMcp`, and
+   `setMcp` merges field by field in mount order with the app last — the app never restates `auth`.
+2. **`akan.config.ts`: `syncPageLibs: true`** (or the lib's name in an array). `akan sync <app>` links the consent
+   route under every basePath the app declares; the link folder is generated and never committed.
+3. **`env.server.*` → `oauth`.** `consentPath` / `signinPath` carry the basePath the browser sees
+   (`/office/oauth/consent`, `/office/signin`) and are omitted for an app without one. The server hands the
+   sign-in page `?redirect=` as the app's router names the route — basePath removed — because `router.push` puts
+   the locale and basePath back; the app adds nothing. `issuer` (`AKAN_MCP_AUTH_SERVERS` for the resource side)
+   only behind a tunnel or an edge that renames the host, `resource` (`AKAN_MCP_RESOURCE`) only when `path` moved
+   off `/mcp`, `clients` + `dynamicRegistration: false` only for a deployment that closes registration.
+4. **The sign-in page honours `?redirect=`** by passing it unchanged to the password and SSO controls — a
+   router-space path, never prefixed by hand. Accepting it needs only `startsWith("/") && !startsWith("//")`.
+5. **`lib/option.ts`: `option.setMcp({ instructions, legacyTextBlock: false })`** (`AKAN_MCP_INSTRUCTIONS`,
+   `AKAN_MCP_LEGACY_TEXT`). Leave `readOnly` (`AKAN_MCP_READONLY`) off when the point is to let people *use* the
+   service; it is the valve for a deployment that must not write, not the way to curate.
+6. **`JWT_SECRET`** (or `security.jwtSecret`) in every deployment outside `local`; the boot refuses without it.
+7. **Read the boot log** — `MCP catalogue: tools=… · listing …KB`, the `MCP catalogue cost:` line, one `warn` per
+   refusal, and the list of published entries with no `.desc()`. A tool missing from it is missing everywhere.
+8. **Connect once per app** — `claude mcp add --transport http <name> <issuer>/mcp`; a second entry for the same
+   server with a pre-registered client tests a registration mode, it does not add anything a user needs.
+
+## Choosing What To Open
+
+One rule: **an endpoint is open to an agent when the same person could do the same thing from the page, under
+the same guards.** What stays closed is closed because no agent has a reason to call it, not because of who may
+— and that is the only thing `mcp: false` says.
+
+| Endpoint | Decision |
+|---|---|
+| Domain read slices (`inOrg`, `inProject`, `inSelf`, `byStatuses`) | Open. A named slice publishes only when it declares its **own** `guards`; the `slice()` map reaches the root slice and the generated CRUD, never a named slice. A search slice only on data that may be enumerated. |
+| The root slice and generated CRUD | Published by default; `root:` is `Admin`, so a user token never lists it. Take the cost line first: `mcp: { cru: false }` keeps the reads and drops the writes of a model whose write entries are most of its bytes; `mcp: false` for an internal or sensitive model. |
+| Domain mutations (`startTask`, `completeTicket`) | Open when a person would ask an agent to do it for them; a resource guard is mandatory. An act that cannot be undone — signing, paying, sending, removing — either stays off or says so in its `.desc()`: MCP has no approval card. |
+| Steps of a UI state machine (`requestPhoneCodeForSignin`, `setPasswordInPrepareUser`, a prepare-user flow) | `mcp: false`. Perfectly guarded, and only ever called by mistake. |
+| Authentication, SSO, and the OAuth protocol endpoints | Already `mcp: false` where they are declared. |
+| File upload, an `Any` / `Upload` return, a required `Any` argument, `pubsub` / `message`, `light<Model>` | Refused by the framework; nothing to write. |
+| Admin-only endpoints | Leave the `Admin` guard; an account-scope guard hides the entry from every caller it refuses. |
+| An act only a person may take (signing, paying, sending to a customer) | `guards: [Every, Person]` refuses every agent and, because `Person` declares `static agents = false`, takes the entry out of the catalogue document — no `mcp: false` needed, the HTTP route untouched. When a person and a model may both call but not to the same effect, keep the guards and take `.with(AgentCall)` to narrow what the call sets in motion. |
+
+- **Scope is what makes hiding possible.** `static scope: "account"` (a role check) is evaluated with no arguments
+  and filters the listing per caller; `"resource"` (`Can<Verb><Model>`, ownership) needs `context.getArg()`, stays
+  listed, and stops the call. Marking a resource guard `"account"` would make the listing lie — the marker has no
+  default for that reason.
+- **Identity comes from the internal args** (`.with(Self)`, `.with(Account)`, `.with(Me)`), never from an id the
+  client sent, and the service re-checks ownership behind the guard.
+- **An admin who signs in on the consent page mints an admin token.** A connector created under an admin account
+  passes `Admin` guards; treat that as an operational decision, and read the request's subject type when in doubt.
+- **Return what answers the question.** A count-or-summary endpoint taking an id beats a document; a nullable model
+  return publishes no `outputSchema`, so prefer a non-null return plus an `Err`. Bulky page-only fields are
+  `field.visual`. Narrow a list with a named filter slice, never with the root list's raw `query`.
+
+## Writing `instructions`
+
+`*.abstract.md` and `<Agent.Guide>` never reach an MCP client. Exactly three texts do: `instructions`, every
+published entry's `.desc()`, and a `prompt()`. All three are English, whatever the users speak — the reader is a
+model, and the catalogue is built once in one `language` and cached by clients.
+
+- **`instructions` is the workflow.** Five to eight sentences, in this order: what the app is and what its nouns
+  mean; **which tool to call first** and which ids the rest take; how a name becomes an id; what a write confirms
+  before it runs and which writes cannot be undone; what this server does *not* do and where that is done instead.
+
+  ```ts
+  instructions: [
+    "Operations tools for a back-office that runs consulting projects.",
+    "An org is one company; a project belongs to an org; a ticket is one unit of work on a project.",
+    "Start from orgInSelf, then projectInOrg and ticketInProject; every other tool takes the ids those return.",
+    "Prefer ticketStatusInProject for 'how is it going' and ticketInProject only when the user asks for detail.",
+    "createTicket, startTicket and completeTicket write on the caller's behalf: confirm the project and title first.",
+    "Nothing here signs, invoices or uploads a file; those are deliberate acts on the record's own page.",
+  ].join(" "),
+  ```
+- **`.desc()` is the reason to pick one tool** — what it returns and when to use it, two clauses. An id argument's
+  `.desc()` names the tool that returns it (`From projectInOrg`). The generated CRUD borrows the model's `.of()`
+  label and `.desc()`, which is the only text those entries can carry.
+- **`prompt()` is a workflow the user invokes** as a slash command, not one the model chooses — a weekly report,
+  an onboarding check. Put the ask in `Msg.user` at a high `priority` and the attachments in `Msg.resource` masked
+  by their `Light` model at a low one.
+
+## Verifying An App
+
+- `akan lint <app>`, `akan typecheck <app>`, `akan sync <app>`, then the boot log above.
+- The lib's own suites run wherever it is mounted: the OAuth signal test (metadata, registration, both `authorize`
+  redirects, code exchange, `/mcp` with the minted token and the refusal of a first-party or forged one, refresh
+  rotation) and the refresh-session and option unit tests.
+- **One exposure test per app**, in a `lib/<model>.signal.test.ts`: list `tools/list` with a user token and pin the
+  names with `toEqual`, and assert the curated and admin-only ones with `not.toContain`. Exposure is derived from
+  the guards, so a guard change fails this test first — which is the point. The framework's own pattern is
+  `pkgs/akanjs/server/mcp/mcp.integration.test.ts`.
+- Live: connect a client, consent, call a tool, `claude mcp logout`, authenticate again. `AKAN_PUBLIC_LOG_LEVEL=debug`
+  prints one `OAuth token request grant_type=… client_id=…` line per token call; two refreshes in the same second
+  both answering 200 is the grace window working, not a fault.

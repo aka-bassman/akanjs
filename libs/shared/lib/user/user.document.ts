@@ -143,13 +143,20 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     await this.userCache.delete("signToken", userId);
     return true;
   }
-  async createRefreshSession(userId: string, refreshTokenHash: string, expiresAt: Date, userAgent?: string) {
+  async createRefreshSession(
+    userId: string,
+    refreshTokenHash: string,
+    expiresAt: Date,
+    userAgent?: string,
+    clientId?: string,
+  ) {
     return await createRefreshSession(this.userCache, {
       subject: "user",
       subjectId: userId,
       refreshTokenHash,
       expiresAt,
       userAgent,
+      clientId,
     });
   }
   async rotateRefreshSession(refreshTokenHash: string, nextRefreshTokenHash: string, nextExpiresAt: Date) {

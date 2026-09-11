@@ -10,7 +10,15 @@ export interface JsonSchemaBuilderOptions {
    * tool schema to resolve on its own and so embeds its models in a per-schema `$defs`.
    */
   refPrefix?: string;
+  /**
+   * How a nullable schema is spelled. `anyOf` with a null branch is the OpenAPI habit and the default; `type` merges
+   * `"null"` into a schema that has one plain `type` (and lists `null` in its `enum`, which would otherwise still
+   * refuse it) — the shorter form a listing that is re-sent to every agent is paid for by the byte.
+   */
+  nullable?: "anyOf" | "type";
 }
+
+export type JsonSchemaRelations = "inline" | "id" | "named";
 
 export interface JsonSchemaModelOptions {
   /**
@@ -25,6 +33,20 @@ export interface JsonSchemaModelOptions {
    * listed `required` and a validating client would refuse the whole result.
    */
   readable?: boolean;
+  /**
+   * How a field holding another database model is described. `inline` follows the `$ref`, which is right where
+   * schemas share a component section. `id` is what a request body carries: `serialize` sends a relation as its id,
+   * so a schema showing the whole related object asks the caller for a shape the server never reads. `named` is for
+   * a response: the nested document becomes `{ type: "object" }` carrying its model name, so the returned model
+   * keeps every field of its own and stops dragging its relations' closures into each copy. An embedded scalar has
+   * no tool of its own and stays inline under either.
+   */
+  relations?: JsonSchemaRelations;
+  /**
+   * Whether an id carries the 24-hex `pattern`. Kept on a top-level argument, where it is read once; dropped inside
+   * a per-tool `$defs`, where it would repeat on every id field of every copy.
+   */
+  idPattern?: boolean;
 }
 
 /**
@@ -33,8 +55,10 @@ export interface JsonSchemaModelOptions {
  */
 export class JsonSchemaBuilder {
   readonly #refPrefix: string;
-  constructor({ refPrefix = "#/components/schemas/" }: JsonSchemaBuilderOptions = {}) {
+  readonly #nullableForm: "anyOf" | "type";
+  constructor({ refPrefix = "#/components/schemas/", nullable = "anyOf" }: JsonSchemaBuilderOptions = {}) {
     this.#refPrefix = refPrefix;
+    this.#nullableForm = nullable;
   }
 
   arg(arg: SerializedArg): JsonSchema {
@@ -43,29 +67,30 @@ export class JsonSchemaBuilder {
       : arg.enum
         ? this.#enum(arg.enum)
         : this.#ref(arg.refName, arg.modelType);
-    return JsonSchemaBuilder.#nullable(JsonSchemaBuilder.#arrayed(schema, arg.arrDepth ?? 0), !!arg.nullable);
+    return this.#nullable(JsonSchemaBuilder.#arrayed(schema, arg.arrDepth ?? 0), !!arg.nullable);
   }
 
   upload(arg: SerializedArg): JsonSchema {
     const fileSchema = { type: "string", format: "binary" };
-    return JsonSchemaBuilder.#nullable(JsonSchemaBuilder.#arrayed(fileSchema, arg.arrDepth ?? 0), !!arg.nullable);
+    return this.#nullable(JsonSchemaBuilder.#arrayed(fileSchema, arg.arrDepth ?? 0), !!arg.nullable);
   }
 
   returns(returns: SerializedReturns): JsonSchema {
-    return JsonSchemaBuilder.#nullable(
+    return this.#nullable(
       JsonSchemaBuilder.#arrayed(this.#ref(returns.refName, returns.modelType), returns.arrDepth ?? 0),
       !!returns.nullable,
     );
   }
 
-  model(modelRef: ConstantCls, { readable = false }: JsonSchemaModelOptions = {}): JsonSchema {
+  model(modelRef: ConstantCls, options: JsonSchemaModelOptions = {}): JsonSchema {
+    const { readable = false } = options;
     const fields = (modelRef as { [FIELD_META]?: Record<string, ConstantField> })[FIELD_META] ?? {};
     const properties: Record<string, JsonSchema> = {};
     const required: string[] = [];
     for (const [key, field] of Object.entries(fields)) {
       const props = field.getProps();
       if (readable && (props.fieldType === "hidden" || props.fieldType === "secret" || props.visual)) continue;
-      properties[key] = this.#field(field);
+      properties[key] = this.#field(field, options);
       if (!props.nullable) required.push(key);
     }
     return {
@@ -152,27 +177,33 @@ export class JsonSchemaBuilder {
     return { $ref: `${this.#refPrefix}${ConstantRegistry.getModelName(modelRef as Cls)}` };
   }
 
-  #modelRef(modelRef: Cls): JsonSchema {
+  #modelRef(modelRef: Cls, { relations = "inline", idPattern = true }: JsonSchemaModelOptions = {}): JsonSchema {
     if (PrimitiveRegistry.has(modelRef))
-      return JsonSchemaBuilder.primitive(PrimitiveRegistry.getName(modelRef as typeof PrimitiveScalar));
+      return JsonSchemaBuilder.primitive(PrimitiveRegistry.getName(modelRef as typeof PrimitiveScalar), { idPattern });
+    if (relations !== "inline" && !ConstantRegistry.isScalar(modelRef as ConstantCls)) {
+      if (relations === "id") return JsonSchemaBuilder.primitive("ID", { idPattern });
+      return { type: "object", description: ConstantRegistry.getModelName(modelRef) };
+    }
     return { $ref: `${this.#refPrefix}${ConstantRegistry.getModelName(modelRef)}` };
   }
 
-  #field(field: ConstantField): JsonSchema {
+  #field(field: ConstantField, options: JsonSchemaModelOptions): JsonSchema {
     const props = field.getProps();
-    const schema = props.enum ? JsonSchemaBuilder.#inlineEnum([...props.enum.values]) : this.#fieldRef(props);
-    return JsonSchemaBuilder.#nullable(JsonSchemaBuilder.#arrayed(schema, props.arrDepth), props.nullable);
+    const schema = props.enum ? JsonSchemaBuilder.#inlineEnum([...props.enum.values]) : this.#fieldRef(props, options);
+    return this.#nullable(JsonSchemaBuilder.#arrayed(schema, props.arrDepth), props.nullable);
   }
 
-  #fieldRef(props: ReturnType<ConstantField["getProps"]>): JsonSchema {
+  #fieldRef(props: ReturnType<ConstantField["getProps"]>, options: JsonSchemaModelOptions): JsonSchema {
     if (props.isMap) {
       const [valueRef, valueArrDepth] = getNonArrayModel(props.of as Cls | Cls[]);
+      // `serialize` sends a map's model values whole rather than as ids, so a request schema keeps them inline.
+      const valueOptions = options.relations === "id" ? { ...options, relations: "inline" as const } : options;
       return {
         type: "object",
-        additionalProperties: JsonSchemaBuilder.#arrayed(this.#modelRef(valueRef as Cls), valueArrDepth),
+        additionalProperties: JsonSchemaBuilder.#arrayed(this.#modelRef(valueRef as Cls, valueOptions), valueArrDepth),
       };
     }
-    return this.#modelRef(props.modelRef as Cls);
+    return this.#modelRef(props.modelRef as Cls, options);
   }
 
   #enum(refName: string): JsonSchema {
@@ -181,7 +212,7 @@ export class JsonSchemaBuilder {
     return JsonSchemaBuilder.#inlineEnum([...enumRef.values]);
   }
 
-  static primitive(refName: string): JsonSchema {
+  static primitive(refName: string, { idPattern = true }: Pick<JsonSchemaModelOptions, "idPattern"> = {}): JsonSchema {
     switch (refName) {
       case "Boolean":
         return { type: "boolean" };
@@ -190,7 +221,7 @@ export class JsonSchemaBuilder {
       case "Float":
         return { type: "number" };
       case "ID":
-        return { type: "string", pattern: "^[0-9a-fA-F]{24}$" };
+        return idPattern ? { type: "string", pattern: "^[0-9a-fA-F]{24}$" } : { type: "string" };
       case "Int":
         return { type: "integer" };
       case "Upload":
@@ -217,7 +248,14 @@ export class JsonSchemaBuilder {
     return current;
   }
 
-  static #nullable(schema: JsonSchema, nullable: boolean): JsonSchema {
-    return nullable ? { anyOf: [schema, { type: "null" }] } : schema;
+  #nullable(schema: JsonSchema, nullable: boolean): JsonSchema {
+    if (!nullable) return schema;
+    // Only a schema with one plain `type` can carry `"null"` in it: a `$ref` has no type of its own, and an `enum`
+    // must list `null` too or the type array admits what the value list still refuses.
+    if (this.#nullableForm === "type" && typeof schema.type === "string" && !("$ref" in schema)) {
+      const merged = { ...schema, type: [schema.type, "null"] };
+      return Array.isArray(schema.enum) ? { ...merged, enum: [...schema.enum, null] } : merged;
+    }
+    return { anyOf: [schema, { type: "null" }] };
   }
 }

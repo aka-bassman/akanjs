@@ -624,6 +624,28 @@ void run();`}
             language="bash"
             code={`[DiLifecycle] INFO  Mounting 3 of 12 module(s): article, file, user`}
           />
+          <div>
+            {l.trans({
+              en: "disableModules and disableLibs are the same idea from the other end: mount everything except what you name and whatever reaches it. disableModules takes module names, disableLibs takes the name of a library and stands for every module that library registered, so it does not drift as the library gains modules. Reach for either when the process serves most of the app and a library it depends on is one it does not use — server.ts is generated from the dependency graph, so a library cannot be dropped by editing it. Both are accepted in all three places modules is, as AKAN_DISABLE_MODULES and AKAN_DISABLE_LIBS in the environment. Naming a module in both modules and an exclusion leaves it out, because modules says what a process is for and the exclusions say what it must not run.",
+              ko: "disableModules와 disableLibs는 같은 발상을 반대편에서 적용합니다. 지정한 대상과 그것을 참조하는 모듈만 빼고 나머지를 전부 마운트합니다. disableModules는 모듈 이름을, disableLibs는 라이브러리 이름을 받아 그 라이브러리가 등록한 모듈 전부를 뜻하므로 라이브러리에 모듈이 추가되어도 목록이 어긋나지 않습니다. 프로세스가 앱 대부분을 담당하는데 의존하는 라이브러리 중 쓰지 않는 것이 있을 때 씁니다. server.ts는 의존성 그래프에서 생성되므로 파일을 고쳐서 라이브러리를 뺄 수는 없습니다. 둘 다 modules와 같은 세 곳에서 쓸 수 있고, 환경변수 이름은 AKAN_DISABLE_MODULES와 AKAN_DISABLE_LIBS입니다. modules와 제외 옵션에 같은 모듈을 적으면 빠집니다. modules는 이 프로세스가 무엇을 위한 것인지를, 제외 옵션은 무엇을 실행하면 안 되는지를 말하기 때문입니다.",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/myapp/main.ts"
+            code={`import { AkanApp } from "akanjs/server";
+
+const run = async () => {
+  await new AkanApp("./server", { disableLibs: ["social"], disableModules: ["legacyImport"] }).start();
+};
+void run();`}
+          />
+          <Code.Snippet
+            className="w-full"
+            title={l.trans({ en: "Boot log", ko: "부팅 로그" })}
+            language="bash"
+            code={`[DiLifecycle] INFO  disableModules/disableLibs also dropped 2 dependent module(s): digest, notification`}
+          />
           <div className="space-y-1">
             {[
               {
@@ -662,8 +684,8 @@ void run();`}
           </div>
           <Docs.Alert type="warning">
             {l.trans({
-              en: "A name no module registered fails the boot instead of being ignored, so a typo cannot quietly drop a module. Selection narrows the enabled set rather than replacing it, so it never turns on a module whose service is disabled. Endpoints of a module left out do not exist, so a client that calls one gets a 404.",
-              ko: "등록되지 않은 이름은 무시되지 않고 부팅을 실패시키므로, 오타 때문에 모듈이 조용히 빠지는 일은 없습니다. 선택은 활성화된 모듈 집합을 좁힐 뿐이라 service가 비활성화된 모듈을 켜지는 않습니다. 빠진 모듈의 endpoint는 존재하지 않으므로 클라이언트가 호출하면 404가 됩니다.",
+              en: "An unregistered name fails the boot instead of being ignored, in all three options: a typo in modules quietly drops a module, and a typo in an exclusion quietly keeps one running. Selection narrows the enabled set rather than replacing it, so it never turns on a module whose service is disabled. A module that reaches a disabled one goes with it, and the boot log names the ones you did not ask for. Endpoints of a module left out do not exist, so a client that calls one gets a 404.",
+              ko: "등록되지 않은 이름은 세 옵션 모두 무시되지 않고 부팅을 실패시킵니다. modules의 오타는 모듈을 조용히 빠뜨리고, 제외 옵션의 오타는 모듈을 조용히 남겨두기 때문입니다. 선택은 활성화된 모듈 집합을 좁힐 뿐이라 service가 비활성화된 모듈을 켜지는 않습니다. 빠진 모듈을 참조하는 모듈은 함께 빠지며, 직접 지정하지 않은 것들은 부팅 로그에 이름이 남습니다. 빠진 모듈의 endpoint는 존재하지 않으므로 클라이언트가 호출하면 404가 됩니다.",
             })}
           </Docs.Alert>
         </Docs.Description>

@@ -43,7 +43,7 @@ const drainSize = 200;
 export class CascadeRunner {
   readonly #modules = new Map<string, CascadeModule>();
   readonly #plans = new Map<string, CascadePlan>();
-  /** `polymorphic: "any"` edges: the owner is unknowable at boot, so every model's removal has to sweep them. */
+  /** `removeWithAny` edges: the owner is unknowable at boot, so every model's removal has to sweep them. */
   readonly #anyEdges: WithEdge[] = [];
   readonly #bulk = new Set<string>();
   readonly #context = new AsyncLocalStorage<CascadeContext>();

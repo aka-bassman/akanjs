@@ -54,6 +54,8 @@ const signal = (): Record<string, SerializedSignal> => ({
       internalOnly: { args: [], guards: ["Admin"] },
       // `init({ mcp: false })`: one declaration covers both entries the slice generates.
       quietSlice: { args: [], guards: ["Public"], mcp: false },
+      // `init({ guards: [Public, Person] })`: the serializer stamped `agents: false` because `Person` admits none.
+      personSlice: { args: [], guards: ["Public", "Person"], agents: false },
     },
     endpoint: {
       countMcpPosts: { type: "query", args: [], returns: { refName: "Int" }, guards: ["Public"] },
@@ -78,6 +80,14 @@ const signal = (): Record<string, SerializedSignal> => ({
         guards: ["Public"],
       },
       undeclaredMcpPost: { type: "query", args: [], returns: { refName: "String" } },
+      // Guarded for a person: `Person` says `static agents = false`, which the serializer resolved onto the entry.
+      signMcpPost: {
+        type: "mutation",
+        args: [],
+        returns: { refName: "Boolean" },
+        guards: ["Admin", "Person"],
+        agents: false,
+      },
       summaryMcpPost: {
         type: "query",
         args: [{ type: "search", name: "status", refName: "String", nullable: true }],
@@ -209,6 +219,26 @@ describe("McpDocument", () => {
     expect(names(doc)).toContain("countMcpPosts");
   });
 
+  test("keeps out what a person-only guard protects, at every altitude, and says which guards did it", () => {
+    // A guard with `static agents = false` never passes a model, so the entry would be a tool every agent is
+    // refused — and hiding it per caller at listing time would still leave it in the document, the boot count and
+    // every listing's bytes. Refused like `mcp: false`, and the reason names the guards so the author can find it.
+    const doc = new McpDocument(signal());
+    const refusals = Object.fromEntries(doc.refusals.map(({ key, reason }) => [key, reason]));
+    expect(names(doc)).not.toContain("signMcpPost");
+    expect(refusals.signMcpPost).toContain("Admin, Person");
+    expect(refusals.signMcpPost).toContain("HTTP still serves it");
+    expect(names(doc)).not.toContain("mcpPostListPersonSlice");
+    expect(names(doc)).not.toContain("mcpPostInsightPersonSlice");
+    // The generated verbs read the signal's own verb map, the shape `mcp` already travels in.
+    const withMap = signal();
+    withMap.mcpPost.agents = { remove: false };
+    const mapped = new McpDocument(withMap);
+    expect(names(mapped)).not.toContain("removeMcpPost");
+    expect(names(mapped)).toContain("createMcpPost");
+    expect(names(mapped)).toContain("mcpPost");
+  });
+
   test("takes the generated verbs the module map names off the shelf, and leaves the rest", () => {
     // The `mcp` map mirrors the `guards` map `slice()` takes, key for key and scope for scope: it narrows the
     // root slice and the generated CRUD, and never reaches a named slice or a custom endpoint.
@@ -268,11 +298,14 @@ describe("McpDocument", () => {
       "bodyPrompt",
       "importMcpPost",
       "lightMcpPost",
+      "mcpPostInsightPersonSlice",
       "mcpPostInsightQuietSlice",
+      "mcpPostListPersonSlice",
       "mcpPostListQuietSlice",
       "rawArgPrompt",
       "rawMcpPost",
       "requestMcpPostCode",
+      "signMcpPost",
       "tagsPrompt",
       "undeclaredMcpPost",
       "unguardedMcpPost",
@@ -320,9 +353,8 @@ describe("McpDocument", () => {
     // so a model can still pick a filter, and the values it may pick are published with it.
     const properties = (list?.inputSchema.properties ?? {}) as Record<string, unknown>;
     expect(Object.keys(properties)).toEqual(["queryKey", "skip", "limit", "sort"]);
-    expect(properties.queryKey).toEqual({
-      anyOf: [{ type: "string", enum: ["any", "byAuthor"] }, { type: "null" }],
-    });
+    // Nullability rides in the type rather than an `anyOf` wrapper, and the enum lists `null` so both halves agree.
+    expect(properties.queryKey).toEqual({ type: ["string", "null"], enum: ["any", "byAuthor", null] });
     expect(doc.resourceTemplates.map((template) => template.uriTemplate)).toContain(
       "akan://mcpPost/list{?queryKey,skip,limit,sort}",
     );
@@ -401,8 +433,31 @@ describe("McpDocument", () => {
     const doc = new McpDocument(signal());
     const tool = doc.tools.find((candidate) => candidate.name === "mcpPost");
     expect(tool?.outputSchema?.$ref).toBe("#/$defs/McpPost");
-    // A `$ref` may not be dereferenced over the network, so every model travels inside the tool that names it.
-    expect(Object.keys(tool?.outputSchema?.$defs as object)).toEqual(["McpPost", "McpTag"]);
+    // A `$ref` may not be dereferenced over the network, so every model travels inside the tool that names it —
+    // and by default a nested model is named rather than inlined, so the closure stops at the returned model.
+    const defs = tool?.outputSchema?.$defs as Record<string, { properties: Record<string, unknown> }>;
+    expect(Object.keys(defs)).toEqual(["McpPost"]);
+    expect(defs.McpPost.properties.tag).toEqual({ type: ["object", "null"], description: "McpTag" });
+    const full = new McpDocument(signal(), { outputSchema: "full" }).tools.find(
+      (candidate) => candidate.name === "mcpPost",
+    );
+    expect(Object.keys(full?.outputSchema?.$defs as object)).toEqual(["McpPost", "McpTag"]);
+  });
+
+  test("asks for a relation's id in a request schema, which is what the wire carries", () => {
+    // `serialize` sends a relation field as its id and the server never converts an object back, so a schema that
+    // showed the related model asked an agent for a shape the document layer cannot take.
+    const doc = new McpDocument(signal());
+    const draft = doc.tools.find((tool) => tool.name === "draftMcpPost");
+    const input = draft?.inputSchema.$defs as Record<string, { properties: Record<string, unknown> }>;
+    expect(Object.keys(input)).toEqual(["McpPostInput"]);
+    expect(input.McpPostInput.properties.tag).toEqual({ type: ["string", "null"] });
+  });
+
+  test("publishes no outputSchema at all when asked, and keeps every input schema", () => {
+    const doc = new McpDocument(signal(), { outputSchema: "none" });
+    expect(doc.tools.every((tool) => tool.outputSchema === undefined)).toBe(true);
+    expect(doc.tools.find((tool) => tool.name === "draftMcpPost")?.inputSchema.$defs).toBeDefined();
   });
 
   test("wraps an array result so structuredContent stays an object", () => {

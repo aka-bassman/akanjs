@@ -7,7 +7,7 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.99 -->
+<!-- akan:agent:version 3.0.0-alpha.101 -->
 
 ## Workspace
 
@@ -488,7 +488,7 @@ Full contract — credential handshake, room revalidation, socket cleanup scopin
 - **The guards are also the MCP exposure decision** — see MCP Exposure. An endpoint that names none is not published to agents at all, and a mutation whose only guard is `Public` is refused, so a missing `guards` array now costs visibility as well as authorization.
 - Resource guards are `Can<Verb><Model>` classes in `srvkit/guards.ts` that `implements Guard` with an `async canPass(context)`. They **fail closed**: no resource named ⇒ `false`; a load that throws ⇒ `logger.warn` then `false`. Admin bypass goes first.
 - Keep `static name = "User";` on guard classes. `fetch` serializes guard names and the API explorer filters on them; it looks like dead code, and deleting it breaks the UI. Comment it so the next reader knows.
-- **Every guard class also declares `static scope: GuardScope`, and it is required with no default.** `"account"` means the verdict reads the caller and nothing about the call, so it can be evaluated with no arguments — which is what lets an MCP listing hide what this caller certainly cannot use. `"resource"` means it needs the call's arguments (`context.getArg()`) and fails closed without them, so it is never evaluated for a listing: the entry stays visible and is stopped at call time. Getting it wrong is not a type error, so the marker is mandatory rather than defaulted — `SignedIn` / `Admin` / role checks are `"account"`, and every `Can<Verb><Model>` is `"resource"`.
+- **Every guard class also declares `static scope: GuardScope`, and it is required with no default.** `"account"` means the verdict reads the caller and nothing about the call, so it can be evaluated with no arguments — which is what lets an MCP listing hide what this caller certainly cannot use. `"resource"` means it needs the call's arguments (`context.getArg()`) and fails closed without them, so it is never evaluated for a listing: the entry stays visible and is stopped at call time. Getting it wrong is not a type error, so the marker is mandatory rather than defaulted — `SignedIn` / `Admin` / role checks are `"account"`, and every `Can<Verb><Model>` is `"resource"`. An `"account"` guard that throws at listing time reached for arguments it does not have: the entry is hidden from every caller and the guard is named once in the log as mismarked. A guard that admits no model at all — `Person` — adds `static agents = false`; the MCP catalogue then refuses every endpoint it guards outright, so the person-only act is absent from the document rather than hidden per caller.
 - The acting user arrives via `.with(Self)` / `.with(CurrentUserId)` / `.with(Me)`. Never trust a client-supplied id.
 - Guards ship with the library that owns the model and are imported by its own signals through the package path, so a mounting app inherits authorization and cannot forget it.
 - Services re-check ownership even when a guard already gated the call — two independent gates.
@@ -635,13 +635,38 @@ it.
   slice and generated CRUD only, never a named slice or a custom endpoint. It is an opt-**out**, and it is
   curation, not authorization: HTTP serves the endpoint exactly as before.
 - **Narrow by cost, and read the boot log first.** MCP forbids a `$ref` across entries, so every entry inlines the
-  full schema of every model it mentions and the listing is re-sent whole to every agent that connects. A plain
-  21-field model costs 12.6KB over eight entries; `mcp: { cru: false }` takes it to 4.7KB. `MCP catalogue: … ·
-  listing 214KB` plus a per-signal `MCP catalogue cost:` line says where it went.
+  schema of every model it mentions and the listing is re-sent whole to every agent that connects. By default a
+  response schema names a nested model instead of inlining it (`outputSchema: "shallow"`; `"full"` restores the
+  closure, `"none"` drops the schema and keeps the text block) and a request schema asks for a relation's id, which
+  is what the wire carries. `MCP catalogue: … · listing 214KB` plus a per-signal `MCP catalogue cost:` line says
+  where the rest went; `mcp: { cru: false }` on a model is the next lever. `outputSchema` moves wire bytes and client
+  memory only — the model receives names, descriptions and input schemas (measured: 219 tools ≈ 41k tokens either
+  way) — so tool count and the input model behind `create*` / `update*` are what cost context. In one line:
+  `Person` for an act reserved for a person, `mcp: { cru: false }` for the tools whose input models cost the model
+  tokens, `outputSchema` for nothing that reaches the model.
 - Settings live in the app's `lib/option.ts` — `option.setMcp({ enabled, readOnly, path, version, instructions,
-  allowedOrigins, pageSize, language, auth })`, **not `main.ts`**. Each field has an `AKAN_MCP_*` env spelling.
-  `AKAN_MCP_READONLY=true` is the read-only-deployment valve, not the exposure switch; `AKAN_MCP=false` takes the
-  whole surface off.
+  allowedOrigins, pageSize, language, outputSchema, rateLimit, auth })`, or `setMcp((env) => …)` for one derived from the server env, **not
+  `main.ts`**. Each field has an `AKAN_MCP_*` env spelling. `AKAN_MCP_READONLY=true` is the read-only-deployment
+  valve, not the exposure switch; `AKAN_MCP=false` takes the whole surface off. Every call that executes an
+  endpoint is rate-limited per caller (120 a minute, 8 in flight, per process; 429 + `Retry-After`) — `rateLimit`
+  / `AKAN_MCP_RATE_LIMIT` tunes or disables it.
+- **Authentication is the same server.** An app mounting `libs/shared` serves the OAuth 2.1 authorization server
+  beside `/mcp` — `/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/oauth/token`, `/oauth/register`
+  (RFC 7591; Cursor's `cursor://` redirect admitted) plus the consent page `libs/shared/page/oauth/consent` — and
+  names itself as the issuer, so `/mcp` demands a bearer token, verifies its signature, and refuses one carrying no
+  `aud`. A token is the app's own access JWT plus `aud`/`iss`/`client_id`, so `AccountMiddleware` and the guards
+  judge it unchanged; there is no scope. Per-app knobs live in `env.server.*` under `oauth` (`consentPath` and
+  `signinPath` with the basePath, `clients`, `dynamicRegistration`, `allowedRedirectSchemes`, `clientIdMetadata`,
+  `enabled`). `/mcp` reads the `Authorization` header only — a cookie is dropped at the door — and `JWT_SECRET` is
+  mandatory outside `local`, because the derived fallback is forgeable from three public names. A grant is revoked
+  whole — `POST /oauth/revoke` (RFC 7009) by the client, `fetch.revokeOAuthConnection(sessionId)` by the account's
+  owner, `fetch.listOAuthConnections()` to see them — and a revoked access token is refused at its next call.
+- **A person may, a model may not.** An agent's token names its `client_id` and `aud`; a browser session has
+  neither, and `context.origin` is `"mcp"` for a call through the MCP endpoint. `guards: [Every, Person]` refuses a
+  model and, because `Person` declares `static agents = false`, takes the entry out of the MCP catalogue document
+  itself (named in the boot log like `mcp: false`); `.with(AgentCall)` hands an endpoint the same verdict as a
+  boolean to narrow what the call sets in motion; `isAgentCall(context)` is the function behind both
+  (`@libs/shared/srvkit`). Never sniff `aud` through a cast.
 - **The refusals are fail-closed**: a declared `mcp: false`, an endpoint with no `guards`, a mutation with no real
   guard, `pubsub` and `message`, an `Any` or `Upload` return, a file upload, a required `Any` argument, and the
   generated `light<Model>` read. A `prompt` also refuses a list argument and any `Any` argument. **Every refusal
@@ -764,10 +789,11 @@ shape, so `cascade` never means "related" — it means one of exactly these:
   forms: a relation, an id with `ref`, or a polymorphic id with `refPath`. An array, a Map, `ref` together with
   `refPath`, and a field naming no owner each fail the class build.
 - **A `refPath` must name an `enumOf` field** — a free-form owner type is unknowable at build time. The one
-  exception is opt-in and priced: `polymorphic: "any"` alongside `cascade: "removeWith"` takes a free-form
-  `String` type field holding the owner's refName, and sweeps for children on **every** model's removal. The
-  sweep is one indexed probe, but a single wildcard edge turns every cascade in the app back to one document at
-  a time; the boot log names the edges in one `info` line.
+  exception is opt-in and priced: `cascade: "removeWithAny"` takes a free-form `String` type field holding the
+  owner's refName, and sweeps for children on **every** model's removal. The sweep is one indexed probe, but a
+  single wildcard edge turns every cascade in the app back to one document at a time; the boot log names the
+  edges in one `info` line. The action carries its own `refPath` in the option type, so the widening cannot be
+  declared apart from the direction it widens.
 - **A cascade goes through the target's service, never its model** — that path is what runs the target's
   `_postRemove`, where a module puts the side effect the removal has to carry.
 - **Nothing checks whether another document still references the same target.** `File` in particular is deduped by

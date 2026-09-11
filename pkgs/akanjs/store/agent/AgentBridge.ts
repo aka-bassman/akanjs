@@ -61,9 +61,11 @@ export class AgentBridge {
    */
   read(key: string, viewKey = ""): unknown {
     const entry = this.#state[key];
-    if (!entry) throw new Error(`Unknown state key: ${key}`);
+    if (!entry) throw new Error(`Unknown state key: ${key}.${this.#readableInstead(viewKey)}`);
     if (!this.#instance.liveKeysIn(viewKey).has(key))
-      throw new Error(`State key "${key}" is not read by this screen, so it is not part of its surface.`);
+      throw new Error(
+        `State key "${key}" is not read by this screen, so it is not part of its surface.${this.#readableInstead(viewKey)}`,
+      );
     const value = AgentBridge.#unwrap(this.#instance.get()[key]);
     if (entry.refName && entry.modelType) {
       const model = ConstantRegistry.getModelRef(entry.refName, entry.modelType) as MaskModel;
@@ -73,6 +75,12 @@ export class AgentBridge {
     throw new Error(
       `State key "${key}" holds an object that belongs to no model, so there is nothing to mask it by and it is not published. Read the model's own keys instead.`,
     );
+  }
+
+  /** Named the way `readScreen` and `highlight` name theirs: a refusal with no way forward costs a whole turn. */
+  #readableInstead(viewKey: string): string {
+    const keys = this.readableKeys(viewKey);
+    return keys.length ? ` Readable here: ${keys.join(", ")}.` : " This screen reads no state keys.";
   }
 
   static #unwrap(value: unknown) {

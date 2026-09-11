@@ -20,7 +20,7 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
   readonly #adaptorOverrides: AdaptorOverride[] = [];
   readonly #webProxies: WebProxyRegistration[] = [];
   readonly #getLlms: ((env: Env) => LlmOption)[] = [];
-  #mcp: boolean | McpServerOption | undefined;
+  #getMcp: ((env: Env) => boolean | McpServerOption) | undefined;
   #agentAccess: GuardCls | GuardCls[] | null | undefined;
   #crossSite: CrossSiteOption | undefined;
   constructor() {
@@ -48,10 +48,11 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
   /**
    * MCP server settings for the app mounting this option, merged over the `AKAN_MCP_*` environment and under an
    * option the server is constructed with. The app's own `option.ts` is the last lib the server reads, so it wins
-   * over every library it depends on.
+   * over every library it depends on. The function form receives the server env, for a setting derived from it —
+   * a token verifier built on the app's signing secret, the issuer an authorization server publishes under.
    */
-  setMcp(mcp: boolean | McpServerOption = true) {
-    this.#mcp = mcp;
+  setMcp(mcpOrFn: boolean | McpServerOption | ((env: Env) => boolean | McpServerOption) = true) {
+    this.#getMcp = typeof mcpOrFn === "function" ? mcpOrFn : () => mcpOrFn;
     return this;
   }
   /**
@@ -91,8 +92,8 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
   getWebProxies(): WebProxyRegistration[] {
     return this.#webProxies;
   }
-  getMcp(): boolean | McpServerOption | undefined {
-    return this.#mcp;
+  getMcp(env: Env): boolean | McpServerOption | undefined {
+    return this.#getMcp?.(env);
   }
   getAgentAccess(): GuardCls | GuardCls[] | null | undefined {
     return this.#agentAccess;

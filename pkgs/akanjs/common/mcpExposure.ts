@@ -17,6 +17,8 @@ export interface McpExposureEndpoint {
   guards?: string[];
   fileUpload?: boolean;
   mcp?: boolean;
+  /** `false` when a guard declares `static agents = false`: no model may ever pass, whatever else the guards say. */
+  agents?: boolean;
 }
 
 export interface McpExposureOption {
@@ -68,6 +70,10 @@ export const mcpRefusalOf = (
   // HTTP serves this endpoint exactly as before, and its guards are still what decide who may call it.
   if (endpoint.mcp === false)
     return "it declares `mcp: false`, so it is deliberately off the agent shelf. HTTP still serves it.";
+  // Also stated, one level down: a guard that admits no model. Publishing the entry would offer every agent a tool
+  // it can only be refused, and hiding it per caller at listing time would still leave it in the document.
+  if (endpoint.agents === false)
+    return `its guards (${(endpoint.guards ?? []).join(", ")}) admit no agent — an act reserved for a person, so it is off the agent shelf. HTTP still serves it.`;
   // The whole exposure policy, and the first gate because it applies to every kind. Publishing follows the guards:
   // an endpoint with none has had no decision made about who may reach it, and a catalogue entry is the one place
   // that omission stops being invisible. `guards: [Public]` is the same access, written down, and publishes.

@@ -525,6 +525,56 @@ describe("DiLifecycle module selection", () => {
     });
   };
 
+  const buildExclusionLibs = () => {
+    class ExclusionExtraService extends serve("exclusionExtra" as const, () => ({})) {}
+    const exclusionExtraServiceModel = ServiceModel.from(ExclusionExtraService);
+    class ExclusionExtraEndpoint extends endpoint(exclusionExtraServiceModel, () => ({})) {}
+    class ExclusionExtraInternal extends internal(exclusionExtraServiceModel, () => ({})) {}
+    class ExclusionExtraSignal extends serverSignal(ExclusionExtraEndpoint, ExclusionExtraInternal) {}
+
+    class ExclusionKeeperService extends serve("exclusionKeeper" as const, () => ({})) {}
+    const exclusionKeeperServiceModel = ServiceModel.from(ExclusionKeeperService);
+    class ExclusionKeeperEndpoint extends endpoint(exclusionKeeperServiceModel, () => ({})) {}
+    class ExclusionKeeperInternal extends internal(exclusionKeeperServiceModel, () => ({})) {}
+    class ExclusionKeeperSignal extends serverSignal(ExclusionKeeperEndpoint, ExclusionKeeperInternal) {}
+
+    class ExclusionDependentService extends serve("exclusionDependent" as const, ({ service }) => ({
+      exclusionExtraService: service<InstanceType<typeof ExclusionExtraService>>(),
+    })) {}
+    const exclusionDependentServiceModel = ServiceModel.from(ExclusionDependentService);
+    class ExclusionDependentEndpoint extends endpoint(exclusionDependentServiceModel, () => ({})) {}
+    class ExclusionDependentInternal extends internal(exclusionDependentServiceModel, () => ({})) {}
+    class ExclusionDependentSignal extends serverSignal(ExclusionDependentEndpoint, ExclusionDependentInternal) {}
+
+    const extraLib = new AkanLib("exclusionExtraTest", {
+      databases: [],
+      services: [
+        {
+          service: exclusionExtraServiceModel,
+          signal: new ServiceSignal(ExclusionExtraInternal, ExclusionExtraEndpoint, ExclusionExtraSignal),
+        },
+      ],
+      scalars: [],
+      option: new AkanOption(),
+    });
+    const coreLib = new AkanLib("exclusionCoreTest", {
+      databases: [],
+      services: [
+        {
+          service: exclusionKeeperServiceModel,
+          signal: new ServiceSignal(ExclusionKeeperInternal, ExclusionKeeperEndpoint, ExclusionKeeperSignal),
+        },
+        {
+          service: exclusionDependentServiceModel,
+          signal: new ServiceSignal(ExclusionDependentInternal, ExclusionDependentEndpoint, ExclusionDependentSignal),
+        },
+      ],
+      scalars: [],
+      option: new AkanOption(),
+    });
+    return [extraLib, coreLib];
+  };
+
   test("mounts only the named modules and what they inject", async () => {
     process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
     process.env.AKAN_PUBLIC_REPO_NAME = "akan";
@@ -576,6 +626,105 @@ describe("DiLifecycle module selection", () => {
     const env = {} satisfies BackendEnv;
     expect(() => new DiLifecycle({ env, modules: ["selectionTypo"] }, buildSelectionLib())).toThrow(
       'unknown module "selectionTypo"',
+    );
+  });
+
+  test("drops a disabled module and everything that reaches it", async () => {
+    process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
+    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
+    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+    process.env.AKAN_PUBLIC_ENV = "local";
+    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
+    process.env.SERVER_MODE = "all";
+    process.env.NODE_ENV = "test";
+    const { DiLifecycle } = await import("./diLifecycle");
+
+    const env = {} satisfies BackendEnv;
+    const lifecycle = new DiLifecycle({ env, disableModules: ["selectionLeaf"] }, buildSelectionLib());
+
+    await expect(lifecycle.initializeAll()).resolves.toBeDefined();
+    expect(lifecycle.registry.serviceCls.has("selectionLeaf")).toBe(false);
+    expect(lifecycle.registry.serviceCls.has("selectionRoot")).toBe(false);
+    expect(lifecycle.registry.serviceCls.has("selectionAside")).toBe(true);
+    expect(lifecycle.disabledModules.get("selectionLeaf")).toBe('named by the "disableModules" option');
+    expect(lifecycle.disabledModules.get("selectionRoot")).toBe('depends on disabled module "selectionLeaf"');
+  });
+
+  test('takes a module off even when "modules" named it', async () => {
+    process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
+    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
+    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+    process.env.AKAN_PUBLIC_ENV = "local";
+    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
+    process.env.SERVER_MODE = "all";
+    process.env.NODE_ENV = "test";
+    const { DiLifecycle } = await import("./diLifecycle");
+
+    const env = {} satisfies BackendEnv;
+    const lifecycle = new DiLifecycle(
+      { env, modules: ["selectionRoot", "selectionAside"], disableModules: ["selectionAside"] },
+      buildSelectionLib(),
+    );
+
+    await expect(lifecycle.initializeAll()).resolves.toBeDefined();
+    expect(lifecycle.registry.serviceCls.has("selectionRoot")).toBe(true);
+    expect(lifecycle.registry.serviceCls.has("selectionLeaf")).toBe(true);
+    expect(lifecycle.registry.serviceCls.has("selectionAside")).toBe(false);
+    expect(lifecycle.disabledModules.get("selectionAside")).toBe('named by the "disableModules" option');
+  });
+
+  test("drops every module the disabled lib registered, and what reaches them", async () => {
+    process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
+    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
+    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+    process.env.AKAN_PUBLIC_ENV = "local";
+    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
+    process.env.SERVER_MODE = "all";
+    process.env.NODE_ENV = "test";
+    const { DiLifecycle } = await import("./diLifecycle");
+
+    const env = {} satisfies BackendEnv;
+    const lifecycle = new DiLifecycle({ env, disableLibs: ["exclusionExtraTest"] }, ...buildExclusionLibs());
+
+    await expect(lifecycle.initializeAll()).resolves.toBeDefined();
+    expect(lifecycle.registry.serviceCls.has("exclusionExtra")).toBe(false);
+    expect(lifecycle.registry.serviceCls.has("exclusionDependent")).toBe(false);
+    expect(lifecycle.registry.serviceCls.has("exclusionKeeper")).toBe(true);
+    expect(lifecycle.disabledModules.get("exclusionExtra")).toBe(
+      'in lib "exclusionExtraTest", named by the "disableLibs" option',
+    );
+    expect(lifecycle.disabledModules.get("exclusionDependent")).toBe('depends on disabled module "exclusionExtra"');
+  });
+
+  test("refuses a lib name nothing mounted", async () => {
+    process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
+    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
+    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+    process.env.AKAN_PUBLIC_ENV = "local";
+    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
+    process.env.SERVER_MODE = "all";
+    process.env.NODE_ENV = "test";
+    const { DiLifecycle } = await import("./diLifecycle");
+
+    const env = {} satisfies BackendEnv;
+    expect(() => new DiLifecycle({ env, disableLibs: ["exclusionTypo"] }, ...buildExclusionLibs())).toThrow(
+      '[DI:disableLibs] unknown lib "exclusionTypo"',
+    );
+  });
+
+  test("refuses a disabled module name no lib registered", async () => {
+    process.env.AKAN_PUBLIC_APP_NAME = "moduleSelection";
+    process.env.AKAN_PUBLIC_REPO_NAME = "akan";
+    process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+    process.env.AKAN_PUBLIC_ENV = "local";
+    process.env.AKAN_PUBLIC_OPERATION_MODE = "local";
+    process.env.SERVER_MODE = "all";
+    process.env.NODE_ENV = "test";
+    const { DiLifecycle } = await import("./diLifecycle");
+
+    const env = {} satisfies BackendEnv;
+    expect(() => new DiLifecycle({ env, disableModules: ["selectionTypo"] }, buildSelectionLib())).toThrow(
+      '[DI:disableModules] unknown module "selectionTypo"',
     );
   });
 });

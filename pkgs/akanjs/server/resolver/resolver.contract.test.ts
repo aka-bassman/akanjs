@@ -351,7 +351,7 @@ describe("DatabaseResolver declaration contracts", () => {
     expect(polymorphic.schema.indexes).toContainEqual({ fields: { removedAt: 1, parentType: 1, parent: 1 } });
 
     // A wildcard owner names no candidate, and the index is what keeps its sweep an empty probe rather than a
-    // scan — the whole reason `polymorphic: "any"` is affordable at all.
+    // scan — the whole reason `removeWithAny` is affordable at all.
     const wildcard = DatabaseResolver.resolveDatabase(
       constantWith({
         key: "parent",

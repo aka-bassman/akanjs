@@ -46,7 +46,7 @@ describe("CascadePaths removeRef", () => {
     // A macro import and a bundled build both reach the collector without a typecheck, so the union alone is not
     // enough: an unknown action would otherwise be dropped and the field would look wired up.
     expect(() => via((f) => ({ cover: f(AssetFull, { cascade: "detach" as never }) }))).toThrow(
-      'Cascade field "cover" declares cascade: "detach", which is not one of removeRef,removeWith',
+      'Cascade field "cover" declares cascade: "detach", which is not one of removeRef,removeWith,removeWithAny',
     );
   });
 
@@ -114,15 +114,15 @@ describe("CascadePaths removeWith", () => {
     ).toThrow("must be an enumOf(...) naming the owner refNames it may hold");
     expect(() =>
       via((f) => ({ owner: f(ID, { refPath: "ownerType", cascade: "removeWith" }), ownerType: f(String) })),
-    ).toThrow('declare polymorphic: "any"');
+    ).toThrow('declare cascade: "removeWithAny"');
     expect(() => via((f) => ({ owner: f(ID, { refPath: "missing", cascade: "removeWith" }) }))).toThrow(
       'declares refPath: "missing", which is not a field',
     );
   });
 
-  test("takes a free-form owner type when the field opts in with polymorphic", () => {
+  test("takes a free-form owner type when the field declares removeWithAny", () => {
     const Model = via((f) => ({
-      owner: f(ID, { refPath: "ownerType", cascade: "removeWith", polymorphic: "any" }),
+      owner: f(ID, { refPath: "ownerType", cascade: "removeWithAny" }),
       ownerType: f(String),
     }));
 
@@ -132,29 +132,29 @@ describe("CascadePaths removeWith", () => {
     expect(path?.typeValues).toEqual([]);
   });
 
-  test("rejects polymorphic on an enum refPath and on a type field that holds no refName", () => {
+  test("rejects removeWithAny on an enum refPath and on a type field that holds no refName", () => {
     // The enum already names the candidates and gets the reverse index for free, so widening it is pure cost.
     expect(() =>
       via((f) => ({
-        owner: f(ID, { refPath: "ownerType", cascade: "removeWith", polymorphic: "any" }),
+        owner: f(ID, { refPath: "ownerType", cascade: "removeWithAny" }),
         ownerType: f(CascadeTestOwnerType),
       })),
-    ).toThrow('declares polymorphic: "any" and a refPath naming an enumOf(...); keep one');
+    ).toThrow('a refPath naming an enumOf(...), which already names its owners; use cascade: "removeWith"');
     expect(() =>
       via((f) => ({
-        owner: f(ID, { refPath: "ownerType", cascade: "removeWith", polymorphic: "any" }),
+        owner: f(ID, { refPath: "ownerType", cascade: "removeWithAny" }),
         ownerType: f(Int),
       })),
     ).toThrow('so refPath: "ownerType" must be a String field holding the owner\'s refName');
   });
 
-  test("rejects polymorphic where it widens nothing", () => {
-    expect(() => via((f) => ({ owner: f(ID, { ref: "cascadeTestAsset", polymorphic: "any" }) }))).toThrow(
-      'Field "owner" declares polymorphic: "any", which only widens a cascade: "removeWith" field',
+  test("rejects removeWithAny with nothing to read the owner refName from", () => {
+    // The option type pairs the action with its refPath, so this shape only reaches the collector through the
+    // macro and bundled paths that skip the typecheck — the same ones `#assertKnownAction` covers.
+    const anyAction = "removeWithAny" as "removeWith";
+    expect(() => via((f) => ({ owner: f(ID, { ref: "cascadeTestAsset", cascade: anyAction }) }))).toThrow(
+      'Cascade field "owner" declares cascade: "removeWithAny" and must name the field holding the owner\'s refName',
     );
-    expect(() =>
-      via((f) => ({ owner: f(ID, { ref: "cascadeTestAsset", cascade: "removeWith", polymorphic: "any" }) })),
-    ).toThrow("which only widens a cascade");
   });
 
   test("rejects ref and refPath together", () => {

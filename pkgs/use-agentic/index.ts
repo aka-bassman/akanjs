@@ -11,6 +11,7 @@ export * from "./httpRunner";
 export * from "./sharedContext";
 export * from "./surfaceContext";
 export * from "./ToolOutput";
+export * from "./ToolRunner";
 export * from "./Transcript";
 export * from "./types";
 export * from "./useAgent";

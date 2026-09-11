@@ -26,7 +26,9 @@ export function makeAkanChildProxyHeaders(req: Request, childIdx: number, peer?:
   // this is the only hop that can still see who connected. An inbound `x-real-ip` is believed only when our
   // own peer is a proxy we put there: from an untrusted peer it is a header the client wrote about itself, and
   // taking it at face value let any caller forge the address every `.with(Ip)` guard and audit line reads.
-  const clientAddress = TrustedProxy.clientAddress(headers, peer?.address);
+  // `null` (the gateway itself was reached over a unix socket, by the dev host) is a local hop whose headers hold;
+  // `undefined` (no listening server to ask) is not.
+  const clientAddress = TrustedProxy.clientAddress(headers, peer === null ? null : peer?.address);
   const host = headers.get("host");
   // Unset rather than a placeholder when genuinely unknown: a loopback-looking address for an unknown caller
   // is indistinguishable from a real local one, which is the confusion this whole header exists to avoid.

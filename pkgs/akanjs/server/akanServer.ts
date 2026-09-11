@@ -33,7 +33,7 @@ import { LogForwarder } from "./logging/logForwarder";
 import { LogHub } from "./logging/logHub";
 import { LogStreamRoute } from "./logging/logStreamRoute";
 import { RotatingLogWriter } from "./logging/rotatingLogWriter";
-import { type McpAuthOption, McpRouter } from "./mcp";
+import { type McpAuthOption, type McpRateLimitOption, McpRouter } from "./mcp";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { WebProxyRunner } from "./proxy";
 import { SignalResolver } from "./resolver";
@@ -65,6 +65,18 @@ export interface AkanServerOptions {
    * services, signals, routes and schedules do not exist. Omitted or empty mounts every enabled module.
    */
   modules?: string[];
+  /**
+   * The inverse of `modules`: mount everything except these and whatever reaches them. Written for a lib the
+   * app depends on but does not serve — `server.ts` is generated from the dependency graph, so a lib cannot be
+   * dropped by editing it. Applied after `modules`, so a module named by both stays out.
+   */
+  disableModules?: string[];
+  /**
+   * The same, by owning lib: every module the named libs registered stays out, along with everything that
+   * reaches one. This is the spelling for a lib the app depends on but does not serve — it does not drift as
+   * the lib gains modules.
+   */
+  disableLibs?: string[];
 }
 
 export interface McpServerOption {
@@ -106,8 +118,20 @@ export interface McpServerOption {
    * half turns this off and halves what each of those calls costs the model. `AKAN_MCP_LEGACY_TEXT=false`.
    */
   legacyTextBlock?: boolean;
+  /**
+   * How much of a result's shape each tool advertises: `shallow` (default) names nested models instead of inlining
+   * them, `full` inlines the whole closure, `none` publishes no `outputSchema` and keeps the text block on. The
+   * listing is re-sent to every agent that connects, and the nested closures were most of it. `AKAN_MCP_OUTPUT_SCHEMA`.
+   */
+  outputSchema?: "full" | "shallow" | "none";
   /** OAuth resource-server identity: which issuers a client may authenticate with, and the scopes to demand. */
   auth?: McpAuthOption;
+  /**
+   * Per-caller budget for `tools/call`, `resources/read` and `prompts/get`: 120 calls a minute and 8 in flight by
+   * default, counted per process. `false` takes it off. `AKAN_MCP_RATE_LIMIT` (`<calls>` or `<calls>/<seconds>`,
+   * `off` to disable) and `AKAN_MCP_CONCURRENT`.
+   */
+  rateLimit?: McpRateLimitOption | false;
 }
 
 interface AkanAppPrepared {
@@ -157,6 +181,8 @@ export class AkanServer {
   /** Resolved at `init`: what this process actually serves, after env and artifact availability. */
   web: AkanWebConfig = getWebConfigFromEnv();
   modules: string[];
+  disableModules: string[];
+  disableLibs: string[];
   shutdownTimeoutMs = AkanServer.#defaultShutdownTimeoutMs();
 
   #di: DiLifecycle;
@@ -196,7 +222,7 @@ export class AkanServer {
     this.openapi = options?.openapi ?? this.openapi;
     // Each lib's `option.ts` in mount order, the app's last, and an option passed here over all of them.
     libs.forEach((lib) => {
-      const mcp = lib.option.getMcp();
+      const mcp = lib.option.getMcp(this.env);
       if (mcp !== undefined) this.setMcp(mcp);
       const agentAccess = lib.option.getAgentAccess();
       if (agentAccess !== undefined) AgentRelayAccess.use(agentAccess);
@@ -207,7 +233,12 @@ export class AkanServer {
     this.serverMode = serverMode;
     // `AKAN_MODULES` is how a gateway hands its own `modules` option to the child that mounts the container.
     this.modules = options?.modules ?? AkanServer.#envList("AKAN_MODULES") ?? [];
-    this.#di = new DiLifecycle({ env: this.env, modules: this.modules }, ...libs);
+    this.disableModules = options?.disableModules ?? AkanServer.#envList("AKAN_DISABLE_MODULES") ?? [];
+    this.disableLibs = options?.disableLibs ?? AkanServer.#envList("AKAN_DISABLE_LIBS") ?? [];
+    this.#di = new DiLifecycle(
+      { env: this.env, modules: this.modules, disableModules: this.disableModules, disableLibs: this.disableLibs },
+      ...libs,
+    );
   }
   setPrefix(prefix: string) {
     if (this.status !== "stopped") throw new Error("Route prefix must be set before app initialization.");
@@ -822,7 +853,11 @@ export class AkanServer {
         !("database" in value) &&
         !("service" in value) &&
         !("scalar" in value) &&
-        ("openapi" in value || "mcp" in value || "modules" in value),
+        ("openapi" in value ||
+          "mcp" in value ||
+          "modules" in value ||
+          "disableModules" in value ||
+          "disableLibs" in value),
     );
   }
 
@@ -893,7 +928,29 @@ export class AkanServer {
       ...(Number.isInteger(pageSize) && pageSize > 0 ? { pageSize } : {}),
       ...(process.env.AKAN_MCP_LANGUAGE ? { language: process.env.AKAN_MCP_LANGUAGE } : {}),
       ...(AkanServer.#isEnvOff("AKAN_MCP_LEGACY_TEXT") ? { legacyTextBlock: false } : {}),
+      ...AkanServer.#mcpOutputSchemaFromEnv(),
+      ...AkanServer.#mcpRateLimitFromEnv(),
     };
+  }
+
+  /** `AKAN_MCP_RATE_LIMIT=off` disables; `120` is per minute, `120/30` per thirty seconds; `AKAN_MCP_CONCURRENT` caps in-flight calls. */
+  static #mcpRateLimitFromEnv(): Pick<McpServerOption, "rateLimit"> {
+    const raw = process.env.AKAN_MCP_RATE_LIMIT?.trim().toLowerCase();
+    if (raw === "off" || raw === "false" || raw === "0") return { rateLimit: false };
+    const option: McpRateLimitOption = {};
+    if (raw) {
+      const [calls, seconds] = raw.split("/").map((part) => Number(part));
+      if (Number.isInteger(calls) && calls > 0) option.calls = calls;
+      if (Number.isInteger(seconds) && seconds > 0) option.windowMs = seconds * 1000;
+    }
+    const concurrent = Number(process.env.AKAN_MCP_CONCURRENT);
+    if (Number.isInteger(concurrent) && concurrent >= 0) option.concurrent = concurrent;
+    return Object.keys(option).length ? { rateLimit: option } : {};
+  }
+
+  static #mcpOutputSchemaFromEnv(): Pick<McpServerOption, "outputSchema"> {
+    const value = process.env.AKAN_MCP_OUTPUT_SCHEMA;
+    return value === "full" || value === "shallow" || value === "none" ? { outputSchema: value } : {};
   }
 
   /**

@@ -66,13 +66,20 @@ export class AdminModel extends into(Admin, AdminFilter, cnst.admin, ({ byField 
     });
     return adminSecret as { id: string; roles: cnst.AdminRole["value"][]; password: string };
   }
-  async createRefreshSession(adminId: string, refreshTokenHash: string, expiresAt: Date, userAgent?: string) {
+  async createRefreshSession(
+    adminId: string,
+    refreshTokenHash: string,
+    expiresAt: Date,
+    userAgent?: string,
+    clientId?: string,
+  ) {
     return await createRefreshSession(this.adminCache, {
       subject: "admin",
       subjectId: adminId,
       refreshTokenHash,
       expiresAt,
       userAgent,
+      clientId,
     });
   }
   async rotateRefreshSession(refreshTokenHash: string, nextRefreshTokenHash: string, nextExpiresAt: Date) {

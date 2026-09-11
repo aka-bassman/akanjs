@@ -1,5 +1,5 @@
 import { type BackendEnv, ENDPOINT_META } from "akanjs/base";
-import { Logger } from "akanjs/common";
+import { interpolateTranslation, Logger } from "akanjs/common";
 import { ConstantRegistry, mask } from "akanjs/constant";
 import { DictionaryLookup } from "akanjs/dictionary";
 import { NoDocumentError } from "akanjs/document";
@@ -160,6 +160,7 @@ export class McpDispatcher {
             endpointInfo: found.endpointInfo,
             adaptor: found.endpoint,
             ctx: new McpExecutionContext(req, {}),
+            origin: "mcp",
           }).canListForAccount();
         cached.set(key, verdict);
         return await verdict;
@@ -212,16 +213,18 @@ export class McpDispatcher {
     // which has to keep the message it has.
     if (error instanceof NoDocumentError) return `No ${refName} found for the arguments given.`;
     if (status && status < 500) {
+      // Every refusal reads the same, whoever wrote it. The framework's own is `Access denied by guard: Admin`
+      // and an app's is `No authentication with roles: admin, superAdmin` — both name the authorization structure
+      // to the one caller barred from it, which is what the shared "unknown tool" message exists to keep off the
+      // wire. All an agent may act on is that it may not, which is all it may know.
+      if (status === 401 || status === 403) return "You are not permitted to perform this action.";
       const raw = error instanceof Error ? error.message : String(error);
       // A domain `Err` carries its dictionary key as the message; anything else is already prose.
       this.#lookup ??= new DictionaryLookup(this.#props.language);
       const text = this.#lookup.text(raw);
-      if (text) return text;
-      // What is left in this band at 401/403 is the framework's own refusal, `Access denied by guard: Admin` —
-      // the private authorization structure named to the one caller not allowed to see it, which is what the
-      // shared "unknown tool" message exists to keep off the wire. A domain error resolved above and keeps its
-      // own words; all this one leaves an agent to act on is that it may not, which is all it may know.
-      if (status === 401 || status === 403) return "You are not permitted to perform this action.";
+      // Filled from the data the error carried: the bare template reads `Too many files: {maxFiles}` to a model,
+      // which is neither the sentence the author wrote nor anything it can act on.
+      if (text) return interpolateTranslation(text, (error as { data?: Record<string, unknown> }).data);
       return raw;
     }
     // An unexpected failure is logged in full and described in one flat sentence: the detail an agent would

@@ -14,7 +14,17 @@
   ],
   "update": {
     "filePath": "./mcpRule.instruction.md",
-    "contents": ["exposure rule", "configuration", "declaring endpoints", "refusals and wire behaviour", "prompts"],
+    "contents": [
+      "exposure rule",
+      "configuration",
+      "declaring endpoints",
+      "refusals and wire behaviour",
+      "prompts",
+      "rolling out to an app",
+      "choosing what to open",
+      "writing instructions",
+      "verifying an app"
+    ],
     "rules": [
       "Use current Akan APIs only",
       "State the rule before the reason, and keep the reason to one clause",

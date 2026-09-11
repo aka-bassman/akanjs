@@ -133,11 +133,13 @@ shape, so `cascade` never means "related" — it means one of exactly these:
   `refPath`. An array, a Map, `ref` together with `refPath`, and a field naming no owner each fail the class build.
 - **A `refPath` must name an `enumOf` field** — a free-form owner type is unknowable at build time, so every
   model's removal would have to sweep the polymorphic table on the chance it is the owner.
-- **`polymorphic: "any"` buys that sweep on purpose**, for the one shape an enum cannot express: a child whose
-  owner is any model in the app, named by a free-form `String` holding the owner's refName.
+- **`cascade: "removeWithAny"` buys that sweep on purpose**, for the one shape an enum cannot express: a child
+  whose owner is any model in the app, named by a free-form `String` holding the owner's refName. It is a third
+  action rather than a flag beside `removeWith`, because the widening and the direction are one decision — the
+  option type pairs the action with the `refPath` it reads the owner off, so neither can be declared alone.
 
   ```ts
-  parent: field(ID, { refPath: "parentType", cascade: "removeWith", polymorphic: "any" }),
+  parent: field(ID, { refPath: "parentType", cascade: "removeWithAny" }),
   parentType: field(String),   // holds the owner's refName
   ```
 
@@ -148,11 +150,12 @@ shape, so `cascade` never means "related" — it means one of exactly these:
   `info` line naming the edges — that line is the answer to "why does this app remove everything per document".
   The opt-in is what keeps an app that declared none on the fast path.
 
-  Refused at the class build: `polymorphic: "any"` on a `refPath` that already names an `enumOf` (the enum names
-  the candidates and indexes better — keep one), a `typeKey` that is not a `String` (the sweep matches a refName
-  against that column, and a column that cannot hold one silently finds nothing), and the option anywhere other
-  than a `cascade: "removeWith"` field with a `refPath`. A wildcard owner is also exempt from the mount check
-  that a monomorphic owner fails at boot — it names no module to mount.
+  Refused at the class build: `removeWithAny` on a `refPath` that already names an `enumOf` (the enum names the
+  candidates and indexes better — use `removeWith`), a `typeKey` that is not a `String` (the sweep matches a
+  refName against that column, and a column that cannot hold one silently finds nothing), and the action with no
+  `refPath` at all — that last one is a typecheck error at the call site, and the class build keeps the same
+  refusal for the macro and bundled paths that reach it untyped. A wildcard owner is also exempt from the mount
+  check that a monomorphic owner fails at boot — it names no module to mount.
 - **A cascade goes through the target's service, never its model** — that path is what runs the target's
   `_postRemove`, where a module puts the side effect the removal has to carry.
 - **Bulk is decided at boot, per target model, for both directions.** A target with no `remove` schema hook, no

@@ -463,8 +463,10 @@ export class FetchClient {
     const removeGuards = signal.removeGuards ?? signal.cruGuards;
     // These endpoints exist only from here, so the signal's own answer is stamped on as they are built — the
     // catalogue and the browser explorer then read one resolved field instead of re-deriving the rule.
-    const mcp = (verb: keyof NonNullable<SerializedSignal["mcp"]>) =>
-      signal.mcp?.[verb] === false ? { mcp: false as const } : {};
+    const mcp = (verb: keyof NonNullable<SerializedSignal["mcp"]>) => ({
+      ...(signal.mcp?.[verb] === false ? { mcp: false as const } : {}),
+      ...(signal.agents?.[verb] === false ? { agents: false as const } : {}),
+    });
     const endpoint: { [key: string]: SerializedEndpoint } = {};
     if (signal.getGuards) {
       endpoint[names.model] = {
@@ -641,7 +643,10 @@ export class FetchClient {
     };
     // A slice's own answer covers both entries it generates: one `mcp: false` on `init()` takes the list and the
     // aggregate together, which is what an author writing it means.
-    const mcp = slice.mcp === false ? { mcp: false as const } : {};
+    const mcp = {
+      ...(slice.mcp === false ? { mcp: false as const } : {}),
+      ...(slice.agents === false ? { agents: false as const } : {}),
+    };
     const endpoint: { [key: string]: SerializedEndpoint } = {
       [names.list]: {
         type: "query",

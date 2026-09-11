@@ -318,8 +318,8 @@ type TicketStatusValue = TicketStatus["value"];`}
             </li>
             <li>
               {l.trans({
-                en: 'polymorphic: "any" buys that sweep on purpose, for a child whose owner may be any model in the app. The lookup is one indexed probe, because the declaration creates the same reverse index, but one wildcard edge turns every cascade in the app back to one document at a time — the boot log names the edges in one info line.',
-                ko: 'polymorphic: "any"는 그 훑기를 의도적으로 사는 선언입니다. 소유자가 앱의 어떤 모델이든 될 수 있는 자식에 씁니다. 같은 역인덱스가 걸리므로 조회는 색인 프로브 한 번이지만, 와일드카드 edge 하나가 앱 전체의 캐스케이드를 다시 문서 단위로 되돌립니다. 부팅 로그가 그 edge들을 info 한 줄로 알려줍니다.',
+                en: "removeWithAny buys that sweep on purpose, for a child whose owner may be any model in the app. It is removeWith over an owner the build cannot name, so the action names the widening and the refPath it needs comes with it. The lookup is one indexed probe, because the declaration creates the same reverse index, but one wildcard edge turns every cascade in the app back to one document at a time — the boot log names the edges in one info line.",
+                ko: "removeWithAny는 그 훑기를 의도적으로 사는 선언입니다. 소유자가 앱의 어떤 모델이든 될 수 있는 자식에 씁니다. 빌드가 이름을 알 수 없는 소유자에 대한 removeWith이므로, 동작 값 자체가 확장을 말하고 필요한 refPath가 함께 붙습니다. 같은 역인덱스가 걸리므로 조회는 색인 프로브 한 번이지만, 와일드카드 edge 하나가 앱 전체의 캐스케이드를 다시 문서 단위로 되돌립니다. 부팅 로그가 그 edge들을 info 한 줄로 알려줍니다.",
               })}
             </li>
             <li>
@@ -354,7 +354,7 @@ type TicketStatusValue = TicketStatus["value"];`}
         <Code.Snippet
           title="reaction.constant.ts"
           code={`export class ReactionInput extends via((field) => ({
-  parent: field(ID, { refPath: "parentType", cascade: "removeWith", polymorphic: "any" }),
+  parent: field(ID, { refPath: "parentType", cascade: "removeWithAny" }),
   parentType: field(String, { default: "" }),
   emoji: field(String, { default: "" }),
 })) {}`}

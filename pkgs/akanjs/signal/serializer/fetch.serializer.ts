@@ -18,6 +18,7 @@ import type {
   SliceCls,
   SliceInfo,
 } from "akanjs/signal";
+import { refusesAgents } from "../guard";
 
 export class FetchSerializer {
   static logger = new Logger("FetchSerializer");
@@ -71,6 +72,7 @@ export class FetchSerializer {
       ...(endpointInfo.signalOption.fileUpload ? { fileUpload: true } : {}),
       ...(guards?.length ? { guards } : {}),
       ...(endpointInfo.signalOption.mcp === false ? { mcp: false as const } : {}),
+      ...(refusesAgents(endpointInfo.signalOption.guards) ? { agents: false as const } : {}),
     };
   }
 
@@ -110,6 +112,7 @@ export class FetchSerializer {
       ...(sliceInfo.signalOption.path ? { path: sliceInfo.signalOption.path } : {}),
       ...(guards?.length ? { guards } : {}),
       ...(sliceInfo.signalOption.mcp === false ? { mcp: false as const } : {}),
+      ...(refusesAgents(sliceInfo.signalOption.guards) ? { agents: false as const } : {}),
       ...(sliceInfo.liveOption
         ? {
             live: {
@@ -160,8 +163,20 @@ export class FetchSerializer {
         ? { removeGuards: sliceCls.removeGuards.map((g) => g.name) }
         : {}),
       ...FetchSerializer.#serializeSliceMcp(sliceCls),
+      ...FetchSerializer.#serializeSliceAgents(sliceCls),
       endpoint,
     };
+  }
+
+  /** The generated verbs a person-only guard protects, shaped like `mcp` so the client stamps both the same way. */
+  static #serializeSliceAgents(sliceCls: SliceCls): { agents?: SerializedSignalMcp } {
+    const agents: SerializedSignalMcp = {
+      ...(refusesAgents(sliceCls.getGuards) ? { get: false as const } : {}),
+      ...(refusesAgents(sliceCls.createGuards) ? { create: false as const } : {}),
+      ...(refusesAgents(sliceCls.updateGuards) ? { update: false as const } : {}),
+      ...(refusesAgents(sliceCls.removeGuards) ? { remove: false as const } : {}),
+    };
+    return Object.keys(agents).length ? { agents } : {};
   }
 
   /** Only the verbs kept off the shelf travel: `true` is the default, so emitting it would grow every payload. */

@@ -13,6 +13,7 @@ import {
   McpErrorCode,
   type McpExposedEndpoint,
   type McpJsonRpcRequest,
+  type McpOutputSchemaMode,
   McpProgress,
   type McpSignalCost,
   type McpToolResult,
@@ -23,6 +24,7 @@ import type { HttpRoutes } from "../types";
 import { McpAuth, type McpAuthOption } from "./McpAuth";
 import { McpAuthRequiredError, McpDispatcher, McpPromptError } from "./McpDispatcher";
 import { McpEventStream } from "./McpEventStream";
+import { McpRateLimiter, type McpRateLimitOption } from "./McpRateLimiter";
 
 export interface McpRouterProps {
   registry: InjectRegistry;
@@ -48,7 +50,14 @@ export interface McpRouterProps {
   language?: string;
   /** Whether a structured result also ships as serialized JSON in the text block. Default `true`. */
   legacyTextBlock?: boolean;
+  outputSchema?: McpOutputSchemaMode;
   auth?: McpAuthOption;
+  /**
+   * Budget per caller for the methods that execute an endpoint (`tools/call`, `resources/read`, `prompts/get`).
+   * On by default at `McpRateLimiter.defaults`; `false` takes it off. Listings are not counted — they are served
+   * from memory and a client polls them.
+   */
+  rateLimit?: McpRateLimitOption | false;
 }
 
 interface McpCall {
@@ -62,6 +71,7 @@ interface McpCall {
 interface McpErrorOptions {
   status?: number;
   data?: unknown;
+  headers?: Record<string, string>;
 }
 
 interface McpCacheHint {
@@ -96,19 +106,24 @@ const discoverCache: McpCacheHint = { ttlMs: 3_600_000, cacheScope: "public" };
 export class McpRouter {
   static readonly logger = new Logger("McpRouter");
   /** Past this a listing is a meaningful slice of a model's window, which is where it becomes worth saying so. */
-  static readonly listingWarnBytes = 100 * 1024;
+  static readonly listingWarnBytes = 1000 * 1024;
 
   readonly #props: McpRouterProps;
   readonly #dispatcher: McpDispatcher;
   readonly #auth: McpAuth;
+  readonly #limiter: McpRateLimiter | null;
   #document: McpDocument | null = null;
 
   constructor(props: McpRouterProps) {
     this.#props = props;
     // Resolved here rather than left to each side's own default, so a domain error a call fails with reads in the
     // language its tool was described in.
-    this.#dispatcher = new McpDispatcher({ ...props, language: props.language ?? defaultLanguage });
+    // A client validates `structuredContent` only against a declared `outputSchema`; with none declared the text
+    // block is the result, so `outputSchema: "none"` keeps it whatever `legacyTextBlock` said.
+    const legacyTextBlock = props.outputSchema === "none" ? undefined : props.legacyTextBlock;
+    this.#dispatcher = new McpDispatcher({ ...props, legacyTextBlock, language: props.language ?? defaultLanguage });
     this.#auth = new McpAuth({ ...props.auth, path: props.path ?? "/mcp" });
+    this.#limiter = props.rateLimit === false ? null : new McpRateLimiter(props.rateLimit);
   }
 
   createRoutes(): HttpRoutes {
@@ -151,6 +166,8 @@ export class McpRouter {
       const readOnly = this.#props.readOnly ? " (read-only deployment)" : "";
       McpRouter.logger.debug(`MCP catalogue: ${counts}${readOnly} · listing ${McpRouter.#kb(cost.bytes)}`);
       if (cost.bySignal.length) McpRouter.logger.debug(`MCP catalogue cost: ${McpRouter.#costLine(cost.bySignal)}`);
+      if (this.#limiter) McpRouter.logger.debug(`MCP rate limit: ${this.#limiter.describe()}`);
+      else McpRouter.logger.warn("MCP rate limit is off: an authenticated agent may call tools as fast as it likes.");
       // A catalogue nobody can see the size of is one nobody narrows. Every entry inlines the schema of every
       // model it mentions, so this grows with models × generated entries and is spent by every agent that
       // connects, before its first turn.
@@ -158,12 +175,17 @@ export class McpRouter {
         McpRouter.logger.warn(
           `MCP listing is ${McpRouter.#kb(cost.bytes)}, which every agent that connects pays before its first turn. Narrow it with \`mcp: false\` on an endpoint or the \`mcp\` map on \`slice()\`.`,
         );
+      if (this.#props.outputSchema === "none" && this.#props.legacyTextBlock === false)
+        McpRouter.logger.warn(
+          '`outputSchema: "none"` keeps the text block on: a client reads `structuredContent` only against a declared schema, so `legacyTextBlock: false` would hand it nothing.',
+        );
       // Exposure follows the guards, so an empty catalogue on an app that has endpoints means every one of them
       // was refused — the lines below say which rule took each.
       if (!tools.length && !prompts.length)
         McpRouter.logger.warn(
           "MCP is enabled but published nothing. Every candidate was refused; see the reasons below.",
         );
+      this.#reportUnverifiable(tools.map((tool) => tool.name));
       for (const { key, reason } of refusals) McpRouter.logger.verbose(`MCP did not expose "${key}": ${reason}`);
       for (const { key, reason } of undescribed)
         McpRouter.logger.warn(`MCP exposed "${key}" with no description: ${reason}`);
@@ -174,6 +196,24 @@ export class McpRouter {
         `MCP catalogue could not be built at boot: ${error instanceof Error ? error.message : error}`,
       );
     }
+  }
+
+  /**
+   * A guarded tool is only reachable with a credential, and this server can neither issue one nor check one unless
+   * something configured `auth`. Left silent, the shelf lists tools no client can ever call and a forged token
+   * reads as anonymous — so it is said once at boot, and said louder anywhere but a developer's machine.
+   */
+  #reportUnverifiable(toolNames: string[]) {
+    const { verify, authorizationServers } = this.#props.auth ?? {};
+    if (verify || authorizationServers?.length) return;
+    const document = this.#getDocument();
+    const guarded = toolNames.filter((name) =>
+      (document.findTool(name)?.endpoint.guards ?? []).some((guard) => guard !== "Public"),
+    ).length;
+    if (!guarded) return;
+    const line = `MCP publishes ${guarded} guarded tool(s) but no authorization server is configured: a client cannot obtain a token for them, and a bearer token's signature is not checked here. Set \`auth.verify\` and \`auth.authorizationServers\` through option.setMcp (a module that issues tokens does this), or AKAN_MCP_AUTH_SERVERS.`;
+    if (getEnv().operationMode === "local") McpRouter.logger.warn(line);
+    else McpRouter.logger.error(line);
   }
 
   static #kb(bytes: number) {
@@ -197,13 +237,19 @@ export class McpRouter {
     this.#document = new McpDocument(FetchSerializer.serializeRegistry(this.#props.live).signal, {
       resolveDescription: (key) => lookup.text(key),
       readOnly: this.#props.readOnly,
+      outputSchema: this.#props.outputSchema,
     });
     return this.#document;
   }
 
   async #post(req: Request) {
     if (!this.#originAllowed(req)) return new Response("Forbidden", { status: 403 });
-    const rejected = this.#auth.reject(req);
+    // The spec admits one credential, the `Authorization` header. A cookie that reached the account middleware
+    // would let a same-site page drive `tools/call` on the visitor's ambient session — the request class every
+    // mutation is shielded from by `CrossSiteGuard`, which this route never passes through. Deleted on the request
+    // itself rather than on a copy so the `BunRequest` keeps its peer address and `req.cookies` reads empty.
+    req.headers.delete("cookie");
+    const rejected = this.#auth.challengeAnonymous(req) ?? (await this.#auth.reject(req));
     if (rejected) return rejected;
     let body: McpJsonRpcRequest;
     try {
@@ -272,12 +318,28 @@ export class McpRouter {
         return await this.#list(call, "resourceTemplates", document.resourceTemplates);
       case "prompts/list":
         return await this.#list(call, "prompts", document.prompts);
-      case "tools/call":
-        return await this.#toolsCall(call, document);
-      case "prompts/get":
-        return await this.#promptsGet(call, document);
-      case "resources/read":
-        return await this.#resourcesRead(call, document);
+      case "tools/call": {
+        const slot = this.#acquire(call);
+        return "refused" in slot ? slot.refused : await this.#toolsCall(call, document, slot.release);
+      }
+      case "prompts/get": {
+        const slot = this.#acquire(call);
+        if ("refused" in slot) return slot.refused;
+        try {
+          return await this.#promptsGet(call, document);
+        } finally {
+          slot.release();
+        }
+      }
+      case "resources/read": {
+        const slot = this.#acquire(call);
+        if ("refused" in slot) return slot.refused;
+        try {
+          return await this.#resourcesRead(call, document);
+        } finally {
+          slot.release();
+        }
+      }
       default:
         // The 404 is a modern-era rule: it exists so a client can tell an MCP server's "no such method" from a
         // proxy's "no such path". The legacy era spends that status on something else entirely — a 404 there means
@@ -298,18 +360,47 @@ export class McpRouter {
     return this.#result(call, result, listCache);
   }
 
-  async #toolsCall(call: McpCall, document: McpDocument) {
-    const name = call.params.name;
-    if (typeof name !== "string") return McpRouter.#error(call.id, McpErrorCode.invalidParams, "Missing tool name.");
-    const exposed = document.findTool(name);
-    // Unknown and not-exposed deliberately land on the same message: an endpoint that opted out must be
-    // indistinguishable from one that does not exist, or the error itself enumerates the private surface.
-    if (!exposed) return McpRouter.#error(call.id, McpErrorCode.invalidParams, `Unknown tool: ${name}.`);
-    const args = McpRouter.#arguments(call.params);
-    if (!args) return McpRouter.#error(call.id, McpErrorCode.invalidParams, McpRouter.#badArguments);
-    const progressToken = McpRouter.#progressToken(call);
-    if (progressToken === undefined) return this.#result(call, await this.#dispatcher.call(exposed, args, call.req));
-    return await this.#streamedToolCall(call, exposed, args, progressToken);
+  /**
+   * Counted before the tool is even looked up, so a loop over an unknown name is a loop this stops too. The 429
+   * carries a JSON-RPC body like every other envelope-level refusal, and `Retry-After` because a client that
+   * backs off by that header is the one behaviour a limit is asking for.
+   */
+  #acquire(call: McpCall): { refused: Response } | { release: () => void } {
+    if (!this.#limiter) return { release: () => {} };
+    const verdict = this.#limiter.acquire(McpAuth.callerKey(call.req));
+    if (verdict.ok) return { release: verdict.release };
+    const seconds = Math.max(1, Math.ceil(verdict.retryAfterMs / 1000));
+    const message =
+      verdict.reason === "calls"
+        ? `Rate limit exceeded: ${this.#limiter.calls} calls per ${Math.round(this.#limiter.windowMs / 1000)}s. Retry in ${seconds}s.`
+        : `Too many calls in flight: at most ${this.#limiter.concurrent} at once. Retry in ${seconds}s.`;
+    return {
+      refused: McpRouter.#error(call.id, McpErrorCode.rateLimited, message, {
+        status: 429,
+        headers: { "retry-after": String(seconds) },
+      }),
+    };
+  }
+
+  /** `release` frees the caller's in-flight slot: at the answer here, or when a streamed call settles. */
+  async #toolsCall(call: McpCall, document: McpDocument, release: () => void) {
+    let streaming = false;
+    try {
+      const name = call.params.name;
+      if (typeof name !== "string") return McpRouter.#error(call.id, McpErrorCode.invalidParams, "Missing tool name.");
+      const exposed = document.findTool(name);
+      // Unknown and not-exposed deliberately land on the same message: an endpoint that opted out must be
+      // indistinguishable from one that does not exist, or the error itself enumerates the private surface.
+      if (!exposed) return McpRouter.#error(call.id, McpErrorCode.invalidParams, `Unknown tool: ${name}.`);
+      const args = McpRouter.#arguments(call.params);
+      if (!args) return McpRouter.#error(call.id, McpErrorCode.invalidParams, McpRouter.#badArguments);
+      const progressToken = McpRouter.#progressToken(call);
+      if (progressToken === undefined) return this.#result(call, await this.#dispatcher.call(exposed, args, call.req));
+      streaming = true;
+      return await this.#streamedToolCall(call, exposed, args, progressToken, release);
+    } finally {
+      if (!streaming) release();
+    }
   }
 
   /**
@@ -325,6 +416,7 @@ export class McpRouter {
     exposed: McpExposedEndpoint,
     args: Record<string, unknown>,
     progressToken: string | number,
+    release: () => void,
   ) {
     const channel = new McpProgress();
     const settled = McpProgress.run(channel, async () => await this.#dispatcher.call(exposed, args, call.req))
@@ -332,7 +424,10 @@ export class McpRouter {
         (result) => ({ result }),
         (error: unknown) => ({ error }),
       )
-      .finally(() => channel.end());
+      .finally(() => {
+        channel.end();
+        release();
+      });
     const reported = await Promise.race([channel.started.then(() => true), settled.then(() => false)]);
     if (!reported) {
       const outcome = await settled;
@@ -463,8 +558,9 @@ export class McpRouter {
     try {
       // The *public* host, for the same reason the resource identifier uses it: behind a proxy `req.url` names
       // the internal child that was dialed, so a browser client whose `Origin` is the public URL — the only
-      // caller that sends one — would be refused on every request.
-      return new URL(origin).host === new URL(McpAuth.origin(req)).host;
+      // caller that sends one — would be refused on every request. With a configured resource the host is that
+      // URL's, and a forwarded header no longer decides who is same-origin.
+      return new URL(origin).host === new URL(this.#auth.publicOrigin(req)).host;
     } catch {
       return false;
     }
@@ -636,8 +732,13 @@ export class McpRouter {
    * proxy in front of it, so the status never travels alone. Tool-level failures stay at 200 and are carried in
    * the JSON-RPC error itself; only envelope problems escalate to an HTTP status.
    */
-  static #error(id: string | number | null, code: number, message: string, { status, data }: McpErrorOptions = {}) {
-    return Response.json(McpRouter.#errorBody(id, code, message, data), { status: status ?? 200 });
+  static #error(
+    id: string | number | null,
+    code: number,
+    message: string,
+    { status, data, headers }: McpErrorOptions = {},
+  ) {
+    return Response.json(McpRouter.#errorBody(id, code, message, data), { status: status ?? 200, headers });
   }
 
   static #errorBody(id: string | number | null, code: number, message: string, data?: unknown) {

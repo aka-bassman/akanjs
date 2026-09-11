@@ -29,6 +29,9 @@ export class AdminService extends serve(db.admin, ({ use, service, memory, signa
     const isRootPasswordMatched = await isPasswordMatch(this.rootAdminInfo.password, storedPassword || "");
     if (!isRootPasswordMatched) await this.setPassword(rootAdmin.id, this.rootAdminInfo.password);
   }
+  async getMe(adminId: string): Promise<Me> {
+    return this._makeMe(await this.adminModel.getAdmin(adminId));
+  }
   private _makeMe(admin: db.Admin): Me {
     return {
       id: admin.id,

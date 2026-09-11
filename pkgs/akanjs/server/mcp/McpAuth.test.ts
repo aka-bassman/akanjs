@@ -64,6 +64,39 @@ describe("McpAuth metadata", () => {
     );
     expect(json.resource).toBe("https://public.example.com/mcp");
   });
+
+  test("a configured resource also fixes the origin the challenge and the same-origin check use", () => {
+    const pinned = auth({ path: "/mcp", resource: "https://public.example.com/mcp" });
+    const forged = new Request("http://internal-child/mcp", {
+      method: "POST",
+      headers: { "x-forwarded-host": "evil.example.net", "x-forwarded-proto": "https" },
+    });
+    expect(pinned.publicOrigin(forged)).toBe("https://public.example.com");
+    expect(pinned.unauthorized(forged).headers.get("WWW-Authenticate")).toContain(
+      'resource_metadata="https://public.example.com/.well-known/oauth-protected-resource/mcp"',
+    );
+    // With nothing pinned the forwarded header is all there is.
+    expect(auth().publicOrigin(forged)).toBe("https://evil.example.net");
+  });
+});
+
+describe("McpAuth callerKey", () => {
+  test("keys a bearer on its session, one connection or many, and an anonymous caller on its address", () => {
+    const sid = request(`Bearer ${token({ sid: "s1", jti: "j1", sub: "user:u1" })}`);
+    expect(McpAuth.callerKey(sid)).toBe("token:s1");
+    expect(McpAuth.callerKey(request(`Bearer ${token({ jti: "j1", sub: "user:u1" })}`))).toBe("token:j1");
+    expect(McpAuth.callerKey(request(`Bearer ${token({ sub: "user:u1" })}`))).toBe("token:user:u1");
+    const opaque = McpAuth.callerKey(request("Bearer opaque-token"));
+    expect(opaque.startsWith("token:")).toBe(true);
+    expect(opaque).toBe(McpAuth.callerKey(request("Bearer opaque-token")));
+    expect(opaque).not.toBe(McpAuth.callerKey(request("Bearer other-token")));
+    expect(McpAuth.callerKey(request())).toBe("ip:anonymous");
+    const proxied = new Request("https://app.example.com/mcp", {
+      method: "POST",
+      headers: { "x-real-ip": "203.0.113.9" },
+    });
+    expect(McpAuth.callerKey(proxied)).toBe("ip:203.0.113.9");
+  });
 });
 
 describe("McpAuth challenge", () => {
@@ -82,59 +115,101 @@ describe("McpAuth challenge", () => {
 });
 
 describe("McpAuth token rejection", () => {
-  test("passes through what it cannot judge", () => {
+  test("passes through what it cannot judge", async () => {
     // No token at all is a legal anonymous call, and an opaque one belongs to whatever middleware issued it.
-    expect(auth().reject(request())).toBeNull();
-    expect(auth().reject(request("Bearer opaque-session-token"))).toBeNull();
+    expect(await auth().reject(request())).toBeNull();
+    expect(await auth().reject(request("Bearer opaque-session-token"))).toBeNull();
     // A JWT with none of the claims this checks reads as fine, which is what the app's own tokens look like.
-    expect(auth().reject(request(`Bearer ${token({ appName: "probe" })}`))).toBeNull();
+    expect(await auth().reject(request(`Bearer ${token({ appName: "probe" })}`))).toBeNull();
   });
 
   test("refuses an expired token instead of letting it degrade to anonymous", async () => {
-    const res = auth().reject(request(`Bearer ${token({ exp: Math.floor(Date.now() / 1000) - 60 })}`));
+    const res = await auth().reject(request(`Bearer ${token({ exp: Math.floor(Date.now() / 1000) - 60 })}`));
     if (!res) throw new Error("expected a rejection");
     expect(res.status).toBe(401);
     expect(((await res.json()) as { error: string }).error).toBe("invalid_token");
   });
 
-  test("keeps a token whose expiry has not passed", () => {
-    expect(auth().reject(request(`Bearer ${token({ exp: Math.floor(Date.now() / 1000) + 60 })}`))).toBeNull();
+  test("keeps a token whose expiry has not passed", async () => {
+    expect(await auth().reject(request(`Bearer ${token({ exp: Math.floor(Date.now() / 1000) + 60 })}`))).toBeNull();
   });
 
-  test("refuses a token minted for another resource but accepts one naming this one", () => {
-    const foreign = auth().reject(request(`Bearer ${token({ aud: ["https://other.example.com/mcp"] })}`));
+  test("refuses a token minted for another resource but accepts one naming this one", async () => {
+    const foreign = await auth().reject(request(`Bearer ${token({ aud: ["https://other.example.com/mcp"] })}`));
     expect(foreign?.status).toBe(401);
-    expect(auth().reject(request(`Bearer ${token({ aud: "https://app.example.com/mcp" })}`))).toBeNull();
+    expect(await auth().reject(request(`Bearer ${token({ aud: "https://app.example.com/mcp" })}`))).toBeNull();
     // This server's own tokens are bound by app and environment rather than by a resource URI, so an absent
     // `aud` must not be read as a violation.
-    expect(auth().reject(request(`Bearer ${token({ appName: "probe" })}`))).toBeNull();
+    expect(await auth().reject(request(`Bearer ${token({ appName: "probe" })}`))).toBeNull();
   });
 
   test("demands an audience once an authorization server is named", async () => {
     // The confused-deputy case RFC 8707 is a MUST for: the moment a deployment names an issuer, that issuer mints
     // tokens for its other resources too, and one arriving here with no `aud` at all is exactly one of those.
     const federated = auth({ authorizationServers: ["https://auth.example.com"] });
-    const res = federated.reject(request(`Bearer ${token({ appName: "probe" })}`));
+    const res = await federated.reject(request(`Bearer ${token({ appName: "probe" })}`));
     if (!res) throw new Error("expected a rejection");
     expect(res.status).toBe(401);
     expect(((await res.json()) as { error_description: string }).error_description).toContain("names no resource");
-    expect(federated.reject(request(`Bearer ${token({ aud: "https://app.example.com/mcp" })}`))).toBeNull();
+    expect(await federated.reject(request(`Bearer ${token({ aud: "https://app.example.com/mcp" })}`))).toBeNull();
     // Unchanged for a deployment that mints its own: refusing those would lock out every internal caller.
-    expect(auth().reject(request(`Bearer ${token({ appName: "probe" })}`))).toBeNull();
+    expect(await auth().reject(request(`Bearer ${token({ appName: "probe" })}`))).toBeNull();
   });
 
   test("answers a scope shortfall with 403 and every missing scope at once", async () => {
     const scoped = auth({ path: "/mcp", scopes: ["mcp:read", "mcp:write"] });
-    const res = scoped.reject(request(`Bearer ${token({ scope: "mcp:read" })}`));
+    const res = await scoped.reject(request(`Bearer ${token({ scope: "mcp:read" })}`));
     expect(res?.status).toBe(403);
     const body = (await res?.json()) as { error: string; error_description: string };
     expect(body.error).toBe("insufficient_scope");
     expect(body.error_description).toContain("mcp:write");
-    expect(scoped.reject(request(`Bearer ${token({ scope: "mcp:read mcp:write" })}`))).toBeNull();
+    expect(await scoped.reject(request(`Bearer ${token({ scope: "mcp:read mcp:write" })}`))).toBeNull();
   });
 
-  test("leaves scopes unenforced until a deployment declares them", () => {
+  test("leaves scopes unenforced until a deployment declares them", async () => {
     // The server's own tokens carry no scope claim, so demanding one by default would lock out first-party callers.
-    expect(auth().reject(request(`Bearer ${token({ appName: "probe" })}`))).toBeNull();
+    expect(await auth().reject(request(`Bearer ${token({ appName: "probe" })}`))).toBeNull();
+  });
+});
+
+describe("McpAuth verification hook", () => {
+  test("refuses a token the verifier rejects instead of degrading it to anonymous", async () => {
+    const res = await auth({ verify: () => null }).reject(request("Bearer forged"));
+    expect(res?.status).toBe(401);
+    const body = (await res?.json()) as { error: string; error_description: string };
+    expect(body.error).toBe("invalid_token");
+    expect(body.error_description).toContain("could not be verified");
+  });
+
+  test("judges the claims the verifier returns, not the ones the token spells", async () => {
+    // The token's own payload says nothing about expiry; the verifier's does, and the verifier is the authority.
+    const expired = auth({ verify: () => ({ exp: Math.floor(Date.now() / 1000) - 60 }) });
+    expect((await expired.reject(request(`Bearer ${token({})}`)))?.status).toBe(401);
+    // An opaque token is fine once a verifier vouches for it — the JWT shape stops being a requirement.
+    expect(await auth({ verify: () => ({ appName: "probe" }) }).reject(request("Bearer opaque"))).toBeNull();
+  });
+
+  test("treats a verifier that throws as a refusal", async () => {
+    const throwing = auth({
+      verify: () => {
+        throw new Error("bad signature");
+      },
+    });
+    expect((await throwing.reject(request("Bearer x")))?.status).toBe(401);
+  });
+
+  test("leaves a request carrying no token to the anonymous path", async () => {
+    expect(await auth({ verify: () => null }).reject(request())).toBeNull();
+  });
+});
+
+describe("McpAuth anonymous challenge", () => {
+  test("challenges a credential-less request only once an authorization server is named", () => {
+    expect(auth().challengeAnonymous(request())).toBeNull();
+    const federated = auth({ authorizationServers: ["https://auth.example.com"] });
+    const res = federated.challengeAnonymous(request());
+    expect(res?.status).toBe(401);
+    expect(res?.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
+    expect(federated.challengeAnonymous(request("Bearer x"))).toBeNull();
   });
 });

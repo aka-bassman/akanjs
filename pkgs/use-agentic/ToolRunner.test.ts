@@ -1,0 +1,214 @@
+import { describe, expect, test } from "bun:test";
+import { AgenticSurface } from "./AgenticSurface";
+import { AgentProgress } from "./AgentProgress";
+import { ToolRunner } from "./ToolRunner";
+import type { ToolCallRequest, ToolEntry, ToolProgress } from "./types";
+
+const call = (name: string, args: Record<string, unknown> = {}, id = "c1"): ToolCallRequest => ({ id, name, args });
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+const until = async (predicate: () => boolean) => {
+  for (let i = 0; i < 200 && !predicate(); i += 1) await tick();
+  if (!predicate()) throw new Error("condition never met");
+};
+
+const surfaceWith = (...entries: (Partial<ToolEntry> & { name: string })[]) => {
+  const surface = new AgenticSurface();
+  for (const entry of entries) surface.registerTool([], { run: () => undefined, ...entry });
+  return surface;
+};
+
+describe("ToolRunner approval", () => {
+  test("a host that cannot ask refuses a tool that has to be asked about, and never runs it", async () => {
+    let ran = 0;
+    const surface = surfaceWith({
+      name: "removeTask",
+      confirm: true,
+      run: () => {
+        ran += 1;
+      },
+    });
+    const runner = new ToolRunner(surface);
+    const result = await runner.run(call("removeTask"), new AbortController().signal);
+    expect(ran).toBe(0);
+    expect(result.error).toContain("approval");
+  });
+
+  test("an approved call runs and a refused one becomes the tool's error result", async () => {
+    let ran = 0;
+    const surface = surfaceWith({
+      name: "removeTask",
+      confirm: "Really remove it?",
+      run: () => {
+        ran += 1;
+        return "gone";
+      },
+    });
+    const asked: string[] = [];
+    const yes = new ToolRunner(surface, {
+      approve: async (request) => {
+        asked.push(request.message);
+        return true;
+      },
+    });
+    expect((await yes.run(call("removeTask"), new AbortController().signal)).result).toBe("gone");
+    expect(asked).toEqual(["Really remove it?"]);
+    const no = new ToolRunner(surface, { approve: async () => "The user declined." });
+    expect((await no.run(call("removeTask"), new AbortController().signal)).error).toBe("The user declined.");
+    expect(ran).toBe(1);
+  });
+
+  test("a tool nobody has to be asked about needs no approval host", async () => {
+    const runner = new ToolRunner(surfaceWith({ name: "bump", run: () => "done" }));
+    expect((await runner.run(call("bump"), new AbortController().signal)).result).toBe("done");
+  });
+
+  test("confirmMessage reads the entry's own verdict, arguments included", () => {
+    const entry = (confirm: ToolEntry["confirm"]): ToolEntry => ({ name: "x", confirm, run: () => undefined });
+    expect(ToolRunner.confirmMessage("x", entry(undefined), {})).toBeNull();
+    expect(ToolRunner.confirmMessage("x", entry(false), {})).toBeNull();
+    expect(ToolRunner.confirmMessage("x", entry(true), {})).toBe("Run x?");
+    expect(ToolRunner.confirmMessage("x", entry("Sure?"), {})).toBe("Sure?");
+    expect(
+      ToolRunner.confirmMessage(
+        "x",
+        entry((args) => args.force === true),
+        { force: true },
+      ),
+    ).toBe("Run x?");
+    expect(
+      ToolRunner.confirmMessage(
+        "x",
+        entry((args) => args.force === true),
+        { force: false },
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("ToolRunner lookup", () => {
+  test("an unknown name is a result rather than a throw, and a fallback answers it", async () => {
+    const bare = new ToolRunner(surfaceWith({ name: "bump" }));
+    expect((await bare.run(call("nope"), new AbortController().signal)).error).toBe("Unknown tool: nope");
+    const asked: string[] = [];
+    const withFallback = new ToolRunner(surfaceWith({ name: "bump" }), {
+      fallback: (request) => {
+        asked.push(request.name);
+        return { id: request.id, name: request.name, result: "answered elsewhere" };
+      },
+    });
+    expect((await withFallback.run(call("askUser"), new AbortController().signal)).result).toBe("answered elsewhere");
+    expect(asked).toEqual(["askUser"]);
+  });
+
+  test("a registered tool of the same name shadows the fallback", async () => {
+    const runner = new ToolRunner(surfaceWith({ name: "askUser", run: () => "the screen's own" }), {
+      fallback: (request) => ({ id: request.id, name: request.name, result: "the built-in" }),
+    });
+    expect((await runner.run(call("askUser"), new AbortController().signal)).result).toBe("the screen's own");
+  });
+
+  test("a guard refusal is the tool's error result", async () => {
+    const runner = new ToolRunner(surfaceWith({ name: "navigate", guard: () => "path must be internal." }));
+    expect((await runner.run(call("navigate"), new AbortController().signal)).error).toBe("path must be internal.");
+  });
+});
+
+describe("ToolRunner reporting", () => {
+  test("settle runs after a changing call and before its report, and never after a read", async () => {
+    let count = 0;
+    const surface = new AgenticSurface();
+    surface.registerResource([], { name: "count", read: () => count });
+    surface.registerTool([], {
+      name: "bump",
+      run: () => {
+        // The screen has not caught up yet: the change lands only once settle has been waited out.
+        setTimeout(() => (count += 1), 0);
+      },
+    });
+    surface.registerTool([], { name: "peek", settle: false, run: () => count });
+    const settles: string[] = [];
+    const runner = new ToolRunner(surface, {
+      settle: async () => {
+        settles.push("settled");
+        await tick();
+      },
+    });
+    const bumped = await runner.run(call("bump"), new AbortController().signal);
+    expect(settles).toEqual(["settled"]);
+    expect(bumped.changes).toEqual([{ name: "count", value: 1 }]);
+    const peeked = await runner.run(call("peek"), new AbortController().signal);
+    expect(settles).toEqual(["settled"]);
+    expect(peeked.result).toBe(1);
+  });
+
+  test("a value past the ceiling is bounded before it leaves the runner", async () => {
+    const runner = new ToolRunner(surfaceWith({ name: "readState", run: () => ({ video: "x".repeat(200_000) }) }));
+    const result = await runner.run(call("readState"), new AbortController().signal);
+    expect(String(result.result)).toContain("Truncated");
+    expect(JSON.stringify(result).length).toBeLessThan(30_000);
+  });
+
+  test("progress rides with the call's own id and the clear only lands for that call", async () => {
+    const surface = surfaceWith({
+      name: "sync",
+      run: () => {
+        AgentProgress.report("halfway", { done: 1, total: 2 });
+      },
+    });
+    const seen: ToolProgress[] = [];
+    const runner = new ToolRunner(surface, { progress: (progress) => seen.push(progress) });
+    await runner.run(call("sync", {}, "call-7"), new AbortController().signal);
+    expect(seen).toEqual([
+      { callId: "call-7", report: { message: "halfway", done: 1, total: 2 } },
+      { callId: "call-7", report: null },
+    ]);
+  });
+});
+
+describe("ToolRunner serialization", () => {
+  test("two runners never have a call in flight at the same time", async () => {
+    const trace: string[] = [];
+    const slow = (name: string) =>
+      new ToolRunner(
+        surfaceWith({
+          name,
+          run: async () => {
+            trace.push(`${name} in`);
+            await tick();
+            await tick();
+            trace.push(`${name} out`);
+          },
+        }),
+      );
+    const signal = new AbortController().signal;
+    // Started together on purpose: the module slots `AgentAbort` and `AgentProgress` use cannot tell two
+    // overlapping calls apart, so the queue is what keeps the invariant they assume.
+    await Promise.all([slow("a").run(call("a"), signal), slow("b").run(call("b"), signal)]);
+    expect(trace).toEqual(["a in", "a out", "b in", "b out"]);
+  });
+
+  test("an approval parked in front of the user does not hold the queue", async () => {
+    let decide: ((verdict: true | string) => void) | null = null;
+    const gated = new ToolRunner(surfaceWith({ name: "removeTask", confirm: true }), {
+      approve: () => new Promise<true | string>((resolve) => (decide = resolve)),
+    });
+    const free = new ToolRunner(surfaceWith({ name: "bump", run: () => "bumped" }));
+    const signal = new AbortController().signal;
+    const parked = gated.run(call("removeTask"), signal);
+    await until(() => !!decide);
+    expect((await free.run(call("bump"), signal)).result).toBe("bumped");
+    decide?.("The user declined.");
+    expect((await parked).error).toBe("The user declined.");
+  });
+
+  test("an aborted call releases the queue instead of jamming it", async () => {
+    const stuck = new ToolRunner(surfaceWith({ name: "wait", run: () => new Promise<void>(() => undefined) }));
+    const controller = new AbortController();
+    const hanging = stuck.run(call("wait"), controller.signal);
+    await tick();
+    controller.abort();
+    expect((await hanging).error).toContain("aborted");
+    const after = new ToolRunner(surfaceWith({ name: "bump", run: () => "bumped" }));
+    expect((await after.run(call("bump"), new AbortController().signal)).result).toBe("bumped");
+  });
+});

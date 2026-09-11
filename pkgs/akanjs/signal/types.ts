@@ -150,6 +150,11 @@ interface SerializedSignalOption {
    * with the catalogue.
    */
   mcp?: false;
+  /**
+   * Only ever `false`, and only when one of the guards declares `static agents = false`: a person-only act. Resolved
+   * here for the same reason `mcp` is — the reader holds guard names, not classes.
+   */
+  agents?: false;
 }
 export interface SerializedSlice extends SerializedSignalOption {
   /**
@@ -211,6 +216,8 @@ export interface SerializedSignal {
    * it names do not exist until `FetchClient.getBaseEndpoint` synthesizes them. Only the `false` keys travel.
    */
   mcp?: SerializedSignalMcp;
+  /** Which generated CRUD verbs a person-only guard protects, by the same verb map; only the `false` keys travel. */
+  agents?: SerializedSignalMcp;
 }
 
 /** Keyed by generated verb, mirroring the `guards` map `slice()` takes. The root slice's own flag rides on `slice[""]`. */

@@ -51,15 +51,37 @@ export class TrustedProxy {
   /**
    * The caller's address as recorded by a proxy, but only when the peer is one. Falls back to the peer itself,
    * which is the right answer for a process nothing is proxying, and `null` when there is no peer either.
+   *
+   * `null` and `undefined` mean different things here. `null` is what `Server.requestIP` answers for a socket
+   * that has no address — a unix socket, which is how a gateway reaches its children — and only a process on
+   * this machine can open one, so the headers it wrote are a local proxy's and are believed. `undefined` is
+   * "nobody asked": no resolver was registered, and a header from an unknown peer is a header the client wrote.
    */
   static clientAddress(headers: Headers, peerAddress: string | null | undefined): string | null {
-    if (TrustedProxy.isTrusted(peerAddress)) {
+    if (peerAddress === null || TrustedProxy.isTrusted(peerAddress)) {
       const realIp = headers.get("x-real-ip")?.trim();
       if (realIp) return normalizeIpAddress(realIp);
       const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
       if (forwarded) return normalizeIpAddress(forwarded);
     }
     return peerAddress ? normalizeIpAddress(peerAddress) : null;
+  }
+
+  /**
+   * Whether an address is one no public name should resolve to: the local ranges `isTrusted` reads, plus the
+   * unspecified address, the carrier-grade NAT block `100.64/10`, multicast and the reserved top of IPv4. Used
+   * to refuse a fetch whose destination a caller chose by name, so it judges the address alone and never the
+   * configured proxy list — a trusted proxy is still not somewhere to send an outbound request.
+   */
+  static isPrivateAddress(address: string): boolean {
+    const bytes = TrustedProxy.#toBytes(normalizeIpAddress(address));
+    if (!bytes) return true;
+    if (TrustedProxy.#isLocalRange(bytes)) return true;
+    if (bytes.length === 4) {
+      const [a = 0, b = 0] = bytes;
+      return a === 0 || (a === 100 && b >= 64 && b <= 127) || a >= 224;
+    }
+    return bytes.every((byte) => byte === 0) || bytes[0] === 0xff;
   }
 
   /** `10/8`, `172.16/12`, `192.168/16`, `127/8`, `169.254/16`, and their IPv6 counterparts `::1`, `fc00::/7`, `fe80::/10`. */

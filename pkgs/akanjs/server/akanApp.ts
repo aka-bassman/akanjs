@@ -98,6 +98,17 @@ export interface AkanAppOptions {
    */
   modules?: string[];
   /**
+   * The inverse of `modules`: mount everything except these and whatever reaches them, in every child. Written
+   * for a lib the app depends on but does not serve — `server.ts` is generated from the dependency graph, so a
+   * lib cannot be dropped by editing it. Handed down as `AKAN_DISABLE_MODULES`, and applied after `modules`.
+   */
+  disableModules?: string[];
+  /**
+   * The same, by owning lib: every module the named libs registered stays out of every child, along with
+   * everything that reaches one. Handed down as `AKAN_DISABLE_LIBS`.
+   */
+  disableLibs?: string[];
+  /**
    * Run the one replica in this process instead of spawning it — see `#startSolo`. Defaults on for a single
    * traffic replica the environment configured, and off whenever `replica` is passed here, because code that
    * states a topology is asking for the gateway that serves it. `AKAN_SOLO=false` turns it off; like
@@ -142,6 +153,8 @@ export class AkanApp {
   /** The gateway hands `/_akan/client|styles|fonts` straight off disk, so it needs the same answer its children do. */
   readonly #web = getWebConfigFromEnv();
   readonly #modules: string[];
+  readonly #disableModules: string[];
+  readonly #disableLibs: string[];
   readonly #solo: boolean;
   readonly #children = new Map<number, ChildState>();
   readonly #roomChildren = new Map<string, Set<number>>();
@@ -183,6 +196,8 @@ export class AkanApp {
     this.#prefix = normalizeRoutePrefix(resolvedOptions.prefix) ?? getApiPrefix();
     this.#websocketPrefix = normalizeRoutePrefix(resolvedOptions.websocketPrefix) ?? getWsPrefix();
     this.#modules = resolvedOptions.modules ?? [];
+    this.#disableModules = resolvedOptions.disableModules ?? [];
+    this.#disableLibs = resolvedOptions.disableLibs ?? [];
     this.#solo = AkanApp.#resolveSolo(resolvedOptions, this.#replica);
     this.#logHub = LogHub.attach();
   }
@@ -324,6 +339,8 @@ export class AkanApp {
       AKAN_WS_PREFIX: this.#websocketPrefix,
       ...(this.#openapi === undefined ? {} : { AKAN_OPENAPI: this.#openapi ? "true" : "false" }),
       ...(this.#modules.length ? { AKAN_MODULES: this.#modules.join(",") } : {}),
+      ...(this.#disableModules.length ? { AKAN_DISABLE_MODULES: this.#disableModules.join(",") } : {}),
+      ...(this.#disableLibs.length ? { AKAN_DISABLE_LIBS: this.#disableLibs.join(",") } : {}),
     });
     // This process already ran as the gateway, so anything that read the env before the assignment above
     // cached the prefix this gateway was about to change.
@@ -420,6 +437,8 @@ export class AkanApp {
         AKAN_WS_PREFIX: this.#websocketPrefix,
         ...(this.#openapi === undefined ? {} : { AKAN_OPENAPI: this.#openapi ? "true" : "false" }),
         ...(this.#modules.length ? { AKAN_MODULES: this.#modules.join(",") } : {}),
+        ...(this.#disableModules.length ? { AKAN_DISABLE_MODULES: this.#disableModules.join(",") } : {}),
+        ...(this.#disableLibs.length ? { AKAN_DISABLE_LIBS: this.#disableLibs.join(",") } : {}),
       },
       ipc: (message) => this.#handleMessage(idx, message as AkanIpcMessage, proc),
       stdout: "pipe",

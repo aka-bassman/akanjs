@@ -1,7 +1,6 @@
-import { AgentAbort } from "./AgentAbort";
-import { AgentProgress, type AgentProgressReport } from "./AgentProgress";
+import type { AgentProgressReport } from "./AgentProgress";
 import { Compaction, type CompactOptions } from "./Compaction";
-import { ToolOutput } from "./ToolOutput";
+import { type ToolApprovalRequest, ToolRunner } from "./ToolRunner";
 import { Transcript } from "./Transcript";
 import type {
   AgentRunner,
@@ -12,7 +11,6 @@ import type {
   SurfaceView,
   ToolCallRequest,
   ToolCallResult,
-  ToolEntry,
 } from "./types";
 
 export interface PendingApproval {
@@ -127,6 +125,7 @@ export class AgentSession {
   readonly #surface: SurfaceView;
   readonly #runner: AgentRunner;
   readonly #options: AgentSessionOptions;
+  readonly #tools: ToolRunner;
   #messages: ChatMessage[] = [];
   #running = false;
   #pending: PendingApproval | null = null;
@@ -151,6 +150,21 @@ export class AgentSession {
     this.#surface = surface;
     this.#runner = runner;
     this.#options = options;
+    this.#tools = new ToolRunner(surface, {
+      approve: (request, signal) => this.#awaitApproval(request, signal),
+      settle: () => this.#options.settle?.(),
+      progress: ({ callId, report }) => {
+        if (report) this.#progress = { ...report, callId };
+        else if (this.#progress?.callId === callId) this.#progress = null;
+        // A clear that names a call the slot has already moved past is not this row's to take back.
+        else return;
+        this.#notify();
+      },
+      fallback: async (call, signal) =>
+        call.name === AgentSession.askUserTool.name
+          ? await this.#ask(call, signal)
+          : { id: call.id, name: call.name, error: `Unknown tool: ${call.name}` },
+    });
     this.#history = options.history;
     this.#onCompact = options.onCompact;
     const restored = AgentSession.#restored(options.history);
@@ -260,9 +274,7 @@ export class AgentSession {
           toolResults.push(
             controller.signal.aborted
               ? { id: call.id, name: call.name, error: Transcript.unanswered }
-              : // Bounded here, at the one place every tool's answer enters the transcript, because from here on it
-                // rides every later turn as well.
-                ToolOutput.clipped(await this.#execute(call, controller.signal)),
+              : await this.#tools.run(call, controller.signal),
           );
         this.#append({ role: "tool", toolResults });
       }
@@ -508,48 +520,6 @@ export class AgentSession {
     return { toolCalls, stop };
   }
 
-  async #execute(call: ToolCallRequest, signal: AbortSignal): Promise<ToolCallResult> {
-    const base = { id: call.id, name: call.name };
-    const entry = this.#surface.tool(call.name);
-    if (!entry) {
-      if (call.name === AgentSession.askUserTool.name) return await this.#ask(call, signal);
-      return { ...base, error: `Unknown tool: ${call.name}` };
-    }
-    const message = AgentSession.#confirmMessage(call.name, entry, call.args);
-    if (message) {
-      const approved = await this.#awaitApproval(call, message, signal);
-      if (approved !== true) return { ...base, error: approved };
-    }
-    const before = this.#surface.snapshot();
-    try {
-      const result = await AgentAbort.run(signal, () =>
-        AgentProgress.run(
-          (report) => {
-            this.#progress = { ...report, callId: call.id };
-            this.#notify();
-          },
-          () => AgentSession.#raced(this.#surface.call(call.name, call.args), signal),
-        ),
-      );
-      // A read returns what is already there; anything else may still be landing, and a report taken now would
-      // describe the screen as it was one tick before the call.
-      if (entry.settle !== false) await this.#options.settle?.();
-      const changes = this.#surface.diffSince(before);
-      return {
-        ...base,
-        ...(result !== undefined ? { result } : {}),
-        ...(changes.length ? { changes } : {}),
-      };
-    } catch (error) {
-      return { ...base, error: error instanceof Error ? error.message : String(error) };
-    } finally {
-      if (this.#progress?.callId === call.id) {
-        this.#progress = null;
-        this.#notify();
-      }
-    }
-  }
-
   /** `null` when the user declined or no ask is configured: both mean stop and record why. */
   async #askToContinue(turns: number, signal: AbortSignal): Promise<string | null> {
     const ask = this.#options.continueAsk?.();
@@ -605,7 +575,7 @@ export class AgentSession {
     });
   }
 
-  #awaitApproval(call: ToolCallRequest, message: string, signal: AbortSignal): Promise<true | string> {
+  #awaitApproval(request: ToolApprovalRequest, signal: AbortSignal): Promise<true | string> {
     return new Promise((resolve) => {
       const settle = (value: true | string) => {
         this.#pending = null;
@@ -616,53 +586,12 @@ export class AgentSession {
       const onAbort = () => settle("The user aborted the turn.");
       signal.addEventListener("abort", onAbort);
       this.#pending = {
-        callId: call.id,
-        name: call.name,
-        args: call.args,
-        message,
+        ...request,
         approve: () => settle(true),
         reject: (reason) => settle(reason ?? "The user declined."),
       };
       this.#notify();
     });
-  }
-
-  /**
-   * The call, or the abort — whichever lands first.
-   *
-   * A tool is handed the signal through `AgentAbort` and may stop itself, but nothing obliges it to, and a tool
-   * that waits on a two-minute job is exactly the one a user reaches for Stop during. Without this race the loop
-   * stays parked inside the call for those two minutes with the chat still showing a turn in flight.
-   *
-   * The losing promise is left running rather than cancelled: the work is usually a job a server is already
-   * doing, and throwing away a result that is about to land helps nobody. Both of its outcomes are handled here,
-   * so a late failure settles nothing instead of surfacing as an unhandled rejection.
-   */
-  static #raced<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const onAbort = () => reject(new Error("The user aborted the turn."));
-      work.then(
-        (value) => {
-          signal.removeEventListener("abort", onAbort);
-          resolve(value);
-        },
-        (error: unknown) => {
-          signal.removeEventListener("abort", onAbort);
-          reject(error instanceof Error ? error : new Error(String(error)));
-        },
-      );
-      if (signal.aborted) onAbort();
-      else signal.addEventListener("abort", onAbort, { once: true });
-    });
-  }
-
-  static #confirmMessage(name: string, entry: ToolEntry, args: Record<string, unknown>): string | null {
-    const confirm = entry.confirm;
-    if (confirm === undefined || confirm === false) return null;
-    if (typeof confirm === "string") return confirm;
-    const verdict = confirm === true ? true : confirm(args);
-    if (verdict === false) return null;
-    return verdict === true ? `Run ${name}?` : verdict;
   }
 
   static #defaultContext(surface: SurfaceView): ContextBlock[] {

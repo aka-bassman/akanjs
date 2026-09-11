@@ -15,7 +15,19 @@ export interface McpDocumentOptions {
    * its author no way to see why. This is the read-only-deployment valve.
    */
   readOnly?: boolean;
+  /**
+   * How much of a result's shape a tool advertises. `shallow`, the default, publishes the returned model with every
+   * field of its own and names each nested model instead of inlining it: on a fully open catalogue 83% of the bytes
+   * were the same model schemas re-inlined per entry, most of them nested closures. `full` inlines the closure the
+   * way a shared component section would. `none` publishes no `outputSchema` at all — results still ship as
+   * `structuredContent` — for a deployment that would rather spend the bytes per call.
+   */
+  outputSchema?: McpOutputSchemaMode;
 }
+
+export type McpOutputSchemaMode = "full" | "shallow" | "none";
+
+type McpSchemaSide = "input" | "output";
 
 export interface McpExposedEndpoint {
   refName: string;
@@ -65,9 +77,8 @@ export class McpDocument {
   readonly refusals: McpRefusal[];
   /** What is published with no description of its own, which is the field a model picks a tool by. */
   readonly undescribed: McpUndescribed[];
-  readonly #schema = new JsonSchemaBuilder({ refPrefix: "#/$defs/" });
-  #allSchemas: Record<string, JsonSchema> | null = null;
-  #readSchemas: Record<string, JsonSchema> | null = null;
+  readonly #schema = new JsonSchemaBuilder({ refPrefix: "#/$defs/", nullable: "type" });
+  readonly #modelSchemas = new Map<McpSchemaSide, Record<string, JsonSchema>>();
   readonly #options: McpDocumentOptions;
   readonly #catalogue: AgentCatalogue;
   readonly #byToolName = new Map<string, McpExposedEndpoint>();
@@ -99,9 +110,9 @@ export class McpDocument {
    * Roughly what a `tools/list` plus `prompts/list` costs the caller, and which signals it went to.
    *
    * Worth reporting because the number is nobody's intuition: MCP has no shared component section and forbids a
-   * `$ref` across entries, so every entry inlines the full schema of every model it mentions — a plain 21-field
-   * model with one named slice ships 12KB across its eight entries, three quarters of it the same four schemas
-   * repeated. A catalogue is re-sent whole to every agent that connects, before its first turn.
+   * `$ref` across entries, so every entry inlines the schema of every model it mentions — under `outputSchema:
+   * "full"` a plain 21-field model with one named slice ships 12KB across its eight entries, three quarters of it
+   * the same four schemas repeated. A catalogue is re-sent whole to every agent that connects, before its first turn.
    */
   get listingCost(): McpListingCost {
     if (this.#cost) return this.#cost;
@@ -231,7 +242,7 @@ export class McpDocument {
         properties,
         ...(required.length ? { required } : {}),
         additionalProperties: false,
-        ...this.#defs(properties),
+        ...this.#defs(properties, "input"),
       },
       ...(outputSchema ? { outputSchema } : {}),
       annotations: mcpHintsOf(key, endpoint) satisfies McpToolAnnotations,
@@ -264,6 +275,7 @@ export class McpDocument {
   }
 
   #outputSchema(endpoint: SerializedEndpoint) {
+    if (this.#options.outputSchema === "none") return undefined;
     // A scalar return ships as text only: `structuredContent` must be an object, and declaring an `outputSchema`
     // obliges the server to produce a result that matches it.
     if (!endpoint.returns.modelType) return undefined;
@@ -284,27 +296,35 @@ export class McpDocument {
     // `readable` because this describes what comes back: `resolveReturn` strips every `hidden` and `secret` field,
     // so publishing their names here promises a property no answer will ever carry — and on a model like `user`,
     // the names alone (`password`, `accountId`) are the whole leak. Input keeps them: they are legal to send.
-    return { ...schema, ...this.#defs(schema, { readable: true }) };
+    return { ...schema, ...this.#defs(schema, "output") };
   }
 
-  #defs(seed: unknown, { readable = false } = {}) {
-    const defs = this.#schema.referencedSchemas(seed, this.#modelSchemas(readable));
+  #defs(seed: unknown, side: McpSchemaSide) {
+    const defs = this.#schema.referencedSchemas(seed, this.#modelSchemasOf(side));
     // A tool schema has to resolve on its own: the spec forbids dereferencing a `$ref` over the network, so every
     // model a tool mentions travels inside that tool rather than in a shared component section.
     return Object.keys(defs).length ? { $defs: defs } : {};
   }
 
   /**
-   * Every registered model, built once per shape for the whole document. Narrowing runs twice per tool — input
+   * Every registered model, built once per side for the whole document. Narrowing runs twice per tool — input
    * schema and output schema — so deriving the full set inside each call rebuilt every model in the app 2N times.
+   * A request side asks for a relation's id, which is what the wire carries; a response side names a nested model
+   * unless `outputSchema: "full"` asked for the closure. Neither repeats the id pattern inside a `$defs`.
    */
-  #modelSchemas(readable: boolean) {
-    if (!readable) {
-      this.#allSchemas ??= this.#schema.allModelSchemas();
-      return this.#allSchemas;
-    }
-    this.#readSchemas ??= this.#schema.allModelSchemas({ readable: true });
-    return this.#readSchemas;
+  #modelSchemasOf(side: McpSchemaSide) {
+    const cached = this.#modelSchemas.get(side);
+    if (cached) return cached;
+    const schemas =
+      side === "input"
+        ? this.#schema.allModelSchemas({ relations: "id", idPattern: false })
+        : this.#schema.allModelSchemas({
+            readable: true,
+            relations: this.#options.outputSchema === "full" ? "inline" : "named",
+            idPattern: false,
+          });
+    this.#modelSchemas.set(side, schemas);
+    return schemas;
   }
 
   #argSchema(refName: string, key: string, arg: SerializedArg) {

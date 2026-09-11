@@ -10,7 +10,9 @@ import type { Guard, GuardScope } from "../../signal/guard";
 import { None, Public } from "../../signal/guards";
 import { internal } from "../../signal/internal";
 import { McpProgress, Msg } from "../../signal/mcp";
+import { middleware } from "../../signal/middleware";
 import { serverSignal } from "../../signal/serverSignal";
+import type { SignalContext } from "../../signal/signalContext";
 import { SignalRegistry } from "../../signal/signalRegistry";
 import { slice } from "../../signal/slice";
 import { AkanLib } from "../akanLib";
@@ -37,6 +39,50 @@ import { McpRouter, type McpRouterProps } from "./McpRouter";
 class SignedIn implements Guard {
   static name = "SignedIn";
   static scope: GuardScope = "account";
+  canPass() {
+    return true;
+  }
+}
+
+/**
+ * Resolves the caller from the `Authorization` header or a `session` cookie, the two channels an app's account
+ * middleware reads — so the suite can show which of the two `/mcp` honours.
+ */
+class McpAccountMiddleware extends middleware("mcpAccount") {
+  override async use() {
+    return async (context: SignalContext, next: () => Promise<unknown>) => {
+      const { req } = context.getHttpContext<{ account?: { id: string } }>();
+      const bearer = req.headers.get("authorization")?.replace(/^Bearer /, "");
+      const cookie = req.headers.get("cookie")?.match(/(?:^|;\s*)session=([^;]+)/)?.[1];
+      const id = bearer ?? cookie;
+      Object.assign(req, { account: id ? { id } : undefined });
+      return await next();
+    };
+  }
+}
+
+class HasAccount implements Guard {
+  static name = "HasAccount";
+  static scope: GuardScope = "account";
+  canPass(context: SignalContext) {
+    return !!context.get<{ id?: string }>("account");
+  }
+}
+
+/** Marked `account` yet reads an argument — the mismark a listing evaluates with none, and throws on. */
+class ReadsArgument implements Guard {
+  static name = "ReadsArgument";
+  static scope: GuardScope = "account";
+  canPass(context: SignalContext) {
+    return (context.getArg<string>("id") as string).length > 0;
+  }
+}
+
+/** Would pass anyone at call time; what keeps it off the shelf is the declaration that no model may. */
+class PersonOnly implements Guard {
+  static name = "PersonOnly";
+  static scope: GuardScope = "account";
+  static agents = false;
   canPass() {
     return true;
   }
@@ -117,6 +163,12 @@ class McpItemEndpoint extends endpoint(serverResolverTestServiceModel, (builder)
     throw new Error("boom: internal detail that must not travel");
   }),
   deniedTitle: builder.query(String, { guards: [None] }).exec(() => "denied"),
+  ownedTitle: builder.query(String, { guards: [HasAccount] }).exec(() => "owned"),
+  personTitle: builder.query(String, { guards: [SignedIn, PersonOnly] }).exec(() => "signed by a person"),
+  mismarkedTitle: builder
+    .query(String, { guards: [ReadsArgument] })
+    .param("id", ID)
+    .exec((id) => `${id}:mismarked`),
   slowTitle: builder.query(String, { guards: [Public] }).exec(async () => {
     McpProgress.report(1, { total: 2, message: "counting" });
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -199,7 +251,7 @@ beforeAll(async () => {
     ],
     services: [],
     scalars: [],
-    option: new AkanOption(),
+    option: new AkanOption().applyMiddleware(McpAccountMiddleware),
   });
   di = new DiLifecycle({ env }, lib);
   httpRoutes = (await di.initializeAll()).routes ?? {};
@@ -233,6 +285,28 @@ const call = async (name: string, args: Record<string, unknown> = {}) =>
   (await post({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } })).json;
 
 describe("MCP over a booted container", () => {
+  test("names an account guard that reaches for arguments, once, and hides its entry without an error line", async () => {
+    // First in the file on purpose: the warning is said once per guard and endpoint for the life of the process,
+    // so it has to be caught on the first listing that evaluates the guard.
+    const lines: string[] = [];
+    const stop = Logger.addSink(({ message }) => void lines.push(message));
+    try {
+      const { json } = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+      expect(json.result.tools.map((tool: { name: string }) => tool.name)).not.toContain("mismarkedTitle");
+      // Absent from the document, not merely hidden for this caller: `PersonOnly` would have passed anyone.
+      expect(json.result.tools.map((tool: { name: string }) => tool.name)).not.toContain("personTitle");
+      await post({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+    } finally {
+      stop();
+    }
+    const warned = lines.filter((line) => line.includes("Guard ReadsArgument threw while listing"));
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain('"mismarkedTitle"');
+    expect(warned[0]).toContain('static scope = "resource"');
+    // A refusal at listing time is the expected answer for most of a catalogue, not an error to log.
+    expect(lines.some((line) => line.startsWith("Error query-"))).toBe(false);
+  });
+
   test("lists every endpoint its guards admit", async () => {
     const { json } = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(json.result.tools.map((tool: { name: string }) => tool.name)).toEqual([
@@ -384,14 +458,14 @@ describe("MCP over a booted container", () => {
     const log = lines.join("\n");
     // The whole build, not one caller's view: `deniedTitle` and `deniedItem` are in the catalogue and are hidden
     // per credential at listing time, so these counts run ahead of what `tools/list` returned above.
-    expect(log).toContain("MCP catalogue: tools=13 prompts=4 resourceTemplates=3 · listing ");
+    expect(log).toContain("MCP catalogue: tools=15 prompts=4 resourceTemplates=3 · listing ");
     // Which signals a listing went to, so a catalogue that grew can say where. Every entry inlines the schema of
     // every model it mentions, and the whole thing is re-sent to every agent that connects.
-    expect(log).toContain("MCP catalogue cost: serverResolverTestItem 17/");
+    expect(log).toContain("MCP catalogue cost: serverResolverTestItem 18/");
     expect(lines.find((line) => line.includes('"publicRenameTitle"'))).toContain("`[Public]` is having none");
     // The read-only valve reports itself the same way, rather than leaving an author to wonder where a guarded,
     // deliberately exposed mutation went.
-    expect(log).toContain("MCP catalogue: tools=12 prompts=4 resourceTemplates=3 (read-only deployment)");
+    expect(log).toContain("MCP catalogue: tools=14 prompts=4 resourceTemplates=3 (read-only deployment)");
     expect(lines.find((line) => line.includes('did not expose "renameTitle"'))).toContain("read-only");
     // Published with nothing an agent can pick it by, which is a broken tool rather than an untidy one. These
     // signals carry no dictionary at all, so every entry is named — including the generated ones, whose only
@@ -406,9 +480,67 @@ describe("MCP over a booted container", () => {
     // slice call's `get: Public` reaches base CRUD and the root slice and never a named slice, which is how an
     // endpoint arrives here without anyone writing anything down.
     expect(lines.find((line) => line.includes('did not expose "hiddenTitle"'))).toContain("declares no guards");
+    // A guard that admits no model takes the entry out of the document itself — not hidden per caller, absent —
+    // and the reason names the guards so the author can find the one that said so.
+    expect(lines.find((line) => line.includes('did not expose "personTitle"'))).toContain("SignedIn, PersonOnly");
     // The root list took `root: Public`, and `echoTitle` wrote `[Public]` itself: both are decisions, both quiet.
     expect(lines.find((line) => line.includes('exposed "serverResolverTestItemList", which'))).toBeUndefined();
     expect(lines.find((line) => line.includes('exposed "echoTitle", which'))).toBeUndefined();
+    // Three tools need a credential (`deniedTitle`, `ownedTitle`, `renameTitle`) and nothing here can issue or
+    // check one, so the shelf lists tools no client can reach. Said once, at boot; quiet once an issuer is named.
+    expect(log).toContain("MCP publishes 3 guarded tool(s) but no authorization server is configured");
+    const configured: string[] = [];
+    const stopConfigured = Logger.addSink(({ message }) => void configured.push(message));
+    try {
+      mcpRouter({ auth: { authorizationServers: ["https://app.example.com"] } }).report();
+    } finally {
+      stopConfigured();
+    }
+    expect(configured.find((line) => line.includes("no authorization server is configured"))).toBeUndefined();
+  });
+
+  test("honours a bearer token and ignores a cookie, the one credential channel the spec admits", async () => {
+    const list = { jsonrpc: "2.0", id: 1, method: "tools/list" };
+    const owned = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "ownedTitle" } };
+    const names = async (res: Response) =>
+      ((await res.json()) as { result: { tools: { name: string }[] } }).result.tools.map((tool) => tool.name);
+    expect(await names(await postRaw(list, { authorization: "Bearer u1" }))).toContain("ownedTitle");
+    // The same session as a cookie is stripped before the account middleware runs, so this caller is anonymous:
+    // the account-guarded tool is off its shelf, and calling it by name is answered with the challenge.
+    expect(await names(await postRaw(list, { cookie: "session=u1" }))).not.toContain("ownedTitle");
+    const cookieCall = await postRaw(owned, { cookie: "session=u1" });
+    expect(cookieCall.status).toBe(401);
+    expect(cookieCall.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
+    const bearerCall = (await (await postRaw(owned, { authorization: "Bearer u1" })).json()) as {
+      result: { content: { text: string }[] };
+    };
+    expect(bearerCall.result.content[0].text).toBe("owned");
+  });
+
+  test("challenges an anonymous initialize once an authorization server is named", async () => {
+    const initialize = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "probe", version: "0" } },
+    };
+    const send = async (headers: Record<string, string>) =>
+      await mcpRoutes({ auth: { authorizationServers: ["https://app.example.com"] } })["/mcp"].POST(
+        new Request("http://127.0.0.1:8080/mcp", {
+          method: "POST",
+          body: JSON.stringify(initialize),
+          headers: { "content-type": "application/json", ...headers },
+        }),
+      );
+    // A client starts its OAuth flow on a 401 and on nothing else; an anonymous handshake that succeeded would leave
+    // it connected to the anonymous shelf, never asking.
+    const anonymous = await send({});
+    expect(anonymous.status).toBe(401);
+    expect(anonymous.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
+    // The same server naming no issuer keeps its anonymous handshake, which is what a public catalogue wants.
+    expect((await postRaw(initialize, {})).status).toBe(200);
+    // With a token the handshake proceeds; whether that token is any good is the next gate's question.
+    expect((await send({ authorization: `Bearer ${"a.b".concat(".c")}` })).status).toBe(200);
   });
 
   test("refuses a guarded call without naming the guard that refused it", async () => {

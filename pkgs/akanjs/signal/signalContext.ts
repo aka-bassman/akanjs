@@ -21,7 +21,7 @@ import type { Internal, InternalCls, InternalInfo, MiddlewareCls } from ".";
 import { CrossSiteGuard } from "./CrossSiteGuard";
 import type { EndpointInfo, EndpointType } from "./endpointInfo";
 import { Exception, isExceptionLike } from "./exception";
-import { guardOf } from "./guard";
+import { type GuardCls, guardOf } from "./guard";
 // Deliberately past the barrel: `./mcp` re-exports `McpDocument`, which would drag `akanjs/fetch` into the
 // signal graph. `Msg` itself imports nothing.
 import { Msg } from "./mcp/Msg";
@@ -57,6 +57,12 @@ export class SignalContext<
   ctx: Ctx;
   endpointInfo: EndpointInfo;
   adaptor: Adaptor;
+  /**
+   * Which surface the call came in on. The transport for a plain request, `mcp` for one an agent made through the
+   * MCP endpoint. Held on the context rather than read off the trace: `SignalTrace.create` may answer `null`, and a
+   * guard that asked the trace whether a model is driving the call would fail open exactly there.
+   */
+  readonly origin: TraceOrigin;
   args: unknown[] = [];
   internalArgs: unknown[] = [];
   trace: SignalTrace | null = null;
@@ -96,6 +102,7 @@ export class SignalContext<
   ) {
     this.key = key;
     this.transport = httpEndpointTypes.has(endpointInfo.type) ? "http" : "websocket";
+    this.origin = origin ?? this.transport;
     this.endpointInfo = endpointInfo;
     if (ctx) this.ctx = ctx;
     else if (this.transport === "http") this.ctx = new HttpExecutionContext(reqOrWsReq as Bun.BunRequest) as Ctx;
@@ -177,26 +184,51 @@ export class SignalContext<
     const guards = (this.endpointInfo.signalOption.guards ?? []).filter((GuardCls) => GuardCls.scope === "account");
     if (guards.length === 0) return true;
     try {
+      // Without the logging middleware: a refusal is the expected answer for most of a catalogue, and it would
+      // otherwise be written as an `Error …` line on every listing.
       await this.#withMiddleware(
         async () => {
           for (const GuardCls of guards) {
-            if (!(await guardOf(GuardCls).canPass(this)))
+            if (!(await this.#canListWith(GuardCls)))
               throw new Exception.Forbidden(`Access denied by guard: ${GuardCls.name}`);
           }
         },
-        { endpointMiddlewares: false },
+        { endpointMiddlewares: false, skip: ["logging"] },
       )();
       return true;
     } catch {
       return false;
     }
   }
+  /**
+   * An account guard has no arguments here, so one that throws anything but a refusal reached for them anyway —
+   * a resource guard mismarked. The entry stays hidden (fail-closed), but the guard is named once per endpoint,
+   * because otherwise the only trace is a tool that is missing for everyone.
+   */
+  async #canListWith(GuardCls: GuardCls): Promise<boolean> {
+    try {
+      return await guardOf(GuardCls).canPass(this);
+    } catch (error) {
+      if (!isExceptionLike(error)) this.#warnMismarkedGuard(GuardCls, error);
+      throw error;
+    }
+  }
+  static #mismarkedWarned = new WeakMap<GuardCls, Set<string>>();
+  #warnMismarkedGuard(GuardCls: GuardCls, error: unknown) {
+    const keys = SignalContext.#mismarkedWarned.get(GuardCls) ?? new Set<string>();
+    if (keys.has(this.key)) return;
+    keys.add(this.key);
+    SignalContext.#mismarkedWarned.set(GuardCls, keys);
+    this.adaptor.logger.warn(
+      `Guard ${GuardCls.name} threw while listing "${this.key}" with no arguments: ${String(error)}. A guard that reads the call's arguments is \`static scope = "resource"\`; until then the entry is hidden from every listing.`,
+    );
+  }
   #withMiddleware(
     coreExec: () => Promise<unknown>,
-    { endpointMiddlewares = true }: { endpointMiddlewares?: boolean } = {},
+    { endpointMiddlewares = true, skip = [] as string[] }: { endpointMiddlewares?: boolean; skip?: string[] } = {},
   ): () => Promise<unknown> {
     const middlewares = [
-      ...this.#middleware.values(),
+      ...[...this.#middleware.entries()].filter(([name]) => !skip.includes(name)).map(([, cls]) => cls),
       ...(endpointMiddlewares ? (this.endpointInfo.signalOption.middlewares ?? []) : []),
     ];
     if (middlewares.length === 0) return coreExec;
@@ -614,7 +646,10 @@ export class SignalContext<
   getClientIp(): string | null {
     if (this.transport === "http") {
       const { req } = this.getHttpContext();
-      return TrustedProxy.clientAddress(req.headers, SignalContext.#httpPeer?.(req)?.address);
+      // A registered resolver that answers `null` names an addressless socket — the unix socket a child is reached
+      // over — and `TrustedProxy` reads that as a local hop; an absent resolver stays `undefined`, an unknown peer.
+      const peer = SignalContext.#httpPeer?.(req);
+      return TrustedProxy.clientAddress(req.headers, peer === undefined ? undefined : (peer?.address ?? null));
     }
     const { ws } = this.getWebSocketContext<{ headers?: Headers }>();
     if (!ws.data.headers) return ws.remoteAddress ? normalizeIpAddress(ws.remoteAddress) : null;

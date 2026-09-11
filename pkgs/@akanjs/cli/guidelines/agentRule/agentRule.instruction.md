@@ -131,6 +131,11 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `data-agent-zone` container; guides follow the layout cascade (ancestors and own, never a sibling's). Zone
   membership is positional — there is no per-declaration zone key, so a lib component joins whatever zone the app
   mounts it in.
+- **Two agents' turns run in parallel; their tool calls take turns.** Tool execution is serialized across the
+  whole page, because `AgentAbort` and `AgentProgress` reach the running call through a module slot rather than a
+  parameter — two calls in flight restore each other's slot and the second one's progress goes nowhere. Only the
+  execution queues: a zone parked on an approval card holds nothing up, since waiting for the user sits outside
+  the queue, and a call that is aborted releases it.
 - **Everything a zone publishes is named `<id>.<name>`,** and that name is what instructions must use. A bare
   `createVideoProject` inside a zone naming its tool `videoProjectDraft.createVideoProject` is a tool that does
   not exist: the model calls it, the surface answers `Unknown tool`, and a turn is gone. Build the name from the
@@ -438,16 +443,17 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   row, Tab completing its name, and Escape closing the menu and then, pressed again, the panel.
 
 ## Built-In Tools
-- The framework publishes five built-ins on every store surface: `navigate` (internal paths only, the same
-  router `Link` rides), `goBack` (this session's history — global, because history is not a control a page owns and
-  a page that draws no back link is not one you may not leave — a screen that must not be left withholds them
-  with `builtins`, not with prose), `readScreen` (the rendered DOM as compact text —
-  headings, links, control values, and `(disabled)` on a control or button that has it; the chat's own UI is
-  skipped via `data-agent-ui`, and a password value is never read), `readState(key)` (one masked store key), and
-  `highlight(target)`. Declaring a hook tool under one of those names shadows the built-in, so reuse them only to
-  mean that. **There is no general-purpose wait**: a built-in one was reachable on every screen and a model spent
-  it on whatever key it liked, parking turns nobody asked to park. Waiting belongs to the screen that knows what
-  is worth waiting for — publish an `st.tool` beside the control that starts the work, and let it await the work.
+- The framework publishes five built-ins on every store surface: `navigate` (internal paths only, the same router
+  `Link` rides), `goBack` (this session's history — global, because history is not a control a page owns and a page
+  that draws no back link is not one you may not leave — a screen that must not be left withholds them with `builtins`,
+  not with prose), `readScreen` (the rendered DOM as compact text — headings, links, control values, and `(disabled)`
+  on a control or button that has it; the chat's own UI is skipped via `data-agent-ui`, and a password value is never
+  read), `readState(key)` (one masked store key — a key that is unknown or that this screen does not read is refused
+  *with the keys it can* read, the way `readScreen` names its sections), and `highlight(target)`. Declaring a hook tool
+  under one of those names shadows the built-in, so reuse them only to mean that. **There is no general-purpose wait**:
+  a built-in one was reachable on every screen and a model spent it on whatever key it liked, parking turns nobody
+  asked to park. Waiting belongs to the screen that knows what is worth waiting for — publish an `st.tool` beside the
+  control that starts the work, and let it await the work.
 - **A tool that changes the screen waits for the screen before it answers.** `router.push` returns while the RSC
   payload is still in flight and a store action that fires `void fetch.*` commits a tick later, so `navigate`
   awaits `ScreenSettle.wait()` — DOM quiescence, bounded, because the client router hands its promise to nobody —

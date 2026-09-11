@@ -171,3 +171,81 @@ describe("JsonSchemaBuilder", () => {
     expect(schema.returns({ refName: "Any" })).toEqual({});
   });
 });
+
+class SchemaGeo extends via((field) => ({ lat: field(Int), lng: field(Int) })) {}
+ConstantRegistry.buildScalar("schemaGeo", SchemaGeo, { SchemaGeo });
+
+class SchemaPlaceInput extends via((field) => ({
+  name: field(String),
+  tag: field(SchemaTag).optional(),
+  tags: field([SchemaTag]),
+  geo: field(SchemaGeo),
+  role: field(SchemaRole).optional(),
+  byLabel: field(Map, { of: SchemaTag }),
+})) {}
+class SchemaPlaceObject extends via(SchemaPlaceInput, () => ({})) {}
+class LightSchemaPlace extends via(SchemaPlaceObject, ["name"] as const, () => ({})) {}
+class SchemaPlace extends via(SchemaPlaceObject, LightSchemaPlace, () => ({})) {}
+class SchemaPlaceInsight extends via(SchemaPlace, () => ({})) {}
+ConstantRegistry.buildModel(
+  "schemaPlace",
+  SchemaPlaceInput,
+  SchemaPlaceObject,
+  SchemaPlace,
+  LightSchemaPlace,
+  SchemaPlaceInsight,
+  {},
+);
+
+describe("JsonSchemaBuilder relations", () => {
+  const builder = new JsonSchemaBuilder();
+  const idSchema = { type: "string", pattern: "^[0-9a-fA-F]{24}$" };
+  const placeInput = SchemaPlaceInput as unknown as Parameters<typeof builder.model>[0];
+
+  test("asks for a relation's id in a request schema and keeps an embedded scalar inline", () => {
+    // `serialize` sends a relation as its id, so this is the shape the server reads; a scalar is embedded whole and
+    // has no tool of its own, so it stays a `$ref`. A map's model values are also sent whole and stay inline.
+    const { properties } = builder.model(placeInput, { relations: "id" }) as {
+      properties: Record<string, unknown>;
+    };
+    expect(properties.tag).toEqual({ anyOf: [idSchema, { type: "null" }] });
+    expect(properties.tags).toEqual({ type: "array", items: idSchema });
+    expect(properties.geo).toEqual({ $ref: "#/components/schemas/SchemaGeo" });
+    expect(properties.byLabel).toEqual({
+      type: "object",
+      additionalProperties: { $ref: "#/components/schemas/SchemaTag" },
+    });
+  });
+
+  test("names a nested database model in a response schema instead of inlining it", () => {
+    const schemas = builder.allModelSchemas({ readable: true, relations: "named" });
+    const { properties } = schemas.SchemaPlace as { properties: Record<string, unknown> };
+    expect(properties.tag).toEqual({ anyOf: [{ type: "object", description: "SchemaTag" }, { type: "null" }] });
+    expect(properties.tags).toEqual({ type: "array", items: { type: "object", description: "SchemaTag" } });
+    // The closure stops at the returned model and its scalars: nothing here refers to SchemaTag any more.
+    const seed = { $ref: "#/components/schemas/SchemaPlace" };
+    expect(Object.keys(builder.referencedSchemas(seed, schemas))).toEqual(["SchemaGeo", "SchemaPlace"]);
+    expect(Object.keys(builder.referencedSchemas(seed, builder.allModelSchemas({ readable: true })))).toEqual([
+      "SchemaGeo",
+      "SchemaPlace",
+      "SchemaTag",
+    ]);
+  });
+
+  test("spells nullability into the type and drops the id pattern when asked", () => {
+    const compact = new JsonSchemaBuilder({ nullable: "type" });
+    const { properties } = compact.model(placeInput, { relations: "id", idPattern: false }) as {
+      properties: Record<string, unknown>;
+    };
+    expect(properties.tag).toEqual({ type: ["string", "null"] });
+    // An enum must list `null` too, or the type array admits what the value list still refuses.
+    expect(properties.role).toEqual({ type: ["string", "null"], enum: ["admin", "user", null] });
+    expect(JsonSchemaBuilder.primitive("ID", { idPattern: false })).toEqual({ type: "string" });
+    // A `$ref` has no type of its own, so it keeps the `anyOf` spelling.
+    expect(
+      compact.arg({ type: "body", name: "tag", refName: "schemaTag", modelType: "input", nullable: true }),
+    ).toEqual({
+      anyOf: [{ $ref: "#/components/schemas/SchemaTagInput" }, { type: "null" }],
+    });
+  });
+});

@@ -1,5 +1,6 @@
 import type { Guard, GuardScope, SignalContext } from "akanjs/signal";
 import type { SerAccount } from "./account";
+import { isAgentCall } from "./agentCall";
 import { allow } from "./guards.helper";
 
 export class Every implements Guard {
@@ -63,7 +64,7 @@ export class User implements Guard {
 }
 
 export class SelfOrAdmin implements Guard {
-  static name = "User";
+  static name = "SelfOrAdmin";
   static scope: GuardScope = "resource";
   private argName: string;
   constructor(argName?: string) {
@@ -78,5 +79,19 @@ export class SelfOrAdmin implements Guard {
             .data.account ?? null);
     const userId = context.getArg(this.argName);
     return !!userId && !!account && (account.self?.id === userId || !!account.me);
+  }
+}
+
+/**
+ * Passes a person and refuses a model — an MCP call, or any call on an agent's token. `agents = false` is what takes
+ * the endpoint out of the MCP catalogue document itself; `account` scope is what refuses the call should one still
+ * arrive. It says nothing about who the person is, so it rides beside a role guard: `guards: [Every, Person]`.
+ */
+export class Person implements Guard {
+  static name = "Person";
+  static scope: GuardScope = "account";
+  static agents = false;
+  canPass(context: SignalContext): boolean {
+    return !isAgentCall(context);
   }
 }

@@ -50,6 +50,17 @@ export interface DiLifecycleProps {
    * empty mounts every module whose service is enabled.
    */
   modules?: string[];
+  /**
+   * Drop these modules and everything that reaches them, leaving the rest mounted. Applied over `modules`
+   * rather than beside it, so a module named by both stays out.
+   */
+  disableModules?: string[];
+  /**
+   * The same, by owning lib: every database and service module the named libs registered goes, along with
+   * everything that reaches one. What a lib's `option.ts` contributes — middleware, web proxies, adaptor
+   * overrides — is untouched, as it is under `modules`.
+   */
+  disableLibs?: string[];
 }
 
 /**
@@ -100,7 +111,7 @@ export class DiLifecycle {
     return !names.some((name) => process.env[name] === "false" || process.env[name] === "0");
   }
 
-  constructor({ env, modules = [] }: DiLifecycleProps, ...libs: AkanLib[]) {
+  constructor({ env, modules = [], disableModules = [], disableLibs = [] }: DiLifecycleProps, ...libs: AkanLib[]) {
     this.#env = env;
     // Copied: "single" mode hands back the shared module-scope object, and applyAdaptor overrides mutate per app.
     this.#predefinedAdaptor = { ...getPredefinedAdaptor(getEnv().databaseMode ?? "single") };
@@ -123,6 +134,9 @@ export class DiLifecycle {
     this.webProxies.push(...defaultOption.getWebProxies());
     const databaseCandidates = new Map<string, DiModuleCandidate>();
     const serviceCandidates = new Map<string, DiModuleCandidate>();
+    // Last writer wins, exactly as the candidate maps do: two libs declaring one refName leave the surviving
+    // candidate's own lib as its owner, so disabling the other lib does not take a module it did not provide.
+    const moduleLibs = new Map<string, string>();
     libs.forEach((lib) => {
       lib.option.getMiddlewares().forEach((middleware) => {
         this.#middleware.set(middleware.refName, middleware);
@@ -138,15 +152,24 @@ export class DiLifecycle {
       this.webProxies.push(...lib.option.getWebProxies());
       lib.database.forEach((mod) => {
         databaseCandidates.set(mod.constant.refName, { refName: mod.constant.refName, module: mod });
+        moduleLibs.set(mod.constant.refName, lib.name);
       });
       lib.service.forEach((mod) => {
         serviceCandidates.set(mod.service.srv.refName, { refName: mod.service.srv.refName, module: mod });
+        moduleLibs.set(mod.service.srv.refName, lib.name);
       });
       lib.scalar.forEach((mod) => {
         this.#scalar.set(mod.constant.refName, mod);
       });
     });
-    const disabledModules = this.#resolveDisabledModules(databaseCandidates, serviceCandidates, modules);
+    const disabledModules = this.#resolveDisabledModules({
+      databaseCandidates,
+      serviceCandidates,
+      modules,
+      disableModules,
+      disableLibs,
+      moduleLibs,
+    });
     databaseCandidates.forEach(({ refName, module }) => {
       if (disabledModules.has(refName)) return;
       this.#database.set(refName, module as DatabaseModule);
@@ -189,11 +212,21 @@ export class DiLifecycle {
     assertUniqueRegistrations("adaptor", adaptorRegistrations);
   }
 
-  #resolveDisabledModules(
-    databaseCandidates: Map<string, DiModuleCandidate>,
-    serviceCandidates: Map<string, DiModuleCandidate>,
-    modules: string[],
-  ) {
+  #resolveDisabledModules({
+    databaseCandidates,
+    serviceCandidates,
+    modules,
+    disableModules,
+    disableLibs,
+    moduleLibs,
+  }: {
+    databaseCandidates: Map<string, DiModuleCandidate>;
+    serviceCandidates: Map<string, DiModuleCandidate>;
+    modules: string[];
+    disableModules: string[];
+    disableLibs: string[];
+    moduleLibs: Map<string, string>;
+  }) {
     const candidates = new Map<string, DiModuleCandidate>([...databaseCandidates, ...serviceCandidates]);
     const disabledReasons = new Map<string, string>();
 
@@ -210,6 +243,13 @@ export class DiLifecycle {
       });
     }
 
+    const excluded = this.#resolveExcludedModules({ candidates, disableModules, disableLibs, moduleLibs });
+    // Last, so it wins over a selection: `modules` says what a process is for, the exclusions what it must not run.
+    excluded.forEach((reason, refName) => {
+      if (!disabledReasons.has(refName)) disabledReasons.set(refName, reason);
+    });
+    const excludedClosure = new Set(excluded.keys());
+
     let changed = true;
     while (changed) {
       changed = false;
@@ -220,6 +260,7 @@ export class DiLifecycle {
           const dependencyReason = disabledReasons.get(dependencyRefName);
           if (!dependencyReason) continue;
           disabledReasons.set(refName, `depends on disabled module "${dependencyRefName}"`);
+          if (excludedClosure.has(dependencyRefName)) excludedClosure.add(refName);
           changed = true;
           break;
         }
@@ -230,7 +271,69 @@ export class DiLifecycle {
       this.disabledModules.set(refName, reason);
       this.logger.verbose(`Skipping disabled module "${refName}": ${reason}`);
     });
+    // The named ones are the caller's own list; the modules that came with them are the surprise worth a line.
+    const cascaded = [...excludedClosure]
+      .filter((refName) => !excluded.has(refName))
+      .sort((a, b) => a.localeCompare(b));
+    if (cascaded.length) {
+      const option = disableLibs.length
+        ? disableModules.length
+          ? "disableModules/disableLibs"
+          : "disableLibs"
+        : "disableModules";
+      this.logger.info(`${option} also dropped ${cascaded.length} dependent module(s): ${cascaded.join(", ")}`);
+    }
     return new Set(disabledReasons.keys());
+  }
+
+  /**
+   * The modules the caller took off, by name and by owning lib, each mapped to the reason it is gone. An
+   * unknown name is refused for the mirror of the reason `modules` refuses one: a typo there drops a module
+   * silently, and a typo here keeps one running silently.
+   */
+  #resolveExcludedModules({
+    candidates,
+    disableModules,
+    disableLibs,
+    moduleLibs,
+  }: {
+    candidates: Map<string, DiModuleCandidate>;
+    disableModules: string[];
+    disableLibs: string[];
+    moduleLibs: Map<string, string>;
+  }) {
+    const excluded = new Map<string, string>();
+    if (disableModules.length) {
+      const known = new Set([...candidates.keys(), ...this.#service.keys()]);
+      const unknown = disableModules.filter((refName) => !known.has(refName));
+      if (unknown.length) {
+        const registered = [...known].sort((a, b) => a.localeCompare(b)).join(", ");
+        throw new Error(
+          `[DI:disableModules] unknown module ${unknown.map((refName) => `"${refName}"`).join(", ")}. Registered: ${registered}`,
+        );
+      }
+      disableModules.forEach((refName) => {
+        if (candidates.has(refName)) excluded.set(refName, 'named by the "disableModules" option');
+      });
+    }
+    if (disableLibs.length) {
+      // Every mounted lib, not just the ones that registered a module: a lib that carries only scalars or an
+      // `option.ts` is a legitimate name to write, and refusing it would read as a typo.
+      const known = new Set(this.#libs.map((lib) => lib.name));
+      const unknown = disableLibs.filter((name) => !known.has(name));
+      if (unknown.length) {
+        const registered = [...known].sort((a, b) => a.localeCompare(b)).join(", ");
+        throw new Error(
+          `[DI:disableLibs] unknown lib ${unknown.map((name) => `"${name}"`).join(", ")}. Mounted: ${registered}`,
+        );
+      }
+      const excludedLibs = new Set(disableLibs);
+      moduleLibs.forEach((libName, refName) => {
+        if (!excludedLibs.has(libName) || !candidates.has(refName) || excluded.has(refName)) return;
+        excluded.set(refName, `in lib "${libName}", named by the "disableLibs" option`);
+      });
+    }
+    return excluded;
   }
 
   /**
