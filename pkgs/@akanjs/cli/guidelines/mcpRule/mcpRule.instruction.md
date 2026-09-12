@@ -146,7 +146,8 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
   doubling of what every model-returning tool costs a model. `option.setMcp({ legacyTextBlock: false })` — or
   `AKAN_MCP_LEGACY_TEXT=false` — leaves a one-line pointer in the text block instead, for a deployment whose
   clients read the structured half. A scalar return is unaffected: it has no structured half to point at, so it
-  ships as the value itself either way.
+  ships as the value itself either way. `resources/read` is unaffected too: `ReadResourceResult` has no
+  `structuredContent`, so a resource's text is its only channel and always carries the serialized value.
 - **A request schema asks for a relation's id, and a response schema names a nested model.** `serialize` sends a
   relation field as its id and the server never converts an object back, so publishing the related model's shape
   asked an agent for what the document layer cannot take. On the response side every entry inlines the transitive
@@ -213,7 +214,7 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
   which is in force, and warns when it is off.
 - **A `resources/read` uri that does not decode** — a stray `%` — is `Unknown resource`, not a server failure.
 - **A caller's own mistake is reported as one** and never as a server failure: an argument that is missing,
-  unparseable or **undeclared** comes back as `isError` naming it — `additionalProperties: false` travels in the
+  unparseable, outside its `enumOf`, or **undeclared** comes back as `isError` naming it — `additionalProperties: false` travels in the
   published schema and nothing on the wire enforces it — and so does a document that is not there, as
   `No <model> found for the arguments given.` A `prompt`, having no `isError` to carry a refusal, answers `-32602`.
   Only a real failure logs a stack; an agent can drive the rest at will.
@@ -317,7 +318,9 @@ delegates to lives in `akanjs/server` (`OAuthAuthorize`, `OAuthToken`, `OAuthReg
 **`prompt()`** is invoked by the *user* — a client renders it as a slash command — not chosen by the model. `exec`
 returns `PromptMessage[]`, or a bare string that is wrapped into one user message; build them with `Msg.user` /
 `Msg.assistant` / `Msg.link` / `Msg.resource` / `Msg.image` / `Msg.imageOf`. It takes `.param()` and `.search()`
-only, because `prompts/get` sends a flat string map. **An embedded payload is masked by the model you name** —
+only, because `prompts/get` sends a flat string map — one string per name. A flat list argument rides that string
+comma-separated (`statuses=opened,inProgress`; its listing appends "Comma-separated list." so the person filling it
+in knows), a nested list is refused, and an `enumOf` argument is checked against its values here as on a tool. **An embedded payload is masked by the model you name** —
 `Msg.resource(uri, task, { model: cnst.LightTask })`, or `Msg.mask(cnst.LightTask, task)` for one piece of an
 assembly. Taking the model as an argument is what makes a `{ ...doc }` spread maskable, since that and `toJSON()`
 arrive with the class already gone; a value with no model named whose `hidden`/`secret` fields are populated is

@@ -1,5 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { Binary, type Dayjs, dayjs, enumOf, FIELD_META, Float, ID, Int, type PrimitiveScalar } from "akanjs/base";
+import {
+  Binary,
+  type Dayjs,
+  dayjs,
+  type EnumInstance,
+  enumOf,
+  FIELD_META,
+  Float,
+  ID,
+  Int,
+  type PrimitiveScalar,
+} from "akanjs/base";
 import { deepObjectify } from "akanjs/common";
 import { immerable, produce } from "immer";
 import {
@@ -46,6 +57,14 @@ const BooleanState = via((f) => ({
   enabled: f(Boolean),
 }));
 ConstantRegistry.buildScalar("constantTestBooleanState", BooleanState, { BooleanState });
+
+// `isEnum` recognises the `class X extends enumOf(...) {}` shape every model writes, not the bare factory result.
+class RoleKind extends enumOf("constantTestRoleKind", ["admin", "user"] as const) {}
+const RoleState = via((f) => ({
+  role: f(RoleKind),
+  roles: f([RoleKind]),
+}));
+ConstantRegistry.buildScalar("constantTestRoleState", RoleState, { RoleState });
 
 const UserInput = via((f) => ({
   name: f(String, { text: "title" }),
@@ -404,6 +423,32 @@ describe("serialize, deserialize, purify, and immerify", () => {
     expect(deserialize(String, 1, ["a", "b"], {})).toEqual(["a", "b"] as never);
     expect(deserialize(String, 0, null, { nullable: true })).toBeNull();
     expect(() => deserialize(String, 0, null, { key: "name" })).toThrow("Invalid Value (Nullable)");
+  });
+
+  test("refuses a value outside its enum wherever the enum was declared", () => {
+    // `enumOf` erases to `String` in every argRef and modelRef, so without this the parser passed any string.
+    expect(deserialize(String, 0, "admin", { enum: RoleKind as EnumInstance })).toBe("admin" as never);
+    expect(deserialize(String, 1, ["admin", "user"], { enum: RoleKind as EnumInstance })).toEqual([
+      "admin",
+      "user",
+    ] as never);
+    expect(deserialize(String, 0, null, { nullable: true, enum: RoleKind as EnumInstance })).toBeNull();
+    expect(() => deserialize(String, 0, "root", { key: "role", enum: RoleKind as EnumInstance })).toThrow(
+      "not one of admin, user",
+    );
+    expect(() => deserialize(String, 1, ["admin", "root"], { key: "roles", enum: RoleKind as EnumInstance })).toThrow(
+      "Invalid Enum Value",
+    );
+    // A field of a scalar carries its enum into the same check.
+    expect(deserialize(RoleState, 0, { role: "user", roles: ["admin"] }, {})).toEqual({
+      role: "user",
+      roles: ["admin"],
+    } as never);
+    expect(() => deserialize(RoleState, 0, { role: "root", roles: [] }, {})).toThrow("Invalid Enum Value in role");
+    // And the form path a store purifies before it sends, which answers an invalid form with `null`.
+    expect(RoleState.purify({ role: "admin", roles: ["user"] })).toEqual({ role: "admin", roles: ["user"] });
+    expect(RoleState.purify({ role: "root" as never, roles: [] })).toBeNull();
+    expect(RoleState.purify({ role: "admin", roles: ["root" as never] })).toBeNull();
   });
 
   test("serializes and deserializes complex schema shapes", () => {

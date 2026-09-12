@@ -537,9 +537,13 @@ export class McpRouter {
     // would read as "this exists and is empty".
     if (result.isError)
       return McpRouter.#error(call.id, McpErrorCode.invalidParams, result.content[0]?.text ?? "Read failed.");
-    return this.#result(call, {
-      contents: [{ uri, mimeType: "application/json", text: result.content[0]?.text ?? "null" }],
-    });
+    // `ReadResourceResult` has no `structuredContent`, so the pointer `legacyTextBlock: false` leaves in a tool's
+    // text block would name a field this reply cannot have; the text is the resource's only channel.
+    const text =
+      result.structuredContent === undefined
+        ? (result.content[0]?.text ?? "null")
+        : JSON.stringify(result.structuredContent);
+    return this.#result(call, { contents: [{ uri, mimeType: "application/json", text }] });
   }
 
   /**

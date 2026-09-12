@@ -52,9 +52,13 @@ export class McpExecutionContext extends HttpExecutionContext {
     const undeclared = Object.keys(this.#arguments).find((name) => !declared.has(name));
     if (undeclared) throw new McpArgumentError(`Unknown argument "${undeclared}".`);
     return endpointInfo.args.map((arg) => {
-      const value = McpExecutionContext.#lift(arg, this.#arguments[arg.name] ?? null);
+      const value = McpExecutionContext.#lift(arg, this.#arguments[arg.name] ?? null, endpointInfo.type === "prompt");
       try {
-        return deserialize(arg.argRef, arg.arrDepth, value, { key: arg.name, nullable: arg.option?.nullable });
+        return deserialize(arg.argRef, arg.arrDepth, value, {
+          key: arg.name,
+          nullable: arg.option?.nullable,
+          enum: arg.enum,
+        });
       } catch {
         // What the parser says names internals; what the caller can act on is which argument and what it should
         // have been. An agent retries on this message, so it must not read as a server failure.
@@ -82,9 +86,19 @@ export class McpExecutionContext extends HttpExecutionContext {
    * The http context never meets this because `searchParams.getAll` always returns an array, and `deserialize`
    * hands a lone scalar straight back instead of lifting it — so the endpoint would receive a string where it
    * iterates a list.
+   *
+   * A prompt's argument is one string by the wire's own shape (`prompts/get` carries a flat string map), so a
+   * list there is comma-separated: the one spelling that map leaves room for, and what its listing tells the
+   * user to type. A tool's list is a JSON array already, and a tag holding a comma stays whole there.
    */
-  static #lift(arg: McpArg, value: unknown) {
-    return arg.arrDepth && value !== null && !Array.isArray(value) ? [value] : value;
+  static #lift(arg: McpArg, value: unknown, delimited: boolean) {
+    if (!arg.arrDepth || value === null || Array.isArray(value)) return value;
+    if (delimited && typeof value === "string")
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    return [value];
   }
 
   /** The same rule `McpDocument` builds `properties` from, so what is refused is exactly what was not published. */
@@ -97,6 +111,7 @@ export class McpExecutionContext extends HttpExecutionContext {
 
   static #argumentMessage(arg: McpArg, value: unknown) {
     if (value === null) return `Missing required argument "${arg.name}".`;
+    if (arg.enum) return `Invalid argument "${arg.name}": expected one of ${arg.enum.values.join(", ")}.`;
     const primitive = PrimitiveRegistry.has(arg.argRef as Cls)
       ? PrimitiveRegistry.getName(arg.argRef as typeof PrimitiveScalar)
       : undefined;

@@ -106,6 +106,8 @@ const purify = (field: FieldProps, key: string, value: unknown, self: Record<str
     throw new Error(`Invalid Date Value (Default) in ${key} for value ${value}`);
   if ([String, ID].includes(field.modelRef as unknown as StringConstructor | typeof ID) && (value === "" || !value))
     throw new Error(`Invalid String Value (Default) in ${key} for value ${value}`);
+  if (field.enum && !field.enum.has(value as never))
+    throw new Error(`Invalid Enum Value in ${key}: ${String(value)} is not one of ${field.enum.values.join(", ")}`);
   if (field.validate && !field.validate(value, self))
     throw new Error(`Invalid Value (Failed to pass validation) / ${value} in ${key}`);
   if (!field.nullable && !value && value !== 0 && value !== false && (field.modelRef as Cls) !== Any)

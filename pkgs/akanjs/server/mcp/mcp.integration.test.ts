@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type BackendEnv, dayjs, ID } from "akanjs/base";
+import { type BackendEnv, dayjs, enumOf, ID } from "akanjs/base";
 import { Logger } from "akanjs/common";
 import { ConstantRegistry, via } from "akanjs/constant";
 import { endpoint } from "../../signal/endpoint";
@@ -123,6 +123,8 @@ class McpItemSlice extends slice(
   }),
 ) {}
 
+class Period extends enumOf("mcpItemPeriod", ["day", "month"] as const) {}
+
 class McpItemEndpoint extends endpoint(serverResolverTestServiceModel, (builder) => ({
   echoTitle: builder
     .query(String, { guards: [Public] })
@@ -138,6 +140,10 @@ class McpItemEndpoint extends endpoint(serverResolverTestServiceModel, (builder)
     .query(String, { guards: [Public] })
     .search("tags", [String])
     .exec((tags) => (tags ?? []).join("|")),
+  periodTitle: builder
+    .query(String, { guards: [Public] })
+    .search("period", Period)
+    .exec((period) => `period:${period ?? "none"}`),
   maybeItem: builder
     .query(ServerResolverTestLight, { guards: [Public], nullable: true })
     .search("title", String)
@@ -190,6 +196,11 @@ class McpItemEndpoint extends endpoint(serverResolverTestServiceModel, (builder)
     .search("tone", String)
     .exec((id, tone) => [Msg.user(`Review ${id} in a ${tone ?? "neutral"} tone.`), Msg.link(`akan://item/${id}`)]),
   briefItem: builder.prompt({ guards: [Public] }).exec(() => "Answer in three sentences."),
+  tagItems: builder
+    .prompt({ guards: [Public] })
+    .search("tags", [String])
+    .search("period", Period)
+    .exec((tags, period) => `Tags: ${(tags ?? []).join("|")} in ${period ?? "any"}.`),
   brokenItem: builder
     .prompt({ guards: [Public] })
     .exec(() => [{ role: "system", content: { type: "text", text: "x" } }] as never),
@@ -314,6 +325,7 @@ describe("MCP over a booted container", () => {
       "failingTitle",
       "joinTags",
       "maybeItem",
+      "periodTitle",
       "renameTitle",
       "serverResolverTestItem",
       "serverResolverTestItemInsight",
@@ -458,14 +470,14 @@ describe("MCP over a booted container", () => {
     const log = lines.join("\n");
     // The whole build, not one caller's view: `deniedTitle` and `deniedItem` are in the catalogue and are hidden
     // per credential at listing time, so these counts run ahead of what `tools/list` returned above.
-    expect(log).toContain("MCP catalogue: tools=15 prompts=4 resourceTemplates=3 · listing ");
+    expect(log).toContain("MCP catalogue: tools=16 prompts=5 resourceTemplates=3 · listing ");
     // Which signals a listing went to, so a catalogue that grew can say where. Every entry inlines the schema of
     // every model it mentions, and the whole thing is re-sent to every agent that connects.
-    expect(log).toContain("MCP catalogue cost: serverResolverTestItem 18/");
+    expect(log).toContain("MCP catalogue cost: serverResolverTestItem 21/");
     expect(lines.find((line) => line.includes('"publicRenameTitle"'))).toContain("`[Public]` is having none");
     // The read-only valve reports itself the same way, rather than leaving an author to wonder where a guarded,
     // deliberately exposed mutation went.
-    expect(log).toContain("MCP catalogue: tools=14 prompts=4 resourceTemplates=3 (read-only deployment)");
+    expect(log).toContain("MCP catalogue: tools=15 prompts=5 resourceTemplates=3 (read-only deployment)");
     expect(lines.find((line) => line.includes('did not expose "renameTitle"'))).toContain("read-only");
     // Published with nothing an agent can pick it by, which is a broken tool rather than an untidy one. These
     // signals carry no dictionary at all, so every entry is named — including the generated ones, whose only
@@ -645,6 +657,7 @@ describe("MCP over a booted container", () => {
       "briefItem",
       "brokenItem",
       "reviewItem",
+      "tagItems",
     ]);
     expect(json.result.prompts.find((p: { name: string }) => p.name === "reviewItem").arguments).toEqual([
       { name: "id", required: true },
@@ -672,6 +685,48 @@ describe("MCP over a booted container", () => {
         },
       },
     ]);
+  });
+
+  test("refuses a value outside its enum on the tool path and on the prompt path", async () => {
+    // `enumOf` erases to `String` in every argRef, so the parser passed `"year"` through and the endpoint ran on
+    // a value the published schema said could not exist. A prompt publishes no schema at all, so this is the only
+    // check it has.
+    const ok = await call("periodTitle", { period: "day" });
+    expect(ok.result.content[0].text).toBe("period:day");
+    const bad = await call("periodTitle", { period: "year" });
+    expect(bad.result.isError).toBe(true);
+    expect(bad.result.content[0].text).toBe('Invalid argument "period": expected one of day, month.');
+    const { json } = await post({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "prompts/get",
+      params: { name: "tagItems", arguments: { period: "year" } },
+    });
+    expect(json.error.code).toBe(-32602);
+    expect(json.error.message).toBe('Invalid argument "period": expected one of day, month.');
+  });
+
+  test("splits a prompt's list argument on commas and says so in its listing", async () => {
+    // `prompts/get` carries a flat string map, so a list has no spelling but a delimited one; refusing the entry
+    // outright left every prompt taking a status list off the shelf.
+    const { json } = await post({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "prompts/get",
+      params: { name: "tagItems", arguments: { tags: "urgent, backend,,ui", period: "month" } },
+    });
+    expect(json.result.messages).toEqual([
+      { role: "user", content: { type: "text", text: "Tags: urgent|backend|ui in month." } },
+    ]);
+    const { json: listed } = await post({ jsonrpc: "2.0", id: 1, method: "prompts/list" });
+    const tagItems = listed.result.prompts.find((prompt: { name: string }) => prompt.name === "tagItems");
+    expect(tagItems.arguments).toEqual([
+      { name: "tags", description: "Comma-separated list.", required: false },
+      { name: "period", required: false },
+    ]);
+    // A tool's list is a JSON array already; a bare string is lifted whole, comma and all.
+    const joined = await call("joinTags", { tags: "a,b" });
+    expect(joined.result.content[0].text).toBe("a,b");
   });
 
   test("wraps a bare string return into one user message", async () => {
@@ -723,6 +778,20 @@ describe("MCP over a booted container", () => {
     const { json: once } = await postWith(body, { legacyTextBlock: false });
     expect(once.result.structuredContent).toMatchObject({ id: "507f1f77bcf86cd799439011", title: "shot" });
     expect(once.result.content[0].text).toBe("The result is in this call's structuredContent.");
+  });
+
+  test("reads a resource whole when the legacy text block is turned off", async () => {
+    // `ReadResourceResult` has no `structuredContent`, so the pointer a tool result leaves in its text block would
+    // send a client to a field this reply cannot have. Every resource of a deployment that took the option was
+    // answering with that one sentence.
+    const body = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "resources/read",
+      params: { uri: "akan://serverResolverTestItem/list/inCategory?category=all" },
+    };
+    const { json } = await postWith(body, { legacyTextBlock: false });
+    expect(json.result.contents[0].text).toBe('{"items":[]}');
   });
 
   test("keeps the text block whole for a scalar return, which has no structured half to point at", async () => {

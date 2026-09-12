@@ -651,7 +651,9 @@ it.
   (`@libs/shared/srvkit`). Never sniff `aud` through a cast.
 - **The refusals are fail-closed**: a declared `mcp: false`, an endpoint with no `guards`, a mutation with no real
   guard, `pubsub` and `message`, an `Any` or `Upload` return, a file upload, a required `Any` argument, and the
-  generated `light<Model>` read. A `prompt` also refuses a list argument and any `Any` argument. **Every refusal
+  generated `light<Model>` read. A `prompt` also refuses a nested list and any `Any` argument; its flat list rides
+  the one string `prompts/get` carries comma-separated, and an `enumOf` argument is checked against its values on
+  every path. **Every refusal
   is named in the boot log**, along with every published entry missing a dictionary `.desc()` — an agent picks a
   tool by its description.
 - A refused endpoint answers the *same* "unknown tool" as one that does not exist, and a guard's refusal is

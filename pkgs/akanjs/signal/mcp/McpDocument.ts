@@ -64,6 +64,8 @@ export class McpDocument {
    * this key and `outputSchema` is shaped to match. Both halves must agree, which is why they live together.
    */
   static readonly listKey = "items";
+  /** Appended to a list argument's description; read by a person in the client's prompt form, so English. */
+  static readonly commaSeparated = "Comma-separated list.";
 
   readonly tools: McpTool[];
   readonly prompts: McpPrompt[];
@@ -263,9 +265,14 @@ export class McpDocument {
         ? {
             arguments: args.map((arg) => {
               const description = this.#options.resolveDescription?.(`${refName}.signal.${key}.arg.${arg.name}.desc`);
+              // The flat string map has no schema to say `array`, so the spelling a list takes is said here, to the
+              // person filling the argument in.
+              const text = [description, arg.arrDepth ? McpDocument.commaSeparated : undefined]
+                .filter(Boolean)
+                .join(" ");
               return {
                 name: arg.name,
-                ...(description ? { description } : {}),
+                ...(text ? { description: text } : {}),
                 required: arg.type === "param",
               };
             }),

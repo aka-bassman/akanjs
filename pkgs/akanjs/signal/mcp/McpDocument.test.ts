@@ -306,7 +306,6 @@ describe("McpDocument", () => {
       "rawMcpPost",
       "requestMcpPostCode",
       "signMcpPost",
-      "tagsPrompt",
       "undeclaredMcpPost",
       "unguardedMcpPost",
       "unguardedPrompt",
@@ -532,17 +531,20 @@ describe("McpDocument", () => {
     expect(doc.resolveResource("akan://mcpPost/6712ab34cd56ef7890123456")?.exposed.key).toBe("mcpPost");
   });
 
-  test("refuses a prompt argument a flat string map cannot carry, whatever its type", () => {
-    // `prompts/get` sends one string per name and no schema beside it. A list argument would silently cap at one
-    // value; an `Any` has nowhere left to be described, which the tool path solves by leaving it out of a schema
-    // a prompt does not have.
-    const refusals = Object.fromEntries(new McpDocument(signal()).refusals.map(({ key, reason }) => [key, reason]));
-    expect(refusals.tagsPrompt).toContain("`tags`");
-    expect(refusals.tagsPrompt).toContain("more than one value");
+  test("carries a prompt's list argument comma-separated and refuses what no string can spell", () => {
+    // `prompts/get` sends one string per name and no schema beside it. A flat list rides that string
+    // comma-separated and says so where the person fills it in; an `Any` has nowhere left to be described, which
+    // the tool path solves by leaving it out of a schema a prompt does not have.
+    const doc = new McpDocument(signal());
+    const refusals = Object.fromEntries(doc.refusals.map(({ key, reason }) => [key, reason]));
+    expect(refusals.tagsPrompt).toBeUndefined();
+    expect(doc.findPrompt("tagsPrompt")?.prompt.arguments).toEqual([
+      { name: "tags", description: "Comma-separated list.", required: false },
+    ]);
     expect(refusals.rawArgPrompt).toContain("`filter`");
     expect(refusals.rawArgPrompt).toContain("no schema");
-    // The same two types are fine on a tool, which publishes a real schema for them.
-    expect(names(new McpDocument(signal()))).toContain("mcpPostListInPeriod");
+    // Both types are fine on a tool, which publishes a real schema for them.
+    expect(names(doc)).toContain("mcpPostListInPeriod");
   });
 
   test("names what it published with no description of its own", () => {
@@ -599,6 +601,7 @@ describe("McpDocument", () => {
     expect(doc.prompts.map((prompt) => prompt.name)).toEqual([
       "mcpPostListDigest",
       "reviewMcpPost",
+      "tagsPrompt",
       "undeclaredPrompt",
     ]);
     // A prompt rides the `Any` carrier, which `#isExposable` refuses — the split has to happen before it.

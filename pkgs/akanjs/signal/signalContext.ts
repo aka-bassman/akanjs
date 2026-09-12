@@ -786,12 +786,14 @@ export class HttpExecutionContext<Appended = unknown> {
           return deserialize(arg.argRef, arg.arrDepth, this.params[arg.name], {
             key: arg.name,
             nullable: arg.option?.nullable,
+            enum: arg.enum,
           });
         case "body":
           if (arg.argRef === Upload) return this.body[arg.name];
           return deserialize(arg.argRef, arg.arrDepth, this.body[arg.name], {
             key: arg.name,
             nullable: arg.option?.nullable,
+            enum: arg.enum,
           });
         case "search": {
           const raw = arg.arrDepth ? this.url.searchParams.getAll(arg.name) : this.url.searchParams.get(arg.name);
@@ -799,6 +801,7 @@ export class HttpExecutionContext<Appended = unknown> {
           const result = deserialize(arg.argRef, arg.arrDepth, value, {
             key: arg.name,
             nullable: arg.option?.nullable,
+            enum: arg.enum,
           });
           this.searchParams[arg.name] = result;
           return result;
@@ -841,11 +844,13 @@ export class WebSocketExecutionContext<Appended = unknown> {
           return deserialize(arg.argRef, arg.arrDepth, this.data[idx], {
             key: arg.name,
             nullable: arg.option?.nullable,
+            enum: arg.enum,
           });
         case "room":
           return deserialize(arg.argRef, arg.arrDepth, this.data[idx], {
             key: arg.name,
             nullable: arg.option?.nullable,
+            enum: arg.enum,
           });
         default:
           return undefined;
