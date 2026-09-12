@@ -1,10 +1,11 @@
 import { appNavClass, Screen } from "@apps/minimal/ui";
-import type { PageConfig } from "akanjs/client";
+import { page } from "akanjs/client";
 import { buttonRecipe, Layout } from "akanjs/ui";
 import { AiOutlineSave } from "react-icons/ai";
 
-export default function Page() {
-  return (
+export default page()
+  .config({ topInset: 48, transition: "stack" })
+  .render(() => (
     <Screen className="px-5 pb-8">
       <Layout.Navbar className={appNavClass} back>
         <div className="font-semibold">Edit profile</div>
@@ -29,6 +30,4 @@ export default function Page() {
         </button>
       </div>
     </Screen>
-  );
-}
-export const pageConfig = { topInset: 48, transition: "stack" } satisfies PageConfig;
+  ));

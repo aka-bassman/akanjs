@@ -1,9 +1,10 @@
 import { usePage } from "@apps/akan/client";
 import { cardGridRecipe, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   const cliGroups = [
@@ -180,4 +181,4 @@ export default function Page() {
       <DocsToc />
     </Scroll>
   );
-}
+});

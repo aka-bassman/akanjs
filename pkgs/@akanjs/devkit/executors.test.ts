@@ -595,9 +595,7 @@ describe("Workspace and app executor environment contracts", () => {
         "_index.tsx": `export const pageConfig = { devOnly: process.env.NODE_ENV !== "production" };\n${PAGE_SOURCE}`,
       });
 
-      await expect(app.getPageKeys({ refresh: true })).rejects.toThrow(
-        "pageConfig.devOnly must be a literal true or false",
-      );
+      await expect(app.getPageKeys({ refresh: true })).rejects.toThrow("devOnly must be a literal true or false");
     });
 
     test("reads devOnly through a satisfies annotation", async () => {

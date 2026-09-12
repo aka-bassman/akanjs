@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { BrowserMockup, Code, Divider, Docs, DocsToc, MobileMockup } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -154,8 +155,8 @@ cd myorg`}
           </div>
           <div>
             {l.trans({
-              en: "Change the component and refresh the local gateway to confirm your first UI change.",
-              ko: "컴포넌트를 수정한 뒤 local gateway를 새로고침해 첫 UI 변경을 확인하세요.",
+              en: "A page file exports one page() chain, and the component lives in its .render() stage. Change the markup and refresh the local gateway to confirm your first UI change.",
+              ko: "page 파일은 page() 체인 하나를 export하고, 컴포넌트는 그 .render() 단계에 들어갑니다. 마크업을 수정한 뒤 local gateway를 새로고침해 첫 UI 변경을 확인하세요.",
             })}
           </div>
         </Docs.Description>
@@ -163,13 +164,15 @@ cd myorg`}
           className="w-full"
           title="apps/myapp/page/_index.tsx"
           code={`
-export default function Page() {
+import { page } from "akanjs/client";
+
+export default page().render(() => {
   return (
     <div className="flex min-h-screen items-center justify-center text-2xl">
       Hello Akan.js! 🎉
     </div>
   );
-}
+});
       `}
         />
         <Docs.Description>
@@ -269,4 +272,4 @@ void run();
       <DocsToc />
     </Scroll>
   );
-}
+});

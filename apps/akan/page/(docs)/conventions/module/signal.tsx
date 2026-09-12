@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, type IntroItem, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   const internalTypes: IntroItem[] = [
@@ -80,14 +81,6 @@ export default function Page() {
         ko: 'Realtime subscription channel입니다. room(...)으로 subscription room을 정의합니다. return이 Binary면 raw byte를 websocket binary frame으로 보내고 backpressure 시 최신 frame만 남깁니다. 모든 frame이 도착해야 하면 backpressure: "queue"를 지정합니다.',
       }),
       example: "chatAdded: pubsub(Chat).room(...).exec(...)",
-    },
-    {
-      name: "prompt(options?)",
-      desc: l.trans({
-        en: "Prompt an MCP client renders as a slash command. exec returns PromptMessage[] or a bare string. Takes .param(...) and .search(...) only.",
-        ko: "MCP client가 slash command로 렌더링하는 prompt입니다. exec은 PromptMessage[] 또는 문자열 하나를 반환합니다. .param(...)과 .search(...)만 받습니다.",
-      }),
-      example: "reviewStory: prompt().param(...).exec(...)",
     },
   ];
 
@@ -492,7 +485,7 @@ const unsubscribe = fetch.subscribeChatAdded(rootId, (chat) => {
           {[
             {
               title: "Endpoint builders",
-              desc: "query(Return), mutation(Return), message(Return), pubsub(Return), prompt()",
+              desc: "query(Return), mutation(Return), message(Return), pubsub(Return)",
             },
             {
               title: "Slice builder",
@@ -542,8 +535,8 @@ const unsubscribe = fetch.subscribeChatAdded(rootId, (chat) => {
                 ko: "required argument가 nullable argument 뒤에 올 수 없으므로 nullable argument는 뒤쪽에 둡니다.",
               }),
               l.trans({
-                en: "An endpoint that names a real guard is reachable by an AI agent; one that names none is not. There is no mcp option to write. See the MCP Server cheatsheet.",
-                ko: "실질 guard를 적은 endpoint는 AI agent가 닿고, 아무 guard도 적지 않은 endpoint는 닿지 않습니다. 적어야 할 mcp 옵션은 없습니다. MCP Server cheatsheet을 참고하세요.",
+                en: "An endpoint that names a real guard is reachable by an AI agent; one that names none is not. There is no mcp option to write and no prompt builder — a screen is published as an MCP prompt from its page file with page().prompt(). See the MCP Server cheatsheet.",
+                ko: "실질 guard를 적은 endpoint는 AI agent가 닿고, 아무 guard도 적지 않은 endpoint는 닿지 않습니다. 적어야 할 mcp 옵션도, prompt builder도 없습니다. 화면은 page 파일에서 page().prompt()로 MCP prompt로 게시됩니다. MCP Server cheatsheet을 참고하세요.",
               }),
             ].map((rule) => (
               <div key={rule} className={panelRecipe({ padding: "row" }, "text-foreground/70")}>
@@ -558,4 +551,4 @@ const unsubscribe = fetch.subscribeChatAdded(rootId, (chat) => {
       <DocsToc />
     </Scroll>
   );
-}
+});

@@ -8,6 +8,7 @@ import {
   type ReferenceRow,
 } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
 const writeOption: ReferenceRow = {
   name: "--write",
@@ -59,7 +60,7 @@ const allowLocalReleaseOption: ReferenceRow = {
   desc: "Allow release with --env local.",
 };
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   const commands: CommandReferenceItem[] = [
@@ -408,4 +409,4 @@ akan dbup --mode cluster`,
       <DocsToc />
     </Scroll>
   );
-}
+});

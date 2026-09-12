@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -75,8 +76,8 @@ export default function Page() {
               [
                 l.trans({ en: "Locale-aware", ko: "다국어 지원" }),
                 l.trans({
-                  en: "Akan injects [lang] automatically.",
-                  ko: "Akan이 [lang]을 자동으로 주입합니다.",
+                  en: "Akan injects [lang] automatically and hands it to every route as lang.",
+                  ko: "Akan이 [lang]을 자동으로 주입하고 모든 라우트에 lang으로 전달합니다.",
                 }),
               ],
               [
@@ -180,97 +181,111 @@ export default function Page() {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A page file must export a default component. It can also export optional helpers for page options, metadata, and loading UI.",
-              ko: "페이지 파일은 반드시 default component를 export해야 합니다. 필요하면 페이지 옵션, 메타데이터, 로딩 UI를 위한 export를 함께 사용할 수 있습니다.",
+              en: "A page file exports one page() chain and nothing else. Every route setting is a stage of that chain: .param() and .search() declare the arguments the page reads, .config(), .metadata() or .head(), and .loading() replace the old named exports, and .render() holds the component. The render receives the declared arguments flat and typed.",
+              ko: "페이지 파일은 page() 체인 하나만 export합니다. 모든 라우트 설정은 그 체인의 단계입니다. .param()과 .search()는 페이지가 읽는 인자를 선언하고, .config(), .metadata() 또는 .head(), .loading()이 예전의 named export를 대신하며, .render()가 컴포넌트를 담습니다. render는 선언한 인자를 평탄하고 타입이 붙은 형태로 받습니다.",
             })}
           </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
           title="page/(user)/project/[projectId]/_index.tsx"
-          code={`import type { GenerateMetadata, PageConfig } from "akanjs/client";
+          code={`import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
 
-interface PageProps {
-  params: { lang: string; projectId: string };
-  searchParams: { [key: string]: string | string[] | undefined };
-}
-
-export default function Page({ params }: PageProps) {
-  return <div>Project {params.projectId}</div>;
-}
-
-export const pageConfig = { transition: "stack" } satisfies PageConfig;
-
-export const generateMetadata = (({ params }) => ({
-  title: \`Project \${params.projectId}\`,
-  description: "Project workspace",
-})) satisfies GenerateMetadata;
-
-export function Loading() {
-  return <div>Loading...</div>;
-}`}
+export default page()
+  .param("projectId", ID, { desc: "The project to open." })
+  .search("tab", String, { desc: "Which tab opens first." })
+  .config({ transition: "stack" })
+  .metadata(({ projectId }) => ({
+    title: \`Project \${projectId}\`,
+    description: "Project workspace",
+  }))
+  .loading(() => <div>Loading...</div>)
+  .render(({ projectId, tab }) => {
+    return (
+      <div>
+        Project {projectId} ({tab ?? "overview"})
+      </div>
+    );
+  });`}
         />
         <Code.Snippet
           className="w-full"
           title="Static metadata example"
-          code={`import type { AkanMetadata } from "akanjs/client";
+          code={`import { page } from "akanjs/client";
 
-export const metadata = {
-  title: "Projects",
-  description: "Browse your projects",
-  openGraph: { title: "Projects", images: ["/og/projects.png"] },
-  twitter: { card: "summary_large_image", images: ["/og/projects.png"] },
-  alternates: {
-    canonical: "https://example.com/projects",
-    languages: {
-      ko: "https://example.com/ko/projects",
-      en: "https://example.com/en/projects",
+export default page()
+  .metadata({
+    title: "Projects",
+    description: "Browse your projects",
+    openGraph: { title: "Projects", images: ["/og/projects.png"] },
+    twitter: { card: "summary_large_image", images: ["/og/projects.png"] },
+    alternates: {
+      canonical: "https://example.com/projects",
+      languages: {
+        ko: "https://example.com/ko/projects",
+        en: "https://example.com/en/projects",
+      },
     },
-  },
-} satisfies AkanMetadata;`}
+  })
+  .render(() => <div>Projects</div>);`}
         />
         <div className="space-y-1">
           {[
             {
-              name: "default",
+              name: ".param(name, Type, { desc })",
               desc: l.trans({
-                en: "The page component. This is required.",
-                ko: "페이지 컴포넌트입니다. 반드시 필요합니다.",
+                en: "One stage per [x] segment of the file's path, in order. A page must declare every segment it sits under; use ID for names ending in Id. A path value the type refuses answers not-found.",
+                ko: "파일 경로의 [x] 세그먼트마다 순서대로 하나씩 둡니다. 페이지는 자기가 놓인 세그먼트를 모두 선언해야 하며, Id로 끝나는 이름에는 ID를 씁니다. 타입이 거부하는 경로 값은 not-found로 응답합니다.",
               }),
             },
             {
-              name: "pageConfig",
+              name: ".search(key, Type | [Type], { desc })",
               desc: l.trans({
-                en: "Optional override for client frame behavior. If omitted, Akan applies platform defaults and frame components such as Navbar or BottomInset register their own insets.",
-                ko: "클라이언트 frame 동작을 위한 선택적 override입니다. 생략하면 Akan이 플랫폼 기본값을 적용하고 Navbar, BottomInset 같은 frame 컴포넌트가 필요한 inset을 자동 등록합니다.",
+                en: "A query key the page reads, optional and typed. [String] reads a list; a value the type refuses is dropped the way an absent one is.",
+                ko: "페이지가 읽는 쿼리 키입니다. 선택 사항이며 타입이 붙습니다. [String]은 목록을 읽고, 타입이 거부하는 값은 없는 값처럼 버려집니다.",
               }),
             },
             {
-              name: "metadata",
+              name: ".config({ … })",
               desc: l.trans({
-                en: "Declarative static metadata for title, description, robots, Open Graph, Twitter, canonical, and language alternates.",
-                ko: "title, description, robots, Open Graph, Twitter, canonical, language alternate를 선언하는 정적 메타데이터입니다.",
+                en: "Optional override for client frame behavior: transition, safeArea, topInset, bottomInset, gesture, cache, ssr, devOnly. If omitted, Akan applies platform defaults and frame components such as Navbar or BottomInset register their own insets.",
+                ko: "클라이언트 frame 동작을 위한 선택적 override입니다. transition, safeArea, topInset, bottomInset, gesture, cache, ssr, devOnly를 받습니다. 생략하면 Akan이 플랫폼 기본값을 적용하고 Navbar, BottomInset 같은 frame 컴포넌트가 필요한 inset을 자동 등록합니다.",
               }),
             },
             {
-              name: "generateMetadata",
+              name: ".metadata(value | (args) => value)",
               desc: l.trans({
-                en: "Dynamic declarative metadata that can use route params and search params.",
-                ko: "라우트 파라미터와 검색 파라미터를 사용할 수 있는 동적 선언형 메타데이터입니다.",
+                en: "Declarative metadata for title, description, robots, Open Graph, Twitter, canonical, and language alternates. Pass an object for static metadata, or a function of the declared arguments for dynamic metadata.",
+                ko: "title, description, robots, Open Graph, Twitter, canonical, language alternate를 선언하는 메타데이터입니다. 정적 메타데이터는 객체로, 동적 메타데이터는 선언한 인자를 받는 함수로 넘깁니다.",
               }),
             },
             {
-              name: "head / generateHead",
+              name: ".head(jsx | (args) => jsx)",
               desc: l.trans({
                 en: "Escape hatch for custom JSX head elements when declarative metadata is not enough.",
                 ko: "선언형 metadata로 충분하지 않을 때 직접 JSX head element를 넣는 escape hatch입니다.",
               }),
             },
             {
-              name: "Loading",
+              name: ".loading((args) => jsx)",
               desc: l.trans({
                 en: "Fallback UI shown while the page is loading.",
                 ko: "페이지가 로딩되는 동안 보여줄 대체 UI입니다.",
+              }),
+            },
+            {
+              name: ".prompt(name, description)",
+              desc: l.trans({
+                en: "Publishes the screen as an MCP prompt. The description is the whole instruction a model receives; .param() stages become required arguments and .search() stages optional ones.",
+                ko: "화면을 MCP prompt로 공개합니다. description이 모델이 받는 지시문 전체이며, .param() 단계는 필수 인자, .search() 단계는 선택 인자가 됩니다.",
+              }),
+            },
+            {
+              name: ".render((args) => jsx)",
+              desc: l.trans({
+                en: "The page component and the end of the chain. This is required. Mark it async only when it awaits.",
+                ko: "페이지 컴포넌트이자 체인의 끝입니다. 반드시 필요합니다. await할 때만 async로 씁니다.",
               }),
             },
           ].map(({ name, desc }) => (
@@ -282,8 +297,8 @@ export const metadata = {
         </div>
         <Docs.Alert type="info">
           {l.trans({
-            en: "Use one metadata API per route module: metadata or generateMetadata. Do not mix metadata/generateMetadata with head/generateHead. Metadata is not merged across layouts and pages; the nearest route module wins.",
-            ko: "라우트 모듈 하나에서는 metadata 또는 generateMetadata 중 하나만 사용합니다. metadata/generateMetadata와 head/generateHead를 섞지 마세요. metadata는 layout과 page 사이에서 병합되지 않고 가장 가까운 라우트 모듈의 설정 하나만 적용됩니다.",
+            en: "Use one metadata stage per route module: .metadata() or .head(), never both. Metadata is not merged across layouts and pages; the nearest route module wins. A page() chain is the module's only export — a named export beside it is refused, and the names in .param() and .prompt() must be string literals because akan sync reads them off the source. Coming from the legacy default-function shape? See Page Migration.",
+            ko: "라우트 모듈 하나에서는 metadata 단계를 하나만 사용합니다. .metadata() 또는 .head() 중 하나이며 둘을 섞지 않습니다. metadata는 layout과 page 사이에서 병합되지 않고 가장 가까운 라우트 모듈의 설정 하나만 적용됩니다. page() 체인은 모듈의 유일한 export입니다. 옆에 named export가 있으면 거절되고, .param()과 .prompt()의 이름은 akan sync가 소스에서 읽으므로 문자열 리터럴이어야 합니다. 예전 default function 형태에서 넘어오고 있다면 페이지 마이그레이션 문서를 참고하세요.",
           })}
         </Docs.Alert>
       </Scroll.Slide>
@@ -302,49 +317,40 @@ export const metadata = {
         <Code.Snippet
           className="w-full"
           title="page/(user)/project/[projectId]/_layout.tsx"
-          code={`interface LayoutProps {
-  children: React.ReactNode;
-  params: { projectId: string };
-}
+          code={`import { ID } from "akanjs/base";
+import { layout } from "akanjs/client";
 
-export default function Layout({ children, params }: LayoutProps) {
-  return (
-    <section>
-      <nav>Project {params.projectId}</nav>
-      {children}
-    </section>
-  );
-}
-
-export function Loading() {
-  return <div>Loading project...</div>;
-}
-
-export function NotFound({ pathname }: { pathname: string }) {
-  return <div>Project route not found: {pathname}</div>;
-}
-
-export function Error({ error }: { error?: unknown }) {
-  return <div>Project failed to render.</div>;
-}`}
+export default layout()
+  .param("projectId", ID)
+  .loading(() => <div>Loading project...</div>)
+  .notFound(({ pathname }) => <div>Project route not found: {pathname}</div>)
+  .error(() => <div>Project failed to render.</div>)
+  .render(({ children, projectId }) => {
+    return (
+      <section>
+        <nav>Project {projectId}</nav>
+        {children}
+      </section>
+    );
+  });`}
         />
         <div>
           {l.trans({
-            en: "Layouts support default, metadata, generateMetadata, head, generateHead, Loading, NotFound, and Error. Layout metadata is used for child pages without their own metadata/head declaration, and the nearest layout fallback renders when a child route is missing or fails.",
-            ko: "레이아웃은 default, metadata, generateMetadata, head, generateHead, Loading, NotFound, Error를 지원합니다. 자체 metadata/head 선언이 없는 child page에는 layout metadata가 사용되고, 하위 라우트를 찾지 못하거나 렌더링에 실패하면 가장 가까운 layout fallback이 렌더링됩니다.",
+            en: "A layout() chain supports .render(), .param() for the segments it reads, .config(), .metadata() or .head(), .loading(), .notFound(), and .error(). A layout may declare a subset of the [x] segments in its path — most read none. Layout metadata is used for child pages without their own metadata/head stage, and the nearest layout fallback renders when a child route is missing or fails.",
+            ko: "layout() 체인은 .render(), 읽는 세그먼트를 위한 .param(), .config(), .metadata() 또는 .head(), .loading(), .notFound(), .error()를 지원합니다. 레이아웃은 경로에 있는 [x] 세그먼트 중 일부만 선언할 수 있습니다. 대부분은 아무것도 읽지 않습니다. 자체 metadata/head 단계가 없는 child page에는 layout metadata가 사용되고, 하위 라우트를 찾지 못하거나 렌더링에 실패하면 가장 가까운 layout fallback이 렌더링됩니다.",
           })}
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
           {[
             {
-              name: "NotFound",
+              name: ".notFound(({ pathname }) => jsx)",
               desc: l.trans({
                 en: "Layout-scoped 404 UI. It renders under the layout when a child route is missing or router.notFound() is called below it.",
                 ko: "레이아웃 범위의 404 UI입니다. 하위 라우트를 찾지 못하거나 해당 layout 아래에서 router.notFound()가 호출되면 layout 안에서 렌더링됩니다.",
               }),
             },
             {
-              name: "Error",
+              name: ".error(({ error, pathname }) => jsx)",
               desc: l.trans({
                 en: "Layout-scoped server render error UI. It renders under the nearest layout when a child route throws during SSR.",
                 ko: "레이아웃 범위의 서버 렌더링 에러 UI입니다. 하위 라우트가 SSR 중 에러를 던지면 가장 가까운 layout 안에서 렌더링됩니다.",
@@ -359,8 +365,8 @@ export function Error({ error }: { error?: unknown }) {
         </div>
         <Docs.Alert type="info">
           {l.trans({
-            en: "Custom NotFound and Error exports are available on _layout.tsx files, not page files. If a layout does not export one, Akan walks up to the nearest parent layout fallback, then falls back to the framework system page.",
-            ko: "커스텀 NotFound와 Error export는 page 파일이 아니라 _layout.tsx 파일에서 사용할 수 있습니다. 해당 layout에 fallback이 없으면 Akan은 가장 가까운 상위 layout fallback을 찾고, 없으면 framework system page를 사용합니다.",
+            en: "The .notFound() and .error() stages exist on layout(), not on page(). If a layout declares neither, Akan walks up to the nearest parent layout fallback, then falls back to the framework system page. A page() chain in a _layout.tsx, or a layout() chain in a page file, is refused at load.",
+            ko: ".notFound()와 .error() 단계는 page()가 아니라 layout()에 있습니다. 해당 layout이 둘 다 선언하지 않으면 Akan은 가장 가까운 상위 layout fallback을 찾고, 없으면 framework system page를 사용합니다. _layout.tsx의 page() 체인이나 page 파일의 layout() 체인은 로드 시 거절됩니다.",
           })}
         </Docs.Alert>
       </Scroll.Slide>
@@ -450,20 +456,18 @@ apps/myapp/page/(libs)/(shared)/login/_index.tsx
         <Docs.Description>
           <div>
             {l.trans({
-              en: "pageConfig.devOnly keeps a route out of akan build. It still serves under akan start and is still typechecked, but nothing about it reaches production: no bundle, no route manifest entry, no URL.",
-              ko: "pageConfig.devOnly를 켜면 해당 라우트가 akan build에서 제외됩니다. akan start에서는 그대로 동작하고 타입 검사도 계속 받지만, 번들에도 라우트 매니페스트에도 들어가지 않아 프로덕션에서는 존재하지 않습니다.",
+              en: ".config({ devOnly: true }) keeps a route out of akan build. It still serves under akan start and is still typechecked, but nothing about it reaches production: no bundle, no route manifest entry, no URL.",
+              ko: ".config({ devOnly: true })를 켜면 해당 라우트가 akan build에서 제외됩니다. akan start에서는 그대로 동작하고 타입 검사도 계속 받지만, 번들에도 라우트 매니페스트에도 들어가지 않아 프로덕션에서는 존재하지 않습니다.",
             })}
           </div>
         </Docs.Description>
         <Code.Snippet
           title="page/(dev)/playground/_index.tsx"
-          code={`import type { PageConfig } from "akanjs/client";
+          code={`import { page } from "akanjs/client";
 
-export const pageConfig = { devOnly: true } satisfies PageConfig;
-
-export default function Page() {
-  return <div>Component playground</div>;
-}`}
+export default page()
+  .config({ devOnly: true })
+  .render(() => <div>Component playground</div>);`}
         />
         <Docs.Alert type="info">
           {l.trans({
@@ -474,99 +478,103 @@ export default function Page() {
       </Scroll.Slide>
       <div className="divider" />
 
-      <Scroll.Slide id="root-layout-exports" title={l.trans({ en: "Root Layout Exports", ko: "Root Layout Exports" })}>
-        <Docs.Title>{l.trans({ en: "Root Layout Exports", ko: "Root Layout Exports" })}</Docs.Title>
+      <Scroll.Slide id="root-layout-exports" title={l.trans({ en: "Root Layout Stages", ko: "Root Layout 단계" })}>
+        <Docs.Title>{l.trans({ en: "Root Layout Stages", ko: "Root Layout 단계" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "The root _layout.tsx can configure app-wide behavior. It is still a layout, but it may also export extra values for fonts, manifest, theme, realtime connection, analytics, and mobile-style rendering.",
-              ko: "root _layout.tsx는 앱 전체의 동작을 설정할 수 있습니다. 기본적으로는 layout이지만, font, manifest, theme, realtime connection, analytics, mobile-style rendering 같은 앱 공통 설정을 추가로 export할 수 있습니다.",
+              en: "The root _layout.tsx of an app, or of a basePath, is a rootLayout() chain. It is still a layout, but it also carries the app-wide stages for fonts, manifest, theme, realtime connection, analytics, and mobile-style rendering. The stylesheet import stays the first line of the file.",
+              ko: "앱 또는 basePath의 root _layout.tsx는 rootLayout() 체인입니다. 기본적으로는 layout이지만 font, manifest, theme, realtime connection, analytics, mobile-style rendering 같은 앱 공통 단계를 함께 가집니다. 스타일시트 import는 파일의 첫 줄에 그대로 둡니다.",
             })}
           </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
           title="page/_layout.tsx"
-          code={`import type { Font, LayoutProps, WebAppManifest } from "akanjs/client";
+          code={`import "./styles.css";
+import { rootLayout } from "akanjs/client";
 
-export const fonts: Font[] = [
-  {
-    name: "pretendard",
-    faces: [{ src: "/fonts/pretendard.woff2", weight: "400" }],
-  },
-];
-
-export const manifest: WebAppManifest = {
-  name: "Akan App",
-  shortName: "Akan",
-  startUrl: "/",
-  display: "standalone",
-  themeColor: "#111827",
-};
-
-export const theme = "dark";
-export const reconnect = true;
-export const wsConnect = true;
-export const layoutStyle = "web";
-export const gaTrackingId = "G-XXXXXXXXXX";
-
-export default function Layout({ children }: LayoutProps) {
-  return <>{children}</>;
-}`}
+export default rootLayout()
+  .fonts([
+    {
+      name: "pretendard",
+      default: true,
+      paths: [{ src: "/fonts/pretendard.woff2", weight: 400 }],
+    },
+  ])
+  .manifest({
+    name: "Akan App",
+    shortName: "Akan",
+    startUrl: "/",
+    display: "standalone",
+    themeColor: "#111827",
+  })
+  .theme("dark")
+  .reconnect(true)
+  .wsConnect(true)
+  .layoutStyle("web")
+  .gaTrackingId("G-XXXXXXXXXX")
+  .head(
+    <>
+      <title>Akan App</title>
+      <link rel="icon" href="/favicon.ico" />
+    </>,
+  )
+  .render(({ children }) => children);`}
         />
         <div className="space-y-1">
           {[
             {
-              name: "fonts",
+              name: ".fonts([…])",
               desc: l.trans({
                 en: "Registers app-wide fonts so pages can use them consistently.",
                 ko: "앱 전체에서 사용할 폰트를 등록합니다.",
               }),
             },
             {
-              name: "manifest",
+              name: ".manifest({ … })",
               desc: l.trans({
                 en: "Defines the web app manifest used for installable/PWA-like behavior.",
                 ko: "설치형 앱이나 PWA에 가까운 동작에 사용하는 웹 앱 manifest를 정의합니다.",
               }),
             },
             {
-              name: "theme",
+              name: '.theme("dark")',
               desc: l.trans({
                 en: "Chooses the default theme policy, such as dark, light, system, or css.",
                 ko: "dark, light, system, css 같은 기본 테마 정책을 정합니다.",
               }),
             },
             {
-              name: "reconnect",
+              name: ".reconnect(boolean)",
               desc: l.trans({
                 en: "Controls whether the client tries to reconnect to realtime runtime channels.",
                 ko: "클라이언트가 실시간 런타임 채널에 다시 연결할지 정합니다.",
               }),
             },
             {
-              name: "wsConnect",
+              name: ".wsConnect(boolean)",
               desc: l.trans({
                 en: "Controls whether the browser connects the client WebSocket runtime after load. The default is true. If false, message/pubsub calls warn in the browser console until fetch.instance.connect() is called.",
                 ko: "브라우저 로드 후 client WebSocket runtime을 연결할지 정합니다. 기본값은 true입니다. false이면 fetch.instance.connect()를 호출하기 전 message/pubsub 호출 시 브라우저 콘솔에 warning이 표시됩니다.",
               }),
             },
             {
-              name: "layoutStyle",
+              name: '.layoutStyle("web" | "mobile")',
               desc: l.trans({
                 en: "Switches the outer page container style. Use mobile for app-like mobile shells.",
                 ko: "바깥 페이지 컨테이너 스타일을 바꿉니다. 앱 같은 모바일 화면에는 mobile을 사용합니다.",
               }),
             },
             {
-              name: "pageConfig",
+              name: ".config({ … })",
               desc: l.trans({
-                en: "Optional layout-level frame override inherited by child pages. Page-level pageConfig still wins for explicitly declared fields.",
-                ko: "하위 페이지가 상속하는 layout 단위 frame override입니다. 명시된 필드는 page 단위 pageConfig가 우선합니다.",
+                en: "Optional layout-level frame override inherited by child pages. A page's own .config() still wins for explicitly declared fields.",
+                ko: "하위 페이지가 상속하는 layout 단위 frame override입니다. 명시된 필드는 page 자체의 .config()가 우선합니다.",
               }),
             },
             {
-              name: "gaTrackingId",
+              name: '.gaTrackingId("G-…")',
               desc: l.trans({
                 en: "Adds Google Analytics tracking for the app.",
                 ko: "앱에 Google Analytics 추적을 추가합니다.",
@@ -581,12 +589,12 @@ export default function Layout({ children }: LayoutProps) {
         </div>
         <Docs.Alert type="info">
           {l.trans({
-            en: "Most extra exports are for root layouts only. Nested layouts may also export pageConfig when they need a shared mobile frame override for their child pages.",
-            ko: "대부분의 추가 export는 root layout 전용입니다. 다만 중첩 layout도 하위 페이지에 공통 모바일 frame override가 필요하면 pageConfig를 export할 수 있습니다.",
+            en: "Most of these stages exist only on rootLayout(). A nested layout() may also call .config() when it needs a shared mobile frame override for its child pages.",
+            ko: "이 단계들은 대부분 rootLayout()에만 있습니다. 다만 중첩 layout()도 하위 페이지에 공통 모바일 frame override가 필요하면 .config()를 호출할 수 있습니다.",
           })}
         </Docs.Alert>
       </Scroll.Slide>
       <DocsToc />
     </Scroll>
   );
-}
+});

@@ -8,13 +8,7 @@ import type { Endpoint, EndpointCls } from "../../signal/endpoint";
 import type { EndpointInfo } from "../../signal/endpointInfo";
 import { Exception } from "../../signal/exception";
 import type { GuardCls } from "../../signal/guard";
-import {
-  McpDocument,
-  McpErrorCode,
-  type McpExposedEndpoint,
-  type McpToolResult,
-  type PromptMessage,
-} from "../../signal/mcp";
+import { McpDocument, McpErrorCode, type McpExposedEndpoint, type McpToolResult } from "../../signal/mcp";
 import type { MiddlewareCls } from "../../signal/middleware";
 import { SignalContext } from "../../signal/signalContext";
 import { McpExecutionContext } from "./McpExecutionContext";
@@ -29,13 +23,6 @@ export class McpAuthRequiredError extends Error {}
  * only place left to say whose fault it was. Without it a mistyped argument reads as `-32603 internal error`,
  * while the *missing*-argument check `prompts/get` does itself answers `-32602` — the same mistake, two codes.
  */
-export class McpPromptError extends Error {
-  readonly code: number;
-  constructor(message: string, code: number) {
-    super(message);
-    this.code = code;
-  }
-}
 
 interface McpDispatcherProps {
   registry: InjectRegistry;
@@ -92,29 +79,6 @@ export class McpDispatcher {
       // on by asking the user or choosing another tool.
       if ((status === 401 || status === 403) && !req.headers.get("authorization")) throw new McpAuthRequiredError();
       return McpDispatcher.#failure(this.#message(error, status, exposed.refName));
-    }
-  }
-
-  /**
-   * A prompt is user-chosen, not model-chosen, so a failure has nowhere to go but the JSON-RPC error — there is
-   * no `isError` result the model could read and recover from. Errors propagate to the router unchanged.
-   *
-   * The messages arrive already normalized: `SignalContext` does that for every `prompt`, so this route and the
-   * plain HTTP one return the same shape.
-   */
-  async prompt(exposed: McpExposedEndpoint, args: Record<string, unknown>, req: Request): Promise<PromptMessage[]> {
-    const found = this.#index().get(exposed.key);
-    if (!found)
-      throw new McpPromptError(
-        `Prompt "${exposed.key}" is declared but not mounted on this server.`,
-        McpErrorCode.internal,
-      );
-    try {
-      return (await this.#exec(exposed.key, found, args, req)) as PromptMessage[];
-    } catch (error) {
-      const status = McpDispatcher.#statusOf(error);
-      if ((status === 401 || status === 403) && !req.headers.get("authorization")) throw new McpAuthRequiredError();
-      throw new McpPromptError(this.#message(error, status, exposed.refName), McpDispatcher.#codeOf(status));
     }
   }
 

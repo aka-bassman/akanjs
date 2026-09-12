@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Docs, type IntroItem, type OptionItem } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   const fieldOptions: OptionItem[] = [
@@ -731,4 +732,4 @@ export class Stock extends via((field) => ({
       <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 lg:flex" />
     </Scroll>
   );
-}
+});

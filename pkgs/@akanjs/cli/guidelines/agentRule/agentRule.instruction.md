@@ -93,8 +93,7 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   model never saw is one it answers about from the filename. An adaptor declares `accepts: { image, document }` and
   `AgentService.readable` degrades the rest, so a text-only provider needs no attachment code at all — DeepSeek
   declares none, which is why an image against the default provider is refused out loud while an extracted PDF
-  works, `text` being readable by every model there is. **A `prompt()`'s `Msg.image` is the same wire shape** and
-  reaches the chat as an attachment rather than the literal `[image]` it used to become. Persisting keeps each
+  works, `text` being readable by every model there is. Persisting keeps each
   attachment's name and drops its content: web storage is a few megabytes, one screenshot fills a chunk of it, and
   a save that fails is silent — so keeping the bytes would quietly stop keeping the transcript.
   **The ceilings are the message's, not the file's**: 4 MB per file, 8 MB and five files per message, and the same
@@ -372,18 +371,11 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   useless to a model — that is cheaper than every tool learning to avoid it.
 
 ## Slash Commands And The Transcript
-- **`prompt()` endpoints double as the chat's slash commands.** There is no listing endpoint — the client reads
-  its own serialized signals — so a prompt's dictionary `.desc()` is what the menu shows, and its guards are
-  enforced by the prompt's own GET at call time. Arguments are positional and whitespace-separated, and quoting
-  is how a sentence stays one of them (`/reviewTask t1 "look at the totals"`) — a prompt taking a single `String`
-  is the common case, and an unquoted sentence would fill its second parameter with the second word.
-- **The chat answers six slash commands of its own**, listed in the same `/` menu ahead of the prompts:
-  `/new` (`/clear`), `/retry`, `/compact`, `/copy`, `/help` and `/tools`. An app writes none of them and cannot add
-  one — the extension point for a product's own command is a `prompt()` endpoint, which is guarded and server-side.
-  **A built-in wins a name collision with a prompt of the same name**, the mirror image of the tool rule: a
-  component's `st.tool` shadows a built-in it means to replace, but no library's prompt may take `/new` away from
-  the user who typed it — so a shadowed prompt is dropped from the menu rather than listed twice. `/new` and
-  `/copy` are also dispatched *before* the is-a-turn-running check **and before the question card takes the
+- **The `/` menu is the chat's own.** An app's prompts are `page().prompt()` declarations served over MCP to
+  external agents; a browser chat lists none of them, so the menu holds the six built-in commands and nothing else.
+- **The chat answers six slash commands of its own**: `/new` (`/clear`), `/retry`, `/compact`, `/copy`, `/help` and
+  `/tools`. An app writes none of them and cannot add one — a workflow a person invokes by name belongs to MCP, as
+  a `page().prompt()`, where it is guarded by the page it opens. `/new` and `/copy` are dispatched *before* the is-a-turn-running check **and before the question card takes the
   composer**, because mid-turn is exactly when they are reached for and a question the agent asked is the middle
   of a turn like any other — answered as text, `/new` would have reached the model as the user's decision.
   `/new` therefore aborts the turn it is clearing and waits for it to wind down, since the loop clears its own

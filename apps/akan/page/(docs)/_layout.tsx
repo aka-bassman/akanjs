@@ -1,10 +1,8 @@
 import { AkanjsFooter, AkanjsHeader, akanjsDocsHeaderLinks, DocsAgentChat } from "@apps/akan/ui";
+import { layout } from "akanjs/client";
 import { Agent } from "akanjs/ui";
 
-interface LayoutProps {
-  children: React.ReactNode;
-}
-export default function Layout({ children }: LayoutProps) {
+export default layout().render(({ children }) => {
   return (
     <>
       <AkanjsHeader
@@ -22,4 +20,4 @@ export default function Layout({ children }: LayoutProps) {
       <AkanjsFooter />
     </>
   );
-}
+});

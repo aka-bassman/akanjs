@@ -1,9 +1,10 @@
 import { usePage } from "@apps/akan/client";
 import { Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -207,8 +208,8 @@ export default function Page() {
               {
                 title: l.trans({ en: "Mobile Architecture", ko: "모바일 아키텍처" }),
                 desc: l.trans({
-                  en: "Explains CSR web inside Capacitor, multi-client basePath targets, local CSR testing, pageConfig, and Android/iOS packaging.",
-                  ko: "Capacitor 안에서 실행되는 CSR web, multi-client basePath target, 로컬 CSR 테스트, pageConfig, Android/iOS 패키징을 설명합니다.",
+                  en: "Explains CSR web inside Capacitor, multi-client basePath targets, local CSR testing, the page .config() stage, and Android/iOS packaging.",
+                  ko: "Capacitor 안에서 실행되는 CSR web, multi-client basePath target, 로컬 CSR 테스트, 페이지의 .config() 단계, Android/iOS 패키징을 설명합니다.",
                 }),
                 href: "/docs/arch/mobile",
               },
@@ -305,4 +306,4 @@ export default function Page() {
       <DocsToc />
     </Scroll>
   );
-}
+});

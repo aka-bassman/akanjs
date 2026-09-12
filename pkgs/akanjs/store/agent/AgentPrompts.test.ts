@@ -1,48 +1,7 @@
-import { beforeAll, describe, expect, test } from "bun:test";
-import { Translator } from "akanjs/client/translator";
-import type { SerializedSignal } from "akanjs/signal";
+import { describe, expect, test } from "bun:test";
 import { AgentPrompts } from "./AgentPrompts";
 
-const signals: Record<string, SerializedSignal> = {
-  task: {
-    endpoint: {
-      reviewTask: {
-        type: "prompt",
-        args: [
-          { type: "param", name: "taskId", refName: "ID" },
-          { type: "search", name: "focus", refName: "String", nullable: true },
-        ],
-        returns: { refName: "Any", arrDepth: 1 },
-      },
-      startTask: {
-        type: "mutation",
-        args: [{ type: "param", name: "taskId", refName: "ID" }],
-        returns: { refName: "Any" },
-      },
-      planWeek: { type: "prompt", args: [], returns: { refName: "Any", arrDepth: 1 } },
-    },
-  } as unknown as SerializedSignal,
-};
-
-beforeAll(() => {
-  Translator.setActiveLocale("en");
-  Translator.seed("en", {
-    task: { signal: { reviewTask: { desc: { t: "Review a task and suggest next steps" } } } },
-  } as never);
-});
-
 describe("AgentPrompts", () => {
-  test("lists only prompt endpoints, with required flags and dictionary descriptions", () => {
-    const prompts = new AgentPrompts(signals).list();
-    expect(prompts.map((prompt) => prompt.name)).toEqual(["planWeek", "reviewTask"]);
-    const review = prompts[1];
-    expect(review.description).toBe("Review a task and suggest next steps");
-    expect(review.args).toEqual([
-      { name: "taskId", required: true },
-      { name: "focus", required: false },
-    ]);
-  });
-
   test("parses a slash command into name and positional args", () => {
     expect(AgentPrompts.parseCommand("/reviewTask t1  urgent")).toEqual({
       name: "reviewTask",

@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.103 -->
+<!-- akan:agent:version 3.0.0-alpha.104 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -669,9 +669,7 @@ it.
   (`@libs/shared/srvkit`). Never sniff `aud` through a cast.
 - **The refusals are fail-closed**: a declared `mcp: false`, an endpoint with no `guards`, a mutation with no real
   guard, `pubsub` and `message`, an `Any` or `Upload` return, a file upload, a required `Any` argument, and the
-  generated `light<Model>` read. A `prompt` also refuses a nested list and any `Any` argument; its flat list rides
-  the one string `prompts/get` carries comma-separated, and an `enumOf` argument is checked against its values on
-  every path. **Every refusal
+  generated `light<Model>` read. An `enumOf` argument is checked against its values on every path. **Every refusal
   is named in the boot log**, along with every published entry missing a dictionary `.desc()` — an agent picks a
   tool by its description.
 - A refused endpoint answers the *same* "unknown tool" as one that does not exist, and a guard's refusal is
@@ -679,10 +677,14 @@ it.
 - **A `field.visual` field is stripped from every MCP result** and from the readable schema so the two agree.
 - **A structured result ships twice by default** — as `structuredContent` and as the same JSON in the text block.
   `option.setMcp({ legacyTextBlock: false })` leaves a pointer there instead.
-- **`prompt()`** is invoked by the *user* as a slash command, never chosen by the model. `exec` returns
-  `PromptMessage[]` built with `Msg.user` / `Msg.assistant` / `Msg.resource` / `Msg.image`; an embedded payload is
-  masked by the model you name, and one whose `hidden`/`secret` fields are populated with no model named is
-  refused. It is also mounted as a plain HTTP `GET` whether or not MCP is enabled, so guard it like any other read.
+- **A prompt is a screen: `page().prompt(name, description)`.** There is no `prompt()` on `endpoint()`.
+  `prompts/get` runs the page's body in the RSC worker under the caller's token — nothing is rendered — and answers
+  the description, one `resource` per `fetch.*` the page made (masked by the endpoint's return model, addressed by
+  its `akan://` uri, one document once whatever shapes read it) and the published tools of the modules it fetched
+  from, minus what is already attached; lists — only lists — are cut to `promptBudget`. A guard refusing a query
+  inside the body reads as the screen refusing the account, the same way a redirect does. A
+  required argument left out answers a pointer to the `<model>List…` tool, never a guess. The description is the
+  only instruction, in English — `<Agent.Guide>` never reaches MCP, and the in-page chat lists no page prompts.
 
 Full contract — configuration, wire behaviour, resource URIs, OAuth metadata, protocol revisions, and
 `McpProgress.report`: `get_guideline` with `mcpRule`, or `akan guideline show mcpRule`.
@@ -814,39 +816,50 @@ shape, so `cascade` never means "related" — it means one of exactly these:
 - Reserved `_*.tsx` route filenames are limited to `_index.tsx`, `_layout.tsx`, and `_overrides.tsx`; do not add files like `_Component.tsx` or `_helper.tsx`.
 - Page filenames must not start with an uppercase letter. Move helper components like `Component.tsx` to app `ui`, `common`, or `lib` instead.
 - Dynamic segments use `[id]`; route groups use directories like `(user)`, `(public)`, `(tab)`, or `(detail)`.
-- Page modules should usually export `default`, `pageConfig`, `head`, `generateHead`, or `Loading`.
+- **A route file exports one thing**: `export default page()…render(…)` for a page, `layout()…render(…)` for a
+  `_layout.tsx`, `rootLayout()…render(…)` for the app's (or a basePath's) root `_layout.tsx`. Every route setting
+  is a stage of the chain — `.param()`, `.search()`, `.config()`, `.head()` / `.metadata()`, `.loading()`;
+  `.notFound()` / `.error()` on a layout; `.fonts()` / `.theme()` / `.manifest()` / `.reconnect()` / `.wsConnect()`
+  / `.layoutStyle()` / `.gaTrackingId()` on the root layout; `.prompt()` on a page. A named export beside the chain,
+  or `page()` in a `_layout.tsx`, fails the build.
+- **A page names every `[x]` segment of its path with `.param("x", Type)`** and reads a query key only through
+  `.search("k", Type)`. Values arrive typed — `ID`/`String` → string, `Int`/`Float` → number, `Boolean`, `Date` →
+  Dayjs, an `enumOf` class → its union, `[T]` → array — a path value the type refuses answers not-found, and a
+  search value that fails is dropped. A layout may declare a subset. Names are string literals: `akan sync` reads
+  them off the source and refuses a `[projectId]` folder whose page declares no `.param("projectId")`. `lang` is
+  never declared: every route sits under `/:lang`, and the locale segment reaches every stage as `lang`.
 - `_overrides.tsx` is a logic-free UI-override manifest: imports plus a single `export default override({ Slot: AppComponent })` (from `akanjs/ui`), no `"use client"`. It re-skins framework `akanjs/ui` components for its route subtree; nested manifests merge over ancestors slot-by-slot (closest wins). See the UI Customization reference for the slot list.
-- Prefer `export default function Page` or `export default async function Page` for page components.
+- The legacy shape — `export default async function Page` beside `pageConfig` / `head` / `Loading` exports — still
+  loads and logs one deprecation warning per file at boot. Migrate with the `workspaceRecipes` recipe "Migrating
+  `page/` to the route chain"; new files are never written in it.
 - `libs/<lib>/page` follows the same rules and ships routes to apps that opt in with `syncPageLibs` in `akan.config.ts`: `true` takes every lib dep that has a `page` folder, an array takes the libs listed, `false` (the default) syncs nothing.
 - `akan sync` links those routes into `apps/<app>/page/(libs)/(<lib>)` — once per basePath when the app declares subRoutes. The folder is generated and gitignored; edit the lib source, never the link.
 - Both path segments are route groups, so a lib route mounts at its own path (`libs/<lib>/page/login/_index.tsx` serves `/login`). Two synced routes that resolve to the same pattern are a sync-time error.
-- `export const pageConfig = { devOnly: true }` keeps a route out of `akan build` while it keeps serving under `akan start` and keeps being typechecked. On a `_layout.tsx` it excludes every route under that directory too. Write it as a literal `true`/`false` — the build reads it off the source without evaluating the module.
+- `.config({ devOnly: true })` keeps a route out of `akan build` while it keeps serving under `akan start` and keeps being typechecked. On a `_layout.tsx` it excludes every route under that directory too. Write it as a literal `true`/`false` — the build reads it off the source without evaluating the module.
 - Before changing route behavior, check `pkgs/akanjs/server/routeTreeBuilder.ts` and nearby routes for the expected pattern.
 
 ### Page Body Shape
 
 ```tsx
-interface PageProps {
-  params: { orgId: string };
-}
-
-export default async function Page({ params }: PageProps) {
-  const { l } = usePage();
-  getSelf({ unauthorize: "/signin" });
-  const { orgId } = params;
-  const [{ org }, { taskInitInOrg }] = await Promise.all([fetch.viewOrg(orgId), fetch.initTaskInOrg(orgId)]);
-  return <Task.Zone.Card init={taskInitInOrg} prefix={`/org/${orgId}`} />;
-}
-
-export const pageConfig = { transition: "stack" } satisfies PageConfig;
+export default page()
+  .param("orgId", ID)
+  .config({ transition: "stack" })
+  .render(async ({ orgId }) => {
+    const { l } = usePage();
+    getSelf({ unauthorize: "/signin" });
+    const [{ org }, { taskInitInOrg }] = await Promise.all([fetch.viewOrg(orgId), fetch.initTaskInOrg(orgId)]);
+    return <Task.Zone.Card init={taskInitInOrg} prefix={`/org/${orgId}`} />;
+  });
 ```
 
-- There is no `loader=` / `render=` page prop. Pages are `export default async function Page`.
-- Declare `interface PageProps { params: {...}; searchParams?: {...} }` immediately above the default export.
-- Body order: `usePage()`, auth, destructure params, fetch, return.
+- There is no `loader=` / `render=` page prop and no `PageProps` interface: the chain declares the arguments and
+  `.render()` receives them flat, typed, with `lang` on every route and `children` added for a layout.
+- Body order inside `.render()`: `usePage()`, auth, fetch, return.
 - Run independent fetches through `Promise.all`, even when there is only one.
 - Gate auth at `_layout.tsx`; repeating `getSelf({ unauthorize: "/signin" })` in the page is fine and common.
-- Keep `async` even when nothing is awaited — it marks a real server page.
+- `async` on the render callback only when the body awaits; the callback is not a React component, so it takes no
+  name and no return type.
+- Publish a screen to agents with `.prompt(name, description)` — see MCP Exposure.
 - No `useState`, no `useEffect`, and no comments in page files.
 
 ## Akan Sync Conventions (`apps/**`, `libs/**`)

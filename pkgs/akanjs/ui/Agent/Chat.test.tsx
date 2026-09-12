@@ -30,15 +30,7 @@ beforeAll(async () => {
   const { registerClientRuntime } = await import("akanjs/client");
   registerClientRuntime({ usePage: () => ({ path: "/", lang: "en", l }), fetch: runtimeFetch });
   const { FetchClient } = await import("akanjs/fetch");
-  new FetchClient("http://chattest", {}, {
-    task: {
-      endpoint: {
-        planWeek: { type: "prompt", args: [], returns: { refName: "Any", arrDepth: 1 } },
-        // Named after a built-in on purpose: the chat's own command has to win it.
-        help: { type: "prompt", args: [], returns: { refName: "Any", arrDepth: 1 } },
-      },
-    },
-  } as never);
+  new FetchClient("http://chattest", {}, { task: { endpoint: {} } } as never);
   lib = await import("use-agentic");
   ({ DefaultChat, default: Chat } = await import("./Chat"));
   ({ Guide } = await import("./Guide"));
@@ -451,27 +443,6 @@ describe("Agent.Chat", () => {
     unmount();
   });
 
-  test("a slash command lists prompts and injects the prompt's messages as the user's turn", async () => {
-    runtimeFetch.planWeek = () =>
-      Promise.resolve([{ role: "user", content: { type: "text", text: "Plan the week from the board." } }]);
-    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "Planned." }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
-    composer(container).type("/");
-    const entry = [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("/planWeek"));
-    expect(entry).toBeTruthy();
-    await act(async () => {
-      entry?.click();
-      await untilFlushed(() => session.messages.length >= 2 && !session.isRunning);
-    });
-    expect(container.innerHTML).toContain("Plan the week from the board.");
-    expect(container.innerHTML).toContain("Planned.");
-    unmount();
-  });
-
   test("resolves an _overrides AgentChat slot in place of the default", () => {
     const Branded = ({ title }: { title?: string }) => <div data-skin="brand">{title ?? "branded"}</div>;
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
@@ -675,7 +646,7 @@ describe("Agent.Chat", () => {
     inline.drop();
   });
 
-  test("the / menu offers this chat's own commands ahead of the app's prompts, once per name", () => {
+  test("the / menu offers this chat's own commands", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
     const { container, unmount } = mount(
       <lib.AgentProvider session={session}>
@@ -684,7 +655,7 @@ describe("Agent.Chat", () => {
     );
     composer(container).type("/");
     const rows = menuRows(container);
-    expect(rows.slice(0, 6).map((row) => row.split("base.")[0])).toEqual([
+    expect(rows.map((row) => row.split("base.")[0])).toEqual([
       "/new",
       "/retry",
       "/compact",
@@ -692,34 +663,6 @@ describe("Agent.Chat", () => {
       "/help",
       "/tools",
     ]);
-    expect(rows.some((row) => row.startsWith("/planWeek"))).toBe(true);
-    // The app's own /help prompt is shadowed, so the name is listed once rather than twice.
-    expect(rows.filter((row) => row.startsWith("/help"))).toHaveLength(1);
-    unmount();
-  });
-
-  test("a built-in wins a name collision with a prompt endpoint", async () => {
-    let called = 0;
-    runtimeFetch.help = () => {
-      called += 1;
-      return Promise.resolve("never");
-    };
-    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
-    const { container, unmount } = mount(
-      <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen />
-      </lib.AgentProvider>,
-    );
-    const input = composer(container);
-    input.type("/help");
-    await act(async () => {
-      input.press("Enter");
-      await untilFlushed(() => session.messages.length > 0);
-    });
-    expect(called).toBe(0);
-    expect(container.innerHTML).toContain("base.agentHelpIntro");
-    // The chat answered it, so nothing of it reaches the model's history.
-    expect(session.messages.every((message) => message.local)).toBe(true);
     unmount();
   });
 

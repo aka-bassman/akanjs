@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -432,24 +433,28 @@ export const General = () => {
             className="w-full"
             title="Server page: hand each promise to the section that renders it"
             code={`import { fetch, Order, Product, usePage } from "@apps/shop/client";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
 import { Load } from "akanjs/ui";
 
-export default async function Page({ params }: PageProps) {
-  const { l } = usePage();
-  const { productInitInShop, productListInShop } = fetch.initProductInShop(params.shopId);
-  const { orderInitInShop } = fetch.initOrderInShop(params.shopId, { insight: false });
+export default page()
+  .param("shopId", ID, { desc: "The shop whose products and orders to show." })
+  .render(({ shopId }) => {
+    const { l } = usePage();
+    const { productInitInShop, productListInShop } = fetch.initProductInShop(shopId);
+    const { orderInitInShop } = fetch.initOrderInShop(shopId, { insight: false });
 
-  return (
-    <div className="space-y-4">
-      <h1 className="font-bold text-3xl">{l("shop.modelName")}</h1>
-      <Product.Zone.Card init={productInitInShop} />
-      <Order.Zone.Card init={orderInitInShop} />
-      <Load.Stream of={productListInShop}>
-        {(productList) => <Product.Unit.Total count={productList.length} />}
-      </Load.Stream>
-    </div>
-  );
-}`}
+    return (
+      <div className="space-y-4">
+        <h1 className="font-bold text-3xl">{l("shop.modelName")}</h1>
+        <Product.Zone.Card init={productInitInShop} />
+        <Order.Zone.Card init={orderInitInShop} />
+        <Load.Stream of={productListInShop}>
+          {(productList) => <Product.Unit.Total count={productList.length} />}
+        </Load.Stream>
+      </div>
+    );
+  });`}
           />
           <div className="space-y-1">
             {[
@@ -553,4 +558,4 @@ export default async function Page({ params }: PageProps) {
       <DocsToc />
     </Scroll>
   );
-}
+});

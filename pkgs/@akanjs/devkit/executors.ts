@@ -1548,6 +1548,7 @@ export class AppExecutor extends SysExecutor {
         else {
           const info = validator.validateRouteSourceExports(routeSource, absPath, parsed.kind, {
             rootLayout: isRootLayout,
+            pattern: parsed.pattern,
           });
           if (info.devOnly) {
             devOnlyKeys.add(key);

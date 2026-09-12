@@ -1,9 +1,10 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -261,8 +262,8 @@ export const option = new AkanOption<ModulesOptions>()
             {
               title: "setMcp",
               desc: l.trans({
-                en: "MCP server settings — instructions, readOnly, path, pageSize, language, auth. Not main.ts: the gateway there only spawns children, while this file is handed to the process that mounts /mcp.",
-                ko: "MCP 서버 설정입니다. instructions·readOnly·path·pageSize·language·auth를 받습니다. main.ts가 아닙니다. main.ts의 gateway는 child를 띄우기만 하고, 이 파일이 /mcp를 마운트하는 프로세스에 전달됩니다.",
+                en: "MCP server settings — instructions, readOnly, path, pageSize, language, auth, and promptBudget, the characters of page data one prompts/get answer may carry (default 60,000; env AKAN_MCP_PROMPT_BUDGET). Not main.ts: the gateway there only spawns children, while this file is handed to the process that mounts /mcp.",
+                ko: "MCP 서버 설정입니다. instructions·readOnly·path·pageSize·language·auth와, prompts/get 응답 하나에 실을 페이지 데이터의 글자 수인 promptBudget(기본 60,000, env AKAN_MCP_PROMPT_BUDGET)을 받습니다. main.ts가 아닙니다. main.ts의 gateway는 child를 띄우기만 하고, 이 파일이 /mcp를 마운트하는 프로세스에 전달됩니다.",
               }),
             },
             {
@@ -781,4 +782,4 @@ apps/api/secrets/**/*
       <DocsToc />
     </Scroll>
   );
-}
+});

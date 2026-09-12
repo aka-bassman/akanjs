@@ -9,6 +9,7 @@ export * from "./frameConfig";
 export * from "./frameDebug";
 export * from "./locale";
 export * from "./makePageProto";
+export * from "./route";
 export * from "./router";
 export * from "./rscNavigation";
 export * from "./sharedContext";

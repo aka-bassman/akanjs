@@ -1,7 +1,6 @@
 "use client";
-import { cn, fetch, usePage } from "akanjs/client";
-import type { PromptResult } from "akanjs/signal";
-import { type AgentPrompt, AgentPrompts } from "akanjs/store";
+import { cn, usePage } from "akanjs/client";
+import { AgentPrompts } from "akanjs/store";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
@@ -193,8 +192,6 @@ export const DefaultChat = ({
       onCompact,
     });
   const session = held.current;
-  const prompts = useRef<AgentPrompts | null>(null);
-  prompts.current ??= AgentPrompts.of();
   const version = useSyncExternalStore(
     session.subscribe,
     () => session.version,
@@ -271,26 +268,6 @@ export const DefaultChat = ({
     },
     [],
   );
-  const runPrompt = async (prompt: AgentPrompt, args: string[]) => {
-    const usage = `/${prompt.name} ${prompt.args.map((arg) => `<${arg.name}>`).join(" ")}`.trim();
-    if (args.length < prompt.args.filter((arg) => arg.required).length) {
-      session.report(`Usage: ${usage}`);
-      return;
-    }
-    const handler = (fetch as unknown as Record<string, (...callArgs: unknown[]) => Promise<PromptResult>>)[
-      prompt.name
-    ];
-    if (typeof handler !== "function") {
-      session.report(`/${prompt.name} is not mounted on this app.`);
-      return;
-    }
-    try {
-      const result = await handler(...args);
-      await session.send(AgentPrompts.messagesOf(result));
-    } catch (error) {
-      session.report(`/${prompt.name} failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
   const write = (text: string) => {
     setDraft(text);
     menu.reopen();
@@ -319,12 +296,9 @@ export const DefaultChat = ({
    */
   const dispatch = (message: QueuedMessage): boolean => {
     if (session.isRunning) return queue.push(message);
-    const command = AgentPrompts.parseCommand(message.text);
-    const prompt = command ? prompts.current?.find(command.name) : null;
     sticky.current = true;
     speech.take(message.byVoice);
-    if (command && prompt) void runPrompt(prompt, command.args);
-    else if (!message.attachments.length) void session.send(message.text);
+    if (!message.attachments.length) void session.send(message.text);
     else
       void session.send([
         { role: "user", ...(message.text ? { text: message.text } : {}), attachments: message.attachments },
@@ -339,21 +313,7 @@ export const DefaultChat = ({
     write([message.text, draft].filter(Boolean).join("\n"));
     speech.hold(message.byVoice);
   };
-  const pick = (prompt: AgentPrompt) => {
-    if (prompt.args.some((arg) => arg.required)) {
-      write(`/${prompt.name} `);
-      return;
-    }
-    // A prompt cannot answer the question the agent is waiting on, so it is refused rather than parked.
-    if (session.pendingQuestion) {
-      session.note(l("base.agentBusy"));
-      return;
-    }
-    write("");
-    recall.remember(`/${prompt.name}`);
-    dispatch({ text: `/${prompt.name}`, attachments: [], byVoice: false });
-  };
-  const menu = useSlashMenu({ draft, prompts: prompts.current, l, onCommand: runCommand, onPrompt: pick });
+  const menu = useSlashMenu({ draft, l, onCommand: runCommand });
   const send = () => {
     const text = draft.trim();
     if (!text && !files.attached.length) return;

@@ -3,17 +3,11 @@ import type { AppInfo, LibInfo } from "akanjs";
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: { appName: string }) {
   return {
     filename: "new.tsx",
-    content: `import { type cnst, fetch, Task, usePage } from "@apps/${dict.appName}/client";
+    content: `import { type cnst, fetch, Task } from "@apps/${dict.appName}/client";
+import { page } from "akanjs/client";
 import { Load, Link, buttonRecipe } from "akanjs/ui";
 
-// ===== page/task/new.tsx =====
-// Convention: Server-side form page using Load.Edit from akanjs/ui.
-// async Page() — server-side component that pre-initializes form data before rendering.
-// Load.Edit with type="form" renders the Template inside a form wrapper with submit/cancel actions.
-// onCancel="back" navigates to the previous page; onSubmit specifies the redirect after success.
-// Template is reused — same Task.Template.General used for create, edit, and client-side modals.
-
-export default async function Page() {
+export default page().render(() => {
   const taskForm: Partial<cnst.Task> = { status: "todo" };
 
   return (
@@ -34,6 +28,6 @@ export default async function Page() {
       </div>
     </main>
   );
-}`,
+});`,
   };
 }

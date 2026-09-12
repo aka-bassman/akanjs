@@ -123,9 +123,11 @@ Request: ${updateRequest}
     if (!(await this.workspace.exists(writePath)))
       await this.workspace.writeFile(
         writePath,
-        `export default function Page() {
+        `import { page } from "akanjs/client";
+
+export default page().render(() => {
   return <div>No Content</div>;
-}
+});
 `,
       );
     const instruction = await Prompter.getInstruction(this.name);
@@ -169,9 +171,11 @@ Please return only the file result in the following format for easy parsing.
     if (!(await this.workspace.exists(writePath)))
       await this.workspace.writeFile(
         writePath,
-        `export default function Page() {
+        `import { page } from "akanjs/client";
+
+export default page().render(() => {
   return <div>No Content</div>;
-}
+});
 `,
       );
     const instruction = await Prompter.getInstruction(this.name);

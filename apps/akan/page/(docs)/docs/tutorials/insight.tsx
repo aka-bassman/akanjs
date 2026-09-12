@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -382,10 +383,11 @@ export const PublicQueryMaker = ({ className }: PublicQueryMakerProps) => {
             className="w-full"
             title="apps/koyo/page/_index.tsx"
             code={`
-import { Load, Model } from "akanjs/ui"; // [!code collapse:3]
+import { Load, Model } from "akanjs/ui"; // [!code collapse:4]
 import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
@@ -415,7 +417,7 @@ export default async function Page() {
       />
     </div>
   );
-}`}
+});`}
           />
         </Docs.Description>
       </Scroll.Slide>
@@ -899,10 +901,11 @@ export const Insight = ({ className, slice = fetch.slice.icecreamOrder }: Insigh
             className="w-full"
             title="apps/koyo/page/_index.tsx"
             code={`
-import { Load, Model } from "akanjs/ui"; // [!code collapse:21]
+import { Load, Model } from "akanjs/ui"; // [!code collapse:22]
 import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
@@ -935,7 +938,7 @@ export default async function Page() {
       </div> // [!code collapse:10]
     </div>
   );
-}`}
+});`}
           />
           <div>
             {l.trans({
@@ -998,4 +1001,4 @@ export default async function Page() {
       <DocsToc />
     </Scroll>
   );
-}
+});

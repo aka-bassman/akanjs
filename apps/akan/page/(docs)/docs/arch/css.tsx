@@ -1,9 +1,10 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -220,27 +221,30 @@ export default function Page() {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Fonts are declared from the root layout. Export a fonts array with a font name, file paths, weights, and an optional default flag. Akan then exposes those fonts as Tailwind-like classes, so components can use className values such as font-pretendard or font-lemonmilk.",
-              ko: "폰트는 루트 레이아웃에서 선언합니다. font name, file path, weight, optional default 값을 가진 fonts 배열을 export하면, Akan은 이를 Tailwind와 유사한 클래스처럼 노출합니다. 컴포넌트는 font-pretendard, font-lemonmilk 같은 className으로 폰트를 사용할 수 있습니다.",
+              en: "Fonts are declared from the root layout. Hand the .fonts() stage of the rootLayout() chain an array with a font name, file paths, weights, and an optional default flag. Akan then exposes those fonts as Tailwind-like classes, so components can use className values such as font-pretendard or font-lemonmilk.",
+              ko: "폰트는 루트 레이아웃에서 선언합니다. rootLayout() 체인의 .fonts() 단계에 font name, file path, weight, optional default 값을 가진 배열을 넘기면, Akan은 이를 Tailwind와 유사한 클래스처럼 노출합니다. 컴포넌트는 font-pretendard, font-lemonmilk 같은 className으로 폰트를 사용할 수 있습니다.",
             })}
           </div>
           <Code.Snippet
             className="w-full"
             title="apps/myapp/page/akanjs/_layout.tsx"
             language="typescript"
-            code={`import type { Font } from "akanjs/client";
+            code={`import "./styles.css";
+import { rootLayout } from "akanjs/client";
 
-export const fonts: Font[] = [
-  {
-    name: "pretendard",
-    default: true,
-    paths: [
-      { src: "/libs/shared/fonts/Pretendard-Regular.woff2", weight: 400 },
-      { src: "/libs/shared/fonts/Pretendard-SemiBold.woff2", weight: 600 },
-      { src: "/libs/shared/fonts/Pretendard-Bold.woff2", weight: 700 },
-    ],
-  },
-];`}
+export default rootLayout()
+  .fonts([
+    {
+      name: "pretendard",
+      default: true,
+      paths: [
+        { src: "/libs/shared/fonts/Pretendard-Regular.woff2", weight: 400 },
+        { src: "/libs/shared/fonts/Pretendard-SemiBold.woff2", weight: 600 },
+        { src: "/libs/shared/fonts/Pretendard-Bold.woff2", weight: 700 },
+      ],
+    },
+  ])
+  .render(({ children }) => children);`}
           />
           <Code.Snippet
             className="w-full"
@@ -261,4 +265,4 @@ export const fonts: Font[] = [
       <DocsToc />
     </Scroll>
   );
-}
+});

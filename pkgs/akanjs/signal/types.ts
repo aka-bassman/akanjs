@@ -187,7 +187,7 @@ export interface SerializedArg {
   ref?: string;
 }
 export interface SerializedEndpoint extends SerializedSignalOption {
-  type: "query" | "mutation" | "pubsub" | "message" | "prompt";
+  type: "query" | "mutation" | "pubsub" | "message";
   returns: SerializedReturns;
 }
 export interface SerializedFilter {

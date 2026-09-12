@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Docs } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   return (
@@ -15,8 +16,8 @@ export default function Page() {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Mobile pages can opt into native-feeling CSR transitions with pageConfig.transition. Stack pages support the iOS-style back swipe by default on iOS, while Android defaults to a scale-out transition and disables edge gestures unless a page opts in.",
-              ko: "모바일 페이지는 pageConfig.transition으로 네이티브 앱에 가까운 CSR 전환을 선택할 수 있습니다. stack 페이지는 iOS에서 기본적으로 뒤로 가기 swipe gesture를 지원하고, Android는 기본적으로 scale-out 전환을 사용하며 edge gesture는 페이지가 opt-in하지 않는 한 꺼집니다.",
+              en: "Mobile pages can opt into native-feeling CSR transitions with `.config({ transition })`. Stack pages support the iOS-style back swipe by default on iOS, while Android defaults to a scale-out transition and disables edge gestures unless a page opts in.",
+              ko: "모바일 페이지는 `.config({ transition })`으로 네이티브 앱에 가까운 CSR 전환을 선택할 수 있습니다. stack 페이지는 iOS에서 기본적으로 뒤로 가기 swipe gesture를 지원하고, Android는 기본적으로 scale-out 전환을 사용하며 edge gesture는 페이지가 opt-in하지 않는 한 꺼집니다.",
             })}
           </div>
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
@@ -70,12 +71,11 @@ export default function Page() {
           </div>
           <Code.Snippet
             title="Page transition"
-            code={`import type { PageConfig } from "akanjs/client";
+            code={`import { page } from "akanjs/client";
 
-export const pageConfig = {
-  transition: "stack",
-  gesture: true,
-} satisfies PageConfig;`}
+export default page()
+  .config({ transition: "stack", gesture: true })
+  .render(() => <ArticleDetail />);`}
           />
           <div className="space-y-1">
             {[
@@ -135,7 +135,7 @@ export const pageConfig = {
               },
               {
                 title: l.trans({ en: "Scroll behavior", ko: "스크롤 동작" }),
-                lines: ["bottom distance kept", "no pageConfig option", "opt in per BottomInset"],
+                lines: ["bottom distance kept", "no .config() option", "opt in per BottomInset"],
               },
             ].map(({ title, lines }) => (
               <div key={title} className="rounded-2xl border border-background/30 bg-background p-4">
@@ -240,11 +240,12 @@ export const pageConfig = {
           </div>
           <Code.Snippet
             title="Bottom composer"
-            code={`import type { PageConfig } from "akanjs/client";
+            code={`import { page } from "akanjs/client";
 import { Layout } from "akanjs/ui";
 
-export default function Page() {
-  return (
+export default page()
+  .config({ topInset: 48, bottomInset: 72, safeArea: true, transition: "stack" })
+  .render(() => (
     <div>
       <div>{/* scrollable content */}</div>
       <Layout.BottomInset
@@ -254,15 +255,7 @@ export default function Page() {
         <input placeholder="Type message..." />
       </Layout.BottomInset>
     </div>
-  );
-}
-
-export const pageConfig = {
-  topInset: 48,
-  bottomInset: 72,
-  safeArea: true,
-  transition: "stack",
-} satisfies PageConfig;`}
+  ));`}
           />
           <div className="space-y-1">
             {[
@@ -311,8 +304,8 @@ export function ScrollToBottomOnMount() {
           />
           <Docs.Alert type="info">
             {l.trans({
-              en: "contentAnchor is intentionally a BottomInset option, not a pageConfig option. General forms can keep the default keyboard behavior, while messenger-style surfaces opt in locally.",
-              ko: "contentAnchor는 pageConfig가 아니라 BottomInset 옵션입니다. 일반 form은 기본 키보드 동작을 유지하고, 메신저형 화면만 지역적으로 opt-in할 수 있습니다.",
+              en: "contentAnchor is intentionally a BottomInset option, not a `.config()` option. General forms can keep the default keyboard behavior, while messenger-style surfaces opt in locally.",
+              ko: "contentAnchor는 `.config()`가 아니라 BottomInset 옵션입니다. 일반 form은 기본 키보드 동작을 유지하고, 메신저형 화면만 지역적으로 opt-in할 수 있습니다.",
             })}
           </Docs.Alert>
         </Docs.Description>
@@ -320,4 +313,4 @@ export function ScrollToBottomOnMount() {
       <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 lg:flex" />
     </Scroll>
   );
-}
+});

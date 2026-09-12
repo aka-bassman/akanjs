@@ -1,5 +1,6 @@
 import { usePage } from "@apps/akan/client";
 import { panelRecipe } from "@apps/akan/ui";
+import { page } from "akanjs/client";
 
 const principles = [
   {
@@ -52,7 +53,7 @@ const timeline = [
   },
 ];
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   return (
@@ -177,4 +178,4 @@ export default function Page() {
       </article>
     </main>
   );
-}
+});

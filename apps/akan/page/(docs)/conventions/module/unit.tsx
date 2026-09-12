@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, type IntroItem, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function UnitDocsPage() {
+export default page().render(() => {
   const { l } = usePage();
   const loadUnitsStateItems: IntroItem[] = [
     {
@@ -324,4 +325,4 @@ export const Mini = ({ article, className, href }: MiniProps) => (
       <DocsToc />
     </Scroll>
   );
-}
+});

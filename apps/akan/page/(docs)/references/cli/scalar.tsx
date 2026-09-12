@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { type CommandReferenceItem, CommandReferenceSlide, Divider, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   const commands: CommandReferenceItem[] = [
@@ -69,4 +70,4 @@ akan create-scalar Address --ai true`,
       <DocsToc />
     </Scroll>
   );
-}
+});

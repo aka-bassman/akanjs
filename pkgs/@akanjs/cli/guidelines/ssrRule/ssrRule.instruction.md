@@ -84,19 +84,21 @@ whole detail surface renders server-side wherever a route uses the `View` direct
 sections actually need:
 
 ```tsx
-export default async function Page({ params: { orgId } }: PageProps) {
-  const { taskInitInOrg, taskListInOrg } = fetch.initTaskInOrg(orgId);
-  const { orgView } = fetch.viewOrg(orgId);
-  return (
-    <>
-      <Org.Zone.Header view={orgView} />
-      <Task.Zone.Card init={taskInitInOrg} />
-      <Load.Stream of={taskListInOrg} fallback={<Loading.Skeleton active />}>
-        {(taskList) => taskList.map((task) => <Task.Unit.Row key={task.id} task={task} />)}
-      </Load.Stream>
-    </>
-  );
-}
+export default page()
+  .param("orgId", ID)
+  .render(async ({ orgId }) => {
+    const { taskInitInOrg, taskListInOrg } = fetch.initTaskInOrg(orgId);
+    const { orgView } = fetch.viewOrg(orgId);
+    return (
+      <>
+        <Org.Zone.Header view={orgView} />
+        <Task.Zone.Card init={taskInitInOrg} />
+        <Load.Stream of={taskListInOrg} fallback={<Loading.Skeleton active />}>
+          {(taskList) => taskList.map((task) => <Task.Unit.Row key={task.id} task={task} />)}
+        </Load.Stream>
+      </>
+    );
+  });
 ```
 
 Both queries leave immediately — splitting the result never serializes them — and each section renders behind its

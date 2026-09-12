@@ -50,7 +50,9 @@ describe("resolveSsrPageEntries", () => {
     expect(groupedRoot?.seedAbsPaths).toContain(groupedLayoutPath);
 
     const generatedSource = await Bun.file(groupedRoot?.moduleAbsPath ?? "").text();
-    expect(generatedSource).toContain('import * as inheritedLayout from "../../../page/_layout.tsx";');
+    // Both user modules go through the route resolver, so a `rootLayout()` chain and the legacy exports read alike.
+    expect(generatedSource).toContain('import * as inheritedModule from "../../../page/_layout.tsx";');
+    expect(generatedSource).toContain("const inheritedLayout = resolveRouteModule(inheritedModule as never");
     expect(generatedSource).not.toContain("<System.Provider");
     expect(generatedSource).toContain("export async function generateMetadata(props: PageProps)");
     expect(generatedSource).toContain("if (userLayout.generateMetadata) return userLayout.generateMetadata(props);");

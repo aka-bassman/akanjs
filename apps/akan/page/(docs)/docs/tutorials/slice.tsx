@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -195,8 +196,9 @@ export const dictionary = modelDictionary(["en", "ko"])
             code={`
 import { Load, buttonRecipe } from "akanjs/ui";
 import { fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const { icecreamOrderInitInWaiting } = fetch.initIcecreamOrderInWaiting();
   const { icecreamOrderInitInPickup } = fetch.initIcecreamOrderInPickup();
@@ -222,7 +224,7 @@ export default async function Page() {
       </div>
     </div>
   );
-}
+});
 `}
           />
           <div>
@@ -685,4 +687,4 @@ export const View = ({ view }: ViewProps) => {
       <DocsToc />
     </Scroll>
   );
-}
+});

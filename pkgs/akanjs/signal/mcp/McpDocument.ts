@@ -4,7 +4,7 @@ import { type AgentCandidate, AgentCatalogue, type AgentRefusal, type AgentUndes
 import { type JsonSchema, JsonSchemaBuilder } from "../schema";
 import type { SerializedArg, SerializedEndpoint, SerializedSignal } from "../types";
 import { McpUriTemplate } from "./McpUriTemplate";
-import type { McpPrompt, McpResource, McpResourceTemplate, McpTool, McpToolAnnotations } from "./mcpProtocol";
+import type { McpResource, McpResourceTemplate, McpTool, McpToolAnnotations } from "./mcpProtocol";
 
 export interface McpDocumentOptions {
   resolveDescription?: (key: string) => string | undefined;
@@ -64,11 +64,8 @@ export class McpDocument {
    * this key and `outputSchema` is shaped to match. Both halves must agree, which is why they live together.
    */
   static readonly listKey = "items";
-  /** Appended to a list argument's description; read by a person in the client's prompt form, so English. */
-  static readonly commaSeparated = "Comma-separated list.";
 
   readonly tools: McpTool[];
-  readonly prompts: McpPrompt[];
   readonly resourceTemplates: McpResourceTemplate[];
   /** Every readable thing is addressed by a template, so there are no fixed resources to enumerate. */
   readonly resources: McpResource[] = [];
@@ -84,7 +81,6 @@ export class McpDocument {
   readonly #options: McpDocumentOptions;
   readonly #catalogue: AgentCatalogue;
   readonly #byToolName = new Map<string, McpExposedEndpoint>();
-  readonly #byPromptName = new Map<string, { exposed: McpExposedEndpoint; prompt: McpPrompt }>();
   /** Keyed by endpoint key: what is addressable, and by exactly which uri. */
   readonly #templates = new Map<string, string>();
   #cost: McpListingCost | null = null;
@@ -92,14 +88,9 @@ export class McpDocument {
   constructor(serializedSignal: Record<string, SerializedSignal>, options: McpDocumentOptions = {}) {
     this.#options = options;
     this.#catalogue = new AgentCatalogue(options);
-    const { tools, prompts } = this.#collect(serializedSignal);
+    const tools = this.#collect(serializedSignal);
     this.refusals = this.#catalogue.refusals;
     this.tools = tools.map((item) => this.#tool(item));
-    this.prompts = prompts.map((item) => {
-      const prompt = this.#prompt(item);
-      this.#byPromptName.set(item.key, { exposed: item, prompt });
-      return prompt;
-    });
     this.resourceTemplates = tools.flatMap((item) => {
       const uriTemplate = this.#templates.get(item.key);
       return uriTemplate ? [this.#template(item, uriTemplate)] : [];
@@ -109,7 +100,7 @@ export class McpDocument {
   }
 
   /**
-   * Roughly what a `tools/list` plus `prompts/list` costs the caller, and which signals it went to.
+   * Roughly what a `tools/list` costs the caller, and which signals it went to.
    *
    * Worth reporting because the number is nobody's intuition: MCP has no shared component section and forbids a
    * `$ref` across entries, so every entry inlines the schema of every model it mentions — under `outputSchema:
@@ -126,7 +117,6 @@ export class McpDocument {
       bySignal.set(refName, cost);
     };
     for (const tool of this.tools) add(this.#byToolName.get(tool.name)?.refName ?? tool.name, tool);
-    for (const prompt of this.prompts) add(this.#byPromptName.get(prompt.name)?.exposed.refName ?? prompt.name, prompt);
     const costs = [...bySignal.values()].sort((a, b) => b.bytes - a.bytes);
     this.#cost = { bytes: costs.reduce((sum, cost) => sum + cost.bytes, 0), bySignal: costs };
     return this.#cost;
@@ -136,9 +126,13 @@ export class McpDocument {
     return this.#byToolName.get(name);
   }
 
-  /** Returns the catalogue entry alongside the endpoint: `prompts/get` validates against the published one. */
-  findPrompt(name: string) {
-    return this.#byPromptName.get(name);
+  /**
+   * The uri `resources/read` answers for one call of a tool, or undefined for a tool that has no template. What a
+   * page fetched is attached to a prompt under the address an agent can read it back from.
+   */
+  resourceUri(key: string, args: Record<string, unknown>): string | undefined {
+    const template = this.#templates.get(key);
+    return template ? McpUriTemplate.expand(template, args) : undefined;
   }
 
   /**
@@ -167,14 +161,10 @@ export class McpDocument {
    *
    * The enumeration and the naming policy are `AgentCatalogue`'s — every audience walks the same registry and
    * holds one name per entry. What is MCP's own is only this: that every candidate is published unless a rule
-   * refuses it, and that a published one becomes a tool, a prompt, and sometimes an addressable uri.
+   * refuses it, and that a published one becomes a tool and sometimes an addressable uri.
    */
-  #collect(serializedSignal: Record<string, SerializedSignal>): {
-    tools: McpExposedEndpoint[];
-    prompts: McpExposedEndpoint[];
-  } {
+  #collect(serializedSignal: Record<string, SerializedSignal>): McpExposedEndpoint[] {
     const tools: McpExposedEndpoint[] = [];
-    const prompts: McpExposedEndpoint[] = [];
     for (const candidate of AgentCatalogue.candidates(serializedSignal, {
       excludeSignals: this.#options.excludeSignals,
     })) {
@@ -194,11 +184,6 @@ export class McpDocument {
         continue;
       }
       if (!this.#catalogue.claim(item.key)) continue;
-      if (item.endpoint.type === "prompt") {
-        // A prompt is never addressable: `resources/read` resolves a template to a tool, and a prompt is not one.
-        prompts.push(item);
-        continue;
-      }
       // Only the reads the framework generates have a uri shape — `#uriTemplate` knows those key shapes and
       // nothing else. A custom endpoint gets no template: falling back to the model's own published
       // `akan://x/{xId}` under a custom name, which `parse` then routed to *that* endpoint, so every read of the
@@ -210,7 +195,7 @@ export class McpDocument {
       if (uriTemplate) this.#templates.set(item.key, uriTemplate);
       tools.push(item);
     }
-    return { tools, prompts };
+    return tools;
   }
 
   /**
@@ -248,36 +233,6 @@ export class McpDocument {
       },
       ...(outputSchema ? { outputSchema } : {}),
       annotations: mcpHintsOf(key, endpoint) satisfies McpToolAnnotations,
-    };
-  }
-
-  /**
-   * A prompt's arguments are a flat string map on the wire, so there is no schema to publish — only names,
-   * descriptions and which ones must be filled. A `param` is a path segment and always required; a `search` is
-   * the only way to declare an optional one.
-   */
-  #prompt({ refName, key, endpoint }: McpExposedEndpoint): McpPrompt {
-    const args = endpoint.args.filter((arg) => arg.type === "param" || arg.type === "search");
-    return {
-      name: key,
-      ...this.#catalogue.entryTexts(refName, key),
-      ...(args.length
-        ? {
-            arguments: args.map((arg) => {
-              const description = this.#options.resolveDescription?.(`${refName}.signal.${key}.arg.${arg.name}.desc`);
-              // The flat string map has no schema to say `array`, so the spelling a list takes is said here, to the
-              // person filling the argument in.
-              const text = [description, arg.arrDepth ? McpDocument.commaSeparated : undefined]
-                .filter(Boolean)
-                .join(" ");
-              return {
-                name: arg.name,
-                ...(text ? { description: text } : {}),
-                required: arg.type === "param",
-              };
-            }),
-          }
-        : {}),
     };
   }
 

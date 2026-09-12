@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const symbols = [
     {
@@ -24,28 +25,6 @@ export class RoomEndpoint extends endpoint(roomSrv, ({ pubsub }) => ({
   feed: pubsub(cnst.Message, { guards: [AdminOnly] })
     .room("roomId", ID)
     .exec(() => undefined),
-})) {}`,
-    },
-    {
-      name: "prompt / Msg",
-      desc: l.trans({
-        en: "`prompt()` is the fifth endpoint kind and the one a *user* invokes by name — an MCP client renders it as a slash command — rather than one the model chooses. `exec` returns `PromptMessage[]`, or a bare string that is wrapped into a single user message. Build messages with `Msg.user`, `Msg.assistant`, `Msg.link`, `Msg.resource`, `Msg.image`, `Msg.audio`, and `Msg.imageOf`. A prompt takes `.param()` and `.search()` only, because `prompts/get` carries a flat string map. An embedded payload is masked by the model you name — `Msg.resource(uri, task, { model: cnst.Task })`, or `Msg.mask(cnst.Task, task)` for one piece of an assembly — and an undeclared value whose secret fields are populated is refused rather than sent.",
-        ko: "`prompt()`는 다섯 번째 endpoint 종류로, model이 고르는 것이 아니라 *사용자*가 이름으로 호출합니다 — MCP client는 slash command로 렌더링합니다. `exec`는 `PromptMessage[]`를 반환하며, 문자열 하나를 반환하면 user message 하나로 감쌉니다. message는 `Msg.user`, `Msg.assistant`, `Msg.link`, `Msg.resource`, `Msg.image`, `Msg.audio`, `Msg.imageOf`로 만듭니다. `prompts/get`이 flat string map을 실어 보내므로 prompt는 `.param()`과 `.search()`만 받습니다. 실어 보내는 payload는 이름을 적은 model 기준으로 마스킹됩니다 — `Msg.resource(uri, task, { model: cnst.Task })`, 조립된 payload의 한 조각이라면 `Msg.mask(cnst.Task, task)` — 그리고 model을 적지 않은 값에 secret field가 채워져 있으면 보내지 않고 거부합니다.",
-      }),
-      code: `import { SignedIn } from "@apps/myapp/srvkit"; // guards are yours, not the framework's
-import { endpoint, Msg } from "akanjs/signal";
-
-export class TaskEndpoint extends endpoint(srv.task, ({ prompt }) => ({
-  reviewTask: prompt({ guards: [SignedIn] }) // guards decide MCP exposure; there is no opt-in to write
-    .param("taskId", ID)
-    .search("tone", String)
-    .exec(async function (taskId, tone) {
-      const task = await this.taskService.getLightTask(taskId);
-      return [
-        Msg.user(\`Review this task in a \${tone ?? "neutral"} tone.\`),
-        Msg.resource(\`akan://task/\${taskId}\`, task, { model: cnst.LightTask }),
-      ];
-    }),
 })) {}`,
     },
     {
@@ -120,6 +99,12 @@ const utilSignal = SignalRegistry.getService("util");`,
               ko: "`akanjs/signal`은 service 주변의 API boundary를 선언합니다. `*.signal.ts`에서 endpoint, internal job, database slice, guard, middleware, request argument, registered server signal을 정의할 때 사용합니다.",
             })}
           </div>
+          <div>
+            {l.trans({
+              en: "The endpoint builder kinds are `query`, `mutation`, `pubsub`, and `message`; an MCP prompt is declared on a page with `page().prompt(name, description)` — see the `akanjs/client` reference.",
+              ko: "endpoint builder의 종류는 `query`, `mutation`, `pubsub`, `message`이며, MCP prompt는 page에서 `page().prompt(name, description)`로 선언합니다 — `akanjs/client` 레퍼런스를 참고하세요.",
+            })}
+          </div>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -140,4 +125,4 @@ const utilSignal = SignalRegistry.getService("util");`,
       <DocsToc />
     </Scroll>
   );
-}
+});

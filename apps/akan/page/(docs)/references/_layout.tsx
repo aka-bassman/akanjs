@@ -1,10 +1,8 @@
 import { usePage } from "@apps/akan/client";
 import { Docs } from "@apps/akan/ui";
+import { layout } from "akanjs/client";
 
-interface LayoutProps {
-  children: React.ReactNode;
-}
-export default function Layout({ children }: LayoutProps) {
+export default layout().render(({ children }) => {
   const { l } = usePage();
   const menuMap = [
     {
@@ -51,4 +49,4 @@ export default function Layout({ children }: LayoutProps) {
     },
   ];
   return <Docs.Layout menuMap={menuMap}>{children}</Docs.Layout>;
-}
+});

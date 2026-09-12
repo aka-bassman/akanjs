@@ -13,6 +13,7 @@ import {
   assertUniqueRoutePatterns,
   compareRouteSpecificity,
   getRouteExports,
+  Logger,
   matchRoutePattern,
   parseBasePaths,
   parseRouteModuleKey,
@@ -20,11 +21,16 @@ import {
 } from "akanjs/common";
 import { createElement } from "react";
 import { defaultPageState, validatePageConfig } from "../client/frameConfig";
+import {
+  type ResolvedRouteModule,
+  type RouteModuleSource,
+  resolveRouteModule,
+} from "../client/route/resolveRouteModule";
 import { resolveHeadExport, resolveMetadataHead } from "./metadata";
 
 type RouteModuleKindWithOverrides = "page" | "layout" | "overrides";
 
-export type PagesContext = Record<string, () => Promise<RouteModule>>;
+export type PagesContext = Record<string, () => Promise<RouteModuleSource>>;
 
 export interface RouteModuleCacheStats {
   moduleCount: number;
@@ -36,6 +42,8 @@ export interface RouteModuleCacheStats {
 }
 
 export class RouteTreeBuilder {
+  static readonly logger = new Logger("RouteTreeBuilder");
+  static readonly #legacyWarned = new Set<string>();
   static readonly #moduleCacheStats: RouteModuleCacheStats = {
     moduleCount: 0,
     loadedModuleCount: 0,
@@ -134,7 +142,7 @@ export class RouteTreeBuilder {
     return result;
   }
 
-  #addRouteModule(filePath: string, loader: () => Promise<RouteModule>) {
+  #addRouteModule(filePath: string, loader: () => Promise<RouteModuleSource>) {
     const parsed = parseRouteModuleKey(filePath);
     if (parsed.kind === "page") this.#pagePatterns.push({ key: filePath, pattern: parsed.pattern });
     const pathSegments = ["/", ...parsed.routeSegments.map(routeSegmentToTreePath)];
@@ -233,8 +241,8 @@ export class RouteTreeBuilder {
     ];
   }
 
-  static #makeLazyModule(key: string, kind: RouteModuleKindWithOverrides, loader: () => Promise<RouteModule>) {
-    let cached: RouteModule | null = null;
+  static #makeLazyModule(key: string, kind: RouteModuleKindWithOverrides, loader: () => Promise<RouteModuleSource>) {
+    let cached: ResolvedRouteModule | null = null;
     let loaded = false;
     RouteTreeBuilder.#moduleCacheStats.moduleCount += 1;
     return async () => {
@@ -243,17 +251,34 @@ export class RouteTreeBuilder {
         return cached;
       }
       RouteTreeBuilder.#moduleCacheStats.cacheMisses += 1;
-      const mod = await loader();
-      RouteTreeBuilder.#validateRouteModuleExports(key, kind, mod);
-      validatePageConfig(key, "pageConfig" in mod ? mod.pageConfig : undefined);
+      const resolved = RouteTreeBuilder.#resolveModule(key, kind, await loader());
+      RouteTreeBuilder.#validateRouteModuleExports(key, kind, resolved.module);
+      validatePageConfig(key, "pageConfig" in resolved.module ? resolved.module.pageConfig : undefined);
       if (!loaded) {
         RouteTreeBuilder.#moduleCacheStats.loadedModuleCount += 1;
         RouteTreeBuilder.#moduleCacheStats.loadedModuleKeys.push(key);
         loaded = true;
       }
-      if (process.env.AKAN_ROUTE_MODULE_CACHE !== "0") cached = mod;
-      return mod;
+      if (process.env.AKAN_ROUTE_MODULE_CACHE !== "0") cached = resolved;
+      return resolved;
     };
+  }
+
+  /**
+   * A `page()` / `layout()` chain is unfolded into the named-export shape the rest of this file reads. The legacy
+   * shape still loads, and is named once per module so an app finds every file the migration guide covers.
+   */
+  static #resolveModule(key: string, kind: RouteModuleKindWithOverrides, mod: RouteModuleSource): ResolvedRouteModule {
+    if (kind === "overrides") return { module: mod as RouteModule };
+    const parsed = parseRouteModuleKey(key);
+    const resolved = resolveRouteModule(mod, key, { kind, pattern: parsed.pattern });
+    if (!resolved.definition && !parsed.isInternalRootLayout && !RouteTreeBuilder.#legacyWarned.has(key)) {
+      RouteTreeBuilder.#legacyWarned.add(key);
+      RouteTreeBuilder.logger.warn(
+        `${key} uses the legacy route shape (a default function beside named exports). Write \`export default ${kind === "layout" ? "layout()" : "page()"}…\` instead — see the "Migrating page/" recipe.`,
+      );
+    }
+    return resolved;
   }
 
   static #validateRouteModuleExports(key: string, kind: RouteModuleKindWithOverrides, mod: RouteModule) {
@@ -287,16 +312,16 @@ export class RouteTreeBuilder {
     }
   }
 
-  static #makeRouteRender(key: string, kind: "page" | "layout", loader: () => Promise<RouteModule>): RouteRender {
+  static #makeRouteRender(key: string, kind: "page" | "layout", loader: () => Promise<RouteModuleSource>): RouteRender {
     const loadModule = RouteTreeBuilder.#makeLazyModule(key, kind, loader);
     const routeRender: RouteRender = {
       isAsync: true,
       resolveLoading: async () => {
-        const mod = await loadModule();
+        const { module: mod } = await loadModule();
         routeRender.Loading = mod.Loading as never;
       },
       render: async (props: LayoutProps | PageProps) => {
-        const mod = await loadModule();
+        const { module: mod } = await loadModule();
         routeRender.Loading = mod.Loading as never;
         if (kind === "layout") {
           const layoutMod = mod as LayoutModule;
@@ -307,7 +332,7 @@ export class RouteTreeBuilder {
         return mod.default(props as never);
       },
       resolveHead: async (props: PageProps) => {
-        const mod = await loadModule();
+        const { module: mod } = await loadModule();
         routeRender.Loading = mod.Loading as never;
         if (kind === "layout") {
           const layoutMod = mod as LayoutModule;
@@ -329,22 +354,23 @@ export class RouteTreeBuilder {
     };
     if (kind === "page") {
       routeRender.getPageConfig = async () => {
-        const mod = await loadModule();
+        const { module: mod } = await loadModule();
         return "pageConfig" in mod ? mod.pageConfig : undefined;
       };
+      routeRender.getRouteDefinition = async () => (await loadModule()).definition;
     } else {
       routeRender.getLayoutPageConfig = async () => {
-        const mod = await loadModule();
+        const { module: mod } = await loadModule();
         return "pageConfig" in mod ? mod.pageConfig : undefined;
       };
       routeRender.resolveNotFound = async () => {
-        const mod = (await loadModule()) as LayoutModule;
+        const mod = (await loadModule()).module as LayoutModule;
         routeRender.NotFound = mod.NotFound;
         routeRender.Error = mod.Error;
         return mod.NotFound;
       };
       routeRender.resolveError = async () => {
-        const mod = (await loadModule()) as LayoutModule;
+        const mod = (await loadModule()).module as LayoutModule;
         routeRender.NotFound = mod.NotFound;
         routeRender.Error = mod.Error;
         return mod.Error;
@@ -356,12 +382,12 @@ export class RouteTreeBuilder {
   // A `_overrides.tsx` renders through its generated `"use client"` wrapper layout: the wrapper's default mounts
   // the `UiOverrideProvider` (with the manifest's slot bindings) around the subtree. On the server the wrapper is
   // a client reference, on the client the real component — `createElement` handles both. No head/config/fallback.
-  #makeOverridesRender(key: string, loader: () => Promise<RouteModule>): RouteRender {
+  #makeOverridesRender(key: string, loader: () => Promise<RouteModuleSource>): RouteRender {
     const loadModule = RouteTreeBuilder.#makeLazyModule(key, "overrides", loader);
     return {
       isAsync: true,
       render: (async ({ children }: LayoutProps) => {
-        const mod = await loadModule();
+        const { module: mod } = await loadModule();
         if (!mod.default) throw new Error(`[route-convention] ${key} generated override wrapper has no default export`);
         return createElement(mod.default as never, { children } as never);
       }) as RouteRender["render"],

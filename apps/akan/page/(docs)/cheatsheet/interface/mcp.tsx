@@ -1,9 +1,10 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsList, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   return (
@@ -30,10 +31,10 @@ export default function Page() {
                 }),
               },
               {
-                title: "prompt",
+                title: "page().prompt()",
                 desc: l.trans({
-                  en: "A slash command the user invokes, not the model.",
-                  ko: "model이 고르는 것이 아니라 사용자가 호출하는 slash command입니다.",
+                  en: "A screen published from its page file as a slash command the user invokes, not the model.",
+                  ko: "page 파일에서 게시되는 화면입니다. model이 고르는 것이 아니라 사용자가 호출하는 slash command입니다.",
                 }),
               },
               {
@@ -244,54 +245,118 @@ akan://task/list/inTodo{?skip,limit,sort}`}
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="prompt" title={l.trans({ en: "4. Write A Prompt", ko: "4. Prompt 작성하기" })}>
-        <Docs.Title>{l.trans({ en: "4. Write A Prompt", ko: "4. Prompt 작성하기" })}</Docs.Title>
+      <Scroll.Slide
+        id="prompt"
+        title={l.trans({ en: "4. Publish A Screen As A Prompt", ko: "4. 화면을 Prompt로 게시하기" })}
+      >
+        <Docs.Title>{l.trans({ en: "4. Publish A Screen As A Prompt", ko: "4. 화면을 Prompt로 게시하기" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A prompt is invoked by the user — a client renders it as a slash command. exec returns PromptMessage[], or a bare string that is wrapped into one user message. It takes .param() and .search() only: prompts/get sends a flat string map.",
-              ko: "prompt는 사용자가 호출합니다. client는 slash command로 렌더링합니다. exec은 PromptMessage[]를 반환하며, 문자열 하나면 user message 하나로 감쌉니다. prompts/get이 flat string map을 보내므로 .param()과 .search()만 받습니다.",
+              en: "A prompt is a screen, not an endpoint. Declare it in the page file with .prompt(name, description): the user invokes it as a slash command, and the model receives what the page loads. There is no prompt() builder in a signal, and Msg is not a public API.",
+              ko: "prompt는 endpoint가 아니라 화면입니다. page 파일에 .prompt(name, description)으로 선언합니다. 사용자가 slash command로 호출하면 model은 그 page가 불러오는 것을 받습니다. signal에 prompt() builder는 없고, Msg는 public API가 아닙니다.",
             })}
           </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title="task.signal.ts"
-          code={`reviewTask: prompt({ guards: [SignedIn] })
-  .param("taskId", ID)
-  .search("tone", String)
-  .exec(async function (taskId, tone) {
-    const task = await this.taskService.getLightTask(taskId);
-    return [
-      Msg.user(\`Review this task in a \${tone ?? "neutral"} tone and suggest next steps.\`),
-      Msg.resource(\`akan://task/\${taskId}\`, task, { model: cnst.LightTask }),
-    ];
-  }),`}
+          title="page/project/[projectId]/tickets.tsx"
+          code={`export default page()
+  .param("projectId", ID, { desc: "The project to brief." })
+  .search("statuses", [String], { desc: "Statuses to include." })
+  .prompt("briefProjectTickets", "Brief the ticket board of one project.")
+  .render(async ({ projectId, statuses }) => {
+    const [{ project }, { ticketInitInProject }] = await Promise.all([
+      fetch.viewProject(projectId),
+      fetch.initTicketInProject(projectId, statuses),
+    ]);
+    return <Ticket.Zone.Card init={ticketInitInProject} project={project} />;
+  });`}
         />
         <Docs.Description>
           <DocsList>
             <li>
               {l.trans({
-                en: "Msg.user and Msg.assistant carry text. Msg.link points without embedding. Msg.resource embeds a value. Msg.image / Msg.imageOf / Msg.audio inline bytes.",
-                ko: "Msg.user와 Msg.assistant는 텍스트를, Msg.link는 임베드 없이 참조를, Msg.resource는 값 자체를 싣고, Msg.image / Msg.imageOf / Msg.audio는 바이트를 인라인합니다.",
+                en: "The description is the whole instruction the model receives — English, in API vocabulary. Agent.Guide text is never used for MCP.",
+                ko: "description이 model이 받는 지시의 전부입니다. API 어휘로, 영어로 씁니다. Agent.Guide 문구는 MCP에 쓰이지 않습니다.",
               })}
             </li>
             <li>
               {l.trans({
-                en: "Name the model on an embedded value so hidden and secret fields are stripped: Msg.resource(uri, task, { model: cnst.LightTask }), or Msg.mask for one piece of an assembly. An undeclared value whose secret fields are populated is refused.",
-                ko: "값을 실을 때 model을 적으면 hidden·secret field가 벗겨집니다. Msg.resource(uri, task, { model: cnst.LightTask }), 조립된 payload의 한 조각이면 Msg.mask입니다. model을 적지 않은 값에 secret field가 채워져 있으면 거부됩니다.",
+                en: "Arguments are the declaration: .param() is required, .search() optional, and desc is the argument's description. A list argument gets Comma-separated list. appended and is typed comma-separated in prompts/get. An ID, Int, or enum value is validated by the page's own declaration.",
+                ko: "인자는 선언 그대로입니다. .param()은 필수, .search()는 optional이고 desc가 인자 설명이 됩니다. 배열 인자에는 Comma-separated list.가 덧붙고 prompts/get에서는 쉼표로 구분해 입력합니다. ID, Int, enum 값은 page 자신의 선언으로 검증합니다.",
               })}
             </li>
             <li>
               {l.trans({
-                en: "Give the instruction a high priority (0..1) and attachments a low one — a client with a full window otherwise drops blocks by position.",
-                ko: "지시에는 높은 priority(0..1)를, 첨부에는 낮은 값을 주세요. 없으면 컨텍스트가 꽉 찬 client가 위치 순으로 블록을 버립니다.",
+                en: "prompts/list lists every page with .prompt(). A name matches ^[A-Za-z0-9_-]{1,64}$ and is unique across pages.",
+                ko: "prompts/list는 .prompt()가 있는 모든 page를 나열합니다. 이름은 ^[A-Za-z0-9_-]{1,64}$에 맞고 page 전체에서 유일해야 합니다.",
+              })}
+            </li>
+          </DocsList>
+        </Docs.Description>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "prompts/get runs the page's body — root layouts, layouts, then the render function — in the RSC worker under the caller's bearer token. No JSX is rendered and no client component runs; every fetch.* query the page makes is recorded and becomes the answer.",
+              ko: "prompts/get은 page의 body — root layout, layout, 그다음 render 함수 — 를 호출자의 bearer token으로 RSC worker에서 실행합니다. JSX는 렌더링되지 않고 client component도 돌지 않습니다. page가 보낸 fetch.* 조회 하나하나가 기록되어 응답이 됩니다.",
+            })}
+          </div>
+          <div className="space-y-1">
+            {[
+              {
+                title: "user",
+                desc: l.trans({
+                  en: "The description, as the first user message.",
+                  ko: "description이 첫 user message로 들어갑니다.",
+                }),
+              },
+              {
+                title: "resource",
+                desc: l.trans({
+                  en: "One per query, embedded and masked by that endpoint's return model — hidden, secret, and visual fields stripped — at the akan:// uri the tool answers to, or akan://<toolKey>?args for a custom read.",
+                  ko: "조회마다 하나씩 값을 실어 보내며, 해당 endpoint의 반환 model로 hidden·secret·visual field를 벗깁니다. 주소는 그 tool이 응답하는 akan:// uri이고, 커스텀 조회는 akan://<toolKey>?args입니다.",
+                }),
+              },
+              {
+                title: "tools",
+                desc: l.trans({
+                  en: "A final line, Tools for this screen: a, b, c. — the published tools of the modules the page fetched from, filtered to what the caller may see.",
+                  ko: "마지막 줄 Tools for this screen: a, b, c. 에 page가 조회한 module들의 게시된 tool을, 호출자가 볼 수 있는 것만 골라 적습니다.",
+                }),
+              },
+            ].map(({ title, desc }) => (
+              <div key={title} className={panelRecipe({ padding: "row" })}>
+                <span className="font-mono font-semibold text-primary">{title}: </span>
+                <span className="text-foreground/70 text-sm">{desc}</span>
+              </div>
+            ))}
+          </div>
+        </Docs.Description>
+        <Docs.Description>
+          <DocsList>
+            <li>
+              {l.trans({
+                en: "Lists are cut, largest first, to promptBudget — 60,000 characters by default, option.setMcp({ promptBudget }) or AKAN_MCP_PROMPT_BUDGET — with a note: Attached the first N of M rows of `key`; call it for the rest.",
+                ko: "목록은 큰 것부터 promptBudget에 맞게 잘립니다. 기본 60,000자이며 option.setMcp({ promptBudget }) 또는 AKAN_MCP_PROMPT_BUDGET로 조정합니다. 잘리면 Attached the first N of M rows of `key`; call it for the rest. 한 줄이 붙습니다.",
               })}
             </li>
             <li>
               {l.trans({
-                en: "A prompt is also a plain HTTP GET whether or not MCP is on, so a web UI can preview it. Guard it like any other read.",
-                ko: "prompt는 MCP를 켰든 아니든 평범한 HTTP GET으로도 올라갑니다. 웹 UI 미리보기용이며, 다른 조회와 똑같이 가드하세요.",
+                en: 'A required argument left out is answered with one message and no page run: No <arg> was named for "<prompt>". Find it with <model>List…, then run this prompt again with <arg>=<id>. There is no fallback context — a prompt cannot re-run itself.',
+                ko: '필수 인자가 빠지면 page를 돌리지 않고 메시지 하나로 답합니다. No <arg> was named for "<prompt>". Find it with <model>List…, then run this prompt again with <arg>=<id>. 대체 컨텍스트는 없습니다. prompt는 스스로 다시 돌 수 없기 때문입니다.',
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: "A page that redirects — getSelf({ unauthorize }) — answers a 401 credential challenge when the call carried no token, otherwise This screen is not available to the signed-in account. router.notFound() answers No screen exists for these arguments. Any other throw answers The page failed to load. and is logged server-side.",
+                ko: "redirect하는 page — getSelf({ unauthorize }) — 는 token 없는 호출에 401 credential challenge를, 있으면 This screen is not available to the signed-in account.를 답합니다. router.notFound()는 No screen exists for these arguments., 그 밖의 throw는 The page failed to load.로 답하고 server에 로그를 남깁니다.",
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: "Tool exposure is unchanged — guards decide, and mcp: false and Person still apply. The in-page chat keeps only its six built-in slash commands; app prompts are not listed there.",
+                ko: "tool 노출은 그대로입니다. guard가 정하고, mcp: false와 Person도 그대로 적용됩니다. 페이지 안 채팅은 내장 slash command 여섯 개만 유지하며, 앱 prompt는 거기에 나열되지 않습니다.",
               })}
             </li>
           </DocsList>
@@ -446,8 +511,8 @@ AKAN_MCP_RESOURCE=https://api.example.com/mcp`}
             </li>
             <li>
               {l.trans({
-                en: "A prompt also refuses a list argument and any Any argument: its arguments are one string per name, with no schema beside them.",
-                ko: "prompt는 배열 인자와 Any 인자도 거부합니다. 인자가 이름마다 문자열 하나이고 옆에 schema가 없기 때문입니다.",
+                en: "A prompt's arguments are one string per name with no schema beside them, so a list is typed comma-separated and a value the page's .param() or .search() type refuses is reported by name.",
+                ko: "prompt 인자는 이름마다 문자열 하나이고 옆에 schema가 없습니다. 그래서 배열은 쉼표로 구분해 입력하고, page의 .param()·.search() 타입이 거부하는 값은 이름을 짚어 돌려줍니다.",
               })}
             </li>
             <li>
@@ -468,4 +533,4 @@ AKAN_MCP_RESOURCE=https://api.example.com/mcp`}
       <DocsToc />
     </Scroll>
   );
-}
+});

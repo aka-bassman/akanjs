@@ -14,6 +14,7 @@ import {
 } from "akanjs/common";
 import { type AkanRequestStore, createRequestStore, parseCookieHeader } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
+import type { PagePromptSource } from "../signal/mcp/pagePrompt";
 import {
   type BuilderRpc,
   type ClientManifest,
@@ -740,6 +741,14 @@ export class WebRouter {
   }
   setLogLevel(minSev: number | null) {
     this.#rsc.setLogLevel(minSev);
+  }
+
+  /** Page prompts live with the pages, in the RSC worker; the MCP router reaches them through this. */
+  pagePrompts(): PagePromptSource {
+    return {
+      list: () => this.#rsc.listPagePrompts(),
+      run: (input) => this.#rsc.runPagePrompt(input),
+    };
   }
 
   onLogRecords(listener: (records: LogRecord[], dropped: number) => void) {

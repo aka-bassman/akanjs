@@ -65,6 +65,8 @@ export class AsyncDefaultExportDetector {
 
       if (ts.isExportAssignment(statement)) {
         if (this.#isAsyncFunctionExpression(statement.expression)) return true;
+        // `export default layout()….render(fn)`: the loader unfolds the chain into an async adapter whatever `fn` is.
+        if (ts.isCallExpression(statement.expression)) return true;
         if (ts.isIdentifier(statement.expression)) defaultIdentifier = statement.expression.text;
         continue;
       }

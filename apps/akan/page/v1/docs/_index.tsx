@@ -1,6 +1,6 @@
-import { router } from "akanjs/client";
+import { page, router } from "akanjs/client";
 
-export default async function Page() {
+export default page().render(() => {
   router.redirect("/v1/docs/intro/quickstart");
   return <div>Docs</div>;
-}
+});

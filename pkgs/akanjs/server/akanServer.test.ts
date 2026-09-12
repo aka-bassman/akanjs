@@ -263,6 +263,7 @@ describe("AkanServer MCP config", () => {
       "AKAN_MCP_OUTPUT_SCHEMA",
       "AKAN_MCP_RATE_LIMIT",
       "AKAN_MCP_CONCURRENT",
+      "AKAN_MCP_PROMPT_BUDGET",
     ];
 
     try {
@@ -280,6 +281,7 @@ describe("AkanServer MCP config", () => {
       process.env.AKAN_MCP_OUTPUT_SCHEMA = "none";
       process.env.AKAN_MCP_RATE_LIMIT = "60/30";
       process.env.AKAN_MCP_CONCURRENT = "2";
+      process.env.AKAN_MCP_PROMPT_BUDGET = "20000";
 
       const fromEnv = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
       expect(fromEnv.mcp).toBe(true);
@@ -293,6 +295,7 @@ describe("AkanServer MCP config", () => {
         language: "ko",
         outputSchema: "none",
         rateLimit: { calls: 60, windowMs: 30_000, concurrent: 2 },
+        promptBudget: 20_000,
       });
       expect(fromEnv.mcpAuth).toEqual({ authorizationServers: ["https://auth.example.com"] });
       process.env.AKAN_MCP_RATE_LIMIT = "off";
@@ -410,7 +413,7 @@ describe("AkanServer MCP config", () => {
       // none stays quiet about a catalogue it is not serving.
       await server.init({ web: false });
       const log = lines.join("\n");
-      expect(log).toContain("MCP catalogue: tools=4 prompts=0 resourceTemplates=2");
+      expect(log).toContain("MCP catalogue: tools=4 resourceTemplates=2");
       // Nobody wrote an opt-in, so the boot log is the only place a missing tool has an explanation — and this
       // fixture's `[Public]` writes and guardless reads are exactly the two shapes the guarded rule keeps out.
       expect(log).toContain('did not expose "createServerResolverTestItem"');

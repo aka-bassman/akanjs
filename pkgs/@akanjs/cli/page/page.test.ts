@@ -8,7 +8,7 @@ type GetContent = (
 // The CRUD page scaffolds are `getContent(scanInfo, dict)` factories under templates/. They render the
 // _index.tsx / edit page source a fresh workspace ships with, so their output must itself pass
 // `akan typecheck`/`akan lint` without hand edits. These golden checks guard the two mistakes that are
-// mechanically always avoidable: `await` inside a non-async `Page`, and app-client imports that skip the
+// mechanically always avoidable: `await` inside a non-async `render` callback, and app-client imports that skip the
 // `@apps/*` path alias.
 const templates = [
   { name: "crudPages list", path: "../templates/crudPages/page.tsx" },
@@ -27,10 +27,10 @@ const renderContent = async (path: string) => {
 
 describe("crud page scaffolds", () => {
   for (const { name, path } of templates) {
-    test(`${name}: a Page that awaits is declared async`, async () => {
+    test(`${name}: a render callback that awaits is declared async`, async () => {
       const content = await renderContent(path);
       if (content.includes("await ")) {
-        expect(content).toContain("export default async function Page");
+        expect(content).toContain(".render(async (");
       }
     });
 

@@ -186,11 +186,11 @@ export class TaskFilter extends from(cnst.Task, (filter) => ({
   })),
 }))
 
-// 4. In page — Init the slice in an async Page and hand the init to a Zone.
-export default async function Page() {
+// 4. In page — init the slice inside the page chain's render and hand the init to a Zone.
+export default page().render(async () => {
   const [{ taskInitInTodo }] = await Promise.all([fetch.initTaskInTodo()]);
   return <Task.Zone.Card init={taskInitInTodo} sliceName="taskInTodo" />;
-}
+});
 ```
 
 The slice name in code uses camelCase (`inTodo`). In dictionary and components it becomes `"taskInTodo"`.
@@ -327,6 +327,71 @@ export const Insight = ({ sliceName }: { sliceName: string }) => {
 ```
 
 ---
+
+### Recipe 7: Migrating `page/` to the Route Chain
+
+A route file used to be a default function beside named exports (`pageConfig`, `head`, `generateHead`, `Loading`,
+`fonts`, …). It is now one chain, and the chain is also what publishes a screen to agents. The legacy shape still
+loads and logs one warning per file at boot (`… uses the legacy route shape …`); migrate file by file, then run
+`bun run akan typecheck <app>` and `bun run akan lint <app>`.
+
+```tsx
+// before — page/(user)/project/[projectId]/_index.tsx
+import { fetch, usePage } from "@apps/<app>/client";
+import type { PageConfig } from "akanjs/client";
+
+interface PageProps {
+  params: { projectId: string };
+  searchParams: { tab?: string };
+}
+export function generateHead({ params }: PageProps) {
+  return <title>{params.projectId}</title>;
+}
+export default async function Page({ params: { projectId }, searchParams }: PageProps) {
+  const { l } = usePage();
+  const { project } = await fetch.viewProject(projectId);
+  return <Project.Zone.View view={project} tab={searchParams.tab} />;
+}
+export const pageConfig = { transition: "stack" } satisfies PageConfig;
+
+// after
+import { fetch, usePage } from "@apps/<app>/client";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
+
+export default page()
+  .param("projectId", ID, { desc: "The project to show." })
+  .search("tab", String)
+  .config({ transition: "stack" })
+  .head(({ projectId }) => <title>{projectId}</title>)
+  .prompt("briefProject", "Brief one project: its status and what is due.")
+  .render(async ({ projectId, tab }) => {
+    const { l } = usePage();
+    const { project } = await fetch.viewProject(projectId);
+    return <Project.Zone.View view={project} tab={tab} />;
+  });
+```
+
+| Legacy export | Chain stage |
+|---|---|
+| `interface PageProps { params }` + `[x]` folder | `.param("x", ID \| String \| Int \| …)` — one per `[x]` segment, every one of them, in path order |
+| `searchParams.k` | `.search("k", Type)`; `[Type]` for a repeated key; the value arrives typed and optional |
+| `params.lang` | `lang` — on every route's `.render()`, `.head()`, `.metadata()` and `.loading()` with no stage; `.param("lang")` is refused |
+| `export const pageConfig = {…}` | `.config({…})` — `devOnly` stays a literal |
+| `export const head = <…/>` / `generateHead({ params })` | `.head(<…/>)` / `.head(({ x }) => <…/>)` |
+| `export const metadata` / `generateMetadata` | `.metadata({…})` / `.metadata((args) => …)` |
+| `export function Loading()` | `.loading((args) => …)` |
+| `export default async function Page({ params, searchParams })` | `.render(async ({ x, k }) => { …same body… })` — `async` only if it awaits |
+| `_layout.tsx`: `export default function Layout({ children })` | `layout().render(({ children }) => …)` |
+| `export function NotFound` / `export function Error` | `.notFound(fn)` / `.error(fn)` on `layout()` |
+| root `_layout.tsx`: `fonts`, `theme`, `manifest`, `reconnect`, `wsConnect`, `layoutStyle`, `gaTrackingId` | `rootLayout().fonts([…]).theme("dark").manifest({…}).reconnect(false).wsConnect(false).layoutStyle("web").gaTrackingId("G-…")` |
+| `prompt()` on `endpoint()` (removed) | `.prompt(name, description)` on the page that shows the same screen |
+
+Rules the loader and `akan sync` enforce: a chain module has no other export; `page()` belongs in a page file and
+`layout()` / `rootLayout()` in a `_layout.tsx`; a page names every `[x]` of its path, a layout may name a subset;
+`.param()` and `.prompt()` names are string literals; `import "./styles.css"` stays the first line of a root layout;
+`_overrides.tsx` is untouched. MCP: `prompts/get` now runs the page's body under the caller's token and hands the
+model the description, what the page fetched, and the tools of those modules — see `mcpRule`.
 
 ### Data Flow Summary
 

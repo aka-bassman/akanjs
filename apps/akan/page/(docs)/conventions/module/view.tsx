@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, cardGridRecipe, Divider, Docs, DocsToc, type IntroItem, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function ViewDocsPage() {
+export default page().render(() => {
   const { l } = usePage();
 
   const comparisonItems: IntroItem[] = [
@@ -187,10 +188,12 @@ export const General = ({ order }: OrderViewProps) => {
         <Code.Snippet
           className="w-full"
           title="detail page"
-          code={`export default async function Page({ params }: PageProps) {
-  const { releaseView } = fetch.viewRelease(params.releaseId);
-  return <Release.Zone.View view={releaseView} />;
-}`}
+          code={`export default page()
+  .param("releaseId", ID)
+  .render(async ({ releaseId }) => {
+    const { releaseView } = fetch.viewRelease(releaseId);
+    return <Release.Zone.View view={releaseView} />;
+  });`}
         />
         <Docs.Description>
           <div>
@@ -275,4 +278,4 @@ export const View = ({ view }: ViewProps) => {
       <DocsToc />
     </Scroll>
   );
-}
+});

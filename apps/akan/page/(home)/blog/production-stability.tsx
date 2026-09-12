@@ -1,4 +1,5 @@
 import { usePage } from "@apps/akan/client";
+import { page } from "akanjs/client";
 
 const comparisonData = [
   {
@@ -150,7 +151,7 @@ const architectureNotes = [
   },
 ];
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   return (
@@ -432,4 +433,4 @@ export default function Page() {
       </article>
     </main>
   );
-}
+});

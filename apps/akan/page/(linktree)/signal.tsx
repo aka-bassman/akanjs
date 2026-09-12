@@ -1,9 +1,8 @@
 import { SampleSignal } from "@apps/akan/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
-  return (
-    <div className="p-8">
-      <SampleSignal />
-    </div>
-  );
-}
+export default page().render(() => (
+  <div className="p-8">
+    <SampleSignal />
+  </div>
+));

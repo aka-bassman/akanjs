@@ -22,6 +22,7 @@ import {
 } from "akanjs/fetch";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-server-dom-webpack/server.node";
+import type { PagePromptRunInput } from "../signal/mcp/pagePrompt";
 import { getCurrentTrace, runTraced, SignalTrace } from "../signal/trace";
 import type { ClientManifest } from "./artifact";
 import {
@@ -56,6 +57,7 @@ import {
 } from "./routeState";
 import { type PagesContext, RouteTreeBuilder } from "./routeTreeBuilder";
 import { encodeAkanRedirectDigest } from "./rscHttp";
+import { RscPagePrompts } from "./rscPagePrompts";
 import { isAkanRscPartialCommitEnabled } from "./rscPartialCommit";
 import { resolveAkanRscHeadSafePatchDecision } from "./rscPatchSafety";
 import {
@@ -116,7 +118,25 @@ interface LogLevelMsg {
   type: "log-level";
   minSev: number | null;
 }
-type InMsg = InitMsg | RenderMsg | CancelMsg | ReloadMsg | UpdateCssAssetsMsg | InvalidateCacheMsg | LogLevelMsg;
+interface PagePromptsMsg {
+  type: "page-prompts";
+  requestId: string;
+}
+interface PagePromptRunMsg {
+  type: "page-prompt.run";
+  requestId: string;
+  input: PagePromptRunInput;
+}
+type InMsg =
+  | InitMsg
+  | RenderMsg
+  | CancelMsg
+  | ReloadMsg
+  | UpdateCssAssetsMsg
+  | InvalidateCacheMsg
+  | LogLevelMsg
+  | PagePromptsMsg
+  | PagePromptRunMsg;
 type RenderControl =
   | { type: "redirect"; location: string; method: "replace" | "push"; status: RedirectStatus }
   | { type: "not-found" }
@@ -226,6 +246,11 @@ export class RscRenderer {
   #resultCacheMisses = 0;
   #resultCacheBypass = 0;
   readonly #send: (message: unknown) => void;
+  readonly #pagePrompts = new RscPagePrompts({
+    routes: () => this.#pathRoutes,
+    run: (request, routeId, fn) => this.#runWithRequest(request, routeId, fn),
+    defaultLocale: () => this.#i18n.defaultLocale,
+  });
 
   constructor() {
     if (typeof process.send !== "function") {
@@ -280,6 +305,21 @@ export class RscRenderer {
       case "log-level":
         this.#logForwarder.setMinSev(msg.minSev);
         return;
+      case "page-prompts":
+        void this.#answer(msg.requestId, "page-prompts.result", () => this.#pagePrompts.list());
+        return;
+      case "page-prompt.run":
+        void this.#answer(msg.requestId, "page-prompt.result", () => this.#pagePrompts.run(msg.input));
+        return;
+    }
+  }
+
+  /** A request whose answer is one JSON value: it rides a single reply rather than the render stream. */
+  async #answer(requestId: string, type: string, fn: () => Promise<unknown>): Promise<void> {
+    try {
+      this.#send({ type, requestId, result: await fn() });
+    } catch (error) {
+      this.#send({ type: "error", requestId, message: error instanceof Error ? error.message : String(error) });
     }
   }
 

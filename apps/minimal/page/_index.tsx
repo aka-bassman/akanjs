@@ -1,7 +1,7 @@
-import { router } from "akanjs/client";
+import { page, router } from "akanjs/client";
 import { Link } from "akanjs/ui";
 
-export default async function Page() {
+export default page().render(async () => {
   router.redirect("/explore?csr=true");
   await new Promise((resolve) => setTimeout(resolve, 10));
   return (
@@ -10,4 +10,4 @@ export default async function Page() {
       <Link href="/explore">Explore</Link>
     </div>
   );
-}
+});

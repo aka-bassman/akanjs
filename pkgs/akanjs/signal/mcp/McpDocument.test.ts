@@ -118,43 +118,6 @@ const signal = (): Record<string, SerializedSignal> => ({
         returns: { refName: "Boolean" },
         guards: ["Admin"],
       },
-      reviewMcpPost: {
-        type: "prompt",
-        args: [
-          { type: "param", name: "mcpPostId", refName: "ID" },
-          { type: "search", name: "tone", refName: "String", nullable: true },
-        ],
-        returns: { refName: "Any" },
-        guards: ["Public"],
-      },
-      unguardedPrompt: { type: "prompt", args: [], returns: { refName: "Any" } },
-      undeclaredPrompt: { type: "prompt", args: [], returns: { refName: "Any" }, guards: ["Public"] },
-      bodyPrompt: {
-        type: "prompt",
-        args: [{ type: "body", name: "data", refName: "mcpPost", modelType: "input" }],
-        returns: { refName: "Any" },
-        guards: ["Public"],
-      },
-      tagsPrompt: {
-        type: "prompt",
-        args: [{ type: "search", name: "tags", refName: "String", arrDepth: 1, nullable: true }],
-        returns: { refName: "Any" },
-        guards: ["Public"],
-      },
-      rawArgPrompt: {
-        type: "prompt",
-        args: [{ type: "search", name: "filter", refName: "Any", nullable: true }],
-        returns: { refName: "Any" },
-        guards: ["Public"],
-      },
-      // Keyed like a generated list, so a uri shape resolves for it — and it is still not addressable, because
-      // `resources/read` resolves a template to a tool and a prompt is never one.
-      mcpPostListDigest: {
-        type: "prompt",
-        args: [],
-        returns: { refName: "Any" },
-        guards: ["Public"],
-      },
     },
   },
 });
@@ -262,7 +225,7 @@ describe("McpDocument", () => {
     // nobody narrows.
     const doc = new McpDocument(signal());
     const cost = doc.listingCost;
-    const entries = [...doc.tools, ...doc.prompts];
+    const entries = [...doc.tools];
     expect(cost.bytes).toBe(entries.reduce((sum, entry) => sum + JSON.stringify(entry).length, 0));
     expect(cost.bySignal.map(({ refName }) => refName)).toEqual(["mcpPost"]);
     expect(cost.bySignal[0]?.entries).toBe(entries.length);
@@ -295,20 +258,17 @@ describe("McpDocument", () => {
     // flag to explain a missing tool, so this list is the only place the answer exists. Printed at boot.
     const refusals = Object.fromEntries(new McpDocument(signal()).refusals.map(({ key, reason }) => [key, reason]));
     expect(Object.keys(refusals).sort()).toEqual([
-      "bodyPrompt",
       "importMcpPost",
       "lightMcpPost",
       "mcpPostInsightPersonSlice",
       "mcpPostInsightQuietSlice",
       "mcpPostListPersonSlice",
       "mcpPostListQuietSlice",
-      "rawArgPrompt",
       "rawMcpPost",
       "requestMcpPostCode",
       "signMcpPost",
       "undeclaredMcpPost",
       "unguardedMcpPost",
-      "unguardedPrompt",
       "wipeMcpPosts",
     ]);
     expect(refusals.rawMcpPost).toContain("`Any`");
@@ -316,11 +276,8 @@ describe("McpDocument", () => {
     // and the other is a decision that is still wrong for a write.
     expect(refusals.undeclaredMcpPost).toContain("declares no guards");
     expect(refusals.wipeMcpPosts).toContain("`[Public]` is having none");
-    // A prompt answers to the guarded rule exactly as a query does.
-    expect(refusals.unguardedPrompt).toContain("declares no guards");
     // Names the argument: "it has an `Any` argument" still leaves an author hunting for which one.
     expect(refusals.importMcpPost).toContain("`payload`");
-    expect(refusals.bodyPrompt).toContain("flat string map");
   });
 
   test("keeps hidden and secret field names out of the output schema and in the input schema", () => {
@@ -531,22 +488,6 @@ describe("McpDocument", () => {
     expect(doc.resolveResource("akan://mcpPost/6712ab34cd56ef7890123456")?.exposed.key).toBe("mcpPost");
   });
 
-  test("carries a prompt's list argument comma-separated and refuses what no string can spell", () => {
-    // `prompts/get` sends one string per name and no schema beside it. A flat list rides that string
-    // comma-separated and says so where the person fills it in; an `Any` has nowhere left to be described, which
-    // the tool path solves by leaving it out of a schema a prompt does not have.
-    const doc = new McpDocument(signal());
-    const refusals = Object.fromEntries(doc.refusals.map(({ key, reason }) => [key, reason]));
-    expect(refusals.tagsPrompt).toBeUndefined();
-    expect(doc.findPrompt("tagsPrompt")?.prompt.arguments).toEqual([
-      { name: "tags", description: "Comma-separated list.", required: false },
-    ]);
-    expect(refusals.rawArgPrompt).toContain("`filter`");
-    expect(refusals.rawArgPrompt).toContain("no schema");
-    // Both types are fine on a tool, which publishes a real schema for them.
-    expect(names(doc)).toContain("mcpPostListInPeriod");
-  });
-
   test("names what it published with no description of its own", () => {
     // The scanner cannot answer this: it reads source, where `expose` is visible only as a literal in the builder
     // call, and where the model `.desc()` a generated entry borrows is not that entry's description at all.
@@ -566,8 +507,6 @@ describe("McpDocument", () => {
     expect(undescribed.mcpPost).toContain("`mcpPost` has no `.desc()`");
     expect(undescribed.mcpPostList).toContain("`mcpPost` has no `.desc()`");
     expect(undescribed.findMcpPost).toContain("no dictionary `.desc()`");
-    // A prompt is chosen by its description exactly as a tool is.
-    expect(undescribed.reviewMcpPost).toBeDefined();
     // Nothing refused is in here — it was never published.
     expect(undescribed.unguardedMcpPost).toBeUndefined();
     // Writing the model's own description is what clears all six generated entries at once.
@@ -587,52 +526,16 @@ describe("McpDocument", () => {
     expect(doc.resolveResource("akan://mcpPost/list/undeclared")).toBeNull();
   });
 
-  test("never addresses a prompt, whatever its key looks like", () => {
-    // A prompt is not a tool, so `resources/read` can never resolve to one. This key matches a generated list,
-    // which is what made a uri resolvable for it at all.
+  test("expands a tool's template into the uri its call answers to, and nothing for a tool without one", () => {
+    // A page prompt attaches what the screen fetched under the address `resources/read` would answer for it.
     const doc = new McpDocument(signal());
-    expect(doc.findPrompt("mcpPostListDigest")).toBeDefined();
-    expect(doc.resourceTemplates.map((template) => template.name)).not.toContain("mcpPostListDigest");
-    expect(doc.resolveResource("akan://mcpPost/list/digest")).toBeNull();
-  });
-
-  test("lists a prompt with its arguments, and never as a tool", () => {
-    const doc = new McpDocument(signal());
-    expect(doc.prompts.map((prompt) => prompt.name)).toEqual([
-      "mcpPostListDigest",
-      "reviewMcpPost",
-      "tagsPrompt",
-      "undeclaredPrompt",
-    ]);
-    // A prompt rides the `Any` carrier, which `#isExposable` refuses — the split has to happen before it.
-    expect(names(doc)).not.toContain("reviewMcpPost");
-    expect(doc.findPrompt("reviewMcpPost")?.prompt.arguments).toEqual([
-      { name: "mcpPostId", required: true },
-      { name: "tone", required: false },
-    ]);
-  });
-
-  test("exposes a prompt on the same terms as a query", () => {
-    const doc = new McpDocument(signal());
-    // `[Public]` written down publishes; declaring nothing does not, exactly as for a query.
-    expect(doc.findPrompt("undeclaredPrompt")).toBeDefined();
-    expect(doc.findPrompt("unguardedPrompt")).toBeUndefined();
-    // `prompts/get` sends a flat string map, so there is nowhere to put a body.
-    expect(doc.findPrompt("bodyPrompt")).toBeUndefined();
-  });
-
-  test("carries dictionary text into a prompt and its arguments", () => {
-    const text: Record<string, string> = {
-      "mcpPost.signal.reviewMcpPost": "Review Post",
-      "mcpPost.signal.reviewMcpPost.desc": "Drafts a review of one post",
-      "mcpPost.signal.reviewMcpPost.arg.mcpPostId.desc": "Post to review",
-    };
-    const doc = new McpDocument(signal(), { resolveDescription: (key) => text[key] });
-    expect(doc.findPrompt("reviewMcpPost")?.prompt).toMatchObject({
-      title: "Review Post",
-      description: "Drafts a review of one post",
-      arguments: [{ name: "mcpPostId", description: "Post to review", required: true }, { name: "tone" }],
-    });
+    expect(doc.resourceUri("mcpPost", { mcpPostId: "6712ab34cd56ef7890123456" })).toBe(
+      "akan://mcpPost/6712ab34cd56ef7890123456",
+    );
+    expect(doc.resourceUri("mcpPostListInPeriod", { from: "2026-01-01", periodTypes: ["day", "week"], limit: 5 })).toBe(
+      "akan://mcpPost/list/inPeriod?from=2026-01-01&periodTypes=day&periodTypes=week&limit=5",
+    );
+    expect(doc.resourceUri("summaryMcpPost", {})).toBeUndefined();
   });
 
   test("orders the catalogue deterministically", () => {

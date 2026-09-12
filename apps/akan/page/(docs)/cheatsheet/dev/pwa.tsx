@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsList, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   return (
@@ -115,19 +116,17 @@ export default function Page() {
         <Code.Snippet
           className="w-full"
           title="apps/myapp/page/_layout.tsx"
-          code={`import type { LayoutProps } from "akanjs/client";
+          code={`import { rootLayout } from "akanjs/client";
 
-export const head = (
-  <>
-    <title>My Akan App</title>
-    <link rel="icon" href="/favicon.ico" />
-    <link rel="manifest" href="/manifest.json" />
-  </>
-);
-
-export default function Layout({ children }: LayoutProps) {
-  return <>{children}</>;
-}`}
+export default rootLayout()
+  .head(
+    <>
+      <title>My Akan App</title>
+      <link rel="icon" href="/favicon.ico" />
+      <link rel="manifest" href="/manifest.json" />
+    </>,
+  )
+  .render(({ children }) => <>{children}</>);`}
         />
       </Scroll.Slide>
       <Divider />
@@ -140,8 +139,8 @@ export default function Layout({ children }: LayoutProps) {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Akan can also read a `manifest` export from the root layout. The object is converted into a manifest link for the document head.",
-              ko: "Akan은 root layout에서 export한 `manifest`도 읽을 수 있습니다. 이 object는 document head의 manifest link로 변환됩니다.",
+              en: "Akan can also take the manifest from the root layout chain with `rootLayout().manifest({...})`. The object is converted into a manifest link for the document head.",
+              ko: "Akan은 root layout chain의 `rootLayout().manifest({...})`에서도 manifest를 읽을 수 있습니다. 이 object는 document head의 manifest link로 변환됩니다.",
             })}
           </div>
           <DocsList>
@@ -168,39 +167,36 @@ export default function Layout({ children }: LayoutProps) {
         <Code.Snippet
           className="w-full"
           title="apps/myapp/page/_layout.tsx"
-          code={`import type { LayoutProps, WebAppManifest } from "akanjs/client";
+          code={`import { rootLayout } from "akanjs/client";
 
-export const manifest: WebAppManifest = {
-  name: "My Akan App",
-  shortName: "MyApp",
-  description: "A simple Akan app",
-  startUrl: "/",
-  scope: "/",
-  display: "standalone",
-  orientation: "portrait",
-  themeColor: "#0C1E3E",
-  backgroundColor: "#ffffff",
-  icons: [
-    {
-      src: "/icon-192x192.png",
-      sizes: "192x192",
-      type: "image/png",
-      purpose: "any maskable",
-    },
-    {
-      src: "/icon-512x512.png",
-      sizes: "512x512",
-      type: "image/png",
-      purpose: "any maskable",
-    },
-  ],
-};
-
-export const head = <title>My Akan App</title>;
-
-export default function Layout({ children }: LayoutProps) {
-  return <>{children}</>;
-}`}
+export default rootLayout()
+  .manifest({
+    name: "My Akan App",
+    shortName: "MyApp",
+    description: "A simple Akan app",
+    startUrl: "/",
+    scope: "/",
+    display: "standalone",
+    orientation: "portrait",
+    themeColor: "#0C1E3E",
+    backgroundColor: "#ffffff",
+    icons: [
+      {
+        src: "/icon-192x192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any maskable",
+      },
+      {
+        src: "/icon-512x512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any maskable",
+      },
+    ],
+  })
+  .head(<title>My Akan App</title>)
+  .render(({ children }) => <>{children}</>);`}
         />
       </Scroll.Slide>
       <Divider />
@@ -278,4 +274,4 @@ export default function Layout({ children }: LayoutProps) {
       <DocsToc />
     </Scroll>
   );
-}
+});

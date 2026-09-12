@@ -1,10 +1,11 @@
 import { usePage } from "@apps/akan/client";
 import { Code, cardGridRecipe, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
 import { FaLink } from "react-icons/fa";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const ExternalLink = ({ href, label }: { href: string; label: string }) => (
     <Link
@@ -1137,4 +1138,4 @@ if (pushToken) {
       <DocsToc />
     </Scroll>
   );
-}
+});

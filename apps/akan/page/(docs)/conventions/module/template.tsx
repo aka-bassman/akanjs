@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, cardGridRecipe, Divider, Docs, DocsToc, type IntroItem, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const loadEditStateItems: IntroItem[] = [
     {
@@ -293,7 +294,7 @@ export const General = ({ className }: TicketEditProps) => {
           <Code.Snippet
             className="w-full"
             title="new.tsx"
-            code={`export default async function Page() {
+            code={`export default page().render(async () => {
   const pickupInPhoneForm: Partial<cnst.Pickup> = {};
   return (
     <Load.Edit
@@ -306,7 +307,7 @@ export const General = ({ className }: TicketEditProps) => {
       <Pickup.Template.General />
     </Load.Edit>
   );
-}`}
+});`}
           />
           <Code.Snippet
             className="w-full"
@@ -401,4 +402,4 @@ export const General = ({ className }: TicketEditProps) => {
       <DocsToc />
     </Scroll>
   );
-}
+});

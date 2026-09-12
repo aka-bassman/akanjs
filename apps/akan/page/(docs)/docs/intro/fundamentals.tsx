@@ -1,10 +1,11 @@
 import { usePage } from "@apps/akan/client";
 import { Code, cardGridRecipe, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 import { badgeRecipe, buttonRecipe, Link } from "akanjs/ui";
 import { BiLinkExternal } from "react-icons/bi";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -692,4 +693,4 @@ export default function Page() {
       <DocsToc />
     </Scroll>
   );
-}
+});

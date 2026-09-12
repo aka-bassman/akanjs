@@ -1,9 +1,17 @@
-import type { PageConfig } from "akanjs/client";
+import { type PageConfig, page } from "akanjs/client";
 import { buttonRecipe, Layout, Link } from "akanjs/ui";
 import { AiOutlineClose } from "react-icons/ai";
 
-export default function Page() {
-  return (
+const pageConfig = {
+  safeArea: true,
+  bottomInset: 72,
+  topInset: 72,
+  transition: "bottomUp",
+} satisfies PageConfig;
+
+export default page()
+  .config(pageConfig)
+  .render(() => (
     <>
       <Layout.Navbar back>
         <Link.Back className="m-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground/10 backdrop-blur">
@@ -35,11 +43,4 @@ export default function Page() {
         </Layout.BottomInset>
       </div>
     </>
-  );
-}
-export const pageConfig = {
-  safeArea: true,
-  bottomInset: 72,
-  topInset: 72,
-  transition: "bottomUp",
-} satisfies PageConfig;
+  ));

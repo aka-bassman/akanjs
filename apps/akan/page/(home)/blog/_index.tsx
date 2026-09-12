@@ -1,4 +1,5 @@
 import { usePage } from "@apps/akan/client";
+import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
 
 const posts = [
@@ -68,7 +69,7 @@ const posts = [
   },
 ];
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const [...listPosts] = posts;
 
@@ -119,4 +120,4 @@ export default function Page() {
       </section>
     </main>
   );
-}
+});

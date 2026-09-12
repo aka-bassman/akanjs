@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   return (
@@ -59,4 +60,4 @@ Describe external calls, jobs, state transitions, or service orchestration.
       <DocsToc />
     </Scroll>
   );
-}
+});

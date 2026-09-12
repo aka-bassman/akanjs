@@ -185,13 +185,17 @@ async function writeGeneratedRootLayoutFile(opts: {
   const clientImport = opts.includeStInit
     ? `import { st } from "@apps/${opts.appName}/client";\nvoid st;\n`
     : `import "@apps/${opts.appName}/client";\n`;
+  // Both user modules go through `resolveRouteModule`: a `rootLayout()` chain and the legacy named exports read
+  // the same afterwards, and this file never has to know which shape the app wrote.
+  const inheritedLabel = inheritedSourceAbsPath ? path.relative(opts.appCwdPath, inheritedSourceAbsPath) : "";
   const inheritedImport = inheritedSourceSpecifier
-    ? `import * as inheritedLayout from ${JSON.stringify(inheritedSourceSpecifier)};\n`
-    : "const inheritedLayout = {};\n";
+    ? `import * as inheritedModule from ${JSON.stringify(inheritedSourceSpecifier)};\nconst inheritedLayout = resolveRouteModule(inheritedModule as never, ${JSON.stringify(inheritedLabel)}).module as LayoutModule;\n`
+    : "const inheritedLayout: LayoutModule = {};\n";
   const prefix = routePrefixForSegments(opts.boundary.segments);
+  const userLabel = opts.boundary.sourceAbsPath ? path.relative(opts.appCwdPath, opts.boundary.sourceAbsPath) : "";
   const userImport = sourceSpecifier
-    ? `import UserLayout, * as userLayout from ${JSON.stringify(sourceSpecifier)};\n`
-    : "const UserLayout = ({ children }) => children;\nconst userLayout = {};\n";
+    ? `import * as userModule from ${JSON.stringify(sourceSpecifier)};\nconst userLayout = resolveRouteModule(userModule as never, ${JSON.stringify(userLabel)}).module as LayoutModule;\nconst UserLayout = userLayout.default as (props: LayoutProps) => ReactNode | Promise<ReactNode>;\n`
+    : "const UserLayout = ({ children }: LayoutProps) => children;\nconst userLayout: LayoutModule = {};\n";
   const isAsyncUserLayout = opts.boundary.sourceAbsPath
     ? await AsyncDefaultExportDetector.detect(opts.boundary.sourceAbsPath)
     : false;
@@ -212,8 +216,9 @@ async function writeGeneratedRootLayoutFile(opts: {
   const layoutChild = isAsyncUserLayout ? "{layout}" : userLayoutElement;
   const layoutReturn = isAsyncUserLayout ? "layout" : userLayoutElement;
   const source = opts.includeSystemProvider
-    ? `import type { LayoutProps, PageProps } from "akanjs/client";
-import { loadFonts } from "akanjs/client";
+    ? `import type { LayoutModule, LayoutProps, PageProps } from "akanjs/client";
+import { loadFonts, resolveRouteModule } from "akanjs/client";
+import type { ReactNode } from "react";
 import { System } from "akanjs/ui";
 import { env } from "@apps/${opts.appName}/env/env.client";
 import { allDictionary } from ${JSON.stringify(dictMacroSpecifier)};
@@ -264,7 +269,9 @@ ${layoutBinding}  return (
   );
 }
 `
-    : `import type { LayoutProps, PageProps } from "akanjs/client";
+    : `import type { LayoutModule, LayoutProps, PageProps } from "akanjs/client";
+import { resolveRouteModule } from "akanjs/client";
+import type { ReactNode } from "react";
 ${inheritedImport}${userImport}
 export async function generateHead(props: PageProps) {
   if (userLayout.generateHead) return userLayout.generateHead(props);

@@ -1,10 +1,15 @@
-import type { PageConfig } from "akanjs/client";
+import { layout } from "akanjs/client";
 import { Layout } from "akanjs/ui";
-import type { ReactNode } from "react";
 import { AiOutlineCompass, AiOutlineHeart, AiOutlineHome, AiOutlineMessage, AiOutlineUser } from "react-icons/ai";
 
-export default function LayoutComponent({ children }: { children: ReactNode }) {
-  return (
+export default layout()
+  .config({
+    bottomInset: 64,
+    safeArea: true,
+    cache: true,
+    transition: "none",
+  })
+  .render(({ children }) => (
     <>
       {children}
       <Layout.BottomTab
@@ -37,12 +42,4 @@ export default function LayoutComponent({ children }: { children: ReactNode }) {
         ]}
       />
     </>
-  );
-}
-
-export const pageConfig = {
-  bottomInset: 64,
-  safeArea: true,
-  cache: true,
-  transition: "none",
-} satisfies PageConfig;
+  ));

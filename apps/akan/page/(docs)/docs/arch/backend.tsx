@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -653,4 +654,4 @@ export class ChatRoomService extends serve(db.chatRoom, ({ signal }) => ({
       <DocsToc />
     </Scroll>
   );
-}
+});

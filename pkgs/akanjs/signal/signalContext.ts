@@ -24,7 +24,6 @@ import { Exception, isExceptionLike } from "./exception";
 import { type GuardCls, guardOf } from "./guard";
 // Deliberately past the barrel: `./mcp` re-exports `McpDocument`, which would drag `akanjs/fetch` into the
 // signal graph. `Msg` itself imports nothing.
-import { Msg } from "./mcp/Msg";
 import { SignalFailure } from "./SignalFailure";
 import { getCurrentTrace, runTraced, SignalTrace, type TraceOrigin, traceSpan } from "./trace";
 
@@ -33,7 +32,7 @@ export type SignalTransportType = "http" | "websocket";
 /** What `Bun.Server.requestIP` reports for the socket a request arrived on. */
 export type HttpPeerResolver = (req: Request) => { address: string; port: number } | null;
 
-const httpEndpointTypes = new Set<EndpointType>(["query", "mutation", "prompt"]);
+const httpEndpointTypes = new Set<EndpointType>(["query", "mutation"]);
 
 interface WebSocketRequest {
   ws: Bun.ServerWebSocket<unknown>;
@@ -305,16 +304,11 @@ export class SignalContext<
       );
     };
     const next = this.#withMiddleware(coreExec);
-    const raw = this.trace ? await traceSpan("execChain", () => next()) : await next();
+    const result = this.trace ? await traceSpan("execChain", () => next()) : await next();
     // A pubsub's return is not a response — nothing is serialized and nothing is sent. It is handed back for the
     // one caller that needs it: a live slice's exec returns the resolved query the room is then routed by.
-    if (this.endpointInfo.type === "pubsub") return raw;
-    if (raw instanceof Response) return raw;
-    // A prompt declares `PromptMessage[]` but rides the `Any` carrier, so `resolveReturn` and `makeResponse` both
-    // hand the value straight back and nothing downstream would notice a malformed one. Normalizing here rather
-    // than in the MCP dispatcher is what makes the HTTP route and `prompts/get` return the same shape — the web
-    // preview is only a preview if it is.
-    const result = this.endpointInfo.type === "prompt" ? Msg.normalize(raw) : raw;
+    if (this.endpointInfo.type === "pubsub") return result;
+    if (result instanceof Response) return result;
     if (!this.trace) {
       const resolved = await SignalContext.resolveReturn(result, {
         signalContext: this,

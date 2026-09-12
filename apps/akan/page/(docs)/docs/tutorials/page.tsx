@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -368,8 +369,9 @@ export const Card = ({ icecreamOrder, showControls = true }: CardProps) => {
             code={`
 import { Link } from "akanjs/ui";
 import { usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-linear-to-br from-background via-muted to-border p-6">
@@ -420,7 +422,7 @@ export default function Page() {
       </div>
     </div>
   );
-}
+});
   `}
           />
           <div>
@@ -479,8 +481,9 @@ export default function Page() {
             code={`
 import { Link } from "akanjs/ui";
 import { usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-linear-to-br from-background via-muted to-border p-6">
@@ -523,7 +526,7 @@ export default function Page() {
       </div>
     </div>
   );
-}`}
+});`}
           />
           <div>
             {l.trans({
@@ -585,45 +588,42 @@ export default function Page() {
             code={`
 import { Load } from "akanjs/ui";
 import { cnst, fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-interface PageProps {
-  searchParams: {
-    serveType?: cnst.ServeType["value"];
-  };
-}
-export default function Page({ searchParams }: PageProps) {
-  const { l } = usePage();
-  const { serveType } = searchParams;
-  const icecreamOrderForm: Partial<cnst.IcecreamOrder> = { serveType };
-        
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-linear-to-br from-background via-muted to-border p-6">
-      <div className="w-full max-w-2xl space-y-8">
-        <div className="space-y-4 text-center">
-          <div className="flex justify-center">
-            <span className="text-8xl">🍦</span>
+export default page()
+  .search("serveType", cnst.ServeType, { desc: "How the order is served: forHere, takeOut or delivery." })
+  .render(({ serveType }) => {
+    const { l } = usePage();
+    const icecreamOrderForm: Partial<cnst.IcecreamOrder> = { serveType };
+
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-linear-to-br from-background via-muted to-border p-6">
+        <div className="w-full max-w-2xl space-y-8">
+          <div className="space-y-4 text-center">
+            <div className="flex justify-center">
+              <span className="text-8xl">🍦</span>
+            </div>
+            <h1 className="bg-linear-to-r from-background via-muted to-border text-5xl font-bold text-primary md:text-6xl">
+              {l("base.createModel", { model: l("icecreamOrder.modelName") })}
+            </h1>
+            <p className="text-xl font-light text-primary">
+              {l.trans({ en: "Customize your perfect treat", ko: "나만의 완벽한 디저트를 만들어보세요" })}
+            </p>
           </div>
-          <h1 className="bg-linear-to-r from-background via-muted to-border text-5xl font-bold text-primary md:text-6xl">
-            {l("base.createModel", { model: l("icecreamOrder.modelName") })}
-          </h1>
-          <p className="text-xl font-light text-primary">
-            {l.trans({ en: "Customize your perfect treat", ko: "나만의 완벽한 디저트를 만들어보세요" })}
-          </p>
+          <Load.Edit
+            className="flex flex-col items-center"
+            slice={fetch.slice.icecreamOrderInPublic}
+            edit={icecreamOrderForm}
+            type="form"
+            onCancel="back"
+            onSubmit="/icecreamOrder/success"
+          >
+            <IcecreamOrder.Template.General showServeType={false} />
+          </Load.Edit>
         </div>
-        <Load.Edit
-          className="flex flex-col items-center"
-          slice={fetch.slice.icecreamOrderInPublic}
-          edit={icecreamOrderForm}
-          type="form"
-          onCancel="back"
-          onSubmit="/icecreamOrder/success"
-        >
-          <IcecreamOrder.Template.General showServeType={false} />
-        </Load.Edit>
       </div>
-    </div>
-  );
-}`}
+    );
+  });`}
           />
           <div>
             {l.trans({
@@ -635,12 +635,12 @@ export default function Page({ searchParams }: PageProps) {
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-primary">🔍</span>
-                <strong className="text-primary">searchParams</strong>
+                <strong className="text-primary">.search()</strong>
               </div>
               <div className="text-foreground/70 text-sm">
                 {l.trans({
-                  en: `Next.js provides searchParams as a Promise that contains URL query parameters. We extract the serveType to pre-fill the order form with the customer's choice from the landing page.`,
-                  ko: `Next.js는 URL 쿼리 파라미터를 포함하는 Promise로 searchParams를 제공합니다. serveType을 추출하여 랜딩 페이지에서 고객이 선택한 내용으로 주문 양식을 미리 채웁니다.`,
+                  en: `The page declares the query key it reads with .search("serveType", cnst.ServeType), so .render() receives serveType already typed as the enum's union — a value outside the enum is dropped, the way an absent one is. We use it to pre-fill the order form with the customer's choice from the landing page.`,
+                  ko: `페이지는 읽을 쿼리 키를 .search("serveType", cnst.ServeType)로 선언합니다. 그래서 .render()는 serveType을 enum의 union 타입으로 이미 받습니다 — enum 밖의 값은 없는 값처럼 버려집니다. 이 값으로 랜딩 페이지에서 고객이 선택한 내용을 주문 양식에 미리 채웁니다.`,
                 })}
               </div>
             </div>
@@ -917,4 +917,4 @@ export const General = ({ className, showServeType = true }: GeneralProps) => {
       <DocsToc />
     </Scroll>
   );
-}
+});

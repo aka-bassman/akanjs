@@ -1,10 +1,19 @@
 import { appCard, Screen } from "@apps/minimal/ui";
-import type { PageConfig } from "akanjs/client";
+import { page } from "akanjs/client";
 import { buttonRecipe, Layout, Link } from "akanjs/ui";
 import { AiOutlineCheckCircle, AiOutlineClose, AiOutlineCompass } from "react-icons/ai";
 
-export default function Page() {
-  return (
+export default page()
+  .config({
+    topInset: 0,
+    safeArea: {
+      top: false,
+      bottom: true,
+    },
+    bottomInset: 192,
+    transition: "fade",
+  })
+  .render(() => (
     <Screen className="pb-24">
       {/* <Layout.TopLeftAction>
         <Link.Back>
@@ -52,14 +61,4 @@ export default function Page() {
         </Link>
       </Layout.BottomInset>
     </Screen>
-  );
-}
-export const pageConfig = {
-  topInset: 0,
-  safeArea: {
-    top: false,
-    bottom: true,
-  },
-  bottomInset: 192,
-  transition: "fade",
-} satisfies PageConfig;
+  ));

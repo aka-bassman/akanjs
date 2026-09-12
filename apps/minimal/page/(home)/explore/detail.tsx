@@ -1,10 +1,11 @@
 import { appCard, appNavClass, Screen } from "@apps/minimal/ui";
-import type { PageConfig } from "akanjs/client";
+import { page } from "akanjs/client";
 import { buttonRecipe, Layout, Link } from "akanjs/ui";
 import { AiOutlineCalendar, AiOutlineHeart, AiOutlineStar } from "react-icons/ai";
 
-export default function Page() {
-  return (
+export default page()
+  .config({ topInset: 48, transition: "scaleOut" })
+  .render(() => (
     <Screen className="pb-8">
       <Layout.Navbar
         right={<div className="font-semibold">Stay detail</div>}
@@ -55,7 +56,4 @@ export default function Page() {
         </div> */}
       </div>
     </Screen>
-  );
-}
-
-export const pageConfig = { topInset: 48, transition: "scaleOut" } satisfies PageConfig;
+  ));

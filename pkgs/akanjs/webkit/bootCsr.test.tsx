@@ -116,6 +116,8 @@ beforeAll(() => {
     },
     getStoredAuthToken: async () => storageState.jwt ?? undefined,
     validatePageConfig: () => undefined,
+    // The fixtures are legacy-shaped modules, which the real resolver passes through untouched.
+    resolveRouteModule: (mod: unknown) => ({ module: mod }),
   }));
   mock.module("react-dom/client", () => ({
     createRoot: () => ({ render: () => undefined }),

@@ -19,7 +19,12 @@ import type {
 } from "akanjs/signal";
 import { agentTurnConstant } from "../agentTurn";
 import type { ClientSignal, FetchClientType, FetchSignalInput, MergeAllFetchTypes, SliceMeta } from "../fetchType";
-import { claimRequestQuery, cookies as requestCookies, headers as requestHeaders } from "../requestStorage";
+import {
+  claimRequestQuery,
+  recordRequestQuery,
+  cookies as requestCookies,
+  headers as requestHeaders,
+} from "../requestStorage";
 import type { GetSliceMetaObjFromDatabaseSignals } from "../types";
 import { FetchHandle } from "./fetchHandle";
 import { HttpClient } from "./httpClient";
@@ -306,8 +311,6 @@ export class FetchClient {
     const parseReturn = this.#makeReturnParser(endpoint.returns);
     const { bodyArgs, uploadArgs } = FetchClient.classifyHttpArgs(endpoint.args);
     switch (endpoint.type) {
-      // A prompt is a GET that returns messages instead of a model, so it rides the query path unchanged.
-      case "prompt":
       case "query": {
         const queryFn = async (...argData: unknown[]) => {
           const args = argData.slice(0, argLength);
@@ -325,6 +328,7 @@ export class FetchClient {
           const claim = baseUrl
             ? { value: requestQuery(), owned: true }
             : claimRequestQuery(FetchClient.#makeRequestQueryCacheKey(this.origin, url, headers), requestQuery);
+          recordRequestQuery({ key, args: Object.fromEntries(argMap), returns: endpoint.returns, value: claim.value });
           const response = await claim.value;
           const payload = claim.owned ? response : FetchClient.#deepCopy(response);
           return parseReturn(payload, { crystalize: option?.crystalize ?? true });
@@ -353,7 +357,6 @@ export class FetchClient {
   }
   #registerEndpoint(key: string, endpoint: SerializedEndpoint, prefix?: string) {
     switch (endpoint.type) {
-      case "prompt":
       case "query": {
         this.#setHandlerFactory(key, () => this.#makeHttpFn(key, endpoint, prefix));
         return;

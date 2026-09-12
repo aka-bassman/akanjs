@@ -14,10 +14,8 @@ export interface ChatCommand {
 }
 
 /**
- * The chat's own slash commands, the client-side peer of `AgentPrompts`. They join the same `/` menu a prompt
- * endpoint appears in and are dispatched ahead of one: a built-in wins a name collision because the user typed it,
- * and no library's prompt may take `/new` away from them — the mirror image of the tool rule, where a component's
- * own `st.tool` shadows a built-in it means to replace.
+ * The chat's own slash commands — the whole `/` menu, since an app's prompts are `page().prompt()` declarations
+ * served over MCP and not listed by a browser chat.
  *
  * Output goes through `session.note`, never `send`: a command is answered by this browser, so its text belongs in
  * the transcript the user reads and nowhere in the history the model reads.

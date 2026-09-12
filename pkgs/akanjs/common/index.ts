@@ -71,7 +71,6 @@ export {
   type McpExposureOption,
   mcpBaseVerbOf,
   mcpHintsOf,
-  mcpPromptRefusalOf,
   mcpRefusalOf,
 } from "./mcpExposure";
 export { mergeVersion } from "./mergeVersion";

@@ -1,5 +1,6 @@
 import { usePage } from "@apps/akan/client";
 import { DocsList } from "@apps/akan/ui";
+import { page } from "akanjs/client";
 
 const latestRun = "2026-05-30T17-11-35-780Z";
 
@@ -108,7 +109,7 @@ const formatRps = (value: number) => value.toLocaleString("en-US");
 const maxHttpComparisonRps = Math.max(...httpComparison.map((item) => item.rps));
 const maxDbComparisonRps = Math.max(...dbComparison.map((item) => item.rps));
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   return (
@@ -366,7 +367,7 @@ export default function Page() {
       </article>
     </main>
   );
-}
+});
 
 function SloMargin({ item }: { item: (typeof akanResults)[number] }) {
   const rpsRatio = item.rps / item.minRps;

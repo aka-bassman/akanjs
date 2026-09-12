@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Divider, Docs, DocsToc, type UiComponentReference, UiComponentSlide } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const components: UiComponentReference[] = [
     {
@@ -198,4 +199,4 @@ export const FadeIn = ({ children }) => {
       <DocsToc />
     </Scroll>
   );
-}
+});

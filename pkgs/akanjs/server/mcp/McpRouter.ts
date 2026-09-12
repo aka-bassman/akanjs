@@ -18,13 +18,16 @@ import {
   type McpSignalCost,
   type McpToolResult,
 } from "../../signal/mcp";
+import type { McpPrompt } from "../../signal/mcp/mcpProtocol";
+import type { PagePromptEntry, PagePromptSource } from "../../signal/mcp/pagePrompt";
 import type { MiddlewareCls } from "../../signal/middleware";
 import { FetchSerializer } from "../../signal/serializer";
 import type { HttpRoutes } from "../types";
 import { McpAuth, type McpAuthOption } from "./McpAuth";
-import { McpAuthRequiredError, McpDispatcher, McpPromptError } from "./McpDispatcher";
+import { McpAuthRequiredError, McpDispatcher } from "./McpDispatcher";
 import { McpEventStream } from "./McpEventStream";
 import { McpRateLimiter, type McpRateLimitOption } from "./McpRateLimiter";
+import { PagePromptComposer } from "./PagePromptComposer";
 
 export interface McpRouterProps {
   registry: InjectRegistry;
@@ -50,6 +53,13 @@ export interface McpRouterProps {
   language?: string;
   /** Whether a structured result also ships as serialized JSON in the text block. Default `true`. */
   legacyTextBlock?: boolean;
+  /**
+   * Where `prompts/list` and `prompts/get` are answered from: the pages, through the RSC worker. Absent on an
+   * API-only build, which then publishes no prompts at all.
+   */
+  pagePrompts?: PagePromptSource;
+  /** Characters of screen data one prompt may attach before its lists are cut; see `PagePromptComposer`. */
+  promptBudget?: number;
   outputSchema?: McpOutputSchemaMode;
   auth?: McpAuthOption;
   /**
@@ -160,9 +170,9 @@ export class McpRouter {
   report() {
     try {
       const document = this.#getDocument();
-      const { tools, prompts, resourceTemplates, refusals, undescribed } = document;
+      const { tools, resourceTemplates, refusals, undescribed } = document;
       const cost = document.listingCost;
-      const counts = `tools=${tools.length} prompts=${prompts.length} resourceTemplates=${resourceTemplates.length}`;
+      const counts = `tools=${tools.length} resourceTemplates=${resourceTemplates.length}`;
       const readOnly = this.#props.readOnly ? " (read-only deployment)" : "";
       McpRouter.logger.debug(`MCP catalogue: ${counts}${readOnly} · listing ${McpRouter.#kb(cost.bytes)}`);
       if (cost.bySignal.length) McpRouter.logger.debug(`MCP catalogue cost: ${McpRouter.#costLine(cost.bySignal)}`);
@@ -181,10 +191,11 @@ export class McpRouter {
         );
       // Exposure follows the guards, so an empty catalogue on an app that has endpoints means every one of them
       // was refused — the lines below say which rule took each.
-      if (!tools.length && !prompts.length)
+      if (!tools.length)
         McpRouter.logger.warn(
           "MCP is enabled but published nothing. Every candidate was refused; see the reasons below.",
         );
+      this.#reportPagePrompts();
       this.#reportUnverifiable(tools.map((tool) => tool.name));
       for (const { key, reason } of refusals) McpRouter.logger.verbose(`MCP did not expose "${key}": ${reason}`);
       for (const { key, reason } of undescribed)
@@ -276,9 +287,6 @@ export class McpRouter {
       return await this.#dispatch({ id, method, params, era, req });
     } catch (error) {
       if (error instanceof McpAuthRequiredError) return this.#auth.unauthorized(req);
-      // A prompt has no `isError` result to carry a refusal, so its already-sanitized message and the code that
-      // says whose fault it was both travel here.
-      if (error instanceof McpPromptError) return McpRouter.#error(id, error.code, error.message);
       McpRouter.logger.error(
         `MCP ${method} failed: ${error instanceof Error ? (error.stack ?? error.message) : error}`,
       );
@@ -293,7 +301,7 @@ export class McpRouter {
         // Legacy only. No `Mcp-Session-Id` is issued, which is what keeps this handler stateless.
         return this.#result(call, {
           protocolVersion: McpRouter.#negotiate(call.params.protocolVersion),
-          capabilities: McpRouter.#capabilities(document),
+          capabilities: this.#capabilities(document),
           serverInfo: this.#serverInfo(),
           ...(this.#props.instructions ? { instructions: this.#props.instructions } : {}),
         });
@@ -305,7 +313,7 @@ export class McpRouter {
           call,
           {
             supportedVersions: MCP_SUPPORTED_VERSIONS,
-            capabilities: McpRouter.#capabilities(document),
+            capabilities: this.#capabilities(document),
             ...(this.#props.instructions ? { instructions: this.#props.instructions } : {}),
           },
           discoverCache,
@@ -317,7 +325,7 @@ export class McpRouter {
       case "resources/templates/list":
         return await this.#list(call, "resourceTemplates", document.resourceTemplates);
       case "prompts/list":
-        return await this.#list(call, "prompts", document.prompts);
+        return await this.#list(call, "prompts", (await this.#pagePromptEntries()).map(McpRouter.#promptOf));
       case "tools/call": {
         const slot = this.#acquire(call);
         return "refused" in slot ? slot.refused : await this.#toolsCall(call, document, slot.release);
@@ -483,16 +491,51 @@ export class McpRouter {
   }
 
   /**
-   * Derived from the catalogue rather than fixed, so a server with no prompts does not invite a `prompts/list`
-   * that can only come back empty. Read from the unfiltered document on purpose: a capability says what this
-   * build implements, and one that narrowed per credential would contradict itself across a cached handshake.
+   * Derived from the catalogue rather than fixed, so a server with nothing to list does not invite a listing that
+   * can only come back empty. Read from the unfiltered document on purpose: a capability says what this build
+   * implements, and one that narrowed per credential would contradict itself across a cached handshake. Prompts
+   * are the pages', so the capability follows whether there are pages to ask — the RSC worker answers the count.
    */
-  static #capabilities(document: McpDocument) {
+  #capabilities(document: McpDocument) {
     return {
       ...(document.tools.length ? { tools: {} } : {}),
       ...(document.resources.length || document.resourceTemplates.length ? { resources: {} } : {}),
-      ...(document.prompts.length ? { prompts: {} } : {}),
+      ...(this.#props.pagePrompts ? { prompts: {} } : {}),
     };
+  }
+
+  /**
+   * Pages load lazily in the RSC worker, so the prompt catalogue is read once the worker is up rather than built
+   * here at boot; the line lands in the same log a little after the tool counts.
+   */
+  #reportPagePrompts() {
+    const source = this.#props.pagePrompts;
+    if (!source) return;
+    void source
+      .list()
+      .then((entries) => {
+        const names = entries.map((entry) => entry.name).join(", ");
+        McpRouter.logger.debug(`MCP page prompts: ${entries.length}${entries.length ? ` (${names})` : ""}`);
+      })
+      .catch((error: unknown) => {
+        McpRouter.logger.warn(
+          `MCP page prompts could not be listed: ${error instanceof Error ? error.message : error}`,
+        );
+      });
+  }
+
+  async #pagePromptEntries(): Promise<PagePromptEntry[]> {
+    return (await this.#props.pagePrompts?.list()) ?? [];
+  }
+
+  static #promptOf({ name, description, arguments: args }: PagePromptEntry): McpPrompt {
+    return { name, description, ...(args.length ? { arguments: args } : {}) };
+  }
+
+  /** Only the credential travels into the page run: the page decides with it exactly as a browser tab would. */
+  static #forwardedHeaders(req: Request): [string, string][] {
+    const authorization = req.headers.get("authorization");
+    return authorization ? [["authorization", authorization]] : [];
   }
 
   /**
@@ -506,25 +549,60 @@ export class McpRouter {
     return typeof token === "string" || typeof token === "number" ? token : undefined;
   }
 
+  /**
+   * A prompt is a screen: the page named by `page().prompt()` runs in the RSC worker with the caller's token, and
+   * what it fetched comes back as the messages. A missing required argument is answered with a pointer to the tool
+   * that finds the id rather than with a guess — a prompt cannot re-run itself, so a guess would go unused.
+   */
   async #promptsGet(call: McpCall, document: McpDocument) {
     const name = call.params.name;
     if (typeof name !== "string") return McpRouter.#error(call.id, McpErrorCode.invalidParams, "Missing prompt name.");
-    const found = document.findPrompt(name);
-    if (!found) return McpRouter.#error(call.id, McpErrorCode.invalidParams, `Unknown prompt: ${name}.`);
-    // `arguments` is a flat string map, so a missing required one is caught here rather than during arg parsing,
-    // where an absent value would deserialize to an empty string and reach the endpoint as if it were real.
+    const source = this.#props.pagePrompts;
+    const entry = source ? (await source.list()).find((candidate) => candidate.name === name) : undefined;
+    if (!source || !entry) return McpRouter.#error(call.id, McpErrorCode.invalidParams, `Unknown prompt: ${name}.`);
     const args = McpRouter.#arguments(call.params);
     if (!args) return McpRouter.#error(call.id, McpErrorCode.invalidParams, McpRouter.#badArguments);
-    const missing = (found.prompt.arguments ?? [])
-      .filter((arg) => arg.required && args[arg.name] === undefined)
+    const strings = Object.fromEntries(Object.entries(args).map(([key, value]) => [key, String(value)]));
+    const composer = new PagePromptComposer({
+      document,
+      budget: this.#props.promptBudget ?? PagePromptComposer.defaultBudget,
+      visibleTools: async (names) =>
+        (
+          await this.#dispatcher.filterForAccount(
+            names.map((tool) => ({ name: tool })),
+            call.req,
+          )
+        ).map((tool) => tool.name),
+    });
+    const missing = entry.arguments
+      .filter((arg) => arg.required && strings[arg.name] === undefined)
       .map((arg) => arg.name);
     if (missing.length)
-      return McpRouter.#error(call.id, McpErrorCode.invalidParams, `Missing prompt arguments: ${missing.join(", ")}.`);
-    const messages = await this.#dispatcher.prompt(found.exposed, args, call.req);
-    return this.#result(call, {
-      ...(found.prompt.description ? { description: found.prompt.description } : {}),
-      messages,
+      return this.#result(call, { description: entry.description, messages: composer.missing(entry, missing) });
+    const run = await source.run({
+      name,
+      arguments: strings,
+      headers: McpRouter.#forwardedHeaders(call.req),
+      language: this.#props.language,
     });
+    if (!run.ok) {
+      // A redirect is the page's own sign-in gate, and a 401/403 from a query inside the body is a guard's. With no
+      // credential the client is told to get one, the same way a guarded tool tells it; with one, the account
+      // simply may not see this screen — and the answer says no more than that, so an id is never confirmed.
+      const gated = run.reason === "redirect" || run.reason === "forbidden";
+      if (gated && !call.req.headers.get("authorization")) throw new McpAuthRequiredError();
+      if (run.reason === "error") McpRouter.logger.warn(`page prompt "${name}" failed: ${run.message}`);
+      const message =
+        run.reason === "argument" || run.reason === "unknown"
+          ? run.message
+          : gated
+            ? "This screen is not available to the signed-in account."
+            : run.reason === "not-found"
+              ? "No screen exists for these arguments."
+              : "The page failed to load.";
+      return McpRouter.#error(call.id, McpErrorCode.invalidParams, message);
+    }
+    return this.#result(call, { description: entry.description, messages: await composer.compose(entry, run) });
   }
 
   async #resourcesRead(call: McpCall, document: McpDocument) {

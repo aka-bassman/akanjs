@@ -52,7 +52,7 @@ export class McpExecutionContext extends HttpExecutionContext {
     const undeclared = Object.keys(this.#arguments).find((name) => !declared.has(name));
     if (undeclared) throw new McpArgumentError(`Unknown argument "${undeclared}".`);
     return endpointInfo.args.map((arg) => {
-      const value = McpExecutionContext.#lift(arg, this.#arguments[arg.name] ?? null, endpointInfo.type === "prompt");
+      const value = McpExecutionContext.#lift(arg, this.#arguments[arg.name] ?? null);
       try {
         return deserialize(arg.argRef, arg.arrDepth, value, {
           key: arg.name,
@@ -86,19 +86,9 @@ export class McpExecutionContext extends HttpExecutionContext {
    * The http context never meets this because `searchParams.getAll` always returns an array, and `deserialize`
    * hands a lone scalar straight back instead of lifting it — so the endpoint would receive a string where it
    * iterates a list.
-   *
-   * A prompt's argument is one string by the wire's own shape (`prompts/get` carries a flat string map), so a
-   * list there is comma-separated: the one spelling that map leaves room for, and what its listing tells the
-   * user to type. A tool's list is a JSON array already, and a tag holding a comma stays whole there.
    */
-  static #lift(arg: McpArg, value: unknown, delimited: boolean) {
-    if (!arg.arrDepth || value === null || Array.isArray(value)) return value;
-    if (delimited && typeof value === "string")
-      return value
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-    return [value];
+  static #lift(arg: McpArg, value: unknown) {
+    return arg.arrDepth && value !== null && !Array.isArray(value) ? [value] : value;
   }
 
   /** The same rule `McpDocument` builds `properties` from, so what is refused is exactly what was not published. */

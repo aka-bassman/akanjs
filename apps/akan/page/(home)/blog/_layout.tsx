@@ -1,3 +1,3 @@
-export default function Layout({ children }: { children: React.ReactNode }) {
-  return <div className="pt-24 lg:pt-16">{children}</div>;
-}
+import { layout } from "akanjs/client";
+
+export default layout().render(({ children }) => <div className="pt-24 lg:pt-16">{children}</div>);

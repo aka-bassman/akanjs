@@ -11,9 +11,11 @@ import {
   type Route,
   type RouteGuide,
   type RouteModule,
+  type RouteModuleSource,
   type RouteRender,
   readCssSafeAreaInsets,
   resolvePageState,
+  resolveRouteModule,
   validatePageConfig,
 } from "akanjs/client";
 import {
@@ -31,7 +33,7 @@ import { useCsrValues } from "./useCsrValues";
 import { useFetch } from "./useFetch";
 
 type RouteModuleWithConfig = RouteModule & { pageConfig?: PageConfig };
-type CsrRouteModuleLoader = () => Promise<RouteModule>;
+type CsrRouteModuleLoader = () => Promise<RouteModuleSource>;
 type CsrRouteModuleEntry = CsrRouteModuleLoader | { loader: CsrRouteModuleLoader; isAsyncDefault?: boolean };
 
 declare global {
@@ -112,7 +114,11 @@ export const bootCsr = async (context: Record<string, CsrRouteModuleEntry>) => {
         if (pageBasePath && otherBasePaths.includes(pageBasePath)) return; // ignore other base paths
       }
       const entry = typeof value === "function" ? { loader: value } : value;
-      const pageContent = await entry.loader();
+      const loaded = await entry.loader();
+      const pageContent =
+        parsed.kind === "overrides"
+          ? (loaded as RouteModule)
+          : resolveRouteModule(loaded, key, { kind: parsed.kind, pattern: parsed.pattern }).module;
       validateRouteModuleExports(key, pageContent);
       validatePageConfig(key, (pageContent as RouteModuleWithConfig).pageConfig);
       asyncDefaultMap[key] = entry.isAsyncDefault;

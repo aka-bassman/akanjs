@@ -1,10 +1,8 @@
 import { usePage } from "@apps/akan/client";
 import { Docs } from "@apps/akan/ui";
+import { layout } from "akanjs/client";
 
-interface LayoutProps {
-  children: React.ReactNode;
-}
-export default function Layout({ children }: LayoutProps) {
+export default layout().render(({ children }) => {
   const { l } = usePage();
   const menuMap = [
     {
@@ -39,6 +37,7 @@ export default function Layout({ children }: LayoutProps) {
       subMenus: [
         { name: l.trans({ en: "Akan Runtime", ko: "Akan 런타임" }), href: "/docs/core/runtime" },
         { name: l.trans({ en: "File Based Routing", ko: "파일 기반 라우팅" }), href: "/docs/core/routing" },
+        { name: l.trans({ en: "Page Migration", ko: "페이지 마이그레이션" }), href: "/docs/core/page-migration" },
         { name: l.trans({ en: "Multi Client", ko: "다중 클라이언트" }), href: "/docs/core/multi-client" },
         { name: l.trans({ en: "App Config", ko: "앱 설정" }), href: "/docs/core/config" },
         { name: l.trans({ en: "Folder Rule", ko: "폴더 규칙" }), href: "/docs/core/folder-rule" },
@@ -64,4 +63,4 @@ export default function Layout({ children }: LayoutProps) {
     },
   ];
   return <Docs.Layout menuMap={menuMap}>{children}</Docs.Layout>;
-}
+});

@@ -73,7 +73,7 @@ export const option = new AkanOption<ModulesOptions>().setMcp({
 ```
 
 ```typescript
-// <model>.signal.ts — every one of these is an MCP tool or prompt, with no `mcp:` option anywhere
+// <model>.signal.ts — every one of these is an MCP tool, with no `mcp:` option anywhere
 export class TaskSlice extends slice(
   srv.task,
   { guards: { root: Admin, get: SignedIn, cru: SignedIn } },
@@ -86,19 +86,24 @@ export class TaskSlice extends slice(
   }),
 ) {}
 
-export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => ({
+export class TaskEndpoint extends endpoint(srv.task, ({ mutation }) => ({
   startTask: mutation(cnst.Task, { guards: [SignedIn] })
     .param("taskId", ID)
     .exec(async function (taskId) {
       return await this.taskService.startTask(taskId);
     }),
-  reviewTask: prompt({ guards: [SignedIn] })
-    .param("taskId", ID)
-    .exec(async function (taskId) {
-      const task = await this.taskService.getTask(taskId);
-      return [Msg.user(`Review this task and suggest next steps.`), Msg.resource(`akan://task/${taskId}`, task)];
-    }),
 })) {}
+```
+
+```tsx
+// page/task/[taskId]/_index.tsx — the screen, published to agents as the prompt `reviewTask`
+export default page()
+  .param("taskId", ID, { desc: "The task to review." })
+  .prompt("reviewTask", "Review this task and suggest next steps.")
+  .render(async ({ taskId }) => {
+    const { taskView } = await fetch.viewTask(taskId);
+    return <Task.Zone.View view={taskView} />;
+  });
 ```
 
 ## Refusals And Wire Behaviour
@@ -111,16 +116,13 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
   **`light<Model>` read** — it returns the same document as `<Model>` under the same guards, in a shape trimmed
   for a page's payload, so publishing both put two entries per model in a listing an agent pays for every turn
   and gave it nothing but the word "light" to choose between them.
-  A `prompt` refuses two more, because its `arguments` is one string per name with no schema beside it: a **list
-  argument**, which could never carry a second value, and **any `Any` argument** — a tool leaves that out of its
-  schema, and a prompt has no schema to leave it out of.
 - **The boot log sizes the catalogue and says which signals it went to** — `MCP catalogue: tools=48 … · listing
   214KB` and `MCP catalogue cost: user 27/71KB · file 6/22KB · …`, heaviest first. Read it before narrowing
   anything: the number is nobody's intuition, because MCP has no shared component section and forbids a `$ref`
   across entries, so **every entry inlines the full schema of every model it mentions** and a listing is re-sent
   whole to every agent that connects, before its first turn. Past 100KB it says so as a `warn`.
-- **Every refusal is named in the boot log**: one `warn` per endpoint plus a `MCP catalogue: tools=… prompts=…`
-  count. Read that line first when a tool you expected is missing — and it is the *only* place the answer exists,
+- **Every refusal is named in the boot log**: one `warn` per endpoint plus a `MCP catalogue: tools=…
+  resourceTemplates=…` count, and a `MCP page prompts: N (…)` line once the RSC worker has listed the pages. Read that line first when a tool you expected is missing — and it is the *only* place the answer exists,
   because there is no absent opt-in to notice. The API explorer badges the same rule per endpoint (`MCP` /
   `MCP refused`), from the same shared implementation the catalogue runs.
 - **An `Any` argument is left out of the published schema** rather than described as `{}` — it tells a model
@@ -216,7 +218,7 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
 - **A caller's own mistake is reported as one** and never as a server failure: an argument that is missing,
   unparseable, outside its `enumOf`, or **undeclared** comes back as `isError` naming it — `additionalProperties: false` travels in the
   published schema and nothing on the wire enforces it — and so does a document that is not there, as
-  `No <model> found for the arguments given.` A `prompt`, having no `isError` to carry a refusal, answers `-32602`.
+  `No <model> found for the arguments given.` A prompt, having no `isError` to carry a refusal, answers `-32602`.
   Only a real failure logs a stack; an agent can drive the rest at will.
 - **Three revisions are spoken**: the modern `2026-07-28` and the legacy `2025-11-25` / `2025-06-18`, which are
   wire-identical over the POST-only surface this implements — a client whose proposal is not listed is told to
@@ -226,7 +228,7 @@ export class TaskEndpoint extends endpoint(srv.task, ({ mutation, prompt }) => (
 - **A modern-era request mirrors `MCP-Protocol-Version` and `Mcp-Method` into headers** (plus `Mcp-Name` when the
   body names one), and one that leaves a mirror out is refused just like one that contradicts the body: a gateway
   rule keyed on a header never fires for the request that omitted it. Legacy requests are not checked. Capabilities
-  are derived from the catalogue, so a server with no prompts does not advertise `prompts`.
+  are derived from the catalogue; `prompts` is advertised when the build serves pages, since prompts are theirs.
 - **An expired, wrongly-audienced or unverifiable bearer token is refused up front**, so an agent is told to
   authenticate rather than that the tool does not exist. The signature is checked through `auth.verify`, which the
   module that mints the tokens supplies (`libs/shared` does, from the app's signing secret); without a verifier the
@@ -314,25 +316,41 @@ delegates to lives in `akanjs/server` (`OAuthAuthorize`, `OAuthToken`, `OAuthReg
   derived fallback is seeded from the app, environment and repo names and forges an admin token for anyone who
   knows them. `AKAN_ALLOW_DERIVED_JWT_SECRET=1` accepts that risk explicitly.
 
-## `prompt()`
-**`prompt()`** is invoked by the *user* — a client renders it as a slash command — not chosen by the model. `exec`
-returns `PromptMessage[]`, or a bare string that is wrapped into one user message; build them with `Msg.user` /
-`Msg.assistant` / `Msg.link` / `Msg.resource` / `Msg.image` / `Msg.imageOf`. It takes `.param()` and `.search()`
-only, because `prompts/get` sends a flat string map — one string per name. A flat list argument rides that string
-comma-separated (`statuses=opened,inProgress`; its listing appends "Comma-separated list." so the person filling it
-in knows), a nested list is refused, and an `enumOf` argument is checked against its values here as on a tool. **An embedded payload is masked by the model you name** —
-`Msg.resource(uri, task, { model: cnst.LightTask })`, or `Msg.mask(cnst.LightTask, task)` for one piece of an
-assembly. Taking the model as an argument is what makes a `{ ...doc }` spread maskable, since that and `toJSON()`
-arrive with the class already gone; a value with no model named whose `hidden`/`secret` fields are populated is
-**refused**, one level into a plain object too. **A `prompt` is also mounted as a
-plain HTTP `GET` whether or not you enabled MCP**, because that route is what lets a web UI preview one — and it
-is in your OpenAPI document like any other `GET`, answering the one fixed `PromptMessage[]` shape. MCP exposure
-gates the catalogue, not the surface, so guard it
-like any other read — and a prompt declaring no
-`guards` at all is named in the boot log, while an explicit `[Public]` is a decision and stays quiet. Every `Msg` builder takes
-optional `annotations` last (`audience`, `priority` 0..1, `lastModified`) — give the instruction a high `priority`
-and its attachments a low one, or a client with a full window drops blocks by position and keeps the attachment
-over the ask.
+## Page Prompts — `page().prompt()`
+**A prompt is a screen.** There is no `prompt()` on `endpoint()`: the page file declares it —
+`page().param("projectId", ID, { desc: "The project to brief." }).prompt("briefProjectTickets", "Brief the ticket
+board of one project.").render(…)` — and that is the whole surface. `prompts/list` is every page carrying
+`.prompt()`; its `.param()` stages are the required arguments and its `.search()` stages the optional ones, a list
+argument is comma-separated on the wire and its description says so, and an `ID`/`Int`/`enumOf` value is checked by
+the page's own declaration. **`prompts/get` runs the page's body** — root layouts, layouts, then the page's
+`.render()` — in the RSC worker under the caller's bearer token, the way a tab would open it. Nothing is rendered:
+the JSX comes back as an element tree nobody walks, no client component runs, and the screen's data footprint is
+exactly the `fetch.*` queries its body made, with the arguments it made them with. The answer is the description as
+the first message (priority 1), one embedded `resource` per query masked by that endpoint's return model and
+addressed by the `akan://` uri the tool answers to (`akan://<toolKey>?args` for a custom read) — one document read
+in two shapes, a layout's `project` beside the page's `lightProject`, travels once as the larger — and a closing
+`Tools for this screen: …` line naming the published tools of the modules the screen fetched from, minus the reads
+whose answers are attached above and filtered to what this caller may see — which is how a model reading a ticket
+board is handed the ticket tools and not three hundred. Lists are cut to `promptBudget` (60,000 characters;
+`option.setMcp({ promptBudget })`, `AKAN_MCP_PROMPT_BUDGET`), largest first, and the cut is said: `Attached the
+first 20 of 341 rows of \`ticketListInProject\`; call it for the rest.` Only lists are cut — a single document rides
+whole, so the budget is what the lists are trimmed to fit under, not a ceiling a screen of large documents cannot
+pass. A layout's own queries (a project selector's `projectListInOrg`) are part of every screen under it and are
+attached too. **No argument fallback**: a required argument left out answers one message — `No projectId was named for
+"briefProjectTickets". Find it with \`projectListBySearch\`, then run this prompt again with projectId=<id>.` —
+and runs nothing, because a prompt cannot re-run itself and context filled in on a guess would never be used. A
+page that redirects (`getSelf({ unauthorize })`), or whose `fetch.*` a guard refuses with 401/403, answers the 401
+credential challenge when the call carried no token and `This screen is not available to the signed-in account.`
+when it did — the same sentence for both, so a refused id is never confirmed to exist; `router.notFound()` and a
+404 from a query are `No screen exists for these arguments.`; anything else the body throws is `The page failed to
+load.`, with the cause in the server log only. **The description is the only instruction.** `<Agent.Guide>` is for the in-page agent, whose
+levers are the screen's controls, and is never read here, where the levers are the API — so write the description
+in English, in the API's vocabulary, and put a computed rule (the legal status transitions) into it as a static
+table the model combines with the attached state. Names match `^[A-Za-z0-9_-]{1,64}$` and are unique across pages;
+two pages claiming one name fail the listing. An API-only build (`web: false`) publishes no prompts, and the
+in-page chat lists none of them: its `/` menu is its six built-in commands. Pick which screens to publish by this
+rule: a page taking no arguments is the most useful prompt, since MCP has no completion — one taking an id is for
+when the id is already in hand.
 
 ## Progress Reporting
 **`McpProgress.report(n, { total, message })`** reports progress from anywhere inside a call, a service or adapter
@@ -402,8 +420,8 @@ the same guards.** What stays closed is closed because no agent has a reason to 
 ## Writing `instructions`
 
 `*.abstract.md` and `<Agent.Guide>` never reach an MCP client. Exactly three texts do: `instructions`, every
-published entry's `.desc()`, and a `prompt()`. All three are English, whatever the users speak — the reader is a
-model, and the catalogue is built once in one `language` and cached by clients.
+published entry's `.desc()`, and a page's `.prompt()` description. All three are English, whatever the users speak
+— the reader is a model, and the catalogue is built once in one `language` and cached by clients.
 
 - **`instructions` is the workflow.** Five to eight sentences, in this order: what the app is and what its nouns
   mean; **which tool to call first** and which ids the rest take; how a name becomes an id; what a write confirms
@@ -422,9 +440,10 @@ model, and the catalogue is built once in one `language` and cached by clients.
 - **`.desc()` is the reason to pick one tool** — what it returns and when to use it, two clauses. An id argument's
   `.desc()` names the tool that returns it (`From projectInOrg`). The generated CRUD borrows the model's `.of()`
   label and `.desc()`, which is the only text those entries can carry.
-- **`prompt()` is a workflow the user invokes** as a slash command, not one the model chooses — a weekly report,
-  an onboarding check. Put the ask in `Msg.user` at a high `priority` and the attachments in `Msg.resource` masked
-  by their `Light` model at a low one.
+- **A page prompt is a workflow the user invokes** as a slash command, not one the model chooses — a weekly
+  report, an onboarding check. Its instruction is the `.prompt()` description alone and its attachments are what
+  the screen fetched, masked by their return models — so to change what a prompt hands the model, change what the
+  screen loads, and keep the description to the ask.
 
 ## Verifying An App
 

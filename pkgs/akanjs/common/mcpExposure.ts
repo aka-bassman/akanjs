@@ -83,7 +83,6 @@ export const mcpRefusalOf = (
   // payload rather than for a model. Publishing both spends two entries of every catalogue listing on one read.
   if (key === `light${capitalize(refName)}`)
     return `it reads the same document as \`${refName}\` in a smaller shape — call \`${refName}\` instead.`;
-  if (endpoint.type === "prompt") return mcpPromptRefusalOf(endpoint);
   if (endpoint.type === "pubsub" || endpoint.type === "message")
     return `\`${endpoint.type}\` rides the websocket, and its internal arguments read a socket an MCP request does not have.`;
   if (readOnly && endpoint.type !== "query")
@@ -99,29 +98,5 @@ export const mcpRefusalOf = (
   const opaque = endpoint.args.find((arg) => !isMcpDescribableArg(arg) && arg.type !== "search" && !arg.nullable);
   if (opaque)
     return `its required argument \`${opaque.name}\` is typed \`Any\`, which is left out of the published schema — expose a named filter slice instead.`;
-  return null;
-};
-
-/**
- * A prompt is a read exposed on the same terms as a query, so every rejection here is one thing: an argument
- * `prompts/get` cannot carry. Its `arguments` is a flat string map — one string per name, and no schema beside it
- * — which rules out the argument *kinds* the builder already refuses and, just as surely, an `Any` and a nested
- * list among the types it accepts; a flat list rides its string comma-separated. A tool escapes all of it because
- * it publishes a real JSON Schema.
- */
-export const mcpPromptRefusalOf = (endpoint: McpExposureEndpoint): string | null => {
-  const carried = endpoint.args.find((arg) => arg.type === "body" || arg.type === "msg" || arg.type === "room");
-  if (carried)
-    return `a prompt's arguments travel as a flat string map, so its \`${carried.type}\` argument \`${carried.name}\` cannot be carried.`;
-  // One name carries one string, which `McpExecutionContext` splits on commas for a flat list. A nested list has
-  // no delimiter left to spell it — expose that as a tool, whose schema can say `array` of `array`.
-  const nested = endpoint.args.find((arg) => (arg.arrDepth ?? 0) > 1);
-  if (nested)
-    return `a prompt argument is one string, so its nested list argument \`${nested.name}\` has no spelling — a flat list is comma-separated, a list of lists cannot be.`;
-  // The tool path can leave an `Any` argument out of its schema and read it as omitted. A prompt has no schema to
-  // leave it out of: the name is published either way, with nothing anywhere to say what belongs in it.
-  const opaque = endpoint.args.find((arg) => !isMcpDescribableArg(arg));
-  if (opaque)
-    return `its argument \`${opaque.name}\` is typed \`Any\`, and a prompt has no schema in which to describe one.`;
   return null;
 };

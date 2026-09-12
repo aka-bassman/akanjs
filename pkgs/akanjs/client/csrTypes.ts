@@ -3,6 +3,7 @@ import type { ReactDOMAttributes } from "@use-gesture/react/dist/declarations/sr
 import type { PromiseOrObject } from "akanjs/base";
 import { type ForwardRefExoticComponent, type ReactNode, type RefObject, useContext } from "react";
 import type { AnimatedComponent, AnimatedProps, Interpolation, SpringValue } from "react-spring";
+import type { RouteDefinition } from "./route/RouteDefinition";
 import type { RouterInstance } from "./router";
 import { sharedContext } from "./sharedContext";
 import type { ReactFont } from "./types";
@@ -134,6 +135,8 @@ export interface RouteRender {
   resolveHead?: ResolveHead;
   getPageConfig?: () => PromiseOrObject<PageConfig | undefined>;
   getLayoutPageConfig?: () => PromiseOrObject<PageConfig | undefined>;
+  /** The `page()` chain behind a page render, when it was declared as one — what a page prompt is read off. */
+  getRouteDefinition?: () => PromiseOrObject<RouteDefinition | undefined>;
 }
 export interface WebAppManifestIcon {
   src: string;

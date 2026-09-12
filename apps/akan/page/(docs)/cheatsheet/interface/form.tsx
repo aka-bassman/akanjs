@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsList, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   return (
@@ -97,26 +98,27 @@ export const General = () => {
         <Code.Snippet
           className="w-full"
           title={l.trans({ en: "New article page", ko: "새 article page" })}
-          code={`export default async function Page({ params }: PageProps) {
-  const { boardId } = params;
-  const { board } = await fetch.viewBoard(boardId);
-  const articleForm: Partial<cnst.Article> = {
-    board: board.id,
-    status: "draft",
-  };
+          code={`export default page()
+  .param("boardId", ID)
+  .render(async ({ boardId }) => {
+    const { board } = await fetch.viewBoard(boardId);
+    const articleForm: Partial<cnst.Article> = {
+      board: board.id,
+      status: "draft",
+    };
 
-  return (
-    <Load.Edit
-      slice={fetch.slice.articleInBoard}
-      edit={articleForm}
-      type="form"
-      onCancel="back"
-      onSubmit={\`/board/\${board.id}\`}
-    >
-      <Article.Template.General />
-    </Load.Edit>
-  );
-}`}
+    return (
+      <Load.Edit
+        slice={fetch.slice.articleInBoard}
+        edit={articleForm}
+        type="form"
+        onCancel="back"
+        onSubmit={\`/board/\${board.id}\`}
+      >
+        <Article.Template.General />
+      </Load.Edit>
+    );
+  });`}
         />
       </Scroll.Slide>
       <Divider />
@@ -134,20 +136,22 @@ export const General = () => {
         <Code.Snippet
           className="w-full"
           title={l.trans({ en: "Edit article page", ko: "Article 수정 page" })}
-          code={`export default async function Page({ params }: PageProps) {
-  const { article, articleEdit } = await fetch.editArticle(params.articleId);
+          code={`export default page()
+  .param("articleId", ID)
+  .render(async ({ articleId }) => {
+    const { article, articleEdit } = await fetch.editArticle(articleId);
 
-  return (
-    <Load.Edit
-      slice={fetch.slice.articleInBoard}
-      edit={articleEdit}
-      type="form"
-      onSubmit={\`/article/\${article.id}\`}
-    >
-      <Article.Template.General />
-    </Load.Edit>
-  );
-}`}
+    return (
+      <Load.Edit
+        slice={fetch.slice.articleInBoard}
+        edit={articleEdit}
+        type="form"
+        onSubmit={\`/article/\${article.id}\`}
+      >
+        <Article.Template.General />
+      </Load.Edit>
+    );
+  });`}
         />
       </Scroll.Slide>
       <Divider />
@@ -215,4 +219,4 @@ export const General = () => {
       <DocsToc />
     </Scroll>
   );
-}
+});

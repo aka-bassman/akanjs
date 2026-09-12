@@ -1,9 +1,10 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   return (
@@ -109,28 +110,28 @@ export default config;`}
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Inside the native shell, Akan uses the CSR router and mobile page frame. Page transitions, safe area, navbar/bottom inset layers, keyboard accessories, and page cache are handled at the client runtime layer instead of requiring a native UI rewrite.",
-              ko: "네이티브 shell 안에서 Akan은 CSR router와 모바일 page frame을 사용합니다. Page transition, safe area, navbar/bottom inset layer, keyboard accessory, page cache는 네이티브 UI를 다시 작성하지 않고 client runtime layer에서 처리됩니다.",
+              en: "Inside the native shell, Akan uses the CSR router and mobile page frame. Page transitions, safe area, navbar/bottom inset layers, keyboard accessories, and page cache are handled at the client runtime layer instead of requiring a native UI rewrite. A page declares them with the .config() stage of its page() chain.",
+              ko: "네이티브 shell 안에서 Akan은 CSR router와 모바일 page frame을 사용합니다. Page transition, safe area, navbar/bottom inset layer, keyboard accessory, page cache는 네이티브 UI를 다시 작성하지 않고 client runtime layer에서 처리됩니다. 페이지는 page() 체인의 .config() 단계로 이를 선언합니다.",
             })}
           </div>
           <Code.Snippet
             className="w-full"
             title="page/store/product/[productId].tsx"
-            code={`import type { PageConfig } from "akanjs/client";
+            code={`import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
 import { Layout } from "akanjs/ui";
 
-export default function Page() {
-  return (
-    <>
-      <Layout.Navbar back>Product detail</Layout.Navbar>
-      <div>Product detail</div>
-    </>
-  );
-}
-
-export const pageConfig = {
-  transition: "stack",
-} satisfies PageConfig;`}
+export default page()
+  .param("productId", ID, { desc: "The product to show." })
+  .config({ transition: "stack" })
+  .render(({ productId }) => {
+    return (
+      <>
+        <Layout.Navbar back>Product detail</Layout.Navbar>
+        <div>Product {productId}</div>
+      </>
+    );
+  });`}
           />
           <div className="space-y-1">
             {[
@@ -243,4 +244,4 @@ export const pageConfig = {
       </Scroll.Slide>
     </Scroll>
   );
-}
+});

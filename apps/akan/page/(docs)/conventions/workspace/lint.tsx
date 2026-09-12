@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -81,23 +82,23 @@ export default function Page() {
               before: [
                 {
                   title: "page.tsx",
-                  code: `import { useState } from "react";
+                  code: `import { page } from "akanjs/client";
+import { useState } from "react";
 
-export default function Page() {
+export default page().render(() => {
   const [liked, setLiked] = useState(false);
 
   return <button onClick={() => setLiked(true)}>Like</button>;
-}`,
+});`,
                 },
               ],
               after: [
                 {
                   title: "page.tsx",
-                  code: `import { LikeButton } from "./LikeButton";
+                  code: `import { page } from "akanjs/client";
+import { LikeButton } from "./LikeButton";
 
-export default function Page() {
-  return <LikeButton />;
-}`,
+export default page().render(() => <LikeButton />);`,
                 },
                 {
                   title: "LikeButton.tsx",
@@ -125,30 +126,30 @@ export function LikeButton() {
                   title: "page.tsx",
                   code: `"use client";
 
+import { page } from "akanjs/client";
 import { useEffect } from "react";
 
-export default function Page() {
+export default page().render(() => {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
 
   return <DashboardView />;
-}`,
+});`,
                 },
               ],
               after: [
                 {
                   title: "page.tsx",
-                  code: `import { ScrollReset } from "./ScrollReset";
+                  code: `import { page } from "akanjs/client";
+import { ScrollReset } from "./ScrollReset";
 
-export default function Page() {
-  return (
-    <>
-      <ScrollReset />
-      <DashboardView />
-    </>
-  );
-}`,
+export default page().render(() => (
+  <>
+    <ScrollReset />
+    <DashboardView />
+  </>
+));`,
                 },
                 {
                   title: "ScrollReset.tsx",
@@ -173,19 +174,18 @@ export function ScrollReset() {
               before: [
                 {
                   title: "page.tsx",
-                  code: `export default function Page() {
-  return <OrderCard onCancel={() => cancelOrder()} />;
-}`,
+                  code: `import { page } from "akanjs/client";
+
+export default page().render(() => <OrderCard onCancel={() => cancelOrder()} />);`,
                 },
               ],
               after: [
                 {
                   title: "page.tsx",
-                  code: `import { OrderCardAction } from "./OrderCardAction";
+                  code: `import { page } from "akanjs/client";
+import { OrderCardAction } from "./OrderCardAction";
 
-export default function Page() {
-  return <OrderCardAction orderId="order_123" />;
-}`,
+export default page().render(() => <OrderCardAction orderId="order_123" />);`,
                 },
                 {
                   title: "OrderCardAction.tsx",
@@ -350,4 +350,4 @@ bunx biome check "apps/myapp/page/akanjs/(docs)/conventions/workspace/lint.tsx"`
       <DocsToc />
     </Scroll>
   );
-}
+});

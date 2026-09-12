@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, cardGridRecipe, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -244,4 +245,4 @@ export function SharedLogo() {
       <DocsToc />
     </Scroll>
   );
-}
+});

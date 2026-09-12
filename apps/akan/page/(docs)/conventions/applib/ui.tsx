@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, cardGridRecipe, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -113,10 +114,9 @@ export { StepBox } from "./StepBox";`}
           className="w-full"
           title="page.tsx"
           code={`import { AutoClose } from "@apps/myapp/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
-  return <AutoClose timeout={1000} />;
-}`}
+export default page().render(() => <AutoClose timeout={1000} />);`}
         />
       </Scroll.Slide>
       <Divider />
@@ -173,10 +173,9 @@ export const Only = {
             className="w-full"
             title="page.tsx"
             code={`import { Only } from "@libs/shared/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
-  return <Only.Web>Desktop content</Only.Web>;
-}`}
+export default page().render(() => <Only.Web>Desktop content</Only.Web>);`}
           />
         </div>
       </Scroll.Slide>
@@ -216,4 +215,4 @@ export default function Page() {
       <DocsToc />
     </Scroll>
   );
-}
+});

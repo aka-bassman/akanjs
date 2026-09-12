@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { type AkanI18nConfig, DEFAULT_AKAN_I18N, Logger, type LogRecord } from "akanjs/common";
 import type { AkanTheme } from "akanjs/fetch";
 import type { AkanMetricsReport } from "akanjs/service";
+import type { PagePromptEntry, PagePromptRun, PagePromptRunInput } from "../signal/mcp/pagePrompt";
 import type { ClientManifest } from "./artifact";
 import type { RouteCacheInvalidation, RouteCacheRenderState } from "./cachePolicy";
 import { ChildOutputReader } from "./logging/childOutputReader";
@@ -25,6 +26,11 @@ export interface RscPending {
   onRedirect?: (location: string, method: RscRedirectMethod, status: RscRedirectStatus) => void;
   onLateRedirect?: (location: string, method: RscRedirectMethod, status: RscRedirectStatus) => void;
   onNotFound?: () => void;
+}
+
+interface RscCall {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
 }
 
 export type RscRedirectMethod = "replace" | "push";
@@ -328,6 +334,8 @@ type RscInMsg =
   | { type: "not-found"; requestId: string }
   | { type: "metrics"; metrics: AkanMetricsReport }
   | { type: "log.records"; records: LogRecord[]; dropped?: number }
+  | { type: "page-prompts.result"; requestId: string; result: PagePromptEntry[] }
+  | { type: "page-prompt.result"; requestId: string; result: PagePromptRun }
   | { type: "error"; requestId: string; message: string; buildId?: number };
 
 export interface RscWorkerReloadInput {
@@ -384,6 +392,7 @@ export class RscWorker {
 
   #proc: RscProcess;
   readonly #pending = new Map<string, RscPending>();
+  readonly #calls = new Map<string, RscCall>();
   #clientManifest: ClientManifest;
   #pagesBundlePath: string;
   #pagesBundleBuildId: number;
@@ -511,6 +520,44 @@ export class RscWorker {
         this.#hostPendingChunkOverflowCount += 1;
       },
     });
+  }
+
+  listPagePrompts(): Promise<PagePromptEntry[]> {
+    return this.#call<PagePromptEntry[]>((requestId) => ({ type: "page-prompts", requestId }));
+  }
+
+  runPagePrompt(input: PagePromptRunInput): Promise<PagePromptRun> {
+    return this.#call<PagePromptRun>((requestId) => ({ type: "page-prompt.run", requestId, input }));
+  }
+
+  /** One request, one reply: the answer is a JSON value rather than a stream, so it rides a promise. */
+  #call<T>(message: (requestId: string) => object): Promise<T> {
+    const requestId = crypto.randomUUID();
+    return new Promise<T>((resolve, reject) => {
+      this.#calls.set(requestId, { resolve: resolve as (value: unknown) => void, reject });
+      const send = () => {
+        if (!this.#calls.has(requestId)) return;
+        try {
+          this.#proc.send(message(requestId));
+        } catch (err) {
+          this.#settleCall(requestId, (call) =>
+            call.reject(new Error(`rsc worker send failed: ${err instanceof Error ? err.message : String(err)}`)),
+          );
+        }
+      };
+      if (this.#status === "ready") send();
+      else if (this.#status === "stopped")
+        this.#settleCall(requestId, (call) => call.reject(new Error("rsc worker is stopped")));
+      else this.#queuedSends.push(send);
+    });
+  }
+
+  #settleCall(requestId: string, fn: (call: RscCall) => void): boolean {
+    const call = this.#calls.get(requestId);
+    if (!call) return false;
+    this.#calls.delete(requestId);
+    fn(call);
+    return true;
   }
 
   invalidateRouteResultCache(invalidation?: string | RouteCacheInvalidation): void {
@@ -790,6 +837,10 @@ export class RscWorker {
       case "log.records":
         this.onLogRecords?.(message.records, message.dropped ?? 0);
         return;
+      case "page-prompts.result":
+      case "page-prompt.result":
+        this.#settleCall(message.requestId, (call) => call.resolve(message.result));
+        return;
       case "error":
         if (message.requestId === "__init__") {
           // Init errors are surfaced on `ready` only for the very first spawn;
@@ -808,6 +859,7 @@ export class RscWorker {
           }
           return;
         }
+        if (this.#settleCall(message.requestId, (call) => call.reject(new Error(String(message.message))))) return;
         this.#resolvePending(message.requestId, (p) => p.onError(String(message.message)));
         return;
     }
@@ -885,6 +937,8 @@ export class RscWorker {
     const err = new Error(`rsc worker exited with code ${code}`);
     for (const [, p] of this.#pending) p.onError(err.message);
     this.#pending.clear();
+    for (const [, call] of this.#calls) call.reject(err);
+    this.#calls.clear();
     if (this.#pendingReload) {
       this.#pendingReload.reject(err);
       this.#pendingReload = null;

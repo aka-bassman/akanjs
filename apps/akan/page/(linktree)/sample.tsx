@@ -1,5 +1,5 @@
 import { getEnv } from "akanjs/base";
-import { usePage } from "akanjs/client";
+import { page, usePage } from "akanjs/client";
 import { badgeRecipe, buttonRecipe, Link, System } from "akanjs/ui";
 import {
   FaBookOpen,
@@ -13,7 +13,7 @@ import {
   FaTerminal,
 } from "react-icons/fa";
 
-export default function Page() {
+export default page().render(() => {
   const appName = getEnv().appName;
   const { l } = usePage();
   return (
@@ -317,4 +317,4 @@ export default function Page() {
       </section>
     </main>
   );
-}
+});

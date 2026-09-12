@@ -12,11 +12,20 @@ export interface AkanDynamicUsage {
   cookies: boolean;
 }
 
+/** One `fetch.*` query a request made, by endpoint and argument — what a page's data footprint is read off. */
+export interface RequestQueryRecord {
+  key: string;
+  args: Record<string, unknown>;
+  returns: { refName: string; modelType?: string; arrDepth?: number; nullable?: boolean };
+  value: Promise<unknown>;
+}
+
 export interface AkanRequestStore {
   request: Request;
   theme?: AkanTheme;
   frameState?: unknown;
   queryCache: Map<string, Promise<unknown>>;
+  queryLog: RequestQueryRecord[];
   policy: AkanRequestPolicy;
   dynamicUsage: AkanDynamicUsage;
 }
@@ -66,6 +75,7 @@ export function createRequestStore(
   return {
     request,
     queryCache: new Map(),
+    queryLog: [],
     policy: { ...createRequestPolicy(), ...policy },
     dynamicUsage: { headers: false, cookies: false },
   };
@@ -195,6 +205,11 @@ export function claimRequestQuery<T>(key: string, factory: () => Promise<T>): { 
   const promise = factory();
   store.queryCache.set(key, promise);
   return { value: promise, owned: true };
+}
+
+/** Appends to the active request's query log; outside a request there is nothing to read it, so nothing is kept. */
+export function recordRequestQuery(record: RequestQueryRecord): void {
+  getRequestStore()?.queryLog.push(record);
 }
 
 /** Deduplicates a promise-producing query within the active request. */

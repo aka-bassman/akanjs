@@ -1,5 +1,6 @@
 import { usePage } from "@apps/akan/client";
 import { DocsList, panelRecipe } from "@apps/akan/ui";
+import { page } from "akanjs/client";
 
 const changes = [
   {
@@ -59,7 +60,7 @@ const migrationNotes = [
   },
 ];
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
 
   return (
@@ -177,4 +178,4 @@ export default function Page() {
       </article>
     </main>
   );
-}
+});

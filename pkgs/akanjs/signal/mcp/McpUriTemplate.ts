@@ -32,6 +32,28 @@ export class McpUriTemplate {
     return argNames.length ? `${base}{?${argNames.join(",")}}` : base;
   }
 
+  /**
+   * The uri a template names for one call's arguments — the inverse of `parse`, so what a page fetched can be
+   * attached under the address an agent may read it back from. A list argument repeats its key; an absent
+   * optional one is left out.
+   */
+  static expand(template: string, args: Record<string, unknown>): string {
+    const queryAt = template.indexOf("{?");
+    const path = (queryAt === -1 ? template : template.slice(0, queryAt)).replace(/\{([^}]+)\}/g, (_, name: string) =>
+      encodeURIComponent(String(args[name] ?? "")),
+    );
+    if (queryAt === -1) return path;
+    const names = template.slice(queryAt + 2, template.indexOf("}", queryAt)).split(",");
+    const search = new URLSearchParams();
+    for (const name of names) {
+      const value = args[name];
+      if (value === undefined || value === null) continue;
+      for (const item of Array.isArray(value) ? value : [value]) search.append(name, String(item));
+    }
+    const query = search.toString();
+    return query ? `${path}?${query}` : path;
+  }
+
   static parse(uri: string): McpResourceTarget | null {
     const authority = `${McpUriTemplate.scheme}://`;
     if (!uri.startsWith(authority)) return null;

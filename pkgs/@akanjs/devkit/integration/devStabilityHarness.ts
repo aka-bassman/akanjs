@@ -159,19 +159,20 @@ export const server = new AkanServer("${this.appName}", {
       this.writeFile(
         "page/_layout.tsx",
         `import "./styles.css";
-import type { LayoutProps } from "akanjs/client";
+import { layout } from "akanjs/client";
 
-export default function Layout({ children }: LayoutProps) {
+export default layout().render(({ children }) => {
   return <>{children}</>;
-}
+});
 `,
       ),
       this.writeFile(
         "page/_index.tsx",
-        `import { marker } from "../common/marker";
+        `import { page } from "akanjs/client";
+import { marker } from "../common/marker";
 import { ClientMarker } from "../ui/ClientMarker";
 
-export default function Page() {
+export default page().render(() => {
   return (
     <main>
       <h1>Dev stability fixture</h1>
@@ -179,7 +180,7 @@ export default function Page() {
       <ClientMarker />
     </main>
   );
-}
+});
 `,
       ),
       // A second route exists so a test can ask for a page the backend has *never* built, at a moment of
@@ -187,16 +188,17 @@ export default function Page() {
       // request of a test is the only one that reaches the builder at all.
       this.writeFile(
         "page/second/_index.tsx",
-        `import { ClientMarker } from "../../ui/ClientMarker";
+        `import { page } from "akanjs/client";
+import { ClientMarker } from "../../ui/ClientMarker";
 
-export default function Page() {
+export default page().render(() => {
   return (
     <main>
       <h1>Second route</h1>
       <ClientMarker />
     </main>
   );
-}
+});
 `,
       ),
       this.writeFile(

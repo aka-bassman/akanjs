@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -1067,11 +1068,12 @@ export const Today = ({ className }: TodayProps) => {
             className="w-full"
             title="apps/koyo/page/_index.tsx"
             code={`
-import { Load, Model } from "akanjs/ui"; // [!code collapse:2]
+import { Load, Model } from "akanjs/ui"; // [!code collapse:3]
 import { cnst, fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 import { Inventory } from "@apps/koyo/client"; // [!code ++]
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
@@ -1101,7 +1103,7 @@ export default async function Page() {
       />
     </div>
   );
-}`}
+});`}
           />
           <div className="my-6 rounded-lg bg-linear-to-r from-background to-border p-6">
             <div className="mb-3 font-bold text-lg text-primary">
@@ -1165,4 +1167,4 @@ export default async function Page() {
       <DocsToc />
     </Scroll>
   );
-}
+});

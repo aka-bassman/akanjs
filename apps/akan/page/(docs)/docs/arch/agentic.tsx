@@ -1,9 +1,10 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
@@ -60,8 +61,8 @@ export default function Page() {
                 {
                   title: "Agent.Chat",
                   desc: l.trans({
-                    en: "The loop, the approval card, its own /new · /retry · /compact · /copy · /help · /tools, and slash commands from prompt() endpoints.",
-                    ko: "대화 루프, 승인 카드, 자체 커맨드(/new · /retry · /compact · /copy · /help · /tools), prompt() 엔드포인트에서 온 slash command.",
+                    en: "The loop, the approval card, and its own /new · /retry · /compact · /copy · /help · /tools — the only slash commands it lists.",
+                    ko: "대화 루프, 승인 카드, 자체 커맨드(/new · /retry · /compact · /copy · /help · /tools). 메뉴에 오르는 slash command는 이것이 전부입니다.",
                   }),
                 },
                 {
@@ -259,8 +260,8 @@ export const option = new AkanOption<ModulesOptions>()
           </div>
           <div>
             {l.trans({
-              en: "The chat answers six commands of its own, listed in the same / menu ahead of the prompts: /new (/clear), /retry, /compact, /copy, /help and /tools. An app writes none of them and cannot add one — a product's own command is a prompt() endpoint, which is guarded and server-side. A built-in wins a name collision with a prompt, the mirror image of the tool rule: a component's st.tool may shadow a built-in it means to replace, but no library's prompt may take /new away from the user who typed it. /new and /copy work mid-turn and ahead of the question card, so /new ends the turn it is clearing instead of being answered into it as text. A command's output is a local message — rendered in the transcript, withheld from the wire, because the transcript is the model's history and text appended plainly would come back next turn as something the assistant believes it said. /copy exists because nothing else keeps the transcript: the relay is stateless, so an export is the one path a wrong answer has to whoever could fix it. And ↑ walks back through what was sent, ↓ forward — seeded from the transcript, so a persisted chat does not lose only what was just typed — while the / menu takes those keys whenever it is open: Enter picks the highlighted row, Tab completes its name, and Escape closes the menu and then the panel.",
-              ko: "채팅은 자체 커맨드 여섯 개를 가집니다. 같은 / 메뉴에서 prompt보다 앞에 놓입니다 — /new(/clear), /retry, /compact, /copy, /help, /tools. 앱은 이 중 아무것도 작성하지 않고 추가할 수도 없습니다. 제품 고유의 커맨드는 guard가 걸린 서버 쪽 prompt() 엔드포인트입니다. 이름이 겹치면 빌트인이 이깁니다 — 툴 규칙의 반대입니다. 컴포넌트의 st.tool은 대체하려는 빌트인을 가릴 수 있지만, 어떤 라이브러리의 prompt도 사용자가 직접 입력한 /new를 빼앗을 수는 없습니다. /new와 /copy는 턴 중에도, 그리고 질문 카드보다 앞서 동작합니다. 그래서 /new는 질문에 대한 답변 텍스트로 삼켜지는 대신 비우려는 턴을 끝냅니다. 커맨드의 출력은 local 메시지입니다 — 트랜스크립트에는 렌더되고 와이어에는 실리지 않습니다. 트랜스크립트가 곧 모델의 히스토리라서, 그냥 붙이면 다음 턴에 모델이 자기가 한 말로 받아들입니다. /copy가 있는 이유는 트랜스크립트를 보관하는 곳이 달리 없기 때문입니다 — 릴레이는 stateless이므로, 잘못된 답이 고칠 수 있는 사람에게 닿는 유일한 경로가 내보내기입니다. 그리고 ↑는 보낸 것들을 거슬러 가고 ↓는 되돌아옵니다 — 트랜스크립트에서 시작되므로 persist된 대화가 방금 입력한 것만 잃는 일은 없습니다. / 메뉴가 열려 있는 동안에는 그 키들을 메뉴가 가져갑니다. Enter는 선택된 줄을 실행하고, Tab은 이름을 완성하며, Escape는 메뉴를 닫고 한 번 더 누르면 패널을 닫습니다.",
+              en: "The chat answers six commands of its own, and they are the whole / menu: /new (/clear), /retry, /compact, /copy, /help and /tools. An app writes none of them and cannot add one — there is no app-defined slash command in the in-page chat. A screen a model should read is published from its page instead, with page().prompt(), and reaches MCP clients as a prompt rather than this menu. /new and /copy work mid-turn and ahead of the question card, so /new ends the turn it is clearing instead of being answered into it as text. A command's output is a local message — rendered in the transcript, withheld from the wire, because the transcript is the model's history and text appended plainly would come back next turn as something the assistant believes it said. /copy exists because nothing else keeps the transcript: the relay is stateless, so an export is the one path a wrong answer has to whoever could fix it. And ↑ walks back through what was sent, ↓ forward — seeded from the transcript, so a persisted chat does not lose only what was just typed — while the / menu takes those keys whenever it is open: Enter picks the highlighted row, Tab completes its name, and Escape closes the menu and then the panel.",
+              ko: "채팅은 자체 커맨드 여섯 개를 가지며, / 메뉴는 그것이 전부입니다 — /new(/clear), /retry, /compact, /copy, /help, /tools. 앱은 이 중 아무것도 작성하지 않고 추가할 수도 없습니다. 인페이지 채팅에는 앱이 정의하는 slash command가 없습니다. 모델이 읽어야 할 화면은 대신 그 페이지에서 page().prompt()로 공개되며, 이 메뉴가 아니라 MCP 클라이언트에 prompt로 전달됩니다. /new와 /copy는 턴 중에도, 그리고 질문 카드보다 앞서 동작합니다. 그래서 /new는 질문에 대한 답변 텍스트로 삼켜지는 대신 비우려는 턴을 끝냅니다. 커맨드의 출력은 local 메시지입니다 — 트랜스크립트에는 렌더되고 와이어에는 실리지 않습니다. 트랜스크립트가 곧 모델의 히스토리라서, 그냥 붙이면 다음 턴에 모델이 자기가 한 말로 받아들입니다. /copy가 있는 이유는 트랜스크립트를 보관하는 곳이 달리 없기 때문입니다 — 릴레이는 stateless이므로, 잘못된 답이 고칠 수 있는 사람에게 닿는 유일한 경로가 내보내기입니다. 그리고 ↑는 보낸 것들을 거슬러 가고 ↓는 되돌아옵니다 — 트랜스크립트에서 시작되므로 persist된 대화가 방금 입력한 것만 잃는 일은 없습니다. / 메뉴가 열려 있는 동안에는 그 키들을 메뉴가 가져갑니다. Enter는 선택된 줄을 실행하고, Tab은 이름을 완성하며, Escape는 메뉴를 닫고 한 번 더 누르면 패널을 닫습니다.",
             })}
           </div>
           <div>
@@ -450,4 +451,4 @@ export const option = new AkanOption<ModulesOptions>()
       <DocsToc />
     </Scroll>
   );
-}
+});

@@ -1,8 +1,9 @@
 import { usePage } from "@apps/akan/client";
 import { Divider, Docs, DocsToc, type UiComponentReference, UiComponentSlide } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const components: UiComponentReference[] = [
     {
@@ -226,23 +227,28 @@ export const ProductUnit = ({ product }) => (
         },
       ],
       code: `import { fetch, Product } from "@apps/shop/client";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
 import { Load, Loading } from "akanjs/ui";
 
-export default async function ProductPage({ params }) {
-  const { productView } = fetch.viewProduct(params.productId);
-  const { productListInShop } = fetch.initProductInShop(params.shopId);
-  return (
-    <>
-      <Load.View
-        view={productView}
-        renderView={(product) => <Product.View.General product={product} />}
-      />
-      <Load.Stream of={productListInShop} fallback={<Loading.Skeleton active />}>
-        {(productList) => <Product.Unit.Total count={productList.length} />}
-      </Load.Stream>
-    </>
-  );
-}`,
+export default page()
+  .param("shopId", ID)
+  .param("productId", ID)
+  .render(({ shopId, productId }) => {
+    const { productView } = fetch.viewProduct(productId);
+    const { productListInShop } = fetch.initProductInShop(shopId);
+    return (
+      <>
+        <Load.View
+          view={productView}
+          renderView={(product) => <Product.View.General product={product} />}
+        />
+        <Load.Stream of={productListInShop} fallback={<Loading.Skeleton active />}>
+          {(productList) => <Product.Unit.Total count={productList.length} />}
+        </Load.Stream>
+      </>
+    );
+  });`,
     },
     {
       name: "Model",
@@ -320,4 +326,4 @@ export const ProductEdit = ({ productEdit, slice }) => (
       <DocsToc />
     </Scroll>
   );
-}
+});

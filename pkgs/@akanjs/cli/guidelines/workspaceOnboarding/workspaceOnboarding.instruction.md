@@ -5,7 +5,8 @@
 - `apps/<app>/lib/<model>` holds database-backed domain modules, `lib/_<service>` service modules, and
   `lib/__scalar/<scalar>` reusable value types. Module abstracts sit beside the code as `<name>.abstract.md`.
 - `apps/<app>/page` holds server-side file-routed pages: `<routeName>.tsx` serves `/routeName`, a directory's
-  `_index.tsx` serves that directory, `_layout.tsx` nests a layout, and `[modelId]` is a dynamic segment.
+  `_index.tsx` serves that directory, `_layout.tsx` nests a layout, and `[modelId]` is a dynamic segment. Each route
+  file is one chain — `export default page()…render()`, or `layout()` / `rootLayout()` in a `_layout.tsx`.
 
 The file roles inside a module — which file owns persistence, business logic, state, and each UI shape — are in
 the convention set above under **Domain Module Conventions**.
@@ -258,6 +259,6 @@ core framework. The core framework gives you the composition points below; wire 
 - **Auto-generated CRUD and `serve()` service methods / lifecycle hooks do not receive session context.** If an
   operation needs the acting user, expose a custom endpoint that takes it via `.with(CurrentUserId)` — never trust a
   client-supplied user id.
-- **SSR auth-gated pages: guard at the layout.** Check the session in the `_layout.tsx` loader and redirect when it is
-  absent, so nested pages never render for signed-out users.
+- **SSR auth-gated pages: guard at the layout.** Check the session inside the `_layout.tsx` chain's `.render()` and
+  redirect when it is absent, so nested pages never render for signed-out users.
 

@@ -132,6 +132,12 @@ export interface McpServerOption {
    * `off` to disable) and `AKAN_MCP_CONCURRENT`.
    */
   rateLimit?: McpRateLimitOption | false;
+  /**
+   * Characters of screen data one page prompt may attach before its lists are cut, 60,000 by default. A page's
+   * `{ limit: 0 }` is right for a screen and wrong for a model's window, so the cap is the server's, not the
+   * page's. `AKAN_MCP_PROMPT_BUDGET`.
+   */
+  promptBudget?: number;
 }
 
 interface AkanAppPrepared {
@@ -349,7 +355,7 @@ export class AkanServer {
         routes,
         routeOptions,
         wsRoutes,
-        builtinRoutes: this.#createBuiltinRoutes(),
+        builtinRoutes: this.#createBuiltinRoutes(null),
         renderEnvRoutes: {},
         hmrHub: null,
         builderRpc: null,
@@ -385,7 +391,7 @@ export class AkanServer {
       routes,
       routeOptions,
       wsRoutes,
-      builtinRoutes: this.#createBuiltinRoutes(),
+      builtinRoutes: this.#createBuiltinRoutes(webRouter),
       renderEnvRoutes,
       hmrHub,
       builderRpc,
@@ -670,7 +676,12 @@ export class AkanServer {
     }
   }
 
-  #createBuiltinRoutes(): HttpRoutes {
+  /**
+   * Takes the web router as an argument rather than reading `this.#prepared`: this runs while the `#prepared`
+   * literal is still being built, so the field is `null` here on every first boot — which is how page prompts
+   * shipped unadvertised once.
+   */
+  #createBuiltinRoutes(webRouter: WebRouter | null): HttpRoutes {
     const { appName } = getEnv();
     const openapiRoutes: HttpRoutes = this.openapi
       ? {
@@ -700,6 +711,7 @@ export class AkanServer {
             ...this.mcpOption,
             readOnly: this.mcpReadOnly,
             auth: this.mcpAuth,
+            pagePrompts: webRouter?.pagePrompts(),
           })
         : null;
     const mcpRoutes: HttpRoutes = mcpRouter?.createRoutes() ?? {};
@@ -920,12 +932,14 @@ export class AkanServer {
   static #mcpOptionFromEnv(): Omit<McpServerOption, "enabled" | "readOnly" | "auth"> {
     const allowedOrigins = AkanServer.#envList("AKAN_MCP_ALLOWED_ORIGINS");
     const pageSize = Number(process.env.AKAN_MCP_PAGE_SIZE);
+    const promptBudget = Number(process.env.AKAN_MCP_PROMPT_BUDGET);
     return {
       ...AkanServer.#mcpPathFromEnv(),
       ...(process.env.AKAN_MCP_VERSION ? { version: process.env.AKAN_MCP_VERSION } : {}),
       ...(process.env.AKAN_MCP_INSTRUCTIONS ? { instructions: process.env.AKAN_MCP_INSTRUCTIONS } : {}),
       ...(allowedOrigins?.length ? { allowedOrigins } : {}),
       ...(Number.isInteger(pageSize) && pageSize > 0 ? { pageSize } : {}),
+      ...(Number.isInteger(promptBudget) && promptBudget > 0 ? { promptBudget } : {}),
       ...(process.env.AKAN_MCP_LANGUAGE ? { language: process.env.AKAN_MCP_LANGUAGE } : {}),
       ...(AkanServer.#isEnvOff("AKAN_MCP_LEGACY_TEXT") ? { legacyTextBlock: false } : {}),
       ...AkanServer.#mcpOutputSchemaFromEnv(),
