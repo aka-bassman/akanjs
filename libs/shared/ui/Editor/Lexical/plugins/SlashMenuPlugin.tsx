@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import type { EditorFeatureKey } from "../feature";
 import type { MentionSource } from "../mention.type";
 import type { EditorSlashOption } from "../plugin";
+import { useLocalOnlyTrigger } from "../typeaheadTrigger";
 import { useEditorUpload } from "../UploadContext";
 import type { SlashOption } from "./slashMenuPlugin.option";
 import type { SlashGroup } from "./slashMenuPlugin.type";
@@ -46,7 +47,7 @@ export const SlashMenuPlugin = ({ features, extraOptions = [], mentionSources = 
 
   // `/` opens the menu at a word boundary; query is a single token (no spaces),
   // matching the Lexical playground convention so the menu closes on space.
-  const triggerFn = useBasicTypeaheadTriggerMatch("/", { minLength: 0 });
+  const triggerFn = useLocalOnlyTrigger(useBasicTypeaheadTriggerMatch("/", { minLength: 0 }));
 
   const options = useMemo(() => {
     if (!query) return allOptions;

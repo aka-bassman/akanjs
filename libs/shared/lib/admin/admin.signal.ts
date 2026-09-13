@@ -4,6 +4,7 @@ import {
   Me,
   makeAdminAccessTokenResponse as makeAccessTokenResponse,
   makeAdminSignoutResponse as makeSignoutResponse,
+  readRefreshTokenCookie,
   SuperAdmin,
 } from "@libs/shared/srvkit";
 import { ID, Int } from "akanjs/base";
@@ -20,7 +21,9 @@ export class AdminInternal extends internal(srv.admin, ({ initialize, process, r
 
 export class AdminSlice extends slice(
   srv.admin,
-  { guards: { root: AdminGuard, get: AdminGuard, cru: SuperAdmin } },
+  // `cru: false`: creating or re-roling an operator account is the escalation every other guard is measured
+  // against. It stays a deliberate act in the admin console.
+  { guards: { root: AdminGuard, get: AdminGuard, cru: SuperAdmin }, mcp: { cru: false } },
   (init) => ({
     inMention: init()
       .search("text", String)
@@ -68,8 +71,8 @@ export class AdminEndpoint extends endpoint(srv.admin, ({ query, mutation, pubsu
     .body("refreshToken", String, { nullable: true })
     .with(Account)
     .with(Req)
-    .exec(async function (refreshToken, account, request) {
-      const token = refreshToken ?? (request as Bun.BunRequest).cookies.get("adminRefreshToken");
+    .exec(async function (refreshToken, account, req) {
+      const token = refreshToken ?? readRefreshTokenCookie(req.cookies, "admin");
       if (!token) throw new Err("admin.error.noRefreshToken");
       try {
         return makeAccessTokenResponse(await this.adminService.refreshAdminToken(token, account)) as never;
@@ -84,7 +87,10 @@ export class AdminEndpoint extends endpoint(srv.admin, ({ query, mutation, pubsu
         throw error;
       }
     }),
-  runAdminSql: mutation(cnst.InsightRows, { guards: [SuperAdmin] })
+  // `mcp: false`: the statement is read-only by construction, but it answers with raw rows rather than a model,
+  // so it is the one read that walks past `mask()` — `SELECT * FROM "user"` returns the columns every model
+  // response strips. One injected instruction in an operator's agent would be the whole database.
+  runAdminSql: mutation(cnst.InsightRows, { guards: [SuperAdmin], mcp: false })
     .body("sql", String, { example: 'SELECT COUNT(*) AS total FROM "user"' })
     .body("limit", Int, { nullable: true })
     .exec(async function (sql, limit) {

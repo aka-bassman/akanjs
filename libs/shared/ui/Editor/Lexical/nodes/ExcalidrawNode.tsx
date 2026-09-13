@@ -39,7 +39,7 @@ export class ExcalidrawNode extends DecoratorNode<JSX.Element> {
     return $createExcalidrawNode(serialized);
   }
 
-  constructor(payload: ExcalidrawPayload, key?: NodeKey) {
+  constructor(payload: ExcalidrawPayload = {}, key?: NodeKey) {
     super(key);
     this.__scene = payload.scene ?? createEmptyExcalidrawScene();
     this.__preview = payload.preview ?? null;

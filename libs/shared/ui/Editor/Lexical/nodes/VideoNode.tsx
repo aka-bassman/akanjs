@@ -35,7 +35,7 @@ export class VideoNode extends DecoratorNode<JSX.Element> {
     return $createVideoNode(serialized);
   }
 
-  constructor(payload: VideoPayload, key?: NodeKey) {
+  constructor(payload: VideoPayload = { src: "" }, key?: NodeKey) {
     super(key);
     this.__fileId = payload.fileId;
     this.__src = payload.src;

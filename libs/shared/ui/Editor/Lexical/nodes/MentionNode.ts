@@ -68,7 +68,7 @@ export class MentionNode extends TextNode {
     return $createMentionNode(serialized).updateFromJSON({ ...serialized, text: serialized.label });
   }
 
-  constructor(payload: MentionPayload, text?: string, key?: string) {
+  constructor(payload: MentionPayload = { refName: "", refId: "", label: "" }, text?: string, key?: string) {
     super(text ?? payload.label, key);
     this.__refName = payload.refName;
     this.__refId = payload.refId;

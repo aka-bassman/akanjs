@@ -1,4 +1,4 @@
-import { extractTextFromContent } from "@libs/shared/common";
+import { RichEditor } from "@libs/shared/common";
 
 import type { EditorLosses, EditorNodeLike } from "../feature";
 
@@ -33,7 +33,7 @@ export const lossyNodesOf = (content: unknown, losses: EditorLosses): RichLoss[]
 
 /** Nothing a person would miss: no text, and none of the blocks that carry meaning without text. */
 export const isEmptyRichContent = (content: unknown, losses: EditorLosses) =>
-  !extractTextFromContent(content).trim() && !lossyNodesOf(content, losses).length;
+  !RichEditor.extractTextFromContent(content).trim() && !lossyNodesOf(content, losses).length;
 
 export const lossSentence = (losses: RichLoss[]) =>
   losses.map(({ label, count }) => `${count} ${label}${count > 1 ? "s" : ""}`).join(", ");

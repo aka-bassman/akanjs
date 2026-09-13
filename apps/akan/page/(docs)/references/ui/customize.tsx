@@ -29,6 +29,7 @@ export default page().render(() => {
       title: l.trans({ en: "Loading (namespace)", ko: "Loading (namespace)" }),
       slots: ["LoadingSpin", "LoadingSkeleton", "LoadingProgressBar", "LoadingButton", "LoadingInput", "LoadingArea"],
     },
+    { title: l.trans({ en: "Toast (compound)", ko: "Toast (compound)" }), slots: ["Toast", "ToastItem"] },
     { title: l.trans({ en: "Edit shell", ko: "Edit shell" }), slots: ["DraftBar"] },
   ];
 

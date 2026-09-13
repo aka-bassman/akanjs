@@ -1,5 +1,7 @@
 "use client";
 import { CheckListPlugin } from "@lexical/react/LexicalCheckListPlugin";
+import { LexicalCollaboration } from "@lexical/react/LexicalCollaborationContext";
+import { CollaborationPlugin } from "@lexical/react/LexicalCollaborationPlugin";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -20,6 +22,7 @@ import { cn } from "akanjs/client";
 import type { ProtoFile } from "akanjs/constant";
 import { BLUR_COMMAND, COMMAND_PRIORITY_LOW, type EditorState } from "lexical";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Doc } from "yjs";
 
 import { createEditorConfig } from "./config";
 import type { AddFile } from "./editor.type";
@@ -102,6 +105,27 @@ interface EditorProps {
   height?: string;
   placeholder?: string;
   debug?: boolean;
+  /** Live collaboration. Present, it replaces the local history and the external-value sync — see EditorCollab. */
+  collab?: EditorCollab;
+}
+
+/**
+ * Live collaboration for one document.
+ *
+ * Three of the editor's own plugins have to stand down while this is on, which is why it is a prop and not
+ * something `plugins` can add: `HistoryPlugin` would let one person's undo revert someone else's typing
+ * (`Y.UndoManager`, which `CollaborationPlugin` installs, is scoped to the local client), `ExternalValuePlugin`
+ * would overwrite the shared document whenever the `value` prop changed, and `initialJson` would give every
+ * client its own starting state instead of the one the room agreed on.
+ */
+export interface EditorCollab {
+  /** Room identity — one per document. */
+  id: string;
+  providerFactory: (id: string, docMap: Map<string, Doc>) => never;
+  /** True for exactly one client per empty document; every other client must say false. */
+  shouldBootstrap: boolean;
+  username?: string;
+  cursorColor?: string;
 }
 
 const CHANGE_DEBOUNCE_MS = 300;
@@ -197,6 +221,7 @@ export default function Editor({
   agentBlocks,
   height,
   placeholder = "Type something",
+  collab,
 }: EditorProps) {
   const editable = !readOnly && !disabled;
   // The positioned wrapper the floating handle/target-line portal into.
@@ -204,7 +229,12 @@ export default function Editor({
   // Lazy init runs once at mount; LexicalComposer ignores later initialConfig
   // changes — so plugin node classes are read here, at mount, and are fixed.
   const [initialConfig] = useState(() =>
-    createEditorConfig({ editable, initialJson: value ?? defaultValue, extraNodes: collectPluginNodes(plugins) }),
+    createEditorConfig({
+      editable,
+      // In a collaborative editor the starting state comes from the room, not from this client's props.
+      initialJson: collab ? undefined : (value ?? defaultValue),
+      extraNodes: collectPluginNodes(plugins),
+    }),
   );
   const extraSlashOptions = useMemo(() => collectPluginSlashOptions(plugins), [plugins]);
   const mentionSources = useMemo(() => collectPluginMentionSources(plugins), [plugins]);
@@ -325,7 +355,9 @@ export default function Editor({
   // carries a matching left gutter for it to sit in without overlapping text.
   const showHandle = editable && blockActions;
 
-  return (
+  // Without a provider `useCollaborationContext` falls back to one module-global context shared by every
+  // editor in the tab, which Lexical marks unsafe and warns about in development.
+  const composer = (
     <LexicalComposer initialConfig={initialConfig}>
       <EditorUploadProvider value={uploadValue}>
         <AgentFieldPlugin
@@ -341,10 +373,12 @@ export default function Editor({
                   className={cn("leading-7 outline-none", showHandle && "pl-2")}
                   aria-placeholder={placeholder}
                   placeholder={
+                    // ContentEditable 과 같은 상자여야 한다 — 이 div 는 절대 위치라 `leading-7` 과
+                    // 좌측 패딩을 직접 따라 적어야 첫 줄이 실제 텍스트와 겹친다.
                     <div
                       className={cn(
-                        "pointer-events-none absolute top-2 select-none text-foreground/40",
-                        showHandle ? "left-7" : "left-0",
+                        "pointer-events-none absolute top-0 left-0 select-none text-foreground/40 leading-7",
+                        showHandle && "pl-2",
                       )}
                     >
                       {placeholder}
@@ -355,7 +389,7 @@ export default function Editor({
               }
               ErrorBoundary={LexicalErrorBoundary}
             />
-            <HistoryPlugin />
+            {collab ? null : <HistoryPlugin />}
             {has("list") ? (
               <>
                 <ListPlugin />
@@ -375,7 +409,22 @@ export default function Editor({
             {has("table") ? <TablePlugin hasCellMerge hasCellBackgroundColor /> : null}
             <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
             <FlushOnBlurPlugin onBlur={flush} />
-            <ExternalValuePlugin value={value} />
+            {collab ? (
+              <CollaborationPlugin
+                id={collab.id}
+                providerFactory={collab.providerFactory as never}
+                shouldBootstrap={collab.shouldBootstrap}
+                // A JSON string, not the object: the object branch of `initializeEditor` hands the value
+                // straight to `setEditorState`, which wants an EditorState instance and not stored JSON.
+                initialEditorState={
+                  collab.shouldBootstrap && isSerializedEditorState(value) ? JSON.stringify(value) : undefined
+                }
+                username={collab.username}
+                cursorColor={collab.cursorColor}
+              />
+            ) : (
+              <ExternalValuePlugin value={value} />
+            )}
             <FormatGuardPlugin features={enabled} />
             <AgentRichPlugin />
             {has("mention") ? <AgentMentionPlugin sources={mentionSources} /> : null}
@@ -398,4 +447,5 @@ export default function Editor({
       </EditorUploadProvider>
     </LexicalComposer>
   );
+  return collab ? <LexicalCollaboration>{composer}</LexicalCollaboration> : composer;
 }

@@ -101,8 +101,9 @@ export const ExportPDF = () => {
     if (loading) return;
     setLoading(true);
     const fullPath =
-      window.location.href +
-      (window.location.href.includes("jwt") ? "" : window.location.href.includes("?") ? `&jwt=${jwt}` : `?jwt=${jwt}`);
+      jwt && !window.location.href.includes("jwt")
+        ? `${window.location.href}${window.location.href.includes("?") ? "&" : "?"}jwt=${jwt}`
+        : window.location.href;
 
     const file = await fetch.generatePdf(fullPath);
     const arrayBuffer = new Uint8Array(file as unknown as ArrayBuffer);

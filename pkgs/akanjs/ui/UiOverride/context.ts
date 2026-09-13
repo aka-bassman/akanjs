@@ -31,6 +31,7 @@ import type { ItemProps as RadioItemProps, RadioProps } from "../Radio";
 import type { BadgeVariants, ButtonVariants, InputSurfaceVariants } from "../recipe";
 import type { SelectProps } from "../Select";
 import type { TableProps } from "../Table";
+import type { ToastItemProps, ToastProps } from "../Toast";
 import type { MultiProps as ToggleSelectMultiProps, ToggleSelectProps } from "../ToggleSelect";
 import type { TooltipProps } from "../Tooltip";
 import type { UnauthorizedProps } from "../Unauthorized";
@@ -98,6 +99,12 @@ export interface AkanUiOverrides {
   DatePicker: ComponentType<DatePickerProps>;
   DatePickerRangePicker: ComponentType<RangePickerProps>;
   DatePickerTimePicker: ComponentType<TimePickerProps>;
+
+  // Compound `Toast` — the stack and one card. `System`'s `Messages` is not a slot: it keeps the `msg.*`
+  // wiring, the store read, the body-level portal and the dismiss timers, so a replacement re-skins the
+  // surface without re-implementing when a toast appears and goes away.
+  Toast: ComponentType<ToastProps>;
+  ToastItem: ComponentType<ToastItemProps>;
 
   // `ToggleSelect` — generic base (widest instantiation) plus the `.Multi` leaf.
   ToggleSelect: ComponentType<ToggleSelectProps<string | number | boolean | null>>;

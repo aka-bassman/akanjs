@@ -4,9 +4,10 @@ import { page } from "akanjs/client";
 import { buttonRecipe } from "akanjs/ui";
 
 export default page()
-  .search("request", String)
-  .render(async ({ request: requestId }) => {
+  .search("request", String, { desc: "The request of this screen." })
+  .render(async ({ request: requestQuery }) => {
     const { l } = usePage();
+    const requestId = requestQuery;
     const request = requestId ? await fetch.viewOAuthAuthorizationRequest(requestId).catch(() => null) : null;
     const decisionAction = (decision: "approveOAuthConsent" | "denyOAuthConsent") =>
       `${getApiPrefix()}/${decision}/${requestId ?? ""}`;

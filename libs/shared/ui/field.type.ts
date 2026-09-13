@@ -2,7 +2,7 @@ import type { cnst } from "@libs/shared/client";
 import type { EditorContent } from "@libs/shared/common";
 import type { ProtoFile } from "akanjs/constant";
 import type { SliceMeta } from "akanjs/fetch";
-import type { EditorFeatureKey, EditorPlugin } from "./Editor";
+import type { EditorCollab, EditorFeatureKey, EditorPlugin } from "./Editor";
 import type { UploadPolicy } from "./Editor/Lexical/upload";
 
 export interface RichProps {
@@ -36,4 +36,6 @@ export interface RichProps {
   agentName?: string | null;
   /** Publish the block read/edit pair too, default on. Turn off for a field too short to address by block. */
   agentBlocks?: boolean;
+  /** Live collaboration for this field's document. See EditorCollab. */
+  collab?: EditorCollab;
 }

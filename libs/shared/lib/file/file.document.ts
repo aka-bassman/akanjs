@@ -1,10 +1,13 @@
+import { ID } from "akanjs/base";
 import { by, from, into, type SchemaOf } from "akanjs/document";
-
 import * as cnst from "../cnst";
 import type * as db from "../db";
 
 export class FileFilter extends from(cnst.File, (filter) => ({
   query: {
+    byIds: filter()
+      .arg("ids", [ID])
+      .query((ids, q) => ({ id: q.oneOf(ids) })),
     byFilename: filter()
       .arg("filename", String)
       .query((filename) => ({ filename })),

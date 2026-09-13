@@ -45,6 +45,7 @@ const Rich = memo((props: RichProps) => {
     plugins,
     agentName,
     agentBlocks,
+    collab,
   } = props;
   // No useFieldTool here: it cannot describe an Any field, so AgentRichPlugin publishes this setter as markdown.
   const agentAction = agentName ?? actionTagOf(onChange)?.action ?? null;
@@ -84,6 +85,7 @@ const Rich = memo((props: RichProps) => {
         plugins={plugins}
         agentName={agentAction}
         agentBlocks={agentBlocks}
+        collab={collab}
       />
     </div>
   );

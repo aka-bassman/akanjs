@@ -39,7 +39,7 @@ export class ImageNode extends DecoratorNode<JSX.Element> {
     return $createImageNode(serialized);
   }
 
-  constructor(payload: ImagePayload, key?: NodeKey) {
+  constructor(payload: ImagePayload = { src: "" }, key?: NodeKey) {
     super(key);
     this.__fileId = payload.fileId;
     this.__src = payload.src;

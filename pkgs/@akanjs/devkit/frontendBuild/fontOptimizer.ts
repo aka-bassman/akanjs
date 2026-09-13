@@ -152,7 +152,7 @@ export class FontOptimizer {
         const file = Bun.file(filePath);
         if (!(await file.exists())) return;
         const source = await file.text();
-        // A declaration named `fonts` cannot exist in text that never mentions it, and parsing the
+        // A `.fonts()` stage or a `fonts` declaration cannot exist in text that never mentions it, and parsing the
         // route files that never declare one is what a cached optimize() otherwise spends its time on.
         if (!source.includes("fonts")) return;
         fonts.push(...this.#extractFontsExport(source, filePath));
@@ -186,23 +186,75 @@ export class FontOptimizer {
     if (faceCss.length > 0) this.#cssParts.push(...faceCss, this.#buildRootVariableRule(font));
   }
 
+  /**
+   * The font list of a route file, from the `.fonts([…])` stage of its default-exported `rootLayout()` chain
+   * or from the legacy `export const fonts`. Only an inline literal is readable, because the build enumerates
+   * routes without evaluating them — and a list it cannot read is warned about rather than skipped in silence:
+   * the runtime still emits `/_akan/fonts` preloads for fonts nothing subset, and every one of them 404s.
+   */
   #extractFontsExport(source: string, filePath: string): ReactFont[] {
     const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-    const fonts: ReactFont[] = [];
+    const declaration = this.#findFontsDeclaration(sourceFile);
+    if (!declaration) return [];
+    const value = this.#literalToValue(declaration);
+    const entries: unknown[] = Array.isArray(value) ? value : [];
+    const fonts = entries.filter((entry): entry is ReactFont => this.#isReadableFont(entry));
+    if (fonts.length !== entries.length || !Array.isArray(value))
+      this.#app.logger.warn(
+        `[font] ${path.relative(this.#app.cwdPath, filePath)} declares fonts the build cannot read without evaluating the module — write the list inline, or nothing is subset for it and every /_akan/fonts request 404s`,
+      );
+    return fonts.map((font) => this.#withFontDefaults(font));
+  }
+
+  #isReadableFont(value: unknown): value is ReactFont {
+    if (!value || typeof value !== "object") return false;
+    const font = value as Partial<ReactFont>;
+    return typeof font.name === "string" && Array.isArray(font.paths);
+  }
+
+  #findFontsDeclaration(sourceFile: ts.SourceFile): ts.Expression | null {
     for (const statement of sourceFile.statements) {
+      if (ts.isExportAssignment(statement)) {
+        if (statement.isExportEquals) continue;
+        const stage = this.#findChainStageArgument(statement.expression, "fonts");
+        if (stage) return stage;
+        continue;
+      }
       if (!ts.isVariableStatement(statement)) continue;
       const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
-      const isExported = modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ?? false;
-      if (!isExported) continue;
+      if (!modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue;
       for (const declaration of statement.declarationList.declarations) {
         if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "fonts") continue;
-        const value = declaration.initializer ? this.#literalToValue(declaration.initializer) : null;
-        if (Array.isArray(value)) {
-          fonts.push(...(value as ReactFont[]).map((font) => this.#withFontDefaults(font)));
-        }
+        if (declaration.initializer) return declaration.initializer;
       }
     }
-    return fonts;
+    return null;
+  }
+
+  /** Walks a `rootLayout()` chain from its outermost call inward, so the stage that wins at runtime is the one read. */
+  #findChainStageArgument(expression: ts.Expression, stageName: string): ts.Expression | null {
+    let node = this.#unwrapExpression(expression);
+    let argument: ts.Expression | null = null;
+    while (node && ts.isCallExpression(node)) {
+      const callee = this.#unwrapExpression(node.expression);
+      if (!callee) return null;
+      if (ts.isIdentifier(callee)) return callee.text === "rootLayout" ? argument : null;
+      if (!ts.isPropertyAccessExpression(callee)) return null;
+      if (callee.name.text === stageName) argument ??= node.arguments[0] ?? null;
+      node = this.#unwrapExpression(callee.expression);
+    }
+    return null;
+  }
+
+  #unwrapExpression(expression?: ts.Expression): ts.Expression | undefined {
+    let current = expression;
+    while (
+      current &&
+      (ts.isAsExpression(current) || ts.isSatisfiesExpression(current) || ts.isParenthesizedExpression(current))
+    ) {
+      current = current.expression;
+    }
+    return current;
   }
 
   #literalToValue(node: ts.Node): unknown {

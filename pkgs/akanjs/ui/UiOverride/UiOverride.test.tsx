@@ -292,4 +292,36 @@ describe("UiOverride", () => {
     expect(overridden).toContain('data-slot="brand-item"');
     expect(overridden).not.toContain('data-slot="default-item"');
   });
+  test("the shipped Toast resolves the stack and the card through their own slots", async () => {
+    const { Toast } = await import("../Toast");
+    const message = { key: "k1", type: "info" as const, content: "HELLO", duration: 3, leaving: false };
+    const props = { messages: [message], topSafeArea: 0, onClose: () => {}, onClosed: () => {} };
+
+    const fallback = await renderToText(<Toast {...props} />);
+    expect(fallback).toContain('id="toast"');
+    expect(fallback).toContain("HELLO");
+
+    const BrandToastItem: AkanUiOverrides["ToastItem"] = ({ message: toast }) => (
+      <div data-slot="brand-card">{toast.content}</div>
+    );
+    // Only the card is bound: the framework stack still renders, and hands it the message.
+    const cardOnly = await renderToText(
+      <UiOverrideProvider value={{ ToastItem: BrandToastItem }}>
+        <Toast {...props} />
+      </UiOverrideProvider>,
+    );
+    expect(cardOnly).toContain('id="toast"');
+    expect(cardOnly).toContain('data-slot="brand-card"');
+
+    const BrandToast: AkanUiOverrides["Toast"] = ({ messages }) => (
+      <div data-slot="brand-stack">{messages.map((toast) => toast.content)}</div>
+    );
+    const whole = await renderToText(
+      <UiOverrideProvider value={{ Toast: BrandToast }}>
+        <Toast {...props} />
+      </UiOverrideProvider>,
+    );
+    expect(whole).toContain('data-slot="brand-stack"');
+    expect(whole).not.toContain('id="toast"');
+  });
 });

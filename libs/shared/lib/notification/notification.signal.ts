@@ -8,7 +8,8 @@ export class NotificationInternal extends internal(srv.notification, () => ({}))
 
 export class NotificationSlice extends slice(
   srv.notification,
-  { guards: { root: Admin, get: Public, cru: Admin } },
+  // `cru: false`: a notification is content that goes out to readers; composing one is a console action.
+  { guards: { root: Admin, get: Public, cru: Admin }, mcp: { cru: false } },
   () => ({}),
 ) {}
 
@@ -26,7 +27,8 @@ export class NotificationEndpoint extends endpoint(srv.notification, ({ mutation
       await this.notificationService.subscribeToSelf(token, self.id);
       return true;
     }),
-  sendPushNotification: mutation(cnst.Notification, { guards: [Admin] })
+  // `mcp: false`: this reaches every device that ever subscribed, and a push cannot be recalled.
+  sendPushNotification: mutation(cnst.Notification, { guards: [Admin], mcp: false })
     .body("notificationInput", cnst.NotificationInput)
     .exec(async function (notificationInput) {
       return await this.notificationService.sendPushNotification(notificationInput);

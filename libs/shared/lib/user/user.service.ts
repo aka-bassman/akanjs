@@ -1,6 +1,6 @@
 import type { Self } from "@libs/shared/common";
-import { MASTER_PHONECODE, MASTER_PHONES, withRedirectQuery } from "@libs/shared/common";
-import type { AuthTokenMeta, SsoCookie } from "@libs/shared/srvkit";
+import { withRedirectQuery } from "@libs/shared/common";
+import { type AuthTokenMeta, type SsoCookie, ssoSessionCookies } from "@libs/shared/srvkit";
 import { randomCode, randomString } from "@libs/util/common";
 import type { EmailApi, PurpleApi } from "@libs/util/srvkit";
 import type { Dayjs } from "akanjs/base";
@@ -11,7 +11,7 @@ import * as db from "../db";
 import { Err } from "../dict";
 import type * as srv from "../srv";
 
-export class UserService extends serve(db.user, ({ use, service }) => ({
+export class UserService extends serve(db.user, ({ use, service, env }) => ({
   adminService: service<srv.AdminService>(),
   fileService: service<srv.FileService>(),
   securityService: service<srv.util.SecurityService>(),
@@ -20,6 +20,8 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
   host: use<string>(),
   emailApi: use<EmailApi>(),
   purpleApi: use<PurpleApi>(),
+  masterPhones: env(() => process.env.MASTER_PHONES?.split(",") ?? []),
+  masterPhoneCode: env(() => process.env.MASTER_PHONECODE),
 })) {
   override async _postRemove(user: db.User) {
     await this.userModel.revokeRefreshSessions(user.id);
@@ -253,8 +255,8 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
   //*====================== SignToken Signing Area =======================*//
   private async _registerPhoneCode(userId: string, phone: string, purpose: string, hash: string) {
     const user = await this.userModel.getUser(userId);
-    const dryrun = MASTER_PHONES.includes(phone);
-    const phoneCode = dryrun && MASTER_PHONECODE ? MASTER_PHONECODE : randomCode(6);
+    const dryrun = this.masterPhones.includes(phone);
+    const phoneCode = dryrun && this.masterPhoneCode ? this.masterPhoneCode : randomCode(6);
     await this.userModel.registerPhoneCode(user.id, phone, purpose, phoneCode);
     if (!dryrun) await this.purpleApi.sendPhoneCode(phone, phoneCode, hash);
   }
@@ -281,7 +283,7 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
       if (ssoFor === "admin") {
         const accessToken = await this.adminService.ssoSigninAdmin(accountId, account);
         return {
-          cookie: { jwt: accessToken.jwt, adminRefreshToken: accessToken.refreshToken ?? "" },
+          cookie: ssoSessionCookies(accessToken.jwt, accessToken.refreshToken ?? "", "admin"),
           redirect: adminRedirect ?? "/admin",
         };
       } else {
@@ -290,7 +292,7 @@ export class UserService extends serve(db.user, ({ use, service }) => ({
           const user = await this.userModel.getActiveUserBySso(accountId, ssoType);
           const accessToken = await this._issueUserToken(user, account);
           return {
-            cookie: { jwt: accessToken.jwt, userRefreshToken: accessToken.refreshToken ?? "" },
+            cookie: ssoSessionCookies(accessToken.jwt, accessToken.refreshToken ?? "", "user"),
             redirect: signinRedirect,
           };
         } else {

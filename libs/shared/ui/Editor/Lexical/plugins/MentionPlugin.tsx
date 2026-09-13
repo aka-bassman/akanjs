@@ -8,6 +8,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { createPortal } from "react-dom";
 import type { MentionCandidate, MentionSource } from "../mention.type";
 import { $insertMention } from "../nodes/mentionNode.util";
+import { useLocalOnlyTrigger } from "../typeaheadTrigger";
 import { OPEN_MENTION_PICKER_COMMAND, SET_MENTION_SOURCE_COMMAND } from "./mentionPlugin.command";
 import { MentionOption } from "./mentionPlugin.option";
 import {
@@ -42,7 +43,7 @@ export const MentionPlugin = ({ sources }: MentionPluginProps) => {
   // The caret is lost while a picker dialog holds focus, so it is captured on open.
   const pickerSelection = useRef<BaseSelection | null>(null);
 
-  const triggerFn = useBasicTypeaheadTriggerMatch(MENTION_TRIGGER, { minLength: 0 });
+  const triggerFn = useLocalOnlyTrigger(useBasicTypeaheadTriggerMatch(MENTION_TRIGGER, { minLength: 0 }));
 
   const scopedSources = useMemo(
     () => (scopedRefName ? sources.filter((source) => source.refName === scopedRefName) : sources),

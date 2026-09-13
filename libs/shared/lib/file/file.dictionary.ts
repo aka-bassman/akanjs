@@ -38,6 +38,9 @@ export const dictionary = modelDictionary(["en", "ko"])
   }))
   .insight<FileInsight>((t) => ({}))
   .query<FileFilter>((fn) => ({
+    byIds: fn(["By Ids", "Id별 조회"]).arg((t) => ({
+      ids: t(["Ids", "Id"]).desc(["Ids to search", "Id로 조회"]),
+    })),
     byFilename: fn(["By Filename", "파일명별 조회"]).arg((t) => ({
       filename: t(["Filename", "파일명"]).desc(["Filename to search", "파일명으로 조회"]),
     })),
@@ -55,7 +58,13 @@ export const dictionary = modelDictionary(["en", "ko"])
       "파일이 업로드중이며 아직 생성되지 않았습니다",
     ]),
   }))
-  .slice<FileSlice>((fn) => ({}))
+  .slice<FileSlice>((fn) => ({
+    inIds: fn(["In Ids", "Id별 조회"])
+      .desc(["Files in ids", "Id에 해당하는 파일"])
+      .arg((t) => ({
+        ids: t(["Ids", "Id"]).desc(["Ids to search", "Id로 조회"]),
+      })),
+  }))
   .endpoint<FileEndpoint>((fn) => ({
     addFiles: fn(["Add Files", "파일 추가"])
       .desc(["Add files to the database", "데이터베이스에 파일 추가"])
