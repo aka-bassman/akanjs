@@ -26,7 +26,7 @@ const useCloseViewTool = (modelName: string, closeView: () => void) =>
 
 interface ActionProps {
   modelName: string;
-  label: string;
+  label: ReactNode;
   onAct: () => void;
   closeView: () => void;
 }
@@ -68,6 +68,12 @@ interface ViewEditModalProps {
   renderTitle?: (model: any) => ReactNode | string;
   renderView: (model: any) => ReactNode | null;
   renderTemplate: () => ReactNode | null;
+  /** The kebab menu beside the title. `false` draws none, which also takes the remove entry off the modal. */
+  menu?: ReactNode | false;
+  /** Label of the button that turns the detail view into the form. */
+  editLabel?: ReactNode;
+  /** Label of the button that saves the form. */
+  saveLabel?: ReactNode;
 }
 export default function ViewEditModal({
   modalClassName,
@@ -76,6 +82,9 @@ export default function ViewEditModal({
   renderTitle,
   renderView,
   renderTemplate,
+  menu,
+  editLabel,
+  saveLabel,
 }: ViewEditModalProps) {
   const { l } = usePage();
   const storeUse = st.use as unknown as { [key: string]: () => unknown };
@@ -121,31 +130,35 @@ export default function ViewEditModal({
       title={
         <div className="flex w-full items-center justify-between">
           <Title />
-          <Dropdown
-            buttonClassName="m-1 size-10 px-0"
-            value={<BiDotsVertical />}
-            content={
-              model ? (
-                <li>
-                  <Remove
-                    className="flex items-center gap-2 text-destructive"
-                    slice={slice}
-                    modelId={model.id}
-                    modal={null}
-                  >
-                    <BiTrash /> {l("base.remove")}
-                  </Remove>
-                </li>
-              ) : null
-            }
-          />
+          {menu === false
+            ? null
+            : (menu ?? (
+                <Dropdown
+                  buttonClassName="m-1 size-10 px-0"
+                  value={<BiDotsVertical />}
+                  content={
+                    model ? (
+                      <li>
+                        <Remove
+                          className="flex items-center gap-2 text-destructive"
+                          slice={slice}
+                          modelId={model.id}
+                          modal={null}
+                        >
+                          <BiTrash /> {l("base.remove")}
+                        </Remove>
+                      </li>
+                    ) : null
+                  }
+                />
+              ))}
         </div>
       }
       action={
         modelModal === "view" ? (
           <EditAction
             modelName={modelName}
-            label={l("base.edit")}
+            label={editLabel ?? l("base.edit")}
             closeView={closeView}
             onAct={() => {
               if (model) storeDo[names.editModel](model.id);
@@ -154,7 +167,7 @@ export default function ViewEditModal({
         ) : (
           <SaveAction
             modelName={modelName}
-            label={l("base.save")}
+            label={saveLabel ?? l("base.save")}
             closeView={closeView}
             onAct={() => {
               storeDo[names.submitModel]({ sliceName, modal: "view" });

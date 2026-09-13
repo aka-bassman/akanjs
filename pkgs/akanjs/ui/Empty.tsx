@@ -8,6 +8,8 @@ import { createOverridable } from "./UiOverride";
 export interface EmptyProps {
   /** Additional classes for the empty-state body. */
   className?: string;
+  /** The mark above the description. */
+  icon?: ReactNode;
   /** Custom description. Defaults to the localized base.noData label. */
   description?: ReactNode;
   /** Optional content rendered below the empty-state body. */
@@ -16,7 +18,7 @@ export interface EmptyProps {
   minHeight?: number;
 }
 
-export const DefaultEmpty = ({ className = "", description, children, minHeight = 300 }: EmptyProps) => {
+export const DefaultEmpty = ({ className = "", icon, description, children, minHeight = 300 }: EmptyProps) => {
   const { l } = usePage();
   return (
     <div>
@@ -27,7 +29,7 @@ export const DefaultEmpty = ({ className = "", description, children, minHeight 
         className={cn("flex w-full flex-col items-center justify-center gap-3 px-6 py-8 text-center", className)}
       >
         <div className="flex size-14 items-center justify-center rounded-full bg-muted text-3xl text-foreground/35">
-          <AiOutlineInbox />
+          {icon ?? <AiOutlineInbox />}
         </div>
         <p className="text-foreground/55 text-sm">{description ?? l("base.noData")}</p>
       </div>

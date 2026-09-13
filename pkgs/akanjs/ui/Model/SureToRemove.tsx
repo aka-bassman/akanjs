@@ -4,7 +4,7 @@ import { cn, msg, router, usePage } from "akanjs/client";
 import { capitalize } from "akanjs/common";
 import type { SliceMeta } from "akanjs/fetch";
 import { st } from "akanjs/store";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { AiOutlineDelete } from "react-icons/ai";
 
 import { agentAttrs } from "../agentAttrs";
@@ -19,6 +19,14 @@ interface SureToRemoveProps {
   slice: SliceMeta;
   redirect?: string;
   typeNameToRemove?: boolean;
+  /** Element that opens the confirmation. Defaults to the framework's delete label. */
+  trigger?: ReactNode;
+  /** Confirmation heading. */
+  title?: ReactNode;
+  /** Confirmation body above the name field. */
+  description?: ReactNode;
+  /** Label of the button that performs the removal. */
+  confirmLabel?: ReactNode;
 }
 export default function SureToRemove({
   className,
@@ -27,6 +35,10 @@ export default function SureToRemove({
   slice,
   redirect,
   typeNameToRemove,
+  trigger,
+  title,
+  description,
+  confirmLabel,
 }: SureToRemoveProps) {
   const { l } = usePage();
   const [repeatName, setRepeatName] = useState("");
@@ -57,21 +69,20 @@ export default function SureToRemove({
     .arg("modelId", ID)
     .exec((id) => removeModel(id));
   return (
-    <div
-      className="inline size-full"
-      {...agentAttrs(removeTool)}
-      onClick={(e) => {
-        e.stopPropagation();
-        setModalOpen(true);
-      }}
-    >
+    <>
       <div
-        className={cn(
-          "flex size-full cursor-pointer flex-nowrap items-center justify-center gap-2 whitespace-nowrap text-destructive",
-          className,
-        )}
+        className={cn(trigger ? "contents" : "inline size-full", className)}
+        {...agentAttrs(removeTool)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setModalOpen(true);
+        }}
       >
-        <AiOutlineDelete /> {l("base.remove")}
+        {trigger ?? (
+          <div className="flex size-full cursor-pointer flex-nowrap items-center justify-center gap-2 whitespace-nowrap text-destructive">
+            <AiOutlineDelete /> {l("base.remove")}
+          </div>
+        )}
       </div>
       <Modal
         open={modalOpen}
@@ -79,9 +90,11 @@ export default function SureToRemove({
           setModalOpen(false);
         }}
         title={
-          <div className="font-bold text-destructive text-lg">
-            {l("base.removeModel", { model: l(`${modelName}.modelName` as "base.new") })}
-          </div>
+          title ?? (
+            <div className="font-bold text-destructive text-lg">
+              {l("base.removeModel", { model: l(`${modelName}.modelName` as "base.new") })}
+            </div>
+          )
         }
         bodyClassName="border-destructive"
         action={
@@ -92,21 +105,23 @@ export default function SureToRemove({
               await removeModel(modelId);
             }}
           >
-            {l("base.removeModel", { model: l(`${modelName}.modelName` as "base.new") })}
+            {confirmLabel ?? l("base.removeModel", { model: l(`${modelName}.modelName` as "base.new") })}
           </button>
         }
       >
-        <div className="py-4">
-          {l("base.sureToRemove", { model: l(`${modelName}.modelName` as "base.new"), name })}
-          <br />
-          {l("base.irreversibleOps")}
-          {typeNameToRemove ? (
-            <>
-              <br />
-              {l("base.typeNameToRemove", { model: l(`${modelName}.modelName` as "base.new"), name })}
-            </>
-          ) : null}
-        </div>
+        {description ?? (
+          <div className="py-4">
+            {l("base.sureToRemove", { model: l(`${modelName}.modelName` as "base.new"), name })}
+            <br />
+            {l("base.irreversibleOps")}
+            {typeNameToRemove ? (
+              <>
+                <br />
+                {l("base.typeNameToRemove", { model: l(`${modelName}.modelName` as "base.new"), name })}
+              </>
+            ) : null}
+          </div>
+        )}
         {typeNameToRemove ? (
           <input
             className={inputRecipe({}, "text-center")}
@@ -118,6 +133,6 @@ export default function SureToRemove({
           />
         ) : null}
       </Modal>
-    </div>
+    </>
   );
 }

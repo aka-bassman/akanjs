@@ -14,7 +14,7 @@ export interface MenuProps {
   menu: string;
   children: ReactNode;
   scrollToTop?: boolean;
-  tooltip?: string;
+  tooltip?: ReactNode;
 }
 export const Menu = ({
   className,

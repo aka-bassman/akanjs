@@ -159,6 +159,14 @@ export const SummaryPanel = ({ loading, children }) => (
           }),
         },
         {
+          name: "icon",
+          type: "ReactNode",
+          desc: l.trans({
+            en: "The mark above the description. Defaults to the framework inbox glyph.",
+            ko: "description 위 mark입니다. 기본값은 프레임워크 inbox glyph입니다.",
+          }),
+        },
+        {
           name: "minHeight",
           type: "number",
           desc: l.trans({ en: "Minimum empty body height in pixels.", ko: "empty body의 최소 높이(px)입니다." }),
@@ -216,6 +224,30 @@ export const EmptyProducts = () => (
             ko: "click navigation 같은 row event를 만드는 factory입니다.",
           }),
         },
+        {
+          name: "header / footer",
+          type: "ReactNode",
+          desc: l.trans({
+            en: "Content drawn above the table and below the pager.",
+            ko: "table 위와 pager 아래에 그려지는 content입니다.",
+          }),
+        },
+        {
+          name: "empty",
+          type: "ReactNode",
+          desc: l.trans({
+            en: "Placeholder for a table with no rows. Defaults to `Empty`.",
+            ko: "row가 없을 때의 placeholder입니다. 기본값은 `Empty`입니다.",
+          }),
+        },
+        {
+          name: "loadingIndicator",
+          type: "ReactNode",
+          desc: l.trans({
+            en: "The mark shown over the rows while `loading`.",
+            ko: "`loading` 동안 row 위에 표시되는 mark입니다.",
+          }),
+        },
       ],
       code: `import { Table } from "akanjs/ui";
 
@@ -254,6 +286,22 @@ export const EmptyProducts = () => (
           desc: l.trans({
             en: "Called with the selected 1-based page number.",
             ko: "선택한 1-based page number와 함께 호출됩니다.",
+          }),
+        },
+        {
+          name: "prev / next / ellipsis",
+          type: "ReactNode",
+          desc: l.trans({
+            en: "The marks inside the step controls and in place of skipped pages. The buttons, their disabled state and their labels stay the framework's.",
+            ko: "이전/다음 control 안의 mark와 생략된 page를 대신하는 mark입니다. button과 disabled 상태, label은 프레임워크가 유지합니다.",
+          }),
+        },
+        {
+          name: "empty",
+          type: "ReactNode",
+          desc: l.trans({
+            en: "Placeholder for a pager with no pages. Replaces the deprecated `renderEmpty`, which is a node and not a render function.",
+            ko: "page가 없을 때의 placeholder입니다. render 함수가 아니라 node였던 `renderEmpty`를 대체합니다.",
           }),
         },
       ],

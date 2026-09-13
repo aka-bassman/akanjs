@@ -44,6 +44,14 @@ export interface TableProps {
   rowClassName?: string | ((record: any, index: number) => string) | undefined;
   /** Custom row key resolver. */
   rowKey?: (model: any) => string;
+  /** Content drawn above the table. */
+  header?: ReactNode;
+  /** Content drawn below the table, under the pager. */
+  footer?: ReactNode;
+  /** Placeholder for a table with no rows. */
+  empty?: ReactNode;
+  /** The mark shown over the rows while `loading`. */
+  loadingIndicator?: ReactNode;
 }
 
 export const DefaultTable = ({
@@ -57,6 +65,10 @@ export const DefaultTable = ({
   onRow,
   rowClassName,
   rowKey,
+  header,
+  footer,
+  empty,
+  loadingIndicator,
 }: TableProps) => {
   const responsive = st.use.responsive({ agent: false });
   const visible = useMemo(
@@ -67,6 +79,7 @@ export const DefaultTable = ({
 
   return (
     <div className="w-full">
+      {header}
       <div className="relative">
         <div
           className={cn(
@@ -118,11 +131,11 @@ export const DefaultTable = ({
               </tbody>
             ) : null}
           </table>
-          {dataSource.length ? null : <Empty minHeight={160} />}
+          {dataSource.length ? null : (empty ?? <Empty minHeight={160} />)}
         </div>
         {loading ? (
           <div className="absolute inset-0 flex items-center justify-center">
-            <AiOutlineLoading3Quarters className="animate-spin text-3xl text-primary/70" />
+            {loadingIndicator ?? <AiOutlineLoading3Quarters className="animate-spin text-3xl text-primary/70" />}
           </div>
         ) : null}
       </div>
@@ -136,6 +149,7 @@ export const DefaultTable = ({
           />
         </div>
       ) : null}
+      {footer}
     </div>
   );
 };

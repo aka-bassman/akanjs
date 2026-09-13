@@ -80,9 +80,7 @@ export const Parent = <Light extends { id: string }>({
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Select<string | null, false, true>
-        label={label}
-        desc={desc}
-        labelClassName={labelClassName}
+        nullable={nullable}
         selectClassName={selectClassName}
         value={value?.id ?? null}
         searchable
@@ -173,10 +171,8 @@ export const ParentId = <Light extends { id: string }>({
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Select<string | null, false, true>
+        nullable={nullable}
         searchable
-        desc={desc}
-        label={label}
-        labelClassName={labelClassName}
         selectClassName={selectClassName}
         value={value}
         options={modelList.map((model) => model.id)}
@@ -268,10 +264,8 @@ export const Children = <Light extends { id: string }>({
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Select
+        nullable={nullable}
         searchable
-        desc={desc}
-        label={label}
-        labelClassName={labelClassName}
         selectClassName={selectClassName}
         multiple
         value={(value ?? []).map((model) => model.id)}
@@ -357,10 +351,8 @@ export const ChildrenId = <Light extends { id: string }>({
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
       {label ? <Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Select
+        nullable={nullable}
         searchable
-        desc={desc}
-        label={label}
-        labelClassName={labelClassName}
         multiple
         // selectClassName={selectClassName}
         value={value ?? []}

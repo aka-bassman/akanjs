@@ -146,6 +146,7 @@ export const baseDictionary = serviceDictionary(["en", "ko"])
     password: ["Password", "비밀번호"],
     passwordConfirm: ["Password Confirm", "비밀번호 확인"],
     noOptions: ["Can't find any datas", "데이터를 찾을 수 없습니다."],
+    noSelection: ["No selection", "선택 안 함"],
     addModel: ["Add {model}", "{model} 추가"],
     createModel: ["Create {model}", "{model} 생성하기"],
     createSuccess: ["{model} create success", "{model} 생성 완료"],

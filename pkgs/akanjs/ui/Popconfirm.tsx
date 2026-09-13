@@ -19,9 +19,13 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 export interface PopconfirmProps {
   /** Confirmation title. */
-  title: string;
+  title: ReactNode;
   /** Optional detailed confirmation message. */
   description?: ReactNode;
+  /** The mark beside the message. `false` draws none. */
+  icon?: ReactNode | false;
+  /** The whole footer, replacing both buttons. A replacement owns the confirm and the dismiss. */
+  actions?: ReactNode;
   /** Called when the user confirms. */
   onConfirm?: () => void;
   /** Props forwarded to the OK button. */
@@ -29,9 +33,9 @@ export interface PopconfirmProps {
   /** Props forwarded to the cancel button. */
   cancelButtonProps?: ButtonProps;
   /** Custom OK button text. */
-  okText?: string;
+  okText?: ReactNode;
   /** Custom cancel button text. */
-  cancelText?: string;
+  cancelText?: ReactNode;
   /** Trigger content. */
   children?: ReactNode;
   /** Additional classes for the trigger wrapper. */
@@ -43,6 +47,8 @@ export interface PopconfirmProps {
 export const DefaultPopconfirm = ({
   title,
   description,
+  icon,
+  actions,
   onConfirm,
   okButtonProps,
   cancelButtonProps,
@@ -113,29 +119,33 @@ export const DefaultPopconfirm = ({
           style={decoClassName ? undefined : { left: (position?.anchorOffset ?? 0) - POINTER_HALF }}
         />
         <div className="flex gap-2">
-          <BiMessageRoundedError className="mt-0.5 shrink-0 text-lg text-warning" />
+          {icon === false ? null : (icon ?? <BiMessageRoundedError className="mt-0.5 shrink-0 text-lg text-warning" />)}
           <div className="min-w-0">
             <p className="font-semibold text-sm leading-snug">{title}</p>
             {description ? <div className="mt-1 text-foreground/70 text-sm leading-snug">{description}</div> : null}
           </div>
         </div>
         <div className="mt-3 flex justify-end gap-2">
-          <button
-            className={recipe({ variant: "ghost", size: "xs" })}
-            onClick={handleCancel}
-            type="button"
-            {...cancelButtonProps}
-          >
-            {cancelText ?? l("base.cancel")}
-          </button>
-          <button
-            className={recipe({ variant: "primary", size: "xs" })}
-            onClick={handleConfirm}
-            type="button"
-            {...okButtonProps}
-          >
-            {okText ?? l("base.ok")}
-          </button>
+          {actions ?? (
+            <>
+              <button
+                className={recipe({ variant: "ghost", size: "xs" })}
+                onClick={handleCancel}
+                type="button"
+                {...cancelButtonProps}
+              >
+                {cancelText ?? l("base.cancel")}
+              </button>
+              <button
+                className={recipe({ variant: "primary", size: "xs" })}
+                onClick={handleConfirm}
+                type="button"
+                {...okButtonProps}
+              >
+                {okText ?? l("base.ok")}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </>

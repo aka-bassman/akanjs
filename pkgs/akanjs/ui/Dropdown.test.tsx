@@ -115,6 +115,33 @@ describe("Dropdown", () => {
     unmount();
   });
 
+  test("a custom trigger keeps the menu's aria state on the caller's own control", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        <DefaultDropdown
+          trigger={
+            <button className="w-full" type="button">
+              More
+            </button>
+          }
+          content={<li>Edit</li>}
+        />,
+      ),
+    );
+    const trigger = container.querySelector("button");
+    // Cloned, not wrapped: a screen reader activates this button, so the disclosure state belongs on it.
+    expect(trigger?.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger?.getAttribute("aria-haspopup")).toBe("menu");
+    expect(trigger?.className).toBe("w-full");
+    act(() => trigger?.click());
+    expect(trigger?.getAttribute("aria-expanded")).toBe("true");
+    act(() => root.unmount());
+    container.remove();
+  });
+
   test("without a namespace it publishes nothing and the trigger still toggles", () => {
     const surface = new AgenticSurface();
     const { container, menu, trigger, unmount } = mount(item, { surface });

@@ -27,9 +27,25 @@ export default page().render(() => {
           }),
         },
         {
+          name: "trigger",
+          type: "ReactNode",
+          desc: l.trans({
+            en: "Element that opens the modal. Given one, `open` may be left out and the modal keeps its own state.",
+            ko: "modal을 여는 element입니다. 넘기면 `open` 없이도 modal이 자체 state로 동작합니다.",
+          }),
+        },
+        {
           name: "title",
           type: "string | ReactNode",
           desc: l.trans({ en: "Optional title slot.", ko: "optional title slot입니다." }),
+        },
+        {
+          name: "closeButton",
+          type: "ReactNode | false",
+          desc: l.trans({
+            en: "The dismiss control, drawn in the corner slot that already closes the dialog — a replacement needs no wiring. `false` draws none.",
+            ko: "닫기 control입니다. 코너 slot 자체가 dialog를 닫으므로 교체해도 별도 배선이 필요 없습니다. `false`면 그리지 않습니다.",
+          }),
         },
         {
           name: "action",
@@ -129,8 +145,24 @@ export const ProductModal = ({ open, close, product }) => (
         },
         {
           name: "okText / cancelText",
-          type: "string",
+          type: "ReactNode",
           desc: l.trans({ en: "Custom button labels.", ko: "custom button label입니다." }),
+        },
+        {
+          name: "icon",
+          type: "ReactNode | false",
+          desc: l.trans({
+            en: "The mark beside the message. `false` draws none.",
+            ko: "message 옆 mark입니다. `false`면 그리지 않습니다.",
+          }),
+        },
+        {
+          name: "actions",
+          type: "ReactNode",
+          desc: l.trans({
+            en: "The whole footer, replacing both buttons. A replacement owns the confirm and the dismiss.",
+            ko: "두 버튼을 모두 대체하는 footer입니다. 교체하면 confirm과 dismiss를 직접 처리해야 합니다.",
+          }),
         },
       ],
       code: `import { Popconfirm } from "akanjs/ui";
@@ -150,6 +182,14 @@ export const ProductModal = ({ open, close, product }) => (
           name: "value",
           type: "ReactNode",
           desc: l.trans({ en: "Trigger button content.", ko: "trigger button content입니다." }),
+        },
+        {
+          name: "trigger",
+          type: "ReactNode",
+          desc: l.trans({
+            en: "The whole trigger element, drawn instead of the framework's ghost button. It is cloned, not wrapped, so the menu's aria-expanded lands on the control a screen reader activates — the element must forward className, onClick and aria-*.",
+            ko: "프레임워크 ghost button 대신 그릴 trigger element 전체입니다. 감싸지 않고 clone하므로 aria-expanded가 스크린리더가 활성화하는 control에 붙습니다 — element가 className, onClick, aria-*를 forward해야 합니다.",
+          }),
         },
         {
           name: "content",

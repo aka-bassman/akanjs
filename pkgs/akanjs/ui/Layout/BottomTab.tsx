@@ -7,7 +7,7 @@ import { Link } from "../Link";
 import { BottomInset } from "./BottomInset";
 
 interface TabType {
-  name: string;
+  name: ReactNode;
   icon: ReactNode;
   activeIcon?: ReactNode;
   notiCount?: number;
@@ -18,9 +18,11 @@ export interface BottomTabProps {
   className?: string;
   tabs: TabType[];
   height?: number;
+  /** Draws one tab inside its link. The link, the route match, and the badge placement stay the framework's. */
+  renderTab?: (tab: TabType, active: boolean) => ReactNode;
 }
 
-export const BottomTab = ({ className, tabs, height = 64 }: BottomTabProps) => {
+export const BottomTab = ({ className, tabs, height = 64, renderTab }: BottomTabProps) => {
   const { lang } = usePage();
   const path = st.use.path({ agent: false });
   const localePath = path.startsWith(`/${lang}`) ? path.slice(lang.length + 1) || "/" : path;
@@ -45,7 +47,7 @@ export const BottomTab = ({ className, tabs, height = 64 }: BottomTabProps) => {
           const active = isActiveTab(tab.href);
           return (
             <Link
-              key={tab.name}
+              key={tab.href}
               href={tab.href}
               replace
               className={cn(
@@ -53,15 +55,21 @@ export const BottomTab = ({ className, tabs, height = 64 }: BottomTabProps) => {
                 active ? "font-medium text-primary" : "text-foreground/55 hover:text-foreground/80",
               )}
             >
-              <div className="relative inline-flex w-max text-xl">
-                {active ? (tab.activeIcon ?? tab.icon) : tab.icon}
-                {tab.notiCount ? (
-                  <span className="absolute -top-1 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 font-medium text-[10px] text-destructive-foreground leading-none">
-                    {tab.notiCount > 99 ? "99+" : tab.notiCount}
-                  </span>
-                ) : null}
-              </div>
-              <span className="text-[11px]">{tab.name}</span>
+              {renderTab ? (
+                renderTab(tab, active)
+              ) : (
+                <>
+                  <div className="relative inline-flex w-max text-xl">
+                    {active ? (tab.activeIcon ?? tab.icon) : tab.icon}
+                    {tab.notiCount ? (
+                      <span className="absolute -top-1 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 font-medium text-[10px] text-destructive-foreground leading-none">
+                        {tab.notiCount > 99 ? "99+" : tab.notiCount}
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="text-[11px]">{tab.name}</span>
+                </>
+              )}
             </Link>
           );
         })}

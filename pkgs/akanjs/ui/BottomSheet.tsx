@@ -4,14 +4,27 @@ import { cn } from "akanjs/client";
 import { st } from "akanjs/store";
 import { animated } from "akanjs/ui";
 import { useEscapeKey } from "akanjs/webkit";
-import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { BiX } from "react-icons/bi";
 import { config, useSpring } from "react-spring";
 import { buttonRecipe } from "./Button";
 
 interface BottomSheetProps {
-  open: boolean;
-  onCancel: () => void;
+  /** Additional classes for the sheet surface. */
+  className?: string;
+  /** Additional classes for the scrolling body. */
+  bodyClassName?: string;
+  /** Controlled open state. Left out, the sheet opens from its own trigger and handle. */
+  open?: boolean;
+  onCancel?: () => void;
+  /** Element that opens the sheet. */
+  trigger?: ReactNode;
+  /** Whole top row of the sheet, replacing the drag handle or the close row. */
+  header?: ReactNode;
+  /** The grab handle a `half` sheet draws. */
+  handle?: ReactNode;
+  /** Element that closes a `full` sheet, inside the default header row. */
+  close?: ReactNode;
   children: ReactNode;
   type: "full" | "half";
 }
@@ -26,13 +39,30 @@ export interface BottomSheetRef {
 const OFFSCREEN = 2000;
 
 export const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
-  ({ open, onCancel, type = "half", children }: BottomSheetProps, bottomSheetRef) => {
+  (
+    {
+      className,
+      bodyClassName,
+      open,
+      onCancel,
+      trigger,
+      header,
+      handle,
+      close,
+      type = "half",
+      children,
+    }: BottomSheetProps,
+    bottomSheetRef,
+  ) => {
     const ref = useRef<HTMLDivElement>(null);
     const pageState = st.use.pageState({ agent: false });
+    const [selfOpen, setSelfOpen] = useState(false);
+    const isOpen = open ?? selfOpen;
 
     const [{ y, opacity }, api] = useSpring(() => ({ y: OFFSCREEN, opacity: 0 }));
 
     const openModal = async () => {
+      setSelfOpen(true);
       await Promise.all(api.start({ y: 0, opacity: 1, immediate: false, config: config.default }));
     };
     const closeModal = async () => {
@@ -40,7 +70,8 @@ export const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
       await Promise.all(
         api.start({ y: height, opacity: 0, immediate: false, config: { ...config.stiff, velocity: 0 } }),
       );
-      onCancel();
+      setSelfOpen(false);
+      onCancel?.();
     };
 
     const bind = useDrag(({ down, movement: [, my] }) => {
@@ -55,21 +86,31 @@ export const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
       close: closeModal,
     }));
 
-    useEscapeKey(open, () => {
+    useEscapeKey(isOpen, () => {
       void closeModal();
     });
 
     useEffect(() => {
-      if (open) void openModal();
+      if (isOpen) void openModal();
       else void closeModal();
-    }, [open]);
+    }, [isOpen]);
 
     return (
       <>
+        {trigger ? (
+          <div
+            className="contents"
+            onClick={() => {
+              setSelfOpen(true);
+            }}
+          >
+            {trigger}
+          </div>
+        ) : null}
         <animated.div
           style={{ opacity }}
           onClick={() => void closeModal()}
-          className={cn("fixed inset-0 bg-black/50 backdrop-blur-sm", open ? "z-50" : "-z-[1]")}
+          className={cn("fixed inset-0 bg-black/50 backdrop-blur-sm", isOpen ? "z-50" : "-z-[1]")}
         />
         <animated.div
           ref={ref}
@@ -78,25 +119,30 @@ export const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
             "fixed bottom-0 left-0 z-[101] flex w-full flex-col bg-card text-card-foreground",
             type === "half" && "h-[90dvh] rounded-t-box border-border border-t shadow-2xl",
             type === "full" && "h-[100dvh]",
+            className,
           )}
         >
-          {type === "half" ? (
-            <animated.div {...bind()} className="flex shrink-0 cursor-grab touch-pan-y justify-center py-3">
-              <div className="h-1 w-10 rounded-full bg-foreground/15" />
-            </animated.div>
-          ) : (
-            <div className="flex shrink-0 justify-end p-2" style={{ paddingTop: pageState.topSafeArea }}>
-              <button
-                aria-label="Close"
-                className={buttonRecipe({ variant: "ghost", size: "icon" }, "rounded-full text-foreground/50")}
-                onClick={() => void closeModal()}
-                type="button"
-              >
-                <BiX className="text-2xl" />
-              </button>
-            </div>
-          )}
-          <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
+          {header ??
+            (type === "half" ? (
+              <animated.div {...bind()} className="flex shrink-0 cursor-grab touch-pan-y justify-center py-3">
+                {handle ?? <div className="h-1 w-10 rounded-full bg-foreground/15" />}
+              </animated.div>
+            ) : (
+              <div className="flex shrink-0 justify-end p-2" style={{ paddingTop: pageState.topSafeArea }}>
+                <div className="contents" onClick={() => void closeModal()}>
+                  {close ?? (
+                    <button
+                      aria-label="Close"
+                      className={buttonRecipe({ variant: "ghost", size: "icon" }, "rounded-full text-foreground/50")}
+                      type="button"
+                    >
+                      <BiX className="text-2xl" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          <div className={cn("scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 pb-4", bodyClassName)}>{children}</div>
         </animated.div>
       </>
     );

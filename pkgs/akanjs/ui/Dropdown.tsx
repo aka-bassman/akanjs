@@ -15,6 +15,7 @@ import {
   useOverlayScope,
 } from "./overlayLayer";
 import { useOverlayPosition } from "./overlayPosition";
+import { triggerSlot } from "./triggerSlot";
 import { createOverridable, useUiRecipe } from "./UiOverride";
 
 /** Put this on a menu item that runs its own interaction (a switch, a copy button) to keep the menu open. */
@@ -23,8 +24,10 @@ export const DROPDOWN_KEEP_OPEN_ATTR = "data-dropdown-keep-open";
 const keepOpenSelector = `[${DROPDOWN_KEEP_OPEN_ATTR}]`;
 
 export interface DropdownProps {
-  /** Button/trigger content. */
-  value: ReactNode;
+  /** Trigger content, drawn inside the framework's own ghost button. */
+  value?: ReactNode;
+  /** Whole trigger element, drawn instead of that button. The menu's click and aria state land on it. */
+  trigger?: ReactNode;
   /** Dropdown menu content. */
   content: ReactNode;
   /** Additional classes for the dropdown wrapper. */
@@ -41,6 +44,7 @@ export interface DropdownProps {
 
 export const DefaultDropdown = ({
   value,
+  trigger,
   content,
   className,
   buttonClassName,
@@ -125,18 +129,23 @@ export const DefaultDropdown = ({
       <OverlayOwnerProvider value={scope}>{content}</OverlayOwnerProvider>
     </ul>
   );
+  const triggerAttrs = {
+    "aria-haspopup": "menu" as const,
+    "aria-expanded": opened,
+    onClick: () => {
+      void toggle();
+    },
+    ...agentAttrs(toggle),
+  };
   return (
     <div ref={ref} className={cn("relative inline-block", className)}>
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={opened}
-        className={recipe({ variant: "ghost" }, ["flex", buttonClassName])}
-        onClick={toggle}
-        {...agentAttrs(toggle)}
-      >
-        {value}
-      </button>
+      {trigger ? (
+        triggerSlot(trigger, { className: buttonClassName, ...triggerAttrs })
+      ) : (
+        <button type="button" className={recipe({ variant: "ghost" }, ["flex", buttonClassName])} {...triggerAttrs}>
+          {value}
+        </button>
+      )}
       {/* Mounted from the first render and hidden while closed: a menu item declares its tool on mount, so an
           unmounted menu publishes nothing an agent could find — and unmounting an open one takes any overlay
           a menu item opened down with it. */}

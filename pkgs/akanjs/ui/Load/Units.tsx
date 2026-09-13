@@ -24,6 +24,8 @@ interface DefaultProps<L extends { id: string }> {
   loading?: ReactNode;
   filter?: (item: L, idx: number) => boolean;
   sort?: (a: L, b: L) => number;
+  /** Placeholder for a slice with no rows. Takes precedence over `renderEmpty`. */
+  empty?: ReactNode;
   renderEmpty?: null | (() => ReactNode) | false;
   renderItem?: (item: L, idx: number) => ReactNode;
   renderList?: (list: DataList<L>) => ReactNode;
@@ -50,6 +52,7 @@ function Render<RefName extends string, Light extends { id: string }>({
   from,
   to,
   loading,
+  empty,
   renderItem,
   renderList,
   renderEmpty = noDiv
@@ -255,6 +258,8 @@ function Render<RefName extends string, Light extends { id: string }>({
           >
             {renderList(modelDataList)}
           </ContainerWrapper>
+        ) : empty !== undefined ? (
+          empty
         ) : typeof renderEmpty === "function" ? (
           renderEmpty()
         ) : null}
@@ -278,9 +283,11 @@ function Render<RefName extends string, Light extends { id: string }>({
           ? (reverse ? [...modelDataList].reverse() : modelDataList)
               .slice(from ?? 0, to ?? modelDataList.length + 1)
               .map((model: Light, idx: number) => <RenderItem key={model.id} model={model} idx={idx} />)
-          : typeof renderEmpty === "function"
-            ? renderEmpty()
-            : null}
+          : empty !== undefined
+            ? empty
+            : typeof renderEmpty === "function"
+              ? renderEmpty()
+              : null}
       </ContainerWrapper>
       {showLoading ? (loading ?? <Loading.Area />) : null}
     </>
@@ -295,6 +302,7 @@ export default function Units<RefName extends string, Light extends { id: string
   from,
   to,
   loading,
+  empty,
   renderItem,
   renderList,
   renderEmpty = noDiv
@@ -320,6 +328,7 @@ export default function Units<RefName extends string, Light extends { id: string
     from,
     to,
     loading,
+    empty,
     renderItem,
     renderList,
     renderEmpty,
@@ -346,6 +355,8 @@ export default function Units<RefName extends string, Light extends { id: string
       {(serverInit) =>
         serverInit ? (
           <Render {...props} init={serverInit} />
+        ) : empty !== undefined ? (
+          empty
         ) : renderEmpty ? (
           renderEmpty()
         ) : (

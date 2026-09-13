@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { BiLoaderAlt } from "react-icons/bi";
 
 export interface InfiniteScrollProps {
@@ -12,6 +12,8 @@ export interface InfiniteScrollProps {
    * itself — and until it does, the sentinel is on screen and loads one window unasked.
    */
   reverse?: boolean;
+  /** The mark shown while the next window is loading. */
+  loading?: ReactNode;
 }
 
 let warnedColumnReverse = false;
@@ -54,7 +56,7 @@ const scrollerOf = (sentinel: Element | null) => {
   return document.scrollingElement;
 };
 
-export const InfiniteScroll = ({ hasMore, onLoadMore, children, reverse }: InfiniteScrollProps) => {
+export const InfiniteScroll = ({ hasMore, onLoadMore, children, reverse, loading }: InfiniteScrollProps) => {
   const [isFetching, setIsFetching] = useState(false);
   const isFetchingRef = useRef(false);
   const target = useRef<HTMLDivElement>(null);
@@ -124,13 +126,13 @@ export const InfiniteScroll = ({ hasMore, onLoadMore, children, reverse }: Infin
     <>
       {reverse && hasMore ? (
         <div ref={target} className="flex w-full items-end justify-center">
-          {isFetching ? <BiLoaderAlt className="h-10 animate-spin pb-4 text-2xl" /> : null}
+          {isFetching ? (loading ?? <BiLoaderAlt className="h-10 animate-spin pb-4 text-2xl" />) : null}
         </div>
       ) : null}
       {children}
       {!reverse && hasMore ? (
         <div ref={target} className="flex h-32 w-full justify-center pt-4">
-          {isFetching ? <BiLoaderAlt className="animate-spin text-2xl" /> : null}
+          {isFetching ? (loading ?? <BiLoaderAlt className="animate-spin text-2xl" />) : null}
         </div>
       ) : null}
     </>

@@ -18,6 +18,8 @@ interface DefaultProps<T extends string, M> {
   noDiv?: boolean;
   /** Custom fallback shown while the client view is loading. */
   loading?: ReactNode;
+  /** Placeholder for a view whose model came back empty. */
+  empty?: ReactNode;
   /** Render callback invoked with the loaded full model. */
   renderView: (model: M) => ReactNode;
 }
@@ -105,6 +107,7 @@ export default function View<T extends string, Full extends { id: string }>({
   view,
   noDiv,
   loading,
+  empty,
   renderView,
 }: ViewProps<T, Full>) {
   //get Props
@@ -132,9 +135,11 @@ export default function View<T extends string, Full extends { id: string }>({
         serverView ? (
           <Render {...props} view={serverView} />
         ) : (
-          <div className="size-full">
-            <Empty />
-          </div>
+          (empty ?? (
+            <div className="size-full">
+              <Empty />
+            </div>
+          ))
         )
       }
     </Stream>

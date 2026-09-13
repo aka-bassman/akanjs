@@ -16,9 +16,9 @@ export interface FieldProps {
   containerClassName?: string;
   labelClassName?: string;
   /** Section label shown above the controls. */
-  label?: string;
+  label?: ReactNode;
   /** Optional help text shown in the label tooltip. */
-  desc?: string;
+  desc?: ReactNode;
   /** Marks the field as optional in the label. */
   nullable?: boolean;
   /** Field control content. */

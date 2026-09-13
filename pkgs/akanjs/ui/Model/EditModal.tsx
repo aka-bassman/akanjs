@@ -132,7 +132,7 @@ interface EditModalProps<Full extends { id: string }> extends EditModelProps<Ful
   /** Modal title or title renderer receiving the current model. */
   renderTitle?: ((model: Full) => string | ReactNode) | string;
   /** Submit button label. */
-  submitText?: string;
+  submitText?: ReactNode;
   /** Additional classes for the submit button. */
   submitClassName?: string;
   /** Store submit options passed to the generated submit action. */

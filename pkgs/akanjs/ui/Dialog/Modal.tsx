@@ -13,10 +13,12 @@ export interface ModalProps {
   className?: string;
   bodyClassName?: string;
   confirmClose?: boolean;
+  /** The dismiss control, drawn in the corner slot that closes the dialog. `false` draws none. */
+  closeButton?: ReactNode | false;
   children?: ReactNode;
   onCancel?: () => void;
 }
-export const Modal = ({ className, bodyClassName, confirmClose, children, onCancel }: ModalProps) => {
+export const Modal = ({ className, bodyClassName, confirmClose, closeButton, children, onCancel }: ModalProps) => {
   const { open, setOpen, registerDismiss, title, action } = useContext(DialogContext);
   const { l } = usePage();
   const ref = useRef<HTMLDivElement>(null);
@@ -90,14 +92,21 @@ export const Modal = ({ className, bodyClassName, confirmClose, children, onCanc
         aria-describedby={contentId}
         tabIndex={-1}
       >
-        <button
-          aria-label="Close"
-          className={buttonRecipe({ variant: "ghost", size: "icon" }, "absolute top-3 right-3 z-10 size-8")}
-          onClick={() => requestClose()}
-          type="button"
-        >
-          <BiX className="text-xl" />
-        </button>
+        {/* The dismissal is on the slot, not on the button inside it, so a replacement needs no wiring — a
+            click on whatever the caller put here bubbles to exactly one handler. */}
+        {closeButton === false ? null : (
+          <div className="absolute top-3 right-3 z-10" onClick={() => requestClose()}>
+            {closeButton ?? (
+              <button
+                aria-label="Close"
+                className={buttonRecipe({ variant: "ghost", size: "icon" }, "size-8")}
+                type="button"
+              >
+                <BiX className="text-xl" />
+              </button>
+            )}
+          </div>
+        )}
         {title ? (
           <div
             className="shrink-0 border-border border-b py-3.5 pr-14 pl-5 font-semibold text-base leading-snug"

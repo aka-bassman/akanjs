@@ -9,9 +9,11 @@ export interface LeftSiderProps {
   children: ReactNode;
   open: boolean;
   width?: number | string;
+  /** Element that closes the drawer. `false` draws none. */
+  close?: ReactNode | false;
   onCancel: () => void;
 }
-export const LeftSider = ({ className, children, open, width, onCancel }: LeftSiderProps) => {
+export const LeftSider = ({ className, children, open, width, close, onCancel }: LeftSiderProps) => {
   return (
     <div
       className={cn(
@@ -22,14 +24,20 @@ export const LeftSider = ({ className, children, open, width, onCancel }: LeftSi
       style={{ width }}
     >
       {children}
-      <button
-        className={buttonRecipe({ variant: "ghost", size: "icon" }, "absolute top-0 right-0")}
-        onClick={() => {
-          onCancel();
-        }}
-      >
-        <BiX />
-      </button>
+      {close === false ? null : (
+        <div
+          className="absolute top-0 right-0"
+          onClick={() => {
+            onCancel();
+          }}
+        >
+          {close ?? (
+            <button className={buttonRecipe({ variant: "ghost", size: "icon" })}>
+              <BiX />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 };

@@ -15,8 +15,16 @@ export interface PaginationProps {
   onPageSelect: (page: number) => void;
   /** Number of items per page. Used to calculate total pages. */
   itemsPerPage: number;
-  /** Optional custom content when there is no data. */
+  /** Placeholder for a pager with no pages. */
+  empty?: ReactNode;
+  /** @deprecated Renamed to `empty` — it is a node, not a render function. */
   renderEmpty?: ReactNode;
+  /** The mark inside the step-back control. The button, its disabled state and its label stay the framework's. */
+  prev?: ReactNode;
+  /** The mark inside the step-forward control. */
+  next?: ReactNode;
+  /** The mark standing in for the pages a long pager skips. */
+  ellipsis?: ReactNode;
   /** Class overrides for wrapper and page buttons. */
   classNames?: {
     className?: string;
@@ -30,7 +38,11 @@ export const DefaultPagination = ({
   total,
   onPageSelect,
   itemsPerPage,
+  empty,
   renderEmpty,
+  prev,
+  next,
+  ellipsis,
   classNames,
 }: PaginationProps) => {
   const recipe = useUiRecipe("button") ?? buttonRecipe;
@@ -53,7 +65,8 @@ export const DefaultPagination = ({
     }
   }
 
-  if (total <= 0) return renderEmpty ? <>{renderEmpty}</> : null;
+  const emptyNode = empty ?? renderEmpty;
+  if (total <= 0) return emptyNode ? <>{emptyNode}</> : null;
   return (
     <div className={cn("flex items-center justify-center gap-1", classNames?.className)}>
       <button
@@ -65,13 +78,13 @@ export const DefaultPagination = ({
         }}
         type="button"
       >
-        <BiChevronLeft />
+        {prev ?? <BiChevronLeft />}
       </button>
       {displayNumbers.map((pageNum, index) => {
         if (pageNum === "...")
           return (
             <span className="flex size-9 items-center justify-center text-foreground/30" key={index}>
-              <BiDotsHorizontalRounded />
+              {ellipsis ?? <BiDotsHorizontalRounded />}
             </span>
           );
         const isCurrent = Number(pageNum) === currentPage;
@@ -102,7 +115,7 @@ export const DefaultPagination = ({
         }}
         type="button"
       >
-        <BiChevronRight />
+        {next ?? <BiChevronRight />}
       </button>
     </div>
   );
