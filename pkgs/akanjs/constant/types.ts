@@ -63,18 +63,23 @@ export class BaseInsight {
   declare count: number;
 }
 
-export interface ProtoFile {
+// The projection a `LightFile` carries, so a field declared `field(LightFile)` feeds the upload UI too.
+export interface ProtoLightFile {
   id: string;
   filename: string;
   abstractData: string | null;
   imageSize: [number, number];
-  progress: number | null;
+  progress?: number | null;
   url: string;
   size: number;
   status: string;
   createdAt: Dayjs;
   updatedAt: Dayjs;
   removedAt: Dayjs | null;
+}
+
+export interface ProtoFile extends ProtoLightFile {
+  progress: number | null;
   mimetype: string;
   encoding: string;
   origin: string | null;

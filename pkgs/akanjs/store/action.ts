@@ -18,6 +18,7 @@ import {
   type FieldState,
   immerify,
   type ProtoFile,
+  type ProtoLightFile,
   withSharedInstances,
 } from "akanjs/constant";
 import type { BaseFilterSortKey, ExtractSort, FilterInstance } from "akanjs/document";
@@ -241,7 +242,7 @@ type FormSetter<
   ArrayFieldAddSetters<RefName, _CapitalizedRefName, _DefaultState> &
   ArrayFieldSubSetters<RefName, _CapitalizedRefName, _DefaultState> &
   ArrayFieldAddOrSubSetters<RefName, _CapitalizedRefName, _DefaultState> & {
-    [K in keyof _DefaultState as _DefaultState[K] extends (ProtoFile | null) | ProtoFile[]
+    [K in keyof _DefaultState as _DefaultState[K] extends (ProtoLightFile | null) | ProtoLightFile[]
       ? K extends string
         ? SetterKey<"upload", K, RefName, _CapitalizedRefName>
         : never
@@ -414,19 +415,23 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
                 form.id,
               );
               if (field.isArray) {
-                const idx = index ?? (form[namesOfField.field] as ProtoFile[]).length;
-                this.set((state: { [key: string]: { [key: string]: ProtoFile[] } }) => {
+                const idx = index ?? (form[namesOfField.field] as ProtoLightFile[]).length;
+                this.set((state: { [key: string]: { [key: string]: ProtoLightFile[] } }) => {
                   state[names.modelForm][namesOfField.field] = [
-                    ...(form[namesOfField.field] as ProtoFile[]).slice(0, idx),
+                    ...(form[namesOfField.field] as ProtoLightFile[]).slice(0, idx),
                     ...files,
-                    ...(form[namesOfField.field] as ProtoFile[]).slice(idx),
+                    ...(form[namesOfField.field] as ProtoLightFile[]).slice(idx),
                   ];
                 });
               } else {
-                this.set((state: { [key: string]: { [key: string]: ProtoFile | null } }) => {
+                this.set((state: { [key: string]: { [key: string]: ProtoLightFile | null } }) => {
                   state[names.modelForm][namesOfField.field] = files[0];
                 });
               }
+              // A light-declared field stores the light projection, so the poll re-reads through the light endpoint.
+              const fileReadName = ConstantRegistry.isLight(field.modelRef)
+                ? `light${capitalize(fileUploadRefName)}`
+                : fileUploadRefName;
               files.forEach((file) => {
                 let attemptsLeft = UPLOAD_POLL_ATTEMPTS;
                 const intervalKey = setInterval(() => {
@@ -438,25 +443,23 @@ export const makeFormSetter = (refName: string, fetch: FetchProxy<any>) => {
                     attemptsLeft -= 1;
                     try {
                       const currentFile = await (
-                        (fetch as { [key: string]: any })[fileUploadRefName as string] as (
-                          id: string,
-                        ) => Promise<ProtoFile>
+                        (fetch as { [key: string]: any })[fileReadName] as (id: string) => Promise<ProtoLightFile>
                       )(file.id);
                       if (field.isArray)
-                        this.set((state: { [key: string]: { [key: string]: ProtoFile[] } }) => {
+                        this.set((state: { [key: string]: { [key: string]: ProtoLightFile[] } }) => {
                           state[names.modelForm][namesOfField.field] = state[names.modelForm][namesOfField.field].map(
                             (file) => (file.id === currentFile.id ? currentFile : file),
                           );
                         });
                       else
-                        this.set((state: { [key: string]: { [key: string]: ProtoFile | null } }) => {
+                        this.set((state: { [key: string]: { [key: string]: ProtoLightFile | null } }) => {
                           state[names.modelForm][namesOfField.field] = currentFile;
                         });
                       if (currentFile.status !== "uploading" || attemptsLeft <= 0) clearInterval(intervalKey);
                     } catch (error) {
                       clearInterval(intervalKey);
                       Logger.warn(
-                        `Upload poll for ${fileUploadRefName as string} ${file.id} stopped: ${
+                        `Upload poll for ${fileReadName} ${file.id} stopped: ${
                           error instanceof Error ? error.message : String(error)
                         }`,
                       );

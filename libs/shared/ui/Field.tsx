@@ -3,7 +3,7 @@ import { cnst, Err, fetch, st } from "@libs/shared/client";
 import { type GoogleProps, inputRecipe, MapView, Upload } from "@libs/util/ui";
 import { cn } from "akanjs/client";
 import { capitalize, pathGet } from "akanjs/common";
-import type { ProtoFile } from "akanjs/constant";
+import type { ProtoFile, ProtoLightFile } from "akanjs/constant";
 import type { SliceMeta } from "akanjs/fetch";
 import { actionTagOf, useFieldTool } from "akanjs/store";
 import { Field as AkanField, Modal } from "akanjs/ui";
@@ -242,7 +242,7 @@ export const Postcode = ({
   );
 };
 
-interface ImgProps {
+interface ImgProps<T extends cnst.LightFile> {
   label?: string;
   desc?: string;
   styleType?: "circle" | "square";
@@ -251,13 +251,13 @@ interface ImgProps {
   className?: string;
   nullable?: boolean;
   slice: SliceMeta;
-  value: cnst.File | null;
-  render?: (file: cnst.File) => ReactNode;
-  onChange: (file: cnst.File | null) => void;
+  value: T | null;
+  render?: (file: T) => ReactNode;
+  onChange: (file: T | null) => void;
   disabled?: boolean;
   aspectRatio?: number[];
 }
-export const Img = ({
+export const Img = <T extends cnst.LightFile = cnst.File>({
   label,
   desc,
   styleType = "circle",
@@ -271,7 +271,7 @@ export const Img = ({
   onChange,
   disabled,
   aspectRatio,
-}: ImgProps) => {
+}: ImgProps<T>) => {
   useFieldTool(onChange);
   const { sliceName } = slice;
   const names = {
@@ -280,10 +280,10 @@ export const Img = ({
   const addFiles = (fetch as unknown as Record<string, (...args: unknown[]) => unknown>)[names.addModelFiles] as (
     fileList: FileList | File[],
     id?: string,
-  ) => Promise<cnst.File[]>;
+  ) => Promise<T[]>;
   useInterval(async () => {
     if (value?.status !== "uploading") return;
-    onChange(await fetch.file(value.id));
+    onChange((await fetch.file(value.id)) as unknown as T);
   }, 1000);
   return (
     <div className={cn("flex flex-col", className)}>
@@ -306,21 +306,21 @@ export const Img = ({
   );
 };
 
-interface ImgsProps {
+interface ImgsProps<T extends cnst.LightFile> {
   label?: string;
   desc?: string;
   labelClassName?: string;
   className?: string;
   slice: SliceMeta;
-  render?: (file: cnst.File) => ReactNode;
-  value: cnst.File[];
-  onChange: (files: cnst.File[]) => void;
+  render?: (file: T) => ReactNode;
+  value: T[];
+  onChange: (files: T[]) => void;
   disabled?: boolean;
   minlength?: number;
   maxlength?: number;
 }
 
-export const Imgs = ({
+export const Imgs = <T extends cnst.LightFile = cnst.File>({
   className,
   label,
   desc,
@@ -332,7 +332,7 @@ export const Imgs = ({
   minlength = 1,
   maxlength = 30,
   disabled,
-}: ImgsProps) => {
+}: ImgsProps<T>) => {
   useFieldTool(onChange);
   const { sliceName } = slice;
   const names = {
@@ -341,12 +341,12 @@ export const Imgs = ({
   const addFiles = (fetch as unknown as Record<string, (...args: unknown[]) => unknown>)[names.addModelFiles] as (
     fileList: FileList | File[],
     id?: string,
-  ) => Promise<cnst.File[]>;
+  ) => Promise<T[]>;
   useInterval(async () => {
     if (!value.length) return;
     const uploadingFiles = value.filter((f) => f.status === "uploading");
     if (!uploadingFiles.length) return;
-    const newFiles = await Promise.all(uploadingFiles.map(async (f) => await fetch.file(f.id)));
+    const newFiles = await Promise.all(uploadingFiles.map(async (f) => (await fetch.file(f.id)) as unknown as T));
     onChange(value.map((f) => newFiles.find((nf) => nf.id === f.id) ?? f));
   }, 1000);
   return (
@@ -356,10 +356,10 @@ export const Imgs = ({
         multiple
         fileList={value}
         disabled={disabled}
-        render={render as unknown as (file: ProtoFile) => ReactNode}
+        render={render as unknown as (file: ProtoLightFile) => ReactNode}
         styleType="square"
         onRemove={(file: File | FileList) => {
-          onChange(value.filter((f) => f.id !== (file as unknown as cnst.File).id));
+          onChange(value.filter((f) => f.id !== (file as unknown as ProtoLightFile).id));
         }}
         onSave={async (file) => {
           // TODO: Max Length 처리해야함.
@@ -371,21 +371,21 @@ export const Imgs = ({
   );
 };
 
-interface FileProps {
+interface FileProps<T extends cnst.LightFile> {
   label?: string;
   desc?: string;
   labelClassName?: string;
   className?: string;
   uploadClassName?: string;
-  render?: (file: cnst.File) => ReactNode;
+  render?: (file: T) => ReactNode;
   slice: SliceMeta;
   nullable?: boolean;
-  value: cnst.File | null;
-  onChange: (file: cnst.File | null) => void;
+  value: T | null;
+  onChange: (file: T | null) => void;
   disabled?: boolean;
   accept?: string;
 }
-export const File = ({
+export const File = <T extends cnst.LightFile = cnst.File>({
   label,
   desc,
   labelClassName,
@@ -398,7 +398,7 @@ export const File = ({
   slice,
   disabled,
   accept,
-}: FileProps) => {
+}: FileProps<T>) => {
   useFieldTool(onChange);
   const { sliceName } = slice;
   const names = {
@@ -407,16 +407,16 @@ export const File = ({
   const addFiles = (fetch as unknown as Record<string, (...args: unknown[]) => unknown>)[names.addModelFiles] as (
     fileList: FileList | File[],
     id?: string,
-  ) => Promise<cnst.File[]>;
+  ) => Promise<T[]>;
   useInterval(async () => {
     if (value?.status !== "uploading") return;
-    onChange(await fetch.file(value.id));
+    onChange((await fetch.file(value.id)) as unknown as T);
   }, 1000);
   return (
     <div className={cn("flex flex-col", className)}>
       {label ? <AkanField.Label className={labelClassName} nullable={nullable} label={label} desc={desc} /> : null}
       <Upload.File
-        render={render as unknown as (file: ProtoFile) => ReactNode}
+        render={render as unknown as (file: ProtoLightFile) => ReactNode}
         uploadClassName={uploadClassName}
         disabled={disabled}
         accept={accept}
@@ -433,21 +433,21 @@ export const File = ({
   );
 };
 
-interface FilesProps {
+interface FilesProps<T extends cnst.LightFile> {
   label?: string;
   desc?: string;
   labelClassName?: string;
   className?: string;
   slice: SliceMeta;
-  render?: (file: cnst.File) => ReactNode;
-  value: cnst.File[];
-  onChange: (files: cnst.File[]) => void;
+  render?: (file: T) => ReactNode;
+  value: T[];
+  onChange: (files: T[]) => void;
   disabled?: boolean;
   minlength?: number;
   maxlength?: number;
 }
 
-export const Files = ({
+export const Files = <T extends cnst.LightFile = cnst.File>({
   className,
   label,
   desc,
@@ -459,7 +459,7 @@ export const Files = ({
   minlength = 1,
   maxlength = 30,
   disabled,
-}: FilesProps) => {
+}: FilesProps<T>) => {
   useFieldTool(onChange);
   const { sliceName } = slice;
   const names = {
@@ -468,12 +468,12 @@ export const Files = ({
   const addFiles = (fetch as unknown as Record<string, (...args: unknown[]) => unknown>)[names.addModelFiles] as (
     fileList: FileList | File[],
     id?: string,
-  ) => Promise<cnst.File[]>;
+  ) => Promise<T[]>;
   useInterval(async () => {
     if (!value.length) return;
     const uploadingFiles = value.filter((f) => f.status === "uploading");
     if (!uploadingFiles.length) return;
-    const newFiles = await Promise.all(uploadingFiles.map(async (f) => await fetch.file(f.id)));
+    const newFiles = await Promise.all(uploadingFiles.map(async (f) => (await fetch.file(f.id)) as unknown as T));
     onChange(value.map((f) => newFiles.find((nf) => nf.id === f.id) ?? f));
   }, 1000);
   return (
@@ -482,9 +482,9 @@ export const Files = ({
       <Upload.FileList
         multiple
         disabled={disabled}
-        render={render as unknown as (file: ProtoFile) => ReactNode}
+        render={render as unknown as (file: ProtoLightFile) => ReactNode}
         fileList={value}
-        onRemove={(file: cnst.File) => {
+        onRemove={(file: ProtoLightFile) => {
           onChange(value.filter((f) => f.id !== file.id));
         }}
         onChange={async (file) => {

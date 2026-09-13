@@ -1,10 +1,10 @@
 "use client";
-import type { ProtoFile } from "akanjs/constant";
+import type { ProtoLightFile } from "akanjs/constant";
 import type { ImgHTMLAttributes } from "react";
 
 type CsrImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "alt" | "src"> & {
   src?: string;
-  file?: ProtoFile | { url: string; imageSize: [number, number]; abstractData?: string | null } | null;
+  file?: ProtoLightFile | { url: string; imageSize: [number, number]; abstractData?: string | null } | null;
   abstractData?: string | null;
   priority?: boolean;
   preload?: boolean;
