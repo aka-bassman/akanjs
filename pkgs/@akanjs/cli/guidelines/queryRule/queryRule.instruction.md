@@ -43,7 +43,12 @@ with it. `conventions` carries the invariants — this is the full contract behi
   the server just returned, so it survives `{ insight: false }` — which makes no count query at all — and cannot
   drift from the count a live event moved. `loadMoreOf<Model>()` is a no-op once it is false, and `Load.Units`
   draws no infinite-scroll sentinel.
-- Generated list accessors like `listBy(...)` return `Promise<Doc[]>`. For a chainable builder (`.sort().skip().limit().select()`) use the model facade's `findMany`/`findOne` (`FindManyChain`, `pkgs/akanjs/document/into.ts`).
+- Generated list accessors like `listBy(...)` return `Promise<Doc[]>`. For a chainable builder (`.sort().skip().limit().select()`) use the model facade's `find`/`findOne` (`FindManyChain`, `pkgs/akanjs/document/into.ts`).
+- **A projection is bare on the facade and nested under `select` on a filter accessor.** `pickById(id, { secretField:
+  true })` / `find(query, { secretField: true })` take the projection as their second argument; a generated
+  `findBy<Filter>(...args, { select: { secretField: true } })` takes it inside the option object. The shapes do not
+  swap: `{ select: … }` handed to the facade projects a field named `select`, which no model has, and the read comes
+  back empty with no error. This is the only way to read a `field.secret(...)` value, which is otherwise stripped.
 - **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`); client fetch results are raw `GetStateObject` plain data (functions stripped, `pkgs/akanjs/base/types.ts`).
 - Every filter generates fourteen methods: `list` · `listIds` · `find` · `findId` · `pick` · `pickId` · `exists` ·
   `count` · `insight` · `query` · **`remove`** · **`removeOne`** · **`update`** · **`updateOne`**. The last four are

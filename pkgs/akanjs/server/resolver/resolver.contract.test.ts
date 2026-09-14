@@ -80,6 +80,22 @@ type FindChain<Result> = Promise<Result> & {
   select: (projection?: unknown) => FindChain<Result>;
 };
 
+// The real store hydrates onto a prototype carrying `set`/`save`, which is the path a write-through read takes.
+const makeFakeDoc = (calls: { method: string; args: unknown[] }[], id: string) => ({
+  id,
+  category: "news",
+  title: "Alpha",
+  toJSON: () => ({ id, title: "Alpha" }),
+  set(patch: Record<string, unknown>) {
+    Object.assign(this, patch);
+    return this;
+  },
+  async save() {
+    calls.push({ method: "save", args: [{ id: this.id, title: this.title }] });
+    return this;
+  },
+});
+
 const makeFakeStore = () => {
   const calls: { method: string; args: unknown[] }[] = [];
   return {
@@ -109,7 +125,7 @@ const makeFakeStore = () => {
     },
     async findOne(query: unknown, options?: unknown) {
       calls.push({ method: "findOne", args: [query, options] });
-      return { id: "doc-1", category: "news", title: "Alpha", toJSON: () => ({ id: "doc-1", title: "Alpha" }) };
+      return makeFakeDoc(calls, "doc-1");
     },
     async findId(query: unknown, options?: unknown) {
       calls.push({ method: "findId", args: [query, options] });
@@ -117,7 +133,7 @@ const makeFakeStore = () => {
     },
     async pickOne(query: unknown, options?: unknown) {
       calls.push({ method: "pickOne", args: [query, options] });
-      return { id: "doc-1", category: "news", title: "Alpha" };
+      return makeFakeDoc(calls, "doc-1");
     },
     async pickById(id: string) {
       calls.push({ method: "pickById", args: [id] });
@@ -305,6 +321,163 @@ describe("DatabaseResolver declaration contracts", () => {
       method: "findOne",
       args: [{ category: "news" }, { sort: { title: -1 }, skip: 1 }],
     });
+  });
+
+  test("hands the facade projection to the store", async () => {
+    const { adaptor: DatabaseAdaptor } = DatabaseResolver.resolveDatabase(
+      serverResolverTestConstant,
+      serverResolverTestDatabase,
+    );
+    const instance = new DatabaseAdaptor() as InstanceType<typeof DatabaseAdaptor> & {
+      __store: ReturnType<typeof makeFakeStore>;
+      ServerResolverTestItem: {
+        find: (query: unknown, projection?: unknown) => FindChain<unknown[]>;
+        findOne: (query: unknown, projection?: unknown) => FindChain<unknown>;
+        findById: (id: string | undefined, projection?: unknown) => Promise<unknown>;
+        pickById: (id: string | undefined, projection?: unknown) => Promise<unknown>;
+        pickOne: (query: unknown, projection?: unknown) => Promise<unknown>;
+      };
+    };
+    Object.assign(instance, { __database: new FakeSqliteDatabase(), __cache: new FakeSolidCache() });
+    await instance.onInit();
+
+    // A `field.secret(...)` value only arrives when the read names it, and `findById` is the one read with no
+    // chain to name it on — dropping the argument turned a secret into an empty value with no error.
+    await instance.ServerResolverTestItem.findById("doc-1", { title: true });
+    expect(instance.__store.calls.at(-1)).toEqual({
+      method: "findOne",
+      args: [{ id: "doc-1" }, { select: { title: true } }],
+    });
+
+    await instance.ServerResolverTestItem.pickById("doc-1", { title: true });
+    expect(instance.__store.calls.at(-1)).toEqual({
+      method: "findOne",
+      args: [{ id: "doc-1" }, { select: { title: true } }],
+    });
+
+    await instance.ServerResolverTestItem.pickOne({ category: "news" }, { title: true });
+    expect(instance.__store.calls.at(-1)).toEqual({
+      method: "pickOne",
+      args: [{ category: "news" }, { select: { title: true } }],
+    });
+
+    await instance.ServerResolverTestItem.find({ category: "news" }, { title: true });
+    expect(instance.__store.calls.at(-1)).toEqual({
+      method: "find",
+      args: [{ category: "news" }, { select: { title: true } }],
+    });
+
+    // The chain link still wins over the argument, so `.select()` keeps overriding what the call opened with.
+    await instance.ServerResolverTestItem.findOne({ category: "news" }, { title: true }).select({ tags: true });
+    expect(instance.__store.calls.at(-1)).toEqual({
+      method: "findOne",
+      args: [{ category: "news" }, { select: { tags: true } }],
+    });
+
+    const missing = await instance.ServerResolverTestItem.findById(undefined, { title: true });
+    expect(missing).toBeNull();
+  });
+
+  test("writes through the document on pickAndWrite", async () => {
+    const { adaptor: DatabaseAdaptor } = DatabaseResolver.resolveDatabase(
+      serverResolverTestConstant,
+      serverResolverTestDatabase,
+    );
+    const instance = new DatabaseAdaptor() as InstanceType<typeof DatabaseAdaptor> & {
+      __store: ReturnType<typeof makeFakeStore>;
+      ServerResolverTestItem: {
+        pickAndWrite: (id: string, rawData: unknown) => Promise<unknown>;
+        pickOneAndWrite: (query: unknown, rawData: unknown) => Promise<unknown>;
+      };
+    };
+    Object.assign(instance, { __database: new FakeSqliteDatabase(), __cache: new FakeSolidCache() });
+    await instance.onInit();
+
+    // The write goes through the document, so the save hooks run — that is the whole difference from `updateById`.
+    await instance.ServerResolverTestItem.pickAndWrite("doc-1", { title: "Beta" });
+    expect(instance.__store.calls.slice(-2)).toEqual([
+      { method: "findOne", args: [{ id: "doc-1" }, { select: undefined }] },
+      { method: "save", args: [{ id: "doc-1", title: "Beta" }] },
+    ]);
+
+    await instance.ServerResolverTestItem.pickOneAndWrite({ category: "news" }, { title: "Gamma" });
+    expect(instance.__store.calls.slice(-2)).toEqual([
+      { method: "pickOne", args: [{ category: "news" }, undefined] },
+      { method: "save", args: [{ id: "doc-1", title: "Gamma" }] },
+    ]);
+  });
+
+  test("unsubscribes a document listener", async () => {
+    const { adaptor: DatabaseAdaptor, schema: documentSchema } = DatabaseResolver.resolveDatabase(
+      serverResolverTestConstant,
+      serverResolverTestDatabase,
+    );
+    const instance = new DatabaseAdaptor() as InstanceType<typeof DatabaseAdaptor> & {
+      listenPre: (type: string, listener: () => void) => () => void;
+      ServerResolverTestItem: { listenPost: (type: string, listener: () => void) => () => void };
+    };
+    Object.assign(instance, { __database: new FakeSqliteDatabase(), __cache: new FakeSolidCache() });
+    await instance.onInit();
+
+    const preBefore = documentSchema.preHooks.get("update")?.length ?? 0;
+    const unlistenPre = instance.listenPre("update", () => undefined);
+    expect(documentSchema.preHooks.get("update")?.length).toBe(preBefore + 1);
+    unlistenPre();
+    expect(documentSchema.preHooks.get("update")?.length).toBe(preBefore);
+
+    // The schema holds a wrapper around the listener, so an unsubscribe that looked the listener up by identity
+    // would find nothing and silently leave the hook in place.
+    const postBefore = documentSchema.postHooks.get("update")?.length ?? 0;
+    const unlistenPost = instance.ServerResolverTestItem.listenPost("update", () => undefined);
+    expect(documentSchema.postHooks.get("update")?.length).toBe(postBefore + 1);
+    unlistenPost();
+    expect(documentSchema.postHooks.get("update")?.length).toBe(postBefore);
+  });
+
+  test("tells a trailing query option from a filter argument", async () => {
+    const { adaptor: DatabaseAdaptor } = DatabaseResolver.resolveDatabase(
+      serverResolverTestConstant,
+      serverResolverTestDatabase,
+    );
+    const instance = new DatabaseAdaptor() as InstanceType<typeof DatabaseAdaptor> & {
+      __store: ReturnType<typeof makeFakeStore>;
+      listInCategory: (...args: unknown[]) => Promise<unknown[]>;
+    };
+    Object.assign(instance, { __database: new FakeSqliteDatabase(), __cache: new FakeSolidCache() });
+    await instance.onInit();
+
+    const notRemoved = { removedAt: { kind: "op", op: "empty" } };
+    const queryOf = (call?: { args: unknown[] }) => call?.args[0];
+    const optionOf = (call?: { args: unknown[] }) => call?.args[1];
+
+    // An option the caller named lands as an option even when no key of it is a number or a string. Read as a
+    // filter arg instead it would fill `includeRemoved`, and every soft-removed row would join the result.
+    await instance.listInCategory("news", { sample: 2 });
+    expect(queryOf(instance.__store.calls.at(-1))).toEqual({
+      kind: "all",
+      queries: [{ category: "news" }, notRemoved],
+    });
+    expect(optionOf(instance.__store.calls.at(-1))).toMatchObject({ sample: 2 });
+
+    await instance.listInCategory("news", { sort: null, limit: null });
+    expect(queryOf(instance.__store.calls.at(-1))).toEqual({
+      kind: "all",
+      queries: [{ category: "news" }, notRemoved],
+    });
+
+    await instance.listInCategory("news", {});
+    expect(queryOf(instance.__store.calls.at(-1))).toEqual({
+      kind: "all",
+      queries: [{ category: "news" }, notRemoved],
+    });
+
+    // A filter arg that is itself an object is still a filter arg: an array, a date, and a scalar all stay put.
+    await instance.listInCategory("news", true);
+    expect(queryOf(instance.__store.calls.at(-1))).toEqual({ kind: "all", queries: [{ category: "news" }, {}] });
+
+    await instance.listInCategory("news", true, { limit: 5 });
+    expect(queryOf(instance.__store.calls.at(-1))).toEqual({ kind: "all", queries: [{ category: "news" }, {}] });
+    expect(optionOf(instance.__store.calls.at(-1))).toMatchObject({ limit: 5 });
   });
 
   test("narrows the by-id facade writes to a single id query", async () => {

@@ -233,8 +233,12 @@ query-level writes are in the convention set above; these are the shapes that bu
   already exist. A collision can build green and fail only at runtime — pick a distinct verb.
 - **Numbers are `Int` or `Float`, never `Number`.** `field(Number)` / `.body("x", Number)` fail to typecheck.
 - **Array fields use `field([T])`** — `tags: field([String])`, `images: field([File])`.
-- **Reading a secret field needs an explicit select.** `field(...).secret()` values are stripped from query results
-  by default: `this.userModel.pickById(id, { select: { passwordHash: true } })`.
+- **Reading a secret field needs an explicit select, and the two call sites spell it differently.**
+  `field(...).secret()` values are stripped from query results by default. The model facade takes the projection
+  **bare** — `this.userModel.pickById(id, { passwordHash: true })`, likewise `pickOne` / `find` / `findOne` /
+  `findById`. A generated filter accessor takes it **inside the option object** —
+  `this.userModel.findByAccountId(accountId, statuses, { select: { passwordHash: true } })`. Handing `{ select: … }`
+  to the facade selects a field named `select`, which no model has: the value arrives empty, with no error.
 - **`cascade` names a direction, and the wrong one is a data loss** — `removeRef` on the relation the owner holds,
   `removeWith` on the child's reference to its owner. A query-level removal fires no hooks and therefore no cascade.
 - **`q.search()` is a filter node, not a slice requirement.** `bySearch: filter().arg("text", String).query((text,

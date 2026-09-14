@@ -403,7 +403,9 @@ framework has no hard delete for a model table, and `delete` is deliberately lef
 The facade spells `Many`/`One` out on its writes (`updateOne` / `updateMany` / `removeOne` / `removeMany`); only the
 count was shortened to `count(query)`, with `countDocuments` kept as `@deprecated`. `updateById(id, update)` and
 `removeById(id)` are those same query-level writes narrowed to one id, **not** the document path: they fire no hooks,
-so a model whose removal cascades or carries a `_postRemove` still goes through `remove<Model>(id)`.
+so a model whose removal cascades or carries a `_postRemove` still goes through `remove<Model>(id)`. The
+write-through pair is `pickAndWrite(id, data)` / `pickOneAndWrite(query, data)` — pick the document, write into it
+and save it, so the save hooks do run; reach for those when the write has to be seen by them.
 
 **`<model>.service.ts`** — keep methods to a few lines: load → chain → `return await ….save()`. Write `return await`
 explicitly in tail position; do not "optimize" it away. Side effects belong in `override async _preUpdate` /
@@ -515,7 +517,12 @@ Full contract — filter-arg `ref` pickers, `getQueryMeta` summary counters, `la
   `[object Object]`. It is an admin API: `root:` is always `Admin`.
 - A slice's `exec` returns a `QueryOf` (an opaque query descriptor); you **cannot** chain `.sort()`/`.limit()` on
   it. Apply ordering/paging via the store `init` fetch option instead: `initX(..., { sort, page, limit })`. For a
-  chainable builder use the model facade's `findMany`/`findOne`.
+  chainable builder use the model facade's `find`/`findOne`.
+- **A projection is bare on the facade and nested under `select` on a filter accessor.** `pickById(id, { secret:
+  true })` and `find`/`findOne`/`findById`/`pickOne` take the projection as their second argument; a generated
+  `findBy<Filter>(...args, { select: { secret: true } })` takes it inside the option object. The shapes do not swap
+  — `{ select: … }` handed to the facade projects a field named `select`, which no model has, and the read comes
+  back empty with no error. This is the only way to read a `field.secret(...)` value.
 - **A slice list is either one window or an accumulated one.** `setPageOf<Model>` swaps the window;
   `loadMoreOf<Model>()` appends the rows after the ones loaded and takes **no page number** — it skips by
   `<model>List.length`, so the offset cannot drift from what is on screen when a live insertion moves the server's

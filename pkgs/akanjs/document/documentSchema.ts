@@ -55,6 +55,28 @@ export class DocumentSchema<Doc = unknown> {
     return this;
   }
 
+  // A removal replaces the array rather than splicing it: a write already running holds the list it started with,
+  // so a listener that unsubscribes from inside a hook cannot make the loop skip the hook after it.
+  removePre<HookDoc = Doc>(type: SaveEventType, hook: DocumentSaveHook<HookDoc>) {
+    const hooks = this.preHooks.get(type);
+    if (hooks)
+      this.preHooks.set(
+        type,
+        hooks.filter((registered) => registered !== (hook as unknown)),
+      );
+    return this;
+  }
+
+  removePost<HookDoc = Doc>(type: SaveEventType, hook: DocumentSaveHook<HookDoc>) {
+    const hooks = this.postHooks.get(type);
+    if (hooks)
+      this.postHooks.set(
+        type,
+        hooks.filter((registered) => registered !== (hook as unknown)),
+      );
+    return this;
+  }
+
   hook(type: DocumentHookName, hook: DocumentSaveHook<Doc>) {
     const [, phase, event] = /^(before|after)(.+)$/.exec(type) ?? [];
     if (!phase || !event) throw new Error(`Invalid document hook: ${type}`);
