@@ -13,6 +13,8 @@ export interface ComposerProps {
   session: AgentSession;
   draft: string;
   attached: readonly MessageAttachment[];
+  /** Files still being read. An `attach` that uploads takes seconds, and a panel that shows nothing looks broken. */
+  pending?: number;
   /** Absent when the screen cannot listen — the same rule as publishing no tool for a control that is not drawn. */
   mic?: { listening: boolean; onToggle: () => void };
   onDraft: (text: string) => void;
@@ -33,6 +35,7 @@ export const DefaultComposer = ({
   session,
   draft,
   attached,
+  pending = 0,
   mic,
   onDraft,
   onKeyDown,
@@ -54,8 +57,14 @@ export const DefaultComposer = ({
   }, [draft, inputRef]);
   return (
     <div className={cn("flex flex-col gap-2 border-foreground/5 border-t p-3", className)}>
-      {attached.length ? (
-        <Chips attachments={attached} onRemove={onRemoveFile} removeLabel={l("base.agentAttachRemove")} />
+      {attached.length || pending ? (
+        <Chips
+          attachments={attached}
+          onRemove={onRemoveFile}
+          pending={pending}
+          pendingLabel={l("base.agentAttachReading")}
+          removeLabel={l("base.agentAttachRemove")}
+        />
       ) : null}
       <div className="flex items-end gap-2">
         {mic ? (

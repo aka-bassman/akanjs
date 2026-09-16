@@ -2,7 +2,7 @@ import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import type { AgentRunner, ToolCallRequest } from "use-agentic";
+import type { AgentRunner, MessageAttachment, ToolCallRequest } from "use-agentic";
 
 let lib: typeof import("use-agentic");
 let DefaultChat: typeof import("./Chat").DefaultChat;
@@ -846,6 +846,48 @@ describe("Agent.Chat", () => {
     unmount();
   });
 
+  test("a chip for an attachment naming no type renders its name instead of taking the transcript down", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    await act(async () => {
+      void session.send([
+        {
+          role: "user",
+          text: "what is this?",
+          attachments: [{ name: "photo.heic", mimeType: null as unknown as string, data: btoa("abc") }],
+        },
+      ]);
+      await untilFlushed(() => !session.isRunning && session.messages.length >= 2);
+    });
+    expect(container.innerHTML).toContain("photo.heic");
+    unmount();
+  });
+
+  test("an image attached by address renders its thumbnail, the shape a reader that uploads produces", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    await act(async () => {
+      void session.send([
+        {
+          role: "user",
+          text: "what is this?",
+          attachments: [{ name: "hero.jpg", mimeType: "image/jpeg", url: "https://cdn/hero.jpg", ref: "file_7" }],
+        },
+      ]);
+      await untilFlushed(() => !session.isRunning && session.messages.length >= 2);
+    });
+    expect(container.querySelector('img[src="https://cdn/hero.jpg"]')).not.toBeNull();
+    unmount();
+  });
+
   test("the app's own reader is what makes a pdf attachable, and runs ahead of the built-in", async () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "read it" }));
     const { container, unmount } = mount(
@@ -871,6 +913,36 @@ describe("Agent.Chat", () => {
     });
     unmount();
   });
+  test("a reader that takes its time says so, instead of leaving the panel blank", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "read it" }));
+    let finish: (value: MessageAttachment | null) => void = () => undefined;
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat
+          attach={() =>
+            new Promise((resolve) => {
+              finish = resolve;
+            })
+          }
+          defaultOpen
+        />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    await act(async () => {
+      input.paste([new File(["%PDF"], "spec.pdf", { type: "application/pdf" })]);
+      await untilFlushed(() => container.innerHTML.includes("base.agentAttachReading"));
+    });
+    // The upload an `attach` performs is seconds long, and the chip for it cannot exist until it resolves.
+    expect(container.innerHTML).not.toContain("spec.pdf");
+    await act(async () => {
+      finish({ name: "spec.pdf", mimeType: "application/pdf", text: "page one" });
+      await untilFlushed(() => container.innerHTML.includes("spec.pdf"));
+    });
+    expect(container.innerHTML).not.toContain("base.agentAttachReading");
+    unmount();
+  });
+
   test("the microphone fills the composer, and a spoken ask is answered out loud", async () => {
     const voice = voiceOf();
     const session = new lib.AgentSession(

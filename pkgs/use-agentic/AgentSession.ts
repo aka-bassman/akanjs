@@ -1,5 +1,6 @@
 import type { AgentProgressReport } from "./AgentProgress";
 import { Compaction, type CompactOptions } from "./Compaction";
+import { ToolOutput } from "./ToolOutput";
 import { type ToolApprovalRequest, ToolRunner } from "./ToolRunner";
 import { Transcript } from "./Transcript";
 import type {
@@ -11,6 +12,7 @@ import type {
   SurfaceView,
   ToolCallRequest,
   ToolCallResult,
+  TurnStop,
 } from "./types";
 
 export interface PendingApproval {
@@ -243,7 +245,7 @@ export class AgentSession {
     this.#controller = controller;
     if (typeof input === "string") this.#append({ role: "user", text: input });
     else for (const message of input) this.#append(message);
-    const maxTurns = this.#options.maxTurns ?? 8;
+    const maxTurns = this.#options.maxTurns ?? 12;
     try {
       let budget = maxTurns;
       for (let turn = 0; ; turn += 1) {
@@ -268,6 +270,19 @@ export class AgentSession {
           this.#unanswered(toolCalls);
           return;
         }
+        // A turn the provider cut off is one whose last call may be missing, so the ones that did arrive are
+        // closed rather than run: acting on half an intention is worse than stopping. The user is told because
+        // nothing else can tell them — a truncated answer is otherwise a complete-looking one, and a turn cut off
+        // before its call finished ends the loop looking exactly like a model that decided it was done.
+        if (stop === "length") {
+          // Marked before the calls are closed, so the error lands on the assistant draft that was cut off rather
+          // than opening a second assistant turn after the tool message.
+          this.#fail(
+            "The model ran out of room mid-answer, so this turn is incomplete. Ask again, or raise the answer limit.",
+          );
+          if (toolCalls.length) this.#unanswered(toolCalls);
+          return;
+        }
         if (stop !== "toolUse" || !toolCalls.length) return;
         const toolResults: ToolCallResult[] = [];
         for (const call of toolCalls)
@@ -276,7 +291,7 @@ export class AgentSession {
               ? { id: call.id, name: call.name, error: Transcript.unanswered }
               : await this.#tools.run(call, controller.signal),
           );
-        this.#append({ role: "tool", toolResults });
+        this.#append({ role: "tool", toolResults: ToolOutput.deduped(toolResults) });
       }
     } catch (error) {
       if (!controller.signal.aborted) this.#fail(error instanceof Error ? error.message : String(error));
@@ -287,6 +302,11 @@ export class AgentSession {
       this.#pending = null;
       this.#question = null;
       this.#progress = null;
+      // Stop caught before the first delta leaves the draft this turn opened, and the rendered transcript is the
+      // one place it survives — `Transcript` already drops it from the wire and from history. A bubble draws an
+      // assistant message with no text as still being written, so the draft outlives the turn as a live spinner.
+      const draft = this.#messages[this.#messages.length - 1];
+      if (draft?.role === "assistant" && !Transcript.carries(draft)) this.#messages = this.#messages.slice(0, -1);
       this.#notify();
     }
   }
@@ -491,7 +511,7 @@ export class AgentSession {
     return text;
   }
 
-  async #assistantTurn(signal: AbortSignal): Promise<{ toolCalls: ToolCallRequest[]; stop: "end" | "toolUse" }> {
+  async #assistantTurn(signal: AbortSignal): Promise<{ toolCalls: ToolCallRequest[]; stop: TurnStop }> {
     const { tools, guides } = this.#surface.snapshot();
     const instructions = [this.#options.instructions, ...guides].filter(Boolean).join("\n\n");
     const request: RunnerRequest = {
@@ -506,7 +526,7 @@ export class AgentSession {
     this.#append({ role: "assistant" });
     let text = "";
     const toolCalls: ToolCallRequest[] = [];
-    let stop: "end" | "toolUse" = "end";
+    let stop: TurnStop = "end";
     for await (const event of this.#runner.run(request)) {
       if (signal.aborted) break;
       if (event.type === "text") {

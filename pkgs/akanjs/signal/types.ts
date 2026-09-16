@@ -88,8 +88,26 @@ export interface SignalOption<Response = any, Nullable extends boolean = false, 
   default?: boolean;
   path?: string;
   serverMode?: "federation" | "batch" | "all";
+  /**
+   * How long this endpoint may take, in milliseconds. It bounds both ends: the `Timeout` middleware — registered
+   * by default — rejects the call with `base.error.gatewayTimeout` once it is spent, and the value is serialized
+   * to the client, where it becomes that call's request budget in place of the client default. Declared nowhere,
+   * neither side imposes one beyond the client's own default.
+   *
+   * Losing the race does not stop the work: the handler runs to completion with nobody holding its result.
+   */
   timeout?: number;
   partial?: _Key[] | readonly _Key[];
+  /**
+   * How long this endpoint's answer may be reused, in milliseconds. The `Cache` middleware — registered by
+   * default — keeps the handler's result under the endpoint's key and its arguments and serves it until it
+   * expires; declared nowhere, nothing is cached.
+   *
+   * **Only a `query` that takes no internal argument may carry one.** Internal arguments are how a call learns
+   * who is asking (`.with(Self)`), so an endpoint that has them answers per caller, and one shared entry would be
+   * one caller's answer handed to the next; such an endpoint is named in the log and left uncached. Guards still
+   * run on every hit — a shared answer is not a public one.
+   */
   cache?: number;
   guards?: GuardCls[];
   middlewares?: MiddlewareCls[];
@@ -189,6 +207,12 @@ export interface SerializedArg {
 export interface SerializedEndpoint extends SerializedSignalOption {
   type: "query" | "mutation" | "pubsub" | "message";
   returns: SerializedReturns;
+  /**
+   * The deadline the endpoint declared, in milliseconds. It travels because the client has to size its own
+   * request budget from it: a call the server is allowed to spend five minutes on is one the browser must not
+   * abandon after the client default.
+   */
+  timeout?: number;
 }
 export interface SerializedFilter {
   /** Every filter query the model declares, by key, with the args each one takes. */

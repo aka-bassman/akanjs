@@ -84,6 +84,7 @@ describe("sessionHistoryOf", () => {
           { name: "shot.png", mimeType: "image/png", data: "AAAA" },
           { name: "spec.pdf", mimeType: "application/pdf", text: "a very long extraction" },
           { name: "hosted.png", mimeType: "image/png", url: "https://cdn/hosted.png" },
+          { name: "kept.png", mimeType: "image/png", data: "BBBB", ref: "file_42" },
         ],
       },
     ]);
@@ -94,6 +95,8 @@ describe("sessionHistoryOf", () => {
       { name: "shot.png", mimeType: "image/png" },
       { name: "spec.pdf", mimeType: "application/pdf" },
       { name: "hosted.png", mimeType: "image/png", url: "https://cdn/hosted.png" },
+      // The handle is what a restored conversation has left to find the file with; only the bytes are too big to keep.
+      { name: "kept.png", mimeType: "image/png", ref: "file_42" },
     ]);
     history?.clear();
   });

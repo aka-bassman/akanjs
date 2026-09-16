@@ -10,7 +10,7 @@ export interface HttpRunnerOptions {
 interface TurnAnswer {
   text?: string;
   toolCalls?: ToolCallRequest[];
-  stop?: "end" | "toolUse";
+  stop?: "end" | "toolUse" | "length";
 }
 
 const eventTypes = new Set(["text", "toolCall", "done", "error"]);

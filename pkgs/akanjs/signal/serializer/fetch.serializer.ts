@@ -70,6 +70,7 @@ export class FetchSerializer {
       ...(endpointInfo.signalOption.path ? { path: endpointInfo.signalOption.path } : {}),
       ...(endpointInfo.signalOption.method ? { method: endpointInfo.signalOption.method } : {}),
       ...(endpointInfo.signalOption.fileUpload ? { fileUpload: true } : {}),
+      ...(endpointInfo.signalOption.timeout ? { timeout: endpointInfo.signalOption.timeout } : {}),
       ...(guards?.length ? { guards } : {}),
       ...(endpointInfo.signalOption.mcp === false ? { mcp: false as const } : {}),
       ...(refusesAgents(endpointInfo.signalOption.guards) ? { agents: false as const } : {}),

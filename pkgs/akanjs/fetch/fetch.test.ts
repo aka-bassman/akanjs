@@ -2010,3 +2010,71 @@ describe("FetchClient websocket generation", () => {
     expect(streamed).toEqual([]);
   });
 });
+
+describe("FetchClient request budget", () => {
+  const budgetSignal = (timeout?: number): SerializedSignal => ({
+    endpoint: {
+      readThing: { type: "query", args: [], returns: { refName: "String" }, ...(timeout ? { timeout } : {}) },
+      provisionThing: {
+        type: "mutation",
+        args: [arg("body", "title")],
+        returns: { refName: "String" },
+        ...(timeout ? { timeout } : {}),
+      },
+    },
+  });
+  const setHangingFetch = () => {
+    const signals: (AbortSignal | null | undefined)[] = [];
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      signals.push(init?.signal);
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject((init.signal as AbortSignal).reason));
+      });
+    }) as typeof globalThis.fetch;
+    return signals;
+  };
+
+  test("gives a call the budget its endpoint declared", async () => {
+    setHangingFetch();
+    const client = new FetchClient("https://api.example", {}, { service: budgetSignal(5) });
+
+    const failure = (await client.handler.provisionThing("Modem").catch((error: unknown) => error)) as Error & {
+      statusCode?: number;
+    };
+
+    expect(failure.statusCode).toBe(408);
+    expect(failure.message).toBe("base.error.gatewayTimeout");
+  });
+
+  test("lets the caller's own timeout override the endpoint's", async () => {
+    setHangingFetch();
+    const client = new FetchClient("https://api.example", {}, { service: budgetSignal(60_000) });
+
+    const failure = (await client.handler.readThing({ timeout: 5 }).catch((error: unknown) => error)) as Error & {
+      statusCode?: number;
+    };
+
+    expect(failure.statusCode).toBe(408);
+  });
+
+  test("leaves a call unbounded when the caller asks for no deadline", async () => {
+    setMockFetch();
+    jsonResponses.push("ok");
+    const client = new FetchClient("https://api.example", {}, { service: budgetSignal(5) });
+
+    expect(await client.handler.readThing({ timeout: false })).toBe("ok");
+    expect(fetchCalls[0]?.init?.signal).toBeUndefined();
+  });
+
+  test("falls back to the client's own default when no endpoint declares one", async () => {
+    setHangingFetch();
+    const client = new FetchClient("https://api.example", {}, { service: budgetSignal() });
+    client.setTimeout(5);
+
+    const failure = (await client.handler.readThing().catch((error: unknown) => error)) as Error & {
+      statusCode?: number;
+    };
+
+    expect(failure.statusCode).toBe(408);
+  });
+});

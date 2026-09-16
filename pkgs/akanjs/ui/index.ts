@@ -12,6 +12,7 @@ export {
   type CompactOptions,
   type ContextBlock,
   httpRunner,
+  type MessageAttachment,
   type PublishedTool,
   type RunnerEvent,
   type RunnerRequest,
@@ -22,8 +23,15 @@ export {
 } from "use-agentic";
 export { Agent } from "./Agent";
 export { type ApprovalProps, DefaultApproval } from "./Agent/Approval";
+export { Chips as AgentAttachments, type ChipsProps as AgentAttachmentsProps } from "./Agent/Attach";
 export { type AgentSessionSetup, agentSessionOf } from "./Agent/agentSessionOf";
-export { type AttachReader, maxAttachmentBytes } from "./Agent/attachment";
+export {
+  type AttachLimits,
+  type AttachReader,
+  maxAttachmentBytes,
+  maxMessageAttachmentBytes,
+  maxMessageAttachments,
+} from "./Agent/attachment";
 export { type BubbleProps, DefaultBubble } from "./Agent/Bubble";
 export type { ChatProps } from "./Agent/Chat";
 export { type ChatCommand, ChatCommands } from "./Agent/ChatCommands";

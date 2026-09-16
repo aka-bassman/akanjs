@@ -50,3 +50,42 @@ describe("ToolOutput.tokensOf", () => {
     expect(tokens).toBeLessThan(1_100);
   });
 });
+
+describe("ToolOutput.deduped", () => {
+  const approval = (at: number, approved: number) => ({
+    id: `c${at}`,
+    name: "approveTask",
+    result: { id: `t${at}`, status: "approved" },
+    changes: [{ name: "taskList", value: { approved, pending: 8 - approved } }],
+  });
+
+  test("a batch that touched one resource eight times reports it once, as it finally stands", () => {
+    const deduped = ToolOutput.deduped(Array.from({ length: 8 }, (_, at) => approval(at + 1, at + 1)));
+    expect(deduped.filter((result) => result.changes?.length)).toHaveLength(1);
+    expect(deduped[7].changes?.[0].value).toEqual({ approved: 8, pending: 0 });
+    // What each call did is still its own result, so nothing about the batch is lost with the stale copies.
+    expect(deduped.map((result) => result.result)).toEqual(
+      Array.from({ length: 8 }, (_, at) => ({ id: `t${at + 1}`, status: "approved" })),
+    );
+  });
+
+  test("a resource only one call touched keeps its value where it is", () => {
+    const deduped = ToolOutput.deduped([
+      { id: "c1", name: "setTitle", changes: [{ name: "taskForm", value: { title: "a" } }] },
+      { id: "c2", name: "refresh", changes: [{ name: "taskList", value: [1] }] },
+    ]);
+    expect(deduped[0].changes).toEqual([{ name: "taskForm", value: { title: "a" } }]);
+    expect(deduped[1].changes).toEqual([{ name: "taskList", value: [1] }]);
+  });
+
+  test("a result whose every change was superseded carries no empty changes array", () => {
+    const deduped = ToolOutput.deduped([approval(1, 1), approval(2, 2)]);
+    expect("changes" in deduped[0]).toBe(false);
+    expect(deduped[1].changes).toHaveLength(1);
+  });
+
+  test("a batch with nothing to drop is handed back as it came", () => {
+    const results = [{ id: "c1", name: "readState", result: 1 }];
+    expect(ToolOutput.deduped(results)).toEqual(results);
+  });
+});

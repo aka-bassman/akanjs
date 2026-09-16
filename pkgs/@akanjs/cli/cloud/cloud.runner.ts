@@ -290,9 +290,14 @@ export class CloudRunner extends runner("cloud") {
         return;
       }
     }
-    Logger.info("Logging in to npm...");
-    await workspace.spawn("npm", ["login"], { stdio: "inherit" });
-    Logger.info("Logged in to npm");
+    // The local registry carries its own token on every publish below, and `npm login` has no registry argument —
+    // it would prompt for npmjs.org credentials to authorize a publish that never reaches npmjs.org, which also
+    // makes the whole local-registry flow interactive and therefore unscriptable.
+    if (!registry) {
+      Logger.info("Logging in to npm...");
+      await workspace.spawn("npm", ["login"], { stdio: "inherit" });
+      Logger.info("Logged in to npm");
+    }
     for (const library of akanPkgs) {
       Logger.info(`Publishing ${library}@${nextVersion} to ${registry ?? "npm"}...`);
       await workspace.spawn(

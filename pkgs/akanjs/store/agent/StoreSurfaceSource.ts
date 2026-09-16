@@ -107,7 +107,7 @@ export class StoreSurfaceSource implements SurfaceSource {
     const subject = viewKey ? "this zone" : "the current page";
     return {
       name: "readScreen",
-      description: `Read what is currently rendered ${where} — headings, prose, links, buttons, and form values. Use it when the user asks about what ${subject} shows. A long screen is truncated, so pass \`section\` to read one part of it.`,
+      description: `Read what is currently rendered ${where} — headings, prose, links, buttons, form values, and where the images are. Use it when the user asks about what ${subject} shows. A long screen is truncated, so pass \`section\` to read one part of it.`,
       parameters: {
         type: "object",
         properties: {
@@ -116,6 +116,11 @@ export class StoreSurfaceSource implements SurfaceSource {
             description:
               "One region of the screen: a heading's anchor as readScreen prints it, the heading's own text, a scope path from the screen context, or the name in a `[skipped: name]` marker. Omit to read all of it.",
           },
+          images: {
+            type: "boolean",
+            description:
+              "Print each image's address beside its caption, for passing to a tool that takes a picture. Off by default, since a gallery spends the whole read on URLs.",
+          },
         },
         additionalProperties: false,
       },
@@ -123,11 +128,12 @@ export class StoreSurfaceSource implements SurfaceSource {
       run: (args) => {
         const root = StoreSurfaceSource.#zoneRoot(viewKey);
         const section = typeof args.section === "string" ? args.section.trim() : "";
-        if (!section) return ScreenReader.read(root);
+        const options = { images: args.images === true };
+        if (!section) return ScreenReader.read(root, options);
         const container = ScreenTarget.container(section, root);
-        if (container) return ScreenReader.read(container);
+        if (container) return ScreenReader.read(container, options);
         const heading = ScreenTarget.heading(section, root);
-        if (heading) return ScreenReader.readFrom(heading, root);
+        if (heading) return ScreenReader.readFrom(heading, root, options);
         const named = ScreenTarget.containerNames(root);
         throw new Error(
           `No section named ${section} is on screen. ${
@@ -156,6 +162,8 @@ export class StoreSurfaceSource implements SurfaceSource {
         required: ["target"],
         additionalProperties: false,
       },
+      // Scrolling and a ring are a change no resource holds, so there is no report to wait for.
+      settle: false,
       run: (args) => {
         const name = typeof args.target === "string" ? args.target.trim() : "";
         if (!name) throw new Error("highlight needs a target.");
@@ -188,6 +196,7 @@ export class StoreSurfaceSource implements SurfaceSource {
         required: ["key"],
         additionalProperties: false,
       },
+      settle: false,
       run: (args: Record<string, unknown>) => {
         this.#bridge ??= AgentBridge.of();
         return this.#bridge.read(String(args.key), viewKey);

@@ -1110,6 +1110,25 @@ describe("AkanApp solo", () => {
     });
   }, 10_000);
 
+  test("logs the solo boot at info, which is all a container with no gateway shows", async () => {
+    const { serverPath, runtimeDir } = await makeSoloRoot("akan-app-solo-boot-log-");
+    await withSoloEnv({ AKAN_SOLO: undefined, AKAN_REPLICA: undefined }, async () => {
+      const writes: string[] = [];
+      const original = process.stdout.write;
+      process.stdout.write = ((chunk: unknown) => {
+        writes.push(String(chunk));
+        return true;
+      }) as typeof process.stdout.write;
+      try {
+        const app = new AkanApp(serverPath, { runtimeDir, port: 24_000 + Math.floor(Math.random() * 10_000) });
+        await app.start();
+      } finally {
+        process.stdout.write = original;
+      }
+      expect(writes.join("")).toContain("replica in this process (solo)");
+    });
+  }, 10_000);
+
   test("spawns a child when the topology was passed explicitly", async () => {
     const { serverPath, reportPath, runtimeDir } = await makeSoloRoot("akan-app-solo-explicit-");
     await withSoloEnv({ AKAN_SOLO: undefined, AKAN_REPLICA: undefined }, async () => {

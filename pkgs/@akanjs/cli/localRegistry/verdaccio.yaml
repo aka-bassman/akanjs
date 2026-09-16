@@ -13,6 +13,22 @@ uplinks:
     url: https://registry.npmjs.org/
 
 packages:
+  # This repo's own packages are published here, so the uplink must not own their names: verdaccio answers a
+  # whole-package PUT for a proxied name with `409 this package is already present`, which every akan package now
+  # gets, having been published to npm. Listed ahead of the wildcards below, which verdaccio resolves in order.
+  "akanjs":
+    access: $all
+    publish: $all
+    unpublish: $all
+  "create-akan-workspace":
+    access: $all
+    publish: $all
+    unpublish: $all
+  "@akanjs/*":
+    access: $all
+    publish: $all
+    unpublish: $all
+
   "@*/*":
     access: $all
     publish: $all

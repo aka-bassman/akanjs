@@ -165,8 +165,9 @@ describe("CloudRunner", () => {
       version: "2.1.0-rc.11",
       dependencies: { akanjs: "2.1.0-rc.11" },
     });
+    // No `npm login`: it takes no registry argument, so it would ask for npmjs.org credentials to authorize a
+    // publish that never reaches npmjs.org — and being interactive, it makes the local-registry flow unscriptable.
     expect(recorder.calls.filter((call) => call.name === "workspace.spawn").map((call) => call.args)).toEqual([
-      ["npm", ["login"], { stdio: "inherit" }],
       [
         "npm",
         [

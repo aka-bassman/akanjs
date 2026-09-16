@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { AgentSession, MessageAttachment } from "use-agentic";
-import { Attachment, maxMessageAttachments } from "./attachment";
+import { type AttachLimits, Attachment, maxMessageAttachments } from "./attachment";
 
 /** What the composer held when it was sent: the shape a turn opens with, whether now or after the running one. */
 export interface QueuedMessage {
@@ -13,6 +13,7 @@ export interface QueuedMessage {
 
 interface ChatQueueSetup {
   session: AgentSession;
+  limits?: AttachLimits;
   /** The chat's own version snapshot — the turn ending is one of the changes it counts. */
   version: number;
   l: (key: string, param?: Record<string, string | number>) => string;
@@ -27,7 +28,8 @@ interface ChatQueueSetup {
  * and then aborts, and the abort's notify would otherwise read the state the render started with and send what
  * was just dropped.
  */
-export const useChatQueue = ({ session, version, l, onFlush }: ChatQueueSetup) => {
+export const useChatQueue = ({ session, limits = {}, version, l, onFlush }: ChatQueueSetup) => {
+  const count = limits.perMessageCount ?? maxMessageAttachments;
   const [queued, setQueued] = useState<QueuedMessage | null>(null);
   const held = useRef<QueuedMessage | null>(null);
   const put = (next: QueuedMessage | null) => {
@@ -46,8 +48,8 @@ export const useChatQueue = ({ session, version, l, onFlush }: ChatQueueSetup) =
     push: (message: QueuedMessage): boolean => {
       const before = held.current;
       const attachments = [...(before?.attachments ?? []), ...message.attachments];
-      const overflow = Attachment.overflow(attachments);
-      if (overflow === "tooMany") session.note(l("base.agentAttachTooMany", { count: maxMessageAttachments }));
+      const overflow = Attachment.overflow(attachments, limits);
+      if (overflow === "tooMany") session.note(l("base.agentAttachTooMany", { count }));
       else if (overflow === "tooMuch")
         session.note(l("base.agentAttachTooMuch", { name: message.attachments[0]?.name ?? "" }));
       if (overflow) return false;

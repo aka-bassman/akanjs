@@ -61,8 +61,8 @@ export class WallpadEndpoint extends endpoint(wallpadSrv, ({ mutation, message }
     {
       name: "middleware / Middleware",
       desc: l.trans({
-        en: "Middleware wraps endpoint execution. Built-ins include Logging, Cache, Timeout, and Retry, while custom middleware can read `SignalContext` and decide when to call `next()`.",
-        ko: "Middleware는 endpoint execution을 감쌉니다. built-in에는 Logging, Cache, Timeout, Retry가 있고 custom middleware는 `SignalContext`를 읽어 언제 `next()`를 호출할지 결정할 수 있습니다.",
+        en: "Middleware wraps endpoint execution. `Logging`, `Timeout`, and `Cache` are registered by default and each stands aside unless the endpoint declares the option it reads (`timeout`, `cache`), while custom middleware can read `SignalContext` and decide when to call `next()`.",
+        ko: "Middleware는 endpoint execution을 감쌉니다. `Logging`, `Timeout`, `Cache`가 기본 등록되어 있으며 각각 endpoint가 해당 option(`timeout`, `cache`)을 선언했을 때만 동작하고, custom middleware는 `SignalContext`를 읽어 언제 `next()`를 호출할지 결정할 수 있습니다.",
       }),
       code: `import { middleware, type SignalContext } from "akanjs/signal";
 

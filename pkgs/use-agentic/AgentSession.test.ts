@@ -47,6 +47,62 @@ describe("AgentSession", () => {
     expect(requests[0].messages.map((message) => message.role)).toEqual(["user"]);
   });
 
+  test("a turn the provider cut off is recorded as incomplete, not read as a final answer", async () => {
+    const surface = new AgenticSurface();
+    const { runner } = scripted([
+      { type: "text", delta: "Half a sen" },
+      { type: "done", stop: "length" },
+    ]);
+    const session = new AgentSession(surface, runner);
+    await session.send("summarize this");
+    expect(session.messages[1].text).toBe("Half a sen");
+    expect(session.messages[1].error).toContain("ran out of room mid-answer");
+    expect(session.isRunning).toBe(false);
+  });
+
+  test("a call the cut-off turn did make is closed rather than run, since the next one never arrived", async () => {
+    const surface = new AgenticSurface();
+    const ran: string[] = [];
+    surface.registerTool([], { name: "approveTask", run: (args) => void ran.push(String(args.id)) });
+    const { runner, requests } = scripted([
+      { type: "toolCall", id: "c1", name: "approveTask", args: { id: "t1" } },
+      { type: "done", stop: "length" },
+    ]);
+    const session = new AgentSession(surface, runner);
+    await session.send("approve them all");
+    // Not run: the turn was cut off, so the batch it finished is half an intention. Answered all the same —
+    // an unanswered call is the one shape every provider dialect refuses on the next post.
+    expect(ran).toEqual([]);
+    expect(session.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"]);
+    expect(session.messages[2].toolResults?.[0].error).toBeTruthy();
+    expect(requests).toHaveLength(1);
+  });
+
+  test("a batch that changed one resource eight times posts it once, as it finally stands", async () => {
+    const surface = new AgenticSurface();
+    const approved: string[] = [];
+    surface.registerResource([], { name: "taskList", read: () => [...approved] });
+    surface.registerTool([], { name: "approveTask", run: (args) => void approved.push(String(args.id)) });
+    const ids = ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"];
+    const { runner, requests } = scripted(
+      [
+        ...ids.map((id, at) => ({ type: "toolCall" as const, id: `c${at}`, name: "approveTask", args: { id } })),
+        { type: "done", stop: "toolUse" },
+      ],
+      [{ type: "done", stop: "end" }],
+    );
+    const session = new AgentSession(surface, runner, {});
+    await session.send("approve them all");
+    const results = session.messages.find((message) => message.role === "tool")?.toolResults ?? [];
+    expect(results).toHaveLength(8);
+    // Seven stale copies of the list would otherwise sit above the one that is true, and ride every later turn.
+    expect(results.filter((result) => result.changes?.length)).toHaveLength(1);
+    expect(results[7].changes?.[0].value).toEqual(ids);
+    // `t1` is in every cumulative copy, so the wire carried nine of them before the batch was deduped: the call's
+    // own arguments, and the list once per result.
+    expect(JSON.stringify(requests[1].messages).match(/t1/g)).toHaveLength(2);
+  });
+
   test("a tool turn executes, reports changes, and feeds results into the next turn", async () => {
     const surface = new AgenticSurface();
     let count = 0;
@@ -1178,6 +1234,36 @@ describe("AgentSession long tools", () => {
     const calls = posted.flatMap((message) => message.toolCalls ?? []).map((call) => call.id);
     const answers = posted.flatMap((message) => message.toolResults ?? []).map((result) => result.id);
     expect(calls.every((id) => answers.includes(id))).toBe(true);
+  });
+
+  test("Stop caught before the first delta leaves no draft behind, so nothing renders as still writing", async () => {
+    let streaming = false;
+    let finishTurn: () => void = () => undefined;
+    const runner: AgentRunner = {
+      async *run() {
+        await new Promise<void>((resolve) => {
+          finishTurn = resolve;
+          streaming = true;
+        });
+        yield { type: "text", delta: "never seen" };
+        yield { type: "done", stop: "end" };
+      },
+    };
+    const session = new AgentSession(new AgenticSurface(), runner);
+    const turn = session.send("go");
+    await until(() => streaming);
+    expect(session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    session.abort();
+    finishTurn();
+    await turn;
+    expect(session.messages.map((message) => message.role)).toEqual(["user"]);
+  });
+
+  test("a turn the provider ends without saying anything leaves no empty bubble either", async () => {
+    const { runner } = scripted([{ type: "done", stop: "end" }]);
+    const session = new AgentSession(new AgenticSurface(), runner);
+    await session.send("go");
+    expect(session.messages.map((message) => message.role)).toEqual(["user"]);
   });
 
   test("Stop while the calls are still arriving leaves none of them unanswered", async () => {

@@ -1,7 +1,5 @@
 "use client";
-import { type Cls, type DataList, PrimitiveRegistry } from "akanjs/base";
-import { capitalize } from "akanjs/common";
-import { type ConstantField, ConstantRegistry } from "akanjs/constant";
+import type { DataList } from "akanjs/base";
 import type { JsonSchema } from "use-agentic";
 import { useScopePath, useSurface } from "use-agentic";
 import { actionTagOf } from "../actionTag";
@@ -18,14 +16,6 @@ export interface RelationFieldSource<T extends { id: string }> {
   label: (model: T) => string;
   disabled?: boolean;
 }
-
-/** The database model a relation field points at, or null for anything else — a primitive, an enum, a scalar. */
-const relationOf = (field: ConstantField): string | null => {
-  const modelRef = field.modelRef as unknown as Cls;
-  if (field.fieldType !== "property" || field.enum || !modelRef || PrimitiveRegistry.has(modelRef)) return null;
-  const refName = ConstantRegistry.getRefName(modelRef, { allowEmpty: true });
-  return refName && ConstantRegistry.database.has(refName) ? refName : null;
-};
 
 /**
  * The two tools a relation picker owes an agent: list the documents it can pick, then pick by id.
@@ -52,13 +42,13 @@ export const useRelationFieldTool = <T extends { id: string }>(
   useEffect(() => {
     if (!action || disabled) return;
     const ref = FormFields.ref(action);
-    const target = ref && relationOf(ref.field);
+    const target = ref && FormFields.relationOf(ref.field);
     // A field the form can describe on its own is `useFieldTool`'s: this hook exists for the one it cannot, and
     // publishing both would register one name twice with two different argument shapes.
     if (!ref || !target || FormFields.schema(ref.field)) return;
     const many = ref.field.arrDepth > 0;
     const nullable = !!ref.field.nullable && !many;
-    const listName = `load${capitalize(ref.key)}OptionsOn${capitalize(ref.refName)}`;
+    const listName = FormFields.optionsToolName(ref.refName, ref.key);
     const argName = many ? `${ref.key}Ids` : `${ref.key}Id`;
     const id: JsonSchema = { type: "string" };
     const options = () => live.current.read().map((model) => ({ id: model.id, label: live.current.label(model) }));

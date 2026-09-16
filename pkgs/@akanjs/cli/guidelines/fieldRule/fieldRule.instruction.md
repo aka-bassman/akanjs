@@ -9,6 +9,7 @@ Use this whenever generating constants or scalar constants. It defines the curre
 - `field(Type).optional()` marks a nullable or optional business value when absence is valid.
 - `field.hidden(Type).optional()` is for internal state that should not be treated as a normal public field.
 - `field.secret(Type).optional()` is for sensitive values that should not be selected by default.
+- Neither survives an endpoint response: both are stripped on the way out and hydration writes `null` over the key, while the generated type still declares the field — so a client holds a deliberate `null` behind a type that promises a value, and only `??` / `== null` catch it. A field a browser has to read is neither.
 - `field([Type])` defines arrays; provide empty array defaults when the app expects list operations.
 
 ## Current Akan Patterns

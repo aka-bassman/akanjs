@@ -28,6 +28,55 @@ mutation is mounted under. `conventions` carries the invariants — this is the 
   neither again, and cleanup that must happen either way registers for both. From a `message` handler it belongs to
   the socket and runs at close. A handler that throws is logged and never blocks the rest of the teardown.
 
+## Request Deadlines
+
+- **`{ timeout: <ms> }` in an endpoint's signal option is the whole configuration surface**, and it reaches both
+  ends of the call. Server side, the `Timeout` middleware races the handler against it and answers
+  `base.error.gatewayTimeout` (504) once it is spent. Client side, `FetchSerializer` ships the value on the
+  serialized endpoint and `fetch.<endpoint>()` uses it as that request's `AbortSignal.timeout` budget, so the
+  browser does not abandon a call the server is still allowed to be working on.
+- **The middleware is registered by default and has no default of its own.** An endpoint that declares no
+  `timeout` is passed straight through — a default here would put a deadline on every endpoint in the app that
+  nobody asked for, which is why the middleware used to be opt-in and, being opt-in, made the declared value
+  dead. It clears its timer in a `finally`: the race's loser is a pending timer per call otherwise, and with a
+  five-minute budget that is a five-minute hold on the event loop for a call that answered in a millisecond.
+- **Without a declaration the client's own default applies — 30 seconds** (`DEFAULT_TIMEOUT_MS`,
+  `fetch/client/httpClient.ts`), and the server imposes nothing. Nothing else bounds a request: `Bun.serve` runs
+  with `idleTimeout: 0`, so a long call is only ever ended by one of these two.
+- **Precedence is caller, then endpoint, then client default.** `fetch.x(…, { timeout: 5_000 })` overrides what
+  the endpoint declared; `{ timeout: false }` waits as long as the runtime will. An app moves its own default
+  with `fetch.instance.setTimeout(ms)` — `lib/useClient.ts` is generated, so the `timeout` option on
+  `FetchClient.build` belongs to the template that writes it, not to app code.
+- **A file upload is never bounded**, on any of those paths: a large body on a slow uplink is a request that is
+  working, and the request body is the only thing the client can tell that from.
+- **The deadline answers the caller; it does not undo the call.** `Promise.race` cannot cancel `next()`, so a
+  handler that timed out keeps running and keeps writing. Reach for a `timeout` to bound what a *caller* waits
+  for, not to bound an effect — an operation that must not half-happen needs its own idempotency or compensation.
+- The failure is the same `base.error.gatewayTimeout` key whichever side gave up, so the user reads one sentence
+  in their own language either way. What differs is the status code — 504 from the server's middleware, 408 from
+  the client's own abort — and nothing downstream branches on that.
+
+## Cached Answers
+
+- **`{ cache: <ms> }` in an endpoint's signal option is the whole cache surface.** The `Cache` middleware is
+  registered by default and stands aside unless an endpoint declares one — it used to be opt-in and to ignore the
+  declared value for a hard-coded 60 seconds, which is the same shape the `timeout` bug had.
+- **Only a `query` that takes no internal argument may carry one.** The handler's inputs are its declared
+  arguments plus its internal ones, so an endpoint with none of the latter answers the same thing to everyone who
+  may read it — which is the only answer a shared entry can hold. An endpoint that takes `.with(Self)` answers
+  per caller, and one entry would be one caller's answer handed to the next; that endpoint and every `mutation`
+  are named once in the log and left uncached rather than silently ignored.
+- **The guards run on every hit.** A cache hit skips `next()`, and `next()` is what runs them, so the middleware
+  calls `context.checkGuards()` itself before handing the entry over. Shared is not public.
+- **The entry is the handler's result, not the response.** The middleware wraps execution, so `resolveReturn`
+  still runs per call on the cached value — field masking, `hidden`/`secret` stripping and relation resolution are
+  never cached, and a relation still costs its own load. The cache saves the handler, not the serialization.
+- **A cache backend that is down does not take the endpoint down.** A failed read is warned and the call runs
+  uncached; a failed write is warned and dropped.
+- The default middleware chain is `Logging → Timeout → Cache → handler`: a hung cache backend is bounded by the
+  same deadline as the handler it stands in for. **`Retry` was removed** — an automatic re-run of an endpoint
+  whose failure it cannot classify replays whatever the first attempt already did.
+
 ## Binary Pubsub
 
 - **`pubsub(Binary)` sends its payload in a websocket binary frame**, skipping the JSON `{ type: "pub" }`

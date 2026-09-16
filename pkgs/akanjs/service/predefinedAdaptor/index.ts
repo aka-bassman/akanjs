@@ -1,3 +1,4 @@
+export * from "./anthropicLlm";
 export * from "./cache.adaptor";
 export * from "./compress.adaptor";
 export * from "./database.adaptor";
@@ -5,6 +6,8 @@ export * from "./deepseekLlm";
 export * from "./insightQuery";
 export * from "./llm.adaptor";
 export * from "./logging.adaptor";
+export * from "./openaiDialect";
+export * from "./openaiLlm";
 export * from "./queue.adaptor";
 export * from "./role.adaptor";
 export * from "./schedule.adaptor";

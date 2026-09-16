@@ -140,12 +140,19 @@ describe("StoreSurfaceSource", () => {
     expect(shadowed).toBe(1);
   });
 
+  test("the built-ins that change nothing a resource holds do not wait for the screen", () => {
+    // Every settle is 120ms of quiet at the very least, and a turn that reads ten keys pays it ten times for a
+    // report that is empty by construction.
+    for (const name of ["readScreen", "readState", "highlight"]) expect(entryOf(name)?.settle).toBe(false);
+    for (const name of ["navigate", "goBack"]) expect(entryOf(name)?.settle).toBeUndefined();
+  });
+
   test("readScreen is published and answers honestly with no document", async () => {
     const surface = new AgenticSurface();
     surface.addSource(source);
     const readScreen = entryOf("readScreen");
     expect(readScreen?.settle).toBe(false);
-    expect(Object.keys((readScreen?.parameters?.properties ?? {}) as object)).toEqual(["section"]);
+    expect(Object.keys((readScreen?.parameters?.properties ?? {}) as object)).toEqual(["section", "images"]);
     expect(readScreen?.parameters?.required).toBeUndefined();
     expect(await surface.call("readScreen", {})).toBe("No rendered document is available.");
   });

@@ -36,8 +36,8 @@ export default page().render(() => {
               {
                 title: l.trans({ en: "Framework built-in", ko: "프레임워크 내장" }),
                 desc: l.trans({
-                  en: "The relay endpoint, the DeepSeek adaptor, and the chat UI all ship with akanjs — no extra library to mount.",
-                  ko: "릴레이 엔드포인트, DeepSeek 어댑터, 채팅 UI가 모두 akanjs에 내장돼 있어 추가로 마운트할 라이브러리가 없습니다.",
+                  en: "The relay endpoint, three LLM adaptors, and the chat UI all ship with akanjs — no extra library to mount.",
+                  ko: "릴레이 엔드포인트, LLM 어댑터 세 개, 채팅 UI가 모두 akanjs에 내장돼 있어 추가로 마운트할 라이브러리가 없습니다.",
                 }),
               },
             ].map(({ title, desc }) => (
@@ -75,8 +75,8 @@ export default page().render(() => {
                 {
                   title: "LlmAdaptor.chat",
                   desc: l.trans({
-                    en: "The whole transcript in, one assistant answer out. DeepSeek is the default.",
-                    ko: "전체 대화가 들어가고 어시스턴트 응답 하나가 나옵니다. 기본값은 DeepSeek입니다.",
+                    en: "The whole transcript in, one assistant answer out. DeepseekLlm is the default; OpenaiLlm and AnthropicLlm ship beside it and read images.",
+                    ko: "전체 대화가 들어가고 어시스턴트 응답 하나가 나옵니다. 기본값은 DeepseekLlm이고, 이미지를 읽는 OpenaiLlm·AnthropicLlm이 함께 들어 있습니다.",
                   }),
                 },
               ].map(({ title, desc }) => (
@@ -155,8 +155,8 @@ export const option = new AkanOption<ModulesOptions>()
             {
               title: "attach",
               desc: l.trans({
-                en: "The composer attaches images and text files on its own; attach is where an app reads what needs a parser, like a PDF's text. Nothing is stored — the bytes ride one turn's request, and a reloaded transcript keeps the name without the content. The ceilings are the message's rather than the file's — 4 MB per file, 8 MB and five files per message, and the same file twice refused by name — because what a provider refuses is the sum, and a request that cannot be sent is one the user has to empty the composer to escape.",
-                ko: "작성창은 이미지와 텍스트 파일을 스스로 첨부합니다. PDF 본문처럼 파서가 필요한 것은 앱이 attach에서 읽습니다. 저장은 하지 않습니다 — 바이트는 한 턴의 요청에만 실리고, 새로고침된 대화는 내용 없이 이름만 남깁니다. 상한은 파일 하나가 아니라 메시지 단위입니다 — 파일당 4MB, 메시지당 8MB와 5개, 같은 파일은 이름을 밝히며 거절합니다. 프로바이더가 거절하는 것은 합계이고, 보낼 수 없는 요청에서 빠져나오려면 작성창을 비우는 수밖에 없기 때문입니다.",
+                en: "The composer attaches images and text files on its own; attach is where an app reads what needs a parser, like a PDF's text, or uploads the file and answers a url. Nothing is stored — the bytes ride one turn's request, and a reloaded transcript keeps the name without the content. The ceilings are the message's rather than the file's — 4 MB per file, 8 MB and five files per message, and the same file twice refused by name — because what a provider refuses is the sum, and a request that cannot be sent is one the user has to empty the composer to escape. They are measured on what attach produced, so a url costs nothing, and attachLimits raises them for a provider that carries more.",
+                ko: "작성창은 이미지와 텍스트 파일을 스스로 첨부합니다. PDF 본문처럼 파서가 필요한 것, 또는 업로드하고 url로 답하는 것은 앱이 attach에서 합니다. 저장은 하지 않습니다 — 바이트는 한 턴의 요청에만 실리고, 새로고침된 대화는 내용 없이 이름만 남깁니다. 상한은 파일 하나가 아니라 메시지 단위입니다 — 파일당 4MB, 메시지당 8MB와 5개, 같은 파일은 이름을 밝히며 거절합니다. 프로바이더가 거절하는 것은 합계이고, 보낼 수 없는 요청에서 빠져나오려면 작성창을 비우는 수밖에 없기 때문입니다. 상한은 attach가 만들어낸 결과를 기준으로 재므로 url은 비용이 0이고, 더 큰 요청을 받는 프로바이더라면 attachLimits로 올립니다.",
               }),
             },
             {
@@ -215,10 +215,10 @@ export const option = new AkanOption<ModulesOptions>()
                 }),
               },
               {
-                title: "readScreen(section?)",
+                title: "readScreen(section?, images?)",
                 desc: l.trans({
-                  en: "The rendered DOM as compact text. Headings carry their anchor and a truncated read names the sections below the cut, so a long screen stays reachable: pass one of those names — or a heading's own text — as section.",
-                  ko: "렌더된 DOM을 압축 텍스트로. 제목에 앵커가 붙고, 잘린 읽기는 잘린 아래쪽 섹션 이름을 알려줍니다. 그래서 긴 화면도 닿을 수 있습니다 — 그 이름이나 제목 텍스트를 section으로 넘기면 됩니다.",
+                  en: "The rendered DOM as compact text. Headings carry their anchor and a truncated read names the sections below the cut, so a long screen stays reachable: pass one of those names — or a heading's own text — as section. Every image is named whether or not it has an alt; images: true appends each one's address, off by default because a gallery is one long URL per thumbnail.",
+                  ko: "렌더된 DOM을 압축 텍스트로. 제목에 앵커가 붙고, 잘린 읽기는 잘린 아래쪽 섹션 이름을 알려줍니다. 그래서 긴 화면도 닿을 수 있습니다 — 그 이름이나 제목 텍스트를 section으로 넘기면 됩니다. 이미지는 alt가 없어도 자리를 남기고, images: true를 주면 주소까지 붙습니다. 갤러리 하나가 썸네일 수만큼의 긴 URL이 되므로 기본값은 꺼짐입니다.",
                 }),
               },
               {
@@ -248,8 +248,8 @@ export const option = new AkanOption<ModulesOptions>()
           </div>
           <div>
             {l.trans({
-              en: "A tool that changes the screen waits for the screen before it answers: router.push returns while the payload is still in flight, so navigate — and the session, after every non-query tool — waits for the DOM to hold still before reporting. And the turn cap is a question rather than a dead end: at maxTurns the agent asks whether to keep going, and what the user types instead rides as their own turn.",
-              ko: "화면을 바꾸는 툴은 화면이 정착한 뒤에 답합니다. router.push는 페이로드가 아직 오는 중에 반환되므로, navigate는 (그리고 세션은 query가 아닌 모든 툴 뒤에서) DOM이 멈출 때까지 기다린 다음 변경을 보고합니다. 턴 상한도 막다른 길이 아니라 질문입니다 — maxTurns에 닿으면 계속할지 묻고, 사용자가 대신 입력한 말은 그 사용자의 턴으로 들어갑니다.",
+              en: "A tool that changes the screen waits for the screen before it answers: router.push returns while the payload is still in flight, so navigate — and the session, after every tool that did not declare itself a read — waits for the DOM to hold still before reporting; the reading built-ins declare it, so a turn that only looks around pays nothing. One turn carries every call the model made in it: they run in order and come back as one tool message, so a batch costs one model round trip where the same calls chained one per turn cost a round trip and a resend of the whole transcript each. And the turn cap is a question rather than a dead end: at maxTurns the agent asks whether to keep going, and what the user types instead rides as their own turn.",
+              ko: "화면을 바꾸는 툴은 화면이 정착한 뒤에 답합니다. router.push는 페이로드가 아직 오는 중에 반환되므로, navigate는 (그리고 세션은 스스로 읽기라고 선언하지 않은 모든 툴 뒤에서) DOM이 멈출 때까지 기다린 다음 변경을 보고합니다. 읽기 빌트인은 그렇게 선언하므로, 둘러보기만 하는 턴은 아무 대가도 치르지 않습니다. 한 턴은 모델이 그 턴에 만든 호출을 전부 실어 나릅니다. 호출은 순서대로 실행되어 하나의 tool 메시지로 돌아오므로, 묶어 보낸 배치는 모델 왕복 한 번이고, 같은 호출을 턴당 하나씩 이어 붙이면 호출마다 왕복 한 번에 트랜스크립트 전체를 다시 올리는 값을 냅니다. 턴 상한도 막다른 길이 아니라 질문입니다 — maxTurns에 닿으면 계속할지 묻고, 사용자가 대신 입력한 말은 그 사용자의 턴으로 들어갑니다.",
             })}
           </div>
           <div>
@@ -302,8 +302,8 @@ st.expose("selectedWaypointId", ID)
             {
               title: "st.tool(name).desc(…).arg(…).opt(…).exec(fn)",
               desc: l.trans({
-                en: "The only way an action reaches an agent. desc is required and comes first; arg is what the caller must pass and opt what it may. Returns the callable to wire to onClick; a remove* name confirms by default.",
-                ko: "액션이 에이전트에게 닿는 유일한 경로입니다. desc는 필수이고 맨 앞에 옵니다. arg는 호출자가 반드시 넘겨야 하는 인자, opt는 생략할 수 있는 인자입니다. onClick에 연결할 callable을 돌려주고, remove* 이름은 기본으로 승인을 받습니다.",
+                en: "The only way an action reaches an agent. desc is required and comes first; arg is what the caller must pass and opt what it may. Both take a scalar, an enum, or one array level of either — [String], [TaskStatus] — so a list never has to be taught as a string format. Returns the callable to wire to onClick; a remove* name confirms by default.",
+                ko: "액션이 에이전트에게 닿는 유일한 경로입니다. desc는 필수이고 맨 앞에 옵니다. arg는 호출자가 반드시 넘겨야 하는 인자, opt는 생략할 수 있는 인자입니다. 둘 다 스칼라·enum, 그리고 그 배열 한 겹까지 받습니다 — [String], [TaskStatus] — 그래서 목록을 문자열 포맷으로 가르칠 일이 없습니다. onClick에 연결할 callable을 돌려주고, remove* 이름은 기본으로 승인을 받습니다.",
               }),
             },
             {
@@ -415,8 +415,8 @@ st.expose("selectedWaypointId", ID)
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Everything the model needs is declared in option.ts, never in the environment. setLlm fills apiKey, model, and host for whichever adaptor holds LlmAdaptorRole, so the settings survive a provider swap. DeepSeek is the built-in default — deepseek-v4-flash at https://api.deepseek.com. With no apiKey the app still boots and the chat says no model is configured; a refusal the provider explained is thrown instead of swallowed, so the chat prints that reason in the user's language.",
-              ko: "모델에 필요한 설정은 환경변수가 아니라 option.ts에 선언합니다. setLlm은 LlmAdaptorRole을 차지한 어댑터에 apiKey·model·host를 채우므로, 프로바이더를 바꿔도 설정은 그대로입니다. 기본값은 DeepSeek입니다. deepseek-v4-flash, https://api.deepseek.com. apiKey가 없어도 앱은 기동하고, 채팅은 모델이 설정되지 않았다고 답합니다. 프로바이더가 이유를 밝힌 거절은 삼키지 않고 던지므로, 채팅이 그 이유를 사용자의 언어로 보여줍니다.",
+              en: "Everything the model needs is declared in option.ts, never in the environment. setLlm fills apiKey, model, host, accepts and maxTokens for whichever adaptor holds LlmAdaptorRole, so the settings survive a provider swap. DeepSeek is the built-in default — deepseek-v4-flash at https://api.deepseek.com, text only. For vision, applyAdaptor(LlmAdaptorRole, OpenaiLlm) or AnthropicLlm; both require a model, since a default would age into a 404 and would decide the vision claim for the app. accepts overrides what the configured model reads, because an adaptor answers for an API and one API serves models that differ. With no apiKey the app still boots and the chat says no model is configured; a refusal the provider explained is thrown instead of swallowed, so the chat prints that reason in the user's language.",
+              ko: "모델에 필요한 설정은 환경변수가 아니라 option.ts에 선언합니다. setLlm은 LlmAdaptorRole을 차지한 어댑터에 apiKey·model·host·accepts·maxTokens를 채우므로, 프로바이더를 바꿔도 설정은 그대로입니다. 기본값은 DeepSeek이고 텍스트 전용입니다. deepseek-v4-flash, https://api.deepseek.com. 비전이 필요하면 applyAdaptor(LlmAdaptorRole, OpenaiLlm) 또는 AnthropicLlm을 씁니다. 둘 다 model이 필수인데, 기본값을 두면 언젠가 404가 되고 비전 여부를 앱 대신 정해버리기 때문입니다. accepts는 설정한 모델이 무엇을 읽는지 덮어씁니다 — 어댑터는 API 하나를 대변하고, 한 API가 서로 다른 모델을 섬기기 때문입니다. apiKey가 없어도 앱은 기동하고, 채팅은 모델이 설정되지 않았다고 답합니다. 프로바이더가 이유를 밝힌 거절은 삼키지 않고 던지므로, 채팅이 그 이유를 사용자의 언어로 보여줍니다.",
             })}
           </div>
         </Docs.Description>

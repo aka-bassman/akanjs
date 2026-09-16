@@ -61,12 +61,20 @@ const blockTags = new Set([
  * guessing at a slug. For the same reason a truncated read ends with the headings below the cut instead of only
  * a character count — otherwise everything past the limit is unreachable, since nothing names it.
  */
+export interface ScreenReadOptions {
+  /**
+   * Carry each image's address as well as its caption. Off by default because a gallery is one long URL per
+   * thumbnail, which is the read's whole budget spent on the part of the screen it can say the least about.
+   */
+  images?: boolean;
+}
+
 export class ScreenReader {
   static readonly limit = 8000;
 
-  static read(root?: HTMLElement | null): string {
+  static read(root?: HTMLElement | null, options: ScreenReadOptions = {}): string {
     if (typeof document === "undefined") return "No rendered document is available.";
-    const reader = new ScreenReader();
+    const reader = new ScreenReader(options);
     const title = document.title.trim();
     if (title) reader.#lines.push(`Page: ${title}`);
     reader.#walk(root ?? document.body, true);
@@ -79,9 +87,9 @@ export class ScreenReader {
    * higher. Reads the heading's container when the heading is the only one in it — the shape a docs slide or an
    * `<article>` has — and otherwise the heading's own following siblings.
    */
-  static readFrom(heading: HTMLElement, root?: HTMLElement | null): string {
+  static readFrom(heading: HTMLElement, root?: HTMLElement | null, options: ScreenReadOptions = {}): string {
     if (typeof document === "undefined") return "No rendered document is available.";
-    const reader = new ScreenReader();
+    const reader = new ScreenReader(options);
     const container = ScreenReader.#sectionOf(heading, root);
     if (container) reader.#walk(container, true);
     else {
@@ -144,10 +152,15 @@ export class ScreenReader {
     return !!found && found <= level;
   }
 
+  readonly #images: boolean;
   #lines: string[] = [];
   #headings: string[] = [];
   #buffer = "";
   #length = 0;
+
+  constructor({ images = false }: ScreenReadOptions = {}) {
+    this.#images = images;
+  }
 
   /**
    * Past the walk budget the text is dropped but the headings are not: a section below the cut is exactly what the
@@ -177,6 +190,19 @@ export class ScreenReader {
     return below.length
       ? `${kept}${note}\nFurther down, unread: ${below.join(" · ")}. Pass one of those names as \`section\` to read it.`
       : `${kept}${note}`;
+  }
+
+  /**
+   * An image is named whether or not it carries an `alt`: dropping an unlabelled one leaves a card that renders a
+   * picture reading exactly like a card that renders nothing, and "the page shows no image" is the one answer the
+   * screen cannot support. The address rides only when it was asked for, and never for a `data:` URL — that is
+   * the bytes themselves rather than somewhere to fetch them, and one of them outweighs the whole read.
+   */
+  #image(el: HTMLElement) {
+    const alt = (el.getAttribute("alt") ?? "").replace(/\s+/g, " ").trim();
+    const src = this.#images ? (el as HTMLImageElement).currentSrc || el.getAttribute("src") || "" : "";
+    const address = src && !src.startsWith("data:") ? `(${src})` : "";
+    this.#buffer += ` [image${alt ? `: ${alt}` : ""}]${address}`;
   }
 
   /** What stands where a skipped region was: its own name, and the anchor `section` takes to read it on request. */
@@ -215,8 +241,7 @@ export class ScreenReader {
       return;
     }
     if (tag === "IMG") {
-      const alt = el.getAttribute("alt");
-      if (alt) this.#buffer += ` [image: ${alt}]`;
+      this.#image(el);
       return;
     }
     if (tag === "BR") {

@@ -33,9 +33,17 @@ export interface StToolMeta {
   guard?: ToolGuard;
 }
 
+/**
+ * What one argument may be: a scalar, an enum, or **one** array level of either. The array level is here because
+ * `fill<Model>Form` already describes exactly that for a form field, so the same shape reaching an agent through a
+ * form and not through a component tool was an oversight rather than a boundary — and a tool that cannot say
+ * "a list of these" says it in prose instead, which is a format the app then owns a parser for.
+ */
+export type StToolArgType = ParamFieldType | readonly [ParamFieldType];
+
 interface StToolArg {
   name: string;
-  type: ParamFieldType;
+  type: StToolArgType;
   optional: boolean;
   oneOf?: readonly (string | number)[];
 }
@@ -45,7 +53,11 @@ export interface StToolArgOption<V> {
   oneOf?: readonly V[];
 }
 
-type ArgValue<T> = T extends EnumInstance<string, infer V> ? V : T extends { [CLIENT_VALUE]: infer V } ? V : never;
+type ScalarValue<T> = T extends EnumInstance<string, infer V> ? V : T extends { [CLIENT_VALUE]: infer V } ? V : never;
+/** What one element carries, which is the whole argument unless it is an array. `oneOf` narrows this one. */
+type ElementValue<T> = T extends readonly [infer E] ? ScalarValue<E> : ScalarValue<T>;
+type ArgValue<T> = T extends readonly [unknown] ? ElementValue<T>[] : ElementValue<T>;
+type NarrowedValue<T, V> = T extends readonly [unknown] ? V[] : V;
 
 /**
  * A component tool past its description: `.arg()` for what the caller must pass, `.opt()` for what it may, and
@@ -75,39 +87,39 @@ export class StToolBuilder<Args extends unknown[] = []> {
     this.#args = args;
   }
 
-  arg<T extends ParamFieldType>(name: string, type: T): StToolBuilder<[...Args, ArgValue<T>]>;
-  arg<T extends ParamFieldType, const V extends ArgValue<T>>(
+  arg<T extends StToolArgType>(name: string, type: T): StToolBuilder<[...Args, ArgValue<T>]>;
+  arg<T extends StToolArgType, const V extends ElementValue<T>>(
     name: string,
     type: T,
     option: StToolArgOption<V>,
-  ): StToolBuilder<[...Args, V]>;
-  arg<T extends ParamFieldType>(
+  ): StToolBuilder<[...Args, NarrowedValue<T, V>]>;
+  arg<T extends StToolArgType>(
     name: string,
     type: T,
-    option: StToolArgOption<ArgValue<T>> = {},
+    option: StToolArgOption<ElementValue<T>> = {},
   ): StToolBuilder<[...Args, ArgValue<T>]> {
     return this.#push(name, type, false, option) as StToolBuilder<[...Args, ArgValue<T>]>;
   }
 
-  opt<T extends ParamFieldType>(name: string, type: T): StToolBuilder<[...Args, ArgValue<T> | null]>;
-  opt<T extends ParamFieldType, const V extends ArgValue<T>>(
+  opt<T extends StToolArgType>(name: string, type: T): StToolBuilder<[...Args, ArgValue<T> | null]>;
+  opt<T extends StToolArgType, const V extends ElementValue<T>>(
     name: string,
     type: T,
     option: StToolArgOption<V>,
-  ): StToolBuilder<[...Args, V | null]>;
-  opt<T extends ParamFieldType>(
+  ): StToolBuilder<[...Args, NarrowedValue<T, V> | null]>;
+  opt<T extends StToolArgType>(
     name: string,
     type: T,
-    option: StToolArgOption<ArgValue<T>> = {},
+    option: StToolArgOption<ElementValue<T>> = {},
   ): StToolBuilder<[...Args, ArgValue<T> | null]> {
     return this.#push(name, type, true, option);
   }
 
-  #push<T extends ParamFieldType>(
+  #push<T extends StToolArgType>(
     name: string,
     type: T,
     optional: boolean,
-    option: StToolArgOption<ArgValue<T>>,
+    option: StToolArgOption<ElementValue<T>>,
   ): StToolBuilder<[...Args, ArgValue<T> | null]> {
     // An argument nothing can describe withdraws the whole tool — the same withholding a falsy name performs, so
     // the callable still drives the click a person makes and the route still renders. Publishing the rest of the
@@ -189,13 +201,22 @@ export class StToolBuilder<Args extends unknown[] = []> {
   }
 
   static #argSchemaOf(arg: StToolArg): JsonSchema {
-    const schema = StToolBuilder.schemaOf(arg.type);
-    return arg.oneOf ? { ...schema, enum: [...arg.oneOf] } : schema;
+    return StToolBuilder.#schemaOfArg(arg.type, arg.oneOf);
   }
 
-  static #describable(toolName: string, argName: string, type: ParamFieldType): boolean {
+  /** The array level `FormFields` wraps a field's leaf in, for an argument that declared one instead. */
+  static #schemaOfArg(type: StToolArgType, oneOf?: readonly (string | number)[]): JsonSchema {
+    const narrowed = (schema: JsonSchema): JsonSchema => (oneOf ? { ...schema, enum: [...oneOf] } : schema);
+    if (!Array.isArray(type)) return narrowed(StToolBuilder.schemaOf(type as ParamFieldType));
+    const element = type[0] as StToolArgType;
+    if (Array.isArray(element))
+      throw new Error("an array of arrays, and st.tool takes one array level of a scalar or an enum.");
+    return { type: "array", items: narrowed(StToolBuilder.schemaOf(element as ParamFieldType)) };
+  }
+
+  static #describable(toolName: string, argName: string, type: StToolArgType): boolean {
     try {
-      StToolBuilder.schemaOf(type);
+      StToolBuilder.#schemaOfArg(type);
       return true;
     } catch (error) {
       console.error(
@@ -216,7 +237,7 @@ export class StToolBuilder<Args extends unknown[] = []> {
     }
     const scalar = type as typeof PrimitiveScalar;
     if (!PrimitiveRegistry.has(scalar as unknown as Cls))
-      throw new Error(`${StToolBuilder.#typeName(type)}, and st.tool takes scalar and enum arguments only.`);
+      throw new Error(`${StToolBuilder.#typeName(type)}, and st.tool takes a scalar, an enum, or one array of either.`);
     switch (PrimitiveRegistry.getName(scalar)) {
       case "ID":
       case "String":
@@ -234,7 +255,8 @@ export class StToolBuilder<Args extends unknown[] = []> {
     }
   }
 
-  static #typeName(type: ParamFieldType): string {
+  static #typeName(type: StToolArgType): string {
+    if (Array.isArray(type)) return `an array of ${StToolBuilder.#typeName(type[0] as StToolArgType)}`;
     const named = type as { name?: string } | null | undefined;
     return named?.name ? `the type ${named.name}` : `${String(type)}`;
   }
@@ -254,11 +276,16 @@ export class StToolBuilder<Args extends unknown[] = []> {
   static checkedValue(
     toolName: string,
     argName: string,
-    type: ParamFieldType,
+    type: StToolArgType,
     value: unknown,
     oneOf?: readonly (string | number)[],
   ): unknown {
-    const checked = StToolBuilder.#checkedScalar(toolName, argName, type, value);
+    if (Array.isArray(type)) {
+      if (!Array.isArray(value)) throw new Error(`Argument "${argName}" of ${toolName} must be an array.`);
+      const element = type[0] as StToolArgType;
+      return value.map((item, idx) => StToolBuilder.checkedValue(toolName, `${argName}[${idx}]`, element, item, oneOf));
+    }
+    const checked = StToolBuilder.#checkedScalar(toolName, argName, type as ParamFieldType, value);
     if (oneOf && !oneOf.includes(checked as string | number))
       throw new Error(`Argument "${argName}" of ${toolName} must be one of: ${oneOf.join(", ")}.`);
     return checked;

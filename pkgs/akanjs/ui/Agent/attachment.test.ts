@@ -40,6 +40,34 @@ describe("Attachment.read", () => {
     const smaller: MessageAttachment = { name: "shot.png", mimeType: "image/png", data: "smaller" };
     expect(await Attachment.read(fileOf("shot.png", "image/png", "abc"), async () => smaller)).toEqual(smaller);
   });
+
+  test("a reader that answers a url carries a file past the ceiling, since it costs the request nothing", async () => {
+    const big = fileOf("photo.jpg", "image/jpeg", "x");
+    Object.defineProperty(big, "size", { value: maxAttachmentBytes * 2 });
+    const stored: MessageAttachment = { name: "photo.jpg", mimeType: "image/jpeg", url: "https://x/1", ref: "f1" };
+    expect(await Attachment.read(big, async () => stored)).toEqual(stored);
+  });
+
+  test("what the reader produced is what the ceiling is applied to", async () => {
+    const small = fileOf("photo.jpg", "image/jpeg", "x");
+    const inlined = async (): Promise<MessageAttachment> => ({
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+      data: btoa("y".repeat(maxAttachmentBytes + 1)),
+    });
+    expect(await Attachment.read(small, inlined)).toBe("tooLarge");
+  });
+
+  test("an app may raise the ceiling it inherits", async () => {
+    const big = fileOf("big.png", "image/png", "abc");
+    Object.defineProperty(big, "size", { value: maxAttachmentBytes + 1 });
+    expect(await Attachment.read(big)).toBe("tooLarge");
+    expect(await Attachment.read(big, undefined, { perFileBytes: maxAttachmentBytes * 2 })).toEqual({
+      name: "big.png",
+      mimeType: "image/png",
+      data: btoa("abc"),
+    });
+  });
 });
 
 describe("Attachment sizing", () => {
@@ -54,5 +82,19 @@ describe("Attachment sizing", () => {
     expect(Attachment.same(one, { ...one })).toBe(true);
     expect(Attachment.same(one, { ...one, name: "other.png" })).toBe(false);
     expect(Attachment.same(one, { ...one, data: btoa("abcd") })).toBe(false);
+  });
+
+  test("a ref answers sameness instead of the guess, so two crops of one export stay two files", () => {
+    const crop: MessageAttachment = { name: "shot.png", mimeType: "image/png", data: btoa("abc"), ref: "f1" };
+    expect(Attachment.same(crop, { ...crop })).toBe(true);
+    expect(Attachment.same(crop, { ...crop, ref: "f2" })).toBe(false);
+    expect(Attachment.same(crop, { name: "shot.png", mimeType: "image/png", data: btoa("abc") })).toBe(false);
+  });
+
+  test("the message ceilings are overridable together with the per-file one", () => {
+    const three = [1, 2, 3].map((at) => ({ name: `${at}.png`, mimeType: "image/png", data: btoa("ab") }));
+    expect(Attachment.overflow(three)).toBe(null);
+    expect(Attachment.overflow(three, { perMessageCount: 2 })).toBe("tooMany");
+    expect(Attachment.overflow(three, { perMessageBytes: 4 })).toBe("tooMuch");
   });
 });

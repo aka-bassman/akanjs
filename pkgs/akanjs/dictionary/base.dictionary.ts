@@ -80,6 +80,7 @@ export const baseDictionary = serviceDictionary(["en", "ko"])
     agentVoiceFailed: ["The microphone could not be used.", "마이크를 사용할 수 없습니다."],
     agentAttach: ["Attach a file", "파일 첨부"],
     agentAttachRemove: ["Remove attachment", "첨부 제거"],
+    agentAttachReading: ["Reading…", "읽는 중…"],
     agentAttachTooLarge: ["{name} is too large to attach.", "{name}은(는) 용량이 너무 커서 첨부할 수 없습니다."],
     agentAttachUnsupported: ["{name} cannot be attached here.", "{name}은(는) 여기에 첨부할 수 없습니다."],
     agentAttachDuplicate: ["{name} is already attached.", "{name}은(는) 이미 첨부되어 있습니다."],

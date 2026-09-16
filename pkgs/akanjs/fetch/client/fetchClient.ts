@@ -173,6 +173,13 @@ export class FetchClient {
         }
       : signal;
   }
+  /**
+   * The budget for every call that neither names one nor is served by an endpoint declaring one. `false` waits
+   * as long as the runtime will, which is the browser's own limit — minutes.
+   */
+  setTimeout(timeout?: number | false) {
+    this.http.setTimeout(timeout);
+  }
   setErrorConstructor(ErrorCls?: ErrorConstructor) {
     this.ErrorCls = ErrorCls;
     this.http.setErrorConstructor(ErrorCls);
@@ -319,9 +326,10 @@ export class FetchClient {
           const url = FetchClient.makeHttpUrl(key, endpoint, prefix, argMap);
           const headers = this.#makeAuthHeaders(option);
           const baseUrl = option?.origin;
+          const timeout = option?.timeout ?? endpoint.timeout;
           // A per-request origin override targets an arbitrary server, so the shared
           // request-query cache (keyed by the client origin) must be bypassed.
-          const requestQuery = () => this.http.get(url, { headers, baseUrl });
+          const requestQuery = () => this.http.get(url, { headers, baseUrl, timeout });
           // Only a caller that did not start the request parses a copy: the memo hands one response object to
           // every caller in the request and a parsed model can hold references into it. Nothing memoizes outside
           // a request store — the browser parses what it received.
@@ -345,6 +353,7 @@ export class FetchClient {
           const response = await this.http.send(endpoint.method ?? "POST", url, body, {
             headers: this.#makeAuthHeaders(option),
             baseUrl: option?.origin,
+            timeout: option?.timeout ?? endpoint.timeout,
           });
           const parsedReturn = parseReturn(response, { crystalize: option?.crystalize ?? true });
           return parsedReturn;
@@ -841,7 +850,15 @@ export class FetchClient {
       connect = false,
       base,
       Err,
-    }: { origin?: string; connect?: boolean; base?: FetchProxy; Err?: ErrorConstructor } = {},
+      timeout,
+    }: {
+      origin?: string;
+      connect?: boolean;
+      base?: FetchProxy;
+      Err?: ErrorConstructor;
+      /** This app's own default request budget, for calls no endpoint and no caller gave one. */
+      timeout?: number | false;
+    } = {},
   ): {
     sig: ClientSignalMap<SigType>;
     fetch: SigType["fetch"];
@@ -852,6 +869,7 @@ export class FetchClient {
     const proxy =
       shared ??
       FetchClient.#makeProxy<unknown, Record<string, SliceMeta>>(new FetchClient(origin, {}, serializedSignal, Err));
+    if (timeout !== undefined) proxy.instance.setTimeout(timeout);
     if (connect) proxy.instance.connect();
     const sig = {} as any;
     Object.entries(serializedSignal).forEach(([refName, serializedSignal]) => {

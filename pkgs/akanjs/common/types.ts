@@ -5,7 +5,11 @@ export interface FetchPolicy<Returns = unknown> {
   onError?: (error: string) => void;
   token?: string;
   partial?: string[];
-  timeout?: number;
+  /**
+   * Milliseconds before this call is abandoned, `false` to wait as long as the runtime will. Overrides the
+   * endpoint's declared `timeout`, which overrides the client's own default.
+   */
+  timeout?: number | false;
   /**
    * A `pubsub` subscription only: called after the room has been resubscribed following a dropped connection.
    *

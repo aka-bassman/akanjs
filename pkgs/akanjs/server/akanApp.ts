@@ -345,7 +345,8 @@ export class AkanApp {
     // This process already ran as the gateway, so anything that read the env before the assignment above
     // cached the prefix this gateway was about to change.
     resetEnvCache();
-    this.logger.debug(`Starting ${role} replica in this process (solo); set AKAN_SOLO=false for the gateway`);
+    // The only boot line a container with no gateway prints; every other line on this path is `verbose`.
+    this.logger.info(`Starting ${role} replica in this process (solo); set AKAN_SOLO=false for the gateway`);
     const mod = (await import(this.#serverPath)) as { server?: SoloServer; app?: SoloServer };
     const server = mod.server ?? mod.app;
     if (!server?.start) throw new Error("server.ts must export server or app with start()");

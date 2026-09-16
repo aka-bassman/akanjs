@@ -1,7 +1,7 @@
 import { Any, enumOf } from "akanjs/base";
 import { ConstantRegistry, via } from "akanjs/constant";
 
-export class AgentStop extends enumOf("agentStop", ["end", "toolUse"] as const) {}
+export class AgentStop extends enumOf("agentStop", ["end", "toolUse", "length"] as const) {}
 
 // Defined in the fetch facet because both bundles must register the scalar: the client materializes
 // `fetch.runAgentTurn` from serialized signal metadata and resolves this refName at handler build, and every

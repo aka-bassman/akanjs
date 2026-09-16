@@ -1,11 +1,18 @@
 "use client";
 import { type DragEventHandler, useRef, useState } from "react";
 import type { AgentSession, MessageAttachment } from "use-agentic";
-import { Attachment, type AttachReader, maxMessageAttachmentBytes, maxMessageAttachments } from "./attachment";
+import {
+  type AttachLimits,
+  Attachment,
+  type AttachReader,
+  maxMessageAttachmentBytes,
+  maxMessageAttachments,
+} from "./attachment";
 
 interface ChatAttachmentsSetup {
   session: AgentSession;
   attach?: AttachReader;
+  limits?: AttachLimits;
   l: (key: string, param?: Record<string, string | number>) => string;
 }
 
@@ -14,8 +21,14 @@ interface ChatAttachmentsSetup {
  * multi-file drop reads them one at a time: the cap has to see what the previous file of the same drop added, and
  * React state inside that loop is still the value the render started with.
  */
-export const useChatAttachments = ({ session, attach, l }: ChatAttachmentsSetup) => {
+export const useChatAttachments = ({ session, attach, limits = {}, l }: ChatAttachmentsSetup) => {
+  const count = limits.perMessageCount ?? maxMessageAttachments;
+  const messageBytes = limits.perMessageBytes ?? maxMessageAttachmentBytes;
   const [attached, setAttached] = useState<MessageAttachment[]>([]);
+  // How many files are being read right now. The built-in readers resolve in a tick, but `attach` is where an app
+  // uploads — so since the ceiling moved behind the reader, a large photo is seconds between the drop and the
+  // chip, with nothing on screen to say the panel took it.
+  const [pending, setPending] = useState(0);
   const [dragging, setDragging] = useState(false);
   const staged = useRef<MessageAttachment[]>([]);
   // Counted, not a boolean: dragging over a child fires leave on the parent, and one flag flickers the highlight.
@@ -32,23 +45,26 @@ export const useChatAttachments = ({ session, attach, l }: ChatAttachmentsSetup)
   /** Staged one at a time so one unreadable file names itself instead of failing the whole drop silently. */
   const add = async (files: File[]) => {
     for (const file of files) {
-      if (staged.current.length >= maxMessageAttachments) {
-        session.note(l("base.agentAttachTooMany", { count: maxMessageAttachments }));
+      if (staged.current.length >= count) {
+        session.note(l("base.agentAttachTooMany", { count }));
         return;
       }
+      setPending((waiting) => waiting + 1);
       try {
-        const read = await Attachment.read(file, attach);
+        const read = await Attachment.read(file, attach, limits);
         if (Attachment.failure(read))
           session.note(
             l(read === "tooLarge" ? "base.agentAttachTooLarge" : "base.agentAttachUnsupported", { name: file.name }),
           );
         else if (staged.current.some((one) => Attachment.same(one, read)))
           session.note(l("base.agentAttachDuplicate", { name: read.name }));
-        else if (bytes() + Attachment.bytesOf(read) > maxMessageAttachmentBytes)
+        else if (bytes() + Attachment.bytesOf(read) > messageBytes)
           session.note(l("base.agentAttachTooMuch", { name: read.name }));
         else stage([...staged.current, read]);
       } catch (error) {
         session.report(`${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        setPending((waiting) => Math.max(0, waiting - 1));
       }
     }
   };
@@ -77,8 +93,8 @@ export const useChatAttachments = ({ session, attach, l }: ChatAttachmentsSetup)
   /** Stages files taken back from a parked message, ahead of what was picked since. False, noted, when they do not fit. */
   const restore = (list: MessageAttachment[]): boolean => {
     const next = [...list, ...staged.current];
-    const overflow = Attachment.overflow(next);
-    if (overflow === "tooMany") session.note(l("base.agentAttachTooMany", { count: maxMessageAttachments }));
+    const overflow = Attachment.overflow(next, limits);
+    if (overflow === "tooMany") session.note(l("base.agentAttachTooMany", { count }));
     else if (overflow === "tooMuch") session.note(l("base.agentAttachTooMuch", { name: list[0]?.name ?? "" }));
     if (overflow) return false;
     stage(next);
@@ -86,6 +102,7 @@ export const useChatAttachments = ({ session, attach, l }: ChatAttachmentsSetup)
   };
   return {
     attached,
+    pending,
     dragging,
     dropProps,
     add,

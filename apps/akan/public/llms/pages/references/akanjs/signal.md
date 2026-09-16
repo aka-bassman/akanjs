@@ -22,7 +22,7 @@ Reports progress for a long-running MCP tool call. Reached through `AsyncLocalSt
 
 Internal argument providers for advanced endpoints. `Req` gives the Bun request, `Res` gives the mutable response context, and `Ws` gives websocket subscription state and event hooks.
 
-Middleware wraps endpoint execution. Built-ins include Logging, Cache, Timeout, and Retry, while custom middleware can read `SignalContext` and decide when to call `next()`.
+Middleware wraps endpoint execution. `Logging`, `Timeout`, and `Cache` are registered by default and each stands aside unless the endpoint declares the option it reads (`timeout`, `cache`), while custom middleware can read `SignalContext` and decide when to call `next()`.
 
 Global registry for database and service signals. App `sig.ts` files register every module signal so serialized fetch metadata, server routes, and runtime signal lookup can be built consistently.
 

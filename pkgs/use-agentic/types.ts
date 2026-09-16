@@ -131,6 +131,13 @@ export interface ToolCallResult {
  * model cannot read and says so in the transcript, because a silently dropped file is one the model then
  * hallucinates about.
  */
+/**
+ * Why an assistant turn ended. `length` is the provider's own ceiling rather than the model's choice, so the turn
+ * is incomplete — a truncated answer and a turn cut off before its tool call finished both arrive this way, and
+ * neither is distinguishable from `end` without it.
+ */
+export type TurnStop = "end" | "toolUse" | "length";
+
 export interface MessageAttachment {
   name: string;
   mimeType: string;
@@ -138,6 +145,13 @@ export interface MessageAttachment {
   data?: string;
   url?: string;
   text?: string;
+  /**
+   * Opaque to the framework, which only carries it: whatever the host needs to find this file again — a file id,
+   * a storage key. Without one a host that stores its uploads keeps a map of its own beside the transcript, keyed
+   * on name and size, which is the same guess `Attachment.same` has to make and is wrong for two crops of one
+   * export. It is not shown to the model; a tool the host publishes is what turns it back into a file.
+   */
+  ref?: string;
 }
 
 export interface ChatMessage {
@@ -171,7 +185,7 @@ export interface ContextBlock {
 export type RunnerEvent =
   | { type: "text"; delta: string }
   | { type: "toolCall"; id: string; name: string; args: Record<string, unknown> }
-  | { type: "done"; stop: "end" | "toolUse" }
+  | { type: "done"; stop: TurnStop }
   /**
    * `data` accompanies a message that is a code rather than a sentence — the values whoever resolves the code
    * interpolates into its text. A host that does not know the code shows the message as it stands.

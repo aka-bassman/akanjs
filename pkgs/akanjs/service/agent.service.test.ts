@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { AgentService } from "./agent.service";
-import { DeepseekLlm } from "./predefinedAdaptor/deepseekLlm";
 import type { LlmTurnRequest } from "./predefinedAdaptor/llm.adaptor";
+import { OpenaiDialect } from "./predefinedAdaptor/openaiDialect";
 import { ToolNames } from "./toolNames";
 
 const turn = (): LlmTurnRequest => ({
@@ -47,6 +47,18 @@ describe("AgentService.readable", () => {
     expect(message.text).toContain("no longer available");
   });
 
+  test("an attachment naming no type is noted rather than dereferenced, and the message keeps the rest", () => {
+    const request = turn();
+    request.messages[0].attachments = [
+      { name: "photo.heic", mimeType: null as unknown as string, url: "https://cdn.example/photo" },
+      { name: "notes.md", mimeType: "text/markdown", text: "# hi" },
+    ];
+    const [message] = AgentService.readable(request, { image: true, document: true }).messages;
+    expect(message.attachments?.map((one) => one.name)).toEqual(["notes.md"]);
+    expect(message.text).toContain("Attachment not read: photo.heic");
+    expect(message.text).toContain("names no type it could be read as");
+  });
+
   test("a transcript with no attachment is the same object, so the common turn allocates nothing", () => {
     const request: LlmTurnRequest = { tools: [], context: [], messages: [{ role: "user", text: "hi" }] };
     expect(AgentService.readable(request, undefined)).toBe(request);
@@ -85,6 +97,25 @@ describe("AgentService.explained", () => {
   });
 });
 
+describe("AgentService.instructed", () => {
+  const plain = (): LlmTurnRequest => ({ tools: [], context: [], messages: [] });
+
+  test("the app's own instructions follow the framework's, so the app's text is the more specific one", () => {
+    const { instructions } = AgentService.instructed({ ...plain(), instructions: "Help edit the project." });
+    expect(instructions?.startsWith(AgentService.preamble)).toBe(true);
+    expect(instructions?.endsWith("Help edit the project.")).toBe(true);
+  });
+
+  test("a turn that says nothing of its own still carries the framework's half", () => {
+    expect(AgentService.instructed(plain()).instructions).toBe(AgentService.preamble);
+  });
+
+  test("the batching instruction reaches the provider's system prompt", () => {
+    const body = OpenaiDialect.requestBody("deepseek-v4-flash", AgentService.instructed(plain()));
+    expect(body.messages[0].content).toContain("in the same turn, rather than one call per turn");
+  });
+});
+
 describe("AgentService tool names on the provider wire", () => {
   // The exact shape that failed in an app: a zone's tools are scope-prefixed, DeepSeek did not reject the illegal
   // name, and the model normalized it to the bare one — which the browser answered with `Unknown tool`.
@@ -94,14 +125,14 @@ describe("AgentService tool names on the provider wire", () => {
     tools: [{ name: "videoProjectDraft.createVideoProject", description: "Create it." }, { name: "readScreen" }],
   });
 
-  /** What `runTurn` composes, without the adaptor plumbing an instance would need. */
+  /** What `runTurn` composes around the tool names, without the adaptor plumbing an instance would need. */
   const prepared = (request: LlmTurnRequest) => {
     const names = ToolNames.of(request);
     return { names, request: names.encode(AgentService.readable(AgentService.explained(request), undefined)) };
   };
 
   test("every function name the provider is handed is one its schema accepts", () => {
-    const body = DeepseekLlm.requestBody("deepseek-chat", prepared(zoneTurn()).request);
+    const body = OpenaiDialect.requestBody("deepseek-chat", prepared(zoneTurn()).request);
     const declared = body.tools?.map((tool) => tool.function.name) ?? [];
     const called = body.messages.flatMap((message) =>
       "tool_calls" in message ? (message.tool_calls ?? []).map((call) => call.function.name) : [],

@@ -232,7 +232,7 @@ export class Subspace {
     }
     const clone = new Executor(`subspace-${this.name}`, this.#clonePath);
     await clone.spawn("git", ["fetch", "--quiet", "origin", branch]);
-    await clone.spawn("git", ["checkout", "--quiet", "-B", branch, `origin/${branch}`]);
+    await clone.spawn("git", ["checkout", "--quiet", "-f", "-B", branch, `origin/${branch}`]);
     await clone.spawn("git", ["clean", "-qfd"]);
     return clone;
   }
@@ -462,10 +462,17 @@ export class Subspace {
       "--",
       `libs/${lib}`,
     ]);
-    const files = listed
+    const candidates = listed
       .split("\0")
       .filter((file) => !!file && !this.#isSubspaceOwned(file))
       .sort();
+    //* `--cached` reads the clone's index, which the slice replaced the members without updating — so it still
+    //* names every file the workspace has deleted or moved since the last push, and opening one throws. The
+    //* index is only reconciled by the `git add -A` a push commits with, long after the stamp is written.
+    const present = await Promise.all(
+      candidates.map(async (file) => await FileSys.entryExists(path.join(this.#clonePath, file))),
+    );
+    const files = candidates.filter((_, index) => present[index]);
     const hasher = new Bun.CryptoHasher("sha256");
     for (const file of files) {
       const content = await FileSys.readText(path.join(this.#clonePath, file));

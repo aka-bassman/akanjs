@@ -7,7 +7,7 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-alpha.111 -->
+<!-- akan:agent:version 3.0.0-beta.5 -->
 
 ## Workspace
 
@@ -482,6 +482,24 @@ Full contract — credential handshake, room revalidation, socket cleanup scopin
 - **A cleanup registered with `ws.on("disconnect" | "unsubscribe", fn)` is scoped to the call that registered it**
   — a room for a `pubsub` subscribe, the socket for a `message` handler. Cleanup that must happen either way
   registers for both.
+- **A call's deadline is the endpoint's `{ timeout: <ms> }`, and there is nowhere else to put one.** It bounds
+  both ends: the `Timeout` middleware — registered by default, and standing aside for every endpoint that
+  declares none — rejects the call with `base.error.gatewayTimeout`, and the same value is serialized to the
+  client as that call's request budget. Declared nowhere, a call takes the client's own default of **30
+  seconds**, so an endpoint whose real work runs longer (provisioning, a firmware flow, an external
+  orchestration) has to declare one or it dies mid-flight with a transport error that does not say whether the
+  server ever received it. A caller overrides it per call with `fetch.x(…, { timeout })` — `false` waits as long
+  as the runtime will — and an app moves its own default with `fetch.instance.setTimeout(ms)`. An upload is
+  never bounded. **Losing the race does not cancel the work**: the handler runs to completion with nobody
+  holding its result, so a deadline is an answer to the caller, not an undo.
+- **A cached answer is the endpoint's `{ cache: <ms> }`, and only a `query` taking no internal argument may have
+  one.** The `Cache` middleware is registered by default and stands aside for every endpoint that declares
+  nothing. Internal arguments are how a call learns who is asking (`.with(Self)`), so an endpoint that has them
+  answers per caller and one shared entry would be one caller's answer handed to the next — that endpoint and
+  every `mutation` are named in the log and left uncached. Guards run on every hit; what is cached is the
+  handler's result, so `resolveReturn` still masks fields and resolves relations per call; a cache backend that
+  is down is warned about and the call runs uncached. The default chain is `Logging → Timeout → Cache → handler`,
+  and there is no `Retry` middleware.
 
 ### Authorization Defaults
 
@@ -714,7 +732,9 @@ what every developer must know even when not building one.
   every tool runs in the caller's own browser session, gated by guards and the approval card. Its guard is
   `AgentRelayAccess`, which refuses every call until the app names a guard of its own —
   `option.setAgentAccess(SignedIn)`. **The LLM is configured in `option.ts`, never through the environment**
-  (`option.setLlm({ apiKey, model, host })`).
+  (`option.setLlm({ apiKey, model, host })`). Three providers ship — `DeepseekLlm` (the default, text only),
+  `OpenaiLlm` and `AnthropicLlm` (both read images) — and swapping one in is
+  `option.applyAdaptor(LlmAdaptorRole, AnthropicLlm)`.
 - **Declare the tool beside the control that already does it**, never as a separate surface:
   `st.tool("x").desc("…").arg("id", ID).exec(fn)` returns the callable to hand to `onClick` — one handler for the
   person and the agent. Publish it only where the screen already renders the control; a falsy name declares the
@@ -743,6 +763,7 @@ what every developer must know even when not building one.
 - Put display and predicate logic on the `Light<Model>` class rather than in a util module — see Module File Playbook.
 - Defaults are a literal for scalars and a thunk for anything constructed. Arrays are `field([T])`; optional is the postfix `.optional()`.
 - **`field.visual(T)` is a field the page renders and an agent never sees** — a blur placeholder, a rendered HTML body, a serialized geometry. It stays an ordinary stored `property` (persistence, search, forms and the page response untouched) and is stripped wherever a value is masked for an AI caller: every in-page-agent read and every MCP result, along with the MCP readable schema. Unlike `hidden`/`secret` it is cost, not secrecy — nothing is refused over one. Reach for it whenever a field is bulky and useless to a model; that is cheaper than every tool learning to avoid it.
+- **A `field.hidden` / `field.secret` value reads `null` on the client, and the type still declares it.** `SignalContext.resolveReturn` skips both field types while it builds an endpoint's response, and hydration writes `null` over the key rather than leaving it absent — the first branch of the loop in `constant/getDefault.ts`, ahead of the field's own default. So the value is a deliberate `null` behind a type promising a `string`, every use of it typechecks, and the failure lands wherever it is finally dereferenced instead of where it was read. **Guard with `??` or `== null`**: `=== undefined`, a destructuring default and an optional parameter default all catch only a missing key and sail straight past this one. A projection (`pickById(id, { secret: true })`) widens the *server's* read, never the response. If a screen needs the value, the field is neither hidden nor secret; if it only needs to be cheap for a model rather than unseen, that is `field.visual`.
 
 ### Scalar & Field Type Reference
 

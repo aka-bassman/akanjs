@@ -169,6 +169,27 @@ export class FormFields {
     return !!value && typeof value === "object" && !Array.isArray(value);
   }
 
+  /**
+   * The tool that lists what a field can be set to. One name across both picker hooks on purpose: a form draws a
+   * relation picker and an upload control side by side, and a model that learned this name on one field spells it
+   * the same on the next. Two names one word apart would cost a failed call to learn.
+   */
+  static optionsToolName(refName: string, key: string): string {
+    return `load${capitalize(key)}OptionsOn${capitalize(refName)}`;
+  }
+
+  /**
+   * The database model a relation field points at, or null for anything else — a primitive, an enum, a scalar.
+   * It is the question both picker hooks ask of a field `schema` refused, and the refusal alone does not answer
+   * it: a `hidden` scalar and an undescribable one are refused too, and neither is something to pick.
+   */
+  static relationOf(field: ConstantField): string | null {
+    const modelRef = field.modelRef as unknown as Cls;
+    if (field.fieldType !== "property" || field.enum || !modelRef || PrimitiveRegistry.has(modelRef)) return null;
+    const refName = ConstantRegistry.getRefName(modelRef, { allowEmpty: true });
+    return refName && ConstantRegistry.database.has(refName) ? refName : null;
+  }
+
   /** A field no annotated control can ever name: its rows are written through `writeOn<Model>(path, value)`. */
   static isComposite(field: ConstantField) {
     return field.arrDepth > 0 || (field.modelRef as unknown) === Map || !!FormFields.#scalarModel(field);

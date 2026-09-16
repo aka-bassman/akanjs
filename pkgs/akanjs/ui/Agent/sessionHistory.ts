@@ -8,16 +8,19 @@ export type PersistOption = boolean | { storage?: "session" | "local"; key?: str
  * chunk of it, and `AgentSession` swallows a failed save — so persisting the bytes would quietly stop persisting
  * the transcript itself. The name and type stay so a restored conversation still reads as what happened, and a
  * `url` stays because a pointer is not content; the server then tells the model the content is gone rather than
- * letting it answer from the filename.
+ * letting it answer from the filename. A `ref` stays for the same reason and matters more: it is the host's own
+ * handle on the file, so dropping it leaves a restored conversation with nothing but a name and size to guess
+ * from — the guess `ref` exists to retire.
  */
 const withoutContent = (message: ChatMessage): ChatMessage =>
   message.attachments?.length
     ? {
         ...message,
-        attachments: message.attachments.map(({ name, mimeType, url }) => ({
+        attachments: message.attachments.map(({ name, mimeType, url, ref }) => ({
           name,
           mimeType,
           ...(url ? { url } : {}),
+          ...(ref ? { ref } : {}),
         })),
       }
     : message;

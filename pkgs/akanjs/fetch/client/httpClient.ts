@@ -49,6 +49,10 @@ export class HttpClient {
   setErrorConstructor(ErrorCls?: ErrorConstructor) {
     this.ErrorCls = ErrorCls;
   }
+  /** The budget every call that names none takes. `false` waits as long as the runtime will. */
+  setTimeout(timeout?: number | false) {
+    this.#timeout = timeout;
+  }
   #resolveBaseUrl(baseUrl?: string) {
     return (baseUrl ?? this.baseUrl).replace(/\/$/, "");
   }

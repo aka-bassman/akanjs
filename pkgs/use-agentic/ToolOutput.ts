@@ -44,6 +44,30 @@ export class ToolOutput {
     return `${ToolOutput.#note(json.length)}\n${json.slice(0, ToolOutput.limit)}…`;
   }
 
+  /**
+   * Within one batch, only the last report of a resource keeps its value.
+   *
+   * Every call takes its own before-and-after, so n calls that touch one resource each attach the whole of it:
+   * eight approvals ship eight copies of the list they approved from. Size is the smaller half of that — the
+   * earlier copies are **stale**. The model reads the batch as one message, and by then only the last value is
+   * still true, so the first seven are wrong answers printed directly above the right one. Dropped rather than
+   * marked, because a change entry with no value is a reason to go and read the screen again, which is the round
+   * trip the change report exists to save. What each call did is still its own `result`.
+   */
+  static deduped(results: ToolCallResult[]): ToolCallResult[] {
+    const last = new Map<string, number>();
+    results.forEach((result, at) => {
+      for (const change of result.changes ?? []) last.set(change.name, at);
+    });
+    return results.map((result, at) => {
+      if (!result.changes?.length) return result;
+      const kept = result.changes.filter((change) => last.get(change.name) === at);
+      if (kept.length === result.changes.length) return result;
+      const { changes, ...rest } = result;
+      return kept.length ? { ...rest, changes: kept } : rest;
+    });
+  }
+
   static #text(text: string): string {
     if (text.length <= ToolOutput.limit) return text;
     return `${ToolOutput.#note(text.length)}\n${text.slice(0, ToolOutput.limit)}…`;

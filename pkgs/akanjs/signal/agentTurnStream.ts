@@ -3,7 +3,7 @@ import type { AgentWireToolCall } from "akanjs/service";
 interface StreamedTurn {
   text?: string;
   toolCalls?: AgentWireToolCall[];
-  stop?: "end" | "toolUse";
+  stop?: "end" | "toolUse" | "length";
 }
 
 /**
@@ -44,7 +44,10 @@ export class AgentTurnStream {
           if (!streamed && turn.text) send({ type: "text", delta: turn.text });
           const toolCalls = turn.toolCalls ?? [];
           for (const call of toolCalls) send({ type: "toolCall", id: call.id, name: call.name, args: call.args });
-          send({ type: "done", stop: turn.stop === "toolUse" || toolCalls.length ? "toolUse" : "end" });
+          // `length` travels as itself: the browser is the only side that can tell the user an answer was cut off.
+          const stop =
+            turn.stop === "length" ? "length" : turn.stop === "toolUse" || toolCalls.length ? "toolUse" : "end";
+          send({ type: "done", stop });
         } catch (error) {
           // The status line is long gone once the stream is open, so a failure travels as the wire's error event.
           send({ type: "error", ...AgentTurnStream.failure(error) });

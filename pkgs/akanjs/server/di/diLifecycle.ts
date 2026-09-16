@@ -17,7 +17,7 @@ import { agentTurnConstant, agentTurnDocument } from "../../signal/agentTurn";
 import { Base, BaseEndpoint, BaseInternal } from "../../signal/base.signal";
 import type { Endpoint } from "../../signal/endpoint";
 import type { Internal } from "../../signal/internal";
-import { Logging, type MiddlewareCls } from "../../signal/middleware";
+import { Cache, Logging, type MiddlewareCls, Timeout } from "../../signal/middleware";
 import type { ServerSignal, ServerSignalCls } from "../../signal/serverSignal";
 import { SignalRegistry } from "../../signal/signalRegistry";
 import type { AkanLib, DatabaseModule, ScalarModule, ServiceModule } from "../akanLib";
@@ -127,6 +127,12 @@ export class DiLifecycle {
       : null;
     if (frameworkAgent) this.#service.set("agent", frameworkAgent);
     this.#middleware.set(Logging.refName, Logging);
+    // Registered rather than opt-in because it is what makes an endpoint's declared `timeout` mean anything;
+    // it stands aside for every endpoint that declared none.
+    this.#middleware.set(Timeout.refName, Timeout);
+    // Inside the deadline, so a cache backend that hangs is bounded by the same budget as the handler it stands
+    // in for. Like `Timeout`, it stands aside for every endpoint that declared no `cache`.
+    this.#middleware.set(Cache.refName, Cache);
     const defaultOption = createDefaultAkanOption();
     defaultOption.getMiddlewares().forEach((middleware) => {
       this.#middleware.set(middleware.refName, middleware);

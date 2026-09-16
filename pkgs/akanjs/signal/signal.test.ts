@@ -4,9 +4,11 @@ import { ConstantRegistry, via } from "akanjs/constant";
 import { by, type DatabaseCls, DatabaseRegistry, from, into, type ModelCls } from "akanjs/document";
 import {
   adapt,
+  CacheAdaptorRole,
   type DatabaseService,
   getDefaultInjectRegistry,
   getDefaultLiveRegistry,
+  type InjectRegistry,
   type LiveRegistry,
   type Service,
   ServiceModel,
@@ -21,7 +23,7 @@ import { type Internal, internal } from "./internal";
 import type { InternalArg } from "./internalArg";
 import { Ws } from "./internalArg";
 import { buildInternal } from "./internalInfo";
-import { middleware } from "./middleware";
+import { Cache, middleware, Timeout } from "./middleware";
 import { FetchSerializer } from "./serializer";
 import { serverSignal } from "./serverSignal";
 import { SignalContext } from "./signalContext";
@@ -238,21 +240,42 @@ const makeSignalContext = ({
   adaptor = new (adapt("signalTestContextAdaptor"))(),
   live = makeLiveRegistry(),
   middlewareMap = new Map(),
+  registry = getDefaultInjectRegistry(),
 }: {
   endpointInfo?: EndpointInfo;
   request?: Bun.BunRequest;
   adaptor?: InstanceType<ReturnType<typeof adapt>>;
   live?: LiveRegistry;
   middlewareMap?: Map<string, typeof GlobalMiddleware>;
+  registry?: InjectRegistry;
 } = {}) =>
   new SignalContext("contextKey", request, {
     endpointInfo,
     adaptor,
-    registry: getDefaultInjectRegistry(),
+    registry,
     env: {} as never,
     live,
     middleware: middlewareMap,
   });
+
+class FakeCacheAdaptor {
+  readonly store = new Map<string, string>();
+  async get<T>(topic: string, key: string) {
+    return this.store.get(`${topic}:${key}`) as T | undefined;
+  }
+  async set(topic: string, key: string, value: string | number | Buffer) {
+    this.store.set(`${topic}:${key}`, String(value));
+  }
+  async delete(topic: string, key: string) {
+    this.store.delete(`${topic}:${key}`);
+  }
+}
+
+const makeCacheRegistry = (cache: FakeCacheAdaptor) => {
+  const registry = getDefaultInjectRegistry();
+  registry.adaptor.set(CacheAdaptorRole as never, cache as never);
+  return registry;
+};
 
 describe("signal metadata builders", () => {
   test("builds endpoint metadata, paths, nullable search args, and validation errors", () => {
@@ -561,6 +584,18 @@ describe("signal serialization and registry", () => {
     });
   });
 
+  test("serializes a declared timeout so the client can size its own request budget", () => {
+    const TimedEndpoint = endpoint(ServiceModel.from(SignalTestAuxService), (builder) => ({
+      provision: builder.mutation(String, { guards: [Public], timeout: 300_000 }).exec(() => "done"),
+      ping: builder.query(String).exec(() => "pong"),
+    }));
+
+    const serialized = FetchSerializer.serializeServiceSignal(TimedEndpoint);
+
+    expect(serialized.endpoint.provision?.timeout).toBe(300_000);
+    expect(serialized.endpoint.ping).not.toHaveProperty("timeout");
+  });
+
   test("registers signals and serializes live registry", () => {
     const databaseRegistered = SignalRegistry.registerDatabase(
       "signalTestItem" as const,
@@ -830,6 +865,112 @@ describe("SignalContext execution", () => {
       "endpoint:after",
       "global:after",
     ]);
+  });
+
+  test("bounds an endpoint that declared a timeout, and stands aside for one that did not", async () => {
+    const slowExec = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return "late";
+    };
+    const boundedInfo = buildEndpoint.query(String, { guards: [Public], timeout: 5 }).exec(slowExec);
+    const unboundedInfo = buildEndpoint.query(String, { guards: [Public] }).exec(slowExec);
+    const adaptor = new (adapt("signalTestTimeoutAdaptor"))();
+    const middlewareMap = new Map([["timeout", Timeout]]) as never;
+
+    const bounded = (await SignalContext.try(adaptor, boundedInfo, "bounded", async () => {
+      const context = makeSignalContext({ endpointInfo: boundedInfo, adaptor, middlewareMap });
+      await context.init();
+      return (await context.exec()) as Response;
+    })) as Response;
+    const unboundedContext = makeSignalContext({ endpointInfo: unboundedInfo, adaptor, middlewareMap });
+    await unboundedContext.init();
+    const unbounded = (await unboundedContext.exec()) as Response;
+
+    expect(bounded.status).toBe(504);
+    expect(await bounded.json()).toMatchObject({ error: "base.error.gatewayTimeout", statusCode: 504 });
+    expect(await unbounded.json()).toBe("late");
+  });
+
+  test("clears the deadline of a call that answered in time", async () => {
+    const info = buildEndpoint.query(String, { guards: [Public], timeout: 60_000 }).exec(() => "ok");
+    const context = makeSignalContext({
+      endpointInfo: info,
+      middlewareMap: new Map([["timeout", Timeout]]) as never,
+    });
+    const originalClearTimeout = globalThis.clearTimeout;
+    let cleared = 0;
+    globalThis.clearTimeout = ((id?: number | Timer) => {
+      cleared++;
+      originalClearTimeout(id);
+    }) as typeof clearTimeout;
+
+    try {
+      await context.init();
+      expect(await ((await context.exec()) as Response).json()).toBe("ok");
+    } finally {
+      globalThis.clearTimeout = originalClearTimeout;
+    }
+    expect(cleared).toBeGreaterThan(0);
+  });
+
+  test("serves a declared cache from the entry, and still runs the guards on the hit", async () => {
+    let runs = 0;
+    let passes = 0;
+    class CountingGuard implements Guard {
+      static name = "CountingGuard";
+      static scope: GuardScope = "account";
+      canPass() {
+        passes++;
+        return true;
+      }
+    }
+    const info = buildEndpoint.query(String, { guards: [CountingGuard], cache: 60_000 }).exec(() => {
+      runs++;
+      return `run-${runs}`;
+    });
+    const cache = new FakeCacheAdaptor();
+    const call = async () => {
+      const context = makeSignalContext({
+        endpointInfo: info,
+        middlewareMap: new Map([["cache", Cache]]) as never,
+        registry: makeCacheRegistry(cache),
+      });
+      await context.init();
+      return await ((await context.exec()) as Response).json();
+    };
+
+    expect(await call()).toBe("run-1");
+    expect(await call()).toBe("run-1");
+    expect(runs).toBe(1);
+    expect(passes).toBe(2);
+  });
+
+  test("refuses a cache on a mutation and on a query that takes an internal argument", async () => {
+    let mutations = 0;
+    const mutationInfo = buildEndpoint.mutation(String, { guards: [Public], cache: 60_000 }).exec(() => {
+      mutations++;
+      return `mutation-${mutations}`;
+    });
+    const perCallerInfo = buildEndpoint
+      .query(String, { guards: [Public], cache: 60_000 })
+      .with(TestInternalArg)
+      .exec((internalValue) => internalValue);
+    const cache = new FakeCacheAdaptor();
+    const call = async (endpointInfo: EndpointInfo) => {
+      const context = makeSignalContext({
+        endpointInfo,
+        request: makeHttpRequest({ body: {} }),
+        middlewareMap: new Map([["cache", Cache]]) as never,
+        registry: makeCacheRegistry(cache),
+      });
+      await context.init();
+      return await ((await context.exec()) as Response).json();
+    };
+
+    expect(await call(mutationInfo)).toBe("mutation-1");
+    expect(await call(mutationInfo)).toBe("mutation-2");
+    expect(await call(perCallerInfo)).toBe("internal-value");
+    expect(cache.store.size).toBe(0);
   });
 
   test("reports guard and internal argument failures through HTTP responses", async () => {

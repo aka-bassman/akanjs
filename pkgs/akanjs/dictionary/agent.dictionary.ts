@@ -28,4 +28,12 @@ export const agentDictionary = serviceDictionary(["en", "ko"])
       "DeepSeek refused this turn with status {status}. Reason: {reason}",
       "DeepSeek가 이번 턴을 거절했습니다 (status {status}). 사유: {reason}",
     ],
+    openaiRequestFailed: [
+      "OpenAI refused this turn with status {status}. Reason: {reason}",
+      "OpenAI가 이번 턴을 거절했습니다 (status {status}). 사유: {reason}",
+    ],
+    anthropicRequestFailed: [
+      "Anthropic refused this turn with status {status}. Reason: {reason}",
+      "Anthropic이 이번 턴을 거절했습니다 (status {status}). 사유: {reason}",
+    ],
   });

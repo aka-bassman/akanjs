@@ -159,9 +159,16 @@ export class SignalContext<
     }
   }
   /**
+   * The endpoint's guards, for a middleware that answers a call without executing it — a cache hit skips
+   * `next()`, and `next()` is what would otherwise run them. Side-effect free, like the guards themselves.
+   */
+  async checkGuards() {
+    await this.#checkGuards();
+  }
+  /**
    * Re-checks this context's guards outside of a request, for a websocket room that is already
    * subscribed. Only global middlewares run: they carry the account resolution this depends on,
-   * while endpoint middlewares (cache/timeout/retry) would observe a call that never executes.
+   * while endpoint middlewares (cache/retry) would observe a call that never executes.
    */
   async authorize(): Promise<boolean> {
     try {

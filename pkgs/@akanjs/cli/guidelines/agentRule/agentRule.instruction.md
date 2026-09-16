@@ -48,7 +48,9 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   slots: `AgentLauncher`, `AgentBubble`, `AgentComposer`, `AgentApproval`,
   `AgentQuestion`, `AgentQueued`, `AgentMenu`, `AgentMarkdown` and `AgentCode` each replace one part in `_overrides.tsx`, and
   `akanjs/ui` exports every default beside them (`DefaultBubble`, `DefaultComposer`, …) so a skin composes the
-  one it is replacing. `AgentCode` is where a highlighter binds — the fence's language reaches it — and a
+  one it is replacing. The attachment row is exported on its own as `AgentAttachments`, because a replaced
+  `AgentBubble` that redraws it by hand forks the rule for which carrier is shown how — and then keeps whatever
+  that rule was on the day it was copied. `AgentCode` is where a highlighter binds — the fence's language reaches it — and a
   replacement for `AgentBubble` carries its own `memo`, since the transcript re-renders on every delta. Only then
   `AgentChat`, which replaces the panel whole: it also replaces the slash commands, the compaction notice and the
   approval gate, so reach for it when the *layout* differs, not when the look does.
@@ -72,9 +74,22 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   fills whichever adaptor holds `LlmAdaptorRole`, reaching it as the `llmOption` use. The settings are the role's
   rather than one provider's, so they survive a swap. **DeepSeek is the built-in default** (`deepseek-v4-flash` at
   `https://api.deepseek.com`); with no `apiKey` the app still boots and the chat answers `llmUnavailable`. Swap
-  providers the way middleware is applied: `option.applyAdaptor(LlmAdaptorRole, ClaudeLlm)`, where the
-  implementation is an `adapt()` class in a `srvkit/` implementing `LlmAdaptor.chat(request, onDelta?)` — ignore
-  `onDelta` and the chat still answers whole.
+  providers the way middleware is applied: `option.applyAdaptor(LlmAdaptorRole, AnthropicLlm)`. An app may still
+  write its own — an `adapt()` class in a `srvkit/` implementing `LlmAdaptor.chat(request, onDelta?)`, where
+  ignoring `onDelta` still answers whole — but for vision it no longer has to.
+- **Three providers ship, and only two of them read a picture.** `DeepseekLlm` is the default and declares no
+  `accepts`, which is a fact about its API rather than a gap. `OpenaiLlm` speaks the same chat-completions dialect
+  — `OpenaiDialect`, shared between them so a protocol fix lands once — against `https://api.openai.com/v1` and
+  declares `{ image: true }`, sending an image as a content part. `AnthropicLlm` is the Messages API and declares
+  `{ image: true, document: true }`; it is its own file rather than a branch, because the system prompt is a field
+  and not a message, tool calls and results are content blocks, the results ride in a *user* turn, roles must
+  alternate — so two wire turns that map to one role are merged — and `max_tokens` is required. **Both new ones
+  require `model`**: a default would age into a 404, and worse, it would decide the vision claim for the app.
+- **`accepts` is answered per model, through `option.setLlm({ accepts })`.** An adaptor answers for an API and one
+  API serves models that differ, so the override rides beside the `model` it is a fact about. It is not a table
+  the framework keeps: a table is a claim about models that ship after it, and getting this wrong is the worst
+  failure available — a provider handed bytes it cannot decode either refuses the turn or accepts it having seen
+  nothing, and the model then answers confidently about a file it never read.
 - **An adaptor answers `null` for "not configured" and *throws* for a refusal it can explain.** The two are
   different things to be told: collapsing both into `null`, the way the adapter convention otherwise reads, left a
   user reading `llmUnavailable` — "no model is configured" — about a conversation that had merely outgrown the
@@ -92,14 +107,49 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   prompt. **What the provider cannot read is replaced by a note naming the file**, never dropped: an attachment the
   model never saw is one it answers about from the filename. An adaptor declares `accepts: { image, document }` and
   `AgentService.readable` degrades the rest, so a text-only provider needs no attachment code at all — DeepSeek
-  declares none, which is why an image against the default provider is refused out loud while an extracted PDF
-  works, `text` being readable by every model there is. Persisting keeps each
-  attachment's name and drops its content: web storage is a few megabytes, one screenshot fills a chunk of it, and
-  a save that fails is silent — so keeping the bytes would quietly stop keeping the transcript.
+  declares none, which is why an image against the *default* provider is refused out loud while an extracted PDF
+  works, `text` being readable by every model there is. Swap in `OpenaiLlm` or `AnthropicLlm` and the same image
+  arrives as an image. `accepts.document` is one boolean over every non-image type, so an adaptor whose API has a
+  block for only some of them — Anthropic's `document` is PDF and nothing else — names the rest in the text rather
+  than dropping them, which is the wire's own rule applied at the one layer that knows which blocks exist. Persisting keeps each
+  attachment's name, type, address and `ref` and drops only its content: web storage is a few megabytes, one
+  screenshot fills a chunk of it, and a save that fails is silent — so keeping the bytes would quietly stop keeping
+  the transcript, while an id is the handle a restored conversation has left to find the file with.
   **The ceilings are the message's, not the file's**: 4 MB per file, 8 MB and five files per message, and the same
   file twice is refused by name. The bytes ride inside one turn's JSON, so what a provider refuses is the sum —
   and a request that cannot be sent is one the user has to empty the composer to escape, which is why the refusal
-  happens at the paperclip and names the file it dropped.
+  happens at the paperclip and names the file it dropped. All three are defaults rather than the law —
+  `<Agent.Chat attachLimits={{ perFileBytes, perMessageBytes, perMessageCount }} />` — because what one request can
+  carry belongs to the configured provider and not to the framework. The per-file one is measured on **what the
+  reader produced**, not on the file that was picked: a reader that uploads and answers a `url` has already paid
+  what the ceiling exists for, so refusing its 6 MB photo would refuse it for a cost it does not incur. Only the
+  built-in path checks the source size, and there the file itself is the carrier.
+- **An app may also build attachments itself and hand them to `session.send([{ role: "user", text, attachments }])`**,
+  which is why `MessageAttachment` is exported from `akanjs/ui` — the composer's path is typed by the `AttachReader`
+  callback, that one is not, and an object assembled with no nameable type is the one that gets a field wrong.
+  Nothing downstream trusts the result: an attachment whose `mimeType` is not a string is noted like any other
+  unreadable one, and its chip renders its name with no preview, because the host wrote the object and the declared
+  type is a claim rather than a check. A field that arrives wrong costs that attachment, never the turn.
+- **A `url` carrier is an address the *provider* fetches, and bytes beside it win.** A reader that uploads answers
+  `{ url }` when its storage is publicly reachable, and `{ data }` — or both — when it is not: an attachment
+  carrying both is read from its bytes and displayed from its address, so the chip draws a thumbnail and the model
+  still gets the picture. That precedence exists because the other order fails the one way nothing reports: the
+  default storage backend serves a path only the app can resolve, the adaptor would hand it over as written, and
+  the model answers about a picture it never saw. Send a provider-reachable URL **alone** — paired with bytes it
+  costs the provider hop whatever the bytes weigh, for a fetch the provider would have done itself.
+- **An image type the provider has no block for is refused at the adaptor, not upstream.** `accepts.image` is one
+  boolean, so `AgentService.readable` passes every `image/*` through, and the built-in composer reader base64s
+  every `image/*` as well — an `AttachReader` answering `null` means "not mine" and falls through to it, so an app
+  cannot gate one either. Both shipped vision adaptors therefore match an exact set (`jpeg`, `png`, `gif`, `webp`)
+  and name the rest in the text. It matters because an unsupported type is not one unread attachment: it is a
+  block the API refuses, so the **whole turn** dies on a vendor 400 — and `image/heic`, the iPhone camera default,
+  is the likeliest one an app meets.
+- **`MessageAttachment.ref` is the host's own handle on the file — carried, never read.** A file id, a storage key,
+  whatever turns the attachment back into something a tool can be handed. The framework only moves it: the model is
+  never shown one, and a tool the app publishes (`useFileFieldTool` below) is what spends it. Without it a host that
+  stores its uploads keeps a map beside the transcript keyed on name and size — the same guess `Attachment.same`
+  has to make, and the one that is wrong for two crops of one export. So when both sides carry a `ref`, it *is* the
+  answer to "the same file twice", and the heuristic is what is left for when they do not.
 - **Speech is one engine contract and the framework's own policy.** `<Agent.Chat voice={engine} />` takes a
   `VoiceEngine` — `listen(handlers)` and `speak(sentence)`, both cancellable — and the chat decides everything
   else: a press-to-talk microphone whose transcript lands in the composer to be corrected, one utterance per
@@ -204,7 +254,12 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   globally and a component cannot build one per render: pass the list it has — a slice's sort keys, the options a
   prop carried — and it is published and enforced the same way. Neither reaches a set that fills in *after* the
   first render, since a declaration is mount-static; put that in the tool's `guard`, which is re-read per call and
-  can name the current values in its refusal. **An argument type nothing can describe — a model class, `Any`, a
+  can name the current values in its refusal. **One array level of either is describable too** —
+  `.arg("bodies", [String])`, `.opt("modes", [TaskStatus])` — and `oneOf` then narrows the elements rather than the
+  list. It is the schema `fill<Model>Form` already builds for an array field, so the same shape reaching an agent
+  through a form and not through a component tool was an oversight: a tool that could not say "a list of these"
+  said it in prose, and the app then owned a parser for the format it invented. A second level is not describable.
+  **An argument type nothing can describe — a model class, `Any`, a
   `Map` — withdraws the whole tool and says so on the console**, naming the tool, the argument and the type; the
   callable still drives the click a person makes. It does not throw: a tool schema is built during render, and an
   agent-tooling mistake that aborted the render would cost the route its server rendering. `st.useState`'s `set`
@@ -319,6 +374,29 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   for a person too: the options arrive when the dropdown opens, and an agent never opens it. `Field.ParentId` /
   `Field.ChildrenId` need none of that — the id *is* the value, so the ordinary setter describes it. All four still
   require the setter **by reference**, and a `disabled` picker publishes nothing.
+- **An upload control reaches an agent the same way, through `useFileFieldTool`.** The clause after "picked **or
+  uploaded**" has its own hook: the control hands `read` and `label` and gets `load<Field>OptionsOn<Model>` — the
+  same name the relation picker publishes, because a form draws both side by side and a model that learned the
+  name on one field spells it the same on the next — plus the field's own `set<Field>On<Model>` taking
+  `<field>Id` / `<field>Ids`, with `add`/`sub` besides on an array field. **`read` omitted publishes nothing**: a
+  shared `Field.Img` forwards an optional prop, and a call site handing it none has no candidates and must not
+  grow a tool that refuses every id. `read` is the control's rather than the framework's because the ids are the
+  host's — a conversation carries `MessageAttachment.ref`s, and only whoever set them can turn one back into the
+  model a form field holds. akanjs draws no upload control itself, so this is the hook a lib's `Field.Img` /
+  `Field.Imgs` calls, exactly as `Field.Relation` calls the relation one.
+- **`add`/`sub` on a file field are the only way in, not the weaker way.** For every other list of ids they are a
+  convenience the framework declines to pay a tool for — `useFieldTool` publishes them for embedded rows only, and
+  the relation picker not at all, because a picker's `read` is the whole resolvable set so rewriting the array is
+  always expressible. An upload control's `read` is what *this conversation* brought, and the field may already
+  hold files that predate it: naming the array whole drops those, since the ids that would keep them are ids the
+  guard has never heard of. **`max` / `min` are passed, not derived** — `ConstantField` carries `arrDepth`, which
+  says the value is a list and not how long a legal one is — and they reach the tool's *description* as well as
+  its guard, because a limit an agent can only learn by tripping the server's `Err` is the round trip the listing
+  tool exists to spare it. Two call sites rendering one field with different caps describe one name two ways, and
+  the surface warns, which is the right answer: a field has one cap. For the same reason the unknown-id refusal
+  **names the boundary rather than the absence** on a list: an id already on the field is real, on screen, and in
+  the form the agent just read, so "no such file" reads as the form being wrong instead of the verb — it says the
+  id is not among what is *offered*, and points at `sub<Field>On<Model>`, which does cover it.
 - **An array of embedded rows also publishes `add<Field>On<Model>` and `sub<Field>On<Model>`** — append, and
   remove-by-position — beside the whole-array setter. Not new authority: the setter can already produce any array
   those two can, so they are strictly weaker. What they add is that neither can touch a row it was not given, and
@@ -449,8 +527,10 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
 - **A tool that changes the screen waits for the screen before it answers.** `router.push` returns while the RSC
   payload is still in flight and a store action that fires `void fetch.*` commits a tick later, so `navigate`
   awaits `ScreenSettle.wait()` — DOM quiescence, bounded, because the client router hands its promise to nobody —
-  and the session awaits it after every non-`query` tool before taking the change report. Without it the report
-  describes the moment before the change landed and the `readScreen` that follows reads the page the user left.
+  and the session awaits it after every tool that did not declare `settle: false` before taking the change report.
+  Without it the report describes the moment before the change landed and the `readScreen` that follows reads the
+  page the user left. The reading built-ins (`readScreen`, `readState`, `highlight`) declare it, because a wait
+  costs 120ms of quiet at the very least and they change nothing a resource holds.
   New tools and state from a fresh route are still only listed from the next turn: the catalogue is snapshotted
   when the turn starts.
 - **A tool that waits for its own work costs no model turns; one that returns early costs one round trip per
@@ -481,6 +561,13 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   one costs nothing, while two buttons reading "Save" are not the same control. **Nothing hidden ever resolves** —
   a ring nobody can see reads as a broken tool, not as a miss. A section named by a heading is read to the next
   heading of its level or higher.
+- **An image is always named, and its address rides only when asked for.** `readScreen` prints `[image: <alt>]`,
+  and `[image]` for one with no `alt` — dropping the unlabelled one left a card that renders a picture reading
+  exactly like a card that renders nothing, and "this page shows no image" is the one answer the screen cannot
+  support. `readScreen({ images: true })` appends `(<src>)` to each, for handing one to a tool that takes a
+  picture; it is off by default because a gallery is one long URL per thumbnail, which is the read's whole budget
+  spent on the part of the screen it can say the least about. A `data:` URL is never printed — that is the bytes
+  themselves rather than somewhere to fetch them.
 - **A screen is only aimable if its names are printed.** `readScreen` writes `(#anchor)` beside a heading that
   opens an id'd or scoped container, and a truncated read ends with the headings below the cut — otherwise
   everything past the 8000-character limit is unreachable, because nothing names it, and an agent asked to point
@@ -517,6 +604,24 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   a no-op when nobody is rendering it. The chat shows it on that call's row until the row resolves. It is the
   browser twin of `McpProgress.report`. Import it and `AgentAbort` from `akanjs/store`: an app may not reach
   `use-agentic` directly (`no-import-external-library`), and those two are the channels a long tool body needs.
+- **One turn carries every call the model made in it, and they run in order.** An assistant turn may hold any
+  number of tool calls; the session executes them one at a time, in the order they arrived, and posts them back as
+  one `tool` message. A batch therefore costs **one** model round trip, where the same calls chained one per turn
+  cost a round trip *and* a resend of the whole transcript each — and then meet the turn cap halfway through. The
+  framework asks for the batch in its own half of the system prompt (`AgentService.preamble`); what an app adds is
+  a tool that does the whole job in one call, so there are fewer calls to batch in the first place. Two agents'
+  calls still take turns page-wide — see Zones.
+- **A chain of ten calls is usually a model checking its own work, not ten things to do.** Measured against the
+  provider, the batch itself lands in one turn; what follows it is `readScreen → readState → readScreen`, one read
+  per turn, confirming a write whose change report already said the same thing. The preamble tells the model not
+  to, which is worth a turn and a half on a plain "approve what is pending". So a tool that returns *what
+  changed* pays for itself twice — once as the answer, once as the reads it stops. The read a fresh route needs
+  after `navigate` is acquisition rather than confirmation and is unaffected.
+- **A batch reports each changed resource once, at the end.** Every call takes its own before-and-after, so eight
+  approvals would each attach the whole list they approved from — and by the time the model reads the message,
+  only the last copy is still true. The superseded ones are dropped (`ToolOutput.deduped`), so a resource several
+  calls touched appears once, as it finally stands, on the last result that touched it. What each call did is
+  still its own `result`; do not compensate by returning the collection from every write.
 - **The turn cap is a question, not a dead end.** At `maxTurns` the session asks whether to keep going through the
   same card `askUser` uses, and the answer rides as the user's own turn — so a steer typed instead of the
   keep-going choice reaches the model as guidance. A host that renders no `pendingQuestion` passes no

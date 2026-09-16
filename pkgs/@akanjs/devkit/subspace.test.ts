@@ -202,6 +202,21 @@ describe("Subspace push", () => {
     expect(manifest.akan.source.hash).toMatch(/^[0-9a-f]{32}$/);
   });
 
+  test("ships a library file the workspace deleted, instead of reading it off the clone's stale index", async () => {
+    const { wsRoot, bareRoot, workRoot, subspace } = await makeMirror("moved-served", "moved-private", "moved-kit");
+    expect((await subspace.push("develop", { verify: false })).outcome).toBe("pushed");
+
+    await rm(path.join(wsRoot, "libs/moved-kit/common/helper.ts"));
+    await write(path.join(wsRoot, "libs/moved-kit/common/renamed.ts"), "export const helper = 1;\n");
+    await git(wsRoot, ["add", "-A"]);
+    await git(wsRoot, ["commit", "--quiet", "-m", "move the helper"]);
+
+    expect((await subspace.push("develop", { verify: false })).outcome).toBe("pushed");
+    const subspaceRoot = await cloneSubspace(workRoot, bareRoot, "moved-check");
+    expect(await FileSys.fileExists(path.join(subspaceRoot, "libs/moved-kit/common/helper.ts"))).toBe(false);
+    expect(await FileSys.fileExists(path.join(subspaceRoot, "libs/moved-kit/common/renamed.ts"))).toBe(true);
+  });
+
   test("is idempotent — a second push with no workspace change is skipped", async () => {
     const { subspace } = await makeMirror("idem-served", "idem-private", "idem-kit");
     expect((await subspace.push("develop", { verify: false })).outcome).toBe("pushed");

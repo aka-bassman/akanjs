@@ -24,7 +24,7 @@ import {
 import { createOverridable } from "../UiOverride";
 import Approval from "./Approval";
 import { agentSessionOf } from "./agentSessionOf";
-import type { AttachReader } from "./attachment";
+import type { AttachLimits, AttachReader } from "./attachment";
 import Bubble from "./Bubble";
 import { type ChatCommand, ChatCommands } from "./ChatCommands";
 import { Composer } from "./Composer";
@@ -109,8 +109,20 @@ export interface ChatProps {
    * (images as bytes, text as text). This is where an app puts what needs a parser — a PDF's text, a spreadsheet's
    * cells — since the framework carries attachments but depends on nothing that can extract one. It runs before
    * the built-in, so it can also replace how an image is prepared.
+   *
+   * **A `url` is handed to the provider as the address it will fetch**, so answer `data` whenever the provider
+   * cannot reach it — the default storage backend serves a path only this app can resolve, and a model handed one
+   * answers about a picture it never saw with nothing anywhere reporting a failure. Answering **both** is the
+   * shape for that case: bytes are what the provider is given, and the address is what the chip draws, so an
+   * uploading reader gets a thumbnail without betting the answer on who can reach its storage.
    */
   attach?: AttachReader;
+  /**
+   * Raises or lowers what the composer accepts — per file, per message, and how many. The defaults are what one
+   * turn's JSON safely carries to a conservative provider; an app pointed at a larger request limit, or one whose
+   * `attach` uploads and answers a `url`, has no reason to inherit them.
+   */
+  attachLimits?: AttachLimits;
   /**
    * Speech in and out. The engine listens and speaks; this component decides when — a press-to-talk microphone
    * whose transcript lands in the composer for the user to correct, and a reply read aloud **only when the ask
@@ -171,6 +183,7 @@ export const DefaultChat = ({
   chrome = true,
   defaultDraft,
   attach,
+  attachLimits,
   voice,
 }: ChatProps) => {
   const { l } = usePage();
@@ -206,7 +219,7 @@ export const DefaultChat = ({
     onOpenChange?.(next);
   };
   const [draft, setDraft] = useState(defaultDraft ?? "");
-  const files = useChatAttachments({ session, attach, l });
+  const files = useChatAttachments({ session, attach, limits: attachLimits, l });
   const speech = useChatVoice({
     session,
     engine: voice,
@@ -216,7 +229,7 @@ export const DefaultChat = ({
   });
   const recall = useDraftRecall(session.messages);
   // `dispatch` is declared below and only ever called from the flush effect, after this render has finished.
-  const queue = useChatQueue({ session, version, l, onFlush: (message) => dispatch(message) });
+  const queue = useChatQueue({ session, limits: attachLimits, version, l, onFlush: (message) => dispatch(message) });
   const [hotkey, setHotkey] = useState<{ label: string; keys: string } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -512,6 +525,7 @@ export const DefaultChat = ({
       <Menu onPick={(row) => row.pick()} rows={menu.rows} selected={menu.selected} />
       <Composer
         attached={files.attached}
+        pending={files.pending}
         draft={draft}
         inputRef={inputRef}
         {...(speech.canListen ? { mic: { listening: speech.listening, onToggle: speech.toggle } } : {})}
