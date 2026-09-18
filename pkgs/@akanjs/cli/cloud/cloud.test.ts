@@ -231,6 +231,56 @@ describe("CloudRunner", () => {
       recorder,
     );
 
+  const createSlicedEnvWorkspace = (root: string, recorder = createCallRecorder()) =>
+    createFakeExecutor(
+      "workspace",
+      {
+        workspaceRoot: root,
+        getExecs: async () => [["demo", "other"], ["kit", "unused"], []],
+        readdir: async (dirPath: string) =>
+          ["apps/demo/env", "apps/other/env", "libs/kit/env", "libs/unused/env"].includes(dirPath)
+            ? ["env.server.local.ts"]
+            : [],
+        mkdir: async (...args: unknown[]) => recorder.record("workspace.mkdir", ...args),
+        remove: async (...args: unknown[]) => recorder.record("workspace.remove", ...args),
+        exists: async (filePath: string) => existsSync(path.join(root, filePath)),
+        readFile: async (filePath: string) => readFile(path.join(root, filePath), "utf8"),
+        writeFile: async (filePath: string, content: string) => writeText(path.join(root, filePath), content),
+      },
+      recorder,
+    );
+
+  test("archives one subspace's slice while the managed .gitignore block still names every app", async () => {
+    const { root } = await makeCliTempWorkspace();
+    await writeText(`${root}/apps/demo/secrets/token.json`, "{}");
+    await writeText(`${root}/apps/other/secrets/other.json`, "{}");
+    stubAppConfigs({ demo: ["secrets/**/*"], other: ["secrets/**/*"] });
+    const recorder = createCallRecorder();
+    const workspace = createSlicedEnvWorkspace(root, recorder);
+
+    try {
+      const result = await new CloudRunner().gatherEnvFiles(workspace as never, {
+        scope: { apps: ["demo"], libs: ["kit"] },
+        archivePath: "local/env.acme.tar",
+      });
+
+      const expectedFiles = [
+        "apps/demo/env/env.server.local.ts",
+        "apps/demo/secrets/token.json",
+        "libs/kit/env/env.server.local.ts",
+      ];
+      expect(result).toEqual({ files: expectedFiles, path: "local/env.acme.tar" });
+      const tarCall = recorder.calls.find((call) => call.name === "workspace.spawn");
+      expect(tarCall?.args).toEqual(["tar", ["-cf", "local/env.acme.tar", ...expectedFiles], { cwd: root }]);
+      // The slice never narrows the workspace's own .gitignore: the other app's secrets stay ignored.
+      const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
+      expect(gitignore).toContain("apps/demo/secrets/**/*");
+      expect(gitignore).toContain("apps/other/secrets/**/*");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("archives custom secret files resolved from app config globs alongside default env files", async () => {
     const { root } = await makeCliTempWorkspace();
     await writeText(`${root}/apps/demo/secrets/token.json`, "{}");

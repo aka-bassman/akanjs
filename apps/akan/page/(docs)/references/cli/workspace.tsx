@@ -121,15 +121,15 @@ akan lint-all --fix false`,
     },
     {
       name: "subspace",
-      signature: "akan subspace <status|status-all|diff|push|push-all|pull> [name] [--format <text|json>]",
-      desc: "Mirror apps and libraries between this workspace and the customer repos (subspaces) it serves, declared in `akan.subspace.ts` at the workspace root.\nThe branch is the unit of uniformity: whichever branch the workspace is on is the branch every subspace receives, so one branch holds one akanjs version and one copy of the library source everywhere. Only the branches `akan.subspace.ts` lists are pushable.\nPush is a squashed snapshot of the workspace's git-tracked files, so a subspace's history never carries the workspace's and one customer's commit messages never reach another's repo. The root manifest is rebuilt from the apps that subspace actually serves, keeping the workspace's exact version specs, so no other customer's dependency tree is installed there. Libraries are push-only: pull applies the subspace's app commits and reports its library edits as a patch instead, because the workspace is the one copy every other subspace is pushed from.\nPull compares the subspace against the last push it received — located by the `akan.subspace.json` only a push writes — rather than against the workspace, so the diff is exactly the customer's own work however far the workspace has moved on. It lands uncommitted in the working tree for a person to review.\nEnvironment values under `env/` are subspace-owned in both directions and are never overwritten or pulled.",
+      signature: "akan subspace <status|status-all|diff|push|push-all|pull|upload-env> [name] [--format <text|json>]",
+      desc: "Mirror apps and libraries between this workspace and the customer repos (subspaces) it serves, declared in `akan.subspace.ts` at the workspace root.\nThe branch is the unit of uniformity: whichever branch the workspace is on is the branch every subspace receives, so one branch holds one akanjs version and one copy of the library source everywhere. Only the branches `akan.subspace.ts` lists are pushable.\nPush is a squashed snapshot of the workspace's git-tracked files, so a subspace's history never carries the workspace's and one customer's commit messages never reach another's repo. The root manifest is rebuilt from the apps that subspace actually serves, keeping the workspace's exact version specs, so no other customer's dependency tree is installed there. Libraries are push-only: pull applies the subspace's app commits and reports its library edits as a patch instead, because the workspace is the one copy every other subspace is pushed from.\nPull compares the subspace against the last push it received — located by the `akan.subspace.json` only a push writes — rather than against the workspace, so the diff is exactly the customer's own work however far the workspace has moved on. It lands uncommitted in the working tree for a person to review.\nEnvironment values under `env/` are subspace-owned: push never overwrites them and pull never takes them. `upload-env` is the one deliberate exception and it does not touch the subspace's git repo at all — it archives this workspace's env values for that subspace's slice (its apps and the libraries their closure pulls in, plus those apps' `secrets` globs) and uploads them to the cloud workspace the subspace declares as `workspaceId`, where its own `akan download-env` reads them. The archive is replaced whole, so the command asks before it runs and refuses a subspace that declares no `workspaceId`, or one that declares this workspace's own id.",
       args: [
         {
           name: "action",
           type: "String",
           required: "no",
           defaultValue: "status",
-          desc: "status, status-all, diff, push, push-all, or pull. status and push ask which subspaces to act on when no name is given; the -all forms take every declared subspace and accept no name.",
+          desc: "status, status-all, diff, push, push-all, pull, or upload-env. status and push ask which subspaces to act on when no name is given; the -all forms take every declared subspace and accept no name. upload-env takes one subspace, like diff and pull.",
         },
         {
           name: "name",
@@ -166,6 +166,20 @@ akan lint-all --fix false`,
           defaultValue: "-",
           desc: "diff only: limit the comparison to one path.",
         },
+        {
+          name: "--host",
+          type: "String",
+          required: "no",
+          defaultValue: "akan cloud",
+          desc: "upload-env only: the cloud host to upload to.",
+        },
+        {
+          name: "-F, --force",
+          type: "Boolean",
+          required: "no",
+          defaultValue: "false",
+          desc: "upload-env only: replace the subspace's env archive without asking. Required outside a terminal, where the command refuses rather than assuming yes. (-f is --format and -y is --verify.)",
+        },
       ],
       examples: `akan subspace status
 akan subspace status-all
@@ -174,7 +188,9 @@ akan subspace push
 akan subspace push acme
 akan subspace push-all
 akan subspace pull acme
-akan subspace pull acme --adopt-libs`,
+akan subspace pull acme --adopt-libs
+akan subspace upload-env acme
+akan subspace upload-env acme --force`,
     },
   ];
 

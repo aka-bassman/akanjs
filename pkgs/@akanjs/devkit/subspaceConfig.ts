@@ -37,6 +37,7 @@ export class SubspaceConfig {
   #assertValid() {
     const seenNames = new Set<string>();
     const appOwners = new Map<string, string>();
+    const idOwners = new Map<string, string>();
     for (const subspace of this.subspaces) {
       if (!subspace.name || !subspace.repo)
         throw new Error(`${SubspaceConfig.fileName}: every subspace needs a name and a repo`);
@@ -55,6 +56,15 @@ export class SubspaceConfig {
           );
         appOwners.set(app, subspace.name);
       }
+      if (!subspace.workspaceId) continue;
+      const idOwner = idOwners.get(subspace.workspaceId);
+      //* An env upload replaces the cloud workspace's archive whole, so two subspaces sharing one would
+      //* each overwrite the other's values.
+      if (idOwner)
+        throw new Error(
+          `${SubspaceConfig.fileName}: subspaces "${idOwner}" and "${subspace.name}" declare the same workspaceId`,
+        );
+      idOwners.set(subspace.workspaceId, subspace.name);
     }
   }
 

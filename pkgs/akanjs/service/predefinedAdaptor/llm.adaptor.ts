@@ -29,6 +29,22 @@ export interface AgentWireAttachment {
 }
 
 /**
+ * Data the caller pointed at while writing one message, rather than a file they attached. `value` is a snapshot
+ * taken when the message was sent and already masked by the host — the server has no model class to mask it with,
+ * so what the browser staged is what leaves. `refName`/`refId`/`path` are the way back to the current value, which
+ * is why they travel even when the value itself does not.
+ */
+export interface AgentWireReference {
+  refName: string;
+  refId: string;
+  label: string;
+  path?: string;
+  value?: unknown;
+  /** Read by the model in place of a value there is none of — clipped, unreadable, or gone from a restored chat. */
+  note?: string;
+}
+
+/**
  * One transcript message of the in-page agent wire (`use-agentic`'s WIRE.md), typed at both ends independently —
  * the wire is the contract, so the server never imports the client package.
  */
@@ -36,6 +52,7 @@ export interface AgentWireMessage {
   role: "user" | "assistant" | "tool";
   text?: string;
   attachments?: AgentWireAttachment[];
+  references?: AgentWireReference[];
   toolCalls?: AgentWireToolCall[];
   toolResults?: AgentWireToolResult[];
   error?: string;

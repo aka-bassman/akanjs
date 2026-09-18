@@ -55,6 +55,17 @@ export interface SubspacePushResult {
   prunedDependencies?: string[];
 }
 
+export interface SubspaceEnvUploadResult {
+  name: string;
+  /** The cloud workspace whose env archive was replaced: the subspace's own, never this workspace's. */
+  workspaceId: string;
+  host: string;
+  outcome: "uploaded" | "cancelled";
+  apps: string[];
+  libs: string[];
+  files: string[];
+}
+
 export interface SubspacePullResult {
   name: string;
   applied: string[];
@@ -99,6 +110,9 @@ export class Subspace {
   }
   get apps() {
     return this.#declaration.apps;
+  }
+  get workspaceId() {
+    return this.#declaration.workspaceId;
   }
   get #remote() {
     return `subspace-${this.#declaration.name}`;
@@ -696,6 +710,25 @@ export function formatSubspacePullResult(result: SubspacePullResult) {
     ...(result.ignored.length
       ? ["", `Ignored (workspace-owned or subspace-owned): ${result.ignored.length} file(s)`]
       : []),
+  ];
+  return sections.join("\n");
+}
+
+export function formatSubspaceEnvUpload(result: SubspaceEnvUploadResult) {
+  const sections = [
+    `Akan Subspace Env Upload — ${result.name}`,
+    `cloud workspace: ${result.workspaceId} · host: ${result.host}`,
+    "",
+    ...(result.outcome === "cancelled"
+      ? ["  cancelled — the subspace's env archive is untouched."]
+      : [
+          `Uploaded (${result.files.length}), replacing that workspace's whole archive:`,
+          "",
+          ...result.files.map((file) => `  ${file}`),
+          "",
+          `  apps: ${result.apps.join(", ")}`,
+          `  libs: ${result.libs.join(", ") || "(none)"}`,
+        ]),
   ];
   return sections.join("\n");
 }

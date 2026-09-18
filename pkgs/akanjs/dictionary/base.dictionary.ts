@@ -81,6 +81,11 @@ export const baseDictionary = serviceDictionary(["en", "ko"])
     agentAttach: ["Attach a file", "파일 첨부"],
     agentAttachRemove: ["Remove attachment", "첨부 제거"],
     agentAttachReading: ["Reading…", "읽는 중…"],
+    agentReferenceRemove: ["Remove reference", "참조 제거"],
+    agentReferenceFailed: [
+      "{label} could not be read, so the agent has only its name.",
+      "{label}을(를) 읽지 못해 이름만 전달됩니다.",
+    ],
     agentAttachTooLarge: ["{name} is too large to attach.", "{name}은(는) 용량이 너무 커서 첨부할 수 없습니다."],
     agentAttachUnsupported: ["{name} cannot be attached here.", "{name}은(는) 여기에 첨부할 수 없습니다."],
     agentAttachDuplicate: ["{name} is already attached.", "{name}은(는) 이미 첨부되어 있습니다."],

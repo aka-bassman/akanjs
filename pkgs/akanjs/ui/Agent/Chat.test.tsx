@@ -1457,3 +1457,232 @@ describe("Agent.Chat", () => {
     unmount();
   });
 });
+
+describe("Agent chat references", () => {
+  const cut = (value: unknown, path = "cutFrames.2.content") => ({
+    refName: "videoCut",
+    refId: "6a1f",
+    label: "Cut 3 body",
+    path,
+    value,
+  });
+
+  test("pointing from elsewhere on the page writes the token into the draft and draws a chip", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    await act(async () => {
+      input.type("make ");
+      session.refer(cut("a wide shot"));
+      await untilFlushed(() => input.value().includes("mention:"));
+    });
+    expect(input.value()).toBe("make @[Cut 3 body](mention:videoCut/6a1f#cutFrames.2.content) ");
+    expect(container.innerHTML).toContain("Cut 3 body");
+    unmount();
+  });
+
+  test("the sent message carries the reference, and the slot empties behind it", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    await act(async () => {
+      session.refer(cut("a wide shot"));
+      await untilFlushed(() => input.value().includes("mention:"));
+    });
+    await act(async () => {
+      input.type(`${input.value()}make it dynamic`);
+    });
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => !session.isRunning && session.messages.length >= 2);
+    });
+    expect(session.messages[0].text).toContain("make it dynamic");
+    expect(session.messages[0].references).toEqual([cut("a wide shot")]);
+    // What was pointed at belongs to the message it was pointed with, so the next turn cannot re-send it.
+    expect(session.staged).toEqual([]);
+    unmount();
+  });
+
+  test("deleting the token by hand drops the reference, because the text is what carries it", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    await act(async () => {
+      session.refer(cut("a wide shot"));
+      await untilFlushed(() => input.value().includes("mention:"));
+    });
+    expect(container.innerHTML).toContain("Cut 3 body");
+    await act(async () => {
+      input.type("just the words");
+      await untilFlushed(() => !container.innerHTML.includes("Cut 3 body"));
+    });
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => !session.isRunning && session.messages.length >= 2);
+    });
+    expect(session.messages[0].references).toBeUndefined();
+    unmount();
+  });
+
+  test("removing the chip removes the token, so the two cannot disagree", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    await act(async () => {
+      input.type("make ");
+      session.refer(cut("a wide shot"));
+      await untilFlushed(() => input.value().includes("mention:"));
+    });
+    const remove = container.querySelector<HTMLButtonElement>('button[aria-label="base.agentReferenceRemove"]');
+    if (!remove) throw new Error("expected a remove control on the chip");
+    const props = Object.keys(remove).find((name) => name.startsWith("__reactProps$")) ?? "";
+    await act(async () => {
+      (remove as unknown as Record<string, { onClick: () => void }>)[props].onClick();
+      await untilFlushed(() => !input.value().includes("mention:"));
+    });
+    expect(input.value()).toBe("make");
+    expect(session.staged).toEqual([]);
+    unmount();
+  });
+
+  test("a token pasted with no value behind it travels as a pointer that says to read it again", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    const input = composer(container);
+    await act(async () => {
+      input.type("fix @[Cut 3 body](mention:videoCut/6a1f#cutFrames.2.content) please");
+    });
+    await act(async () => {
+      input.press("Enter");
+      await untilFlushed(() => !session.isRunning && session.messages.length >= 2);
+    });
+    expect(session.messages[0].references).toEqual([
+      {
+        refName: "videoCut",
+        refId: "6a1f",
+        label: "Cut 3 body",
+        path: "cutFrames.2.content",
+        note: lib.Reference.unstagedNote,
+      },
+    ]);
+    unmount();
+  });
+});
+
+describe("Agent chat @ menu", () => {
+  const source = (resolve: (id: string) => Promise<unknown>) => ({
+    refName: "videoCharacter",
+    label: "People",
+    type: String,
+    search: async (query: string) =>
+      [{ refId: "c1", label: "Karina" }].filter((one) => one.label.toLowerCase().startsWith(query.toLowerCase())),
+    resolve,
+  });
+
+  test("typing @ offers the app's own rows and picking one writes the token and stages the value", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen reference={[source(async () => "a dancer in a red coat")]} />
+      </lib.AgentProvider>,
+    );
+    try {
+      const input = composer(container);
+      // Two acts, not one: a nested sync act inside an async one does not flush until the outer act exits, so a
+      // sleep sharing the act with the keystroke waits out the debounce against the draft as it was before it.
+      await act(async () => {
+        input.type("compare @Kar");
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      });
+      // The row is drawn under its source's own heading, which is how two sources stay told apart.
+      expect(container.innerHTML).toContain("People");
+      await act(async () => {
+        input.press("Enter");
+        await untilFlushed(() => session.staged.length > 0);
+      });
+      expect(input.value()).toBe("compare @[Karina](mention:videoCharacter/c1) ");
+      expect(session.staged[0].value).toBe("a dancer in a red coat");
+      // The trailing space closes the query, so the menu cannot reopen onto the token it just wrote.
+      expect(container.innerHTML).not.toContain("People");
+    } finally {
+      unmount();
+    }
+  });
+
+  test("a resolve that fails leaves the pointer and says so, rather than a chip that means nothing", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen reference={[source(async () => Promise.reject(new Error("gone")))]} />
+      </lib.AgentProvider>,
+    );
+    try {
+      const input = composer(container);
+      // Two acts, not one: a nested sync act inside an async one does not flush until the outer act exits, so a
+      // sleep sharing the act with the keystroke waits out the debounce against the draft as it was before it.
+      await act(async () => {
+        input.type("compare @Kar");
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      });
+      await act(async () => {
+        input.press("Enter");
+        await untilFlushed(() => session.messages.length > 0);
+      });
+      expect(input.value()).toContain("mention:videoCharacter/c1");
+      expect(session.staged).toEqual([]);
+      expect(container.innerHTML).toContain("base.agentReferenceFailed");
+    } finally {
+      unmount();
+    }
+  });
+
+  test("a chat given no sources keeps the @ key as an ordinary character", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    try {
+      const input = composer(container);
+      await act(async () => {
+        input.type("mail me @kar");
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      });
+      await act(async () => {
+        input.press("Enter");
+        await untilFlushed(() => !session.isRunning && session.messages.length >= 2);
+      });
+      expect(session.messages[0].text).toBe("mail me @kar");
+      expect(session.messages[0].references).toBeUndefined();
+    } finally {
+      unmount();
+    }
+  });
+});

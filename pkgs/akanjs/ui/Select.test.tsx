@@ -210,6 +210,31 @@ describe("Select value", () => {
     unmount();
   });
 
+  test("renders a selected value the options do not carry", async () => {
+    const { container, unmount } = await hydrate(
+      <Select<"a" | "b"> value="a" options={["b"]} onChange={() => undefined} />,
+    );
+    expect(triggerOf(container).textContent).toContain("a");
+    unmount();
+  });
+
+  test("renders a selected chip the options do not carry", async () => {
+    const { container, unmount } = await hydrate(
+      <Select<string, true> multiple value={["a"]} options={["b"]} onChange={() => undefined} />,
+    );
+    expect(triggerOf(container).textContent).toContain("a");
+    unmount();
+  });
+
+  test("shows a spinner instead of the empty placeholder while the options load", async () => {
+    const { unmount } = await hydrate(
+      <Select<"a" | null> loading value={null} options={[]} onChange={() => undefined} />,
+    );
+    expect(panelOf()?.textContent).not.toContain("base.noOptions");
+    expect(panelOf()?.querySelectorAll("svg")).toHaveLength(1);
+    unmount();
+  });
+
   test("offers the clear button only when it is nullable", async () => {
     const plain = await hydrate(field());
     expect(triggerOf(plain.container).querySelectorAll("svg")).toHaveLength(1);

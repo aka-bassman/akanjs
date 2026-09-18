@@ -5,6 +5,7 @@ import { type AgentProgressReport, AgentSession, type ChatMessage, type ToolCall
 import { createOverridable } from "../UiOverride";
 import { Chips } from "./Attach";
 import Markdown from "./Markdown";
+import { ReferenceChips } from "./Refer";
 import { tokenCount } from "./tokenCount";
 
 export interface BubbleProps {
@@ -151,6 +152,7 @@ const Content = ({ className, message, progress, results }: BubbleProps) => {
     return (
       <div className={cn("flex max-w-[85%] flex-col items-end gap-1 self-end", className)}>
         {message.attachments?.length ? <Chips attachments={message.attachments} className="justify-end" /> : null}
+        {message.references?.length ? <ReferenceChips className="justify-end" references={message.references} /> : null}
         {message.text ? (
           <p className="whitespace-pre-wrap rounded-box bg-primary/10 px-3 py-2 text-sm">{message.text}</p>
         ) : null}

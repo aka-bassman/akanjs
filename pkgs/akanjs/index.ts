@@ -305,6 +305,11 @@ export interface SubspaceDeclaration {
   repo: string;
   /** Apps this subspace serves. Libraries are never listed — they are derived from each app's closure. */
   apps: string[];
+  /**
+   * The cloud workspace this subspace deploys from — its own `AKAN_WORKSPACE_ID`, not this workspace's.
+   * `akan subspace upload-env` is the only thing that reads it.
+   */
+  workspaceId?: string;
 }
 
 /**

@@ -2,6 +2,10 @@
 // The `use-agentic` names below are re-exported because an app may not import that package directly (a barrel
 // takes no third-party import): without them a replacement cannot see the session an `Agent.Zone` handed down,
 // a custom transport cannot be typed, and a host cannot back the transcript with a store of its own.
+
+// Re-exported beside the chat it points into, so a component pointing at data imports from one place rather than
+// reaching into the store barrel for the hook and `akanjs/ui` for the chat.
+export { type AgentReferenceInput, useAgentReference } from "akanjs/store";
 export {
   AgentProvider,
   type AgentProviderProps,
@@ -13,7 +17,9 @@ export {
   type ContextBlock,
   httpRunner,
   type MessageAttachment,
+  type MessageReference,
   type PublishedTool,
+  Reference,
   type RunnerEvent,
   type RunnerRequest,
   SessionContext,
@@ -43,10 +49,15 @@ export { type CodeProps, DefaultCode, DefaultMarkdown, type MarkdownProps } from
 export { DefaultAgentMenu, type MenuProps as AgentMenuProps, type MenuRow } from "./Agent/Menu";
 export { DefaultQuestion, type QuestionProps } from "./Agent/Question";
 export { DefaultQueued, type QueuedProps } from "./Agent/Queued";
+export {
+  ReferenceChips as AgentReferences,
+  type ReferenceChipsProps as AgentReferencesProps,
+} from "./Agent/Refer";
 export type { PersistOption } from "./Agent/sessionHistory";
 export type { AgentBuiltin, BuiltinOption } from "./Agent/sessionView";
 export { tokenCount } from "./Agent/tokenCount";
 export type { QueuedMessage } from "./Agent/useChatQueue";
+export type { ReferenceCandidate, ReferenceSource } from "./Agent/useReferenceMenu";
 export type { VoiceEngine, VoiceHandlers, VoiceListener, VoiceSpeech } from "./Agent/voice";
 export { agentAttrs } from "./agentAttrs";
 export { animated } from "./animated";

@@ -16,6 +16,12 @@ interface RegistryOptions {
   tag?: string;
 }
 
+/** The apps and libraries an env archive covers, when it carries a slice of the workspace rather than all of it. */
+export interface EnvScope {
+  apps: string[];
+  libs: string[];
+}
+
 interface SelectedRemoteEnvServer {
   name: string;
   config: RemoteEnvServerConfig;
@@ -415,9 +421,14 @@ export class CloudRunner extends runner("cloud") {
     }
   }
 
-  async gatherEnvFiles(workspace: Workspace) {
+  async gatherEnvFiles(
+    workspace: Workspace,
+    { scope, archivePath = "local/env.tar" }: { scope?: EnvScope; archivePath?: string } = {},
+  ) {
     const envFilePattern = /^env\.(client|server)\.(?!(type|example)\.ts$).+\.ts$/;
-    const [appNames, libNames] = await workspace.getExecs();
+    const [workspaceAppNames, workspaceLibNames] = await workspace.getExecs();
+    const appNames = scope?.apps ?? workspaceAppNames;
+    const libNames = scope?.libs ?? workspaceLibNames;
     const envDirs = [
       ...appNames.map((appName) => `apps/${appName}/env`),
       ...libNames.map((libName) => `libs/${libName}/env`),
@@ -433,17 +444,24 @@ export class CloudRunner extends runner("cloud") {
         ),
       )
     ).flat();
-    await this.#syncSecretGitignore(workspace, appNames);
+    //* The managed block is a workspace-level file listing every app: syncing it from one slice would drop
+    //* every other app's secret patterns from it.
+    await this.#syncSecretGitignore(workspace, workspaceAppNames);
     const customSecretPaths = await this.#gatherCustomSecretFiles(workspace, appNames);
     const envFilePaths = [...new Set([...defaultEnvFilePaths, ...customSecretPaths])].sort();
     await workspace.mkdir("local");
-    await workspace.remove("local/env.tar");
-    if (envFilePaths.length === 0) throw new Error("No environment files found to archive");
-    await workspace.spawn("tar", ["-cf", "local/env.tar", ...envFilePaths], {
+    await workspace.remove(archivePath);
+    if (envFilePaths.length === 0)
+      throw new Error(
+        scope
+          ? `No environment files found to archive for ${appNames.join(", ") || "(no apps)"}`
+          : "No environment files found to archive",
+      );
+    await workspace.spawn("tar", ["-cf", archivePath, ...envFilePaths], {
       cwd: workspace.workspaceRoot,
     });
-    Logger.info(`Archived ${envFilePaths.length} environment files to local/env.tar`);
-    return { files: envFilePaths, path: "local/env.tar" };
+    Logger.info(`Archived ${envFilePaths.length} environment files to ${archivePath}`);
+    return { files: envFilePaths, path: archivePath };
   }
 
   async #gatherCustomSecretFiles(workspace: Workspace, appNames: string[]) {

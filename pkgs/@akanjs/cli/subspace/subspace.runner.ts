@@ -1,9 +1,9 @@
-import { runner, type Workspace } from "@akanjs/devkit/commandDecorators";
-import { Subspace } from "@akanjs/devkit/subspace";
+import { CommandContainer, runner, type Workspace } from "@akanjs/devkit/commandDecorators";
+import { Subspace, type SubspaceEnvUploadResult } from "@akanjs/devkit/subspace";
 import { SubspaceConfig } from "@akanjs/devkit/subspaceConfig";
 
-export type SubspaceAction = "status" | "diff" | "push" | "pull";
-type SubspacePrompts = Pick<typeof import("@inquirer/prompts"), "checkbox" | "select">;
+export type SubspaceAction = "status" | "diff" | "push" | "pull" | "upload-env";
+type SubspacePrompts = Pick<typeof import("@inquirer/prompts"), "checkbox" | "confirm" | "select">;
 
 // @inquirer is ~24MB and only the no-name form of a command ever prompts, so the stack loads on first use.
 const loadPrompts = async (): Promise<SubspacePrompts> => await import("@inquirer/prompts");
@@ -25,11 +25,14 @@ export class SubspaceRunner extends runner("subspace") {
     return { config, subspaces, branch };
   }
 
+  static #isInteractive() {
+    return process.stdin.isTTY === true && process.stdout.isTTY === true;
+  }
+
   /** The names `akan subspace <action>` acts on when none was given: asked in a terminal, refused elsewhere. */
   async selectNames(workspace: Workspace, action: SubspaceAction): Promise<string[]> {
     const config = await this.config(workspace);
-    const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
-    return await SubspaceRunner.chooseNames(config, action, { interactive });
+    return await SubspaceRunner.chooseNames(config, action, { interactive: SubspaceRunner.#isInteractive() });
   }
 
   static async chooseNames(
@@ -85,5 +88,66 @@ export class SubspaceRunner extends runner("subspace") {
     const [subspace] = subspaces;
     if (!subspace) throw new Error(`Unknown subspace "${name}"`);
     return await subspace.pull(branch, { adoptLibs });
+  }
+
+  /**
+   * This workspace's env values for one subspace's slice, sent to that subspace's own cloud workspace.
+   *
+   * The slice is the one a push ships — the declared apps and the libraries their closure pulls in — because
+   * an archive is replaced whole: uploading the workspace's other apps would hand one customer every other
+   * customer's secrets, and uploading less than the slice would leave the deployment short of a value.
+   */
+  async uploadEnv(
+    workspace: Workspace,
+    name: string,
+    { host, force }: { host: string; force?: boolean },
+  ): Promise<SubspaceEnvUploadResult> {
+    //? Not `subspaces()`: an env archive is per cloud workspace, so this is the one action with no branch.
+    const config = await this.config(workspace);
+    const [declaration] = config.select([name]);
+    if (!declaration) throw new Error(`Unknown subspace "${name}"`);
+    const subspace = new Subspace(workspace, config, declaration);
+    const { workspaceId } = subspace;
+    if (!workspaceId)
+      throw new Error(
+        `Subspace "${subspace.name}" declares no workspaceId. Add its cloud workspace id to ${SubspaceConfig.fileName}.`,
+      );
+    if (workspaceId === workspace.getWorkspaceId({ allowEmpty: true }))
+      throw new Error(
+        `Subspace "${subspace.name}" declares this workspace's own id. Uploading a slice there would replace the workspace's env archive with a subset of it.`,
+      );
+    const apps = subspace.apps;
+    //? Asked before the slice is planned, so a refusal costs nothing and a non-terminal run fails at once.
+    const asked = await SubspaceRunner.confirmEnvUpload(
+      { name: subspace.name, workspaceId, apps, force },
+      { interactive: SubspaceRunner.#isInteractive() },
+    );
+    if (!asked) return { name: subspace.name, workspaceId, host, apps, libs: [], outcome: "cancelled", files: [] };
+    const { libs } = await subspace.slice();
+    // Loaded here rather than declared as a dependency: CloudScript reaches the ai and build stacks, which
+    // every other `akan subspace` action would then pay for at import.
+    const { CloudScript } = await import("../cloud/cloud.script");
+    const { files } = await CommandContainer.get(CloudScript).uploadEnv(workspace, {
+      host,
+      workspaceId,
+      scope: { apps, libs },
+      archivePath: `local/env.${subspace.name}.tar`,
+    });
+    return { name: subspace.name, workspaceId, host, apps, libs, outcome: "uploaded", files };
+  }
+
+  static async confirmEnvUpload(
+    { name, workspaceId, apps, force }: { name: string; workspaceId: string; apps: string[]; force?: boolean },
+    { interactive, prompts }: { interactive: boolean; prompts?: SubspacePrompts },
+  ) {
+    if (force) return true;
+    const target = `subspace "${name}" (cloud workspace ${workspaceId})`;
+    if (!interactive)
+      throw new Error(`Refusing to replace the env archive of ${target} with no terminal to ask in. Pass --force.`);
+    const { confirm } = prompts ?? (await loadPrompts());
+    return await confirm({
+      message: `Replace the env archive of ${target} with this workspace's env for ${apps.join(", ")} and the libraries they pull in?`,
+      default: false,
+    });
   }
 }

@@ -172,11 +172,13 @@ export class WsClient {
             break;
         }
       } catch (error) {
-        this.logger.warn(`WebSocket message process failed ${String(error)}`);
+        const errMsg = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`WebSocket message process failed ${errMsg}`);
       }
     };
     this.#ws.onerror = (e) => {
-      this.logger.verbose(`WebSocket error ${String(e)}`);
+      const errMsg = e instanceof Error ? e.message : String(e);
+      this.logger.verbose(`WebSocket error ${errMsg}`);
     };
     this.#ws.onclose = (event) => {
       this.logger.debug(`WebSocket closed: ${event.code} ${event.reason}`);

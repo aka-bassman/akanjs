@@ -1,6 +1,7 @@
 import { script, type Workspace } from "@akanjs/devkit/commandDecorators";
 import {
   formatSubspaceDiff,
+  formatSubspaceEnvUpload,
   formatSubspacePullResult,
   formatSubspacePushResults,
   formatSubspaceStatuses,
@@ -40,6 +41,19 @@ export class SubspaceScript extends script("subspace", [SubspaceRunner]) {
     const total = result.app.files.length + result.libs.files.length;
     spinner.succeed(`${total} file(s) differ (${result.libs.files.length} in shared libraries)`);
     Logger.rawLog(format === "json" ? JSON.stringify(result, null, 2) : formatSubspaceDiff(result));
+  }
+
+  /**
+   * No spinner: the confirmation, and the device login the first upload of a session triggers, both draw
+   * over one.
+   */
+  async uploadEnv(
+    workspace: Workspace,
+    name: string,
+    { host, force, format }: { host: string; force?: boolean; format?: "text" | "json" },
+  ) {
+    const result = await this.subspaceRunner.uploadEnv(workspace, name, { host, force });
+    Logger.rawLog(format === "json" ? JSON.stringify(result, null, 2) : formatSubspaceEnvUpload(result));
   }
 
   async pull(

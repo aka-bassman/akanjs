@@ -83,7 +83,7 @@ const api = new RestClient("https://api.example.com", {
       }),
       code: `import { pathGet, pathSet } from "akanjs/common";
 
-const nickname = pathGet(user, "profile.nickname");
+const nickname = pathGet("profile.nickname", user);
 const next = pathSet(user, "profile.nickname", "Akan");`,
     },
     {

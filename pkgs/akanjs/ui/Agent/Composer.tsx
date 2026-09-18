@@ -1,18 +1,24 @@
 "use client";
 import { cn, usePage } from "akanjs/client";
 import { type KeyboardEvent, type RefObject, useEffect } from "react";
-import type { AgentSession, MessageAttachment } from "use-agentic";
+import type { AgentSession, MessageAttachment, MessageReference } from "use-agentic";
 import { Button } from "../Button";
 import { inputRecipe } from "../recipe";
 import { createOverridable, useUiRecipe } from "../UiOverride";
 import { Attach, Chips } from "./Attach";
 import { Mic } from "./Mic";
+import { ReferenceChips } from "./Refer";
 
 export interface ComposerProps {
   className?: string;
   session: AgentSession;
   draft: string;
   attached: readonly MessageAttachment[];
+  /**
+   * What the draft's `@[…](mention:…)` tokens point at. The text is what carries them, so a composer that draws no
+   * chip still sends them — the chip is how somebody sees and removes one, not how it travels.
+   */
+  references?: readonly MessageReference[];
   /** Files still being read. An `attach` that uploads takes seconds, and a panel that shows nothing looks broken. */
   pending?: number;
   /** Absent when the screen cannot listen — the same rule as publishing no tool for a control that is not drawn. */
@@ -21,6 +27,8 @@ export interface ComposerProps {
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onFiles: (files: File[]) => void;
   onRemoveFile: (idx: number) => void;
+  /** Keyed on `refName/refId#path`, not on a row index: the order is the draft's, and the draft is the truth. */
+  onRemoveReference?: (key: string) => void;
   onSend: () => void;
   onStop: () => void;
   inputRef?: RefObject<HTMLTextAreaElement | null>;
@@ -35,12 +43,14 @@ export const DefaultComposer = ({
   session,
   draft,
   attached,
+  references = [],
   pending = 0,
   mic,
   onDraft,
   onKeyDown,
   onFiles,
   onRemoveFile,
+  onRemoveReference,
   onSend,
   onStop,
   inputRef,
@@ -57,6 +67,13 @@ export const DefaultComposer = ({
   }, [draft, inputRef]);
   return (
     <div className={cn("flex flex-col gap-2 border-foreground/5 border-t p-3", className)}>
+      {references.length ? (
+        <ReferenceChips
+          onRemove={onRemoveReference}
+          references={references}
+          removeLabel={l("base.agentReferenceRemove")}
+        />
+      ) : null}
       {attached.length || pending ? (
         <Chips
           attachments={attached}

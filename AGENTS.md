@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-beta.5 -->
+<!-- akan:agent:version 3.0.0-beta.7 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 

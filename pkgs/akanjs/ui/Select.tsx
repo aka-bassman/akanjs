@@ -21,9 +21,16 @@ import { BsQuestionCircleFill } from "react-icons/bs";
 import { TiDelete } from "react-icons/ti";
 import { agentAttrs } from "./agentAttrs";
 import { Label } from "./Field/Label";
+import { Spin } from "./Loading/Spin";
 import { overlayZ, useOverlayLayerProps } from "./overlayLayer";
 import { useOverlayPosition } from "./overlayPosition";
-import { useUiOverride } from "./UiOverride";
+import { createOverridable, useUiOverride } from "./UiOverride";
+
+// Bound here rather than taken off the `Loading` namespace: that namespace pulls `Loading/ProgressBar`, which
+// imports the `akanjs/ui` barrel, and the barrel reaches `Field/index.tsx` — which imports this file's caller.
+// The cycle leaves `Field/Relation` half-initialized. `createOverridable` only looks a slot up at render, so
+// binding the same name twice resolves to the same `_overrides.tsx` entry.
+const LoadingSpin = createOverridable("LoadingSpin", Spin);
 
 interface LabelOption<T> {
   label: string | boolean | number;
@@ -59,6 +66,8 @@ export interface SelectProps<
   nullable?: boolean;
   /** Disable open and selection behavior. */
   disabled?: boolean;
+  /** The options are still being loaded: shows a spinner in place of the empty placeholder. */
+  loading?: boolean;
   /** Called when the dropdown opens. */
   onOpen?: () => void;
   /** Controlled change callback. Receives next and previous value. */
@@ -87,6 +96,7 @@ const DefaultSelect = <
   options,
   nullable,
   disabled,
+  loading,
   multiple,
   searchable,
   placeholder,
@@ -291,20 +301,21 @@ const DefaultSelect = <
         <span className="flex w-full flex-wrap items-center gap-1">
           {multiple
             ? selectedValues.map((v, index) => {
+                // Off the value, not off a matching option: the options are the caller's to load and can lag
+                // behind the value, or never carry it — dropping the chip would blank a field that holds one.
                 const optionValue = labeledOptions.find((option) => option.value === v);
-                if (!optionValue) return null;
                 return (
                   <div
                     key={index}
                     className="flex items-center gap-2 rounded-field bg-primary px-2 py-1 text-primary-foreground text-xs"
                   >
-                    {renderSelected ? renderSelected(optionValue.value) : optionValue.label}
+                    {renderSelected ? renderSelected(v) : (optionValue?.label ?? String(v))}
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         e.preventDefault();
-                        onSelect(optionValue.value);
+                        onSelect(v);
                       }}
                       className="opacity-50 duration-300 hover:opacity-100"
                     >
@@ -319,8 +330,8 @@ const DefaultSelect = <
               {(() => {
                 // Off the whole list, not the filtered one: typing a search must not blank out what is selected.
                 const optionValue = labeledOptions.find((option) => selected(option.value));
-                if (!optionValue) return null;
-                return renderSelected ? renderSelected(optionValue.value) : optionValue.label;
+                const v = selectedValues[0] as T;
+                return renderSelected ? renderSelected(v) : (optionValue?.label ?? String(v));
               })()}
             </div>
           ) : null}
@@ -440,14 +451,18 @@ const DefaultSelect = <
                   </div>
                 );
               })}
-              {searchOptions.length
-                ? null
-                : (empty ?? (
-                    <div className="flex size-full flex-col items-center justify-center gap-2 p-2 text-center text-5xl text-foreground/50">
-                      <BsQuestionCircleFill />
-                      <div className="text-sm">{l("base.noOptions")}</div>
-                    </div>
-                  ))}
+              {searchOptions.length ? null : loading ? (
+                <div className="flex size-full items-center justify-center p-4">
+                  <LoadingSpin />
+                </div>
+              ) : (
+                (empty ?? (
+                  <div className="flex size-full flex-col items-center justify-center gap-2 p-2 text-center text-5xl text-foreground/50">
+                    <BsQuestionCircleFill />
+                    <div className="text-sm">{l("base.noOptions")}</div>
+                  </div>
+                ))
+              )}
             </div>,
             portal,
           )

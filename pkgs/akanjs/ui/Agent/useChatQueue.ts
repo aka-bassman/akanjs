@@ -1,12 +1,15 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { AgentSession, MessageAttachment } from "use-agentic";
+import type { AgentSession, MessageAttachment, MessageReference } from "use-agentic";
+import { Reference } from "use-agentic";
 import { type AttachLimits, Attachment, maxMessageAttachments } from "./attachment";
 
 /** What the composer held when it was sent: the shape a turn opens with, whether now or after the running one. */
 export interface QueuedMessage {
   text: string;
   attachments: MessageAttachment[];
+  /** What the parked text's tokens pointed at. Carried so a turn that opens later still knows what they held. */
+  references: MessageReference[];
   /** The ask came from the microphone, so the reply it gets is read aloud — carried until the send that opens it. */
   byVoice: boolean;
 }
@@ -56,6 +59,14 @@ export const useChatQueue = ({ session, limits = {}, version, l, onFlush }: Chat
       put({
         text: [before?.text, message.text].filter(Boolean).join("\n"),
         attachments,
+        // Keyed by pointer rather than appended: joining two messages joins their texts, and the same field named
+        // in both is one reference whose newer value is the one that is still true.
+        references: [
+          ...message.references,
+          ...(before?.references ?? []).filter(
+            (one) => !message.references.some((fresh) => Reference.keyOf(fresh) === Reference.keyOf(one)),
+          ),
+        ],
         byVoice: !!before?.byVoice || message.byVoice,
       });
       return true;

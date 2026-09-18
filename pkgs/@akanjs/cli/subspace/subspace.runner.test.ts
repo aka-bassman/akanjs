@@ -1,5 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { rm } from "node:fs/promises";
+import path from "node:path";
 import { SubspaceConfig } from "@akanjs/devkit/subspaceConfig";
+import { makeCliTempWorkspace, writeText } from "../testHelpers";
 import { SubspaceRunner } from "./subspace.runner";
 
 const config = new SubspaceConfig({
@@ -23,12 +26,41 @@ const fakePrompts = (answer: string | string[]) => {
       calls.push({ kind: "checkbox", ...options });
       return answer;
     }) as never,
+    confirm: (async () => true) as never,
     select: (async (options: Omit<PromptCall, "kind">) => {
       calls.push({ kind: "select", ...options });
       return answer;
     }) as never,
   };
   return { prompts, calls };
+};
+
+const originalEnv = { ...process.env };
+const tempRoots: string[] = [];
+
+afterEach(async () => {
+  process.env = { ...originalEnv };
+  await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+const makeEnvUploadWorkspace = async () => {
+  const { root, workspace } = await makeCliTempWorkspace();
+  tempRoots.push(root);
+  process.env.AKAN_PUBLIC_REPO_NAME = "repo";
+  process.env.AKAN_PUBLIC_SERVE_DOMAIN = "example.com";
+  process.env.AKAN_PUBLIC_ENV = "local";
+  process.env.AKAN_WORKSPACE_ID = "workspace-project";
+  await writeText(
+    path.join(root, SubspaceConfig.fileName),
+    `export default {
+  subspaces: [
+    { name: "acme", repo: "git@github.com:acme/app.git", apps: ["acme"] },
+    { name: "globex", repo: "git@github.com:globex/app.git", apps: ["globex"], workspaceId: "workspace-project" },
+  ],
+};
+`,
+  );
+  return workspace;
 };
 
 describe("SubspaceRunner.chooseNames", () => {
@@ -74,6 +106,16 @@ describe("SubspaceRunner.chooseNames", () => {
     );
   });
 
+  test("takes one subspace for upload-env, which replaces one cloud workspace's archive", async () => {
+    const { prompts, calls } = fakePrompts("acme");
+
+    expect(await SubspaceRunner.chooseNames(config, "upload-env", { interactive: true, prompts })).toEqual(["acme"]);
+    expect(calls.map((call) => call.kind)).toEqual(["select"]);
+    await expect(SubspaceRunner.chooseNames(config, "upload-env", { interactive: false })).rejects.toThrow(
+      "one repo at a time",
+    );
+  });
+
   test("refuses an empty declaration before prompting", async () => {
     const { prompts, calls } = fakePrompts([]);
     const empty = new SubspaceConfig({ subspaces: [] });
@@ -82,5 +124,53 @@ describe("SubspaceRunner.chooseNames", () => {
       "declares no subspaces",
     );
     expect(calls).toEqual([]);
+  });
+});
+
+describe("SubspaceRunner.uploadEnv", () => {
+  test("refuses a subspace that declares no cloud workspace of its own", async () => {
+    const workspace = await makeEnvUploadWorkspace();
+
+    await expect(
+      new SubspaceRunner().uploadEnv(workspace as never, "acme", { host: "https://cloud", force: true }),
+    ).rejects.toThrow("declares no workspaceId");
+  });
+
+  test("refuses this workspace's own id, which a slice upload would empty of every other app", async () => {
+    const workspace = await makeEnvUploadWorkspace();
+
+    await expect(
+      new SubspaceRunner().uploadEnv(workspace as never, "globex", { host: "https://cloud", force: true }),
+    ).rejects.toThrow("this workspace's own id");
+  });
+});
+
+describe("SubspaceRunner.confirmEnvUpload", () => {
+  const upload = { name: "globex", workspaceId: "globex-project", apps: ["globex"] };
+
+  test("refuses to replace a customer's archive unasked when there is no terminal to ask in", async () => {
+    await expect(SubspaceRunner.confirmEnvUpload(upload, { interactive: false })).rejects.toThrow("Pass --force");
+    expect(await SubspaceRunner.confirmEnvUpload({ ...upload, force: true }, { interactive: false })).toBe(true);
+  });
+
+  test("names the subspace and its cloud workspace in the question, and defaults to no", async () => {
+    const asked: { message: string; default?: boolean }[] = [];
+    const prompts = {
+      checkbox: (async () => []) as never,
+      confirm: (async (options: { message: string; default?: boolean }) => {
+        asked.push(options);
+        return false;
+      }) as never,
+      select: (async () => "") as never,
+    };
+
+    expect(await SubspaceRunner.confirmEnvUpload(upload, { interactive: true, prompts })).toBe(false);
+    expect(asked).toEqual([
+      {
+        message:
+          'Replace the env archive of subspace "globex" (cloud workspace globex-project) with this workspace\'s env for globex and the libraries they pull in?',
+        default: false,
+      },
+    ]);
   });
 });

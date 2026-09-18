@@ -63,6 +63,28 @@ describe("Compaction.digest", () => {
     expect(digest).toContain("[failed setSeconds: refused]");
   });
 
+  test("a folded reference keeps its pointer and says the value is gone", () => {
+    const digest = Compaction.digest([
+      {
+        role: "user",
+        text: "make this more dynamic",
+        references: [
+          {
+            refName: "videoCut",
+            refId: "6a1f",
+            label: "Cut 3 body",
+            path: "cutFrames.2.content",
+            value: "a wide shot",
+          },
+        ],
+      },
+    ]);
+    // The value is the whole point of dropping it, and the pointer is the whole point of keeping the line: a model
+    // that needs the text again has a refName and an id to read it with.
+    expect(digest).toContain("[referenced videoCut/6a1f#cutFrames.2.content (Cut 3 body), value not carried");
+    expect(digest).not.toContain("a wide shot");
+  });
+
   test("an overlong digest gives way in the middle, keeping the earlier summary and where it now is", () => {
     const messages = [user("SUMMARY OF EVERYTHING"), ...Array.from({ length: 40 }, (_, at) => assistant(`m${at}`))];
     const digest = Compaction.digest(messages, 200);

@@ -111,6 +111,7 @@ export { sleep } from "./sleep";
 export { splitVersion } from "./splitVersion";
 export { getBasePathFromPathname, parseBasePaths, parseSubRouteHosts, resolveSubRouteHosts } from "./subRoute";
 export { TrustedProxy } from "./TrustedProxy";
+export { toPathSegments } from "./toPathSegments";
 export type * from "./types";
 export {
   type WebsocketAuthAckData,

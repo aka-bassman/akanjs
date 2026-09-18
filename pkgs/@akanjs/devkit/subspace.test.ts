@@ -424,6 +424,27 @@ describe("SubspaceConfig", () => {
     ).toThrow(/duplicate subspace/);
   });
 
+  test("refuses two subspaces on one cloud workspace, and takes a declaration with none", () => {
+    expect(
+      () =>
+        new SubspaceConfig({
+          subspaces: [
+            { name: "a", repo: "a.git", apps: ["one"], workspaceId: "project" },
+            { name: "b", repo: "b.git", apps: ["two"], workspaceId: "project" },
+          ],
+        }),
+    ).toThrow(/same workspaceId/);
+    expect(
+      () =>
+        new SubspaceConfig({
+          subspaces: [
+            { name: "a", repo: "a.git", apps: ["one"] },
+            { name: "b", repo: "b.git", apps: ["two"], workspaceId: "project" },
+          ],
+        }),
+    ).not.toThrow();
+  });
+
   test("defaults the pushable branches and rejects anything else", () => {
     const config = new SubspaceConfig({ subspaces: [{ name: "a", repo: "a.git", apps: ["one"] }] });
     expect(config.pushableBranches).toEqual(SubspaceConfig.defaultPushableBranches);

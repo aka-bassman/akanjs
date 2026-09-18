@@ -119,6 +119,13 @@ export interface ToolCallResult {
 }
 
 /**
+ * Why an assistant turn ended. `length` is the provider's own ceiling rather than the model's choice, so the turn
+ * is incomplete — a truncated answer and a turn cut off before its tool call finished both arrive this way, and
+ * neither is distinguishable from `end` without it.
+ */
+export type TurnStop = "end" | "toolUse" | "length";
+
+/**
  * A file the user handed the conversation rather than the screen — which is why it rides a message instead of a
  * tool, the same reason `askUser` belongs to the session and not to the surface.
  *
@@ -131,13 +138,6 @@ export interface ToolCallResult {
  * model cannot read and says so in the transcript, because a silently dropped file is one the model then
  * hallucinates about.
  */
-/**
- * Why an assistant turn ended. `length` is the provider's own ceiling rather than the model's choice, so the turn
- * is incomplete — a truncated answer and a turn cut off before its tool call finished both arrive this way, and
- * neither is distinguishable from `end` without it.
- */
-export type TurnStop = "end" | "toolUse" | "length";
-
 export interface MessageAttachment {
   name: string;
   mimeType: string;
@@ -154,11 +154,42 @@ export interface MessageAttachment {
   ref?: string;
 }
 
+/**
+ * Data the user pointed at while they were talking, rather than a file they handed over — a record, or one field
+ * of one, named in the message the way they named it. It rides a message for the same reason an attachment does:
+ * what somebody referred to while asking is part of the asking, and the turn context is rebuilt from the screen
+ * every turn, so a screen-shaped carrier forgets what was pointed at three turns ago.
+ *
+ * **`value` is a snapshot, deliberately.** It is what the data was when the user sent the message, and it is never
+ * re-read on a later turn. Re-reading would be wrong twice over: it rewrites what the person was looking at when
+ * they spoke, and the common case is an agent that then *edits* the very field it was pointed at, which would
+ * leave the reference showing the result and no record of what was being changed from. `refName`, `refId` and
+ * `path` are the way back to the current value — a tool re-reads it when the answer needs it.
+ *
+ * **`value` arrives masked, and nothing downstream can mask it again.** Masking needs the model class
+ * (`mask(model, value)`), which no wire carries, so whichever model the host names when it stages the reference is
+ * the whole of the decision about what leaves the browser.
+ */
+export interface MessageReference {
+  /** The host's own `refName`, unchanged — the vocabulary its published tools already speak. */
+  refName: string;
+  refId: string;
+  /** What the chip draws and what the token in the text spells, so the two can never disagree. */
+  label: string;
+  /** A dotted path into the document, in `pathSet`'s vocabulary. Absent means the whole of it. */
+  path?: string;
+  value?: unknown;
+  /** Read by the model in place of a value there is none of — clipped, unreadable, or gone from a restored chat. */
+  note?: string;
+}
+
 export interface ChatMessage {
   role: ChatRole;
   text?: string;
   /** Files the message carries. Content, not instructions — a backend frames them the way it frames context. */
   attachments?: MessageAttachment[];
+  /** Data the message points at. Content, framed like attachments and for the same reason. */
+  references?: MessageReference[];
   toolCalls?: ToolCallRequest[];
   toolResults?: ToolCallResult[];
   /** A failed or capped turn, recorded in the transcript rather than thrown past it. */

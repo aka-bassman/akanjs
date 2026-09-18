@@ -46,6 +46,12 @@ export class Transcript {
 
   /** An empty assistant message is a draft a reload or an abort caught before it said anything. */
   static carries(message: ChatMessage) {
-    return !!message.text || !!message.error || !!message.toolCalls?.length || !!message.attachments?.length;
+    return (
+      !!message.text ||
+      !!message.error ||
+      !!message.toolCalls?.length ||
+      !!message.attachments?.length ||
+      !!message.references?.length
+    );
   }
 }

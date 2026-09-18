@@ -4,6 +4,7 @@ import { AgenticSurface } from "./AgenticSurface";
 import { AgentProgress } from "./AgentProgress";
 import { AgentSession } from "./AgentSession";
 import { Compaction } from "./Compaction";
+import { Reference } from "./Reference";
 import { ToolOutput } from "./ToolOutput";
 import { Transcript } from "./Transcript";
 import type { AgentRunner, ChatMessage, RunnerEvent, RunnerRequest } from "./types";
@@ -1290,5 +1291,148 @@ describe("AgentSession long tools", () => {
     const answered = session.messages.flatMap((message) => message.toolResults ?? []);
     expect(session.messages.flatMap((message) => message.toolCalls ?? [])).toHaveLength(1);
     expect(answered).toEqual([{ id: "c1", name: "slow", error: Transcript.unanswered }]);
+  });
+});
+
+describe("AgentSession staged references", () => {
+  const cut = (path: string, value: unknown) => ({
+    refName: "videoCut",
+    refId: "6a1f",
+    label: `Cut ${path}`,
+    path,
+    value,
+  });
+
+  test("pointing at the same field twice replaces it rather than stacking a second chip", () => {
+    const session = new AgentSession(new AgenticSurface(), scripted([{ type: "done", stop: "end" }]).runner);
+    session.stage(cut("cutFrames.2.content", "first"));
+    session.stage(cut("cutFrames.3.content", "other"));
+    session.stage(cut("cutFrames.2.content", "second"));
+    expect(session.staged.map((one) => one.value)).toEqual(["second", "other"]);
+  });
+
+  test("unstaging is by key, so it survives a list the message text ordered differently", () => {
+    const session = new AgentSession(new AgenticSurface(), scripted([{ type: "done", stop: "end" }]).runner);
+    session.stage(cut("cutFrames.2.content", "a"));
+    session.stage(cut("cutFrames.3.content", "b"));
+    session.unstage("videoCut/6a1f#cutFrames.2.content");
+    expect(session.staged.map((one) => one.path)).toEqual(["cutFrames.3.content"]);
+    // A key nothing staged leaves the list alone rather than throwing at a composer that redrew late.
+    session.unstage("videoCut/6a1f#gone");
+    expect(session.staged.length).toBe(1);
+  });
+
+  test("a staged value is clipped on the way in, so an oversized document never enters a message", () => {
+    const session = new AgentSession(new AgenticSurface(), scripted([{ type: "done", stop: "end" }]).runner);
+    session.stage(cut("cutFrames", { frames: "x".repeat(Reference.limit * 2) }));
+    expect((session.staged[0].value as string).length).toBe(Reference.limit + 1);
+    expect(session.staged[0].note).toContain("Read a narrower part of it with a tool");
+  });
+
+  test("staging redraws the composer without saving a transcript nothing touched", async () => {
+    const saved: ChatMessage[][] = [];
+    const session = new AgentSession(new AgenticSurface(), scripted([{ type: "done", stop: "end" }]).runner, {
+      history: { load: () => null, save: (messages) => void saved.push([...messages]), clear: () => undefined },
+    });
+    const before = session.version;
+    session.stage(cut("cutFrames.2.content", "a"));
+    expect(session.version).toBeGreaterThan(before);
+    // Past the persist debounce: the version moved, so every subscriber redrew, and still nothing was written.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(saved).toEqual([]);
+  });
+
+  test("clearing the conversation takes the staged references with it", async () => {
+    const session = new AgentSession(new AgenticSurface(), scripted([{ type: "done", stop: "end" }]).runner);
+    session.stage(cut("cutFrames.2.content", "a"));
+    session.clearStaged();
+    expect(session.staged).toEqual([]);
+    session.stage(cut("cutFrames.2.content", "a"));
+    await session.reset();
+    expect(session.staged).toEqual([]);
+  });
+});
+
+describe("references on the wire", () => {
+  test("a user message carrying only a reference is not mistaken for an empty draft", () => {
+    const referenced: ChatMessage = {
+      role: "user",
+      references: [{ refName: "videoCut", refId: "6a1f", label: "Cut 3", value: "a wide shot" }],
+    };
+    expect(Transcript.carries(referenced)).toBe(true);
+    expect(Transcript.wire([referenced])).toEqual([referenced]);
+  });
+});
+
+describe("AgentSession reference insertion", () => {
+  const cut = (path: string, value: unknown) => ({
+    refName: "videoCut",
+    refId: "6a1f",
+    label: `Cut ${path}`,
+    path,
+    value,
+  });
+  const session = () => new AgentSession(new AgenticSurface(), scripted([{ type: "done", stop: "end" }]).runner);
+
+  test("the composer's own menu stages a value and asks for no token, having written one already", () => {
+    const one = session();
+    one.attachChat();
+    one.stage(cut("c.2", "a"));
+    expect(one.staged.length).toBe(1);
+    expect(one.pendingInserts).toEqual([]);
+  });
+
+  test("a card points at data and leaves the token for whichever chat holds the draft", () => {
+    const one = session();
+    one.attachChat();
+    one.refer(cut("c.2", "a"));
+    expect(one.pendingInserts.map((ref) => Reference.token(ref))).toEqual(["@[Cut c.2](mention:videoCut/6a1f#c.2)"]);
+  });
+
+  test("two chats on one session both write the token, and the second acknowledgement is a no-op", () => {
+    const one = session();
+    one.attachChat();
+    one.attachChat();
+    one.refer(cut("c.2", "a"));
+    // Both read the same state in the same commit — a destructive read would have handed it to one of them.
+    expect(one.pendingInserts.length).toBe(1);
+    const key = Reference.keyOf(one.pendingInserts[0]);
+    one.insertApplied(key);
+    expect(one.pendingInserts).toEqual([]);
+    one.insertApplied(key);
+    expect(one.pendingInserts).toEqual([]);
+  });
+
+  test("pointing with no chat mounted warns instead of staging a value no token will ever name", () => {
+    const warned: string[] = [];
+    const original = console.warn;
+    console.warn = (message: string) => void warned.push(message);
+    try {
+      const one = session();
+      one.refer(cut("c.2", "a"));
+      expect(one.pendingInserts).toEqual([]);
+      expect(warned[0]).toContain("No chat is rendering this agent session");
+      expect(warned[0]).toContain("Agent.Zone");
+    } finally {
+      console.warn = original;
+    }
+  });
+
+  test("a parked reference gives way to one pointed at since, so an edit in between is not undone", () => {
+    const one = session();
+    one.attachChat();
+    one.stage(cut("c.2", "edited since"));
+    one.restoreStaged([cut("c.2", "parked"), cut("c.9", "also parked")]);
+    expect(one.staged.find((ref) => ref.path === "c.2")?.value).toBe("edited since");
+    expect(one.staged.find((ref) => ref.path === "c.9")?.value).toBe("also parked");
+  });
+
+  test("clearing takes the unwritten tokens too, so /new does not seed the next message", () => {
+    const one = session();
+    one.attachChat();
+    one.refer(cut("c.2", "a"));
+    one.clearStaged();
+    expect(one.staged).toEqual([]);
+    expect(one.pendingInserts).toEqual([]);
   });
 });

@@ -32,6 +32,37 @@ describe("object and path helpers", () => {
     expect(pathGet("user.profile.name", null, ".", "unknown")).toBe("unknown");
   });
 
+  test("reads bracket paths, so what writeOn can write can be read back", () => {
+    const obj = { cutFrames: [{ content: "a wide shot" }, { content: "a slow pan" }] };
+
+    // `pathSet` has always taken both spellings; a read that took only one is a path an agent can write and not read.
+    expect(pathGet("cutFrames[1].content", obj)).toBe("a slow pan");
+    expect(pathGet("cutFrames.1.content", obj)).toBe("a slow pan");
+    expect(pathGet(["cutFrames", 1, "content"], obj)).toBe("a slow pan");
+  });
+
+  test("reads map entries, the way pathSet writes them", () => {
+    const obj = { prompts: new Map([["photo", { text: "a cinematic still" }]]) };
+
+    expect(pathGet("prompts.photo.text", obj)).toBe("a cinematic still");
+    expect(pathGet("prompts.missing", obj, ".", "none")).toBe("none");
+  });
+
+  test("a round trip through both spellings lands on one value", () => {
+    const obj: Record<string, unknown> = {};
+
+    pathSet(obj, "cutFrames[2].content", "a wide shot");
+    expect(pathGet("cutFrames.2.content", obj)).toBe("a wide shot");
+    pathSet(obj, "cutFrames.2.content", "a slow pan");
+    expect(pathGet("cutFrames[2].content", obj)).toBe("a slow pan");
+  });
+
+  test("a caller that named its own separator keeps the plain split", () => {
+    const obj = { "a.b": { c: 1 } };
+
+    expect(pathGet("a.b/c", obj, "/")).toBe(1);
+  });
+
   test("sets nested object and array paths in place", () => {
     const obj: Record<string, unknown> = {};
 

@@ -3,6 +3,7 @@ import { cn, usePage } from "akanjs/client";
 import { AiOutlineClose, AiOutlineEdit } from "react-icons/ai";
 import { createOverridable } from "../UiOverride";
 import { Chips } from "./Attach";
+import { ReferenceChips } from "./Refer";
 import type { QueuedMessage } from "./useChatQueue";
 
 export interface QueuedProps {
@@ -29,6 +30,7 @@ export const DefaultQueued = ({ className, message, onEdit, onCancel }: QueuedPr
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="text-[10px] text-foreground/40">{l("base.agentQueued")}</span>
         {message.attachments.length ? <Chips attachments={message.attachments} /> : null}
+        {message.references.length ? <ReferenceChips references={message.references} /> : null}
         {message.text ? (
           <p className="line-clamp-2 whitespace-pre-wrap text-foreground/70 text-sm">{message.text}</p>
         ) : null}

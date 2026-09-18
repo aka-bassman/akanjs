@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { AgentService } from "./agent.service";
+import { AnthropicLlm } from "./predefinedAdaptor/anthropicLlm";
 import type { LlmTurnRequest } from "./predefinedAdaptor/llm.adaptor";
 import { OpenaiDialect } from "./predefinedAdaptor/openaiDialect";
 import { ToolNames } from "./toolNames";
@@ -94,6 +95,136 @@ describe("AgentService.explained", () => {
   test("a transcript with nothing failed is handed on untouched", () => {
     const request = turn();
     expect(AgentService.explained(request)).toBe(request);
+  });
+});
+
+const pointed = (references: LlmTurnRequest["messages"][number]["references"]): LlmTurnRequest => ({
+  tools: [],
+  context: [],
+  messages: [{ role: "user", text: "make this more dynamic", references }],
+});
+
+describe("AgentService.referenced", () => {
+  test("a request pointing at nothing is handed back untouched", () => {
+    const request = pointed(undefined);
+    expect(AgentService.referenced(request)).toBe(request);
+  });
+
+  test("the value folds into the message text, under a heading that says it is a snapshot", () => {
+    const [message] = AgentService.referenced(
+      pointed([
+        { refName: "videoCut", refId: "6a1f", label: "Cut 3 body", path: "cutFrames.2.content", value: "a wide shot" },
+      ]),
+    ).messages;
+    expect(message.text).toContain("make this more dynamic");
+    expect(message.text).toContain("videoCut/6a1f#cutFrames.2.content (Cut 3 body):");
+    expect(message.text).toContain("a wide shot");
+    expect(message.text).toContain("not what it is now");
+    // Folded into text, which is the one field every provider mapping reads — the wire key itself does not travel.
+    expect(message.references).toBeUndefined();
+  });
+
+  test("a string value prints as itself, so the model quotes prose rather than an escaped copy of it", () => {
+    const [message] = AgentService.referenced(
+      pointed([{ refName: "videoCut", refId: "6a1f", label: "Body", path: "c.0.content", value: 'He said "go".' }]),
+    ).messages;
+    expect(message.text).toContain('He said "go".');
+    expect(message.text).not.toContain('\\"go\\"');
+  });
+
+  test("an object value prints as indented JSON", () => {
+    const [message] = AgentService.referenced(
+      pointed([{ refName: "videoCharacter", refId: "c1", label: "Karina", value: { name: "Karina", age: 24 } }]),
+    ).messages;
+    expect(message.text).toContain('"name": "Karina"');
+  });
+
+  test("the heading rides once per message however many things were pointed at", () => {
+    const [message] = AgentService.referenced(
+      pointed([
+        { refName: "videoCut", refId: "6a1f", label: "One", path: "c.0", value: "a" },
+        { refName: "videoCut", refId: "6a1f", label: "Two", path: "c.1", value: "b" },
+        { refName: "videoCut", refId: "6a1f", label: "Three", path: "c.2", value: "c" },
+      ]),
+    ).messages;
+    expect(message.text?.split("[Referenced data:").length).toBe(2);
+    expect(message.text).toContain("(One):");
+    expect(message.text).toContain("(Three):");
+  });
+
+  test("a multi-line value is fenced, so it cannot run into the next reference's heading", () => {
+    const [message] = AgentService.referenced(
+      pointed([
+        { refName: "videoCut", refId: "6a1f", label: "Cut 3", path: "c.2", value: "a wide shot\nthen a slow pan" },
+        { refName: "videoCut", refId: "6a1f", label: "Cut 4", path: "c.3", value: "close on her hands" },
+      ]),
+    ).messages;
+    expect(message.text).toContain("videoCut/6a1f#c.2 (Cut 3):\n```\na wide shot\nthen a slow pan\n```");
+    expect(message.text).toContain("videoCut/6a1f#c.3 (Cut 4):\n```\nclose on her hands\n```");
+  });
+
+  test("a value that is itself fenced gets a longer fence, rather than ending the block early", () => {
+    const [message] = AgentService.referenced(
+      pointed([{ refName: "doc", refId: "d1", label: "Body", value: "before\n```\ncode\n```\nafter" }]),
+    ).messages;
+    expect(message.text).toContain("doc/d1 (Body):\n````\nbefore\n```\ncode\n```\nafter\n````");
+  });
+
+  test("a reference with no value is named as unread rather than left for the model to infer", () => {
+    const [message] = AgentService.referenced(
+      pointed([{ refName: "videoCut", refId: "6a1f", label: "Cut 3", path: "c.2", note: "restored from storage" }]),
+    ).messages;
+    expect(message.text).toContain("videoCut/6a1f#c.2 (Cut 3): [not read: restored from storage]");
+  });
+
+  test("a value past the ceiling is cut here too, so a host that builds its own wire cannot route around it", () => {
+    const [message] = AgentService.referenced(
+      pointed([
+        { refName: "videoCut", refId: "6a1f", label: "All", value: "x".repeat(AgentService.referenceLimit * 2) },
+      ]),
+    ).messages;
+    expect(message.text?.length).toBeLessThan(AgentService.referenceLimit + 1000);
+    expect(message.text).toContain(`Clipped at ${AgentService.referenceLimit} characters.`);
+  });
+
+  test("a message that points at nothing keeps its own text while a sibling folds", () => {
+    const request: LlmTurnRequest = {
+      tools: [],
+      context: [],
+      messages: [
+        { role: "user", text: "plain ask" },
+        { role: "user", text: "pointed ask", references: [{ refName: "x", refId: "1", label: "L", value: "v" }] },
+      ],
+    };
+    const [plain, folded] = AgentService.referenced(request).messages;
+    expect(plain.text).toBe("plain ask");
+    expect(folded.text).toContain("x/1 (L):");
+  });
+});
+
+describe("a reference on the provider wire", () => {
+  const asked = (): LlmTurnRequest =>
+    AgentService.referenced(
+      pointed([
+        { refName: "videoCut", refId: "6a1f", label: "Cut 3 body", path: "cutFrames.2.content", value: "a wide shot" },
+      ]),
+    );
+
+  // Both dialects read the user turn out of `text`, which is the whole reason the fold happens in the service: a
+  // reference reaches every provider without either adaptor knowing the word, including the text-only default.
+  test("rides the OpenAI dialect's user turn, text-only provider included", () => {
+    const withImages = OpenaiDialect.requestBody("gpt-vision", asked(), { accepts: { image: true } });
+    expect(JSON.stringify(withImages.messages[1])).toContain("a wide shot");
+    const textOnly = OpenaiDialect.requestBody("deepseek-v4", asked());
+    expect(textOnly.messages[1]).toEqual({
+      role: "user",
+      content: expect.stringContaining("videoCut/6a1f#cutFrames.2.content (Cut 3 body):") as unknown as string,
+    });
+  });
+
+  test("rides the Anthropic messages body", () => {
+    const [message] = AnthropicLlm.providerMessages(asked().messages, { image: true });
+    expect(JSON.stringify(message)).toContain("a wide shot");
   });
 });
 

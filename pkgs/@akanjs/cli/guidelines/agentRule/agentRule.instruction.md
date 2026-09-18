@@ -164,6 +164,43 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   WebView, **which has neither on Android or iOS**, so a `speech.plugin.ts` declares the permission and
   the packages the native build needs. An engine answering `available()` false renders no microphone at all,
   the same rule as publishing no tool for a control the screen does not draw.
+- **Data the user points at rides the message too, as `references` — and its value is a snapshot.** A file is
+  something they handed over; a reference is something they pointed at while asking, so it belongs in the same
+  place and for the same reason. Screen context does not do this job: `ContextBlock`s are rebuilt from the screen
+  every turn, so what was named three turns ago is simply not in the conversation any more. A `MessageReference`
+  carries the host's own `refName`, the id, a label, an optional dotted `path` into the document, and the `value`
+  those resolved to. **The value is never re-read on a later turn**, which is the point: re-reading rewrites what
+  the person was looking at when they spoke, and the usual next thing the agent does is edit the very field it was
+  pointed at — leaving a live reference showing the result with no record of what it was changed from.
+  `refName`/`refId`/`path` travel so a tool can read the current value when the answer needs it, and
+  `AgentService.referenced` folds the whole lot into the message text in one place, so every provider carries a
+  reference without either adaptor knowing the word. **The value is masked on the way in and nowhere else**: masking
+  needs the model class, which no wire carries, so the model a host names when it stages the reference is the whole
+  of the decision about what leaves the browser — name the class that actually holds the field, because a `Light`
+  one usually does not. **The ceiling is 20,000 characters per reference**, applied as it is staged and again on
+  the server; a reference is bulkier than a tool result and outlives one, riding every later turn and being the last
+  thing compaction folds. Persisting keeps the pointer and drops the value with a note saying so, which is a better
+  restored state than an attachment can offer — the pointer is still live, so the answer is to read it again.
+  Staging lives on the **session** (`stage` / `staged` / `unstage(key)` / `clearStaged()`), not on the composer where
+  staged files live, because a reference comes from whichever component drew the data rather than from the paperclip;
+  `unstage` is keyed on `refName/refId#path` because what orders a message's references is its text, not that list.
+- **Two ways to point at data, and which one depends on who knows the value.** `<Agent.Chat reference={[…]} />`
+  takes one `ReferenceSource` per kind of document — `refName`, a `type`, the app's own `search`, and a `resolve` —
+  and the composer's `@` menu offers whole documents from them; the token is written the moment a row is picked and
+  the value is staged when `resolve` lands, so a slow fetch never freezes the menu and one that fails leaves a
+  pointer that reads as *go and read it*. For a field *inside* a document, the component drawing it calls
+  `useAgentReference()` — it already holds the value, so there is no round trip, and it is the only thing that
+  knows a rich-text field stored as `field(Any)` reads as a paragraph rather than as the editor document it is. The
+  hook no-ops with a warning outside a session, the same call `AgentValue.publishable` makes: a card carrying a
+  reference button must not cost a route its render.
+- **The token in the draft is what carries a reference, and the chip only draws it.** Deleting
+  `@[label](mention:refName/id#path)` by hand drops the reference exactly as removing the chip does — removing the
+  chip removes the token — so the two can never disagree, and nothing re-derives a value from text somebody edited.
+  A token pasted out of an earlier message travels as a pointer with a note, which is the same shape a restored
+  conversation produces. Staged references are the **session's**, not the composer's, because `useAgentReference`
+  is called from components the composer cannot see; writing the token is the composer's half, and `refer` warns
+  rather than staging silently when no chat is mounted on that session — the case where a card sits outside the
+  `<Agent.Zone>` its chat is inside.
 - **`attach` and `voice` both carry functions, so a server layout cannot pass either.** A closure does not cross
   the RSC boundary — `non-scalar-props-restricted` says so on `page/**` — so an app that wants either mounts the
   chat from a small client component in the app's own `ui/` that calls the hook.

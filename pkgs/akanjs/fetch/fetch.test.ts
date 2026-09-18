@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { DataList, getEnv, Int } from "akanjs/base";
-import { websocketBinaryFrameContract } from "akanjs/common";
+import { Logger, websocketBinaryFrameContract } from "akanjs/common";
 import { ConstantRegistry, via } from "akanjs/constant";
 import {
   type DatabaseSignal,
@@ -13,7 +13,7 @@ import {
 } from "akanjs/signal";
 import { FetchClient, type FetchProxy } from "./client/fetchClient";
 import { HttpClient } from "./client/httpClient";
-import type { RestoredError } from "./client/remoteError";
+import type { ErrorResponsePayload, RestoredError } from "./client/remoteError";
 import { WsClient } from "./client/wsClient";
 import type { FetchClientType, FetchTypeOfSignal, MergeAllFetchTypes, SliceMeta } from "./fetchType";
 import {
@@ -1753,43 +1753,39 @@ describe("WsClient", () => {
 
   test("restores websocket error payloads with the provided error constructor", () => {
     setFakeWebSocket();
-    const originalConsoleError = console.error;
-    const errors: unknown[] = [];
-    console.error = ((error: unknown) => {
-      errors.push(error);
-    }) as typeof console.error;
-    try {
-      const client = new WsClient("ws://example/ws", TestErr);
-      client.connect();
-      const ws = FakeWebSocket.instances[0];
-      ws.open();
+    const restored: RestoredError[] = [];
+    const ErrorCls = {
+      fromJSON: (payload: ErrorResponsePayload) => {
+        const error = TestErr.fromJSON(payload);
+        restored.push(error);
+        return error;
+      },
+    };
+    const client = new WsClient("ws://example/ws", ErrorCls);
+    client.connect();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
 
-      ws.receive({
-        error: "chatRoom.error.notMember",
-        statusCode: 403,
-        data: { chatRoomId: "room-1" },
-        timestamp: "2026-05-25T00:00:00.000Z",
-      });
+    ws.receive({
+      error: "chatRoom.error.notMember",
+      statusCode: 403,
+      data: { chatRoomId: "room-1" },
+      timestamp: "2026-05-25T00:00:00.000Z",
+    });
 
-      expect(errors[0]).toBeInstanceOf(TestErr);
-      expect(errors[0]).toMatchObject({
-        error: "chatRoom.error.notMember",
-        statusCode: 403,
-        data: { chatRoomId: "room-1" },
-        timestamp: "2026-05-25T00:00:00.000Z",
-      });
-    } finally {
-      console.error = originalConsoleError;
-    }
+    expect(restored[0]).toBeInstanceOf(TestErr);
+    expect(restored[0]).toMatchObject({
+      error: "chatRoom.error.notMember",
+      statusCode: 403,
+      data: { chatRoomId: "room-1" },
+      timestamp: "2026-05-25T00:00:00.000Z",
+    });
   });
 
-  test("keeps a restored websocket failure rethrowable when the client has no error constructor", () => {
+  test("reports a websocket failure it cannot restore by its own message", () => {
     setFakeWebSocket();
-    const originalConsoleError = console.error;
-    const errors: unknown[] = [];
-    console.error = ((error: unknown) => {
-      errors.push(error);
-    }) as typeof console.error;
+    const lines: string[] = [];
+    const removeSink = Logger.addSink((entry) => void lines.push(entry.plainMessage), { minLevel: "warn" });
     try {
       const client = new WsClient("ws://example/ws");
       client.connect();
@@ -1801,15 +1797,9 @@ describe("WsClient", () => {
         data: { chatRoomId: "room-1" },
       });
 
-      const error = errors[0] as RestoredError;
-      expect(isExceptionLike(error)).toBe(true);
-      expect(error.toJSON?.()).toEqual({
-        error: "chatRoom.error.notMember",
-        statusCode: 403,
-        data: { chatRoomId: "room-1" },
-      });
+      expect(lines.at(-1) ?? "").toContain("WebSocket message process failed chatRoom.error.notMember");
     } finally {
-      console.error = originalConsoleError;
+      removeSink();
     }
   });
 

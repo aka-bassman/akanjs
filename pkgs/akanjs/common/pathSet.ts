@@ -1,9 +1,8 @@
+import { toPathSegments } from "./toPathSegments";
+
 type MutableIndexable = Record<string | number, unknown>;
 type PathSegment = string | number;
 type Container = MutableIndexable | Map<PathSegment, unknown>;
-
-const toPathSegments = (path: string | readonly PathSegment[]) =>
-  Array.isArray(path) ? [...path] : path.toString().match(/[^.[\]]+/g) || [];
 
 // A `field(Map, …)` value holds its entries outside its own keys, so bracket access would write a stray property
 // instead of an entry — and immer would drop it when the draft is finalized.

@@ -1,3 +1,4 @@
+import { GlobalConfig } from "@akanjs/devkit/cloud";
 import { command, Workspace } from "@akanjs/devkit/commandDecorators";
 import { SubspaceScript } from "./subspace.script";
 
@@ -6,7 +7,7 @@ export class SubspaceCommand extends command("subspace", [SubspaceScript], ({ pu
     .arg("action", String, {
       desc: "subspace action; status-all and push-all take every declared subspace",
       default: "status",
-      enum: ["status", "status-all", "diff", "push", "push-all", "pull"],
+      enum: ["status", "status-all", "diff", "push", "push-all", "pull", "upload-env"],
     })
     .arg("subspace", String, {
       desc: "subspace name; asks which one(s) when omitted, and is refused by status-all / push-all",
@@ -21,12 +22,21 @@ export class SubspaceCommand extends command("subspace", [SubspaceScript], ({ pu
     })
     .option("adoptLibs", Boolean, { desc: "pull: also apply the subspace's library edits", default: false })
     .option("path", String, { desc: "diff: limit to one path", nullable: true })
-    .exec(async function (action, subspace, workspace, format, verify, adoptLibs, filePath) {
+    .option("host", String, { desc: "upload-env: host of the cloud to target", default: GlobalConfig.akanCloudHost })
+    //? -f is already `--format`, and -y already `--verify`.
+    .option("force", Boolean, {
+      flag: "F",
+      desc: "upload-env: replace the subspace's env archive without asking",
+      default: false,
+    })
+    .exec(async function (action, subspace, workspace, format, verify, adoptLibs, filePath, host, force) {
       const output = format as "text" | "json";
       const all = action === "status-all" || action === "push-all";
       const base = all ? (action.slice(0, -"-all".length) as "status" | "push") : action;
-      if (base !== "status" && base !== "diff" && base !== "push" && base !== "pull")
-        throw new Error(`Unknown subspace action: ${action}. Use status, status-all, diff, push, push-all or pull.`);
+      if (base !== "status" && base !== "diff" && base !== "push" && base !== "pull" && base !== "upload-env")
+        throw new Error(
+          `Unknown subspace action: ${action}. Use status, status-all, diff, push, push-all, pull or upload-env.`,
+        );
       if (all && subspace)
         throw new Error(
           `\`akan subspace ${action}\` takes no name. Run \`akan subspace ${base} ${subspace}\` instead.`,
@@ -38,6 +48,8 @@ export class SubspaceCommand extends command("subspace", [SubspaceScript], ({ pu
         const [name] = names;
         if (!name) throw new Error(`\`akan subspace ${base}\` needs a name — it is reviewed one repo at a time.`);
         if (base === "diff") await this.subspaceScript.diff(workspace, name, filePath, output);
+        else if (base === "upload-env")
+          await this.subspaceScript.uploadEnv(workspace, name, { host, force, format: output });
         else await this.subspaceScript.pull(workspace, name, { adoptLibs, format: output });
       }
     }),

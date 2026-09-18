@@ -1,5 +1,6 @@
 import type { AgentProgressReport } from "./AgentProgress";
 import { Compaction, type CompactOptions } from "./Compaction";
+import { Reference } from "./Reference";
 import { ToolOutput } from "./ToolOutput";
 import { type ToolApprovalRequest, ToolRunner } from "./ToolRunner";
 import { Transcript } from "./Transcript";
@@ -7,6 +8,7 @@ import type {
   AgentRunner,
   ChatMessage,
   ContextBlock,
+  MessageReference,
   PublishedTool,
   RunnerRequest,
   SurfaceView,
@@ -132,6 +134,9 @@ export class AgentSession {
   #running = false;
   #pending: PendingApproval | null = null;
   #question: PendingQuestion | null = null;
+  #staged: MessageReference[] = [];
+  #inserts: MessageReference[] = [];
+  #chats = 0;
   #progress: (AgentProgressReport & { callId: string }) | null = null;
   #controller: AbortController | null = null;
   #active: Promise<void> | null = null;
@@ -213,6 +218,117 @@ export class AgentSession {
   get pendingQuestion(): PendingQuestion | null {
     return this.#question;
   }
+
+  /**
+   * What the user has pointed at and not yet sent.
+   *
+   * Held by the session rather than by the composer, which is where staged *files* live — and the difference is
+   * not an inconsistency. A file only ever arrives from the composer's own picker or drop zone, so composer-local
+   * state can reach every producer of one. A reference arrives from whichever component drew the data: a card
+   * partway down the page, reaching the session it is already inside. Composer state is unreachable from there,
+   * and a chat that replaces its composer has no state to reach anyway.
+   *
+   * A staging slot, not a tray. `send` empties it, so what somebody pointed at belongs to the message they were
+   * writing and never leaks into the next one.
+   */
+  get staged(): readonly MessageReference[] {
+    return this.#staged;
+  }
+
+  /**
+   * Pointing at the same field twice replaces it: the newer value is the one they meant, and one chip is honest.
+   *
+   * Stages the value only. The caller is the composer's own `@` menu, which is already writing the token as the
+   * user picks — `refer` is the entry point for everything that is not the composer.
+   */
+  stage = (reference: MessageReference) => {
+    this.#stage(Reference.clipped(reference));
+    this.#announce();
+  };
+
+  /**
+   * Points at something from a component that is not the composer — a card the user clicked beside the data.
+   *
+   * Two halves, because the composer owns one of them: the value is staged here, and the token the message needs
+   * is left for whichever chat is rendering this session's draft to write. That is why nothing is queued when no
+   * chat is: the value would sit staged with no token anywhere naming it, and the message text is what decides
+   * which references a turn carries — so the user would press a button and watch nothing happen, which is the
+   * failure this warns about instead.
+   */
+  refer = (reference: MessageReference) => {
+    const clipped = Reference.clipped(reference);
+    this.#stage(clipped);
+    if (this.#chats) this.#inserts = [...this.#inserts.filter((one) => !Reference.same(one, clipped)), clipped];
+    else
+      console.warn(
+        `No chat is rendering this agent session, so "${clipped.label}" was staged with no token written for it. ` +
+          "The component calling this and an <Agent.Chat /> have to share one session — check which <Agent.Zone> " +
+          "each of them is inside.",
+      );
+    this.#announce();
+  };
+
+  /**
+   * Tokens a chat has not written into its draft yet. State rather than a queue somebody drains, for the reason
+   * `pendingApproval` is state: two chats may be mounted on one session — a responsive app renders a desktop and
+   * a mobile composer and hides one in CSS — and each holds its own draft, so each has to write the token. A
+   * destructive read would hand it to whichever rendered first and leave the other silently without it.
+   */
+  get pendingInserts(): readonly MessageReference[] {
+    return this.#inserts;
+  }
+
+  /** Idempotent by key: the second chat to apply the same insert is acknowledging one that is already gone. */
+  insertApplied = (key: string) => {
+    const next = this.#inserts.filter((one) => Reference.keyOf(one) !== key);
+    if (next.length === this.#inserts.length) return;
+    this.#inserts = next;
+    this.#announce();
+  };
+
+  /**
+   * Stages references back from a message that was parked behind a running turn. What was pointed at since wins:
+   * the parked value is the older read of the same field, and letting it land would undo an edit made in between.
+   * No token is written — the parked text carries them already, and the composer is putting that text back.
+   */
+  restoreStaged = (references: readonly MessageReference[]) => {
+    const fresh = references.filter((one) => !this.#staged.some((held) => Reference.same(held, one)));
+    if (!fresh.length) return;
+    this.#staged = [...fresh.map((one) => Reference.clipped(one)), ...this.#staged];
+    this.#announce();
+  };
+
+  /**
+   * Registered by a chat for as long as it is rendering this session's draft, so `refer` can tell the difference
+   * between a token nobody has written yet and one nobody ever will.
+   */
+  attachChat = () => {
+    this.#chats += 1;
+    return () => {
+      this.#chats = Math.max(0, this.#chats - 1);
+    };
+  };
+
+  #stage(clipped: MessageReference) {
+    const at = this.#staged.findIndex((one) => Reference.same(one, clipped));
+    this.#staged =
+      at === -1 ? [...this.#staged, clipped] : this.#staged.map((one, idx) => (idx === at ? clipped : one));
+  }
+
+  /** By key, never by index: what orders the references of a message is its text, and that is not this list. */
+  unstage = (key: string) => {
+    const next = this.#staged.filter((one) => Reference.keyOf(one) !== key);
+    if (next.length === this.#staged.length) return;
+    this.#staged = next;
+    this.#announce();
+  };
+
+  clearStaged = () => {
+    if (!this.#staged.length && !this.#inserts.length) return;
+    this.#staged = [];
+    this.#inserts = [];
+    this.#announce();
+  };
 
   /** What the tool running now last said about its own progress, for the row that is still spinning. */
   get progress(): (AgentProgressReport & { callId: string }) | null {
@@ -326,6 +442,8 @@ export class AgentSession {
       await this.#active;
     }
     this.#messages = [];
+    this.#staged = [];
+    this.#inserts = [];
     this.#compactFloor = 0;
     // The pending debounced save would re-create the entry clear() just removed.
     if (this.#saveTimer) {
@@ -651,9 +769,17 @@ export class AgentSession {
   }
 
   #notify() {
+    this.#announce();
+    this.#schedulePersist();
+  }
+
+  /**
+   * A change that is not the transcript's. Staged references live beside the messages rather than in them, so
+   * announcing one has to redraw the composer without scheduling a save of messages nothing touched.
+   */
+  #announce() {
     this.#version += 1;
     for (const listener of this.#listeners) listener();
-    this.#schedulePersist();
   }
 
   /** Debounced: streaming patches the last message on every delta, and a save per delta would thrash storage. */

@@ -1,13 +1,28 @@
 "use client";
 import type { DataList } from "akanjs/base";
 import { cn } from "akanjs/client";
-import { capitalize, lowerlize } from "akanjs/common";
 import type { SliceMeta } from "akanjs/fetch";
-import { st, useFieldTool, useRelationFieldTool } from "akanjs/store";
+import { useFieldTool, useRelationFieldTool } from "akanjs/store";
 import type { ReactNode } from "react";
 import { agentAttrs } from "../agentAttrs";
 import { Select } from "../Select";
 import { Label } from "./Label";
+import { useRelationOptions } from "./useRelationOptions";
+
+interface UnresolvedProps {
+  id: string;
+}
+/** A row nothing could resolve — removed, unreadable, or still being read. The id beats an empty control. */
+const Unresolved = ({ id }: UnresolvedProps) => <span className="font-mono text-foreground/45">{id}</span>;
+
+const renderRow = <Light extends { id: string }>(
+  models: DataList<Light>,
+  id: string,
+  render: (model: Light) => ReactNode,
+) => {
+  const model = models.get(id);
+  return model ? render(model) : <Unresolved id={id} />;
+};
 
 export interface ParentProps<Light> {
   label?: string;
@@ -26,12 +41,6 @@ export interface ParentProps<Light> {
   renderOption: (model: Light) => ReactNode;
   renderSelected?: (value: Light) => ReactNode;
 }
-/** The one line an option renders as, so an agent can match an id against what it reads on screen. */
-const optionLabel = <Light extends { id: string }>(model: Light, render: (model: Light) => ReactNode) => {
-  const rendered = render(model);
-  return typeof rendered === "string" ? rendered : model.id;
-};
-
 export const Parent = <Light extends { id: string }>({
   label,
   desc,
@@ -49,32 +58,15 @@ export const Parent = <Light extends { id: string }>({
   renderOption,
   renderSelected = renderOption,
 }: ParentProps<Light>) => {
-  const { refName, sliceName } = slice;
-  const [modelName, ModelName] = [lowerlize(refName), capitalize(refName)];
-  const storeUse = st.use as { [key: string]: () => unknown };
-  const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
-  const storeGet = st.get as unknown as <V>() => { [key: string]: V };
-
-  const names = {
-    model: modelName,
-    modelList: `${modelName}List`,
-    modelListLoading: `${modelName}ListLoading`,
-    refreshModel: `refresh${ModelName}`,
-  };
-
-  const namesOfSlice = {
-    modelList: sliceName.replace(names.model, names.modelList),
-    modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-    refreshModel: sliceName.replace(names.model, names.refreshModel),
-  };
-
-  const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
-  useRelationFieldTool(onChange, {
-    read: () => storeGet<DataList<Light>>()[namesOfSlice.modelList],
-    load: () => storeDo[namesOfSlice.refreshModel]({ invalidate: true, queryArgs: initArgs }),
-    label: (model) => optionLabel(model, renderOption),
-    disabled,
+  const { models, options, optionLabel, listLoading, load, read } = useRelationOptions<Light>({
+    slice,
+    ids: value ? [value.id] : [],
+    pinned: [value],
+    initArgs,
+    sortOption,
+    renderOption,
   });
+  useRelationFieldTool(onChange, { read, load, label: optionLabel, disabled });
 
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
@@ -84,29 +76,16 @@ export const Parent = <Light extends { id: string }>({
         selectClassName={selectClassName}
         value={value?.id ?? null}
         searchable
-        options={modelList.map((model) => {
-          const render = renderOption(model);
-          return { label: typeof render === "string" ? render : model.id, value: model.id };
-        })}
-        renderOption={(modelId) => {
-          if (!modelId) return null;
-          const model = modelList.get(modelId);
-          if (!model) return null;
-          return renderOption(model);
-        }}
-        renderSelected={(modelId) => {
-          if (!modelId) return null;
-          const model = modelList.get(modelId);
-          if (!model) return null;
-          return renderSelected(model);
-        }}
+        loading={listLoading}
+        options={options}
+        renderOption={(modelId) => (modelId ? renderRow(models, modelId, renderOption) : null)}
+        renderSelected={(modelId) => (modelId ? renderRow(models, modelId, renderSelected) : null)}
         onChange={(modelId) => {
-          if (modelId) onChange(modelList.get(modelId) ?? null);
-          else onChange(null);
+          onChange(modelId ? (models.get(modelId) ?? null) : null);
         }}
         onOpen={() => {
           if (disabled) return;
-          void storeDo[namesOfSlice.refreshModel]({ invalidate: true, queryArgs: initArgs });
+          void load();
         }}
         onSearch={onSearch}
       />
@@ -148,22 +127,13 @@ export const ParentId = <Light extends { id: string }>({
   renderOption,
   renderSelected = renderOption,
 }: ParentIdProps<Light>) => {
-  const { refName, sliceName } = slice;
-  const [modelName, ModelName] = [lowerlize(refName), capitalize(refName)];
-  const storeUse = st.use as { [key: string]: () => unknown };
-  const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
-  const names = {
-    model: modelName,
-    modelList: `${modelName}List`,
-    modelListLoading: `${modelName}ListLoading`,
-    refreshModel: `refresh${ModelName}`,
-  };
-  const namesOfSlice = {
-    modelList: sliceName.replace(names.model, names.modelList),
-    modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-    refreshModel: sliceName.replace(names.model, names.refreshModel),
-  };
-  const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
+  const { models, options, optionLabel, listLoading, load } = useRelationOptions<Light>({
+    slice,
+    ids: value ? [value] : [],
+    initArgs,
+    sortOption,
+    renderOption,
+  });
   // The id *is* the value here, so the ordinary field setter describes it — no lookup, unlike `Parent`.
   useFieldTool(onChange, { disabled });
 
@@ -175,25 +145,16 @@ export const ParentId = <Light extends { id: string }>({
         searchable
         selectClassName={selectClassName}
         value={value}
-        options={modelList.map((model) => model.id)}
-        renderOption={(renderId) => {
-          if (!renderId) return null;
-          const model = modelList.get(renderId);
-          if (!model) return null;
-          return renderOption?.(model) ?? null;
-        }}
-        renderSelected={(renderId) => {
-          if (!renderId) return null;
-          const model = modelList.get(renderId);
-          if (!model) return null;
-          return renderSelected?.(model) ?? null;
-        }}
+        loading={listLoading}
+        options={options}
+        renderOption={(renderId) => (renderId ? renderRow(models, renderId, renderOption ?? optionLabel) : null)}
+        renderSelected={(renderId) => (renderId ? renderRow(models, renderId, renderSelected ?? optionLabel) : null)}
         onOpen={() => {
           if (disabled) return;
-          void storeDo[namesOfSlice.refreshModel]({ invalidate: true, queryArgs: initArgs });
+          void load();
         }}
         onChange={(modelId) => {
-          if (modelId) onChange(modelId, modelList.get(modelId) ?? null);
+          if (modelId) onChange(modelId, models.get(modelId) ?? null);
           else onChange(null, null);
         }}
         onSearch={onSearch}
@@ -236,29 +197,15 @@ export const Children = <Light extends { id: string }>({
   renderOption,
   renderSelected = renderOption,
 }: ChildrenProps<Light>) => {
-  const { refName, sliceName } = slice;
-  const [modelName, ModelName] = [lowerlize(refName), capitalize(refName)];
-  const storeUse = st.use as { [key: string]: () => unknown };
-  const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
-  const storeGet = st.get as unknown as <T>() => { [key: string]: T };
-  const names = {
-    model: modelName,
-    modelList: `${modelName}List`,
-    modelListLoading: `${modelName}ListLoading`,
-    refreshModel: `refresh${ModelName}`,
-  };
-  const namesOfSlice = {
-    modelList: sliceName.replace(names.model, names.modelList),
-    modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-    refreshModel: sliceName.replace(names.model, names.refreshModel),
-  };
-  const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
-  useRelationFieldTool(onChange, {
-    read: () => storeGet<DataList<Light>>()[namesOfSlice.modelList],
-    load: () => storeDo[namesOfSlice.refreshModel]({ invalidate: true, queryArgs: initArgs }),
-    label: (model) => optionLabel(model, renderOption),
-    disabled,
+  const { models, options, optionLabel, listLoading, load, read } = useRelationOptions<Light>({
+    slice,
+    ids: (value ?? []).map((model) => model.id),
+    pinned: value ?? [],
+    initArgs,
+    sortOption,
+    renderOption,
   });
+  useRelationFieldTool(onChange, { read, load, label: optionLabel, disabled });
 
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
@@ -269,28 +216,16 @@ export const Children = <Light extends { id: string }>({
         selectClassName={selectClassName}
         multiple
         value={(value ?? []).map((model) => model.id)}
-        options={modelList.map((model) => {
-          const label = renderOption(model);
-          return { label: typeof label === "string" ? label : model.id, value: model.id };
-        })}
+        loading={listLoading}
+        options={options}
         onOpen={() => {
           if (disabled) return;
-          void storeDo[namesOfSlice.refreshModel]({ invalidate: true, queryArgs: initArgs });
+          void load();
         }}
-        renderOption={(modelId: string) => {
-          const model = modelList.get(modelId);
-          if (!model) return null;
-          return renderOption(model);
-        }}
-        renderSelected={(modelId: string) => {
-          const model = modelList.get(modelId);
-          if (!model) return null;
-          return renderSelected(model);
-        }}
+        renderOption={(modelId: string) => renderRow(models, modelId, renderOption)}
+        renderSelected={(modelId: string) => renderRow(models, modelId, renderSelected)}
         onChange={(modelIds: string[]) => {
-          onChange(
-            modelIds.map((id) => modelList.get(id)).filter((model) => model !== undefined) as unknown as Light[],
-          );
+          onChange(modelIds.map((id) => models.get(id)).filter((model): model is Light => !!model));
         }}
         onSearch={onSearch}
       />
@@ -328,22 +263,13 @@ export const ChildrenId = <Light extends { id: string }>({
   sortOption,
   renderOption,
 }: ChildrenIdProps<Light>) => {
-  const { refName, sliceName } = slice;
-  const [modelName, ModelName] = [lowerlize(refName), capitalize(refName)];
-  const storeUse = st.use as { [key: string]: () => unknown };
-  const storeDo = st.do as unknown as { [key: string]: (...args: any[]) => Promise<void> };
-  const names = {
-    model: modelName,
-    modelList: `${modelName}List`,
-    modelListLoading: `${modelName}ListLoading`,
-    refreshModel: `refresh${ModelName}`,
-  };
-  const namesOfSlice = {
-    modelList: sliceName.replace(names.model, names.modelList),
-    modelListLoading: sliceName.replace(names.model, names.modelListLoading),
-    refreshModel: sliceName.replace(names.model, names.refreshModel),
-  };
-  const modelList = storeUse[namesOfSlice.modelList]() as DataList<Light>;
+  const { models, options, listLoading, load } = useRelationOptions<Light>({
+    slice,
+    ids: value ?? [],
+    initArgs,
+    sortOption,
+    renderOption,
+  });
   // The ids *are* the value here, so the ordinary field setter describes them — no lookup, unlike `Children`.
   useFieldTool(onChange, { disabled });
 
@@ -354,20 +280,14 @@ export const ChildrenId = <Light extends { id: string }>({
         nullable={nullable}
         searchable
         multiple
-        // selectClassName={selectClassName}
         value={value ?? []}
-        options={modelList.map((model) => {
-          const label = renderOption(model);
-          return { label: typeof label === "string" ? label : model.id, value: model.id };
-        })}
-        renderOption={(renderId) => {
-          const model = modelList.get(renderId);
-          if (!model) return null;
-          return renderOption(model);
-        }}
+        loading={listLoading}
+        options={options}
+        renderOption={(renderId: string) => renderRow(models, renderId, renderOption)}
+        renderSelected={(renderId: string) => renderRow(models, renderId, renderOption)}
         onOpen={() => {
           if (disabled) return;
-          void storeDo[namesOfSlice.refreshModel]({ invalidate: true, queryArgs: initArgs });
+          void load();
         }}
         onChange={(modelIds) => {
           onChange(modelIds);
