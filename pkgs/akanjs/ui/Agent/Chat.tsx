@@ -1,6 +1,6 @@
 "use client";
 import { cn, usePage } from "akanjs/client";
-import { AgentPrompts } from "akanjs/store";
+import { AgentPrompts, type AgentVisualOption } from "akanjs/store";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
@@ -17,6 +17,7 @@ import {
   type AgentRunner,
   type AgentSession,
   type AgentSessionOptions,
+  type ChatMessage,
   type CompactOptions,
   SessionContext,
   type SessionHistory,
@@ -32,6 +33,7 @@ import { Launcher } from "./Launcher";
 import Menu from "./Menu";
 import Question from "./Question";
 import Queued from "./Queued";
+import Steps from "./Steps";
 import type { PersistOption } from "./sessionHistory";
 import type { BuiltinOption } from "./sessionView";
 import { tokenCount } from "./tokenCount";
@@ -78,6 +80,13 @@ export interface ChatProps {
    * controlled chat assemblable by a server component, since this is the only prop here that is a function.
    */
   onOpenChange?: (open: boolean) => void;
+  /**
+   * What the page itself draws while this agent drives it: the control a call was published from is ringed where
+   * it stands, and a pointer presses it. On by default — the chat panel is closed as often as it is open, and
+   * a change nothing attributes is one the user watches happen for no reason they can see. `false` draws nothing,
+   * and an object turns one effect off (`visual={{ cursor: false }}`).
+   */
+  visual?: boolean | AgentVisualOption;
   /** `false` draws no launcher, for an app that opens the panel from a control of its own. */
   launcher?: boolean;
   /**
@@ -184,6 +193,7 @@ export const DefaultChat = ({
   open: openProp,
   onOpenChange,
   launcher = true,
+  visual = true,
   persist,
   inline = false,
   shortcut = true,
@@ -215,6 +225,7 @@ export const DefaultChat = ({
       builtins,
       persist,
       onCompact,
+      visual,
     });
   const session = held.current;
   const version = useSyncExternalStore(
@@ -442,15 +453,40 @@ export const DefaultChat = ({
   // A call and its result are two wire messages because the model needs both, but they are one thing that
   // happened: the call's row resolves in place, and the result message renders only what no call claimed —
   // a persisted transcript is capped, so a result can outlive the assistant message that made it.
+  //
+  // Emitted per turn rather than per message: a user message stands alone, and everything after it up to the next
+  // one goes to one `Steps`. Where a turn starts and ends is the one thing no per-message slot can see, so an app
+  // folding a turn into a scaffold has to be handed the group — the default draws the same flat bubbles.
   const bubbles = useMemo(() => {
     const resultOf = new Map(session.messages.flatMap((message) => message.toolResults ?? []).map((r) => [r.id, r]));
     const claimed = new Set(session.messages.flatMap((message) => message.toolCalls?.map((call) => call.id) ?? []));
-    return session.messages.flatMap((message, idx) => {
-      if (message.role !== "tool")
-        return [<Bubble key={idx} message={message} progress={session.progress} results={resultOf} />];
-      const orphans = (message.toolResults ?? []).filter((result) => !claimed.has(result.id));
-      return orphans.length ? [<Bubble key={idx} message={{ ...message, toolResults: orphans }} />] : [];
+    const blocks: ({ at: number; user: ChatMessage } | { at: number; turn: ChatMessage[] })[] = [];
+    session.messages.forEach((message, idx) => {
+      if (message.role === "user") {
+        blocks.push({ at: idx, user: message });
+        return;
+      }
+      const orphans = message.role === "tool" ? (message.toolResults ?? []).filter((r) => !claimed.has(r.id)) : null;
+      if (orphans && !orphans.length) return;
+      const shown = orphans ? { ...message, toolResults: orphans } : message;
+      const open = blocks.at(-1);
+      if (open && "turn" in open) open.turn.push(shown);
+      else blocks.push({ at: idx, turn: [shown] });
     });
+    const last = blocks.at(-1);
+    return blocks.map((block) =>
+      "user" in block ? (
+        <Bubble key={block.at} message={block.user} progress={session.progress} results={resultOf} />
+      ) : (
+        <Steps
+          isRunning={session.isRunning && block === last}
+          key={block.at}
+          messages={block.turn}
+          progress={session.progress}
+          results={resultOf}
+        />
+      ),
+    );
   }, [version]);
   // Recomputed per transcript change, never per render: the estimate walks every message, and the composer
   // re-renders on every keystroke.

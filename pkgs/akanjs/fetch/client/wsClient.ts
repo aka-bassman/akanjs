@@ -1,4 +1,10 @@
-import { Logger, websocketAuthContract, websocketBinaryFrameContract } from "akanjs/common";
+import {
+  Logger,
+  type WebsocketHeartbeatAckData,
+  websocketAuthContract,
+  websocketBinaryFrameContract,
+  websocketHeartbeatContract,
+} from "akanjs/common";
 import type {
   WebsocketAuthAck,
   WebsocketMessageData,
@@ -63,6 +69,8 @@ export class WsClient {
   #outbox: string[] = [];
   #unconnectedWarnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   #jwt: string | null = null;
+  #heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  #lastInboundAt = 0;
   connected = false;
 
   constructor(
@@ -109,6 +117,7 @@ export class WsClient {
       this.#reconnectAttempts = 0;
       this.connected = true;
       this.logger.debug(`WebSocket connected`);
+      this.#startHeartbeat();
       // Ordered before the resubscribes: the server applies the credential synchronously, so every
       // room below is authorized against this token rather than the bare handshake.
       if (this.#jwt) this.#sendAuth();
@@ -125,6 +134,7 @@ export class WsClient {
       for (const frame of queued) this.#ws?.send(frame);
     };
     this.#ws.onmessage = (e) => {
+      this.#lastInboundAt = Date.now();
       try {
         if (typeof e.data !== "string") {
           const frame = websocketBinaryFrameContract.decode(e.data as ArrayBuffer);
@@ -136,7 +146,7 @@ export class WsClient {
         if (parsed?.error) {
           throw this.#restoreError(parsed);
         }
-        const type = (parsed as WebsocketResData).type;
+        const type = (parsed as WebsocketResData | WebsocketHeartbeatAckData).type;
         switch (type) {
           case "msg": {
             const msg = parsed as unknown as WebsocketMessageData;
@@ -158,6 +168,8 @@ export class WsClient {
             this.#handlePubsub(publishData.roomId, publishData.data);
             break;
           }
+          case "pong":
+            break;
           case "auth": {
             const ack = parsed as WebsocketAuthAck;
             for (const roomId of ack.revokedRooms) {
@@ -183,8 +195,36 @@ export class WsClient {
     this.#ws.onclose = (event) => {
       this.logger.debug(`WebSocket closed: ${event.code} ${event.reason}`);
       this.connected = false;
+      this.#stopHeartbeat();
       this.#scheduleReconnect();
     };
+  }
+
+  #startHeartbeat() {
+    this.#stopHeartbeat();
+    this.#lastInboundAt = Date.now();
+    this.#heartbeatTimer = setInterval(() => this.#beat(), websocketHeartbeatContract.intervalMs);
+    // A pending interval would otherwise hold a server-side runtime open past the last socket.
+    this.#heartbeatTimer.unref?.();
+  }
+
+  #stopHeartbeat() {
+    if (this.#heartbeatTimer) clearInterval(this.#heartbeatTimer);
+    this.#heartbeatTimer = null;
+  }
+
+  #beat() {
+    const ws = this.#ws;
+    if (ws?.readyState !== WebSocket.OPEN) return;
+    // A socket the network dropped without a FIN still accepts `send()` forever, so silence is the only tell.
+    // Closing it by hand is what hands it to the reconnect path, which resubscribes every room.
+    if (Date.now() - this.#lastInboundAt > websocketHeartbeatContract.silenceMs) {
+      this.logger.warn(`WebSocket is silent, reconnecting`);
+      this.#stopHeartbeat();
+      ws.close();
+      return;
+    }
+    ws.send(JSON.stringify(websocketHeartbeatContract.makeRequest()));
   }
 
   #scheduleReconnect() {
@@ -224,6 +264,7 @@ export class WsClient {
     this.logger.debug(`WebSocket destroying`);
     this.#destroyed = true;
     this.#connectRequested = false;
+    this.#stopHeartbeat();
     if (this.#reconnectTimer) {
       clearTimeout(this.#reconnectTimer);
       this.#reconnectTimer = null;

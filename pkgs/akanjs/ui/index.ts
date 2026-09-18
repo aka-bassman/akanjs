@@ -53,6 +53,7 @@ export {
   ReferenceChips as AgentReferences,
   type ReferenceChipsProps as AgentReferencesProps,
 } from "./Agent/Refer";
+export { DefaultSteps, type StepsProps } from "./Agent/Steps";
 export type { PersistOption } from "./Agent/sessionHistory";
 export type { AgentBuiltin, BuiltinOption } from "./Agent/sessionView";
 export { tokenCount } from "./Agent/tokenCount";

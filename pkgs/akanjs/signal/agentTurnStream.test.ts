@@ -17,6 +17,14 @@ describe("AgentTurnStream", () => {
     expect(AgentTurnStream.wants(plain as Bun.BunRequest)).toBe(false);
   });
 
+  test("the response carries the headers that keep an intermediary from buffering it", () => {
+    const response = AgentTurnStream.response(async () => ({ text: "x", stop: "end" }));
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+    expect(response.headers.get("cache-control")).toBe("no-cache, no-transform");
+    expect(response.headers.get("x-accel-buffering")).toBe("no");
+    expect(response.headers.get("connection")).toBe("keep-alive");
+  });
+
   test("streams deltas as they arrive, then tool calls, then done", async () => {
     const response = AgentTurnStream.response(async (onDelta) => {
       onDelta("Nav");

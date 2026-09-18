@@ -12,6 +12,7 @@ import type {
   PublishedTool,
   RunnerRequest,
   SurfaceView,
+  ToolActivity,
   ToolCallRequest,
   ToolCallResult,
   TurnStop,
@@ -92,6 +93,12 @@ export interface AgentSessionOptions {
    * duplicate, no error, just messages that never reach the server. Reset the mark here.
    */
   onCompact?: (replaced: readonly ChatMessage[], summary: ChatMessage) => void;
+  /**
+   * Called as each tool call starts and ends — where a host draws what the agent is doing on the page itself.
+   * The session keeps none of it: nothing here is transcript, and holding it would mean a re-render per call for
+   * something no message renders.
+   */
+  onActivity?: (event: ToolActivity) => void;
 }
 
 /**
@@ -160,6 +167,7 @@ export class AgentSession {
     this.#tools = new ToolRunner(surface, {
       approve: (request, signal) => this.#awaitApproval(request, signal),
       settle: () => this.#options.settle?.(),
+      activity: (event) => this.#options.onActivity?.(event),
       progress: ({ callId, report }) => {
         if (report) this.#progress = { ...report, callId };
         else if (this.#progress?.callId === callId) this.#progress = null;

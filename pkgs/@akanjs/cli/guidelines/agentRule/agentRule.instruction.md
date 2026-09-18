@@ -45,10 +45,14 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   clear and close. `chrome={false}` drops the header bar whole, for an `inline` chat inside a panel the app
   already titles, and `defaultDraft` opens the composer with text in it without sending it. A panel driven by a
   controlled `open` with **no** `onOpenChange` draws no close button at all rather than an inert one. Then the
-  slots: `AgentLauncher`, `AgentBubble`, `AgentComposer`, `AgentApproval`,
+  slots: `AgentLauncher`, `AgentSteps`, `AgentBubble`, `AgentComposer`, `AgentApproval`,
   `AgentQuestion`, `AgentQueued`, `AgentMenu`, `AgentMarkdown` and `AgentCode` each replace one part in `_overrides.tsx`, and
   `akanjs/ui` exports every default beside them (`DefaultBubble`, `DefaultComposer`, …) so a skin composes the
-  one it is replacing. The attachment row is exported on its own as `AgentAttachments`, because a replaced
+  one it is replacing. **`AgentSteps` is one agent turn** — the messages between the user message that opened it
+  and the next one, with `isRunning` saying whether more are still coming — which is the grain a chat needs to
+  fold a turn's steps into a `details` and stand its answer outside them. It is the one boundary a per-message
+  slot cannot see, since neither message on either side of it knows it is at an edge. The default draws the turn's
+  messages flat into a Fragment, so a chat that binds nothing renders exactly what it did before the slot existed. The attachment row is exported on its own as `AgentAttachments`, because a replaced
   `AgentBubble` that redraws it by hand forks the rule for which carrier is shown how — and then keeps whatever
   that rule was on the day it was copied. `AgentCode` is where a highlighter binds — the fence's language reaches it — and a
   replacement for `AgentBubble` carries its own `memo`, since the transcript re-renders on every delta. Only then
@@ -671,3 +675,44 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   error result rather than a silent empty answer, and the settled exchange renders as question-and-answer instead
   of a tool row. **Never re-implement it per screen** — a `st.tool("askAboutX")` that opens a modal is the same
   thing with a worse transcript — and a hook tool named `askUser` shadows it like any other built-in.
+
+## What The Page Draws
+- **The page shows the agent's work, not just the transcript.** A chat panel is closed as often as it is open, and
+  a form that fills itself or a tab that switches on its own is a change the user watches happen with nothing
+  anywhere attributing it. So **the control a call was published from is ringed** where it stands, scrolled to
+  first when it is off screen, and **a pointer travels to it and presses it** — both on by default, and both
+  driven from the tool call itself rather than from a store action, which cannot tell the agent's write from the
+  user's.
+- **It costs an app nothing, for the same reason `data-akan-action` does.** `onChange={st.do.setTitleOnTask}` by
+  reference is what annotates the control, and the annotation is what makes it findable — so the fields and verbs
+  that matter light up with no code. An inline arrow publishes no tool, carries no annotation, and therefore
+  draws nothing: one wrapper silently costs three things at once.
+- **For a control the framework did not render, spread `agentAttrs`** from `akanjs/ui`:
+  `<button {...agentAttrs(run)} onClick={run}>`, where `run` is what `st.tool(…).exec(…)` returned. It reads the
+  name off the callable, so there is nothing to keep in sync and no `ref` to thread — and it earns the same E2E
+  selector and accessibility name an `akanjs/ui` control has. Never hand-write `data-akan-*`.
+- **Nothing is ever waited on.** The call starts the moment the effect is handed its event; a ring that lands a
+  frame later costs the turn nothing, and an animation that held a call would make the agent slower for a
+  decoration. A batch past four calls stops scrolling and keeps ringing — eight scrolls across a page is motion
+  sickness rather than attribution.
+- **What it refuses to draw is the point.** A name several rows answer to rings nothing rather than guessing a row,
+  a call an approval or a guard turned back is never drawn at all, a tool no control carries draws nothing, and a
+  backgrounded tab draws nothing. A ring on the wrong element is worse than no ring: it is the screen telling the
+  user something untrue about what just happened. **`navigate` is in that last class** — the router is not an
+  element, so it draws nothing. A bar across the top of the page was tried for it and removed: it read as chrome
+  the page had grown rather than as the agent doing something, which is the opposite of attribution.
+- **Turn it off with `visual`** on `Agent.Chat` / `Agent.Zone` — `false` for all of it, `{ cursor: false }` or
+  `{ reveal: false }` for one effect. The pointer is chrome (`data-agent-ui`, `aria-hidden`,
+  `pointer-events: none`), so `readScreen` never reads it back and `highlight` can never aim at it.
+- **`ToolActivity` is the channel underneath**, a `ToolRunner` host option and an `AgentSession.onActivity`, firing
+  `start` / `end` around the execution alone. It is deliberately not `progress`: that one fires only for a tool
+  that chose to report, and a tool that says nothing about itself is exactly the one whose effect arrives
+  unexplained.
+- **The pointer presses on arrival, never on departure** — a press fired as it leaves is a click on whatever it
+  was still over. It glides only when the hop is far enough to be worth following (a third of a second to cross
+  fifty pixels reads as lag, not motion), teleports otherwise, and fades once the batch is over. The ring answers
+  *where* and the pointer answers *who*, which is why they are one default rather than two.
+- **A form patch fans out over the fields it named.** `fill<Model>Form` is published by the form rather than by any
+  one control, so it rings one control per field in the arguments — resolved through the same
+  `data-akan-state="<model>Form.<field>"` the setter annotates — capped at five. `writeOn<Model>(path, value)`
+  draws nothing, for the same reason it carries no annotation: there is no control to put one on.

@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
 
 // Type-only (erased) so the module under test is still first evaluated by the in-test dynamic import,
 // after `mock.module` has replaced react / akanjs.
+import { pushNavigateMessage } from "../common/pushNavigateMessage";
 import type { PushNotificationGlobals } from "./usePushNotification";
 
 const pushGlobals = globalThis as unknown as PushNotificationGlobals;
@@ -24,6 +25,7 @@ const pushState = {
   registrationListeners: [] as Array<(event: { value?: string }) => void>,
 };
 const deepLinks: string[] = [];
+const swMessageListeners: Array<(event: { data: unknown }) => void> = [];
 
 beforeAll(() => {
   mock.module("react", () => ({
@@ -92,7 +94,17 @@ const installWindow = () => {
     globalThis as typeof globalThis & { Capacitor?: unknown }
   ).Capacitor;
   Object.defineProperty(globalThis, "window", { value: window, configurable: true });
-  Object.defineProperty(globalThis, "navigator", { value: { serviceWorker: {} }, configurable: true });
+  Object.defineProperty(globalThis, "navigator", {
+    value: {
+      serviceWorker: {
+        addEventListener: (eventName: string, listener: (event: { data: unknown }) => void) => {
+          if (eventName === "message") swMessageListeners.push(listener);
+        },
+        getRegistration: async () => undefined,
+      },
+    },
+    configurable: true,
+  });
   Object.defineProperty(globalThis, "location", { value: window.location, configurable: true });
 };
 
@@ -121,7 +133,10 @@ afterEach(() => {
   pushState.actionListeners = [];
   pushState.registrationListeners = [];
   deepLinks.length = 0;
+  swMessageListeners.length = 0;
   pushGlobals.__AKAN_PUSH_CLICK_BRIDGE__ = undefined;
+  pushGlobals.__AKAN_PUSH_WEB_CLICK__ = undefined;
+  pushGlobals.__AKAN_PUSH_FOREGROUND__ = undefined;
   pushGlobals.__AKAN_CLIENT_ENV__ = undefined;
   effectCleanups.splice(0);
 });
@@ -147,6 +162,23 @@ describe("usePushNotification", () => {
 
     pushState.receive = "denied";
     expect(await hook.current.register()).toBeUndefined();
+    hook.unmount();
+  });
+
+  test("routes a worker's notification-click handover through the client router", async () => {
+    installWindow();
+    const { usePushNotification } = await import("./usePushNotification");
+    const hook = renderHook(() => usePushNotification());
+
+    await hook.current.initClickBridge();
+    expect(swMessageListeners).toHaveLength(1);
+
+    swMessageListeners[0]?.({ data: { type: pushNavigateMessage, url: "/notified" } });
+    expect(deepLinks).toEqual(["/notified"]);
+
+    swMessageListeners[0]?.({ data: { type: "unrelated", url: "/ignored" } });
+    swMessageListeners[0]?.({ data: { type: pushNavigateMessage } });
+    expect(deepLinks).toEqual(["/notified"]);
     hook.unmount();
   });
 });

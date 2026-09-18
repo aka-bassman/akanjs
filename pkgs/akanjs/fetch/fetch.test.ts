@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { DataList, getEnv, Int } from "akanjs/base";
 import { Logger, websocketBinaryFrameContract } from "akanjs/common";
 import { ConstantRegistry, via } from "akanjs/constant";
@@ -124,6 +124,8 @@ const originalFetch = globalThis.fetch;
 const originalWebSocket = globalThis.WebSocket;
 const originalSetTimeout = globalThis.setTimeout;
 const originalClearTimeout = globalThis.clearTimeout;
+const originalSetInterval = globalThis.setInterval;
+const originalClearInterval = globalThis.clearInterval;
 const originalEnv = {
   appName: process.env.AKAN_PUBLIC_APP_NAME,
   repoName: process.env.AKAN_PUBLIC_REPO_NAME,
@@ -165,6 +167,9 @@ afterEach(() => {
   globalThis.WebSocket = originalWebSocket;
   globalThis.setTimeout = originalSetTimeout;
   globalThis.clearTimeout = originalClearTimeout;
+  globalThis.setInterval = originalSetInterval;
+  globalThis.clearInterval = originalClearInterval;
+  setSystemTime();
   if (originalEnv.appName === undefined) delete process.env.AKAN_PUBLIC_APP_NAME;
   else process.env.AKAN_PUBLIC_APP_NAME = originalEnv.appName;
   if (originalEnv.repoName === undefined) delete process.env.AKAN_PUBLIC_REPO_NAME;
@@ -1801,6 +1806,49 @@ describe("WsClient", () => {
     } finally {
       removeSink();
     }
+  });
+
+  test("pings on an interval, so an idle proxy has traffic to see", async () => {
+    setFakeWebSocket();
+    globalThis.setInterval = ((handler: TimerHandler, _interval?: number, ...args: unknown[]) =>
+      originalSetInterval(handler, 1, ...args)) as typeof setInterval;
+    const client = new WsClient("ws://example/ws");
+    client.connect();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+
+    await new Promise((resolve) => originalSetTimeout(resolve, 10));
+    expect(ws.sent.map((frame) => (JSON.parse(frame) as { key: string }).key)).toContain("__ping");
+
+    client.destroy();
+    const pinged = ws.sent.length;
+    await new Promise((resolve) => originalSetTimeout(resolve, 10));
+    expect(ws.sent).toHaveLength(pinged);
+  });
+
+  test("reconnects a socket that has stopped answering, so its rooms are resubscribed", async () => {
+    setFakeWebSocket();
+    setSystemTime(new Date("2026-09-18T00:00:00Z"));
+    globalThis.setInterval = ((handler: TimerHandler, _interval?: number, ...args: unknown[]) =>
+      originalSetInterval(handler, 1, ...args)) as typeof setInterval;
+    globalThis.setTimeout = ((handler: TimerHandler, _timeout?: number, ...args: unknown[]) =>
+      originalSetTimeout(handler, 0, ...args)) as typeof setTimeout;
+    const client = new WsClient("ws://example/ws");
+    client.subscribe({ key: "roomKey", data: ["r1"], handleEvent: () => undefined });
+    client.connect();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+
+    // A socket the network dropped without a FIN keeps accepting `send()`, so only the missing pong says so.
+    setSystemTime(new Date("2026-09-18T00:10:00Z"));
+    await new Promise((resolve) => originalSetTimeout(resolve, 10));
+
+    expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+    const reconnected = FakeWebSocket.instances[1];
+    expect(reconnected).toBeDefined();
+    reconnected.open();
+    expect(JSON.parse(reconnected.sent[0] ?? "{}")).toEqual({ key: "roomKey", data: ["r1"], subscribe: true });
+    client.destroy();
   });
 
   test("resubscribes rooms on reconnect and destroy prevents reconnect", async () => {

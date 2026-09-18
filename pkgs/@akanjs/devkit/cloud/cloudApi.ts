@@ -43,6 +43,30 @@ class HttpClient {
   }
 }
 
+/**
+ * A share the control plane just issued. `token` is the connector credential — whoever holds it can become the
+ * origin behind `hostname`, so it is never written to disk or logged, only handed to the agent in memory.
+ */
+export interface TunnelGrant {
+  code: string;
+  hostname: string;
+  url: string;
+  /** The gateway to dial, as `wss://tunnel.akanjs.com`. The control plane names it; the CLI never assumes one. */
+  gatewayUrl: string;
+  token: string;
+  expiresAt: string | null;
+}
+
+export interface TunnelSummary {
+  code: string;
+  hostname: string;
+  url: string;
+  name: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  connected: boolean;
+}
+
 export class CloudApi {
   readonly #api: HttpClient;
   #accessToken: AccessToken | null = null;
@@ -107,6 +131,17 @@ export class CloudApi {
     this.#accessToken = GlobalConfig.toAccessToken(response);
     this.#api.setHeaders({ Authorization: `Bearer ${this.#accessToken.jwt}` });
     return this.#accessToken;
+  }
+  async requestTunnel(input: { name: string; ttlMinutes?: number }): Promise<TunnelGrant> {
+    return await this.#api.post<TunnelGrant>(`/requestTunnel`, input);
+  }
+  /** The generated name of the model's own `inSelf` slice: a hand-written `listTunnels` would collide with it. */
+  async tunnelListInSelf(): Promise<TunnelSummary[]> {
+    return await this.#api.get<TunnelSummary[]>(`/tunnelListInSelf`);
+  }
+  /** Hands the grant back. The CLI calls this "stop", which is what the operator is doing, not what it does. */
+  async revokeTunnel(code: string): Promise<boolean> {
+    return await this.#api.post<boolean>(`/revokeTunnel`, { code });
   }
   async getRemoteSelf(): Promise<{ id: string; nickname: string } | null> {
     try {

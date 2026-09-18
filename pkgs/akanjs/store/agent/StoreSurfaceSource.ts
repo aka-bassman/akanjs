@@ -1,6 +1,7 @@
 import { router } from "akanjs/client";
 import type { SurfaceSource, ToolEntry } from "use-agentic";
 import { AgentBridge } from "./AgentBridge";
+import { ScreenFlash } from "./ScreenFlash";
 import { ScreenReader } from "./ScreenReader";
 import { ScreenSettle } from "./ScreenSettle";
 import { ScreenTarget } from "./ScreenTarget";
@@ -18,10 +19,6 @@ import { ScreenTarget } from "./ScreenTarget";
  * with the bare name a source publishes, so a zone drops a built-in with the session's `builtins` option instead.
  */
 export class StoreSurfaceSource implements SurfaceSource {
-  /** Defined in `akanjs/ui/styles.css`, so the flash follows the app's own theme tokens. */
-  static readonly highlightClass = "akan-agent-highlight";
-  /** Mirrors the animation in that stylesheet: the class outlives the ring by nothing. */
-  static readonly highlightMs = 2400;
   /**
    * What `tools()` contributes, in the order it builds them — the list a session's `builtins` option selects from.
    * A screen that declares a hook tool of one of these names is not in it: that entry is the screen's, not this
@@ -178,8 +175,7 @@ export class StoreSurfaceSource implements SurfaceSource {
             }`,
           );
         }
-        target.scrollIntoView({ block: "center", behavior: "smooth" });
-        StoreSurfaceSource.#flash(target);
+        ScreenFlash.show(target);
         return `Highlighted ${name} on screen for the user.`;
       },
     };
@@ -202,30 +198,6 @@ export class StoreSurfaceSource implements SurfaceSource {
         return this.#bridge.read(String(args.key), viewKey);
       },
     };
-  }
-
-  /**
-   * The ring goes on once the scroll lands, not when it starts: a smooth scroll across a long page takes most of a
-   * second, and a flash begun at the top is already fading by the time the user's eye arrives. Settles on the
-   * element's own position rather than a scroll event, which no browser fires consistently, and is capped so a page
-   * that never stops moving still flashes. Removed on a timer — a React re-render that drops the class early only
-   * ends it sooner.
-   */
-  static #flash(target: HTMLElement) {
-    let last = Number.NaN;
-    let frames = 0;
-    const settle = () => {
-      const { top } = target.getBoundingClientRect();
-      frames += 1;
-      if (Math.abs(top - last) >= 1 && frames < 90) {
-        last = top;
-        requestAnimationFrame(settle);
-        return;
-      }
-      target.classList.add(StoreSurfaceSource.highlightClass);
-      setTimeout(() => target.classList.remove(StoreSurfaceSource.highlightClass), StoreSurfaceSource.highlightMs);
-    };
-    requestAnimationFrame(settle);
   }
 
   static #zoneRoot(viewKey: string): HTMLElement | undefined {

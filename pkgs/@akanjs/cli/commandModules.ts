@@ -27,6 +27,7 @@ export const commandModules = {
   quality: async () => (await import("./quality/quality.command")).QualityCommand,
   repair: async () => (await import("./repair/repair.command")).RepairCommand,
   workflow: async () => (await import("./workflow/workflow.command")).WorkflowCommand,
+  tunnel: async () => (await import("./tunnel/tunnel.command")).TunnelCommand,
 } satisfies Record<string, () => Promise<CommandCls>>;
 
 export type CommandModuleId = keyof typeof commandModules;

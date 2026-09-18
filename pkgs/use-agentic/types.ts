@@ -20,6 +20,20 @@ export interface ToolEntry {
   run: (args: Record<string, unknown>) => unknown;
 }
 
+/**
+ * That a call is happening, for a host drawing it on the screen rather than in a transcript.
+ *
+ * Emitted around the execution alone — after the approval card settled, and never for a call a guard or an
+ * approval refused before it ran, so a host may treat `start` as "this is being done to the page right now".
+ */
+export interface ToolActivity {
+  callId: string;
+  name: string;
+  args: Record<string, unknown>;
+  phase: "start" | "end";
+  error?: string;
+}
+
 /** One call an agent made through the surface, in the order it made them. */
 export interface AgentCall {
   name: string;

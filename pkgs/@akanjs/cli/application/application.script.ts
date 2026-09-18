@@ -28,6 +28,7 @@ import { type DevUiMode, resolveDevUi } from "./devUiMode";
 interface StartOptions {
   open?: boolean;
   dbup?: boolean;
+  share?: boolean;
   write?: boolean;
   plain?: boolean;
   kill?: boolean;
@@ -249,13 +250,22 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
 
   async start(
     apps: Apps,
-    { open = false, dbup = true, write = true, plain = false, kill = false, concurrency = null }: StartOptions = {},
+    {
+      open = false,
+      dbup = true,
+      write = true,
+      plain = false,
+      kill = false,
+      share = false,
+      concurrency = null,
+    }: StartOptions = {},
   ) {
     const first = apps[0];
     if (!first) throw new Error("No app selected to start");
     const { mode, downgraded } = resolveDevUi(plain);
     if (downgraded) first.workspace.log("no sized terminal to draw on; printing prefixed lines instead");
     if (kill) await this.reclaimDevPorts(apps);
+    if (share) await this.#shareOnInterrupt(apps);
     //? `--plain` on a single app is the pre-supervisor path, kept whole: no extra process, this
     //? process's own stdio, and the same Ctrl+C handling it always had.
     if (mode === "stream" && apps.length === 1)
@@ -315,7 +325,13 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
    */
   async #startMany(
     apps: Apps,
-    { open, dbup, write, mode, concurrency }: Required<Omit<StartOptions, "plain" | "kill">> & { mode: DevUiMode },
+    {
+      open,
+      dbup,
+      write,
+      mode,
+      concurrency,
+    }: Required<Omit<StartOptions, "plain" | "kill" | "share">> & { mode: DevUiMode },
   ) {
     const workspace = apps[0]?.workspace;
     if (!workspace) throw new Error("No app selected to start");
@@ -487,6 +503,39 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
    * wedged one, so the teardown is bounded and the exit runs even when it fails, and a second Ctrl+C
    * abandons it rather than queueing behind the first.
    */
+  /**
+   * Opens a public share per app and hands the hostnames back when the session ends.
+   *
+   * The agent runs in *this* process rather than inside the dev server, so it is unaffected by which supervisor
+   * mode `start` picked, and by the dev server restarting under it. A share opened before the app is listening
+   * is not a problem either: until the origin answers, a public request is refused rather than dropped, and the
+   * share starts working the moment the port opens.
+   */
+  #shareOnInterrupt(apps: Apps) {
+    const shares: { close: () => Promise<void> }[] = [];
+    const open = Promise.all(
+      apps.map(async (app) => {
+        const { TunnelShare } = await import("../tunnel/TunnelShare");
+        const share = await TunnelShare.open(app, { workspace: app.workspace });
+        shares.push(share);
+        Logger.rawLog(`${app.name} is shared at ${share.url}`);
+      }),
+    ).catch((error: unknown) => {
+      Logger.rawLog(
+        `Could not open the tunnel: ${error instanceof Error ? error.message : String(error)}`,
+        undefined,
+        "error",
+      );
+    });
+    let closing = false;
+    process.on("SIGINT", () => {
+      if (closing) return;
+      closing = true;
+      void Promise.all(shares.map(async (share) => await share.close()));
+    });
+    return open;
+  }
+
   #stopDatabaseOnInterrupt(workspace: Workspace) {
     let stopping = false;
     process.on("SIGINT", () => {

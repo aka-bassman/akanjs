@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { AgentVisualDemo, Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
@@ -407,6 +407,45 @@ st.expose("selectedWaypointId", ID)
             })}
           </div>
         </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="agent-visual" title={l.trans({ en: "Showing the Work", ko: "작업을 보여주기" })}>
+        <Docs.Title>{l.trans({ en: "Showing the Work", ko: "작업을 보여주기" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "The transcript says what the agent did, and it is behind a panel that is closed as often as it is open. So the page says it too: the control a call was published from is ringed where it stands, scrolled to first when it is off screen, and a pointer travels to it and presses it. It costs an app nothing for the same reason data-akan-action does. The onChange={st.do.setTitleOnTask} reference that publishes the tool is what annotates the control, and the annotation is what makes it findable, so an inline arrow silently costs three things at once.",
+              ko: "대화창은 에이전트가 무엇을 했는지 말해 주지만, 그 패널은 열려 있는 만큼이나 닫혀 있습니다. 그래서 페이지도 같이 말합니다. 호출이 발행된 컨트롤에 그 자리에서 링이 걸리고, 화면 밖이면 먼저 스크롤하며, 포인터가 그리로 이동해 누릅니다. data-akan-action이 그렇듯 앱이 쓸 코드는 없습니다. 툴을 발행하는 onChange={st.do.setTitleOnTask} 레퍼런스가 컨트롤에 표식을 남기고, 그 표식이 컨트롤을 찾을 수 있게 만듭니다. 인라인 화살표 함수 하나가 세 가지를 한꺼번에 조용히 잃게 하는 이유입니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "What it refuses to draw is the point. A name several rows answer to rings nothing rather than guessing a row, a call an approval or a guard turned back is never drawn at all, and a backgrounded tab draws nothing. A ring on the wrong element is worse than no ring: it is the screen telling the user something untrue about what just happened. Nothing is ever waited on either — the call starts the moment the effect is handed its event, because an animation that held a call would make the agent slower for a decoration.",
+              ko: "그리지 않기로 한 것들이 핵심입니다. 여러 행이 같은 이름을 가지면 행을 추측하느니 아무것도 그리지 않고, 승인이나 가드가 되돌린 호출은 애초에 그려지지 않으며, 백그라운드 탭에서는 아무 일도 하지 않습니다. 엉뚱한 요소에 걸린 링은 링이 없는 것보다 나쁩니다. 방금 무슨 일이 있었는지에 대해 화면이 사용자에게 거짓을 말하는 것이기 때문입니다. 무엇도 기다리지 않습니다. 이벤트를 넘겨받는 순간 호출은 이미 시작돼 있습니다. 연출 때문에 에이전트가 느려지면 안 되니까요.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "It draws where the change landed and nowhere else. A call that reaches no control on screen draws nothing at all — navigate included, since the router is not an element and a bar across the top of the page read as chrome the page had grown rather than as the agent doing something.",
+              ko: "변화가 떨어진 자리에만 그리고 그 밖에는 그리지 않습니다. 화면의 어떤 컨트롤에도 닿지 않는 호출은 아무것도 그리지 않습니다. navigate도 마찬가지입니다. 라우터는 요소가 아니고, 페이지 상단에 걸었던 바는 에이전트가 무언가 하고 있다는 신호가 아니라 페이지가 늘린 크롬처럼 읽혔습니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "Below is the thing itself. Both buttons hand their st.tool callable straight to Button's onClick, which is the whole of what makes them findable — ask the agent to count up three times and reset, and watch where it presses.",
+              ko: "아래가 그 자체입니다. 두 버튼 모두 st.tool이 돌려준 callable을 Button의 onClick에 그대로 넘기며, 그것만으로 찾을 수 있는 컨트롤이 됩니다. 에이전트에게 세 번 올린 뒤 초기화해 달라고 하고 어디를 누르는지 보세요.",
+            })}
+          </div>
+        </Docs.Description>
+        <AgentVisualDemo />
+        <Code.Snippet
+          className="w-full"
+          title="apps/<app>/page/_layout.tsx"
+          code={`<Agent.Chat visual={false} />
+
+<Agent.Chat visual={{ cursor: false }} />`}
+        />
       </Scroll.Slide>
       <Divider />
 

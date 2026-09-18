@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { EventStream } from "../routing/eventStream";
+import { EventStream } from "akanjs/common";
 import type { LogHub, LogHubEntry } from "./logHub";
 import { LogQueryMatcher } from "./logQuery";
 import { LogStdoutWriter } from "./logStdoutWriter";

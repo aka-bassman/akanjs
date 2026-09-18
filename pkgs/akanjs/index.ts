@@ -191,6 +191,7 @@ export interface AkanSyncContext {
   readonly executor: AkanExecutor;
   getPath(rel: string): string;
   fileExists(rel: string): Promise<boolean>;
+  readFile(rel: string): Promise<string>;
   writeFile(rel: string, content: string, opts?: { overwrite?: boolean }): Promise<void>;
   /** Resolves `env/env.client.ts` and returns its exported `env`, or null when absent/invalid. */
   readEnvClient(): Promise<Record<string, unknown> | null>;

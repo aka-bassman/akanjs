@@ -1,4 +1,4 @@
-import { EventStream } from "../routing/eventStream";
+import { EventStream } from "akanjs/common";
 
 /**
  * One `text/event-stream` response carrying the notifications a single request produced, ending with that

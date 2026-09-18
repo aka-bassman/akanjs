@@ -544,8 +544,8 @@ akan release-ios myapp --target default --env main`}
               </li>
               <li>
                 {l.trans({
-                  en: "Akan serves /firebase-messaging-sw.js automatically from the client Firebase config.",
-                  ko: "Akan은 client Firebase config를 사용해 /firebase-messaging-sw.js를 자동으로 서빙합니다.",
+                  en: "The push plugin generates public/firebase-messaging-sw.js from the client Firebase config on akan sync.",
+                  ko: "push 플러그인이 akan sync 때 client Firebase config로 public/firebase-messaging-sw.js를 생성합니다.",
                 })}
                 <ExternalLink
                   href="https://firebase.google.com/docs/cloud-messaging/js/receive"

@@ -17,6 +17,7 @@ export {
 } from "./clientAddress";
 export { deepObjectify } from "./deepObjectify";
 export type { DynamicRecord } from "./dynamicRecord";
+export { EventStream, type EventStreamOptions } from "./eventStream";
 export {
   type FileUploadCapability,
   fileUploadContract,
@@ -112,6 +113,37 @@ export { splitVersion } from "./splitVersion";
 export { getBasePathFromPathname, parseBasePaths, parseSubRouteHosts, resolveSubRouteHosts } from "./subRoute";
 export { TrustedProxy } from "./TrustedProxy";
 export { toPathSegments } from "./toPathSegments";
+export {
+  type TunnelAgentIdentity,
+  type TunnelAttachedFrame,
+  type TunnelAttachFrame,
+  type TunnelByeFrame,
+  type TunnelCloseCode,
+  type TunnelControlFromAgent,
+  type TunnelControlFromGateway,
+  type TunnelDataFromAgent,
+  type TunnelDataFromGateway,
+  type TunnelDemandFrame,
+  type TunnelEndFrame,
+  type TunnelFrame,
+  type TunnelHeaderList,
+  type TunnelHeadFrame,
+  type TunnelHelloFrame,
+  type TunnelOpenFrame,
+  type TunnelPingFrame,
+  type TunnelPongFrame,
+  type TunnelReadyFrame,
+  type TunnelReleaseFrame,
+  type TunnelResetCode,
+  type TunnelResetFrame,
+  type TunnelStreamKind,
+  type TunnelWsPayloadKind,
+  tunnelCloseCode,
+  tunnelForwardedHeaders,
+  tunnelHopByHopHeaders,
+  tunnelWireContract,
+  tunnelWsPayload,
+} from "./tunnelWire";
 export type * from "./types";
 export {
   type WebsocketAuthAckData,
@@ -119,3 +151,8 @@ export {
   websocketAuthContract,
 } from "./websocketAuth";
 export { type WebsocketBinaryFrame, websocketBinaryFrameContract } from "./websocketBinaryFrame";
+export {
+  type WebsocketHeartbeatAckData,
+  type WebsocketHeartbeatRequest,
+  websocketHeartbeatContract,
+} from "./websocketHeartbeat";

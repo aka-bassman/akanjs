@@ -41,10 +41,19 @@ export class ScreenTarget {
   }
 
   static control(name: string, root?: HTMLElement | null): HTMLElement | null {
+    return ScreenTarget.controls(name, root)[0] ?? null;
+  }
+
+  /**
+   * Every visible control carrying the name, not just the first — a row component registers one tool per row, so
+   * a caller that must not act on the wrong row is the one that needs to know there were several.
+   */
+  static controls(name: string, root?: HTMLElement | null): HTMLElement[] {
     const scope = root ?? ScreenTarget.#body();
-    if (!scope || !name) return null;
+    if (!scope || !name) return [];
     const escaped = CSS.escape(name);
-    return ScreenTarget.#first(scope, controlAttrs.map((attr) => `[${attr}="${escaped}"]`).join(", "));
+    const selector = controlAttrs.map((attr) => `[${attr}="${escaped}"]`).join(", ");
+    return [...scope.querySelectorAll<HTMLElement>(selector)].filter(ScreenTarget.#visible);
   }
 
   /** Matched on letters and digits only, so a slug written for a heading still finds it. */

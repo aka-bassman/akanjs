@@ -1,3 +1,4 @@
+import { EventStream } from "akanjs/common";
 import type { AgentWireToolCall } from "akanjs/service";
 
 interface StreamedTurn {
@@ -5,6 +6,8 @@ interface StreamedTurn {
   toolCalls?: AgentWireToolCall[];
   stop?: "end" | "toolUse" | "length";
 }
+
+type RunTurn = (onDelta: (delta: string) => void) => Promise<StreamedTurn>;
 
 /**
  * The streaming half of the agent turn wire (use-agentic WIRE.md): the same endpoint answers `text/event-stream`
@@ -28,36 +31,33 @@ export class AgentTurnStream {
       : { message };
   }
 
-  static response(run: (onDelta: (delta: string) => void) => Promise<StreamedTurn>): Response {
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        const send = (event: object) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-        try {
-          let streamed = 0;
-          const turn = await run((delta) => {
-            if (!delta) return;
-            streamed += delta.length;
-            send({ type: "text", delta });
-          });
-          // An adapter that ignores onDelta still resolves the whole text; deliver it as one late delta.
-          if (!streamed && turn.text) send({ type: "text", delta: turn.text });
-          const toolCalls = turn.toolCalls ?? [];
-          for (const call of toolCalls) send({ type: "toolCall", id: call.id, name: call.name, args: call.args });
-          // `length` travels as itself: the browser is the only side that can tell the user an answer was cut off.
-          const stop =
-            turn.stop === "length" ? "length" : turn.stop === "toolUse" || toolCalls.length ? "toolUse" : "end";
-          send({ type: "done", stop });
-        } catch (error) {
-          // The status line is long gone once the stream is open, so a failure travels as the wire's error event.
-          send({ type: "error", ...AgentTurnStream.failure(error) });
-        } finally {
-          controller.close();
-        }
-      },
-    });
-    return new Response(stream, {
-      headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" },
-    });
+  static response(run: RunTurn): Response {
+    // Nothing to cancel: `run` takes no signal, so a turn whose reader went away finishes with nobody holding it.
+    const stream = new EventStream(() => undefined);
+    void AgentTurnStream.#deliver(stream, run);
+    return stream.response();
+  }
+
+  static async #deliver(stream: EventStream, run: RunTurn) {
+    try {
+      let streamed = 0;
+      const turn = await run((delta) => {
+        if (!delta) return;
+        streamed += delta.length;
+        stream.write({ type: "text", delta });
+      });
+      // An adapter that ignores onDelta still resolves the whole text; deliver it as one late delta.
+      if (!streamed && turn.text) stream.write({ type: "text", delta: turn.text });
+      const toolCalls = turn.toolCalls ?? [];
+      for (const call of toolCalls) stream.write({ type: "toolCall", id: call.id, name: call.name, args: call.args });
+      // `length` travels as itself: the browser is the only side that can tell the user an answer was cut off.
+      const stop = turn.stop === "length" ? "length" : turn.stop === "toolUse" || toolCalls.length ? "toolUse" : "end";
+      stream.write({ type: "done", stop });
+    } catch (error) {
+      // The status line is long gone once the stream is open, so a failure travels as the wire's error event.
+      stream.write({ type: "error", ...AgentTurnStream.failure(error) });
+    } finally {
+      stream.close();
+    }
   }
 }

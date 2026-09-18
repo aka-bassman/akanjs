@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { AgenticSurface } from "./AgenticSurface";
 import { AgentProgress } from "./AgentProgress";
 import { ToolRunner } from "./ToolRunner";
-import type { ToolCallRequest, ToolEntry, ToolProgress } from "./types";
+import type { ToolActivity, ToolCallRequest, ToolEntry, ToolProgress } from "./types";
 
 const call = (name: string, args: Record<string, unknown> = {}, id = "c1"): ToolCallRequest => ({ id, name, args });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -210,5 +210,65 @@ describe("ToolRunner serialization", () => {
     expect((await hanging).error).toContain("aborted");
     const after = new ToolRunner(surfaceWith({ name: "bump", run: () => "bumped" }));
     expect((await after.run(call("bump"), new AbortController().signal)).result).toBe("bumped");
+  });
+});
+
+describe("ToolRunner activity", () => {
+  const recorded = (host: Partial<ConstructorParameters<typeof ToolRunner>[1]> = {}) => {
+    const events: string[] = [];
+    return {
+      events,
+      host: { ...host, activity: (event: ToolActivity) => events.push(`${event.phase}:${event.name}`) },
+    };
+  };
+
+  test("a call announces itself starting and ending, with the arguments it was made with", async () => {
+    const seen: ToolActivity[] = [];
+    const surface = surfaceWith({ name: "submitTask", run: () => "done" });
+    const runner = new ToolRunner(surface, { activity: (event) => seen.push(event) });
+    await runner.run(call("submitTask", { id: "7" }), new AbortController().signal);
+    expect(seen.map((event) => event.phase)).toEqual(["start", "end"]);
+    expect(seen[0]).toMatchObject({ callId: "c1", name: "submitTask", args: { id: "7" } });
+    expect(seen[1].error).toBeUndefined();
+  });
+
+  test("a call that threw ends with the reason, so a host can draw the failure it caused", async () => {
+    const surface = surfaceWith({
+      name: "submitTask",
+      run: () => {
+        throw new Error("the server said no");
+      },
+    });
+    const seen: ToolActivity[] = [];
+    const runner = new ToolRunner(surface, { activity: (event) => seen.push(event) });
+    await runner.run(call("submitTask"), new AbortController().signal);
+    expect(seen[1]).toMatchObject({ phase: "end", error: "the server said no" });
+  });
+
+  // Drawing one would say the agent is doing something to the page at the moment the user turned it down.
+  test("nothing is announced for a call an approval or a guard turned back", async () => {
+    const declined = recorded({ approve: async () => "no thanks" });
+    const surface = surfaceWith({ name: "removeTask", confirm: true });
+    await new ToolRunner(surface, declined.host).run(call("removeTask"), new AbortController().signal);
+    expect(declined.events).toEqual([]);
+
+    const unknown = recorded();
+    await new ToolRunner(surfaceWith({ name: "other" }), unknown.host).run(
+      call("nothingHere"),
+      new AbortController().signal,
+    );
+    expect(unknown.events).toEqual([]);
+  });
+
+  // A guard runs inside `surface.call`, so the call has begun by then — the start is honest and the end carries why.
+  test("a guard's refusal is an announced call that failed", async () => {
+    const seen: ToolActivity[] = [];
+    const surface = surfaceWith({ name: "navigate", guard: () => "path must be internal." });
+    await new ToolRunner(surface, { activity: (event) => seen.push(event) }).run(
+      call("navigate"),
+      new AbortController().signal,
+    );
+    expect(seen.map((event) => event.phase)).toEqual(["start", "end"]);
+    expect(seen[1].error).toBe("path must be internal.");
   });
 });

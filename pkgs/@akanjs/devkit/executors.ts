@@ -1714,6 +1714,7 @@ export class AppExecutor extends SysExecutor {
       executor: this,
       getPath: (rel) => this.getPath(rel),
       fileExists: (rel) => FileSys.fileExists(this.getPath(rel)),
+      readFile: (rel) => this.readFile(rel),
       writeFile: async (rel, content, opts) => {
         await this.writeFile(rel, content, opts);
       },

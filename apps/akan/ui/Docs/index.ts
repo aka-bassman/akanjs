@@ -1,4 +1,5 @@
 import { Snippet as CodeSnippet } from "../Code/Snippet";
+import { AgentVisualDemo } from "./AgentVisualDemo";
 import { Alert } from "./Alert";
 import { ConstantDocsDemo, ConstantDocsPrintDemo } from "./ConstantDocsDemo";
 import { Description } from "./Description";
@@ -25,4 +26,4 @@ export const Docs = {
   Search,
 };
 export type { IntroItem, OptionItem };
-export { ConstantDocsDemo, ConstantDocsPrintDemo };
+export { AgentVisualDemo, ConstantDocsDemo, ConstantDocsPrintDemo };

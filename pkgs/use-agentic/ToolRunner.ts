@@ -1,7 +1,7 @@
 import { AgentAbort } from "./AgentAbort";
 import { AgentProgress, type AgentProgressReport } from "./AgentProgress";
 import { ToolOutput } from "./ToolOutput";
-import type { SurfaceView, ToolCallRequest, ToolCallResult, ToolEntry } from "./types";
+import type { SurfaceView, ToolActivity, ToolCallRequest, ToolCallResult, ToolEntry } from "./types";
 
 export interface ToolApprovalRequest {
   callId: string;
@@ -37,6 +37,12 @@ export interface ToolRunnerHost {
    */
   settle?: () => Promise<void> | void;
   progress?: (progress: ToolProgress) => void;
+  /**
+   * That a call is running, for a host drawing it on the page rather than in a transcript. Separate from
+   * `progress`, which only ever fires for a tool that chose to report: a call the user has to be told about is
+   * every call, and one that says nothing about itself is exactly the one whose effect arrives unexplained.
+   */
+  activity?: (event: ToolActivity) => void;
   /**
    * Answers a name the surface does not carry — where a consumer puts a built-in of its own. Reached only after
    * the surface came up empty, so a registered tool of the same name shadows it.
@@ -102,6 +108,9 @@ export class ToolRunner {
   async #execute(call: ToolCallRequest, entry: ToolEntry, signal: AbortSignal): Promise<ToolCallResult> {
     const base = { id: call.id, name: call.name };
     const before = this.#surface.snapshot();
+    // Here rather than in `#answer`, so nothing is drawn for a call an approval or a guard turned back.
+    this.#host.activity?.({ callId: call.id, name: call.name, args: call.args, phase: "start" });
+    let failed: string | undefined;
     try {
       const result = await AgentAbort.run(signal, () =>
         AgentProgress.run(
@@ -119,9 +128,17 @@ export class ToolRunner {
         ...(changes.length ? { changes } : {}),
       };
     } catch (error) {
-      return { ...base, error: error instanceof Error ? error.message : String(error) };
+      failed = error instanceof Error ? error.message : String(error);
+      return { ...base, error: failed };
     } finally {
       this.#host.progress?.({ callId: call.id, report: null });
+      this.#host.activity?.({
+        callId: call.id,
+        name: call.name,
+        args: call.args,
+        phase: "end",
+        ...(failed ? { error: failed } : {}),
+      });
     }
   }
 

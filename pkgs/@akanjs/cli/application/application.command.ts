@@ -155,9 +155,10 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     })
     .option("dbup", Boolean, { desc: "start the local database first", default: true })
     .option("open", Boolean, { desc: "open web browser?", default: false })
+    .option("share", Boolean, { desc: "also share each app on a public URL through an akan tunnel", default: false })
     .option("write", Boolean, { desc: "write code generation", default: true })
-    .exec(async function (apps, plain, kill, concurrency, dbup, open, write) {
-      await this.applicationScript.start(apps, { plain, kill, concurrency, dbup, open, write });
+    .exec(async function (apps, plain, kill, concurrency, dbup, open, share, write) {
+      await this.applicationScript.start(apps, { plain, kill, concurrency, dbup, open, share, write });
     }),
   startIos: target({ short: true, desc: "Start iOS app in simulator or device" })
     .with(App)

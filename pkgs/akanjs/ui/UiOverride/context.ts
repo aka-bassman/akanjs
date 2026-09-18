@@ -11,6 +11,7 @@ import type { CodeProps as AgentCodeProps, MarkdownProps as AgentMarkdownProps }
 import type { MenuProps as AgentMenuProps } from "../Agent/Menu";
 import type { QuestionProps as AgentQuestionProps } from "../Agent/Question";
 import type { QueuedProps as AgentQueuedProps } from "../Agent/Queued";
+import type { StepsProps as AgentStepsProps } from "../Agent/Steps";
 import type { BadgeProps } from "../Badge";
 import type { ButtonProps } from "../Button";
 import type { DatePickerProps, RangePickerProps, TimePickerProps } from "../DatePicker";
@@ -67,9 +68,12 @@ export interface AkanUiOverrides {
 
   // In-page chat, one slot per part. `AgentChat` replaces the whole panel; these replace what it renders, so an
   // app re-skins the transcript or the composer without re-implementing the loop, the slash commands, or the
-  // approval gate. `AgentCode` is the seam a syntax highlighter binds to — the fence's language reaches it.
+  // approval gate. `AgentSteps` is one agent turn — everything between two user messages — which is the grain a
+  // folded scaffold needs and the one thing a per-message slot cannot see. `AgentCode` is the seam a syntax
+  // highlighter binds to — the fence's language reaches it.
   AgentLauncher: ComponentType<AgentLauncherProps>;
   AgentBubble: ComponentType<AgentBubbleProps>;
+  AgentSteps: ComponentType<AgentStepsProps>;
   AgentComposer: ComponentType<AgentComposerProps>;
   AgentApproval: ComponentType<AgentApprovalProps>;
   AgentQuestion: ComponentType<AgentQuestionProps>;

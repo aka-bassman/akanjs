@@ -349,7 +349,7 @@ body.akan-mobile-document {
 /*
  * The in-page agent's `highlight` tool: a ring that draws the eye, holds, and fades, on the app's own primary
  * token. It holds through the middle because a person has to find it after the scroll — a symmetric fade reads as
- * a flicker. `StoreSurfaceSource.highlightMs` mirrors this duration.
+ * a flicker. `ScreenFlash.ringMs` mirrors this duration.
  */
 @keyframes akanAgentHighlight {
   0% {
@@ -371,6 +371,107 @@ body.akan-mobile-document {
   outline-offset: 2px;
   border-radius: var(--radius-field, 0.25rem);
   animation: akanAgentHighlight 2.4s ease-in-out;
+}
+
+/*
+ * The receipt beside a control the agent just drove, as opposed to one it was asked to point at: shorter, and a
+ * wash of the primary token behind the outline so it reads at a glance without the user hunting for the ring.
+ * `ScreenFlash.actingMs` mirrors this duration.
+ */
+@keyframes akanAgentActing {
+  0% {
+    outline-color: color-mix(in oklab, var(--color-primary) 0%, transparent);
+    background-color: color-mix(in oklab, var(--color-primary) 0%, transparent);
+  }
+  20% {
+    outline-color: var(--color-primary);
+    background-color: color-mix(in oklab, var(--color-primary) 14%, transparent);
+  }
+  100% {
+    outline-color: color-mix(in oklab, var(--color-primary) 0%, transparent);
+    background-color: color-mix(in oklab, var(--color-primary) 0%, transparent);
+  }
+}
+
+.akan-agent-acting {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-field, 0.25rem);
+  animation: akanAgentActing 1s ease-out;
+}
+
+/*
+ * The agent's pointer. Positioned by a transform on the element's own centre, so the two children draw relative to
+ * a point rather than a box — `i` is the arrow and `b` the tap ripple.
+ */
+.akan-agent-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2147483001;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    transform 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 200ms ease-out;
+}
+
+.akan-agent-cursor-shown {
+  opacity: 1;
+}
+
+/* No travel for the first placement: the pointer has nowhere to have come from. */
+.akan-agent-cursor-placing {
+  transition: opacity 200ms ease-out;
+}
+
+/* The tip sits on the transform's own point, so the pointer lands on the control's centre rather than beside it. */
+.akan-agent-cursor > i {
+  position: absolute;
+  display: block;
+  width: 14px;
+  height: 20px;
+  background: var(--color-primary);
+  clip-path: polygon(0 0, 0 72%, 24% 55%, 40% 92%, 58% 84%, 42% 48%, 70% 46%);
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.45));
+}
+
+.akan-agent-cursor > b {
+  position: absolute;
+  display: block;
+  width: 2rem;
+  height: 2rem;
+  margin: -1rem 0 0 -1rem;
+  border-radius: 9999px;
+  border: 2px solid var(--color-primary);
+  opacity: 0;
+}
+
+.akan-agent-cursor-tap > b {
+  animation: akanAgentTap 450ms ease-out;
+}
+
+@keyframes akanAgentTap {
+  0% {
+    transform: scale(0.2);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .akan-agent-acting,
+  .akan-agent-highlight {
+    animation-duration: 0.01ms;
+  }
+
+  /* The pointer still appears and still taps — what goes is the glide, which is the part that is motion. */
+  .akan-agent-cursor {
+    transition: opacity 200ms ease-out;
+  }
 }
 
 @keyframes spin {

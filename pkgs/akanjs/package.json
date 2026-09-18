@@ -1,6 +1,6 @@
 {
   "name": "akanjs",
-  "version": "3.0.0-beta.9",
+  "version": "3.0.0-beta.11",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -114,6 +114,11 @@
       "import": "./server/akanApp.ts",
       "types": "./server/akanApp.ts",
       "default": "./server/akanApp.ts"
+    },
+    "./server/tunnel": {
+      "import": "./server/tunnel/index.ts",
+      "types": "./server/tunnel/index.ts",
+      "default": "./server/tunnel/index.ts"
     },
     "./server/memoryLimit": {
       "import": "./server/memoryLimit.ts",

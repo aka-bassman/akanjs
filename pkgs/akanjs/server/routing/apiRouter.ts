@@ -1,5 +1,5 @@
 import { dayjs } from "akanjs/base";
-import { type Logger, websocketAuthContract } from "akanjs/common";
+import { type Logger, websocketAuthContract, websocketHeartbeatContract } from "akanjs/common";
 import type { InjectRegistry, LiveRegistry } from "akanjs/service";
 import { isExceptionLike, SignalContext, SignalFailure, type WebsocketReqData } from "akanjs/signal";
 import { compressResponse } from "../contentEncoding";
@@ -144,6 +144,10 @@ export class ApiRouter {
               AppWsData.applyCredential(AppWsData.of(ws), websocketAuthContract.readJwt(msg.data));
               const revokedRooms = await SignalResolver.revalidateWsRooms(ws, registry, live);
               ws.send(JSON.stringify(websocketAuthContract.makeAck(revokedRooms)));
+              return;
+            }
+            if (msg.key === websocketHeartbeatContract.key) {
+              ws.send(JSON.stringify(websocketHeartbeatContract.makeAck()));
               return;
             }
             const wsRoute = wsRoutes[msg.key];

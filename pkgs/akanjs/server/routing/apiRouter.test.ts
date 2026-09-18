@@ -229,6 +229,30 @@ describe("ApiRouter websocket authentication", () => {
     expect(AppWsData.of(ws).account).toBeUndefined();
   });
 
+  test("answers a heartbeat frame instead of rejecting it as an unregistered route", async () => {
+    process.env.AKAN_PUBLIC_APP_NAME = "test";
+    const { ApiRouter } = await import("./apiRouter");
+    const { AppWsData } = await import("./appWsData");
+    const { websocketHeartbeatContract } = await import("akanjs/common");
+    const sent: string[] = [];
+    const ws = {
+      data: AppWsData.fromRequest(new Request("http://localhost/api/ws")),
+      send: (message: string) => sent.push(message),
+    } as unknown as Bun.ServerWebSocket<{ kind?: string }>;
+    const handlers = ApiRouter.buildWebsocketHandlers({
+      wsRoutes: {} as WebsocketRoutes,
+      registry: getDefaultInjectRegistry(),
+      hmrHub: null,
+      hmrState: null,
+      logger: { error: () => undefined } as never,
+    });
+
+    await handlers.message?.(ws, JSON.stringify(websocketHeartbeatContract.makeRequest()));
+
+    expect(sent).toHaveLength(1);
+    expect(JSON.parse(sent[0] ?? "{}")).toEqual({ type: "pong" });
+  });
+
   test("signing out over the socket clears the credential it was upgraded with", async () => {
     process.env.AKAN_PUBLIC_APP_NAME = "test";
     const { ApiRouter } = await import("./apiRouter");

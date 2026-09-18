@@ -2,7 +2,7 @@ import "../../test/registerDom";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import type { AgentRunner, MessageAttachment, ToolCallRequest } from "use-agentic";
+import type { AgentRunner, ChatMessage, MessageAttachment, ToolCallRequest } from "use-agentic";
 
 let lib: typeof import("use-agentic");
 let DefaultChat: typeof import("./Chat").DefaultChat;
@@ -73,6 +73,26 @@ const scripted = (...turns: Turn[]): AgentRunner => {
 const untilFlushed = async (done: () => boolean) => {
   for (let i = 0; i < 100 && !done(); i += 1) await Promise.resolve();
 };
+
+/** A transcript already in storage, which is how a test opens a chat on messages nothing had to run to produce. */
+const stored = (...messages: ChatMessage[]) => ({
+  load: () => messages,
+  save: () => {},
+  clear: () => {},
+});
+
+/** A turn slot that puts what it was handed where the DOM can be read, so a re-render cannot double-count it. */
+const stepsSkin = {
+  AgentSteps: ({ messages, isRunning }: { messages: readonly ChatMessage[]; isRunning: boolean }) => (
+    <div data-running={isRunning ? "yes" : "no"} data-skin="steps">
+      {messages.map((message, idx) => (
+        <span key={idx}>{message.text ?? `[${message.role}]`}</span>
+      ))}
+    </div>
+  ),
+};
+
+const turns = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>('[data-skin="steps"]')];
 
 /**
  * happy-dom dispatch never reaches React's synthetic handlers, so the composer is driven through its props — and
@@ -589,6 +609,136 @@ describe("Agent.Chat", () => {
     expect(container.innerHTML).toContain("ask");
     // The composer, the launcher and the loop are the default's still: one slot replaced one part.
     expect(container.innerHTML).toContain("base.agentPlaceholder");
+    unmount();
+  });
+
+  test("hands one agent turn to the AgentSteps slot, and leaves the user's own messages beside it", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }), {
+      history: stored(
+        { role: "assistant", text: "Earlier they asked about routing.", summary: true },
+        { role: "user", text: "find it" },
+        { role: "assistant", text: "Looking.", toolCalls: [{ id: "c1", name: "searchDocs", args: {} }] },
+        { role: "tool", toolResults: [{ id: "c1", name: "searchDocs", result: "ok" }] },
+        { role: "assistant", text: "Found it." },
+        { role: "user", text: "thanks" },
+        { role: "assistant", text: "Any time." },
+      ),
+    });
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <UiOverrideProvider value={stepsSkin}>
+          <DefaultChat defaultOpen />
+        </UiOverrideProvider>
+      </lib.AgentProvider>,
+    );
+    // Three turns: a transcript whose head is a compaction summary opens one without a user message to start it,
+    // and the tool message is in none of them — its result is already drawn by the call row that claims it.
+    expect(turns(container).map((turn) => [...turn.children].map((step) => step.textContent))).toEqual([
+      ["Earlier they asked about routing."],
+      ["Looking.", "Found it."],
+      ["Any time."],
+    ]);
+    // The user's own messages are not in a turn, and the rest of the panel is the default's still.
+    expect(container.innerHTML).toContain("find it");
+    expect(container.innerHTML).toContain("thanks");
+    expect(container.innerHTML).toContain("base.agentPlaceholder");
+    unmount();
+  });
+
+  test("marks only the turn that is still running, and stops marking it once the turn settles", async () => {
+    const gates = [0, 1].map(() => {
+      let release = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { held, release };
+    });
+    let started = 0;
+    const runner: AgentRunner = {
+      async *run() {
+        const gate = gates[Math.min(started, gates.length - 1)];
+        started += 1;
+        yield { type: "text", delta: `turn ${started}` };
+        await gate.held;
+        yield { type: "done", stop: "end" };
+      },
+    };
+    const session = new lib.AgentSession(new lib.AgenticSurface(), runner);
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <UiOverrideProvider value={stepsSkin}>
+          <DefaultChat defaultOpen />
+        </UiOverrideProvider>
+      </lib.AgentProvider>,
+    );
+    const running = () => turns(container).map((turn) => turn.getAttribute("data-running"));
+    let first: Promise<void> = Promise.resolve();
+    await act(async () => {
+      first = session.send("first");
+      await untilFlushed(() => session.messages.some((message) => message.text === "turn 1"));
+    });
+    expect(running()).toEqual(["yes"]);
+    await act(async () => {
+      gates[0].release();
+      await first;
+    });
+    expect(running()).toEqual(["no"]);
+    let second: Promise<void> = Promise.resolve();
+    await act(async () => {
+      second = session.send("second");
+      await untilFlushed(() => session.messages.some((message) => message.text === "turn 2"));
+    });
+    // The turn that settled stays settled: only the last one is the one the session is working on.
+    expect(running()).toEqual(["no", "yes"]);
+    await act(async () => {
+      gates[1].release();
+      await second;
+    });
+    expect(running()).toEqual(["no", "no"]);
+    unmount();
+  });
+
+  test("the default turn draws the same flat bubbles, adding no element of its own", () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }), {
+      history: stored(
+        { role: "user", text: "ask" },
+        { role: "assistant", text: "Working." },
+        { role: "assistant", text: "Done." },
+      ),
+    });
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    // One transcript child per message, exactly as before a turn was a group: the default is a Fragment, not a box.
+    const log = container.querySelector('[role="log"]');
+    expect([...(log?.children ?? [])].map((child) => child.textContent)).toEqual(["ask", "Working.", "Done."]);
+    unmount();
+  });
+
+  test("groups a restored transcript by the same boundary, with the turn folded to one assistant message", () => {
+    // What a host storing rows of its own hands back: the calls are folded into the assistant's text, so a
+    // restored turn is assistant text and nothing else. The boundary is the user message either way.
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "hi" }), {
+      history: stored(
+        { role: "user", text: "find it" },
+        { role: "assistant", text: "Found it.\n\n[called: searchDocs]" },
+        { role: "user", text: "thanks" },
+        { role: "assistant", text: "Any time." },
+      ),
+    });
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <UiOverrideProvider value={stepsSkin}>
+          <DefaultChat defaultOpen />
+        </UiOverrideProvider>
+      </lib.AgentProvider>,
+    );
+    const groups = turns(container);
+    expect(groups.map((turn) => turn.children.length)).toEqual([1, 1]);
+    expect(groups[0]?.textContent).toContain("[called: searchDocs]");
+    expect(groups[1]?.textContent).toContain("Any time.");
     unmount();
   });
 
