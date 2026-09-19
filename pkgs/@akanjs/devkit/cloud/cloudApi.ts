@@ -17,7 +17,7 @@ class HttpClient {
         ...headers,
       },
     });
-    return await response.json();
+    return await HttpClient.#body<T>(response, url);
   }
   async getFile(url: string, localPath: string, headers?: Record<string, string>): Promise<void> {
     const response = await fetch(`${this.baseUrl}${url}`, {
@@ -35,7 +35,16 @@ class HttpClient {
         ? { ...this.headers, ...headers }
         : { "Content-Type": "application/json", ...this.headers, ...headers },
     });
-    return await response.json();
+    return await HttpClient.#body<T>(response, url);
+  }
+  /**
+   * A route that does not exist answers the error *page*, not JSON, so parsing first reports a syntax error at
+   * `<` and buries the status that says what is actually wrong. Read the status before the body.
+   */
+  static async #body<T>(response: Response, url: string): Promise<T> {
+    const text = await response.text();
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText} from ${url}: ${text.slice(0, 200)}`);
+    return JSON.parse(text) as T;
   }
   setHeaders(headers: Record<string, string>) {
     Object.assign(this.headers, headers);
@@ -132,16 +141,21 @@ export class CloudApi {
     this.#api.setHeaders({ Authorization: `Bearer ${this.#accessToken.jwt}` });
     return this.#accessToken;
   }
+  /**
+   * The `/tunnel` segment is the model's refName, which every database module's endpoints carry and the service
+   * modules above — `_cloud`, which owns `uploadEnv` and `getRemoteSelf` — do not. Dropping it to match those
+   * neighbours answers 404, and the control plane returns an HTML error page that fails as a JSON parse error.
+   */
   async requestTunnel(input: { name: string; ttlMinutes?: number }): Promise<TunnelGrant> {
-    return await this.#api.post<TunnelGrant>(`/requestTunnel`, input);
+    return await this.#api.post<TunnelGrant>(`/tunnel/requestTunnel`, input);
   }
   /** The generated name of the model's own `inSelf` slice: a hand-written `listTunnels` would collide with it. */
   async tunnelListInSelf(): Promise<TunnelSummary[]> {
-    return await this.#api.get<TunnelSummary[]>(`/tunnelListInSelf`);
+    return await this.#api.get<TunnelSummary[]>(`/tunnel/tunnelListInSelf`);
   }
   /** Hands the grant back. The CLI calls this "stop", which is what the operator is doing, not what it does. */
   async revokeTunnel(code: string): Promise<boolean> {
-    return await this.#api.post<boolean>(`/revokeTunnel`, { code });
+    return await this.#api.post<boolean>(`/tunnel/revokeTunnel`, { code });
   }
   async getRemoteSelf(): Promise<{ id: string; nickname: string } | null> {
     try {
