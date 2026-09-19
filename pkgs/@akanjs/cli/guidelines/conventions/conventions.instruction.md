@@ -714,9 +714,12 @@ what every developer must know even when not building one.
   every tool runs in the caller's own browser session, gated by guards and the approval card. Its guard is
   `AgentRelayAccess`, which refuses every call until the app names a guard of its own —
   `option.setAgentAccess(SignedIn)`. **The LLM is configured in `option.ts`, never through the environment**
-  (`option.setLlm({ apiKey, model, host })`). Three providers ship — `DeepseekLlm` (the default, text only),
-  `OpenaiLlm` and `AnthropicLlm` (both read images) — and swapping one in is
-  `option.applyAdaptor(LlmAdaptorRole, AnthropicLlm)`.
+  (`option.setLlm({ apiKey, model, host })`). Two adaptors ship, one per wire: `OpenaiLlm` is the default and
+  speaks the chat-completions dialect to whatever `host` names — OpenAI, DeepSeek, Groq, OpenRouter, Ollama — and
+  `AnthropicLlm` speaks the Messages API and reads a PDF as well as a picture. Both require `model`. A provider
+  neither covers is an `adapt()` class in `srvkit/` implementing `LlmAdaptor`, applied with
+  `option.applyAdaptor(LlmAdaptorRole, TheClass)`; whatever settings it needs beyond `LlmOption` ride `setLlm`
+  too, read back with `use<MyLlmOption>()`.
 - **Declare the tool beside the control that already does it**, never as a separate surface:
   `st.tool("x").desc("…").arg("id", ID).exec(fn)` returns the callable to hand to `onClick` — one handler for the
   person and the agent. Publish it only where the screen already renders the control; a falsy name declares the

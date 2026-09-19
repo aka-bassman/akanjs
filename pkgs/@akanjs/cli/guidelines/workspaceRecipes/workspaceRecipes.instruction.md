@@ -393,6 +393,68 @@ Rules the loader and `akan sync` enforce: a chain module has no other export; `p
 `_overrides.tsx` is untouched. MCP: `prompts/get` now runs the page's body under the caller's token and hands the
 model the description, what the page fetched, and the tools of those modules — see `mcpRule`.
 
+---
+
+### Recipe 8: Migrating the LLM Adaptor and the Removed `--ai` Commands
+
+Two changes land together. The runtime LLM seam now names a wire rather than a vendor, and the CLI's AI editor is
+gone. They touch different files and neither one is optional — the first breaks a build or, worse, degrades
+silently; the second breaks a script that calls a command that no longer exists.
+
+#### The adaptor, in `lib/option.ts` and `env/env.server.*.ts`
+
+`DeepseekLlm` is deleted. `OpenaiLlm` is the default and speaks the chat-completions dialect to whatever `host`
+names, so DeepSeek, Groq, Together, OpenRouter, Ollama and a self-hosted vLLM are the same class with a different
+`host` and `model`. `AnthropicLlm` is unchanged.
+
+```ts
+// before — env/env.server.local.ts
+export const env: ModulesOptions = {
+  ...libEnv,
+  llm: { apiKey: process.env.DEEPSEEK_KEY },
+};
+
+// after — the default model and host are gone, so name both
+export const env: ModulesOptions = {
+  ...libEnv,
+  llm: { apiKey: process.env.DEEPSEEK_KEY, model: "deepseek-v4-flash", host: "https://api.deepseek.com" },
+};
+```
+
+| Before | After | What happens if you skip it |
+|---|---|---|
+| `setLlm({ apiKey })`, relying on the DeepSeek default | `setLlm({ apiKey, model, host })` | The app boots, the log warns once, and the chat answers `llmUnavailable` to every turn |
+| `applyAdaptor(LlmAdaptorRole, DeepseekLlm)` | `OpenaiLlm` + `host: "https://api.deepseek.com"` | Build error — the class is gone |
+| `OpenaiLlm` pointed at a **named** `host`, reading images | add `accepts: { image: true }` to `setLlm` | **Silent**: images reach the model as a note saying they could not be read |
+| An adaptor of your own throwing `agent.error.<vendor>RequestFailed` | `new Err("agent.error.llmRequestFailed", { provider, status, reason })` | The chat prints the raw key instead of a sentence |
+| Provider settings in a second `option.use({ myLlmOption })` | put them in `setLlm` and read `use<MyLlmOption>()` | Nothing breaks; the second channel is no longer needed |
+
+`OpenaiLlm` claims vision for its default host (`https://api.openai.com/v1`) and for nothing else, because a host
+you named is a gateway it knows nothing about — and bytes handed to a model that cannot decode them kill the whole
+turn on a 400, where text-only degrades them to a note. Declare `accepts` whenever you set `host`.
+
+`LlmOption` is now a floor rather than the whole shape: `setLlm` carries whatever else it is handed to the role, so
+an adaptor of your own declares `interface MyLlmOption extends LlmOption { region: string }`, reads it with
+`use<MyLlmOption>()`, and stops needing a config channel beside `setLlm`.
+
+#### The CLI, in scripts and CI
+
+`AiSession` and every command that drove it are removed. There is no replacement command — the workspace's agent
+surface (`akan context`, the MCP tools, `akan guideline show`) is what feeds a coding agent now.
+
+| Removed | What to do instead |
+|---|---|
+| `akan create-module <name> --ai`, `akan create-scalar <name> --ai` | Drop the flag. The command scaffolds the same files it always did; write the constant and dictionary yourself or let a coding agent do it against `get_guideline modelConstant` / `modelDictionary` |
+| `akan compact <app-or-lib>` | Edit the `*.abstract.md` by hand. `akan quality scan` still warns past 300 lines |
+| `akan set-llm`, `akan reset-llm`, `akan ask` | Nothing. The runtime LLM is `option.setLlm(...)` and has never been this config |
+| `akan generate-instruction`, `akan update-instruction`, `akan generate-document`, `akan reapply-instruction` | Nothing. `akan guideline list` / `show` still read the bundled guidelines |
+| `import { AiSession } from "@akanjs/devkit/aiEditor"` | Nothing — the module is gone |
+
+`~/.akan/config.json` keeps an `llm` entry if it had one. It is ignored; delete it, because it holds an API key.
+
+Then: `bun run akan typecheck <app>`, `bun run akan lint <app>`, and one agent turn in the browser to confirm the
+provider answers.
+
 ### Data Flow Summary
 
 For each business question, follow this chain:

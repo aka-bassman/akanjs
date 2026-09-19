@@ -95,7 +95,9 @@ describe("OAuthClientIdMetadata", () => {
 
   test("refuses what is not a small JSON document", async () => {
     expect(await OAuthClientIdMetadata.fetch(clientId, { fetchImpl: fetching("not json"), resolve })).toBeNull();
-    expect(await OAuthClientIdMetadata.fetch(clientId, { fetchImpl: fetching(document, { status: 404 }) })).toBeNull();
+    expect(
+      await OAuthClientIdMetadata.fetch(clientId, { fetchImpl: fetching(document, { status: 404 }), resolve }),
+    ).toBeNull();
     const huge = fetching(document, { headers: { "content-length": String(OAuthClientIdMetadata.maxBytes + 1) } });
     expect(await OAuthClientIdMetadata.fetch(clientId, { fetchImpl: huge, resolve })).toBeNull();
     const throwing = async () => {

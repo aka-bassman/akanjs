@@ -65,14 +65,14 @@ describe("AgentTurnStream", () => {
 
   test("a domain Err sends the values its text interpolates alongside its key", async () => {
     const response = AgentTurnStream.response(async () => {
-      throw Object.assign(new Error("agent.error.deepseekRequestFailed"), {
+      throw Object.assign(new Error("agent.error.llmRequestFailed"), {
         data: { status: "400", reason: "context length exceeded" },
       });
     });
     expect(await framesOf(response)).toEqual([
       {
         type: "error",
-        message: "agent.error.deepseekRequestFailed",
+        message: "agent.error.llmRequestFailed",
         data: { status: "400", reason: "context length exceeded" },
       },
     ]);

@@ -3,7 +3,6 @@
   "name": "akan",
   "version": "0.0.1",
   "dependencies": {
-    "@langchain/openai": "^1.4.6",
     "react": "19.2.7",
     "react-icons": "^5.6.0",
     "react-spring": "^10.0.4",

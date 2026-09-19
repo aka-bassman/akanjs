@@ -21,6 +21,7 @@
       "create a mutation",
       "internal triggers",
       "insights",
+      "migrating the LLM adaptor and the removed --ai commands",
       "auto-generated API reference"
     ],
     "rules": [

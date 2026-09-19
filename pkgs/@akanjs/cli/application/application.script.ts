@@ -1,4 +1,3 @@
-import type { AbstractCompactOptions } from "@akanjs/devkit/abstractCompactor";
 import type { DevHostEvent } from "@akanjs/devkit/akanApp";
 import type { AkanAppConfig, DatabaseMode, MobileEnv } from "@akanjs/devkit/akanConfig";
 import { ApplicationBuildReporter } from "@akanjs/devkit/applicationBuildReporter";
@@ -24,6 +23,7 @@ import { DevPortReclaimer } from "./devPortReclaimer";
 import { DevStreamView } from "./devStreamView";
 import { DevSupervisor } from "./devSupervisor";
 import { type DevUiMode, resolveDevUi } from "./devUiMode";
+import { InterruptTeardown } from "./interruptTeardown";
 
 interface StartOptions {
   open?: boolean;
@@ -57,6 +57,7 @@ type MobileReleaseOptions = MobileCommandOptions & {
 export class ApplicationScript extends script("application", [ApplicationRunner, LibraryScript]) {
   /** Long enough for `docker compose down` on a healthy daemon, short enough that a wedged one still exits. */
   static dbShutdownTimeoutMs = 20_000;
+  readonly #interrupt = new InterruptTeardown();
   async confirmDatabaseModeDependencyInstall(databaseMode: DatabaseMode, installSpecs: string[]) {
     return await confirm({
       message: [
@@ -164,18 +165,6 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     else await this.libraryScript.syncLibrary(sys as Lib);
   }
 
-  async compact(sys: Sys, { module = null, minLines, interactive = false }: AbstractCompactOptions = {}) {
-    const { scanned, reports } = await this.applicationRunner.compact(sys, { module, minLines, interactive });
-    if (!reports.length) {
-      Logger.rawLog(`No abstract file long enough to compact in ${sys.name} (${scanned} scanned)`);
-      return;
-    }
-    for (const report of reports)
-      Logger.rawLog(`${report.status}: ${report.path} (${report.beforeLines} -> ${report.afterLines} lines)`);
-    const compactedNum = reports.filter((report) => report.status === "compacted").length;
-    Logger.rawLog(`Compacted ${compactedNum}/${reports.length} abstract files in ${sys.name}`);
-  }
-
   async script(app: App, filename: string | null) {
     const scriptFilename = filename ?? (await this.applicationRunner.getScriptFilename(app));
     await app.scanSync();
@@ -270,6 +259,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     //? process's own stdio, and the same Ctrl+C handling it always had.
     if (mode === "stream" && apps.length === 1)
       return await this.startOne(first, { open, dbup, write, ...DevSupervisor.childHooks() });
+    this.#interrupt.ownsExit = false;
     await this.#startMany(apps, { open, dbup, write, mode, concurrency });
   }
 
@@ -497,13 +487,6 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     spinner.succeed("Local database (/local/docker-compose.yaml) is down");
   }
   /**
-   * Registering any SIGINT listener replaces the kernel's "terminate now" with this callback, so from
-   * here on it is the only thing that can end `akan start` — Ctrl+C does nothing at all until it
-   * returns. `docker compose down` takes tens of seconds on a healthy daemon and never returns on a
-   * wedged one, so the teardown is bounded and the exit runs even when it fails, and a second Ctrl+C
-   * abandons it rather than queueing behind the first.
-   */
-  /**
    * Opens a public share per app and hands the hostnames back when the session ends.
    *
    * The agent runs in *this* process rather than inside the dev server, so it is unaffected by which supervisor
@@ -527,25 +510,20 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
         "error",
       );
     });
-    let closing = false;
-    process.on("SIGINT", () => {
-      if (closing) return;
-      closing = true;
-      void Promise.all(shares.map(async (share) => await share.close()));
-    });
+    this.#interrupt.add(async () => {
+      await Promise.all(shares.map(async (share) => await share.close()));
+    }, "Abandoning the tunnel release; the shares expire on their own.");
     return open;
   }
 
+  /**
+   * `docker compose down` takes tens of seconds on a healthy daemon and never returns on a wedged one, so the
+   * teardown is bounded and the exit runs even when it fails.
+   */
   #stopDatabaseOnInterrupt(workspace: Workspace) {
-    let stopping = false;
-    process.on("SIGINT", () => {
-      if (stopping) {
-        Logger.rawLog("Abandoning the local database teardown; containers are left running.", undefined, "error");
-        process.exit(130);
-      }
-      stopping = true;
-      void this.#stopDatabase(workspace).finally(() => process.exit(0));
-    });
+    this.#interrupt.add(async () => {
+      await this.#stopDatabase(workspace);
+    }, "Abandoning the local database teardown; containers are left running.");
   }
   async #stopDatabase(workspace: Workspace) {
     // Cleared rather than left to fire: the losing timer of this race is a live handle, and it holds the

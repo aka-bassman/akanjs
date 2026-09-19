@@ -30,7 +30,7 @@ export class GlobalConfig {
     };
   }
   /**
-   * This file holds the cloud jwt, a refresh token that does not expire, and the LLM api key, so it is
+   * This file holds the cloud jwt and a refresh token that does not expire, so it is
    * written owner-only — the same `0600` the runtime gives its control socket. `Bun.write` takes no mode
    * and lands on `0666 & ~umask` (0644 on a default shell), so the mode is applied after the write; an
    * existing world-readable file is tightened by the next write rather than left as it was found.
@@ -48,14 +48,6 @@ export class GlobalConfig {
     const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
     akanConfig.cloudHost[config.host] = GlobalConfig.toHostConfigDto(config);
     await GlobalConfig.#setAkanGlobalConfig(akanConfig);
-  }
-  static async getLlmConfig(): Promise<AkanGlobalConfig["llm"]> {
-    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
-    return akanConfig.llm ?? null;
-  }
-  static async setLlmConfig(llmConfig: AkanGlobalConfig["llm"]) {
-    const akanConfig = await GlobalConfig.#getAkanGlobalConfig();
-    await GlobalConfig.#setAkanGlobalConfig({ ...akanConfig, llm: llmConfig });
   }
   static async getRemoteEnvServers(): Promise<AkanGlobalConfig["remoteEnvServers"]> {
     const akanConfig = await GlobalConfig.#getAkanGlobalConfig();

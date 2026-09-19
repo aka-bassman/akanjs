@@ -59,7 +59,7 @@ export const Menu = ({
           switchTab(menu);
           if (scrollToTop) window.scrollTo({ top: 0, behavior: "smooth" });
         }}
-        {...agentAttrs(switchTab)}
+        {...agentAttrs(switchTab, menu)}
         role="tab"
         type="button"
       >

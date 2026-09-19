@@ -8,13 +8,10 @@ export class ScalarCommand extends command("scalar", [ScalarScript], ({ public: 
   createScalar: target({ desc: "Create a new scalar type (simple data model without DB)" })
     .arg("scalarName", String, { desc: "name of scalar" })
     .with(Sys)
-    .option("ai", Boolean, { default: false, desc: "use ai to create scalar" })
     .option("format", String, { flag: "o", desc: "output format", default: "markdown", enum: ["markdown", "json"] })
-    .exec(async function (scalarName, sys, ai, format) {
+    .exec(async function (scalarName, sys, format) {
       const name = lowerlize(scalarName.replace(/ /g, ""));
-      const report = ai
-        ? await this.scalarScript.createScalarWithAi(sys, name)
-        : await this.scalarScript.createScalar(sys, name);
+      const report = await this.scalarScript.createScalar(sys, name);
       Logger.rawLog(renderPrimitiveReport(report, format as PrimitiveFormat));
     }),
   removeScalar: target({ desc: "Remove a scalar type from an app or library" })

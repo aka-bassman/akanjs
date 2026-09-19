@@ -73,8 +73,15 @@ export class AkanOption<Env extends BackendEnv = BackendEnv> {
     this.#crossSite = crossSite;
     return this;
   }
-  /** Settings for whichever adaptor fills `LlmAdaptorRole`, injected into it as the `llmOption` use. */
-  setLlm(llmOrFn: LlmOption | ((env: Env) => LlmOption)) {
+  /**
+   * Settings for whichever adaptor fills `LlmAdaptorRole`, injected into it as the `llmOption` use.
+   *
+   * The argument is generic so that whatever an adaptor needs beyond `LlmOption` travels here too: an adaptor an
+   * app or a library wrote declares its own interface extending it, reads it with `use<MyLlmOption>()`, and its
+   * region or project id rides the same channel the shipped fields do. Entries merge in mount order with the
+   * app's last, so a library may name a host and the app the key.
+   */
+  setLlm<Option extends LlmOption>(llmOrFn: Option | ((env: Env) => Option)) {
     if (typeof llmOrFn === "function") this.#getLlms.push(llmOrFn);
     else this.#getLlms.push(() => llmOrFn);
     return this;

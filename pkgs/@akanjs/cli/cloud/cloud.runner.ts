@@ -1,5 +1,4 @@
 import path from "node:path";
-import { AiSession } from "@akanjs/devkit/aiEditor";
 import { CloudApi, GlobalConfig, getDefaultHostConfig, type RemoteEnvServerConfig } from "@akanjs/devkit/cloud";
 import { runner, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, WorkspaceExecutor } from "@akanjs/devkit/executors";
@@ -232,13 +231,6 @@ export class CloudRunner extends runner("cloud") {
       Logger.rawLog(chalk.yellow.bold("\n⚠️  No active session found"));
       Logger.rawLog(chalk.dim("You were not logged in to begin with\n"));
     }
-  }
-  async setLlm() {
-    await AiSession.init({ useExisting: false });
-  }
-  resetLlm() {
-    AiSession.setLlmConfig(null);
-    Logger.rawLog(chalk.green("☑️ LLM model config is cleared. Please run `akan set-llm` to set a new LLM model."));
   }
   async getAkanPkgs(workspace: Workspace) {
     const pkgs = await workspace.getPkgs();

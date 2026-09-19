@@ -50,7 +50,7 @@ export const agentSessionOf = ({
 }: AgentSessionSetup): AgentSession => {
   const { surface } = ensureStoreSurface();
   const history = sessionHistoryOf(persist, view.join("."));
-  const onActivity = AgentVisual.sink(visual);
+  const drawing = AgentVisual.sink(visual);
   return new AgentSession(sessionView(surface, view, builtins), runner ?? fetchRunner(), {
     buildContext: (scoped) => AgentContext.of().blocks(scoped, view),
     settle: () => ScreenSettle.wait(),
@@ -60,6 +60,6 @@ export const agentSessionOf = ({
     ...(compact ? { compact } : {}),
     ...(history ? { history } : {}),
     ...(onCompact ? { onCompact } : {}),
-    ...(onActivity ? { onActivity } : {}),
+    ...(drawing ?? {}),
   });
 };

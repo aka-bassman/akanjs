@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { LlmTurnRequest } from "akanjs/service";
+import type { LlmOption, LlmTurnRequest } from "akanjs/service";
 import { OpenaiDialect } from "./openaiDialect";
 import { OpenaiLlm } from "./openaiLlm";
 
@@ -78,12 +78,60 @@ describe("OpenaiLlm content parts", () => {
 });
 
 describe("OpenaiLlm refusals", () => {
-  test("carries the provider's own sentence under its own key", async () => {
+  test("carries the provider's own sentence, named by the host that refused", async () => {
     const body = JSON.stringify({ error: { message: "context_length_exceeded" } });
-    const error = (await OpenaiLlm.refusal(new Response(body, { status: 400 }))) as Error & {
+    const error = (await OpenaiLlm.refusal(OpenaiLlm.defaultHost, new Response(body, { status: 400 }))) as Error & {
       data?: Record<string, string>;
     };
-    expect(error.message).toBe("agent.error.openaiRequestFailed");
-    expect(error.data).toEqual({ status: "400", reason: "context_length_exceeded" });
+    expect(error.message).toBe("agent.error.llmRequestFailed");
+    expect(error.data).toEqual({ provider: "api.openai.com", status: "400", reason: "context_length_exceeded" });
+  });
+
+  test("a gateway the app named answers under its own host, not OpenAI's", async () => {
+    const body = JSON.stringify({ error: { message: "This model's maximum context length is 65536 tokens" } });
+    const error = (await OpenaiLlm.refusal(
+      "https://api.deepseek.com",
+      new Response(body, { status: 400 }),
+    )) as Error & {
+      data?: Record<string, string>;
+    };
+    expect(error.data).toEqual({
+      provider: "api.deepseek.com",
+      status: "400",
+      reason: "This model's maximum context length is 65536 tokens",
+    });
+  });
+
+  test("a body that is not the dialect's JSON falls back to the status line", async () => {
+    const error = (await OpenaiLlm.refusal(
+      OpenaiLlm.defaultHost,
+      new Response("<html>gateway</html>", { status: 502 }),
+    )) as Error & { data?: Record<string, string> };
+    expect(error.data?.status).toBe("502");
+    expect(error.data?.reason).toBeTruthy();
+  });
+});
+
+/**
+ * The claim is per host, not per class: the default host is OpenAI's own endpoint and takes image parts, while a
+ * gateway the app pointed this at is one the class knows nothing about — and handing bytes to a model that cannot
+ * decode them kills the whole turn, where text-only degrades them to a note.
+ */
+describe("OpenaiLlm vision claim", () => {
+  const acceptsOf = (llmOption: LlmOption) => Object.assign(new OpenaiLlm(), { llmOption }).accepts;
+
+  test("the default host reads images", () => {
+    expect(acceptsOf({ apiKey: "k", model: "gpt-vision" })).toEqual({ image: true });
+  });
+
+  test("a named host is text-only until the app says otherwise", () => {
+    expect(acceptsOf({ apiKey: "k", model: "deepseek-v4-flash", host: "https://api.deepseek.com" })).toBeUndefined();
+  });
+
+  test("a declared accepts wins over both", () => {
+    expect(acceptsOf({ apiKey: "k", model: "gpt-text", accepts: { image: false } })).toEqual({ image: false });
+    expect(acceptsOf({ apiKey: "k", model: "m", host: "https://gw", accepts: { image: true } })).toEqual({
+      image: true,
+    });
   });
 });

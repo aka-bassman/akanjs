@@ -32,6 +32,49 @@ const until = async (predicate: () => boolean) => {
 };
 
 describe("AgentSession", () => {
+  // The gap between two tool calls is a whole model turn, so anything a host draws per call keeps stopping inside
+  // a turn that never stopped. This is the boundary it measures instead.
+  test("a turn reports its own start and end, once each, around every call it makes", async () => {
+    const surface = new AgenticSurface();
+    surface.registerTool([], {
+      name: "save",
+      description: "save",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+      run: () => "saved",
+    });
+    const { runner } = scripted(
+      [
+        { type: "toolCall", id: "c1", name: "save", args: {} },
+        { type: "done", stop: "toolUse" },
+      ],
+      [
+        { type: "text", delta: "done" },
+        { type: "done", stop: "end" },
+      ],
+    );
+    const seen: string[] = [];
+    const session = new AgentSession(surface, runner, {
+      onTurn: (running) => seen.push(running ? "turn:start" : "turn:end"),
+      onActivity: (event) => seen.push(`call:${event.phase}`),
+    });
+    await session.send("save it");
+    expect(seen).toEqual(["turn:start", "call:start", "call:end", "turn:end"]);
+  });
+
+  test("summarizing the transcript is not a turn a host draws the agent working in", async () => {
+    const surface = new AgenticSurface();
+    const { runner } = scripted([
+      { type: "text", delta: "a summary" },
+      { type: "done", stop: "end" },
+    ]);
+    const seen: boolean[] = [];
+    const session = new AgentSession(surface, runner, { onTurn: (running) => seen.push(running) });
+    await session.send("hi");
+    seen.length = 0;
+    await session.compact({ keep: 0 });
+    expect(seen).toEqual([]);
+  });
+
   test("a text-only turn lands as one streamed assistant message", async () => {
     const surface = new AgenticSurface();
     const { runner, requests } = scripted([

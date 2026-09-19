@@ -24,8 +24,13 @@ export class ScreenFlash {
     ScreenFlash.ring(target);
   }
 
-  static reveal(target: HTMLElement) {
+  /** Answers which way the view travels, for whoever has to say that the scroll is the agent's doing. */
+  static reveal(target: HTMLElement): "up" | "down" {
+    const { top, height } = target.getBoundingClientRect();
+    const viewHeight = window.innerHeight || document.documentElement.clientHeight;
+    const way = top + height / 2 < viewHeight / 2 ? "up" : "down";
     target.scrollIntoView({ block: "center", behavior: "smooth" });
+    return way;
   }
 
   /**
@@ -38,6 +43,22 @@ export class ScreenFlash {
     const viewHeight = window.innerHeight || document.documentElement.clientHeight;
     const viewWidth = window.innerWidth || document.documentElement.clientWidth;
     return top >= margin && left >= 0 && bottom <= viewHeight - margin && right <= viewWidth;
+  }
+
+  /**
+   * Whether the element is the one actually painted at its own centre, rather than merely present in the layout.
+   * `checkVisibility` answers about the element alone, so a control under a modal's backdrop, inside a drawer that
+   * has slid off, or faded to nothing all pass it while being invisible — and a pointer sent to one of those lands
+   * on a blank patch of overlay, which reads as the effect being broken rather than as the agent acting.
+   *
+   * An ancestor counts as a hit: a `<label>` wrapping its input is what the point belongs to, not an occlusion.
+   */
+  static onTop(target: HTMLElement) {
+    if (!ScreenFlash.inView(target)) return false;
+    if (typeof document.elementFromPoint !== "function") return true;
+    const { top, left, width, height } = target.getBoundingClientRect();
+    const hit = document.elementFromPoint(left + width / 2, top + height / 2);
+    return !!hit && (hit === target || target.contains(hit) || hit.contains(target));
   }
 
   /**

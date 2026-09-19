@@ -1,4 +1,3 @@
-import { AiSession } from "@akanjs/devkit/aiEditor";
 import { CloudApi, GlobalConfig } from "@akanjs/devkit/cloud";
 import { script, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { PkgExecutor } from "@akanjs/devkit/executors";
@@ -13,16 +12,6 @@ export class CloudScript extends script("cloud", [CloudRunner, ApplicationScript
   }
   async logout(workspace: Workspace, host = GlobalConfig.akanCloudHost) {
     await this.cloudRunner.logout(host);
-  }
-  async setLlm(workspace: Workspace) {
-    await this.cloudRunner.setLlm();
-  }
-  resetLlm(workspace: Workspace) {
-    this.cloudRunner.resetLlm();
-  }
-  async ask(question: string, workspace: Workspace) {
-    const session = new AiSession("general", { workspace, isContinued: true });
-    await session.ask(question);
   }
   async downloadEnv(
     workspace: Workspace,

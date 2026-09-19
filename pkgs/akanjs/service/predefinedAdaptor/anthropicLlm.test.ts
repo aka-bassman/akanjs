@@ -224,13 +224,14 @@ describe("AnthropicLlm answers", () => {
     ).toBe("length");
   });
 
-  test("a refusal carries the API's own sentence under its own key", async () => {
+  test("a refusal carries the API's own sentence, named by the host that refused", async () => {
     const body = JSON.stringify({ error: { type: "invalid_request_error", message: "prompt is too long" } });
-    const error = (await AnthropicLlm.refusal(new Response(body, { status: 400 }))) as Error & {
-      data?: Record<string, string>;
-    };
-    expect(error.message).toBe("agent.error.anthropicRequestFailed");
-    expect(error.data).toEqual({ status: "400", reason: "prompt is too long" });
+    const error = (await AnthropicLlm.refusal(
+      "https://api.anthropic.com/v1",
+      new Response(body, { status: 400 }),
+    )) as Error & { data?: Record<string, string> };
+    expect(error.message).toBe("agent.error.llmRequestFailed");
+    expect(error.data).toEqual({ provider: "api.anthropic.com", status: "400", reason: "prompt is too long" });
   });
 });
 

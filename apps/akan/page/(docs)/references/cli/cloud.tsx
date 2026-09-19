@@ -20,34 +20,6 @@ export default page().render(() => {
       examples: "akan logout",
     },
     {
-      name: "set-llm",
-      signature: "akan set-llm",
-      desc: "Configure an LLM API key used by cloud-assisted or AI-assisted commands.\nThe command stores the workspace-level LLM setting so project questions and generation helpers use the intended provider.",
-      examples: "akan set-llm",
-    },
-    {
-      name: "reset-llm",
-      signature: "akan reset-llm",
-      desc: "Reset the workspace LLM configuration back to the default behavior.\nUse it when a custom provider or key should no longer be used by AI-assisted command flows.",
-      examples: "akan reset-llm",
-    },
-    {
-      name: "ask",
-      signature: "akan ask [--question <question>]",
-      desc: "Ask the configured AI assistant a question about the current project.\nPass `--question` for a non-interactive request, or omit it to enter the command's prompt-based question flow.",
-      options: [
-        {
-          name: "--question",
-          type: "String",
-          defaultValue: "-",
-          enumOrFlag: "ask prompt",
-          desc: "Question to ask. Prompts interactively when omitted.",
-        },
-      ],
-      examples: `akan ask --question "How should I add a new module?"
-akan ask`,
-    },
-    {
       name: "update",
       signature: "akan update [--tag <tag>]",
       desc: "Update Akan.js framework packages using the selected release tag.\nUse `latest` for normal updates and prerelease tags such as `beta`, `rc`, or `canary` only when intentionally testing that channel.",

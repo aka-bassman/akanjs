@@ -6,7 +6,7 @@ Use this to orchestrate AI-assisted module creation. The model should emit small
 ## Ownership
 - Input description explains the business object, lifecycle, actions, queries, UI needs, and relations.
 - The first output pass should prioritize data shape and persistence over decorative UI.
-- Each returned code block must start with `// File: <relative path>` so `AiSession.writeTypescripts()` can parse it.
+- Each returned code block must start with `// File: <relative path>` so the caller can tell which file it writes.
 - Generated files must target `lib/<model>/...` or `lib/__scalar/<scalar>/...` only unless explicitly requested.
 
 ## Current Akan Patterns

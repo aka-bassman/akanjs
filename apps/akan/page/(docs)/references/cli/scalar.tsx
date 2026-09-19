@@ -9,7 +9,7 @@ export default page().render(() => {
   const commands: CommandReferenceItem[] = [
     {
       name: "create-scalar",
-      signature: "akan create-scalar <scalarName> [--ai <boolean>]",
+      signature: "akan create-scalar <scalarName>",
       desc: "Create a new scalar type for reusable value objects or simple data shapes that do not need DB persistence.\nThe generator normalizes the scalar name and creates the scalar files used by constants, documents, dictionaries, and typed business code.",
       args: [
         {
@@ -20,18 +20,8 @@ export default page().render(() => {
           desc: "Scalar name. Spaces are removed and the first letter is lowercased.",
         },
       ],
-      options: [
-        {
-          name: "--ai",
-          type: "Boolean",
-          defaultValue: "false",
-          enumOrFlag: "-",
-          desc: "Use AI to create scalar before normal scalar creation.",
-        },
-      ],
-      notes: [{ name: "execution", desc: "When --ai is true, createScalarWithAi runs before createScalar." }],
       examples: `akan create-scalar Coordinate
-akan create-scalar Address --ai true`,
+akan create-scalar Address`,
     },
     {
       name: "remove-scalar",

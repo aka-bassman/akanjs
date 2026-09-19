@@ -57,7 +57,11 @@ export const Mermaid = ({ chart, title, className, highlightNodes = [] }: Mermai
         if (cancelled) return;
         const parsed = new DOMParser().parseFromString(result.svg, "text/html");
         const svg = parsed.querySelector("svg");
-        if (!svg) throw new Error("Mermaid did not return an SVG.");
+        if (!svg) {
+          containerRef.current?.replaceChildren();
+          setError("Mermaid did not return an SVG.");
+          return;
+        }
         applyHighlights(svg, highlightNodes, colors.primary);
         const container = containerRef.current;
         if (container) {

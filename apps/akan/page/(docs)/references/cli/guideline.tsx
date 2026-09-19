@@ -39,7 +39,7 @@ export default page().render(() => {
       notes: [
         {
           name: "read-only",
-          desc: "`list` and `show` are public read-only commands. Instruction generation and reapply commands remain development-only.",
+          desc: "`list` and `show` are the whole command: guidelines are bundled files, read but never written by the CLI.",
         },
         {
           name: "agent context",

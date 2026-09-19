@@ -260,6 +260,28 @@ describe("ToolRunner activity", () => {
     expect(unknown.events).toEqual([]);
   });
 
+  // Drawing a click on the link a navigation is about to follow only works if the click lands first: the router
+  // replaces the tree the link is in, so the element would already be gone by the time the pointer arrived.
+  test("the start is awaited, so a host may draw something the call would otherwise outrun", async () => {
+    const order: string[] = [];
+    const surface = surfaceWith({
+      name: "navigate",
+      run: () => {
+        order.push("ran");
+        return "gone";
+      },
+    });
+    const runner = new ToolRunner(surface, {
+      activity: async (event) => {
+        if (event.phase !== "start") return;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        order.push("drew");
+      },
+    });
+    await runner.run(call("navigate"), new AbortController().signal);
+    expect(order).toEqual(["drew", "ran"]);
+  });
+
   // A guard runs inside `surface.call`, so the call has begun by then — the start is honest and the end carries why.
   test("a guard's refusal is an announced call that failed", async () => {
     const seen: ToolActivity[] = [];

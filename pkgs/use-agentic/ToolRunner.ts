@@ -41,8 +41,12 @@ export interface ToolRunnerHost {
    * That a call is running, for a host drawing it on the page rather than in a transcript. Separate from
    * `progress`, which only ever fires for a tool that chose to report: a call the user has to be told about is
    * every call, and one that says nothing about itself is exactly the one whose effect arrives unexplained.
+   *
+   * **The `start` is awaited**, so a host may draw something that has to land before the call does — a pointer
+   * pressing the link a `navigate` is about to follow is drawing on an element the router would otherwise have
+   * replaced first. The host owns the deadline: a decoration that takes its time makes the agent take its time.
    */
-  activity?: (event: ToolActivity) => void;
+  activity?: (event: ToolActivity) => void | Promise<void>;
   /**
    * Answers a name the surface does not carry — where a consumer puts a built-in of its own. Reached only after
    * the surface came up empty, so a registered tool of the same name shadows it.
@@ -109,7 +113,7 @@ export class ToolRunner {
     const base = { id: call.id, name: call.name };
     const before = this.#surface.snapshot();
     // Here rather than in `#answer`, so nothing is drawn for a call an approval or a guard turned back.
-    this.#host.activity?.({ callId: call.id, name: call.name, args: call.args, phase: "start" });
+    await this.#host.activity?.({ callId: call.id, name: call.name, args: call.args, phase: "start" });
     let failed: string | undefined;
     try {
       const result = await AgentAbort.run(signal, () =>

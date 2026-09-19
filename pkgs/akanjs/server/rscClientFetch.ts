@@ -10,6 +10,7 @@ type RscNavigate = (href: string, options?: { replace?: boolean; scrollToTop?: b
 export type RscClientFetchResponseResult =
   | { type: "response"; response: Response }
   | { type: "patch"; response: Response; patch: AkanRscPatchMetadata }
+  | { type: "not-found" }
   | { type: "redirected"; status?: number };
 
 export async function fetchRscNavigationResponse(
@@ -40,6 +41,13 @@ export async function fetchRscNavigationResponse(
     const status = statusHeader ? Number(statusHeader) : undefined;
     if (shouldApplyNavigation()) await options.navigate?.(redirect, { replace: method !== "push", scrollToTop: true });
     return { type: "redirected", status };
+  }
+  // The RSC endpoint answers a target that resolves to nothing with `0:null` under a 404 — a Flight payload whose
+  // root is literally null. Decoded like any other it commits an empty tree over the whole document, so the status
+  // has to be read before the body reaches the decoder.
+  if (response.status === 404) {
+    await response.body?.cancel();
+    return { type: "not-found" };
   }
   if (response.headers.get("X-Akan-Rsc-Partial") === "patch") {
     const patch = readAkanRscPatchMetadataResponseHeaders(response.headers);

@@ -1,7 +1,7 @@
 // Types only, deliberately. This barrel re-exports all 40 devkit facets, so a single *value* import
 // from it loads every one of them — measured at 417MB / 654ms, versus 38MB / 38ms for the one subpath
 // the caller actually needed. That is how `commandDecorators/command.ts` silently put ink, typescript,
-// ssh2, @trapezedev/project, @langchain/* and the cloud stack into every process that registered a CLI
+// ssh2, @trapezedev/project and the cloud stack into every process that registered a CLI
 // command, and it is the single largest regression this package can suffer from a one-line edit.
 //
 // `export type *` erases at runtime (verified on Bun 1.3.14: the re-exported module is never loaded),
@@ -12,7 +12,6 @@
 //
 // Import values from the owning facet instead: `import { FileSys } from "@akanjs/devkit/fileSys"`.
 // Keep this file type-only; do not "fix" a TS1362 by widening an entry back to `export *`.
-export type * from "./aiEditor";
 export type * from "./akanApp";
 export type * from "./akanConfig";
 export type * from "./akanContext";

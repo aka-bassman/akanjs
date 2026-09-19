@@ -451,6 +451,89 @@ body.akan-mobile-document {
   animation: akanAgentTap 450ms ease-out;
 }
 
+/*
+ * Between two calls of one turn the model is writing, which takes longer than a pointer sitting still reads as.
+ * The arrow gives way to a spinner in place, so the pause is the agent thinking rather than the pointer stuck.
+ */
+.akan-agent-cursor-thinking > i {
+  opacity: 0;
+}
+
+.akan-agent-cursor-thinking > b {
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: -0.5625rem 0 0 -0.5625rem;
+  opacity: 1;
+  border-color: color-mix(in oklab, var(--color-primary) 25%, transparent);
+  border-top-color: var(--color-primary);
+  animation: akanAgentThinking 700ms linear infinite;
+}
+
+@keyframes akanAgentThinking {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/*
+ * The pointer holds still while a reveal scrolls the page under it, exactly as a person's does — so on its own the
+ * stillness reads as a pointer that came loose. The chevron is what says the scroll is the agent's, and it points
+ * the way the view is travelling.
+ */
+.akan-agent-cursor::after {
+  content: "";
+  position: absolute;
+  top: 22px;
+  left: 1px;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid var(--color-primary);
+  border-bottom: 2px solid var(--color-primary);
+  opacity: 0;
+  transform: rotate(45deg);
+}
+
+.akan-agent-cursor-scrolling::after {
+  animation: akanAgentScrollDown 800ms ease-in-out infinite;
+}
+
+.akan-agent-cursor-scrolling-up::after {
+  animation-name: akanAgentScrollUp;
+}
+
+.akan-agent-cursor-thinking::after {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes akanAgentScrollDown {
+  0% {
+    transform: rotate(45deg) translate(-4px, -4px);
+    opacity: 0;
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(45deg) translate(4px, 4px);
+    opacity: 0;
+  }
+}
+
+@keyframes akanAgentScrollUp {
+  0% {
+    transform: rotate(225deg) translate(-4px, -4px);
+    opacity: 0;
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(225deg) translate(4px, 4px);
+    opacity: 0;
+  }
+}
+
 @keyframes akanAgentTap {
   0% {
     transform: scale(0.2);
@@ -471,6 +554,16 @@ body.akan-mobile-document {
   /* The pointer still appears and still taps — what goes is the glide, which is the part that is motion. */
   .akan-agent-cursor {
     transition: opacity 200ms ease-out;
+  }
+
+  /* The chevron holds its direction instead of sliding: the way the view is going is the part that carries. */
+  .akan-agent-cursor-scrolling::after {
+    animation: none;
+    opacity: 1;
+  }
+
+  .akan-agent-cursor-scrolling-up::after {
+    transform: rotate(225deg);
   }
 }
 

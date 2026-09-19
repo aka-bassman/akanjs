@@ -144,7 +144,7 @@ export class CliDistBuilder {
       ],
       // Required, not cosmetic: with `splitting: false` Bun inlines every dynamically imported module
       // into the entry and hoists its external `import` statements to the top of the file, so the
-      // lazy imports that keep `typescript`, @trapezedev/project, @langchain/* and the tailwind stack
+      // lazy imports that keep `typescript`, @trapezedev/project and the tailwind stack
       // out of the dev host would all load eagerly anyway.
       splitting: true,
       target: "bun",

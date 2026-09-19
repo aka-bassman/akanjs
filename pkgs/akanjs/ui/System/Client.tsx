@@ -365,7 +365,15 @@ export const ClientSsrBridge = ({ lang, prefix = "", initialPageState }: ClientS
         fallback();
         return;
       }
-      void navigation.catch((error) => {
+      return navigation.catch((error: unknown) => {
+        // By name, not `instanceof`: the RSC client is inlined into more than one browser bundle.
+        if (error instanceof Error && error.name === "RscRouteNotFound") {
+          // `syncHref` ran before the fetch, so the store is already describing the page the router refused to
+          // go to. Falling back to a document navigation is what must not happen: it would land on the 404.
+          syncHref(window.location.href);
+          Logger.error(`No route at ${href}; the page was left where it was.`);
+          throw error;
+        }
         Logger.warn(`RSC navigation failed, falling back to document navigation: ${String(error)}`);
         fallback();
       });
@@ -389,11 +397,11 @@ export const ClientSsrBridge = ({ lang, prefix = "", initialPageState }: ClientS
       router: {
         push: (href, routeOptions) => {
           syncHref(href);
-          navigateRscWithFallback(href, routeOptions, () => window.location.assign(href));
+          return navigateRscWithFallback(href, routeOptions, () => window.location.assign(href));
         },
         replace: (href, routeOptions) => {
           syncHref(href);
-          navigateRscWithFallback(href, { ...routeOptions, replace: true }, () => window.location.replace(href));
+          return navigateRscWithFallback(href, { ...routeOptions, replace: true }, () => window.location.replace(href));
         },
         back: () => {
           window.history.back();

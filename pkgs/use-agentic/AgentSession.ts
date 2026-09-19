@@ -98,7 +98,16 @@ export interface AgentSessionOptions {
    * The session keeps none of it: nothing here is transcript, and holding it would mean a re-render per call for
    * something no message renders.
    */
-  onActivity?: (event: ToolActivity) => void;
+  onActivity?: (event: ToolActivity) => void | Promise<void>;
+  /**
+   * Called when a turn starts and when it settles — the boundary a host draws the agent's own presence in. The
+   * calls of one turn arrive with model turns between them, seconds long, so anything measured in the gap
+   * between *calls* keeps ending and restarting inside a turn that never stopped.
+   *
+   * Only the conversation loop reports here. `compact` runs under the same flag and drives nothing on screen, so
+   * a host drawing the agent at work would draw it for a summary nobody asked to watch.
+   */
+  onTurn?: (running: boolean) => void;
 }
 
 /**
@@ -367,6 +376,7 @@ export class AgentSession {
   async #turn(input: string | ChatMessage[]) {
     const controller = new AbortController();
     this.#controller = controller;
+    this.#options.onTurn?.(true);
     if (typeof input === "string") this.#append({ role: "user", text: input });
     else for (const message of input) this.#append(message);
     const maxTurns = this.#options.maxTurns ?? 12;
@@ -431,6 +441,7 @@ export class AgentSession {
       // assistant message with no text as still being written, so the draft outlives the turn as a live spinner.
       const draft = this.#messages[this.#messages.length - 1];
       if (draft?.role === "assistant" && !Transcript.carries(draft)) this.#messages = this.#messages.slice(0, -1);
+      this.#options.onTurn?.(false);
       this.#notify();
     }
   }

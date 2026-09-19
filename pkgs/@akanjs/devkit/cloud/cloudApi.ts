@@ -2,6 +2,11 @@ import type { Workspace } from "../commandDecorators";
 import type { AccessToken, AccessTokenDto, HostConfig } from "./constants";
 import { GlobalConfig } from "./globalConfig";
 
+interface HttpRequestOptions {
+  headers?: Record<string, string>;
+  signal?: AbortSignal;
+}
+
 class HttpClient {
   readonly baseUrl: string;
   readonly headers: Record<string, string> = {};
@@ -9,13 +14,14 @@ class HttpClient {
     this.baseUrl = baseUrl;
     this.headers = headers;
   }
-  async get<T>(url: string, { headers }: { headers?: Record<string, string> } = {}): Promise<T> {
+  async get<T>(url: string, { headers, signal }: HttpRequestOptions = {}): Promise<T> {
     const response = await fetch(`${this.baseUrl}${url}`, {
       headers: {
         "Content-Type": "application/json",
         ...this.headers,
         ...headers,
       },
+      ...(signal ? { signal } : {}),
     });
     return await HttpClient.#body<T>(response, url);
   }
@@ -26,7 +32,7 @@ class HttpClient {
     if (!response.ok) throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
     await Bun.write(localPath, response);
   }
-  async post<T>(url: string, data: unknown, { headers }: { headers?: Record<string, string> } = {}): Promise<T> {
+  async post<T>(url: string, data: unknown, { headers, signal }: HttpRequestOptions = {}): Promise<T> {
     const isFormData = data instanceof FormData;
     const response = await fetch(`${this.baseUrl}${url}`, {
       method: "POST",
@@ -34,6 +40,7 @@ class HttpClient {
       headers: isFormData
         ? { ...this.headers, ...headers }
         : { "Content-Type": "application/json", ...this.headers, ...headers },
+      ...(signal ? { signal } : {}),
     });
     return await HttpClient.#body<T>(response, url);
   }
@@ -153,9 +160,15 @@ export class CloudApi {
   async tunnelListInSelf(): Promise<TunnelSummary[]> {
     return await this.#api.get<TunnelSummary[]>(`/tunnel/tunnelListInSelf`);
   }
-  /** Hands the grant back. The CLI calls this "stop", which is what the operator is doing, not what it does. */
+  /**
+   * Hands the grant back. The CLI calls this "stop", which is what the operator is doing, not what it does.
+   *
+   * Bounded because every caller is on the way out: an unreachable control plane is exactly the state a session
+   * ends in, and an unbounded `fetch` there holds the event loop open long after the work is done. Losing the
+   * release costs nothing — the share expires on its own TTL.
+   */
   async revokeTunnel(code: string): Promise<boolean> {
-    return await this.#api.post<boolean>(`/tunnel/revokeTunnel`, { code });
+    return await this.#api.post<boolean>(`/tunnel/revokeTunnel`, { code }, { signal: AbortSignal.timeout(5_000) });
   }
   async getRemoteSelf(): Promise<{ id: string; nickname: string } | null> {
     try {

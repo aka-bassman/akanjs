@@ -3,8 +3,8 @@ import type { CommandCls } from "@akanjs/devkit/commandDecorators";
 /**
  * Lazy loaders for every CLI command module, keyed by module id.
  *
- * Loading all of them costs ~173MB resident because each pulls its own stack (typescript, the
- * @langchain set, ssh2, @trapezedev/project, the tailwind stack). `akan start` needs one of them, and
+ * Loading all of them costs ~173MB resident because each pulls its own stack (typescript, ssh2,
+ * @trapezedev/project, the tailwind stack). `akan start` needs one of them, and
  * a dev sandbox holds that process for its whole session — so the entry resolves `argv[2]` through
  * {@link CommandManifest} and imports only the owning module. The manifest is generated at build time
  * from these same loaders, so it can never name a module that does not exist here.

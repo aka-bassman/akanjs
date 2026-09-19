@@ -69,6 +69,15 @@ export class StoreSurfaceSource implements SurfaceSource {
       run: async (args) => {
         const path = String(args.path);
         router.push(path);
+        // A path with no route leaves the page where it was rather than replacing it, so this is a miss the model
+        // can recover from in the same turn — and the screen it is still on is the one its tools belong to.
+        try {
+          await router.navigation();
+        } catch {
+          throw new Error(
+            `There is no route at ${path}, so the page did not move. Call readScreen — it prints each link on this screen with its own path — and navigate to one of those.`,
+          );
+        }
         // The push returns while the payload for the new route is still in flight, so without this the readScreen
         // right after it reads the page the user just left, and the new screen's tools are not registered yet.
         await ScreenSettle.wait({ appearMs: 800, timeoutMs: 5000 });

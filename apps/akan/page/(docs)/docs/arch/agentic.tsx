@@ -36,8 +36,8 @@ export default page().render(() => {
               {
                 title: l.trans({ en: "Framework built-in", ko: "프레임워크 내장" }),
                 desc: l.trans({
-                  en: "The relay endpoint, three LLM adaptors, and the chat UI all ship with akanjs — no extra library to mount.",
-                  ko: "릴레이 엔드포인트, LLM 어댑터 세 개, 채팅 UI가 모두 akanjs에 내장돼 있어 추가로 마운트할 라이브러리가 없습니다.",
+                  en: "The relay endpoint, two LLM adaptors, and the chat UI all ship with akanjs — no extra library to mount.",
+                  ko: "릴레이 엔드포인트, LLM 어댑터 두 개, 채팅 UI가 모두 akanjs에 내장돼 있어 추가로 마운트할 라이브러리가 없습니다.",
                 }),
               },
             ].map(({ title, desc }) => (
@@ -75,8 +75,8 @@ export default page().render(() => {
                 {
                   title: "LlmAdaptor.chat",
                   desc: l.trans({
-                    en: "The whole transcript in, one assistant answer out. DeepseekLlm is the default; OpenaiLlm and AnthropicLlm ship beside it and read images.",
-                    ko: "전체 대화가 들어가고 어시스턴트 응답 하나가 나옵니다. 기본값은 DeepseekLlm이고, 이미지를 읽는 OpenaiLlm·AnthropicLlm이 함께 들어 있습니다.",
+                    en: "The whole transcript in, one assistant answer out. OpenaiLlm is the default and speaks the chat-completions dialect to whatever host is named; AnthropicLlm ships beside it for the Messages API.",
+                    ko: "전체 대화가 들어가고 어시스턴트 응답 하나가 나옵니다. 기본값은 OpenaiLlm이고, host가 가리키는 곳에 chat-completions 방언으로 말합니다. Messages API용 AnthropicLlm이 함께 들어 있습니다.",
                   }),
                 },
               ].map(({ title, desc }) => (
@@ -421,14 +421,20 @@ st.expose("selectedWaypointId", ID)
           </div>
           <div>
             {l.trans({
-              en: "What it refuses to draw is the point. A name several rows answer to rings nothing rather than guessing a row, a call an approval or a guard turned back is never drawn at all, and a backgrounded tab draws nothing. A ring on the wrong element is worse than no ring: it is the screen telling the user something untrue about what just happened. Nothing is ever waited on either — the call starts the moment the effect is handed its event, because an animation that held a call would make the agent slower for a decoration.",
-              ko: "그리지 않기로 한 것들이 핵심입니다. 여러 행이 같은 이름을 가지면 행을 추측하느니 아무것도 그리지 않고, 승인이나 가드가 되돌린 호출은 애초에 그려지지 않으며, 백그라운드 탭에서는 아무 일도 하지 않습니다. 엉뚱한 요소에 걸린 링은 링이 없는 것보다 나쁩니다. 방금 무슨 일이 있었는지에 대해 화면이 사용자에게 거짓을 말하는 것이기 때문입니다. 무엇도 기다리지 않습니다. 이벤트를 넘겨받는 순간 호출은 이미 시작돼 있습니다. 연출 때문에 에이전트가 느려지면 안 되니까요.",
+              en: "The pointer's unit is the turn, not the call. A model's calls arrive with its own writing between them — seconds each — so a pointer that lived for the length of a call spent every turn vanishing and coming back. It stays for as long as the turn runs: it appears at the first control it presses, drifts clear of it and waits there as a spinner, and fades when the turn ends. Clearing the control is the whole of that gesture — a person clicks and takes the hand away, and a spinner left sitting on the button covers the very change it caused. A turn that drove no control draws no pointer at all, which is the honest answer: an agent that only answered a question was never on the screen. While a reveal scrolls the page to the next control, the pointer holds still the way a person's does, and carries a chevron pointing the way the view is travelling — stillness over a sliding page otherwise reads as a pointer that has come loose rather than as the one doing the scrolling.",
+              ko: "포인터의 단위는 호출이 아니라 턴입니다. 모델의 호출들 사이에는 모델이 글을 쓰는 시간이 몇 초씩 끼어 있어서, 호출 길이만큼만 사는 포인터는 턴마다 사라졌다 다시 나타나기를 반복했습니다. 이제는 턴이 도는 동안 머뭅니다. 처음 누르는 컨트롤에서 등장하고, 그 컨트롤을 살짝 벗어난 자리로 물러나 스피너로 기다리다가, 턴이 끝나면 사라집니다. 벗어나는 것이 그 동작의 핵심입니다. 사람은 누르고 나면 손을 치우고, 누른 버튼 위에 그대로 남은 스피너는 자기가 일으킨 변화를 가려 버리니까요. 아무 컨트롤도 몰지 않은 턴은 포인터를 아예 그리지 않습니다. 질문에 답만 한 에이전트는 애초에 화면에 있지 않았으니까요. 다음 컨트롤로 화면을 스크롤하는 동안 포인터는 사람의 포인터가 그렇듯 제자리를 지키되, 화면이 가는 방향으로 셰브론을 답니다. 그렇지 않으면 미끄러지는 페이지 위에 가만히 있는 포인터가 스크롤하는 주체가 아니라 화면에서 떨어져 나온 것처럼 읽힙니다.",
             })}
           </div>
           <div>
             {l.trans({
-              en: "It draws where the change landed and nowhere else. A call that reaches no control on screen draws nothing at all — navigate included, since the router is not an element and a bar across the top of the page read as chrome the page had grown rather than as the agent doing something.",
-              ko: "변화가 떨어진 자리에만 그리고 그 밖에는 그리지 않습니다. 화면의 어떤 컨트롤에도 닿지 않는 호출은 아무것도 그리지 않습니다. navigate도 마찬가지입니다. 라우터는 요소가 아니고, 페이지 상단에 걸었던 바는 에이전트가 무언가 하고 있다는 신호가 아니라 페이지가 늘린 크롬처럼 읽혔습니다.",
+              en: "What it refuses to draw is the point. A name several rows answer to rings nothing unless the call's own argument names which one — a tab's menus share one tool, so each menu carries its key and the pointer picks the one that was switched to. A call an approval or a guard turned back is never drawn at all, a control the screen is not actually showing is not pointed at — under a modal's backdrop, inside a drawer that has slid off, faded to nothing — and a backgrounded tab draws nothing. A ring on the wrong element is worse than no ring: it is the screen telling the user something untrue about what just happened. Almost nothing is waited on either — the call starts the moment the effect is handed its event, because an animation that held a call would make the agent slower for a decoration.",
+              ko: "그리지 않기로 한 것들이 핵심입니다. 여러 컨트롤이 같은 이름을 가지면, 호출의 인자가 그중 어느 것인지 짚어 주지 않는 한 추측하느니 아무것도 그리지 않습니다. 탭의 메뉴들은 툴 하나를 공유하므로 각 메뉴가 자기 키를 달고 있고, 포인터는 실제로 전환된 그 메뉴를 고릅니다. 승인이나 가드가 되돌린 호출은 애초에 그려지지 않고, 화면이 실제로 보여 주고 있지 않은 컨트롤에는 포인터가 가지 않으며(모달 뒤, 밀려난 서랍 안, 투명해진 것), 백그라운드 탭에서는 아무 일도 하지 않습니다. 엉뚱한 요소에 걸린 링은 링이 없는 것보다 나쁩니다. 방금 무슨 일이 있었는지에 대해 화면이 사용자에게 거짓을 말하는 것이기 때문입니다. 거의 아무것도 기다리지 않습니다. 이벤트를 넘겨받는 순간 호출은 이미 시작돼 있습니다. 연출 때문에 에이전트가 느려지면 안 되니까요.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "It draws where the change landed and nowhere else. A call that reaches no control on screen draws nothing at all — navigate mostly included, since the router is not an element and a bar across the top of the page read as chrome the page had grown rather than as the agent doing something. But a destination the screen already offers as a link is an element, and that one is pressed: when exactly one visible link goes where the navigation is going, the pointer travels to it and clicks it before the route moves. That is the only call the runtime waits for, capped at 600ms, because a click drawn on a tree the router has already replaced is no click at all. Link presence decides what is drawn, never what is allowed — the agent may go anywhere the user could type.",
+              ko: "변화가 떨어진 자리에만 그리고 그 밖에는 그리지 않습니다. 화면의 어떤 컨트롤에도 닿지 않는 호출은 아무것도 그리지 않습니다. navigate도 대체로 그렇습니다. 라우터는 요소가 아니고, 페이지 상단에 걸었던 바는 에이전트가 무언가 하고 있다는 신호가 아니라 페이지가 늘린 크롬처럼 읽혔습니다. 다만 목적지를 화면이 이미 링크로 내어주고 있다면 그건 요소입니다. 그리로 가는 보이는 링크가 정확히 하나일 때, 포인터가 거기로 이동해 라우팅보다 먼저 누릅니다. 런타임이 기다려 주는 유일한 호출이고 상한은 600ms입니다. 라우터가 이미 갈아치운 트리에 그린 클릭은 클릭이 아니니까요. 링크의 유무는 무엇을 그릴지를 정할 뿐 무엇을 허용할지를 정하지 않습니다. 에이전트는 사용자가 주소창에 칠 수 있는 곳이면 어디든 갑니다.",
             })}
           </div>
           <div>
@@ -454,8 +460,8 @@ st.expose("selectedWaypointId", ID)
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Everything the model needs is declared in option.ts, never in the environment. setLlm fills apiKey, model, host, accepts and maxTokens for whichever adaptor holds LlmAdaptorRole, so the settings survive a provider swap. DeepSeek is the built-in default — deepseek-v4-flash at https://api.deepseek.com, text only. For vision, applyAdaptor(LlmAdaptorRole, OpenaiLlm) or AnthropicLlm; both require a model, since a default would age into a 404 and would decide the vision claim for the app. accepts overrides what the configured model reads, because an adaptor answers for an API and one API serves models that differ. With no apiKey the app still boots and the chat says no model is configured; a refusal the provider explained is thrown instead of swallowed, so the chat prints that reason in the user's language.",
-              ko: "모델에 필요한 설정은 환경변수가 아니라 option.ts에 선언합니다. setLlm은 LlmAdaptorRole을 차지한 어댑터에 apiKey·model·host·accepts·maxTokens를 채우므로, 프로바이더를 바꿔도 설정은 그대로입니다. 기본값은 DeepSeek이고 텍스트 전용입니다. deepseek-v4-flash, https://api.deepseek.com. 비전이 필요하면 applyAdaptor(LlmAdaptorRole, OpenaiLlm) 또는 AnthropicLlm을 씁니다. 둘 다 model이 필수인데, 기본값을 두면 언젠가 404가 되고 비전 여부를 앱 대신 정해버리기 때문입니다. accepts는 설정한 모델이 무엇을 읽는지 덮어씁니다 — 어댑터는 API 하나를 대변하고, 한 API가 서로 다른 모델을 섬기기 때문입니다. apiKey가 없어도 앱은 기동하고, 채팅은 모델이 설정되지 않았다고 답합니다. 프로바이더가 이유를 밝힌 거절은 삼키지 않고 던지므로, 채팅이 그 이유를 사용자의 언어로 보여줍니다.",
+              en: "Everything the model needs is declared in option.ts, never in the environment. setLlm fills apiKey, model, host, accepts and maxTokens for whichever adaptor holds LlmAdaptorRole, so the settings survive a provider swap — and it keeps whatever else it is handed, so an adaptor you wrote reads its own fields from the same place with use<MyLlmOption>(). Two adaptors ship, one per wire. OpenaiLlm is the default and speaks the chat-completions dialect to whatever host names: OpenAI, DeepSeek, Groq, OpenRouter, Ollama. AnthropicLlm is the Messages API and reads a PDF as well as a picture. Both require a model, since a default would age into a 404 and would decide the vision claim for the app. accepts overrides what the configured model reads, because an adaptor answers for an API and one API serves models that differ. With no apiKey the app still boots and the chat says no model is configured; a refusal the provider explained is thrown instead of swallowed, so the chat prints that reason in the user's language.",
+              ko: "모델에 필요한 설정은 환경변수가 아니라 option.ts에 선언합니다. setLlm은 LlmAdaptorRole을 차지한 어댑터에 apiKey·model·host·accepts·maxTokens를 채우므로, 프로바이더를 바꿔도 설정은 그대로입니다. 그리고 건네받은 나머지 필드도 그대로 실어 나르므로, 직접 쓴 어댑터는 use<MyLlmOption>()으로 자기 설정을 같은 자리에서 읽습니다. 어댑터는 와이어당 하나씩 둘이 들어 있습니다. 기본값 OpenaiLlm은 host가 가리키는 곳에 chat-completions 방언으로 말합니다. OpenAI, DeepSeek, Groq, OpenRouter, Ollama가 모두 여기에 해당합니다. AnthropicLlm은 Messages API이고 사진뿐 아니라 PDF도 읽습니다. 둘 다 model이 필수인데, 기본값을 두면 언젠가 404가 되고 비전 여부를 앱 대신 정해버리기 때문입니다. accepts는 설정한 모델이 무엇을 읽는지 덮어씁니다 — 어댑터는 API 하나를 대변하고, 한 API가 서로 다른 모델을 섬기기 때문입니다. apiKey가 없어도 앱은 기동하고, 채팅은 모델이 설정되지 않았다고 답합니다. 프로바이더가 이유를 밝힌 거절은 삼키지 않고 던지므로, 채팅이 그 이유를 사용자의 언어로 보여줍니다.",
             })}
           </div>
         </Docs.Description>

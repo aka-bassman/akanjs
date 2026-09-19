@@ -9,13 +9,10 @@ export class ModuleCommand extends command("module", [ModuleScript], ({ public: 
     .arg("moduleName", String, { desc: "name of module" })
     .with(Sys)
     .option("page", Boolean, { desc: "create page", default: false })
-    .option("ai", Boolean, { desc: "use ai to create module constant and dictionary", default: false })
     .option("format", String, { flag: "o", desc: "output format", default: "markdown", enum: ["markdown", "json"] })
-    .exec(async function (moduleName, sys, page, ai, format) {
+    .exec(async function (moduleName, sys, page, format) {
       const name = lowerlize(moduleName.replace(/ /g, ""));
-      const report = ai
-        ? await this.moduleScript.createModule(sys, name, { page })
-        : await this.moduleScript.createModuleTemplate(sys, name, { page });
+      const report = await this.moduleScript.createModuleTemplate(sys, name, { page });
       Logger.rawLog(renderPrimitiveReport(report, format as PrimitiveFormat));
     }),
   removeModule: target({ desc: "Remove a module from an app or library" })

@@ -20,8 +20,6 @@ export class EntryModuleGraph {
     "ink",
     "ssh2",
     "@trapezedev/project",
-    "@langchain/core",
-    "@langchain/openai",
     "@tailwindcss/node",
     "tailwindcss",
     "fonteditor-core",

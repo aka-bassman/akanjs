@@ -1,17 +1,15 @@
 import path from "node:path";
-import type { AbstractCompactOptions } from "@akanjs/devkit/abstractCompactor";
 import { AkanAppHost, type DevHostEvent } from "@akanjs/devkit/akanApp";
 import type { DatabaseMode, MobileEnv } from "@akanjs/devkit/akanConfig";
 import type { BuildProgressReporter, BuildResult, TypecheckOptions } from "@akanjs/devkit/applicationBuildRunner";
 import type { ReleaseSourceOptions } from "@akanjs/devkit/applicationReleasePackager";
 import { resolveSignalTestPreloadPath } from "@akanjs/devkit/applicationTestPreload";
-import { type App, type Exec, runner, type Sys, type Workspace } from "@akanjs/devkit/commandDecorators";
+import { type App, type Exec, runner, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor, LibExecutor } from "@akanjs/devkit/executors";
 import type { DevStdioMode } from "@akanjs/devkit/incrementalBuilder";
 import { type ResolvedMobileTarget, resolveMobileTargets } from "@akanjs/devkit/mobile";
 import { SlicePlanner } from "@akanjs/devkit/slicePlanner";
 import { Logger, type LogRecord } from "akanjs/common";
-import ora from "ora";
 import { openBrowser } from "../openBrowser";
 
 export interface LogsOptions {
@@ -31,13 +29,12 @@ export interface LogsOptions {
 
 // `akan start` is the hot path and must not pay for the build, mobile, release and AI stacks:
 // `applicationBuildRunner` pulls tailwind + fonteditor + typescript (~140MB), `capacitorApp` pulls
-// @trapezedev/project (~76MB), the @langchain set ~57MB and @inquirer ~24MB. Import them inside the
+// @trapezedev/project (~76MB) and @inquirer ~24MB. Import them inside the
 // methods that use them so only those commands pay.
 const loadBuildRunner = async () => (await import("@akanjs/devkit/applicationBuildRunner")).ApplicationBuildRunner;
 const loadReleasePackager = async () =>
   (await import("@akanjs/devkit/applicationReleasePackager")).ApplicationReleasePackager;
 const loadCapacitorApp = async () => (await import("@akanjs/devkit/capacitorApp")).CapacitorApp;
-const loadAbstractCompactor = async () => (await import("@akanjs/devkit/abstractCompactor")).AbstractCompactor;
 const loadPrompts = async () => await import("@inquirer/prompts");
 
 export class ApplicationRunner extends runner("application") {
@@ -185,10 +182,6 @@ try {
   }
   async typecheck(app: App, options: TypecheckOptions = {}) {
     await new (await loadBuildRunner())(app).typecheck(options);
-  }
-  async compact(sys: Sys, { module, minLines, interactive }: AbstractCompactOptions = {}) {
-    const compactor = new (await loadAbstractCompactor())(sys, { minLines, interactive });
-    return await compactor.compactAll({ module });
   }
   async test(exec: Exec) {
     const isSignalTarget = exec instanceof AppExecutor || exec instanceof LibExecutor;
@@ -481,29 +474,5 @@ try {
       local,
     });
     return;
-  }
-
-  async generateApplicationTemplate(app: App) {
-    const openAIApiKey = process.env.OPENAI_API_KEY;
-    if (!openAIApiKey) throw new Error("OPENAI_API_KEY is not set");
-    const [{ StringOutputParser }, { PromptTemplate }, { RunnableSequence }, { ChatOpenAI }, prompts] =
-      await Promise.all([
-        import("@langchain/core/output_parsers"),
-        import("@langchain/core/prompts"),
-        import("@langchain/core/runnables"),
-        import("@langchain/openai"),
-        loadPrompts(),
-      ]);
-    const chatModel = new ChatOpenAI({ modelName: "gpt-4o", openAIApiKey });
-    const projectName = await prompts.input({ message: "please enter project name." });
-    const projectDesc = await prompts.input({
-      message: "please enter project description. (40 ~ 60 characters)",
-    });
-    const spinner = ora("Gerating project files...");
-
-    const mainPrompt = PromptTemplate.fromTemplate(`prompt.requestApplication()`);
-    const chain = RunnableSequence.from([mainPrompt, chatModel, new StringOutputParser()]);
-    await chain.invoke({ projectName, projectDesc });
-    spinner.succeed("Loading complete!");
   }
 }

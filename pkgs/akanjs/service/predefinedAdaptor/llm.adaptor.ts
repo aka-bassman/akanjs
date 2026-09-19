@@ -131,7 +131,12 @@ export interface LlmAccepts {
 /**
  * Settings for whichever adaptor fills `LlmAdaptorRole`, registered with `option.setLlm(...)` and injected as the
  * `llmOption` use. It belongs to the role rather than to one provider: swapping the default for another `adapt()`
- * class re-reads the same three fields under that provider's own defaults.
+ * class re-reads the same fields under that provider's own defaults.
+ *
+ * It is the floor, not the whole shape. `setLlm` keeps whatever else it is handed, so an adaptor an app or a
+ * library wrote declares its own interface extending this one and reads it with `use<MyLlmOption>()` — a region,
+ * a project id, a deployment name reach it through the same channel the fields below do, instead of a second
+ * `option.use({...})` key beside it.
  */
 export interface LlmOption {
   apiKey?: string;
@@ -156,3 +161,18 @@ export interface LlmOption {
    */
   maxTokens?: number;
 }
+
+/**
+ * What the chat prints as the party that refused a turn, carried on `agent.error.llmRequestFailed`.
+ *
+ * It is the host rather than the adaptor's own name because one adaptor speaks one dialect to whatever host it
+ * is pointed at — an OpenAI-dialect class aimed at a gateway would otherwise credit OpenAI for that gateway's
+ * refusal. A host that is not a URL is printed as written; there is nothing better to say about it.
+ */
+export const llmProviderOf = (host: string): string => {
+  try {
+    return new URL(host).hostname;
+  } catch {
+    return host;
+  }
+};

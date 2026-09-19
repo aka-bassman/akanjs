@@ -11,7 +11,7 @@ import { type Command, program } from "commander";
 import { AppSelectionMemory } from "../appSelectionMemory";
 import { AppExecutor, Executor, LibExecutor, ModuleExecutor, PkgExecutor, WorkspaceExecutor } from "../executors";
 // Import the owning modules directly, never the root barrel: `..` re-exports all 41 devkit modules,
-// so a barrel import here drags ink, @trapezedev/project, ssh2, @langchain/* and the cloud stack into
+// so a barrel import here drags ink, @trapezedev/project, ssh2 and the cloud stack into
 // every process that registers a command (measured: 236MB vs 3MB).
 import { FileSys } from "../fileSys";
 import { getDirname } from "../getDirname";

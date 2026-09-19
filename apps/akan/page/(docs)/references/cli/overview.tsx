@@ -107,10 +107,10 @@ export default page().render(() => {
     {
       title: "Cloud",
       href: "/references/cli/cloud",
-      commands: ["login", "logout", "set-llm", "reset-llm", "ask", "update"],
+      commands: ["login", "logout", "update"],
       desc: l.trans({
-        en: "Configure optional cloud authentication, LLM settings, project questions, and updates.",
-        ko: "선택적인 cloud authentication, LLM setting, project question, update를 설정합니다.",
+        en: "Configure optional cloud authentication, environment transfer, and framework updates.",
+        ko: "선택적인 cloud authentication, environment 전송, framework update를 설정합니다.",
       }),
     },
     {

@@ -29,7 +29,7 @@ Create reusable value types that are not database-backed document models.
 
 Generate CRUD page routes for an existing module inside an app.
 
-Configure optional cloud authentication, LLM settings, project questions, and updates.
+Configure optional cloud authentication, environment transfer, and framework updates.
 
 Expose workspace context, module abstracts, diagnostics, guideline instructions, agent rules, and read-only MCP tools.
 

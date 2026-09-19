@@ -9,6 +9,7 @@ import type {
   LlmTurnAnswer,
   LlmTurnRequest,
 } from "./llm.adaptor";
+import { llmProviderOf } from "./llm.adaptor";
 
 type AnthropicSource = { type: "base64"; media_type: string; data: string } | { type: "url"; url: string };
 type AnthropicBlock =
@@ -101,7 +102,7 @@ export class AnthropicLlm
       );
       return this.#reported(await AnthropicLlm.consumeStream(body, onDelta));
     } catch (error) {
-      // Logged and rethrown rather than answered as `null` — see `DeepseekLlm.chat` for why the two differ.
+      // Logged and rethrown rather than answered as `null` — see `OpenaiLlm.chat` for why the two differ.
       this.logger.error(`Anthropic turn failed: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
@@ -136,7 +137,7 @@ export class AnthropicLlm
       // A model turn regularly outlives the usual 20s adapter budget; long tool turns finish well within this.
       signal: AbortSignal.timeout(120_000),
     });
-    if (!response.ok) throw await AnthropicLlm.refusal(response);
+    if (!response.ok) throw await AnthropicLlm.refusal(this.#host, response);
     return (await response.json()) as T;
   }
 
@@ -147,12 +148,13 @@ export class AnthropicLlm
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(120_000),
     });
-    if (!response.ok || !response.body) throw await AnthropicLlm.refusal(response);
+    if (!response.ok || !response.body) throw await AnthropicLlm.refusal(this.#host, response);
     return response.body;
   }
 
-  static async refusal(response: Response): Promise<Error> {
-    return new Err("agent.error.anthropicRequestFailed", {
+  static async refusal(host: string, response: Response): Promise<Error> {
+    return new Err("agent.error.llmRequestFailed", {
+      provider: llmProviderOf(host),
       status: String(response.status),
       reason: await AnthropicLlm.reasonOf(response),
     });

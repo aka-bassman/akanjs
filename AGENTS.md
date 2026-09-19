@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-beta.7 -->
+<!-- akan:agent:version 3.0.0-beta.13 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -732,9 +732,12 @@ what every developer must know even when not building one.
   every tool runs in the caller's own browser session, gated by guards and the approval card. Its guard is
   `AgentRelayAccess`, which refuses every call until the app names a guard of its own —
   `option.setAgentAccess(SignedIn)`. **The LLM is configured in `option.ts`, never through the environment**
-  (`option.setLlm({ apiKey, model, host })`). Three providers ship — `DeepseekLlm` (the default, text only),
-  `OpenaiLlm` and `AnthropicLlm` (both read images) — and swapping one in is
-  `option.applyAdaptor(LlmAdaptorRole, AnthropicLlm)`.
+  (`option.setLlm({ apiKey, model, host })`). Two adaptors ship, one per wire: `OpenaiLlm` is the default and
+  speaks the chat-completions dialect to whatever `host` names — OpenAI, DeepSeek, Groq, OpenRouter, Ollama — and
+  `AnthropicLlm` speaks the Messages API and reads a PDF as well as a picture. Both require `model`. A provider
+  neither covers is an `adapt()` class in `srvkit/` implementing `LlmAdaptor`, applied with
+  `option.applyAdaptor(LlmAdaptorRole, TheClass)`; whatever settings it needs beyond `LlmOption` ride `setLlm`
+  too, read back with `use<MyLlmOption>()`.
 - **Declare the tool beside the control that already does it**, never as a separate surface:
   `st.tool("x").desc("…").arg("id", ID).exec(fn)` returns the callable to hand to `onClick` — one handler for the
   person and the agent. Publish it only where the screen already renders the control; a falsy name declares the
@@ -1000,7 +1003,7 @@ cd dist/apps/<appName> && USE_AKANJS_PKGS=true AKAN_PUBLIC_REPO_NAME=<repo> AKAN
 - Update the abstract when business invariants, workflows, or public behavior change.
 - Do not update the abstract for formatting-only, import-only, or style-only changes.
 - Service modules live in `lib/_<service>`, but their abstract file is `<service>.abstract.md`.
-- Keep an abstract short. Run `akan compact <app-or-lib>` to rewrite bloated abstracts down to the invariants the code cannot show; `akan quality scan` warns past 300 lines.
+- Keep an abstract short — the invariants the code cannot show, and nothing it already states. `akan quality scan` warns past 300 lines.
 
 ## Generated Files
 

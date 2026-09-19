@@ -44,9 +44,10 @@ export interface ZoneProps {
   onCompact?: AgentSessionOptions["onCompact"];
   /**
    * What the page itself draws while this agent drives it: the control a call was published from is ringed where
-   * it stands, and a pointer presses it. On by default — the chat panel is closed as often as it is open, and
-   * a change nothing attributes is one the user watches happen for no reason they can see. `false` draws nothing,
-   * and an object turns one effect off (`visual={{ cursor: false }}`).
+   * it stands, and a pointer presses it, waits out the model's turn as a spinner where it landed, and goes when
+   * the turn ends. On by default — the chat panel is closed as often as it is open, and a change nothing
+   * attributes is one the user watches happen for no reason they can see. `false` draws nothing, and an object
+   * turns one effect off (`visual={{ cursor: false }}` keeps the ring, `{ reveal: false }` keeps the pointer).
    */
   visual?: boolean | AgentVisualOption;
   /**

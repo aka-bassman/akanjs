@@ -1,6 +1,6 @@
 import path from "node:path";
 // Module paths, never a barrel. The `@akanjs/devkit` root re-exports all 41 modules, which would drag
-// @trapezedev/project, the @langchain stack, ssh2, ink and the cloud stack in; and `frontendBuild`'s own
+// @trapezedev/project, ssh2, ink and the cloud stack in; and `frontendBuild`'s own
 // barrel reaches `cssCompiler`/`ssrBaseArtifactBuilder`, which pull tailwindcss + @tailwindcss/node
 // (~40MB) into a process that then holds them for the whole dev session. Phase 2 moved css compilation
 // into the batch worker, so this process has no use for them — `entryModuleGraph.test.ts` keeps it that way.

@@ -259,6 +259,35 @@ describe("router", () => {
     globalThis.setTimeout = originalSetTimeout;
   });
 
+  test("navigation() carries a refused push back to the caller", async () => {
+    envState.side = "client";
+    installClientWindow();
+    const { router } = await import("./router");
+    const refusal = new Error("no route at /nope");
+    refusal.name = "RscRouteNotFound";
+
+    router.init({
+      type: "ssr",
+      side: "client",
+      lang: "en",
+      router: {
+        push: (href) => (href.includes("/nope") ? Promise.reject(refusal) : undefined),
+        replace: () => undefined,
+        back: () => undefined,
+        refresh: () => undefined,
+      },
+    });
+
+    router.push("/docs/intro");
+    await expect(router.navigation()).resolves.toBeUndefined();
+
+    router.push("/nope");
+    await expect(router.navigation()).rejects.toThrow("no route at /nope");
+    // Awaited a second time: the refusal is held inside the router, so nobody's failure to await it turns into an
+    // unhandled rejection, and the one caller that does await it still sees it.
+    await expect(router.navigation()).rejects.toThrow("no route at /nope");
+  });
+
   test("csr navigation preserves csr runtime search params", async () => {
     envState.side = "client";
     installClientWindow("/en/admin/current", "?csr=true&akanMobileTarget=default&akanMobileBasePath=admin");
