@@ -7,6 +7,7 @@ export {
   legacyAuthTokenKey,
   readAuthToken,
 } from "./authToken";
+export { CodeAgentClient, type CodeAgentTransport } from "./CodeAgentClient";
 export { capitalize } from "./capitalize";
 export { clamp } from "./clamp";
 export {
@@ -15,6 +16,49 @@ export {
   forwardedHeaders,
   normalizeIpAddress,
 } from "./clientAddress";
+export {
+  type CodeAgentApprovalPolicy,
+  type CodeAgentBuiltinTool,
+  type CodeAgentInteractionMode,
+  type CodeAgentMcpServerRef,
+  type CodeAgentPresetName,
+  type CodeAgentProfile,
+  type CodeAgentSubagentBudget,
+  codeAgentDeniedPaths,
+  codeAgentPresets,
+  isCodeAgentPresetName,
+} from "./codeAgentProfile";
+export {
+  type CodeAgentAnswer,
+  type CodeAgentApprovalRequest,
+  type CodeAgentCommand,
+  type CodeAgentCommandType,
+  type CodeAgentEvent,
+  type CodeAgentEventBody,
+  type CodeAgentEventType,
+  type CodeAgentFrame,
+  type CodeAgentImage,
+  type CodeAgentQuestion,
+  type CodeAgentQuestionOption,
+  type CodeAgentReply,
+  type CodeAgentRequest,
+  type CodeAgentSessionInfo,
+  type CodeAgentStartOptions,
+  type CodeAgentState,
+  type CodeAgentStopReason,
+  type CodeAgentToolOp,
+  type CodeAgentToolOutcome,
+  type CodeAgentToolSummary,
+  codeAgentClip,
+  codeAgentEventLabel,
+  codeAgentEventPersistence,
+  codeAgentLabelChars,
+  codeAgentOutputChars,
+  codeAgentRenderAnswer,
+  codeAgentShouldPersist,
+  codeAgentWireVersion,
+  isCodeAgentReply,
+} from "./codeAgentWire";
 export { deepObjectify } from "./deepObjectify";
 export type { DynamicRecord } from "./dynamicRecord";
 export { EventStream, type EventStreamOptions } from "./eventStream";

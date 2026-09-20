@@ -138,6 +138,9 @@ export class CliDistBuilder {
     const buildResult = await Bun.build({
       entrypoints: [
         `${this.#cliDir}/index.ts`,
+        // The code-agent SDK is a second published entry, and `naming.entry` is the bare basename — which is
+        // why this file is not called `index.ts` like every other barrel here.
+        `${this.#cliDir}/code/akanCode.ts`,
         `${this.#devkitDir}/incrementalBuilder/incrementalBuilder.proc.ts`,
         `${this.#devkitDir}/incrementalBuilder/buildBatch.proc.ts`,
         `${this.#devkitDir}/typecheck/typecheck.proc.ts`,
@@ -158,14 +161,16 @@ export class CliDistBuilder {
       plugins: [],
     });
     if (!buildResult.success) throw new AggregateError(buildResult.logs, "CLI build failed");
-    await $`rm -rf ${this.#outDir}/templates ${this.#outDir}/guidelines`;
+    await $`rm -rf ${this.#outDir}/templates ${this.#outDir}/guidelines ${this.#outDir}/skills`;
     await $`cp -R ${this.#cliDir}/templates ${this.#outDir}/templates`;
     await $`cp -R ${this.#cliDir}/guidelines ${this.#outDir}/guidelines`;
+    await $`cp -R ${this.#cliDir}/skills ${this.#outDir}/skills`;
     const distPackageJson = {
       ...packageJson,
       bin: { akan: "./index.js" },
       exports: {
         ".": { import: "./index.js", default: "./index.js" },
+        "./code": { import: "./akanCode.js", default: "./akanCode.js" },
         "./package.json": "./package.json",
       },
     };

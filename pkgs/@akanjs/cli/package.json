@@ -25,9 +25,15 @@
       "types": "./index.ts",
       "default": "./index.ts"
     },
+    "./code": {
+      "import": "./code/akanCode.ts",
+      "types": "./code/akanCode.ts",
+      "default": "./code/akanCode.ts"
+    },
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.6",
     "@inquirer/prompts": "^8.4.3",
     "@tailwindcss/node": "^4.3.0",
     "@trapezedev/project": "^7.1.4",
@@ -46,6 +52,7 @@
     "subset-font": "^2.5.0",
     "tailwind-scrollbar": "^4.0.2",
     "tailwindcss": "^4.3.0",
+    "typebox": "1.1.38",
     "typescript": "^6.0.3"
   },
   "devDependencies": {},

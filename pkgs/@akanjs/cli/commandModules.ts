@@ -12,6 +12,7 @@ import type { CommandCls } from "@akanjs/devkit/commandDecorators";
 export const commandModules = {
   workspace: async () => (await import("./workspace/workspace.command")).WorkspaceCommand,
   agent: async () => (await import("./agent/agent.command")).AgentCommand,
+  code: async () => (await import("./code/code.command")).CodeCommand,
   application: async () => (await import("./application/application.command")).ApplicationCommand,
   library: async () => (await import("./library/library.command")).LibraryCommand,
   localRegistry: async () => (await import("./localRegistry/localRegistry.command")).LocalRegistryCommand,
