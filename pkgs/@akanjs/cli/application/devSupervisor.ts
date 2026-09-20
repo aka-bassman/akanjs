@@ -10,6 +10,8 @@ export interface DevAppStatus {
   name: string;
   port: number;
   url: string;
+  /** The public URL `--share` opened for this app, or null when the session opened none. */
+  shareUrl: string | null;
   state: DevHostState;
   detail: string;
   exitCode: number | null;
@@ -22,6 +24,8 @@ export interface DevSupervisorOptions {
   concurrency?: number | null;
   open?: boolean;
   write?: boolean;
+  /** App name to public URL, for the shares `--share` opened before the session started. */
+  shares?: Map<string, string> | null;
 }
 
 export interface DevSupervisorView {
@@ -151,6 +155,7 @@ export class DevSupervisor {
         name: app.name,
         port,
         url: `http://localhost:${port}`,
+        shareUrl: this.#options.shares?.get(app.name) ?? null,
         state: "starting",
         detail: "queued",
         exitCode: null,

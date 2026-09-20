@@ -151,7 +151,7 @@ describe("fetchRscNavigationResponse", () => {
           },
         }),
         { status: 404, headers: { "Content-Type": RSC_CONTENT_TYPE } },
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
 
     const result = await fetchRscNavigationResponse("https://example.test/nope", { currentRouterState: null });
 

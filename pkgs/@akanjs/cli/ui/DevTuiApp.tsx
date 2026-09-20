@@ -31,6 +31,8 @@ export interface DevTuiSnapshot {
   editingGrep: boolean;
   /** A copy result, holding the footer in place of the key hints until it expires. */
   notice: string;
+  /** Whether any app has a public share, which is what puts the `s` hint in the footer. */
+  hasShare: boolean;
   readyCount: number;
   appCount: number;
   logRows: number;
@@ -53,6 +55,7 @@ export interface DevTuiActions {
   clear: () => void;
   copyLines: () => void;
   copyPath: () => void;
+  copyShareUrl: () => void;
   openSelected: () => void;
   restartSelected: () => void;
   quit: () => void;
@@ -171,6 +174,7 @@ export const DevTuiApp = ({ actions }: { actions: DevTuiActions }) => {
     else if (input === "c") actions.clear();
     else if (input === "y") actions.copyLines();
     else if (input === "Y") actions.copyPath();
+    else if (input === "s") actions.copyShareUrl();
     else if (input === "o") actions.openSelected();
     else if (input === "r") actions.restartSelected();
     else if (/^[1-9]$/.test(input)) actions.selectApp(Number(input) - 1);
@@ -212,7 +216,8 @@ export const DevTuiApp = ({ actions }: { actions: DevTuiActions }) => {
         </Text>
       ) : (
         <Text dimColor wrap="truncate">
-          {`Tab next · 1-9 app · ↑↓ scroll (shift page) · G follow${snapshot.following ? "" : " (paused)"} · / grep${snapshot.grep ? ` (${snapshot.grep})` : ""} · e errors${snapshot.errorsOnly ? " on" : ""} · c clear · y copy · Y path · o open · r restart · q quit`}
+          {/* `s share` leads because the hint line truncates well before its end on an ordinary terminal. */}
+          {`${snapshot.hasShare ? "s share · " : ""}Tab next · 1-9 app · ↑↓ scroll (shift page) · G follow${snapshot.following ? "" : " (paused)"} · / grep${snapshot.grep ? ` (${snapshot.grep})` : ""} · e errors${snapshot.errorsOnly ? " on" : ""} · c clear · y copy · Y path · o open · r restart · q quit`}
         </Text>
       )}
     </Box>

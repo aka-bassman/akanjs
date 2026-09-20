@@ -170,8 +170,12 @@ describe("router", () => {
       ],
       indexPath: "/explore",
       router: {
-        push: (href, options) => calls.push(["push", href, options]),
-        replace: (href, options) => calls.push(["replace", href, options]),
+        push: (href, options) => {
+          calls.push(["push", href, options]);
+        },
+        replace: (href, options) => {
+          calls.push(["replace", href, options]);
+        },
         back: (options) => calls.push(["back", options]),
         refresh: () => calls.push(["refresh"]),
       },
@@ -225,8 +229,12 @@ describe("router", () => {
       lang: "en",
       prefix: "admin",
       router: {
-        push: (href, options) => calls.push(["push", href, options]),
-        replace: (href, options) => calls.push(["replace", href, options]),
+        push: (href, options) => {
+          calls.push(["push", href, options]);
+        },
+        replace: (href, options) => {
+          calls.push(["replace", href, options]);
+        },
         back: (options) => calls.push(["back", options]),
         refresh: () => calls.push(["refresh"]),
       },
@@ -307,8 +315,12 @@ describe("router", () => {
       lang: "en",
       prefix: "admin",
       router: {
-        push: (href, options) => calls.push(["push", href, options]),
-        replace: (href, options) => calls.push(["replace", href, options]),
+        push: (href, options) => {
+          calls.push(["push", href, options]);
+        },
+        replace: (href, options) => {
+          calls.push(["replace", href, options]);
+        },
         back: (options) => calls.push(["back", options]),
         refresh: () => calls.push(["refresh"]),
       },
@@ -340,8 +352,12 @@ describe("router", () => {
       lang: "en",
       prefix: "admin",
       router: {
-        push: (href, options) => calls.push(["push", href, options]),
-        replace: (href, options) => calls.push(["replace", href, options]),
+        push: (href, options) => {
+          calls.push(["push", href, options]);
+        },
+        replace: (href, options) => {
+          calls.push(["replace", href, options]);
+        },
         back: (options) => calls.push(["back", options]),
         refresh: () => calls.push(["refresh"]),
       },
@@ -370,8 +386,12 @@ describe("router", () => {
       lang: "en",
       prefix: "akanjs",
       router: {
-        push: (href, options) => calls.push(["push", href, options]),
-        replace: (href, options) => calls.push(["replace", href, options]),
+        push: (href, options) => {
+          calls.push(["push", href, options]);
+        },
+        replace: (href, options) => {
+          calls.push(["replace", href, options]);
+        },
         back: (options) => calls.push(["back", options]),
         refresh: () => calls.push(["refresh"]),
       },

@@ -221,8 +221,23 @@ export class CodeAgentEventMapper {
     if (!args || typeof args !== "object") return "";
     const entries = Object.entries(args as Record<string, unknown>).filter(([, value]) => value !== undefined);
     if (!entries.length) return "";
-    const rendered = entries.map(([key, value]) => `${key}=${codeAgentClip(String(value), 60)}`).join(" ");
+    const rendered = entries.map(([key, value]) => `${key}=${CodeAgentEventMapper.#renderArgValue(value)}`).join(" ");
     return `(${codeAgentClip(rendered, 120)})`;
+  }
+
+  /**
+   * A structured argument is described by its shape, not stringified.
+   *
+   * `String({})` is `"[object Object]"` and an array of them is that repeated — which is where an `edit` call's
+   * replacement list ends up, so the row says nothing about a call that changed three places in a file.
+   */
+  static #renderArgValue(value: unknown) {
+    if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? "" : "s"}`;
+    if (value && typeof value === "object") {
+      const keys = Object.keys(value as Record<string, unknown>).length;
+      return `{${keys} key${keys === 1 ? "" : "s"}}`;
+    }
+    return codeAgentClip(String(value), 60);
   }
 
   static #renderContent(content: unknown): string {

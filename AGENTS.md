@@ -7,7 +7,7 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-beta.13 -->
+<!-- akan:agent:version 3.0.0-beta.14 -->
 
 ## Workspace
 
@@ -964,7 +964,9 @@ when two shapes disagree.
   selected one's log beside it. `Tab` walks every row and `1`-`9` jump to that app (the rail shows each
   app's digit), `↑↓` scroll (shift for a page, `G` back to following),
   `/` greps, `e` shows stderr only, `c` clears, `y` copies, `Y` copies the log path, `o` opens the browser,
-  `r` restarts that app, `q` quits.
+  `r` restarts that app, `q` quits. Under `--share`, `s` copies the public URL — the selected app's, or every
+  app's from the merged row — and the header carries it ahead of the local one, because the line `--share`
+  printed before the view took the terminal is gone by its first repaint.
   **`--plain` prints prefixed interleaved lines instead**, and a pipe, a redirect or an unsized terminal
   downgrades to that on its own.
 - **A supervised session writes `local/apps/<app>/runtime/dev.log`, and that path is how a log gets handed over.**

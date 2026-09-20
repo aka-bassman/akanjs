@@ -1046,6 +1046,7 @@ describe("FetchClient HTTP generation", () => {
 
   test("reads the SSR credential from the app-scoped cookie, ignoring a neighbouring app's", async () => {
     if (!requestStorage) return;
+    const storage = requestStorage;
     setMockFetch();
     jsonResponses.push("Scoped", "Legacy", "Neighbour");
     const client = new FetchClient("https://api.example", {}, { service: serviceSignal });
@@ -1059,7 +1060,7 @@ describe("FetchClient HTTP generation", () => {
     const own = jwtOf(appName);
     const neighbour = jwtOf(`${appName}-neighbour`);
     const call = async (cookie: string) =>
-      await requestStorage.run(new Request("https://example.test", { headers: { cookie } }), async () => {
+      await storage.run(new Request("https://example.test", { headers: { cookie } }), async () => {
         setAkanPublicEnv();
         return await client.handler.getThing("abcdefabcdefabcdefabcdef", [], null);
       });
@@ -2076,7 +2077,9 @@ describe("FetchClient request budget", () => {
     setHangingFetch();
     const client = new FetchClient("https://api.example", {}, { service: budgetSignal(5) });
 
-    const failure = (await client.handler.provisionThing("Modem").catch((error: unknown) => error)) as Error & {
+    const failure = (await Promise.resolve(client.handler.provisionThing("Modem")).catch(
+      (error: unknown) => error,
+    )) as Error & {
       statusCode?: number;
     };
 
@@ -2088,7 +2091,9 @@ describe("FetchClient request budget", () => {
     setHangingFetch();
     const client = new FetchClient("https://api.example", {}, { service: budgetSignal(60_000) });
 
-    const failure = (await client.handler.readThing({ timeout: 5 }).catch((error: unknown) => error)) as Error & {
+    const failure = (await Promise.resolve(client.handler.readThing({ timeout: 5 })).catch(
+      (error: unknown) => error,
+    )) as Error & {
       statusCode?: number;
     };
 
@@ -2109,7 +2114,7 @@ describe("FetchClient request budget", () => {
     const client = new FetchClient("https://api.example", {}, { service: budgetSignal() });
     client.setTimeout(5);
 
-    const failure = (await client.handler.readThing().catch((error: unknown) => error)) as Error & {
+    const failure = (await Promise.resolve(client.handler.readThing()).catch((error: unknown) => error)) as Error & {
       statusCode?: number;
     };
 

@@ -254,13 +254,13 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
     const { mode, downgraded } = resolveDevUi(plain);
     if (downgraded) first.workspace.log("no sized terminal to draw on; printing prefixed lines instead");
     if (kill) await this.reclaimDevPorts(apps);
-    if (share) await this.#shareOnInterrupt(apps);
+    const shares = share ? await this.#shareOnInterrupt(apps) : null;
     //? `--plain` on a single app is the pre-supervisor path, kept whole: no extra process, this
     //? process's own stdio, and the same Ctrl+C handling it always had.
     if (mode === "stream" && apps.length === 1)
       return await this.startOne(first, { open, dbup, write, ...DevSupervisor.childHooks() });
     this.#interrupt.ownsExit = false;
-    await this.#startMany(apps, { open, dbup, write, mode, concurrency });
+    await this.#startMany(apps, { open, dbup, write, mode, concurrency, shares });
   }
 
   async startOne(
@@ -321,12 +321,16 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
       write,
       mode,
       concurrency,
-    }: Required<Omit<StartOptions, "plain" | "kill" | "share">> & { mode: DevUiMode },
+      shares,
+    }: Required<Omit<StartOptions, "plain" | "kill" | "share">> & {
+      mode: DevUiMode;
+      shares: Map<string, string> | null;
+    },
   ) {
     const workspace = apps[0]?.workspace;
     if (!workspace) throw new Error("No app selected to start");
     const startedDatabase = dbup ? await this.#prepareSharedDatabase(apps) : false;
-    const supervisor = new DevSupervisor({ apps, mode, concurrency, open, write });
+    const supervisor = new DevSupervisor({ apps, mode, concurrency, open, write, shares });
     const view =
       mode === "tui"
         ? await (await import("./devTuiView")).createDevTuiView(supervisor)
@@ -494,13 +498,20 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
    * is not a problem either: until the origin answers, a public request is refused rather than dropped, and the
    * share starts working the moment the port opens.
    */
-  #shareOnInterrupt(apps: Apps) {
+  async #shareOnInterrupt(apps: Apps): Promise<Map<string, string>> {
     const shares: { close: () => Promise<void> }[] = [];
-    const open = Promise.all(
+    const urls = new Map<string, string>();
+    this.#interrupt.add(async () => {
+      await Promise.all(shares.map(async (share) => await share.close()));
+    }, "Abandoning the tunnel release; the shares expire on their own.");
+    await Promise.all(
       apps.map(async (app) => {
         const { TunnelShare } = await import("../tunnel/TunnelShare");
         const share = await TunnelShare.open(app, { workspace: app.workspace });
         shares.push(share);
+        urls.set(app.name, share.url);
+        // Printed for `--plain`; the full-screen view owns the terminal and carries the URL in its own
+        // header instead, because anything written before `render` is wiped by the first repaint.
         Logger.rawLog(`${app.name} is shared at ${share.url}`);
       }),
     ).catch((error: unknown) => {
@@ -510,10 +521,7 @@ export class ApplicationScript extends script("application", [ApplicationRunner,
         "error",
       );
     });
-    this.#interrupt.add(async () => {
-      await Promise.all(shares.map(async (share) => await share.close()));
-    }, "Abandoning the tunnel release; the shares expire on their own.");
-    return open;
+    return urls;
   }
 
   /**

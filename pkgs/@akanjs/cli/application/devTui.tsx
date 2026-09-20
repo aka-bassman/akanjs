@@ -62,6 +62,7 @@ export class DevTui implements DevSupervisorView {
           clear: this.#clear,
           copyLines: this.#copyLines,
           copyPath: this.#copyPath,
+          copyShareUrl: this.#copyShareUrl,
           openSelected: this.#openSelected,
           restartSelected: this.#restartSelected,
           quit: this.#quit,
@@ -101,7 +102,10 @@ export class DevTui implements DevSupervisorView {
     // Ink leaves its last frame behind, so the only thing still owed is whatever a child wrote without
     // a closing newline plus a summary of how the session ended.
     for (const line of this.#buffer.flushPartials()) process.stdout.write(`${line.app} │ ${line.text}\n`);
-    for (const status of this.#statuses) process.stdout.write(`${status.name} ${status.url} — ${status.state}\n`);
+    for (const status of this.#statuses)
+      process.stdout.write(
+        `${status.name} ${status.url}${status.shareUrl ? ` · ${status.shareUrl}` : ""} — ${status.state}\n`,
+      );
     // The frame left behind is a bordered screenshot of one page; this says where the whole thing is.
     const log = this.#supervisor.sessionLog;
     for (const name of log.appNames) process.stdout.write(`${name} log: ${log.relativePathOf(name)}\n`);
@@ -167,9 +171,12 @@ export class DevTui implements DevSupervisorView {
     this.#cachedSnapshot = {
       rows,
       selected: this.#indexOfTarget(rows),
+      // The share leads, ahead of the local URL and the state: the title truncates to the pane width, the
+      // rail already carries the state glyph and the port, and the public URL is the one thing this session
+      // has that cannot be read off anything else on screen.
       title: status
-        ? `${status.name}${this.#target.source ? ` · ${this.#target.source}` : ""} · ${status.url} · ${status.state}${status.detail ? ` (${status.detail})` : ""}`
-        : "all apps",
+        ? `${status.name}${this.#target.source ? ` · ${this.#target.source}` : ""}${status.shareUrl ? ` · ◈ ${status.shareUrl}` : ""} · ${status.url} · ${status.state}${status.detail ? ` (${status.detail})` : ""}`
+        : this.#mergedTitle(),
       lines: view.lines,
       above: view.above,
       below: view.below,
@@ -182,6 +189,7 @@ export class DevTui implements DevSupervisorView {
       errorsOnly: this.#errorsOnly,
       editingGrep: this.#editingGrep,
       notice: this.#notice,
+      hasShare: this.#statuses.some((candidate) => !!candidate.shareUrl),
       readyCount: this.#statuses.filter((candidate) => candidate.state === "ready").length,
       appCount: this.#statuses.length,
       logRows,
@@ -306,6 +314,36 @@ export class DevTui implements DevSupervisorView {
     const log = this.#supervisor.sessionLog;
     const app = this.#target.app;
     return (app ? [app] : log.appNames).map((name) => log.relativePathOf(name));
+  }
+
+  /**
+   * The share's whole point is a URL somebody else opens, and this view owns the terminal for the session —
+   * so the line `--share` printed before `render` is gone by the first repaint and there is nothing to select.
+   * The header carries it and this hands it over.
+   */
+  #copyShareUrl = () => {
+    const urls = this.#shareUrls();
+    if (urls.length === 0) {
+      this.#setNotice("no public share — start with --share");
+      return;
+    }
+    void writeClipboard(urls.join("\n")).then((copied) => {
+      this.#setNotice(copied ? `copied ${urls.join(" · ")}` : urls.join(" · "));
+    });
+  };
+
+  /** The selected app's share, or every one of them while the merged view is selected — as `Y` does. */
+  #shareUrls(): string[] {
+    const app = this.#target.app;
+    return this.#statuses
+      .filter((status) => app === null || status.name === app)
+      .map((status) => status.shareUrl)
+      .filter((url): url is string => !!url);
+  }
+
+  #mergedTitle() {
+    const urls = this.#shareUrls();
+    return urls.length === 0 ? "all apps" : `all apps · ◈ ${urls.join(" · ")}`;
   }
 
   #setNotice(text: string) {

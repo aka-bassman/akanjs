@@ -231,6 +231,27 @@ describe("CodeAgentEventMapper", () => {
     expect(think).toEqual([{ type: "thinking_delta", turnId: "t1", text: "hmm" }]);
   });
 
+  /**
+   * `String({})` is `"[object Object]"`, and an `edit` call's argument is an array of them — so a row that
+   * should read "three replacements" read as two identical placeholders instead.
+   */
+  test("a structured argument is described by its shape, not stringified", () => {
+    const mapper = new CodeAgentEventMapper();
+    mapper.map(start);
+    const [event] = mapper.map({
+      type: "tool_execution_start",
+      toolCallId: "c1",
+      toolName: "edit",
+      args: { path: "/repo/a.ts", edits: [{ old: "x" }, { old: "y" }], options: { dryRun: false } },
+    } as never);
+    const title = event?.type === "tool_start" ? event.tool.title : "";
+    expect(title).not.toContain("[object Object]");
+    expect(title).toContain("edits=2 items");
+    expect(title).toContain("options={1 key}");
+    // A path still reads as itself: it is the one argument worth showing verbatim.
+    expect(title).toContain("path=/repo/a.ts");
+  });
+
   test("a blocked call gets a start frame and the engine's end frame is relabelled once", () => {
     const mapper = new CodeAgentEventMapper();
     mapper.map(start);

@@ -81,6 +81,7 @@ const mount = (patch: Partial<DevTuiSnapshot> = {}): Harness => {
     errorsOnly: false,
     editingGrep: false,
     notice: "",
+    hasShare: false,
     readyCount: 1,
     appCount: 2,
     logRows: 10,
@@ -109,6 +110,7 @@ const mount = (patch: Partial<DevTuiSnapshot> = {}): Harness => {
     clear: () => calls.push("clear"),
     copyLines: () => calls.push("copyLines"),
     copyPath: () => calls.push("copyPath"),
+    copyShareUrl: () => calls.push("copyShareUrl"),
     openSelected: () => calls.push("openSelected"),
     restartSelected: () => calls.push("restartSelected"),
     quit: () => calls.push("quit"),
@@ -227,6 +229,7 @@ describe("DevTuiApp", () => {
     await harness.press("c");
     await harness.press("y");
     await harness.press("Y");
+    await harness.press("s");
     await harness.press("o");
     await harness.press("r");
     await harness.press("G");
@@ -237,11 +240,32 @@ describe("DevTuiApp", () => {
       "clear",
       "copyLines",
       "copyPath",
+      "copyShareUrl",
       "openSelected",
       "restartSelected",
       "follow",
       "quit",
     ]);
+  });
+
+  test("offers the share hint only once a share is open", async () => {
+    const harness = mount();
+    await nextFrame();
+    expect(harness.stdout.lastFrame).not.toContain("s share");
+
+    harness.setSnapshot({ hasShare: true });
+    await nextFrame();
+    expect(harness.stdout.lastFrame).toContain("s share");
+  });
+
+  test("keeps the public URL in the header on a terminal narrow enough to truncate the rest", async () => {
+    const harness = mount({
+      title: "akan · ◈ https://wispy-fox.tunnel.akanjs.com · http://localhost:8282 · ready",
+    });
+    await nextFrame();
+    expect(harness.stdout.lastFrame).toContain("https://wispy-fox.tunnel.akanjs.com");
+    // The pane truncates, so the assertion above only means something while something is being cut.
+    expect(harness.stdout.lastFrame).toContain("…");
   });
 
   test("a copy result takes the footer, and the hints come back with it", async () => {
