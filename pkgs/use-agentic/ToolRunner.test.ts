@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { AgenticSurface } from "./AgenticSurface";
 import { AgentProgress } from "./AgentProgress";
 import { ToolRunner } from "./ToolRunner";
-import type { ToolActivity, ToolCallRequest, ToolEntry, ToolProgress } from "./types";
+import type { ToolActionEntry, ToolActivity, ToolCallRequest, ToolCardEntry, ToolEntry, ToolProgress } from "./types";
 
 const call = (name: string, args: Record<string, unknown> = {}, id = "c1"): ToolCallRequest => ({ id, name, args });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -11,9 +11,15 @@ const until = async (predicate: () => boolean) => {
   if (!predicate()) throw new Error("condition never met");
 };
 
-const surfaceWith = (...entries: (Partial<ToolEntry> & { name: string })[]) => {
+const surfaceWith = (...entries: (Partial<ToolActionEntry> & { name: string })[]) => {
   const surface = new AgenticSurface();
   for (const entry of entries) surface.registerTool([], { run: () => undefined, ...entry });
+  return surface;
+};
+
+const surfaceWithCard = (entry: Partial<ToolCardEntry> & { name: string; card: ToolCardEntry["card"] }) => {
+  const surface = new AgenticSurface();
+  surface.registerTool([], entry);
   return surface;
 };
 
@@ -292,5 +298,87 @@ describe("ToolRunner activity", () => {
     );
     expect(seen.map((event) => event.phase)).toEqual(["start", "end"]);
     expect(seen[1].error).toBe("path must be internal.");
+  });
+});
+
+describe("ToolRunner cards", () => {
+  const rendered = (entry: Parameters<typeof surfaceWithCard>[0]) => {
+    const surface = surfaceWithCard(entry);
+    return new ToolRunner(surface, {
+      card: (request) =>
+        new Promise((resolve) => {
+          request.render({
+            args: request.args,
+            submit: (result) => resolve({ result }),
+            cancel: (reason) => resolve({ error: reason ?? "The user closed the card." }),
+          });
+        }),
+    });
+  };
+
+  test("a card tool parks instead of running, and what the card submits is the call's result", async () => {
+    const runner = rendered({
+      name: "collectContact",
+      card: ({ submit }) => {
+        submit({ name: "Bora", phone: "010-0000-0000" });
+        return null;
+      },
+    });
+    const result = await runner.run(call("collectContact"), new AbortController().signal);
+    expect(result.result).toEqual({ name: "Bora", phone: "010-0000-0000" });
+    expect(result.error).toBeUndefined();
+  });
+
+  test("the card's own cancel is the refusal the model reads", async () => {
+    const runner = rendered({
+      name: "collectContact",
+      card: ({ cancel }) => {
+        cancel("The user would rather not say.");
+        return null;
+      },
+    });
+    const result = await runner.run(call("collectContact"), new AbortController().signal);
+    expect(result.result).toBeUndefined();
+    expect(result.error).toBe("The user would rather not say.");
+  });
+
+  test("a host with nowhere to render one refuses the call instead of answering it itself", async () => {
+    let drawn = 0;
+    const surface = surfaceWithCard({
+      name: "collectContact",
+      card: () => {
+        drawn += 1;
+        return null;
+      },
+    });
+    const result = await new ToolRunner(surface).run(call("collectContact"), new AbortController().signal);
+    expect(drawn).toBe(0);
+    expect(result.error).toContain("answered by the user");
+  });
+
+  test("a guard's refusal is answered without ever drawing the card", async () => {
+    let drawn = 0;
+    const runner = rendered({
+      name: "collectContact",
+      guard: () => "This screen is not asking for a contact.",
+      card: () => {
+        drawn += 1;
+        return null;
+      },
+    });
+    const result = await runner.run(call("collectContact"), new AbortController().signal);
+    expect(drawn).toBe(0);
+    expect(result.error).toBe("This screen is not asking for a contact.");
+  });
+
+  // The same property an approval has, and for the same reason: a form parked in front of somebody is not work,
+  // so holding the execution lock across it would freeze every other agent on the page behind one unanswered card.
+  test("a card waiting on the user does not hold the queue against another runner", async () => {
+    const parked = surfaceWithCard({ name: "collectContact", card: () => null });
+    const waiting = new ToolRunner(parked, { card: () => new Promise<never>(() => {}) });
+    void waiting.run(call("collectContact"), new AbortController().signal);
+    await tick();
+    const other = new ToolRunner(surfaceWith({ name: "bump", run: () => "done" }));
+    expect((await other.run(call("bump", {}, "c2"), new AbortController().signal)).result).toBe("done");
   });
 });

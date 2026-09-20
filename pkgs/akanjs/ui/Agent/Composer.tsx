@@ -1,5 +1,6 @@
 "use client";
 import { cn, usePage } from "akanjs/client";
+import { lazy } from "akanjs/webkit";
 import { type KeyboardEvent, type RefObject, useEffect } from "react";
 import type { AgentSession, MessageAttachment, MessageReference } from "use-agentic";
 import { Button } from "../Button";
@@ -8,6 +9,16 @@ import { createOverridable, useUiRecipe } from "../UiOverride";
 import { Attach, Chips } from "./Attach";
 import { Mic } from "./Mic";
 import { ReferenceChips } from "./Refer";
+
+/**
+ * What the chat needs of whatever the composer draws into — a textarea, or the mention editor. Every offset is an
+ * offset into the draft string, tokens included, because that is the text the chat reasons about.
+ */
+export interface ComposerHandle {
+  focus: () => void;
+  caret: () => number | null;
+  setCaret: (at: number) => void;
+}
 
 export interface ComposerProps {
   className?: string;
@@ -32,7 +43,22 @@ export interface ComposerProps {
   onSend: () => void;
   onStop: () => void;
   inputRef?: RefObject<HTMLTextAreaElement | null>;
+  /**
+   * Draws each `@` pointer as the name it points at instead of as its token. On only where the chat was given
+   * `reference` sources, so an app that declared none never fetches the editor's chunk.
+   */
+  mentions?: boolean;
+  /** Filled by whichever input is drawn. An override that draws its own textarea leaves it null and `inputRef` answers. */
+  handleRef?: RefObject<ComposerHandle | null>;
 }
+
+// Its own chunk behind the chat's: the editor is the one heavy thing in this panel, and a chat with no mention
+// sources has nothing to spend it on.
+const RichInput = lazy(() => import("./RichInput"), {
+  ssr: false,
+  suspense: true,
+  loading: () => <div className="flex-1" />,
+});
 
 /** Where the box stops growing and starts scrolling: a chat composer is a paragraph at most. */
 const maxComposerHeight = 128;
@@ -54,9 +80,31 @@ export const DefaultComposer = ({
   onSend,
   onStop,
   inputRef,
+  mentions = false,
+  handleRef,
 }: ComposerProps) => {
   const { l } = usePage();
   const surface = useUiRecipe("input") ?? inputRecipe;
+  const field = surface({ kind: "area", size: "sm" }, "max-h-32 flex-1 resize-none py-1.5");
+  const placeholder = session.pendingQuestion
+    ? l("base.agentAnswer")
+    : session.isRunning
+      ? l("base.agentQueuePlaceholder")
+      : l("base.agentPlaceholder");
+  useEffect(() => {
+    if (!handleRef || mentions) return;
+    handleRef.current = {
+      focus: () => inputRef?.current?.focus(),
+      caret: () => inputRef?.current?.selectionStart ?? null,
+      setCaret: (at) => {
+        inputRef?.current?.focus();
+        inputRef?.current?.setSelectionRange(at, at);
+      },
+    };
+    return () => {
+      handleRef.current = null;
+    };
+  }, [handleRef, inputRef, mentions]);
   useEffect(() => {
     const area = inputRef?.current;
     if (!area) return;
@@ -88,27 +136,33 @@ export const DefaultComposer = ({
           <Mic className="pb-2" label={l("base.agentListen")} listening={mic.listening} onToggle={mic.onToggle} />
         ) : null}
         <Attach className="pb-2" label={l("base.agentAttach")} onPick={onFiles} />
-        <textarea
-          className={surface({ kind: "area", size: "sm" }, "max-h-32 flex-1 resize-none py-1.5")}
-          onChange={(event) => onDraft(event.target.value)}
-          onKeyDown={onKeyDown}
-          onPaste={(event) => {
-            const pasted = [...event.clipboardData.files];
-            if (!pasted.length) return;
-            event.preventDefault();
-            onFiles(pasted);
-          }}
-          placeholder={
-            session.pendingQuestion
-              ? l("base.agentAnswer")
-              : session.isRunning
-                ? l("base.agentQueuePlaceholder")
-                : l("base.agentPlaceholder")
-          }
-          ref={inputRef}
-          rows={1}
-          value={draft}
-        />
+        {mentions ? (
+          <RichInput
+            className={field}
+            draft={draft}
+            handleRef={handleRef}
+            onDraft={onDraft}
+            onFiles={onFiles}
+            onKeyDown={onKeyDown}
+            placeholder={placeholder}
+          />
+        ) : (
+          <textarea
+            className={field}
+            onChange={(event) => onDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            onPaste={(event) => {
+              const pasted = [...event.clipboardData.files];
+              if (!pasted.length) return;
+              event.preventDefault();
+              onFiles(pasted);
+            }}
+            placeholder={placeholder}
+            ref={inputRef}
+            rows={1}
+            value={draft}
+          />
+        )}
         {/* A parked question is not a turn to stop: the loop is waiting on the card, and the card has its own out. */}
         {session.isRunning && !session.pendingQuestion ? (
           <>

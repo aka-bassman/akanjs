@@ -1479,3 +1479,73 @@ describe("AgentSession reference insertion", () => {
     expect(one.pendingInserts).toEqual([]);
   });
 });
+
+describe("AgentSession cards", () => {
+  const contactSurface = () => {
+    const surface = new AgenticSurface();
+    surface.registerTool([], {
+      name: "collectContact",
+      description: "Ask the user for their name and phone number, and return what they entered.",
+      card: () => null,
+    });
+    return surface;
+  };
+
+  test("a card tool parks on the session, and what it submits is what the model reads back", async () => {
+    const { runner } = scripted(
+      [
+        { type: "toolCall", id: "c1", name: "collectContact", args: {} },
+        { type: "done", stop: "toolUse" },
+      ],
+      [
+        { type: "text", delta: "Thanks." },
+        { type: "done", stop: "end" },
+      ],
+    );
+    const session = new AgentSession(contactSurface(), runner);
+    const sent = session.send("book me in");
+    await until(() => !!session.pendingCard);
+    expect(session.pendingCard?.name).toBe("collectContact");
+    session.pendingCard?.submit({ name: "Bora", phone: "010-0000-0000" });
+    await sent;
+    expect(session.pendingCard).toBeNull();
+    const answered = session.messages.find((message) => message.role === "tool");
+    expect(answered?.toolResults?.[0].result).toEqual({ name: "Bora", phone: "010-0000-0000" });
+  });
+
+  test("dismissing the card ends the call with a reason instead of a value", async () => {
+    const { runner } = scripted(
+      [
+        { type: "toolCall", id: "c1", name: "collectContact", args: {} },
+        { type: "done", stop: "toolUse" },
+      ],
+      [
+        { type: "text", delta: "No problem." },
+        { type: "done", stop: "end" },
+      ],
+    );
+    const session = new AgentSession(contactSurface(), runner);
+    const sent = session.send("book me in");
+    await until(() => !!session.pendingCard);
+    session.pendingCard?.dismiss();
+    await sent;
+    const answered = session.messages.find((message) => message.role === "tool");
+    expect(answered?.toolResults?.[0].result).toBeUndefined();
+    expect(answered?.toolResults?.[0].error).toContain("without filling it in");
+  });
+
+  // A card outliving the turn it belongs to would sit on the screen answering nothing.
+  test("aborting the turn takes the card down and says so", async () => {
+    const { runner } = scripted([
+      { type: "toolCall", id: "c1", name: "collectContact", args: {} },
+      { type: "done", stop: "toolUse" },
+    ]);
+    const session = new AgentSession(contactSurface(), runner);
+    const sent = session.send("book me in");
+    await until(() => !!session.pendingCard);
+    session.abort();
+    await sent;
+    expect(session.pendingCard).toBeNull();
+    expect(session.isRunning).toBe(false);
+  });
+});

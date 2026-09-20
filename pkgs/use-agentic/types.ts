@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 export type JsonSchema = Record<string, unknown>;
 
 /** `true` asks with a default message, a string is the message, a function decides from the arguments. */
@@ -6,7 +8,24 @@ export type ToolConfirm = boolean | string | ((args: Record<string, unknown>) =>
 /** Re-checked at the moment of execution; a string is the refusal reason the agent reads. */
 export type ToolGuard = (args: Record<string, unknown>) => true | string;
 
-export interface ToolEntry {
+/**
+ * What a card tool renders while its call waits, and the two ways the user ends that wait. `submit` is the call's
+ * result, `cancel` is its refusal; whichever comes first settles the call and takes the card off the screen, so a
+ * second call of either does nothing.
+ */
+export interface ToolCardControl {
+  args: Record<string, unknown>;
+  submit: (value: unknown) => void;
+  cancel: (reason?: string) => void;
+}
+
+/**
+ * Called, not mounted — the host invokes it inside its own render, so the returned tree keeps no state of its
+ * own between renders. Put anything stateful in a component the function returns.
+ */
+export type ToolCard = (control: ToolCardControl) => ReactNode;
+
+interface ToolEntryBase {
   name: string;
   description?: string;
   parameters?: JsonSchema;
@@ -17,8 +36,24 @@ export interface ToolEntry {
   settle?: boolean;
   confirm?: ToolConfirm;
   guard?: ToolGuard;
-  run: (args: Record<string, unknown>) => unknown;
 }
+
+export interface ToolActionEntry extends ToolEntryBase {
+  run: (args: Record<string, unknown>) => unknown;
+  card?: never;
+}
+
+/**
+ * A call the **user** answers rather than the screen: the host parks the call, renders `card`, and what the card
+ * submits is what the model reads back. `confirm` is not read for one — the card in front of the user is already
+ * the asking, and a gate before it would ask them twice for one thing.
+ */
+export interface ToolCardEntry extends ToolEntryBase {
+  card: ToolCard;
+  run?: never;
+}
+
+export type ToolEntry = ToolActionEntry | ToolCardEntry;
 
 /**
  * That a call is happening, for a host drawing it on the screen rather than in a transcript.

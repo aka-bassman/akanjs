@@ -1753,7 +1753,7 @@ describe("Agent chat @ menu", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
     const { container, unmount } = mount(
       <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen reference={[source(async () => "a dancer in a red coat")]} />
+        <DefaultChat defaultOpen mentions={false} reference={[source(async () => "a dancer in a red coat")]} />
       </lib.AgentProvider>,
     );
     try {
@@ -1785,7 +1785,7 @@ describe("Agent chat @ menu", () => {
     const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
     const { container, unmount } = mount(
       <lib.AgentProvider session={session}>
-        <DefaultChat defaultOpen reference={[source(async () => Promise.reject(new Error("gone")))]} />
+        <DefaultChat defaultOpen mentions={false} reference={[source(async () => Promise.reject(new Error("gone")))]} />
       </lib.AgentProvider>,
     );
     try {
@@ -1831,6 +1831,159 @@ describe("Agent chat @ menu", () => {
       });
       expect(session.messages[0].text).toBe("mail me @kar");
       expect(session.messages[0].references).toBeUndefined();
+    } finally {
+      unmount();
+    }
+  });
+});
+
+describe("Agent chat tool cards", () => {
+  const contactSession = () => {
+    const surface = new lib.AgenticSurface();
+    surface.registerTool([], {
+      name: "collectContact",
+      description: "Ask the user for their name and phone number.",
+      card: ({ submit, cancel }) => (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit({ name: "Bora" });
+          }}
+        >
+          <input aria-label="name" defaultValue="Bora" />
+          <button type="submit">Send it</button>
+          <button onClick={() => cancel("Not now.")} type="button">
+            Not now
+          </button>
+        </form>
+      ),
+    });
+    return new lib.AgentSession(
+      surface,
+      scripted({ toolCall: { id: "c1", name: "collectContact", args: {} } }, { text: "Booked." }),
+    );
+  };
+
+  test("renders the app's own card in the panel and sends what it submits back as the result", async () => {
+    const session = contactSession();
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    try {
+      let sendDone: Promise<void> = Promise.resolve();
+      await act(async () => {
+        sendDone = session.send("book me in");
+        await untilFlushed(() => !!session.pendingCard);
+      });
+      expect(container.innerHTML).toContain("Send it");
+      const submit = [...container.querySelectorAll("button")].find((button) => button.textContent === "Send it");
+      await act(async () => {
+        submit?.click();
+        await sendDone;
+      });
+      expect(session.messages.find((message) => message.role === "tool")?.toolResults?.[0].result).toEqual({
+        name: "Bora",
+      });
+      expect(container.innerHTML).not.toContain("Send it");
+      expect(container.innerHTML).toContain("Booked.");
+    } finally {
+      unmount();
+    }
+  });
+
+  // The frame draws it even when the card does not, so a turn can never park on something with no way out of it.
+  test("the frame's own skip closes a card the app gave no way out of", async () => {
+    const surface = new lib.AgenticSurface();
+    surface.registerTool([], { name: "collectContact", description: "Ask for a contact.", card: () => <p>Name?</p> });
+    const session = new lib.AgentSession(
+      surface,
+      scripted({ toolCall: { id: "c1", name: "collectContact", args: {} } }, { text: "Fine." }),
+    );
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultOpen />
+      </lib.AgentProvider>,
+    );
+    try {
+      let sendDone: Promise<void> = Promise.resolve();
+      await act(async () => {
+        sendDone = session.send("book me in");
+        await untilFlushed(() => !!session.pendingCard);
+      });
+      const skip = [...container.querySelectorAll("button")].find((button) => button.textContent === "base.skip");
+      expect(skip).toBeTruthy();
+      await act(async () => {
+        skip?.click();
+        await sendDone;
+      });
+      expect(session.pendingCard).toBeNull();
+      expect(session.messages.find((message) => message.role === "tool")?.toolResults?.[0].error).toContain(
+        "without filling it in",
+      );
+    } finally {
+      unmount();
+    }
+  });
+});
+
+describe("Agent chat mention pills", () => {
+  const source = {
+    refName: "videoCharacter",
+    label: "People",
+    type: String,
+    search: async (query: string) =>
+      [{ refId: "c1", label: "Karina" }].filter((one) => one.label.toLowerCase().startsWith(query.toLowerCase())),
+    resolve: async () => "a dancer in a red coat",
+  };
+  const editorOf = (container: HTMLElement) => container.querySelector<HTMLElement>('[role="textbox"]');
+
+  // The whole point of the editor: the draft still carries the token — it is what puts the reference on the
+  // message — and the person sees the name they picked.
+  test("a picked pointer is drawn as the name it points at, never as the token that carries it", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat defaultDraft="compare @Kar" defaultOpen reference={[source]} />
+      </lib.AgentProvider>,
+    );
+    try {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      });
+      expect(editorOf(container)?.textContent).toBe("compare @Kar");
+      const row = [...container.querySelectorAll("button")].find((button) => button.textContent?.includes("Karina"));
+      expect(row).toBeTruthy();
+      await act(async () => {
+        row?.click();
+        await untilFlushed(() => session.staged.length > 0);
+      });
+      const editor = editorOf(container);
+      expect(editor?.textContent).toBe("compare Karina ");
+      expect(editor?.innerHTML).not.toContain("mention:");
+      expect(session.staged[0].value).toBe("a dancer in a red coat");
+    } finally {
+      unmount();
+    }
+  });
+
+  test("a draft opened with a token already in it renders the pointer the same way", async () => {
+    const session = new lib.AgentSession(new lib.AgenticSurface(), scripted({ text: "ok" }));
+    const { container, unmount } = mount(
+      <lib.AgentProvider session={session}>
+        <DefaultChat
+          defaultDraft="fix @[Cut 3 body](mention:videoCut/6a1f#cutFrames.2.content) please"
+          defaultOpen
+          reference={[source]}
+        />
+      </lib.AgentProvider>,
+    );
+    try {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(editorOf(container)?.textContent).toBe("fix Cut 3 body please");
     } finally {
       unmount();
     }

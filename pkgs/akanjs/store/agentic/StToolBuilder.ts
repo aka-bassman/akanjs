@@ -9,6 +9,7 @@ import {
   type PrimitiveScalar,
 } from "akanjs/base";
 import type { ParamFieldType } from "akanjs/constant";
+import type { ReactNode } from "react";
 import {
   AgenticSurface,
   type JsonSchema,
@@ -21,6 +22,15 @@ import { tagAction } from "../actionTag";
 // Through the `"use client"` shim, not `react` — the RSC pages bundle stubs client modules per file, and a raw
 // react-hook import here resolves against react's react-server build, which has no hooks. Same as `storeInstance`.
 import { useEffect, useRef } from "../hooks";
+
+/**
+ * The two ways a card ends the call it is parked on. `submit`'s value is what the model reads back, `cancel` is
+ * why there is none; the first one settles it and the card leaves the screen.
+ */
+export interface StToolCardControl {
+  submit: (value: unknown) => void;
+  cancel: (reason?: string) => void;
+}
 
 export interface StToolMeta {
   /**
@@ -187,6 +197,50 @@ export class StToolBuilder<Args extends unknown[] = []> {
       });
     }, [surface, scopeKey, this.#name]);
     return callable.current.fn;
+  }
+
+  /**
+   * The other way a chain ends, for a tool whose answer belongs to the **user**: the call parks in the chat, the
+   * card renders there, and what it submits is what the model reads back. `.exec()` runs a function; this one runs
+   * a person, which is the whole difference — a name and a phone number are theirs to type, and a model that
+   * invents them has answered its own question.
+   *
+   * The arguments arrive positional like `.exec()`'s, and they are checked **before** the card is parked rather
+   * than while it renders: a bad argument has to reach the model as a refusal it can correct, and a throw inside
+   * the render would take the chat panel down with it instead.
+   *
+   * `confirm` is not read here. The card in front of the user is already the asking.
+   */
+  card(render: (control: StToolCardControl, ...args: Args) => ReactNode): void {
+    const surface = useSurface();
+    const scope = useScopePath();
+    const live = useRef({ render, meta: this.#meta });
+    live.current = { render, meta: this.#meta };
+    const declared = useRef<{ name: string | null; desc: string; meta: StToolMeta; args: StToolArg[] } | null>(null);
+    if (declared.current?.name !== this.#name)
+      declared.current = { name: this.#name, desc: this.#desc, meta: this.#meta, args: this.#args };
+    const scopeKey = scope.join(".");
+    useEffect(() => {
+      const spec = declared.current;
+      const name = spec?.name;
+      if (!spec || !name) return;
+      return surface.registerTool(scope, {
+        name,
+        description: spec.desc,
+        settle: spec.meta.settle,
+        parameters: StToolBuilder.parametersOf(spec.args),
+        guard: (args) => {
+          try {
+            StToolBuilder.positionalOf(name, spec.args, args);
+          } catch (error) {
+            return error instanceof Error ? error.message : String(error);
+          }
+          return live.current.meta.guard?.(args) ?? true;
+        },
+        card: ({ args, submit, cancel }) =>
+          live.current.render({ submit, cancel }, ...(StToolBuilder.positionalOf(name, spec.args, args) as Args)),
+      });
+    }, [surface, scopeKey, this.#name]);
   }
 
   static parametersOf(args: StToolArg[]): JsonSchema | undefined {

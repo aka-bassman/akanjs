@@ -71,7 +71,7 @@ export const useFormTools = (refName: string | null, write: (action: string, val
         // and another way for this patch. A composite the guard waved through has no control, and dispatches.
         for (const { entry, value } of patch) {
           const control = surface.tool(AgenticSurface.fullName(scope, entry.action), scope);
-          if (control) void control.run({ value });
+          if (control?.run) void control.run({ value });
           else live.current(entry.action, value);
         }
       },

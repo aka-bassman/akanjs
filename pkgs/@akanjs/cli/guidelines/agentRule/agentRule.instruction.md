@@ -46,7 +46,7 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   already titles, and `defaultDraft` opens the composer with text in it without sending it. A panel driven by a
   controlled `open` with **no** `onOpenChange` draws no close button at all rather than an inert one. Then the
   slots: `AgentLauncher`, `AgentSteps`, `AgentBubble`, `AgentComposer`, `AgentApproval`,
-  `AgentQuestion`, `AgentQueued`, `AgentMenu`, `AgentMarkdown` and `AgentCode` each replace one part in `_overrides.tsx`, and
+  `AgentQuestion`, `AgentToolCard`, `AgentQueued`, `AgentMenu`, `AgentMarkdown` and `AgentCode` each replace one part in `_overrides.tsx`, and
   `akanjs/ui` exports every default beside them (`DefaultBubble`, `DefaultComposer`, …) so a skin composes the
   one it is replacing. **`AgentSteps` is one agent turn** — the messages between the user message that opened it
   and the next one, with `isRunning` saying whether more are still coming — which is the grain a chat needs to
@@ -216,6 +216,15 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   is called from components the composer cannot see; writing the token is the composer's half, and `refer` warns
   rather than staging silently when no chat is mounted on that session — the case where a card sits outside the
   `<Agent.Zone>` its chat is inside.
+- **The composer draws a pointer as the name it points at, never as the token.** Where `reference` sources are
+  declared the input is a Lexical editor rather than a textarea, and each pointer is one atomic node — a backspace
+  takes the whole thing rather than a character of a label that would then name nothing. Nothing above it changes:
+  the node's text content *is* the `@[…](mention:…)` token, so the draft string the chat reads, the `@` query, the
+  chips, the wire and the server's framing all see what they always saw, and every offset the chat hands over is
+  an offset into that string. It is its own chunk behind the chat's, fetched only where a source was declared, and
+  `mentions={false}` keeps the plain textarea — for an app that overrides `AgentComposer`, or one that would
+  rather see the tokens it is sending. An override that draws its own textarea keeps working: it fills the
+  `inputRef` it is handed, and the chat reads the caret off that when no editor filled `handleRef`.
 - **`attach` and `voice` both carry functions, so a server layout cannot pass either.** A closure does not cross
   the RSC boundary — `non-scalar-props-restricted` says so on `page/**` — so an app that wants either mounts the
   chat from a small client component in the app's own `ui/` that calls the hook.
@@ -287,6 +296,14 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   `data-akan-action` like a store setter does. A `remove*` name defaults to a confirm gate. Reach a store action
   from the body — `.exec((id) => st.do.removeX(id))` — which is how an agent gets CRUD; `st.do` on its own
   reaches nobody.
+- **`.card()` is the other way the chain ends, for an answer that is the user's to give.** Where `.exec()` runs a
+  function, `.card(({ submit, cancel }, ...args) => <Form …/>)` parks the call in the chat and renders the app's own
+  component there; what `submit` is handed is what the model reads back, and `cancel` is the refusal it reads
+  instead. A name and a phone number, a date somebody has to look up, a signature — a model that fills those in
+  has answered its own question, and every other shape of "ask the user" is `askUser`. The declared arguments are
+  checked **before** the card is parked, so a bad one reaches the model as a refusal rather than throwing inside
+  the render; `confirm` is not read at all, because the card in front of the user is already the asking. The frame
+  draws its own way out even when the card does not, and the turn is never parked on something with no exit.
 - **The second argument is how the call behaves, never what it is.** `{ settle, confirm, guard }`:
   `settle: false` marks a read that returns what is already there and skips the wait; every other tool is waited
   out before its effect on the screen is reported, because a write may still be landing when `exec` resolves. A
@@ -685,7 +702,10 @@ apps and libs never import it directly (`no-import-external-library`) — everyt
   is among them. The loop parks on the question exactly as it parks on an approval, a dismissal is the tool's
   error result rather than a silent empty answer, and the settled exchange renders as question-and-answer instead
   of a tool row. **Never re-implement it per screen** — a `st.tool("askAboutX")` that opens a modal is the same
-  thing with a worse transcript — and a hook tool named `askUser` shadows it like any other built-in.
+  thing with a worse transcript — and a hook tool named `askUser` shadows it like any other built-in. The line
+  between it and a `.card()` tool is what the answer *is*: a sentence or a pick off a list is `askUser` and belongs
+  to the conversation, while a shape the model must not invent — fields, a form, a signature — is a card the screen
+  declares, because only the screen knows what filling it in looks like.
 
 ## What The Page Draws
 - **The page shows the agent's work, not just the transcript.** A chat panel is closed as often as it is open, and

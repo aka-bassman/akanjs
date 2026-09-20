@@ -2,7 +2,7 @@ import type { AgentProgressReport } from "./AgentProgress";
 import { Compaction, type CompactOptions } from "./Compaction";
 import { Reference } from "./Reference";
 import { ToolOutput } from "./ToolOutput";
-import { type ToolApprovalRequest, ToolRunner } from "./ToolRunner";
+import { type ToolApprovalRequest, type ToolCardAnswer, type ToolCardRequest, ToolRunner } from "./ToolRunner";
 import { Transcript } from "./Transcript";
 import type {
   AgentRunner,
@@ -15,6 +15,7 @@ import type {
   ToolActivity,
   ToolCallRequest,
   ToolCallResult,
+  ToolCard,
   TurnStop,
 } from "./types";
 
@@ -37,6 +38,20 @@ export interface PendingQuestion {
   choices: string[];
   multiple: boolean;
   answer: (value: string | string[]) => void;
+  dismiss: (reason?: string) => void;
+}
+
+/**
+ * A call parked on a component the app declared with the tool — a form to fill in, a choice no list of strings
+ * could carry. The loop waits on it exactly as it waits on an approval, and `render` is the app's own, so the
+ * framework decides where the card sits and nothing about what it asks.
+ */
+export interface PendingCard {
+  callId: string;
+  name: string;
+  args: Record<string, unknown>;
+  render: ToolCard;
+  submit: (value: unknown) => void;
   dismiss: (reason?: string) => void;
 }
 
@@ -150,6 +165,7 @@ export class AgentSession {
   #running = false;
   #pending: PendingApproval | null = null;
   #question: PendingQuestion | null = null;
+  #card: PendingCard | null = null;
   #staged: MessageReference[] = [];
   #inserts: MessageReference[] = [];
   #chats = 0;
@@ -175,6 +191,7 @@ export class AgentSession {
     this.#options = options;
     this.#tools = new ToolRunner(surface, {
       approve: (request, signal) => this.#awaitApproval(request, signal),
+      card: (request, signal) => this.#awaitCard(request, signal),
       settle: () => this.#options.settle?.(),
       activity: (event) => this.#options.onActivity?.(event),
       progress: ({ callId, report }) => {
@@ -234,6 +251,10 @@ export class AgentSession {
 
   get pendingQuestion(): PendingQuestion | null {
     return this.#question;
+  }
+
+  get pendingCard(): PendingCard | null {
+    return this.#card;
   }
 
   /**
@@ -435,6 +456,7 @@ export class AgentSession {
       this.#active = null;
       this.#pending = null;
       this.#question = null;
+      this.#card = null;
       this.#progress = null;
       // Stop caught before the first delta leaves the draft this turn opened, and the rendered transcript is the
       // one place it survives — `Transcript` already drops it from the wire and from history. A bubble draws an
@@ -727,6 +749,28 @@ export class AgentSession {
         multiple,
         answer: (value) => settle({ result: value }),
         dismiss: (reason) => settle({ error: reason ?? "The user dismissed the question without answering it." }),
+      };
+      this.#notify();
+    });
+  }
+
+  #awaitCard(request: ToolCardRequest, signal: AbortSignal): Promise<ToolCardAnswer> {
+    return new Promise((resolve) => {
+      const settle = (answer: ToolCardAnswer) => {
+        this.#card = null;
+        signal.removeEventListener("abort", onAbort);
+        this.#notify();
+        resolve(answer);
+      };
+      const onAbort = () => settle({ error: "The user aborted the turn." });
+      signal.addEventListener("abort", onAbort);
+      this.#card = {
+        callId: request.callId,
+        name: request.name,
+        args: request.args,
+        render: request.render,
+        submit: (value) => settle({ result: value }),
+        dismiss: (reason) => settle({ error: reason ?? "The user closed the card without filling it in." }),
       };
       this.#notify();
     });

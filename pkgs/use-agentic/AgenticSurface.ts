@@ -184,6 +184,8 @@ export class AgenticSurface {
     try {
       const verdict = entry.guard?.(args) ?? true;
       if (verdict !== true) throw new Error(verdict);
+      // A card tool is answered by a person in a chat, and this path is every caller that is not one.
+      if (!entry.run) throw new Error(`${name} is answered by the user, and this caller cannot ask them.`);
       return await entry.run(args);
     } catch (error) {
       record.error = error instanceof Error ? error.message : String(error);

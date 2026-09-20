@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { AgenticSurface } from "./AgenticSurface";
-import type { ToolEntry } from "./types";
+import type { ToolActionEntry } from "./types";
 
-const tool = (name: string, extra: Partial<ToolEntry> = {}): ToolEntry => ({
+const tool = (name: string, extra: Partial<ToolActionEntry> = {}): ToolActionEntry => ({
   name,
   run: () => `ran-${name}`,
   ...extra,

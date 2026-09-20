@@ -28,7 +28,7 @@ import { agentSessionOf } from "./agentSessionOf";
 import type { AttachLimits, AttachReader } from "./attachment";
 import Bubble from "./Bubble";
 import { type ChatCommand, ChatCommands } from "./ChatCommands";
-import { Composer } from "./Composer";
+import { Composer, type ComposerHandle } from "./Composer";
 import { Launcher } from "./Launcher";
 import Menu from "./Menu";
 import Question from "./Question";
@@ -36,6 +36,7 @@ import Queued from "./Queued";
 import Steps from "./Steps";
 import type { PersistOption } from "./sessionHistory";
 import type { BuiltinOption } from "./sessionView";
+import ToolCard from "./ToolCard";
 import { tokenCount } from "./tokenCount";
 import { useChatAttachments } from "./useChatAttachments";
 import { type QueuedMessage, useChatQueue } from "./useChatQueue";
@@ -139,6 +140,12 @@ export interface ChatProps {
    */
   reference?: readonly ReferenceSource[];
   /**
+   * Draws each pointer in the composer as the name it points at rather than as the `@[…](mention:…)` token that
+   * carries it. On wherever `reference` sources are declared, and `false` keeps the plain textarea — for an app
+   * that overrides the composer, or one that would rather see the tokens it is sending.
+   */
+  mentions?: boolean;
+  /**
    * Raises or lowers what the composer accepts — per file, per message, and how many. The defaults are what one
    * turn's JSON safely carries to a conservative provider; an app pointed at a larger request limit, or one whose
    * `attach` uploads and answers a `url`, has no reason to inherit them.
@@ -207,6 +214,7 @@ export const DefaultChat = ({
   attach,
   attachLimits,
   reference,
+  mentions,
   voice,
 }: ChatProps) => {
   const { l } = usePage();
@@ -258,7 +266,14 @@ export const DefaultChat = ({
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
-  const refs = useChatReferences({ session, draft, version, inputRef, onDraft: setDraft });
+  const handleRef = useRef<ComposerHandle | null>(null);
+  // Filled by whichever input the composer drew. An override that draws a textarea of its own fills no handle,
+  // and the ref it was handed answers instead.
+  const focusComposer = () => {
+    if (handleRef.current) handleRef.current.focus();
+    else inputRef.current?.focus();
+  };
+  const refs = useChatReferences({ session, draft, version, handleRef, onDraft: setDraft });
   // Only what the panel is following: a user who scrolled up to read is not dragged back down by the next delta.
   const sticky = useRef(true);
   const returning = useRef(false);
@@ -283,7 +298,7 @@ export const DefaultChat = ({
       event.preventDefault();
       sticky.current = true;
       setOpen(true);
-      inputRef.current?.focus();
+      focusComposer();
     };
     // Cmd/Ctrl+L is the browser location bar; capture so preventDefault wins.
     window.addEventListener("keydown", onKeyDown, true);
@@ -296,7 +311,7 @@ export const DefaultChat = ({
       returning.current = false;
       return;
     }
-    inputRef.current?.focus();
+    focusComposer();
   }, [open, session.pendingQuestion?.callId]);
   useEffect(
     () => () => {
@@ -309,7 +324,7 @@ export const DefaultChat = ({
   const write = (text: string) => {
     setDraft(text);
     menu.reopen();
-    mentions.reopen();
+    mentionMenu.reopen();
   };
   // A panel driven by a controlled `open` with no `onOpenChange` cannot close itself, so it draws no close button
   // rather than one that does nothing — the case an `inline` chat inside an app's own frame lands in.
@@ -361,10 +376,10 @@ export const DefaultChat = ({
     speech.hold(message.byVoice);
   };
   const menu = useSlashMenu({ draft, l, onCommand: runCommand });
-  const mentions = useReferenceMenu({ draft, sources: reference ?? [], session, l, onWrite: write });
+  const mentionMenu = useReferenceMenu({ draft, sources: reference ?? [], session, l, onWrite: write });
   // At most one list is ever open — a slash command is the whole draft and a mention is a word at the end of one
   // — so the keys and the panel address whichever has rows rather than choosing between two of them.
-  const list = menu.at() ? menu : mentions;
+  const list = menu.at() ? menu : mentionMenu;
   const send = () => {
     const text = draft.trim();
     if (!text && !files.attached.length) return;
@@ -584,6 +599,7 @@ export const DefaultChat = ({
         ) : null}
       </div>
       {session.pendingApproval ? <Approval approval={session.pendingApproval} /> : null}
+      {session.pendingCard ? <ToolCard card={session.pendingCard} key={session.pendingCard.callId} /> : null}
       {session.pendingQuestion ? (
         <Question key={session.pendingQuestion.callId} question={session.pendingQuestion} />
       ) : null}
@@ -593,7 +609,9 @@ export const DefaultChat = ({
         attached={files.attached}
         pending={files.pending}
         draft={draft}
+        handleRef={handleRef}
         inputRef={inputRef}
+        mentions={mentions ?? !!reference?.length}
         {...(speech.canListen ? { mic: { listening: speech.listening, onToggle: speech.toggle } } : {})}
         onDraft={write}
         onFiles={(picked) => void files.add(picked)}

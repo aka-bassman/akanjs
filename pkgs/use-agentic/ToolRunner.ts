@@ -1,7 +1,15 @@
 import { AgentAbort } from "./AgentAbort";
 import { AgentProgress, type AgentProgressReport } from "./AgentProgress";
 import { ToolOutput } from "./ToolOutput";
-import type { SurfaceView, ToolActivity, ToolCallRequest, ToolCallResult, ToolEntry } from "./types";
+import type {
+  SurfaceView,
+  ToolActivity,
+  ToolCallRequest,
+  ToolCallResult,
+  ToolCard,
+  ToolCardEntry,
+  ToolEntry,
+} from "./types";
 
 export interface ToolApprovalRequest {
   callId: string;
@@ -10,6 +18,17 @@ export interface ToolApprovalRequest {
   /** What the user is asked, already resolved from the entry's `confirm`. */
   message: string;
 }
+
+/** A call whose answer the user writes, handed to the host with the component its declaration named. */
+export interface ToolCardRequest {
+  callId: string;
+  name: string;
+  args: Record<string, unknown>;
+  render: ToolCard;
+}
+
+/** What the card settled on: the value the model reads back, or why there is none. */
+export type ToolCardAnswer = { result: unknown } | { error: string };
 
 /** `report` is `null` once the call is over, carrying the id so a host can ignore a clear that is not its own. */
 export interface ToolProgress {
@@ -30,6 +49,13 @@ export interface ToolRunnerHost {
    * a host that may not perform the action, and the refusal says so rather than silently downgrading the gate.
    */
   approve?: (request: ToolApprovalRequest, signal: AbortSignal) => Promise<true | string>;
+  /**
+   * Parks the call until the user fills in the card its declaration named, and answers with what they submitted.
+   *
+   * Omitting it refuses those calls rather than running something in their place: a card tool has no function to
+   * fall back to — the user *is* the implementation — so a host with nowhere to render one may not answer it.
+   */
+  card?: (request: ToolCardRequest, signal: AbortSignal) => Promise<ToolCardAnswer>;
   /**
    * Awaited after a tool that changed something and before its change report is taken. A surface is read
    * synchronously and a screen does not settle synchronously, so without this the report describes the moment
@@ -98,6 +124,7 @@ export class ToolRunner {
       const fallback = this.#host.fallback;
       return fallback ? await fallback(call, signal) : { ...base, error: `Unknown tool: ${call.name}` };
     }
+    if (entry.card) return await this.#carded(call, entry, signal);
     const message = ToolRunner.confirmMessage(call.name, entry, call.args);
     if (message) {
       const approve = this.#host.approve;
@@ -107,6 +134,33 @@ export class ToolRunner {
       if (approved !== true) return { ...base, error: approved };
     }
     return await ToolRunner.#serialized(() => this.#execute(call, entry, signal));
+  }
+
+  /**
+   * A call the user answers. It waits **outside** the serialization queue, for the reason an approval does: a card
+   * parked in front of somebody is not work, and holding the lock across it would let one agent's unanswered form
+   * freeze every other agent on the page.
+   *
+   * The screen is still snapshotted around the wait, because a card that writes what it collected into a store is
+   * the ordinary case and the model has to be told what moved. Nothing is drawn through `activity` — that draws a
+   * call landing *on* the page, and this one lands in the chat.
+   */
+  async #carded(call: ToolCallRequest, entry: ToolCardEntry, signal: AbortSignal): Promise<ToolCallResult> {
+    const base = { id: call.id, name: call.name };
+    const verdict = entry.guard?.(call.args) ?? true;
+    if (verdict !== true) return { ...base, error: verdict };
+    const ask = this.#host.card;
+    if (!ask) return { ...base, error: `${call.name} is answered by the user, and nothing here can ask them.` };
+    const before = this.#surface.snapshot();
+    const answered = await ask({ callId: call.id, name: call.name, args: call.args, render: entry.card }, signal);
+    if ("error" in answered) return { ...base, error: answered.error };
+    if (entry.settle !== false) await this.#host.settle?.();
+    const changes = this.#surface.diffSince(before);
+    return {
+      ...base,
+      ...(answered.result !== undefined ? { result: answered.result } : {}),
+      ...(changes.length ? { changes } : {}),
+    };
   }
 
   async #execute(call: ToolCallRequest, entry: ToolEntry, signal: AbortSignal): Promise<ToolCallResult> {

@@ -41,7 +41,7 @@ export {
 export { type BubbleProps, DefaultBubble } from "./Agent/Bubble";
 export type { ChatProps } from "./Agent/Chat";
 export { type ChatCommand, ChatCommands } from "./Agent/ChatCommands";
-export { type ComposerProps, DefaultComposer } from "./Agent/Composer";
+export { type ComposerHandle, type ComposerProps, DefaultComposer } from "./Agent/Composer";
 export { fetchRunner } from "./Agent/fetchRunner";
 export type { HistoryProps as AgentHistoryProps } from "./Agent/History";
 export { DefaultLauncher, type LauncherProps } from "./Agent/Launcher";
@@ -56,6 +56,7 @@ export {
 export { DefaultSteps, type StepsProps } from "./Agent/Steps";
 export type { PersistOption } from "./Agent/sessionHistory";
 export type { AgentBuiltin, BuiltinOption } from "./Agent/sessionView";
+export { DefaultToolCard, type ToolCardProps } from "./Agent/ToolCard";
 export { tokenCount } from "./Agent/tokenCount";
 export type { QueuedMessage } from "./Agent/useChatQueue";
 export type { ReferenceCandidate, ReferenceSource } from "./Agent/useReferenceMenu";

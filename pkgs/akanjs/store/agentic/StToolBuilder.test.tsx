@@ -445,3 +445,74 @@ describe("StToolBuilder.exec", () => {
     }
   });
 });
+
+describe("StToolBuilder.card", () => {
+  test("publishes a tool with no runnable side of its own, and hands the card its declared arguments", () => {
+    const surface = new AgenticSurface();
+    const drawn: unknown[] = [];
+    const Widget = () => {
+      new StToolDraft("collectContact")
+        .desc("Ask the user for their name and phone number.")
+        .arg("reason", String)
+        .card((control, reason) => {
+          drawn.push(reason);
+          control.submit({ name: "Bora" });
+          return null;
+        });
+      return null;
+    };
+    const unmount = mount(
+      <AgentProvider surface={surface}>
+        <Widget />
+      </AgentProvider>,
+    );
+    const entry = surface.tool("collectContact");
+    expect(entry?.run).toBeUndefined();
+    expect(surface.snapshot().tools).toEqual([
+      {
+        name: "collectContact",
+        description: "Ask the user for their name and phone number.",
+        parameters: {
+          type: "object",
+          properties: { reason: { type: "string" } },
+          required: ["reason"],
+          additionalProperties: false,
+        },
+        needsConfirm: false,
+      },
+    ]);
+    const answered: unknown[] = [];
+    entry?.card?.({ args: { reason: "booking" }, submit: (value) => answered.push(value), cancel: () => undefined });
+    expect(drawn).toEqual(["booking"]);
+    expect(answered).toEqual([{ name: "Bora" }]);
+    unmount();
+  });
+
+  // Checked as a verdict rather than inside the render: the host draws the card in its own tree, so a throw there
+  // takes the chat down instead of reaching the model as something it can correct.
+  test("a missing or mistyped argument is refused before the card is ever drawn", () => {
+    const surface = new AgenticSurface();
+    let drawn = 0;
+    const Widget = () => {
+      new StToolDraft("schedule")
+        .desc("Ask the user to pick a time.")
+        .arg("startAt", Date)
+        .card(() => {
+          drawn += 1;
+          return null;
+        });
+      return null;
+    };
+    const unmount = mount(
+      <AgentProvider surface={surface}>
+        <Widget />
+      </AgentProvider>,
+    );
+    const entry = surface.tool("schedule");
+    expect(entry?.guard?.({})).toBe('Missing argument "startAt" for schedule.');
+    expect(entry?.guard?.({ startAt: "not-a-date" })).toContain("ISO 8601");
+    expect(entry?.guard?.({ startAt: "2026-08-19T09:00:00Z" })).toBe(true);
+    expect(drawn).toBe(0);
+    unmount();
+  });
+});

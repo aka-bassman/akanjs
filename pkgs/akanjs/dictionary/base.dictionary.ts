@@ -75,6 +75,7 @@ export const baseDictionary = serviceDictionary(["en", "ko"])
     agentPlaceholder: ["Message the agent...", "에이전트에게 메시지..."],
     agentClear: ["Clear conversation", "대화 비우기"],
     agentQuestion: ["The agent needs your decision", "에이전트가 결정을 요청합니다"],
+    agentToolCard: ["The agent needs you to fill this in", "에이전트가 입력을 요청합니다"],
     agentAnswer: ["Type your answer...", "답변을 입력하세요..."],
     agentListen: ["Speak to the agent", "에이전트에게 말하기"],
     agentVoiceFailed: ["The microphone could not be used.", "마이크를 사용할 수 없습니다."],
