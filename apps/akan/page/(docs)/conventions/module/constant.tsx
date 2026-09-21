@@ -287,7 +287,7 @@ type TicketStatusValue = TicketStatus["value"];`}
           </div>
         </Docs.Description>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="cascade-fields" title={l.trans({ en: "Cascade Remove Fields", ko: "캐스케이드 삭제 field" })}>
         <Docs.Title>{l.trans({ en: "Cascade Remove Fields", ko: "캐스케이드 삭제 field" })}</Docs.Title>
@@ -361,7 +361,7 @@ type TicketStatusValue = TicketStatus["value"];`}
 })) {}`}
         />
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide
         id="generated-extension"

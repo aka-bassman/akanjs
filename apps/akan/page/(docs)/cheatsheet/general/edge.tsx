@@ -52,20 +52,22 @@ export default page().render(() => {
           </div>
           <div>
             {l.trans({
-              en: "Include the server global API prefix (for example `/api`) in the origin, because fetch sends the call to it as-is.",
-              ko: "origin에는 서버 global API prefix(예: `/api`)까지 포함해야 합니다. fetch가 이 값을 그대로 사용해 호출을 보내기 때문입니다.",
+              en: "The origin has to carry the server's API prefix, because fetch sends the call to it as-is. The prefix is configurable, so read it with `getApiPrefix()` from `akanjs/base` instead of writing `/api` as a literal.",
+              ko: "origin에는 서버의 API prefix까지 들어 있어야 합니다. fetch가 이 값을 그대로 써서 호출하기 때문입니다. Prefix는 설정으로 바뀔 수 있으므로 `/api`를 문자열로 적지 말고 `akanjs/base`의 `getApiPrefix()`로 읽으세요.",
             })}
           </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title={l.trans({ en: "Ping an edge server", ko: "엣지 서버 ping" })}
-          code={`const origin = "https://edge.example.com/api";
+          title="apps/myapp/lib/_edge/edge.service.ts"
+          code={`import { getApiPrefix } from "akanjs/base";
 
-const result = await fetch.ping({ origin });
-
-if (result === "ping") {
-  console.info("edge server is alive");
+async isEdgeAlive(edgeHost: string) {
+  const origin = \`https://\${edgeHost}\${getApiPrefix()}\`;
+  const result = await fetch.ping({ origin });
+  if (result !== "ping") return false;
+  this.logger.info(\`edge server \${edgeHost} is alive\`);
+  return true;
 }`}
         />
       </Scroll.Slide>
@@ -83,8 +85,8 @@ if (result === "ping") {
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title={l.trans({ en: "Remote command", ko: "원격 명령" })}
-          code={`const edgeOrigin = "https://edge.example.com/api";
+          title="apps/myapp/lib/_edge/edge.service.ts"
+          code={`const edgeOrigin = \`https://\${edgeHost}\${getApiPrefix()}\`;
 
 await fetch.startJob(jobId, { origin: edgeOrigin });
 await fetch.stopJob(jobId, { origin: edgeOrigin });`}
@@ -137,7 +139,7 @@ await fetch.startJob(jobId, { origin: edgeOrigin });`}
   (status) => {
     console.info(status);
   },
-  { origin: "https://edge.example.com/api" },
+  { origin: edgeOrigin },
 );
 
 // When the page or worker closes:
@@ -158,16 +160,22 @@ unsubscribe();`}
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title={l.trans({ en: "Small wrapper", ko: "작은 wrapper" })}
-          code={`class RemoteEdge {
-  constructor(private origin: string) {}
+          title="apps/myapp/srvkit/RemoteEdge.ts"
+          code={`import { getApiPrefix } from "akanjs/base";
+
+export class RemoteEdge {
+  readonly #origin: string;
+
+  constructor(host: string) {
+    this.#origin = \`https://\${host}\${getApiPrefix()}\`;
+  }
 
   ping() {
-    return fetch.ping({ origin: this.origin });
+    return fetch.ping({ origin: this.#origin });
   }
 
   start(jobId: string) {
-    return fetch.startJob(jobId, { origin: this.origin });
+    return fetch.startJob(jobId, { origin: this.#origin });
   }
 }`}
         />
@@ -211,8 +219,8 @@ unsubscribe();`}
             </li>
             <li>
               {l.trans({
-                en: "Keep edge server origins in the database so cloud logic can loop over them.",
-                ko: "cloud 로직이 순회할 수 있도록 edge server origin은 DB에 저장하세요.",
+                en: "Keep edge server hosts in the database, and build each origin from `getApiPrefix()` so a prefix change reaches every one of them.",
+                ko: "Edge server host는 DB에 저장하고, origin은 `getApiPrefix()`로 조립하세요. 그래야 prefix가 바뀌어도 모든 origin에 반영됩니다.",
               })}
             </li>
             <li>

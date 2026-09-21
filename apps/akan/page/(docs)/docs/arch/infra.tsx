@@ -12,8 +12,8 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Akan apps can run locally, in a cloud cluster, or near users and devices through edge servers. The same application code can be packaged for different environments, while infrastructure decides where traffic enters, where services run, and how data or deployment operations are managed.",
-              ko: "Akan 앱은 로컬, 클라우드 클러스터, 또는 사용자와 장비 가까이에 있는 엣지 서버에서 실행될 수 있습니다. 같은 애플리케이션 코드를 여러 환경에 맞게 패키징할 수 있고, 인프라는 트래픽이 어디로 들어오고 서비스가 어디서 실행되며 데이터와 배포 작업이 어떻게 관리되는지를 결정합니다.",
+              en: "Akan apps run on a developer machine or in a cloud cluster. The same application code is packaged for both, while infrastructure decides where traffic enters, where services run, and how data or deployment operations are managed.",
+              ko: "Akan 앱은 개발자 PC 또는 클라우드 클러스터에서 실행됩니다. 같은 애플리케이션 코드를 두 환경에 맞게 패키징하고, 인프라는 트래픽이 어디로 들어오고 서비스가 어디서 실행되며 데이터와 배포 작업이 어떻게 관리되는지를 결정합니다.",
             })}
           </div>
           <div className="space-y-1">
@@ -30,13 +30,6 @@ export default page().render(() => {
                 desc: l.trans({
                   en: "Kubernetes-based runtime for shared team environments and production-like workloads.",
                   ko: "팀 공용 환경과 운영에 가까운 워크로드를 위한 Kubernetes 기반 실행 환경입니다.",
-                }),
-              },
-              {
-                title: "Edge",
-                desc: l.trans({
-                  en: "Near-site server for stores, kiosks, robots, factories, buildings, or local device networks.",
-                  ko: "매장, 키오스크, 로봇, 공장, 건물, 로컬 장비망 가까이에서 실행되는 현장 서버입니다.",
                 }),
               },
               {
@@ -59,11 +52,15 @@ export default page().render(() => {
             chart={`flowchart LR
   developer["Developer"] --> master["Master Infra"]
   master --> cluster["Cloud Cluster"]
-  master --> edge["Edge Server"]
   cluster --> app["Application Runtime"]
-  edge --> app
   app --> users["Users And Devices"]`}
           />
+          <Docs.Alert type="info">
+            {l.trans({
+              en: "edge is an operation mode an app can be built and run in, and an endpoint can be scoped to it, but Akan ships no edge infrastructure: infra/ carries the cluster chart and the deployment control area only. An on-site deployment is yours to build.",
+              ko: "edge는 앱을 빌드하고 실행할 수 있는 operation mode이고 endpoint를 그 모드로 한정할 수도 있지만, Akan이 제공하는 엣지 인프라는 없습니다. infra/에는 클러스터 차트와 배포 제어 영역만 들어 있습니다. 현장 배포 구성은 직접 만들어야 합니다.",
+            })}
+          </Docs.Alert>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -76,8 +73,8 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Start from the product situation, not from the infrastructure name. A small internal tool, a team QA environment, a store kiosk, and a production service need different levels of infrastructure.",
-              ko: "인프라 이름보다 제품 상황에서 먼저 출발하세요. 작은 내부 도구, 팀 QA 환경, 매장 키오스크, 운영 서비스는 서로 다른 수준의 인프라가 필요합니다.",
+              en: "Start from the product situation, not from the infrastructure name. A small internal tool, a team QA environment, and a production service need different levels of infrastructure.",
+              ko: "인프라 이름보다 제품 상황에서 먼저 출발하세요. 작은 내부 도구, 팀 QA 환경, 운영 서비스는 서로 다른 수준의 인프라가 필요합니다.",
             })}
           </div>
           <div className="space-y-1">
@@ -97,17 +94,10 @@ export default page().render(() => {
                 }),
               },
               {
-                title: l.trans({ en: "Physical site or device network", ko: "물리 현장 또는 장비망" }),
+                title: l.trans({ en: "Production service", ko: "운영 서비스" }),
                 desc: l.trans({
-                  en: "Use edge when the service is close to stores, kiosks, factories, buildings, robots, or private device networks.",
-                  ko: "서비스가 매장, 키오스크, 공장, 건물, 로봇, 사설 장비망 가까이에서 동작해야 한다면 edge를 사용합니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Headquarters plus branches", ko: "본사와 지점 구조" }),
-                desc: l.trans({
-                  en: "Use a hybrid shape: cloud cluster as the main service and edge servers for nearby execution, proxying, or cache-like responsibilities.",
-                  ko: "하이브리드 구성을 사용합니다. 클라우드 클러스터를 메인 서비스로 두고, 엣지 서버는 현장 실행, 프록시, 캐시성 역할을 담당합니다.",
+                  en: "Use the main branch of the same cloud deployment. The shipped chart runs one pod per app, so plan the database and cache layer before traffic outgrows it.",
+                  ko: "같은 클라우드 배포의 main branch를 사용합니다. 제공되는 차트는 앱당 pod 하나를 실행하므로, 트래픽이 그 한계를 넘기 전에 데이터베이스와 캐시 계층을 먼저 계획해야 합니다.",
                 }),
               },
             ].map(({ title, desc }) => (
@@ -127,8 +117,8 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Infrastructure does not change the business code inside your app. It decides how a request reaches the Akan runtime. The path is simple on your laptop, more structured in a cloud cluster, and sometimes site-specific when edge servers are involved.",
-              ko: "인프라는 앱 내부의 비즈니스 코드를 바꾸지 않습니다. 대신 요청이 어떤 경로로 Akan 런타임에 도착할지를 결정합니다. 내 PC에서는 경로가 단순하고, 클라우드 클러스터에서는 구조화된 계층을 거치며, 엣지 서버가 있으면 현장별 경로가 추가될 수 있습니다.",
+              en: "Infrastructure does not change the business code inside your app. It decides how a request reaches the Akan runtime. The path is simple on your laptop and goes through a structured layer in a cloud cluster.",
+              ko: "인프라는 앱 내부의 비즈니스 코드를 바꾸지 않습니다. 대신 요청이 어떤 경로로 Akan 런타임에 도착할지를 결정합니다. 내 PC에서는 경로가 단순하고, 클라우드 클러스터에서는 구조화된 계층을 거칩니다.",
             })}
           </div>
           <Docs.Mermaid
@@ -137,12 +127,9 @@ export default page().render(() => {
   browser["Browser Or Device"] --> domain["Domain Or Local Address"]
   domain --> local["Local Dev Server"]
   domain --> ingress["Cloud Ingress"]
-  domain --> edgeProxy["Edge Proxy Or Tunnel"]
   local --> runtime["Akan App Runtime"]
   ingress --> service["Kubernetes Service"]
   service --> runtime
-  edgeProxy --> edgeRuntime["Edge Runtime"]
-  edgeRuntime --> runtime
   runtime --> response["Page API WebSocket Asset"]`}
           />
           <div className="space-y-1">
@@ -159,13 +146,6 @@ export default page().render(() => {
                 desc: l.trans({
                   en: "A user enters through a public domain. Kubernetes Ingress receives the request, Service finds the right app pod, and the Akan runtime handles the actual page or API response.",
                   ko: "사용자는 공개 도메인으로 들어옵니다. Kubernetes Ingress가 요청을 받고, Service가 적절한 앱 pod를 찾은 뒤, Akan 런타임이 실제 페이지나 API 응답을 처리합니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Edge path", ko: "엣지 경로" }),
-                desc: l.trans({
-                  en: "A store, kiosk, robot, or local device network can reach an edge proxy first. The edge side may serve nearby runtime work or forward traffic to the cloud service.",
-                  ko: "매장, 키오스크, 로봇, 로컬 장비망은 먼저 엣지 프록시에 연결될 수 있습니다. 엣지 쪽은 가까운 런타임 작업을 처리하거나 클라우드 서비스로 트래픽을 전달할 수 있습니다.",
                 }),
               },
             ].map(({ title, desc }) => (
@@ -222,8 +202,8 @@ export default page().render(() => {
           </div>
           <Docs.Alert type="info">
             {l.trans({
-              en: "Key idea: infrastructure chooses the route into the app, not the business behavior inside the app. Local, cloud, and edge paths can look different, but they all eventually hand work to the Akan runtime.",
-              ko: "핵심은 이렇습니다. 인프라는 앱 안의 비즈니스 동작을 바꾸는 것이 아니라 앱으로 들어오는 경로를 선택합니다. 로컬, 클라우드, 엣지 경로는 서로 다르게 보일 수 있지만 결국 모두 Akan 런타임에 작업을 전달합니다.",
+              en: "Key idea: infrastructure chooses the route into the app, not the business behavior inside the app. The local and cloud paths look different, but both eventually hand work to the same Akan runtime.",
+              ko: "핵심은 이렇습니다. 인프라는 앱 안의 비즈니스 동작을 바꾸는 것이 아니라 앱으로 들어오는 경로를 선택합니다. 로컬 경로와 클라우드 경로는 서로 다르게 보이지만 결국 같은 Akan 런타임에 작업을 전달합니다.",
             })}
           </Docs.Alert>
         </Docs.Description>
@@ -348,16 +328,15 @@ akan dbup --mode cluster`}
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Infrastructure does not need to start big. A business can begin with one server and one container, then grow step by step as traffic, reliability requirements, and physical site needs increase.",
-              ko: "인프라는 처음부터 크게 시작할 필요가 없습니다. 비즈니스는 서버 하나와 컨테이너 하나로 시작하고, 트래픽과 안정성 요구, 현장 운영 요구가 커질 때 단계적으로 확장하면 됩니다.",
+              en: "Infrastructure does not need to start big. A business can begin with one server and one container, then grow step by step as traffic and reliability requirements increase. Akan ships the first stages; the later ones describe where the shape goes next, not a chart you can apply today.",
+              ko: "인프라는 처음부터 크게 시작할 필요가 없습니다. 비즈니스는 서버 하나와 컨테이너 하나로 시작하고, 트래픽과 안정성 요구가 커질 때 단계적으로 확장하면 됩니다. 앞쪽 단계는 Akan이 그대로 제공하고, 뒤쪽 단계는 구조가 어디로 가는지를 설명할 뿐 지금 바로 적용할 수 있는 차트가 아닙니다.",
             })}
           </div>
           <Docs.Mermaid
             title="Infrastructure growth"
             chart={`flowchart LR
   stage1["1. Solo Dev<br/>Single Server<br/>Single Container"] --> stage2["2. More Users<br/>Single Server<br/>Multiple Containers"]
-  stage2 --> stage3["3. Cloud Scale<br/>Multiple Servers<br/>Multiple Containers"]
-  stage3 --> stage4["4. Large Service<br/>Cloud Cluster<br/>Distributed Edge Servers"]`}
+  stage2 --> stage3["3. Cloud Scale<br/>Multiple Servers<br/>Multiple Containers"]`}
           />
           <div className="space-y-1">
             <div className={panelRecipe({}, "gap-2 lg:grid")}>
@@ -367,19 +346,13 @@ akan dbup --mode cluster`}
                 </div>
                 <div className="text-foreground/70 text-sm">
                   {l.trans({
-                    en: "A small product, MVP, internal tool, or early admin page can run as a single server with a single Akan container. single database mode is usually enough.",
-                    ko: "작은 제품, MVP, 내부 도구, 초기 관리자 화면은 서버 하나와 Akan 컨테이너 하나로 충분히 운영할 수 있습니다. 데이터베이스도 보통 single 모드면 충분합니다.",
+                    en: "A small product, MVP, internal tool, or early admin page can run as a single server with a single Akan container serving database, API, web, CSR, image optimization, cache, and queue. single database mode is usually enough. The chart asks a debug or develop pod for 0.05 CPU and 250M, capped at 0.5 CPU and 1G.",
+                    ko: "작은 제품, MVP, 내부 도구, 초기 관리자 화면은 서버 하나와 Akan 컨테이너 하나로 충분히 운영할 수 있습니다. 컨테이너 하나가 데이터베이스, API, 웹, CSR, 이미지 최적화, 캐시, 큐를 모두 처리합니다. 데이터베이스도 보통 single 모드면 충분합니다. 차트는 debug/develop pod에 0.05 CPU와 250M을 요청하고 상한을 0.5 CPU, 1G로 둡니다.",
                   })}
                 </div>
                 <div className="rounded-lg bg-muted px-3 py-2 font-mono text-foreground/80 text-xs">
                   single server / single container / single mode
                 </div>
-                <Docs.Alert type="info">
-                  {l.trans({
-                    en: "Akan runtime's single container uses about 0.05 CPU/200MB RAM at boot, and about 0.5 CPU/0.5GB RAM in use. It handles all database, api server, web server, CSR page, image optimization, cache, queue, etc., isn't it amazing?",
-                    ko: "Akan 런타임의 싱글 컨테이너는 부팅 시 0.05 cpu/200MB RAM 사용하며, 실사용 시 0.5 cpu/0.5GB RAM 정도를 사용합니다. 데이터베이스, api서버, 웹서버, CSR페이지, 이미지 최적화, 캐시, 큐, 멀티스레드, 로드밸런싱 등을 모두 처리하는데, 놀랍지 않나요?",
-                  })}
-                </Docs.Alert>
               </div>
               <Docs.Mermaid
                 className="col-span-2"
@@ -446,6 +419,12 @@ akan dbup --mode cluster`}
                 <div className="rounded-lg bg-muted px-3 py-2 font-mono text-foreground/80 text-xs">
                   multiple servers / multiple containers / cluster mode
                 </div>
+                <Docs.Alert type="warning">
+                  {l.trans({
+                    en: "The chart in infra/app does not reach this stage. It deploys one pod behind Ingress and Service, with SQLite on a ReadWriteOnce volume, and there is no Redis or Postgres manifest under infra/. Fanning out to several pods means bringing your own database and cache first, because a ReadWriteOnce volume cannot be mounted by a second pod.",
+                    ko: "infra/app의 차트는 이 단계까지 가지 않습니다. Ingress와 Service 뒤에 pod 하나를 배포하고 ReadWriteOnce 볼륨에 SQLite를 둘 뿐이며, infra/ 아래에 Redis나 Postgres 매니페스트는 없습니다. pod를 여러 개로 늘리려면 먼저 데이터베이스와 캐시를 직접 준비해야 합니다. ReadWriteOnce 볼륨은 두 번째 pod가 마운트할 수 없기 때문입니다.",
+                  })}
+                </Docs.Alert>
               </div>
               <Docs.Mermaid
                 className="col-span-2"
@@ -467,52 +446,11 @@ akan dbup --mode cluster`}
   runtime3 --> postgres`}
               />
             </div>
-
-            <div className={panelRecipe({}, "gap-2 lg:grid")}>
-              <div className="space-y-1">
-                <div className="font-bold text-foreground">
-                  {l.trans({ en: "4. Cloud plus distributed edge", ko: "4. 클라우드와 분산 엣지" })}
-                </div>
-                <div className="text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Very large services can keep the cloud cluster from stage 3 and add edge servers below it. Each edge server has its own Akan runtime and local database, so stores, factories, robots, or local networks can compute and store nearby data like a distributed cache layer.",
-                    ko: "초대형 서비스는 3번 단계의 클라우드 클러스터를 유지한 채 그 아래에 엣지 서버들을 추가할 수 있습니다. 각 엣지 서버는 자체 Akan 런타임과 로컬 데이터베이스를 가지므로 매장, 공장, 로봇, 로컬 네트워크가 가까운 곳에서 데이터를 계산하고 저장하는 분산 캐시 계층처럼 동작할 수 있습니다.",
-                  })}
-                </div>
-                <div className="rounded-lg bg-muted px-3 py-2 font-mono text-foreground/80 text-xs">
-                  cloud cluster / edge runtime per site / database per edge
-                </div>
-              </div>
-              <Docs.Mermaid
-                className="col-span-2"
-                title={l.trans({ en: "4. Cloud plus distributed edge", ko: "4. 클라우드와 분산 엣지" })}
-                chart={`flowchart TB
-  cloudIngress["Cloud Ingress"] --> cloudRuntime["Cloud Akan Runtime Pods"]
-  cloudRuntime --> redis["Redis Cluster"]
-  cloudRuntime --> postgres["Cloud Postgres Database"]
-  cloudRuntime --> edge1["Store Edge Server"]
-  cloudRuntime --> edge2["Factory Edge Server"]
-  cloudRuntime --> edge3["Robot Edge Server"]
-  users["Users And Devices"] --> cloudIngress
-  users["Users And Devices"] --> edge1
-  users --> edge2
-  users --> edge3
-  edge1 --> edgeRuntime1["Edge Akan Runtime"]
-  edge2 --> edgeRuntime2["Edge Akan Runtime"]
-  edge3 --> edgeRuntime3["Edge Akan Runtime"]
-  edgeRuntime1 --> edgeDb1["Store Edge Database"]
-  edgeRuntime2 --> edgeDb2["Factory Edge Database"]
-  edgeRuntime3 --> edgeDb3["Robot Edge Database"]
-  edgeRuntime1 --> edgeCache1["Store Cache"]
-  edgeRuntime2 --> edgeCache2["Factory Cache"]
-  edgeRuntime3 --> edgeCache3["Robot Cache"]`}
-              />
-            </div>
           </div>
           <Docs.Alert type="info">
             {l.trans({
-              en: "The practical rule is to grow only when the business asks for it. Start small, measure real usage, then move from single server to multi-container, cloud cluster, and finally cloud plus edge.",
-              ko: "실용적인 기준은 비즈니스가 요구할 때만 확장하는 것입니다. 작게 시작하고 실제 사용량을 측정한 뒤, 싱글 서버에서 다중 컨테이너, 클라우드 클러스터, 마지막으로 클라우드와 엣지 조합으로 이동하면 됩니다.",
+              en: "The practical rule is to grow only when the business asks for it. Start small, measure real usage, then move from single server to multi-container and on to a cloud cluster.",
+              ko: "실용적인 기준은 비즈니스가 요구할 때만 확장하는 것입니다. 작게 시작하고 실제 사용량을 측정한 뒤, 싱글 서버에서 다중 컨테이너로, 그리고 클라우드 클러스터로 이동하면 됩니다.",
             })}
           </Docs.Alert>
         </Docs.Description>

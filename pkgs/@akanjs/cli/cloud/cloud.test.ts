@@ -4,7 +4,7 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { CommandContainer, getArgMetas, getTargetMetas } from "@akanjs/devkit/commandDecorators";
 import { AppExecutor } from "@akanjs/devkit/executors";
-import { createCallRecorder, createFakeExecutor, makeCliTempWorkspace, writeText } from "../testHelpers";
+import { createCallRecorder, createFakeExecutor, makeCliTempWorkspace, writeText } from "@akanjs/devkit/testHelpers";
 import { CloudCommand } from "./cloud.command";
 import { CloudRunner } from "./cloud.runner";
 import { CloudScript } from "./cloud.script";

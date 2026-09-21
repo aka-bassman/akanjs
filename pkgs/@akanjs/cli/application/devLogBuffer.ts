@@ -1,3 +1,5 @@
+import { stripAnsi } from "@akanjs/devkit/stripAnsi";
+
 export interface DevLogLine {
   seq: number;
   app: string;
@@ -17,9 +19,6 @@ export interface DevLogQuery extends DevLogTarget {
   grep?: string;
   errorsOnly?: boolean;
 }
-
-const ansi = new RegExp(`${String.fromCharCode(27)}(?:[@-Z\\\\-_]|\\[[\\s\\S]*?[@-~])`, "g");
-export const stripAnsi = (text: string) => text.replace(ansi, "");
 
 /**
  * Selected lines as text to hand somebody — no ANSI, no pane truncation, no border. The app name is

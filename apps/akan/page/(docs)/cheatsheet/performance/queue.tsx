@@ -55,7 +55,7 @@ export default page().render(() => {
           className="w-full"
           title={l.trans({ en: "Queue report generation", ko: "Report 생성 queue" })}
           code={`export class ReportEndpoint extends endpoint(srv.report, ({ mutation }) => ({
-  queueGenerateReport: mutation(cnst.Report)
+  queueGenerateReport: mutation(cnst.Report, { guards: [Owner] })
     .param("reportId", ID)
     .exec(async function (reportId) {
       return await this.reportService.queueGenerateReport(reportId);

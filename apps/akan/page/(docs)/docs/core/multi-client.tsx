@@ -12,8 +12,8 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Akan can serve multiple web clients from one app by splitting pages with basePath. Each client gets its own first path segment during local development, but in production the matching domain can hide that segment and serve it as a separate site.",
-              ko: "Akan은 basePath로 페이지를 나누어 하나의 앱에서 여러 웹 클라이언트를 제공할 수 있습니다. 로컬 개발에서는 각 클라이언트가 첫 번째 경로 세그먼트로 구분되지만, 배포 후에는 연결된 도메인이 그 세그먼트를 숨기고 별도의 사이트처럼 제공합니다.",
+              en: "Akan can serve multiple web clients from one app by splitting pages with basePath. Every route sits under the locale, so locally a client is the segment right after it — /en/store — but in production the matching domain hides that segment and serves the client as a separate site.",
+              ko: "Akan은 basePath로 페이지를 나누어 하나의 앱에서 여러 웹 클라이언트를 제공할 수 있습니다. 모든 라우트는 locale 아래에 놓이므로, 로컬에서 클라이언트는 locale 바로 다음 세그먼트입니다. 예를 들어 /en/store입니다. 배포 후에는 연결된 도메인이 그 세그먼트를 숨기고 별도의 사이트처럼 제공합니다.",
             })}
           </div>
         </Docs.Description>
@@ -99,8 +99,8 @@ export default page().render(() => {
             <div className="font-mono font-semibold text-primary">domains</div>
             <div className="mt-2 text-foreground/70 text-sm">
               {l.trans({
-                en: "Production domains that should open this basePath. When the domain matches, users see the site without the basePath segment.",
-                ko: "이 basePath를 열 배포 도메인입니다. 도메인이 매칭되면 사용자는 basePath 세그먼트 없이 사이트를 보게 됩니다.",
+                en: "Domains that should open this basePath, keyed by deployment branch: main, develop, debug, or a branch name you add. When the domain matches, users see the site without the basePath segment.",
+                ko: "이 basePath를 열 도메인이며, 배포 branch를 키로 씁니다. main, develop, debug 또는 직접 추가한 branch 이름을 키로 둡니다. 도메인이 매칭되면 사용자는 basePath 세그먼트 없이 사이트를 보게 됩니다.",
               })}
             </div>
           </div>
@@ -213,8 +213,8 @@ export default page().render(() => {
         />
         <Docs.Alert type="info">
           {l.trans({
-            en: "In local development, you open each client with its basePath, such as /store or /admin. After deployment, a configured domain can open that same client without showing the basePath in the URL.",
-            ko: "로컬 개발에서는 /store, /admin처럼 basePath로 각 클라이언트를 엽니다. 배포 후에는 설정된 도메인이 같은 클라이언트를 basePath 없이 열 수 있습니다.",
+            en: "In local development, you open each client with the locale followed by its basePath, such as /en/store or /ko/admin. After deployment, a configured domain can open that same client without showing the basePath in the URL.",
+            ko: "로컬 개발에서는 locale 다음에 basePath를 붙여 각 클라이언트를 엽니다. /en/store, /ko/admin 같은 형태입니다. 배포 후에는 설정된 도메인이 같은 클라이언트를 basePath 없이 열 수 있습니다.",
           })}
         </Docs.Alert>
         <Docs.Alert type="warning">
@@ -241,9 +241,9 @@ export default page().render(() => {
             className="w-full"
             title={l.trans({ en: "Local development", ko: "로컬 개발" })}
             language="bash"
-            code={`http://localhost:8282/store
-http://localhost:8282/admin
-http://localhost:8282/partner`}
+            code={`http://localhost:8282/en/store
+http://localhost:8282/en/admin
+http://localhost:8282/en/partner`}
           />
           <Code.Snippet
             className="w-full"
@@ -253,6 +253,12 @@ http://localhost:8282/partner`}
 https://admin.example.com  -> admin
 https://partner-main.example.com -> partner`}
           />
+        </div>
+        <div>
+          {l.trans({
+            en: "partner declares no domain of its own, and still has one. Akan derives <basePath>-<branch>.<serveDomain> for every basePath on every branch it knows, so partner-main.example.com and partner-develop.example.com exist without being written down.",
+            ko: "partner는 도메인을 직접 선언하지 않았는데도 도메인을 갖습니다. Akan이 알고 있는 모든 branch에 대해 basePath별로 <basePath>-<branch>.<serveDomain>을 자동으로 만들기 때문입니다. 그래서 partner-main.example.com과 partner-develop.example.com은 적지 않아도 존재합니다.",
+          })}
         </div>
         <Docs.Alert type="info">
           {l.trans({

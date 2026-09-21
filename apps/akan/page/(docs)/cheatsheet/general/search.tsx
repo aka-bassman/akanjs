@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Docs } from "@apps/akan/ui";
+import { Code, Divider, Docs } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
@@ -39,7 +39,7 @@ export default page().render(() => {
           </ul>
         </Docs.Description>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="declare" title={l.trans({ en: "1. Mark The Fields", ko: "1. Field 표시하기" })}>
         <Docs.Title>{l.trans({ en: "1. Mark The Fields", ko: "1. Field 표시하기" })}</Docs.Title>
@@ -113,7 +113,7 @@ export default page().render(() => {
           ))}
         </div>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="filter" title={l.trans({ en: "2. Write The Filter", ko: "2. Filter 작성하기" })}>
         <Docs.Title>{l.trans({ en: "2. Write The Filter", ko: "2. Filter 작성하기" })}</Docs.Title>
@@ -145,7 +145,7 @@ export default page().render(() => {
 const count = await this.countBySearch(text, statuses);`}
         />
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="options" title={l.trans({ en: "3. Tune The Match", ko: "3. 매칭 다듬기" })}>
         <Docs.Title>{l.trans({ en: "3. Tune The Match", ko: "3. 매칭 다듬기" })}</Docs.Title>
@@ -189,7 +189,7 @@ q.search(text, { weights: [20, 1, 5, 0] })`}
           </ul>
         </Docs.Description>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="publish" title={l.trans({ en: "Publishing To Clients", ko: "Client에 공개하기" })}>
         <Docs.Title>{l.trans({ en: "Publishing To Clients", ko: "Client에 공개하기" })}</Docs.Title>
@@ -223,7 +223,7 @@ q.search(text, { weights: [20, 1, 5, 0] })`}
 ) {}`}
         />
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="operations" title={l.trans({ en: "Operating It", ko: "운영하기" })}>
         <Docs.Title>{l.trans({ en: "Operating It", ko: "운영하기" })}</Docs.Title>
@@ -271,7 +271,7 @@ q.search(text, { weights: [20, 1, 5, 0] })`}
           </ul>
         </Docs.Description>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="gotchas" title={l.trans({ en: "Gotchas", ko: "주의할 점" })}>
         <Docs.Title>{l.trans({ en: "Gotchas", ko: "주의할 점" })}</Docs.Title>

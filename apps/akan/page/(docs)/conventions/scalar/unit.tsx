@@ -44,7 +44,7 @@ export default page().render(() => {
 └── __scalar/
     └── price/
         ├── price.constant.ts
-        └── price.Unit.tsx`}
+        └── Price.Unit.tsx`}
         />
       </Scroll.Slide>
       <Divider />
@@ -61,7 +61,7 @@ export default page().render(() => {
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title="price.Unit.tsx"
+          title="Price.Unit.tsx"
           code={`import { cnst } from "@apps/myapp/client";
 
 interface LabelProps {
@@ -90,14 +90,17 @@ export const Label = ({ price, className }: LabelProps) => (
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title="product.Unit.tsx"
-          code={`import { Layout } from "akanjs/ui";
-import { cnst, Price } from "@apps/myapp/client";
+          title="Product.Unit.tsx"
+          code={`import { cnst, Price } from "@apps/myapp/client";
+import { Layout } from "akanjs/ui";
 
-export const Card = ({ product }: { product: cnst.Product }) => (
+interface CardProps {
+  product: cnst.Product;
+}
+export const Card = ({ product }: CardProps) => (
   <Layout.Unit className="rounded-xl border border-border p-4">
     <div className="font-bold">{product.name}</div>
-    <Price.Label price={product.price} className="text-foreground/70" />
+    <Price.Unit.Label price={product.price} className="text-foreground/70" />
   </Layout.Unit>
 );`}
         />
@@ -116,17 +119,30 @@ export const Card = ({ product }: { product: cnst.Product }) => (
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title="price.Unit.tsx"
-          code={`export const Compact = ({ price }: { price: Price }) => (
-  <span>{price.amount.toLocaleString()}</span>
-);
+          title="Price.Unit.tsx"
+          code={`import { cnst, usePage } from "@apps/myapp/client";
 
-export const Detail = ({ price }: { price: Price }) => (
-  <div>
-    <div>Amount: {price.amount.toLocaleString()}</div>
-    <div>Currency: {price.currency}</div>
-  </div>
-);`}
+interface CompactProps {
+  price: cnst.Price;
+}
+export const Compact = ({ price }: CompactProps) => <span>{price.amount.toLocaleString()}</span>;
+
+interface DetailProps {
+  price: cnst.Price;
+}
+export const Detail = ({ price }: DetailProps) => {
+  const { l } = usePage();
+  return (
+    <div>
+      <div>
+        {l("price.amount")}: {price.amount.toLocaleString()}
+      </div>
+      <div>
+        {l("price.currency")}: {price.currency}
+      </div>
+    </div>
+  );
+};`}
         />
       </Scroll.Slide>
       <Divider />

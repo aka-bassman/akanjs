@@ -8,7 +8,7 @@ import {
   createTempApp,
   writeJson,
   writeText,
-} from "../testHelpers";
+} from "@akanjs/devkit/testHelpers";
 import { WorkspaceCommand } from "./workspace.command";
 import { defaultMaxDiagnostics, WorkspaceRunner } from "./workspace.runner";
 import { WorkspaceScript } from "./workspace.script";

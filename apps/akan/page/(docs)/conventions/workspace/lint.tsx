@@ -106,11 +106,11 @@ export default page().render(() => <LikeButton />);`,
 
 import { useState } from "react";
 
-export function LikeButton() {
+export const LikeButton = () => {
   const [liked, setLiked] = useState(false);
 
   return <button onClick={() => setLiked(true)}>Like</button>;
-}`,
+};`,
                 },
               ],
             },
@@ -157,10 +157,10 @@ export default page().render(() => (
 
 import { useEffect } from "react";
 
-export function ScrollReset() {
+export const ScrollReset = () => {
   useEffect(() => window.scrollTo(0, 0), []);
   return null;
-}`,
+};`,
                 },
               ],
             },
@@ -191,9 +191,12 @@ export default page().render(() => <OrderCardAction orderId="order_123" />);`,
                   title: "OrderCardAction.tsx",
                   code: `"use client";
 
-export function OrderCardAction({ orderId }: { orderId: string }) {
+interface OrderCardActionProps {
+  orderId: string;
+}
+export const OrderCardAction = ({ orderId }: OrderCardActionProps) => {
   return <button onClick={() => cancelOrder(orderId)}>Cancel</button>;
-}`,
+};`,
                 },
               ],
             },
@@ -206,41 +209,41 @@ export function OrderCardAction({ orderId }: { orderId: string }) {
               }),
               before: [
                 {
-                  title: "order.service.ts",
+                  title: "apps/myapp/lib/order/order.service.ts",
                   code: `import { serve } from "akanjs/service";
 import { customAlphabet } from "nanoid";
 
 import * as db from "../db";
 
-export class OrderService extends serve(db.order, () => ({
+export class OrderService extends serve(db.order, () => ({})) {
   createOrderCode() {
     const createId = customAlphabet("1234567890", 8);
     return createId();
-  },
-})) {}`,
+  }
+}`,
                 },
               ],
               after: [
                 {
-                  title: "order.service.ts",
-                  code: `import { serve } from "akanjs/service";
-import { createNumberId } from "@libs/util/id";
+                  title: "apps/myapp/lib/order/order.service.ts",
+                  code: `import { createNumberId } from "@libs/util/common";
+import { serve } from "akanjs/service";
 
 import * as db from "../db";
 
-export class OrderService extends serve(db.order, () => ({
+export class OrderService extends serve(db.order, () => ({})) {
   createOrderCode() {
     return createNumberId(8);
-  },
-})) {}`,
+  }
+}`,
                 },
                 {
-                  title: "@libs/util/id.ts",
+                  title: "libs/util/common/createNumberId.ts",
                   code: `import { customAlphabet } from "nanoid";
 
-export function createNumberId(size: number) {
+export const createNumberId = (size: number) => {
   return customAlphabet("1234567890", size)();
-}`,
+};`,
                 },
               ],
             },
@@ -248,41 +251,41 @@ export function createNumberId(size: number) {
               id: "private-methods",
               title: l.trans({ en: "Using JavaScript private methods", ko: "JavaScript private method를 쓴 경우" }),
               desc: l.trans({
-                en: "In service classes, use TypeScript private methods with an underscore name instead of JavaScript #private methods. Other classes can use #private methods.",
-                ko: "service class에서는 JavaScript #private method 대신 underscore 이름을 가진 TypeScript private method를 사용하세요. Service를 제외한 다른 class에서는 #private method를 사용할 수 있습니다.",
+                en: "#private is banned in exactly four file suffixes — constant.ts, document.ts, service.ts, and store.ts. Those use a TypeScript private method with an underscore name. Everywhere else, including srvkit, #private stays the house style.",
+                ko: "#private은 정확히 네 가지 파일 suffix에서 금지됩니다. constant.ts, document.ts, service.ts, store.ts입니다. 이 네 곳에서는 underscore 이름을 가진 TypeScript private method를 사용합니다. srvkit을 포함한 나머지에서는 #private이 그대로 기본 스타일입니다.",
               }),
               before: [
                 {
-                  title: "order.service.ts",
+                  title: "apps/myapp/lib/order/order.service.ts",
                   code: `import { serve } from "akanjs/service";
 
 import * as db from "../db";
 
-export class OrderService extends serve(db.order, () => ({
+export class OrderService extends serve(db.order, () => ({})) {
   async #syncOrderStock() {
-    return fetchOrderStock();
-  },
+    return await this.orderModel.syncStock();
+  }
   async refreshOrderStock() {
-    return this.#syncOrderStock();
-  },
-})) {}`,
+    return await this.#syncOrderStock();
+  }
+}`,
                 },
               ],
               after: [
                 {
-                  title: "order.service.ts",
+                  title: "apps/myapp/lib/order/order.service.ts",
                   code: `import { serve } from "akanjs/service";
 
 import * as db from "../db";
 
-export class OrderService extends serve(db.order, () => ({
+export class OrderService extends serve(db.order, () => ({})) {
   private async _syncOrderStock() {
-    return fetchOrderStock();
-  },
+    return await this.orderModel.syncStock();
+  }
   async refreshOrderStock() {
-    return this._syncOrderStock();
-  },
-})) {}`,
+    return await this._syncOrderStock();
+  }
+}`,
                 },
               ],
             },
@@ -340,9 +343,10 @@ export class OrderService extends serve(db.order, () => ({
           className="w-full"
           title="Lint commands"
           language="bash"
-          code={`akan lint apps/myapp
+          code={`akan lint myapp
+akan lint myapp --max-diagnostics 0
 akan lintAll
-bunx biome check "apps/myapp/page/akanjs/(docs)/conventions/workspace/lint.tsx"`}
+bunx biome check "apps/myapp/lib/order"`}
         />
       </Scroll.Slide>
       <Divider />

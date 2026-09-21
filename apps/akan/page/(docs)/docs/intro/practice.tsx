@@ -605,7 +605,7 @@ export const Card = ({ icecreamOrder }: ModelProps<"icecreamOrder", cnst.LightIc
           <Code.Snippet
             className="w-full"
             title="apps/koyo/page/_index.tsx"
-            code={`import { Model } from "akanjs/ui";
+            code={`import { Model, buttonRecipe } from "akanjs/ui";
 import { cnst, fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
 import { page } from "akanjs/client";
 
@@ -618,7 +618,7 @@ export default page().render(() => {
       <div className="flex items-center gap-4 text-5xl font-black">
         <div className="text-5xl font-bold">{l("icecreamOrder.modelName")}</div>
         <Model.New
-          className={buttonRecipe({ variant: "primary" })}
+          trigger={<button className={buttonRecipe({ variant: "primary" })}>{l("base.new")}</button>}
           slice={fetch.slice.icecreamOrderInPublic}
           renderTitle="name"
           partial={icecreamOrderForm}

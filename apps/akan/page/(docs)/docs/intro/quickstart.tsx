@@ -218,7 +218,7 @@ export default page().render(() => {
             className="w-full"
             title="apps/myapp/main.ts"
             code={`
-import { AkanApp } from "akanjs/server";
+import { AkanApp } from "akanjs/server/akanApp";
 
 const run = async () => {
   await new AkanApp().start();

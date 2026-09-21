@@ -67,8 +67,8 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A mobile target is one native package built from an Akan app. A single Akan app can publish multiple mobile packages by pointing each target at a different basePath while reusing the same backend modules.",
-              ko: "모바일 target은 Akan 앱에서 만들어지는 하나의 네이티브 패키지입니다. 하나의 Akan 앱은 각 target이 서로 다른 basePath를 열도록 설정해 여러 모바일 패키지를 배포할 수 있고, 백엔드 모듈은 그대로 공유할 수 있습니다.",
+              en: "A mobile target is one native package built from an Akan app. A single Akan app can publish multiple mobile packages by pointing each target at a different basePath while reusing the same backend modules. Give each basePath its own host: the server resolves an incoming host to exactly one basePath, so two basePaths sharing a domain leave one of them unreachable.",
+              ko: "모바일 target은 Akan 앱에서 만들어지는 하나의 네이티브 패키지입니다. 하나의 Akan 앱은 각 target이 서로 다른 basePath를 열도록 설정해 여러 모바일 패키지를 배포할 수 있고, 백엔드 모듈은 그대로 공유할 수 있습니다. basePath마다 host는 따로 주어야 합니다. 서버는 들어온 host를 정확히 하나의 basePath로만 해석하므로, 두 basePath가 도메인을 공유하면 한쪽은 열리지 않습니다.",
             })}
           </div>
           <Code.Snippet
@@ -78,8 +78,8 @@ export default page().render(() => {
 
 const config: AppConfig = {
   routes: [
-    { domains: { main: ["example.com"] }, basePath: "store" },
-    { domains: { main: ["example.com"] }, basePath: "admin" },
+    { domains: { main: ["store.example.com"] }, basePath: "store" },
+    { domains: { main: ["admin.example.com"] }, basePath: "admin" },
   ],
   mobile: {
     appName: "Example App",

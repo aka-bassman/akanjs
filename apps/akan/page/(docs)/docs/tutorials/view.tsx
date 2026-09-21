@@ -92,7 +92,7 @@ export default page().render(() => {
 import type { ClientInit, ClientView, SliceMeta } from "akanjs/fetch";
 import { cnst, fetch, IcecreamOrder } from "@apps/koyo/client";
 import { DefaultOf } from "akanjs/constant";
-import { Load, Model, buttonRecipe } from "akanjs/ui";
+import { Load, Model } from "akanjs/ui";
 
 interface CardProps {
   className?: string;
@@ -192,7 +192,7 @@ export const View = ({ view }: ViewProps) => {
             code={`
 import { cn, type ModelProps } from "akanjs/client"; // [!code collapse:2]
 import { cnst, fetch, usePage } from "@apps/koyo/client";
-import { Model } from "akanjs/ui"; // [!code ++]
+import { Model, buttonRecipe } from "akanjs/ui"; // [!code ++]
 
 export const Card = ({ icecreamOrder }: ModelProps<"icecreamOrder", cnst.LightIcecreamOrder>) => {
   const { l } = usePage();

@@ -1832,6 +1832,11 @@ export class PkgExecutor extends Executor {
     };
     const rootVersion = rootDeps[dep];
     if (rootVersion) return rootVersion;
+    // A transitive dependency the workspace pins rather than imports is only ever written as an override, and
+    // that pin has to reach the published package: neither an override nor a dependency's own shrinkwrap is
+    // applied to a consumer's install, so the version has to be a dependency of what we publish.
+    const overrideVersion = rootPackageJson.overrides?.[dep];
+    if (typeof overrideVersion === "string") return overrideVersion;
 
     try {
       const packageJsonPath = `pkgs/${dep}/package.json`;

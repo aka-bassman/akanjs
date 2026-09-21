@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { SubspaceConfig } from "@akanjs/devkit/subspaceConfig";
-import { makeCliTempWorkspace, writeText } from "../testHelpers";
+import { makeCliTempWorkspace, writeText } from "@akanjs/devkit/testHelpers";
 import { SubspaceRunner } from "./subspace.runner";
 
 const config = new SubspaceConfig({

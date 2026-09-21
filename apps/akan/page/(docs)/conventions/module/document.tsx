@@ -172,9 +172,7 @@ export class TicketModel extends into(Ticket, TicketFilter, cnst.ticket, () => (
         <div className={cardGridRecipe()}>
           <div className={panelRecipe()}>
             <div className="font-bold text-foreground">CRUD helpers</div>
-            <div className="mt-2 text-foreground/70">
-              get, load, loadMany, create, update, remove, searchDocs, searchCount
-            </div>
+            <div className="mt-2 text-foreground/70">get, load, loadMany, create, update, remove</div>
           </div>
           <div className={panelRecipe()}>
             <div className="font-bold text-foreground">Query helpers</div>
@@ -205,6 +203,61 @@ const ticket = await this.pickInProject(projectId);
 const count: number = await this.countInProject(projectId);
 const exists = await this.existsInProject(projectId);
 const ticketInsight: db.TicketInsight = await this.insightInProject(projectId);`}
+        />
+        <Docs.SubTitle>{l.trans({ en: "Full-Text Search", ko: "전문 검색" })}</Docs.SubTitle>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  There is no separate search method. Text search is a <code>q.search()</code> node inside an ordinary
+                  filter, so a filter named <code>bySearch</code> generates <code>listBySearch</code>,{" "}
+                  <code>countBySearch</code>, <code>queryBySearch</code> and the rest for free. A field joins the index
+                  by declaring a role — <code>field(String, &#123; text: "title" &#125;)</code>.
+                </span>
+              ),
+              ko: (
+                <span>
+                  별도의 search method는 없습니다. 전문 검색은 일반 filter 안의 <code>q.search()</code> node이므로,{" "}
+                  <code>bySearch</code>라는 filter는 <code>listBySearch</code>, <code>countBySearch</code>,{" "}
+                  <code>queryBySearch</code> 등을 그대로 생성합니다. field는 role을 선언해 index에 참여합니다 —{" "}
+                  <code>field(String, &#123; text: "title" &#125;)</code>.
+                </span>
+              ),
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  <code>q.search()</code> compiles to a JOIN, so it must sit at an AND position — nesting it under{" "}
+                  <code>q.any()</code> or <code>q.not()</code> throws. Blank input matches nothing; never turn that into
+                  a passthrough, which would make the endpoint a full listing.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>q.search()</code>는 JOIN으로 컴파일되므로 AND 위치에 있어야 합니다. <code>q.any()</code>나{" "}
+                  <code>q.not()</code> 아래에 중첩하면 error가 발생합니다. 빈 입력은 아무것도 match하지 않습니다. 이를
+                  passthrough로 바꾸면 검색 endpoint가 전체 목록 조회가 되므로 그렇게 하지 마세요.
+                </span>
+              ),
+            })}
+          </div>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title="libs/shared/lib/admin/admin.document.ts"
+          code={`export class AdminFilter extends from(cnst.Admin, (filter) => ({
+  query: {
+    bySearch: filter()
+      .opt("text", String)
+      .query((text, q) => (text ? q.search(text, { prefix: true }) : {})),
+  },
+  sort: {},
+})) {}
+
+const admins = await this.listBySearch(text, { sort: "relevance" });`}
         />
       </Scroll.Slide>
       <Divider />
@@ -303,7 +356,7 @@ const count = await this.countBySearch(text, statuses);`}
           </ul>
         </Docs.Description>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide
         id="document-by"

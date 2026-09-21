@@ -5,10 +5,11 @@ import {
   type CodeAgentEventType,
   type CodeAgentSessionInfo,
   type CodeAgentToolSummary,
+  CodeTranscript,
   codeAgentEventPersistence,
 } from "akanjs/common";
-import { CodeTranscript } from "./CodeTranscript";
 import { CodeTuiLines } from "./CodeTuiLines";
+import { CodeTuiParts } from "./CodeTuiParts";
 
 const info: CodeAgentSessionInfo = {
   sessionId: "s1",
@@ -17,6 +18,8 @@ const info: CodeAgentSessionInfo = {
   model: { provider: "deepseek", id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
   tools: ["read", "bash"],
   contextTokens: 1_000_000,
+  effort: "medium",
+  name: undefined,
   interaction: { question: "await", approval: "await" },
 };
 
@@ -26,6 +29,9 @@ const tool = (toolCallId: string, title: string): CodeAgentToolSummary => ({
   op: "read",
   title,
 });
+
+const drawn = (transcript: CodeTranscript, width = 200) =>
+  CodeTuiParts.lines(transcript.parts, width).map((line) => CodeTuiLines.text(line));
 
 const feed = (transcript: CodeTranscript, bodies: CodeAgentEventBody[]) => {
   let seq = 0;
@@ -113,9 +119,9 @@ describe("CodeTranscript", () => {
     ]);
     const part = transcript.parts.filter((entry) => entry.kind === "tool")[0];
     expect(part?.outcome).toBe("blocked");
-    const lines = CodeTuiLines.of(transcript.parts, 80);
-    expect(lines[0]?.text).toContain("⦸");
-    expect(lines[0]?.color).toBe("yellow");
+    const lines = CodeTuiParts.lines(transcript.parts, 80);
+    expect(CodeTuiLines.text(lines[0] ?? { key: "", spans: [] })).toContain("⦸");
+    expect(lines[0]?.spans[0]?.color).toBe("yellow");
   });
 
   test("a truncated turn says so, because a cut answer looks exactly like a finished one", () => {
@@ -125,7 +131,7 @@ describe("CodeTranscript", () => {
       { type: "turn_end", turnId: "t1", stopReason: "truncated" },
     ]);
     expect(transcript.parts.filter((part) => part.kind === "assistant")[0]?.truncated).toBe(true);
-    expect(CodeTuiLines.of(transcript.parts, 80).some((line) => line.text.includes("output limit"))).toBe(true);
+    expect(drawn(transcript).some((line) => line.includes("output limit"))).toBe(true);
   });
 
   test("an interrupted turn keeps the text it produced", () => {
@@ -169,7 +175,7 @@ describe("CodeTranscript", () => {
     expect(transcript.question?.questionId).toBe("q1");
     feed(transcript, [{ type: "question_resolved", questionId: "q1", answer: { keys: ["a"] }, rendered: "akan" }]);
     expect(transcript.question).toBeUndefined();
-    expect(CodeTuiLines.of(transcript.parts, 80).some((line) => line.text.includes("= akan"))).toBe(true);
+    expect(drawn(transcript).some((line) => line.includes("= akan"))).toBe(true);
   });
 
   test("an approval holds its own slot and records the verdict", () => {
@@ -182,7 +188,7 @@ describe("CodeTranscript", () => {
     expect(transcript.approval?.approvalId).toBe("a1");
     feed(transcript, [{ type: "approval_resolved", approvalId: "a1", approved: false }]);
     expect(transcript.approval).toBeUndefined();
-    expect(CodeTuiLines.of(transcript.parts, 80).some((line) => line.text.includes("denied"))).toBe(true);
+    expect(drawn(transcript).some((line) => line.includes("denied"))).toBe(true);
   });
 
   test("a host frame carrying an id is one row through its whole lifecycle", () => {
@@ -256,6 +262,10 @@ describe("CodeTranscript", () => {
       },
       approval_resolved: { type: "approval_resolved", approvalId: "a1", approved: true },
       context: { type: "context", used: 1, max: 2 },
+      subagent: {
+        type: "subagent",
+        agents: [{ id: "c0", kind: "explore", description: "reading the store", startedAt: 1, tokens: 2 }],
+      },
       compaction: { type: "compaction", phase: "end", reason: "threshold" },
       retry: { type: "retry", attempt: 1, maxAttempts: 3, delayMs: 10, message: "429" },
       queue: { type: "queue", steering: ["a"], followUp: [] },
@@ -278,6 +288,7 @@ describe("CodeTranscript", () => {
         transcript.info,
         transcript.context,
         transcript.queue,
+        transcript.subagents,
         transcript.streaming,
         transcript.compacting,
         transcript.stopReason,
@@ -303,28 +314,38 @@ describe("CodeTranscript", () => {
   });
 });
 
-describe("CodeTui layout", () => {
-  test("the rows always add up to the terminal, whatever the question asks", async () => {
-    const { CodeTui } = await import("./CodeTui");
-    for (let terminalRows = 10; terminalRows <= 60; terminalRows += 1)
-      for (const optionCount of [0, 1, 2, 5, 12, 40]) {
-        const { askRows, bodyHeight, shown, first } = CodeTui.layout(terminalRows, optionCount, 0);
-        // Ink overwrites rather than clips, so one row too many prints the prompt through its first option.
-        expect(bodyHeight + askRows + 1).toBe(terminalRows);
-        expect(bodyHeight).toBeGreaterThanOrEqual(CodeTui.minBodyRows);
-        expect(shown).toBeLessThanOrEqual(optionCount);
-        expect(first + shown).toBeLessThanOrEqual(Math.max(shown, optionCount));
-      }
+describe("assistant rendering", () => {
+  test("markdown is rendered while it is still arriving, not only once the turn ends", () => {
+    const transcript = feed(new CodeTranscript(), [
+      { type: "turn_start", turnId: "t1" },
+      { type: "text_delta", turnId: "t1", text: "## Results\n\n- **one** item" },
+    ]);
+    const lines = drawn(transcript);
+    // No markers on screen: the reader spends most of an answer looking at this state.
+    expect(lines.join("\n")).not.toContain("##");
+    expect(lines.join("\n")).not.toContain("**");
+    expect(lines).toContain("Results");
   });
 
-  test("the option window follows the cursor rather than pinning to the top", async () => {
+  test("an unterminated fence is already a code block, so it does not change shape when it closes", () => {
+    const open = feed(new CodeTranscript(), [{ type: "text_delta", turnId: "t1", text: "```ts\nconst a = 1;" }]);
+    const closed = feed(new CodeTranscript(), [{ type: "text_delta", turnId: "t1", text: "```ts\nconst a = 1;\n```" }]);
+    expect(drawn(open)).toEqual(drawn(closed));
+  });
+});
+
+describe("CodeTui layout", () => {
+  test("the rows always add up to the terminal, whatever the prompt or the question needs", async () => {
     const { CodeTui } = await import("./CodeTui");
-    const short = 12;
-    const { shown } = CodeTui.layout(short, 40, 0);
-    expect(shown).toBeLessThan(40);
-    const last = CodeTui.layout(short, 40, 39);
-    expect(last.first + last.shown).toBe(40);
-    expect(39 - last.first).toBeLessThan(last.shown);
+    for (let terminalRows = 10; terminalRows <= 60; terminalRows += 1)
+      for (const askRows of [1, 2, 5, 12, 40]) {
+        const { ask, bodyHeight } = CodeTui.layout(terminalRows, askRows);
+        // Ink overwrites rather than clips, so one row too many prints the prompt through its own content.
+        expect(bodyHeight + ask + CodeTui.chromeRows).toBe(terminalRows);
+        expect(bodyHeight).toBeGreaterThanOrEqual(CodeTui.minBodyRows);
+        expect(ask).toBeLessThanOrEqual(askRows);
+        expect(ask).toBeGreaterThanOrEqual(1);
+      }
   });
 });
 
@@ -337,7 +358,7 @@ describe("CodeTui layout", () => {
  */
 describe("printer and transcript agree", () => {
   test("the same session says the same things through both hosts", async () => {
-    const { CodeAgentStreamPrinter } = await import("./CodeAgentStreamPrinter");
+    const { CodeAgentStreamPrinter } = await import("@akanjs/devkit/codeAgent/agent/CodeAgentStreamPrinter");
     const session: CodeAgentEventBody[] = [
       { type: "session", info },
       { type: "turn_start", turnId: "t1" },
@@ -376,7 +397,7 @@ describe("printer and transcript agree", () => {
     }
     printer.finish();
     const plain = printed.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
-    const drawn = [transcript.headline, ...CodeTuiLines.of(transcript.parts, 200).map((line) => line.text)].join("\n");
+    const rendered = [transcript.headline, ...drawn(transcript)].join("\n");
     for (const fact of [
       "DeepSeek V4 Flash",
       "1000k ctx",
@@ -387,11 +408,11 @@ describe("printer and transcript agree", () => {
     ])
       for (const [host, text] of [
         ["printer", plain],
-        ["transcript", drawn],
+        ["transcript", rendered],
       ] as const)
         expect(`${host}: ${text.includes(fact)}`).toBe(`${host}: true`);
     // Both have to say the answer was cut off; neither may let it read as a finished one.
     expect(plain.toLowerCase()).toContain("cut off");
-    expect(drawn.toLowerCase()).toContain("output limit");
+    expect(rendered.toLowerCase()).toContain("output limit");
   });
 });

@@ -9,28 +9,28 @@ export default page().render(() => {
     {
       name: "ID",
       desc: l.trans({
-        en: "24 hex string uuid used for document ids and signal payload ids. It validates as a string and keeps an empty string as the default placeholder value.",
-        ko: "document id와 signal payload id에 사용하는 24자리 hex string uuid입니다. string으로 검증되며 기본 placeholder 값으로 빈 문자열을 유지합니다.",
+        en: "24 hex string uuid used for document ids and signal payload ids. It validates as a string and keeps an empty string as the default placeholder value. A relation is declared with the model class itself, so ID is for a bare id a model stores without a relation.",
+        ko: "document id와 signal payload id에 사용하는 24자리 hex string uuid입니다. string으로 검증되며 기본 placeholder 값으로 빈 문자열을 유지합니다. relation은 model class 자체로 선언하므로, ID는 relation 없이 id만 저장할 때 사용합니다.",
       }),
       code: `import { ID } from "akanjs/base";
 import { via } from "akanjs/constant";
 
-export const user = via.model({
-  id: ID,
-});`,
+export class FileMetaInput extends via((field) => ({
+  fileId: field(ID).optional(),
+})) {}`,
     },
     {
       name: "Int",
       desc: l.trans({
-        en: "Integer primitive scalar for numeric fields that must be safe integers. It is common in counters, pagination values, metric samples, and scalar constant definitions.",
-        ko: "safe integer여야 하는 numeric field를 위한 integer primitive scalar입니다. counter, pagination value, metric sample, scalar constant definition에서 자주 사용합니다.",
+        en: "Integer primitive scalar for numeric fields that must be safe integers. It is common in counters, pagination values, metric samples, and scalar constant definitions. The JS global Number is not a field type — Int or Float is.",
+        ko: "safe integer여야 하는 numeric field를 위한 integer primitive scalar입니다. counter, pagination value, metric sample, scalar constant definition에서 자주 사용합니다. JS global Number는 field type이 아니므로 Int 또는 Float을 사용합니다.",
       }),
       code: `import { Int } from "akanjs/base";
 import { via } from "akanjs/constant";
 
-export const accessStat = via.scalar("accessStat", {
-  total: Int,
-});`,
+export class AccessStatInput extends via((field) => ({
+  total: field(Int, { default: 0 }),
+})) {}`,
     },
     {
       name: "Float",
@@ -41,23 +41,23 @@ export const accessStat = via.scalar("accessStat", {
       code: `import { Float } from "akanjs/base";
 import { via } from "akanjs/constant";
 
-export const coordinate = via.scalar("coordinate", {
-  lat: Float,
-  lng: Float,
-});`,
+export class CoordinateInput extends via((field) => ({
+  lat: field(Float),
+  lng: field(Float),
+})) {}`,
     },
     {
       name: "Any",
       desc: l.trans({
-        en: "Loose object scalar for payloads whose shape is intentionally open. Prefer explicit scalar/model fields when the shape is stable; use Any for integration blobs or flexible metadata.",
-        ko: "shape을 의도적으로 열어 두는 payload를 위한 loose object scalar입니다. shape이 안정적이면 명시적인 scalar/model field를 우선 사용하고, integration blob이나 flexible metadata에는 Any를 사용합니다.",
+        en: "Loose object scalar for payloads whose shape is intentionally open. Prefer explicit scalar/model fields when the shape is stable; use Any for integration blobs or flexible metadata. Pass the TypeScript shape as the type argument so the field is still typed. Never carry bytes in Any — declare Binary.",
+        ko: "shape을 의도적으로 열어 두는 payload를 위한 loose object scalar입니다. shape이 안정적이면 명시적인 scalar/model field를 우선 사용하고, integration blob이나 flexible metadata에는 Any를 사용합니다. TypeScript shape을 type argument로 넘기면 field type은 유지됩니다. byte는 Any가 아니라 Binary로 선언합니다.",
       }),
       code: `import { Any } from "akanjs/base";
 import { via } from "akanjs/constant";
 
-export const eventPayload = via.scalar("eventPayload", {
-  body: Any,
-});`,
+export class EventPayloadInput extends via((field) => ({
+  body: field<Record<string, unknown>>(Any, { default: {} }),
+})) {}`,
     },
     {
       name: "Binary",
@@ -65,11 +65,39 @@ export const eventPayload = via.scalar("eventPayload", {
         en: "Raw bytes for a signal argument or return, never a model field. It is a Uint8Array on both sides and base64 on a JSON wire; a pubsub whose whole return is Binary sends its own websocket frame instead. Store a blob as a File model.",
         ko: "signal argument와 return을 위한 raw byte입니다. model field로는 쓸 수 없습니다. 양쪽 모두 Uint8Array이고 JSON wire에서는 base64이며, return 전체가 Binary인 pubsub은 별도의 websocket binary frame으로 보냅니다. blob 저장은 File model을 사용합니다.",
       }),
-      code: `import { Binary } from "akanjs/base";
+      code: `import { Every } from "@libs/shared/srvkit";
+import { Binary } from "akanjs/base";
+import { endpoint } from "akanjs/signal";
+
+import * as srv from "../srv";
 
 export class StreamEndpoint extends endpoint(srv.stream, ({ pubsub }) => ({
-  chunkReceived: pubsub(Binary).room("channel", String).exec(() => undefined),
-}))  {}`,
+  chunkReceived: pubsub(Binary, { guards: [Every] })
+    .room("channel", String)
+    .exec(() => undefined),
+})) {}`,
+    },
+    {
+      name: "Upload",
+      desc: l.trans({
+        en: "File upload primitive for a signal body, and nothing else. It is valid only inside a mutation flagged with `fileUpload: true`, and a model that stores files references the File model instead.",
+        ko: "signal body 전용 file upload primitive입니다. `fileUpload: true`로 표시한 mutation 안에서만 유효하며, file을 저장하는 model은 File model을 참조합니다.",
+      }),
+      code: `import { Every } from "@libs/shared/srvkit";
+import { ID, Upload } from "akanjs/base";
+import { endpoint } from "akanjs/signal";
+
+import * as cnst from "../cnst";
+import * as srv from "../srv";
+
+export class FileEndpoint extends endpoint(srv.file, ({ mutation }) => ({
+  addFiles: mutation([cnst.File], { guards: [Every], fileUpload: true })
+    .body("files", [Upload])
+    .body("parentId", ID, { nullable: true })
+    .exec(async function (files, parentId) {
+      return await this.fileService.addFiles(files, parentId);
+    }),
+})) {}`,
     },
     {
       name: "dayjs / Dayjs",
@@ -90,10 +118,10 @@ const label = createdAt.format("YYYY-MM-DD");`,
       }),
       code: `import { enumOf } from "akanjs/base";
 
-export const Status = enumOf("status", ["ready", "running", "done"] as const);
+export class JobStatus extends enumOf("jobStatus", ["ready", "running", "done"] as const) {}
 
-Status.has("ready");
-Status.map((value) => value.toUpperCase());`,
+JobStatus.has("ready");
+JobStatus.map((value) => value.toUpperCase());`,
     },
     {
       name: "getEnv",
@@ -107,6 +135,17 @@ const env = getEnv();
 if (env.operationMode === "local") {
   console.info(env.serverHttpUri);
 }`,
+    },
+    {
+      name: "getApiPrefix / getWsPrefix",
+      desc: l.trans({
+        en: "Read the route prefix the running app answers on, instead of writing `/api` or `/ws` as a literal. Both fall back to the default when nothing moved them, and both read the value the server-rendered page wrote before any component ran, so a moved prefix reaches the browser too.",
+        ko: "실행 중인 app이 응답하는 route prefix를 읽습니다. `/api`나 `/ws`를 literal로 쓰지 않습니다. 아무것도 옮기지 않았다면 기본값으로 떨어지고, server-rendered page가 component 실행 전에 기록한 값을 읽으므로 옮긴 prefix가 browser까지 전달됩니다.",
+      }),
+      code: `import { getApiPrefix, getWsPrefix } from "akanjs/base";
+
+const healthPath = \`\${getApiPrefix()}/_akan/app/health\`;
+const socketPath = getWsPrefix();`,
     },
     {
       name: "DataList",

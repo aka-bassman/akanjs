@@ -89,8 +89,8 @@ export class BillingService {
           />
           <div className={panelRecipe({}, "text-foreground/70 text-sm")}>
             {l.trans({
-              en: "Use trace or debug for detailed diagnosis, info/log for normal lifecycle events, warn for recoverable issues, and error when an operation failed or needs attention.",
-              ko: "상세 진단에는 trace/debug를, 일반 라이프사이클 이벤트에는 info/log를, 복구 가능한 문제에는 warn을, 작업 실패나 확인이 필요한 상황에는 error를 사용합니다.",
+              en: "Use trace or debug for detailed diagnosis, info for normal lifecycle events, warn for recoverable issues, and error when an operation failed or needs attention. Never call logger.log() — it is a build failure, because it emits at info while reading as a level of its own.",
+              ko: "상세 진단에는 trace/debug를, 일반 라이프사이클 이벤트에는 info를, 복구 가능한 문제에는 warn을, 작업 실패나 확인이 필요한 상황에는 error를 사용합니다. logger.log()는 호출하지 마세요. 별도 level처럼 읽히지만 실제로는 info로 출력되며, build가 깨집니다.",
             })}
           </div>
         </Docs.Description>
@@ -392,7 +392,6 @@ AKAN_LOG_STREAM_TOKEN=<secret>  # optional: mounts GET /_akan/app/logs`}
           <Code.Snippet
             className="w-full"
             title="docker-compose.yml"
-            // language="yaml"
             code={`services:
   app:
     environment:
@@ -405,7 +404,6 @@ AKAN_LOG_STREAM_TOKEN=<secret>  # optional: mounts GET /_akan/app/logs`}
           <Code.Snippet
             className="w-full"
             title="fluent-bit.conf"
-            // language="ini"
             code={`[INPUT]
     name    tail
     path    /var/log/containers/*.log

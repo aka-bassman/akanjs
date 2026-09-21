@@ -44,6 +44,7 @@ await runner.build();
 - Command/script decorators used by `@akanjs/cli`.
 - AI prompt, guideline, and code-generation support utilities.
 - Capacitor and mobile release helpers.
+- The `akan code` agent engine, the tools it is given, and the shipped akan skills (`@akanjs/devkit/codeAgent`).
 
 ## Dev Server Sizing
 

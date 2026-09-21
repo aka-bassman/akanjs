@@ -190,12 +190,12 @@ export class OrderService extends serve(db.order, () => ({})) {
           />
           <Code.Snippet
             className="w-full"
-            title="page.tsx"
+            title="ui/PreviewCode.tsx"
             code={`import { randomCode } from "@libs/util/common";
 
-export function PreviewCode() {
+export const PreviewCode = () => {
   return <span>{randomCode(8)}</span>;
-}`}
+};`}
           />
         </div>
       </Scroll.Slide>

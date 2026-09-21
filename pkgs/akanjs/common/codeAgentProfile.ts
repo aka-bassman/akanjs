@@ -31,6 +31,24 @@ export interface CodeAgentMcpServerRef {
   env?: Record<string, string>;
 }
 
+/**
+ * One declared MCP server, as the session found it.
+ *
+ * A server that answered and one that was never reachable are both here: an integration that is silently
+ * absent is indistinguishable from one the model simply chose not to use, and the tool names are the only
+ * evidence of which of the two happened.
+ */
+export interface CodeAgentMcpStatus {
+  name: string;
+  transport: "stdio" | "http";
+  /** The command line or the url — what tells two entries of the same shape apart without opening the file. */
+  target: string;
+  /** Published tool names, already prefixed with the server the way the model sees them. */
+  tools: string[];
+  /** Why it published none, when it published none. */
+  error?: string;
+}
+
 export interface CodeAgentSubagentBudget {
   maxDepth: number;
   maxConcurrent: number;
@@ -80,7 +98,8 @@ export interface CodeAgentProfile {
 }
 
 const allBuiltins: CodeAgentBuiltinTool[] = ["read", "write", "edit", "ls", "grep", "find", "bash"];
-const readOnlyBuiltins: CodeAgentBuiltinTool[] = ["read", "ls", "grep", "find"];
+/** The builtins that cannot change anything, which is what a profile is narrowed to when it must not. */
+export const codeAgentReadOnlyBuiltins: CodeAgentBuiltinTool[] = ["read", "ls", "grep", "find"];
 
 const baseLimits = { turnMs: 900_000, toolOutputBytes: 200_000, contextTokens: 0, feedback: 2 };
 
@@ -133,7 +152,7 @@ export const codeAgentPresets = {
   review: (root: string): CodeAgentProfile => ({
     name: "review",
     tools: {
-      builtin: readOnlyBuiltins,
+      builtin: codeAgentReadOnlyBuiltins,
       akan: true,
       mcp: "off",
       subagent: { maxDepth: 1, maxConcurrent: 4, budget: 120_000 },

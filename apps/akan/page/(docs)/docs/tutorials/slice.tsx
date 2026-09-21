@@ -36,7 +36,8 @@ export default page().render(() => {
             className="w-full"
             title="apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts"
             code={`
-import { ID } from "akanjs/base"; // [!code collapse:13]
+import { Admin } from "@libs/shared/srvkit"; // [!code collapse:14]
+import { ID } from "akanjs/base";
 import { endpoint, internal, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
@@ -50,7 +51,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder, // [!code collapse:2]
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init().exec(function () {
       return this.icecreamOrderService.queryAny();
@@ -194,7 +195,6 @@ export const dictionary = modelDictionary(["en", "ko"])
             className="w-full"
             title="apps/koyo/page/dashboard.tsx"
             code={`
-import { Load, buttonRecipe } from "akanjs/ui";
 import { fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
 import { page } from "akanjs/client";
 
@@ -341,8 +341,8 @@ export const dictionary = modelDictionary(["en", "ko"])
               </div>
               <div className="text-foreground/70 text-sm">
                 {l.trans({
-                  en: `Zone components connect slice data to UI rendering. By passing the init data and slice, the Zone automatically subscribes to real-time updates for that specific slice.`,
-                  ko: `Zone 컴포넌트는 슬라이스 데이터를 UI 렌더링에 연결합니다. init 데이터와 slice를 전달하면 Zone이 자동으로 해당 슬라이스의 실시간 업데이트를 구독합니다.`,
+                  en: `Zone components connect slice data to UI rendering. init is the window the route already resolved, and slice names the store slice the Zone hydrates and that its controls write back to.`,
+                  ko: `Zone 컴포넌트는 슬라이스 데이터를 UI 렌더링에 연결합니다. init은 라우트가 이미 해소한 윈도우이고, slice는 Zone이 하이드레이션하고 컨트롤이 다시 기록할 스토어 슬라이스를 지정합니다.`,
                 })}
               </div>
             </div>
@@ -368,8 +368,8 @@ export const dictionary = modelDictionary(["en", "ko"])
         <Docs.Description>
           <div>
             {l.trans({
-              en: `For a real-time dashboard, the data needs to stay fresh. When a staff member changes an order status, customers watching the display should see it update automatically. The Zone component combined with useInterval creates this "live" experience - just like how airport departure boards constantly refresh to show the latest flight information.`,
-              ko: `실시간 대시보드에서는 데이터가 항상 최신 상태여야 합니다. 직원이 주문 상태를 변경하면 디스플레이를 보고 있는 고객들이 자동으로 업데이트되는 것을 봐야 합니다. Zone 컴포넌트와 useInterval을 결합하면 이러한 "라이브" 경험을 만들 수 있습니다 - 공항 출발 게시판이 최신 비행 정보를 보여주기 위해 지속적으로 새로고침되는 것처럼요.`,
+              en: `For a real-time dashboard, the data needs to stay fresh. When a staff member changes an order status, customers watching the display should see it update on their own. The Zone component combined with useInterval refreshes the board on a timer - just like how airport departure boards re-read the schedule every few seconds.`,
+              ko: `실시간 대시보드에서는 데이터가 항상 최신 상태여야 합니다. 직원이 주문 상태를 변경하면 디스플레이를 보고 있는 고객들이 알아서 업데이트되는 것을 봐야 합니다. Zone 컴포넌트와 useInterval을 결합하면 보드가 타이머에 맞춰 새로고침됩니다 - 공항 출발 게시판이 몇 초마다 시간표를 다시 읽는 것처럼요.`,
             })}
           </div>
           <div>
@@ -383,7 +383,7 @@ export const dictionary = modelDictionary(["en", "ko"])
             title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Unit.tsx"
             code={`
 import { cn, type ModelProps } from "akanjs/client"; // [!code collapse:4]
-import { Model } from "akanjs/ui";
+import { Model, buttonRecipe } from "akanjs/ui";
 import { cnst, fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
 
 interface CardProps extends ModelProps<"icecreamOrder", cnst.LightIcecreamOrder> { // [!code ++:4]
@@ -528,8 +528,8 @@ export const View = ({ view }: ViewProps) => {
               </div>
               <div className="text-foreground/70 text-sm">
                 {l.trans({
-                  en: `The useInterval hook refreshes the slice data every 3 seconds. This ensures the dashboard stays current without manual user interaction - perfect for displays that need to show live order status.`,
-                  ko: `useInterval 훅은 3초마다 슬라이스 데이터를 새로고침합니다. 이렇게 하면 사용자의 수동 상호작용 없이도 대시보드가 최신 상태를 유지합니다 - 실시간 주문 상태를 보여줘야 하는 디스플레이에 완벽합니다.`,
+                  en: `This is a plain 3-second poll: every mounted Zone re-runs the slice query whether anything changed or not, which is enough for one shop's board. Live sync is the real answer - a slice that declares .live() pushes each change to its subscribers, and Load.Units subscribes on its own with no interval at all.`,
+                  ko: `이것은 단순한 3초 폴링입니다. 마운트된 Zone마다 변경 여부와 무관하게 슬라이스 쿼리를 다시 실행하며, 가게 한 곳의 보드에는 이 정도로 충분합니다. 진짜 답은 live sync입니다 - 슬라이스가 .live()를 선언하면 변경분이 구독자에게 푸시되고, Load.Units가 알아서 구독하므로 interval이 아예 필요 없습니다.`,
                 })}
               </div>
             </div>

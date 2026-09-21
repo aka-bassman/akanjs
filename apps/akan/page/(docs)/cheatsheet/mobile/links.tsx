@@ -1,25 +1,10 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Docs } from "@apps/akan/ui";
+import { Code, Docs, ExternalLink } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
-import { Link } from "akanjs/ui";
-import { FaLink } from "react-icons/fa";
 
 export default page().render(() => {
   const { l } = usePage();
-  const ExternalLink = ({ href, label }: { href: string; label: string }) => (
-    <Link
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="ml-1 inline-flex size-5 -translate-y-px items-center justify-center rounded-full bg-foreground/50 align-baseline text-white transition-colors hover:bg-foreground/70"
-      aria-label={label}
-      title={label}
-    >
-      <FaLink className="size-2.5" />
-    </Link>
-  );
-
   return (
     <Scroll>
       <Scroll.Slide id="deep-link-setup" title={l.trans({ en: "Deep Link Setup", ko: "Deep Link Setup" })}>

@@ -173,31 +173,53 @@ export class Order extends by(cnst.Order) {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Akan fetch restores an error response as `Err`. In UI code, catch it and pass its key and data to `msg.error()`.",
-              ko: "Akan fetch는 에러 응답을 `Err`로 복원합니다. UI 코드에서는 catch한 뒤 key와 data를 `msg.error()`에 넘기면 됩니다.",
+              en: "Akan fetch restores an error response as `Err`, and the store already catches it: every action runs inside a wrapper that translates the key with the caller's language and toasts it. A store action is the happy path only — never a try/catch.",
+              ko: "Akan fetch는 에러 응답을 `Err`로 복원하고, store가 이미 그것을 잡습니다. 모든 action은 key를 호출자의 언어로 번역해 toast로 띄우는 wrapper 안에서 실행됩니다. Store action에는 성공 경로만 쓰고, try/catch는 쓰지 않습니다.",
             })}
           </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title="Order.Util.tsx"
-          code={`import { Err, fetch, msg } from "@apps/myApp/client";
+          title="apps/myapp/lib/order/order.store.ts"
+          code={`export class OrderStore extends store(sig.order, () => ({})) {
+  async addItem(orderId: string, productId: string, quantity: number) {
+    const order = await fetch.addItem(orderId, productId, quantity);
+    this.setOrder(order);
+    msg.success("order.addItemSuccess");
+  }
+}`}
+        />
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "The button reads nothing about failure. It calls the action and lets the wrapper answer:",
+              ko: "버튼은 실패에 대해 아무것도 알지 않습니다. Action을 호출하고 나머지는 wrapper에 맡깁니다:",
+            })}
+          </div>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title="apps/myapp/lib/order/Order.Util.tsx"
+          code={`"use client";
+import { st, usePage } from "@apps/myapp/client";
+import { buttonRecipe } from "akanjs/ui";
 
-export const AddOrderItem = ({ orderId, productId }: Props) => {
-  const addItem = async () => {
-    try {
-      await fetch.addItem(orderId, productId, 3);
-      msg.success("order.addItemSuccess");
-    } catch (error) {
-      if (error instanceof Err) {
-        msg.error(error.error, { data: error.data });
-        return;
-      }
-      msg.error("order.error.unknown");
-    }
-  };
-
-  return <button onClick={addItem}>Add item</button>;
+interface AddItemProps {
+  className?: string;
+  orderId: string;
+  productId: string;
+}
+export const AddItem = ({ className, orderId, productId }: AddItemProps) => {
+  const { l } = usePage();
+  return (
+    <button
+      className={buttonRecipe({ variant: "primary" }, className)}
+      onClick={() => st.do.addItem(orderId, productId, 3)}
+      type="button"
+    >
+      {l("order.signal.addItem")}
+    </button>
+  );
 };`}
         />
       </Scroll.Slide>
@@ -236,8 +258,8 @@ export const AddOrderItem = ({ orderId, productId }: Props) => {
           <DocsList>
             <li>
               {l.trans({
-                en: "Use `Err` for user-facing domain failures. Use normal `Error` for programmer mistakes, missing setup, or impossible states.",
-                ko: "사용자에게 보여줄 도메인 실패에는 `Err`를 사용하세요. 개발 실수, 설정 누락, 일어나면 안 되는 상태에는 일반 `Error`를 사용합니다.",
+                en: "Throw `Err`, always. A raw `throw new Error` is a build failure under `apps/**` and `libs/**`; only tests, `*.constant.ts`, `common/**`, and `env/**` are exempt, and those have no `Err` import path, so keep throwing code out of them.",
+                ko: "던지는 것은 언제나 `Err`입니다. `apps/**`와 `libs/**`에서 `throw new Error`는 build를 깨뜨립니다. 예외는 test, `*.constant.ts`, `common/**`, `env/**` 뿐이고, 이들에는 `Err`를 import할 경로가 없으므로 애초에 던지는 코드를 두지 마세요.",
               })}
             </li>
             <li>

@@ -74,6 +74,9 @@ artifact is built last and is not overwritten by the root `akan` bootstrap scrip
 - Use `@akanjs/cli` as the user-facing executable package.
 - `@akanjs/devkit` is bundled into the CLI for published CLI usage; it is not required as a separate
   runtime dependency for ordinary CLI users.
+- The `akan code` agent follows that same split: its engine, tools and skills are a devkit facet
+  (`@akanjs/devkit/codeAgent`), and `@akanjs/cli/code` is the terminal host plus the SDK entry that
+  re-exports both.
 
 ## Requirements
 

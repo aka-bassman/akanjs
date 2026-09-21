@@ -1,25 +1,10 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Docs } from "@apps/akan/ui";
+import { Code, Divider, Docs, ExternalLink } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
-import { Link } from "akanjs/ui";
-import { FaLink } from "react-icons/fa";
 
 export default page().render(() => {
   const { l } = usePage();
-  const ExternalLink = ({ href, label }: { href: string; label: string }) => (
-    <Link
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="ml-1 inline-flex size-5 -translate-y-px items-center justify-center rounded-full bg-foreground/50 align-baseline text-white transition-colors hover:bg-foreground/70"
-      aria-label={label}
-      title={label}
-    >
-      <FaLink className="size-2.5" />
-    </Link>
-  );
-
   return (
     <Scroll>
       <Scroll.Slide id="overview" title={l.trans({ en: "Mobile Setup Flow", ko: "모바일 설정 흐름" })}>
@@ -69,7 +54,7 @@ export default page().render(() => {
           </div>
         </Docs.Description>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="mobile-config" title={l.trans({ en: "Mobile Config", ko: "Mobile Config" })}>
         <Docs.Title>{l.trans({ en: "Mobile Config", ko: "Mobile Config" })}</Docs.Title>
@@ -160,7 +145,7 @@ export default config;`}
           </Docs.Alert>
         </Docs.Description>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="capacitor-plugins" title={l.trans({ en: "Capacitor Plugins", ko: "Capacitor Plugins" })}>
         <Docs.Title>{l.trans({ en: "Capacitor Plugins", ko: "Capacitor Plugins" })}</Docs.Title>
@@ -237,7 +222,7 @@ export default config;`}
           </div>
         </Docs.Description>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="android-setup" title={l.trans({ en: "Android Setup", ko: "Android Setup" })}>
         <Docs.Title>{l.trans({ en: "Android Setup", ko: "Android Setup" })}</Docs.Title>
@@ -360,7 +345,7 @@ akan release-android myapp --target default --env main --assembleType aab`}
           </Docs.Alert>
         </Docs.Description>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="ios-setup" title={l.trans({ en: "iOS Setup", ko: "iOS Setup" })}>
         <Docs.Title>{l.trans({ en: "iOS Setup", ko: "iOS Setup" })}</Docs.Title>
@@ -444,7 +429,7 @@ akan release-ios myapp --target default --env main`}
           </Docs.Alert>
         </Docs.Description>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
       <Scroll.Slide id="verify" title={l.trans({ en: "Verify Setup", ko: "Verify Setup" })}>
         <Docs.Title>{l.trans({ en: "Verify Setup", ko: "Verify Setup" })}</Docs.Title>
         <Docs.Description>

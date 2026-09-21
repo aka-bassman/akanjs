@@ -10,13 +10,16 @@ export class CodeCommand extends command("code", [CodeScript], ({ public: target
     .option("json", Boolean, { desc: "print one event per line as JSON", default: false })
     .option("thinking", Boolean, { desc: "print the model's reasoning", default: false })
     .option("rpc", Boolean, { desc: "serve the agent over stdio for another process to drive", default: false })
+    // `-r` already belongs to `--rpc`, and the short flag is derived from the first letter unless one is given.
+    .option("resume", String, { desc: "continue a stored session by id", flag: "R", nullable: true })
     .option("interactive", Boolean, {
       desc: "open the full-screen session even when a prompt is given",
       flag: "i",
       default: false,
     })
     .with(Workspace)
-    .exec(async function (prompt, app, profile, model, json, thinking, rpc, interactive, workspace) {
-      await this.codeScript.run(workspace, prompt ?? "", { app, profile, model, json, thinking, rpc, interactive });
+    .exec(async function (prompt, app, profile, model, json, thinking, rpc, resume, interactive, workspace) {
+      const options = { app, profile, model, json, thinking, rpc, interactive, resume };
+      await this.codeScript.run(workspace, prompt ?? "", options);
     }),
 })) {}

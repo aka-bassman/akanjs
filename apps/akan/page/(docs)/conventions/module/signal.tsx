@@ -180,12 +180,12 @@ export default page().render(() => {
       example: "await fetch.storyInsightInRoot(rootId)",
     },
     {
-      name: "init[Model](query?, option?)",
+      name: "init[Model](queryKey?, args?)",
       desc: l.trans({
-        en: "Initializes the default model list with list and insight data. Both queries leave at call time; the handle hands out storyInit, storyList, and storyInsight as separate promises.",
-        ko: "기본 model list를 list와 insight data로 초기화합니다. 두 query는 호출 시점에 출발하고, handle은 storyInit, storyList, storyInsight를 각각의 promise로 제공합니다.",
+        en: "Initializes the root slice list with list and insight data. queryKey names one of the model's own filters and args are that filter's arguments; no key at all is the any filter. Both queries leave at call time, and the handle hands out storyInit, storyList, and storyInsight as separate promises.",
+        ko: "root slice list를 list와 insight data로 초기화합니다. queryKey는 model이 선언한 filter 중 하나의 이름이고 args는 그 filter의 인자입니다. key를 생략하면 any filter입니다. 두 query는 호출 시점에 출발하고, handle은 storyInit, storyList, storyInsight를 각각의 promise로 제공합니다.",
       }),
-      example: "const { storyInit } = fetch.initStory()",
+      example: 'const { storyInit } = fetch.initStory("byOwner", [ownerId])',
     },
     {
       name: "init[Model][Suffix](...args)",
@@ -243,14 +243,33 @@ export default page().render(() => {
             title="story.signal.ts"
             code={`export class StoryInternal extends internal(srv.story, () => ({})) {}
 
-export class StorySlice extends slice(srv.story, { guards: { root: Admin } }, () => ({})) {}
+export class StorySlice extends slice(srv.story, { guards: { root: Admin, get: Public, cru: Admin } }, () => ({})) {}
 
 export class StoryEndpoint extends endpoint(srv.story, ({ query }) => ({
-  story: query(cnst.Story).exec(async function () {
+  story: query(cnst.Story, { guards: [Public] }).exec(async function () {
     return await this.storyService.getStory();
   }),
 })) {}`}
           />
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Every <code>slice()</code> names an explicit <code>guards</code> map with <code>root: Admin</code>,
+                  and every custom endpoint names its own <code>guards</code> array. The guards are also the MCP
+                  exposure decision: an endpoint that names none is unauthorized and silently refused from the agent
+                  catalogue.
+                </span>
+              ),
+              ko: (
+                <span>
+                  모든 <code>slice()</code>는 <code>root: Admin</code>을 포함한 <code>guards</code> map을 명시하고, 모든
+                  custom endpoint는 자기 <code>guards</code> 배열을 적습니다. guard는 MCP 노출 결정이기도 해서, 아무
+                  guard도 적지 않은 endpoint는 인가되지 않을 뿐 아니라 agent catalogue에서도 조용히 거부됩니다.
+                </span>
+              ),
+            })}
+          </div>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -273,12 +292,17 @@ export class StoryEndpoint extends endpoint(srv.story, ({ query }) => ({
           title="user.signal.ts"
           code={`export class UserInternal extends internal(srv.user, () => ({}), ...user.internals) {}
 
-export class UserSlice extends slice(srv.user, {}, () => ({}), ...user.slices) {}
+export class UserSlice extends slice(
+  srv.user,
+  { guards: { root: Admin, get: Public, cru: SelfOrAdmin } },
+  () => ({}),
+  ...user.slices,
+) {}
 
 export class UserEndpoint extends endpoint(
   srv.user,
   ({ query }) => ({
-    authCallback: query(String).search("code", String).exec(async function (code) {
+    authCallback: query(String, { guards: [Public] }).search("code", String).exec(async function (code) {
       return await this.userService.authCallback(code);
     }),
   }),
@@ -345,12 +369,12 @@ export class UserEndpoint extends endpoint(
           className="w-full"
           title="story.signal.ts"
           code={`export class StoryEndpoint extends endpoint(srv.story, ({ query, mutation }) => ({
-  story: query(cnst.Story)
+  story: query(cnst.Story, { guards: [Public] })
     .param("storyId", ID)
     .exec(async function (storyId) {
       return await this.storyService.getStory(storyId);
     }),
-  createStory: mutation(cnst.Story)
+  createStory: mutation(cnst.Story, { guards: [Every] })
     .body("data", cnst.StoryInput)
     .exec(async function (data) {
       return await this.storyService.createStory(data);
@@ -363,12 +387,18 @@ export class UserEndpoint extends endpoint(
           className="w-full"
           title="chatRoom.signal.ts"
           code={`export class ChatRoomEndpoint extends endpoint(srv.chatRoom, ({ message, pubsub }) => ({
-  readChat: message(Boolean).msg("root", ID).exec(async function (root) {
+  readChat: message(Boolean, { guards: [Every] }).msg("root", ID).exec(async function (root) {
     return await this.chatRoomService.read(root);
   }),
-  chatAdded: pubsub(cnst.Chat).room("root", ID).exec(async function () {}),
+  chatAdded: pubsub(cnst.Chat, { guards: [Every] }).room("root", ID).exec(async function () {}),
 })) {}`}
         />
+        <Docs.Description>
+          {l.trans({
+            en: "A slice-level guards map only reaches the generated query and mutation endpoints. A message or pubsub endpoint is unguarded unless it declares its own guards, and its guards are re-run whenever the socket's credential changes.",
+            ko: "slice의 guards map은 generated query와 mutation endpoint에만 닿습니다. message와 pubsub endpoint는 자기 guards를 선언하지 않으면 무방비이며, socket의 credential이 바뀔 때마다 guard가 다시 실행됩니다.",
+          })}
+        </Docs.Description>
 
         <Docs.SubTitle>Public Path Endpoints</Docs.SubTitle>
         <Docs.Description>
@@ -381,7 +411,7 @@ export class UserEndpoint extends endpoint(
           className="w-full"
           title="site.signal.ts"
           code={`export class SiteEndpoint extends endpoint(srv.site, ({ query }) => ({
-  sitemapXml: query(Any, { path: "sitemap.xml", prefix: false }).exec(async function () {
+  sitemapXml: query(Any, { guards: [Public], path: "sitemap.xml", prefix: false }).exec(async function () {
     return new Response(null, { headers: { "Content-Type": "application/xml" } });
   }),
 })) {}`}
@@ -443,8 +473,8 @@ const unsubscribe = fetch.subscribeChatAdded(rootId, (chat) => {
         <Code.Snippet
           className="w-full"
           title="story.signal.ts"
-          code={`export class StorySlice extends slice(srv.story, {}, (init) => ({
-  inRoot: init().param("root", ID).exec(function (root) {
+          code={`export class StorySlice extends slice(srv.story, { guards: { root: Admin, get: Public, cru: Admin } }, (init) => ({
+  inRoot: init({ guards: [Public] }).param("root", ID).exec(function (root) {
     return this.storyService.queryInRoot(root);
   }),
 })) {}`}
@@ -535,8 +565,12 @@ const unsubscribe = fetch.subscribeChatAdded(rootId, (chat) => {
                 ko: "required argument가 nullable argument 뒤에 올 수 없으므로 nullable argument는 뒤쪽에 둡니다.",
               }),
               l.trans({
-                en: "An endpoint that names a real guard is reachable by an AI agent; one that names none is not. There is no mcp option to write and no prompt builder — a screen is published as an MCP prompt from its page file with page().prompt(). See the MCP Server cheatsheet.",
-                ko: "실질 guard를 적은 endpoint는 AI agent가 닿고, 아무 guard도 적지 않은 endpoint는 닿지 않습니다. 적어야 할 mcp 옵션도, prompt builder도 없습니다. 화면은 page 파일에서 page().prompt()로 MCP prompt로 게시됩니다. MCP Server cheatsheet을 참고하세요.",
+                en: "An endpoint that names a real guard is reachable by an AI agent; one that names none is not. There is no per-endpoint opt-in — mcp: false only opts an already-guarded endpoint out, and on a slice mcp: { cru: false } mirrors the guards map for the root slice and generated CRUD.",
+                ko: "실질 guard를 적은 endpoint는 AI agent가 닿고, 아무 guard도 적지 않은 endpoint는 닿지 않습니다. endpoint별 opt-in은 없습니다. mcp: false는 이미 guard된 endpoint를 빼는 opt-out이고, slice의 mcp: { cru: false }는 root slice와 generated CRUD에 한해 guards map을 그대로 따라 적습니다.",
+              }),
+              l.trans({
+                en: "There is no prompt builder on endpoint(). A screen is published as an MCP prompt from its page file with page().prompt(name, description). See the MCP Server cheatsheet.",
+                ko: "endpoint()에는 prompt builder가 없습니다. 화면은 page 파일에서 page().prompt(name, description)으로 MCP prompt로 게시됩니다. MCP Server cheatsheet을 참고하세요.",
               }),
             ].map((rule) => (
               <div key={rule} className={panelRecipe({ padding: "row" }, "text-foreground/70")}>

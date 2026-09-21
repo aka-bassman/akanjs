@@ -288,15 +288,15 @@ export default page().render(() => {
                 {
                   title: "plug",
                   desc: l.trans({
-                    en: "Plug connects a service or runtime object to an adaptor role, such as queue, cache, storage, scheduler, or websocket.",
-                    ko: "plug는 service나 runtime 객체를 queue, cache, storage, scheduler, websocket 같은 adaptor role에 연결합니다.",
+                    en: "Inject an adaptor singleton: plug(TheClass) for an adapt() class, or plug(StorageAdaptorRole) for a role. Which implementation a role resolves to is decided once by option.applyAdaptor(role, TheClass), not here.",
+                    ko: "adaptor 싱글턴을 주입합니다. adapt() 클래스는 plug(TheClass), role은 plug(StorageAdaptorRole) 형태로 씁니다. role이 어떤 구현으로 연결될지는 여기가 아니라 option.applyAdaptor(role, TheClass)가 한 번 결정합니다.",
                   }),
                 },
                 {
-                  title: "adaptor",
+                  title: "database",
                   desc: l.trans({
-                    en: "An adaptor is a replaceable runtime connector. The same service can use solid, redis, local, or cloud-backed implementations.",
-                    ko: "adaptor는 교체 가능한 런타임 연결자입니다. 같은 service가 solid, redis, local, cloud 기반 구현을 사용할 수 있습니다.",
+                    en: "Inject another module's database model when the service reads or writes it directly.",
+                    ko: "service가 다른 모듈의 데이터를 직접 읽거나 써야 할 때 그 모듈의 database 모델을 주입합니다.",
                   }),
                 },
                 {
@@ -375,8 +375,17 @@ export default page().render(() => {
               <div className="font-bold text-foreground">{l.trans({ en: "Operation controls", ko: "운영 제어" })}</div>
               <div className="mt-2 text-foreground/70 text-sm">
                 {l.trans({
-                  en: "Signal is also where request guards, parameters, search inputs, message inputs, cache hints, and throttling-style operational boundaries are described.",
-                  ko: "signal은 request guard, parameter, search input, message input, cache hint, throttling 성격의 운영 경계를 설명하는 위치이기도 합니다.",
+                  en: "Signal is also where parameters, search inputs, and message inputs are described, alongside the endpoint options that bound a call: guards, timeout, cache, mcp, and the HTTP method a mutation answers on.",
+                  ko: "signal은 parameter, search input, message input을 기술하는 자리이자, 호출의 경계를 정하는 endpoint 옵션을 두는 자리입니다. guards, timeout, cache, mcp, 그리고 mutation이 응답할 HTTP method가 여기에 놓입니다.",
+                })}
+              </div>
+            </div>
+            <div className={panelRecipe()}>
+              <div className="font-bold text-foreground">{l.trans({ en: "Guards", ko: "Guard" })}</div>
+              <div className="mt-2 text-foreground/70 text-sm">
+                {l.trans({
+                  en: "Every slice names a guard per verb and every custom endpoint names its own guards array. The guards are also the MCP exposure decision: an endpoint that declares none is refused from the agent catalogue, so a missing array costs visibility as well as authorization.",
+                  ko: "모든 slice는 verb별로 guard를 지정하고, 모든 custom endpoint는 자기 guards 배열을 선언합니다. guards는 MCP 노출 여부까지 결정합니다. guards를 선언하지 않은 endpoint는 agent 카탈로그에서 거부되므로, 배열을 빠뜨리면 권한뿐 아니라 노출까지 잃습니다.",
                 })}
               </div>
             </div>
@@ -498,7 +507,7 @@ export default page().render(() => {
                   ko: "Signal은 액션을 endpoint로 노출합니다. Service는 규칙을 확인하고 데이터를 변경합니다. 화면은 결과를 즉시 받습니다.",
                 }),
                 code: `export class StockEndpoint extends endpoint(srv.stock, ({ mutation }) => ({
-  addStock: mutation(cnst.Stock)
+  addStock: mutation(cnst.Stock, { guards: [Admin] })
     .param("productId", ID)
     .param("amount", Int)
     .exec(async function (productId, amount) {
@@ -527,7 +536,6 @@ export class StockService extends serve(db.stock, () => ({})) {
                 code: `export class ReservationInternal extends internal(srv.reservation, ({ cron }) => ({
   expireOldReservations: cron("*/10 * * * *", { serverMode: "batch" }).exec(async function () {
     await this.reservationService.expireOldReservations();
-    return true;
   }),
 })) {}
 
@@ -560,7 +568,7 @@ export class ReservationService extends serve(db.reservation, () => ({})) {
     }),
 })) {}
 // [!code collapse:9]
-export class SalesReportSlice extends slice(srv.salesReport, {}, (init) => ({ 
+export class SalesReportSlice extends slice(srv.salesReport, { guards: { root: Admin, get: Admin, cru: Admin } }, (init) => ({
   byMonth: init()
     .param("month", String)
     .exec(function (month) {
@@ -569,7 +577,7 @@ export class SalesReportSlice extends slice(srv.salesReport, {}, (init) => ({
 })) {}
 
 export class SalesReportEndpoint extends endpoint(srv.salesReport, ({ mutation }) => ({
-  createMonthlyReport: mutation(cnst.SalesReport)
+  createMonthlyReport: mutation(cnst.SalesReport, { guards: [Admin] })
     .param("month", String)
     .exec(async function (month) {
       return await this.salesReportService.queueMonthlyReport(month);
@@ -603,7 +611,7 @@ export class SalesReportService extends serve(db.salesReport, ({ signal }) => ({
                   en: "Endpoint receives the chat action and service saves the message. Pubsub publishes the saved chat to the chat room so every open screen can append it.",
                   ko: "Endpoint가 채팅 액션을 받고 service가 메시지를 저장합니다. Pubsub는 저장된 채팅을 채팅방에 전달해 열린 화면들이 메시지를 바로 추가할 수 있게 합니다.",
                 }),
-                code: `export class ChatRoomSlice extends slice(srv.chatRoom, {}, (init) => ({
+                code: `export class ChatRoomSlice extends slice(srv.chatRoom, { guards: { root: Admin, get: Every, cru: Every } }, (init) => ({
   chats: init()
     .param("roomId", ID)
     .exec(function (roomId) {
@@ -612,13 +620,13 @@ export class SalesReportService extends serve(db.salesReport, ({ signal }) => ({
 })) {}
 
 export class ChatRoomEndpoint extends endpoint(srv.chatRoom, ({ mutation, pubsub }) => ({
-  sendChat: mutation(cnst.Chat)
+  sendChat: mutation(cnst.Chat, { guards: [Every] })
     .param("roomId", ID)
     .param("text", String)
     .exec(async function (roomId, text) {
       return await this.chatRoomService.sendChat(roomId, text);
     }),
-  chatAdded: pubsub(cnst.Chat)
+  chatAdded: pubsub(cnst.Chat, { guards: [Every] })
     .room("roomId", ID)
     .exec(async () => {
       // The runtime delivers the published chat to subscribers in this room.

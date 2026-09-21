@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { akanCodePaths } from "./akanCodePaths";
+import { akanCodePaths } from "@akanjs/devkit/codeAgent";
 
 const dir = akanCodePaths.builtinSkillsDir() ?? "";
 const names = readdirSync(dir).filter((entry) => !entry.startsWith("."));

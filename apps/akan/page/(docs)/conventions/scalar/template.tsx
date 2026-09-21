@@ -44,7 +44,7 @@ export default page().render(() => {
 └── __scalar/
     └── price/
         ├── price.constant.ts
-        └── price.Template.tsx`}
+        └── Price.Template.tsx`}
         />
       </Scroll.Slide>
       <Divider />
@@ -61,7 +61,7 @@ export default page().render(() => {
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title="price.Template.tsx"
+          title="Price.Template.tsx"
           code={`"use client";
 
 import { cnst, usePage } from "@apps/myapp/client";
@@ -74,23 +74,34 @@ interface GeneralProps {
 
 export const General = ({ value, onChange }: GeneralProps) => {
   const { l } = usePage();
+  const patch = (next: Partial<cnst.Price>) => onChange(new cnst.Price().set(value).set(next));
 
   return (
     <div className="space-y-4">
-      <Field.Number
-        label={l("price.amount")}
-        value={value.amount}
-        onChange={(amount) => onChange({ ...value, amount })}
-      />
-      <Field.Text
-        label={l("price.currency")}
-        value={value.currency}
-        onChange={(currency) => onChange({ ...value, currency })}
-      />
+      <Field.Number label={l("price.amount")} value={value.amount} onChange={(amount) => patch({ amount })} />
+      <Field.Text label={l("price.currency")} value={value.currency} onChange={(currency) => patch({ currency })} />
     </div>
   );
 };`}
         />
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: (
+              <span>
+                Copy the scalar with <code>new cnst.Price().set(value)</code>, never <code>&#123;...value&#125;</code>.
+                A model instance keeps its <code>Date</code> fields behind prototype accessors, so a spread and{" "}
+                <code>Object.keys</code> both miss them and the copy silently loses every date.
+              </span>
+            ),
+            ko: (
+              <span>
+                scalar 복사는 <code>&#123;...value&#125;</code>가 아니라 <code>new cnst.Price().set(value)</code>로
+                합니다. model instance는 <code>Date</code> field를 prototype accessor 뒤에 두므로 spread와{" "}
+                <code>Object.keys</code>가 모두 그 field를 빠뜨리고, 복사본은 모든 날짜를 조용히 잃습니다.
+              </span>
+            ),
+          })}
+        </Docs.Alert>
       </Scroll.Slide>
       <Divider />
 
@@ -106,29 +117,46 @@ export const General = ({ value, onChange }: GeneralProps) => {
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title="product.Template.tsx"
+          title="Product.Template.tsx"
           code={`"use client";
 
-import { st } from "@apps/myapp/client";
-import * as Price from "../__scalar/price/price.Template";
+import { Price, st, usePage } from "@apps/myapp/client";
+import { Field } from "@libs/shared/ui";
 
 export const General = () => {
+  const { l } = usePage();
   const productForm = st.use.productForm();
 
   return (
     <div className="space-y-6">
-      <input
-        value={productForm.name}
-        onChange={(event) => st.do.setNameOnProduct(event.target.value)}
-      />
-      <Price.General
-        value={productForm.price}
-        onChange={st.do.setPriceOnProduct}
-      />
+      <Field.Text label={l("product.name")} value={productForm.name} onChange={st.do.setNameOnProduct} />
+      <Price.Template.General value={productForm.price} onChange={st.do.setPriceOnProduct} />
     </div>
   );
 };`}
         />
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: (
+              <span>
+                Pass the generated setter by reference. An inline arrow such as{" "}
+                <code>onChange=&#123;(v) =&gt; st.do.setNameOnProduct(v)&#125;</code> runs identically but emits no{" "}
+                <code>data-akan-action</code>, so the field publishes no agent tool and no E2E selector —{" "}
+                <code>no-unpublished-form-setter</code> rejects it. A wrapper that genuinely transforms the value, as{" "}
+                <code>patch</code> does above, stays legal.
+              </span>
+            ),
+            ko: (
+              <span>
+                generated setter는 reference로 넘깁니다.{" "}
+                <code>onChange=&#123;(v) =&gt; st.do.setNameOnProduct(v)&#125;</code> 같은 inline arrow는 동작은 같지만{" "}
+                <code>data-akan-action</code>을 내보내지 않아 agent tool도 E2E selector도 게시되지 않습니다.{" "}
+                <code>no-unpublished-form-setter</code>가 이를 거부합니다. 위의 <code>patch</code>처럼 값을 실제로
+                변환하는 wrapper는 그대로 허용됩니다.
+              </span>
+            ),
+          })}
+        </Docs.Alert>
       </Scroll.Slide>
       <Divider />
 
@@ -137,8 +165,8 @@ export const General = () => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Use Field components when they match the scalar input. If the scalar needs a special interaction, it is fine to use plain inputs, buttons, or an app-specific component.",
-              ko: "scalar input에 맞는 Field component가 있다면 사용합니다. scalar에 특별한 interaction이 필요하다면 일반 input, button 또는 app 전용 component를 사용해도 괜찮습니다.",
+              en: "Use a Field component for every scalar field — a bare input is never right for one, because Field is what carries the label, the validation surface and the data-akan-action annotation. When the scalar needs an interaction no Field covers, build an app-specific component that takes value and onChange the same way.",
+              ko: "scalar field에는 항상 Field component를 사용합니다. label, validation surface, data-akan-action 주석을 싣는 것이 Field이므로 맨 input은 적절하지 않습니다. Field가 다루지 못하는 interaction이 필요하다면 value와 onChange를 같은 방식으로 받는 app 전용 component를 만드세요.",
             })}
           </div>
           <div>

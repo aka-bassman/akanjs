@@ -46,6 +46,12 @@ export default page().render(() => {
       desc: "Build the selected package for distribution or local framework consumption.\nUse it after package source changes have been synced and before relying on the package output from apps or other packages.",
       examples: "akan build-package renderer",
     },
+    {
+      name: "verify-dist-package",
+      signature: "akan verify-dist-package <pkg>",
+      desc: "Verify a package's built dist output, then measure it with an `npm pack` dry run.\nIt checks that the dist manifest names the right package and a version, publishes with public access, ships both READMEs, points no bin entry at a TypeScript source, and that every specifier its export map declares actually resolves. It reports the file count and packed size.\nRun it after `build-package` and before publishing, so a broken export map is caught here rather than by the first consumer to install it.",
+      examples: "akan verify-dist-package renderer",
+    },
   ];
 
   return (

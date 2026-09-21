@@ -82,30 +82,6 @@ export default page().render(() => {
       }),
       example: `await this.removeStory(storyId);`,
     },
-    {
-      name: "search<Model>(text, option?)",
-      desc: l.trans({
-        en: "Search documents and return docs with count.",
-        ko: "document를 검색하고 docs와 count를 반환합니다.",
-      }),
-      example: `const { docs, count } = await this.searchStory("notice");`,
-    },
-    {
-      name: "searchDocs<Model>(text, option?)",
-      desc: l.trans({
-        en: "Search documents and return docs only.",
-        ko: "document를 검색하고 docs만 반환합니다.",
-      }),
-      example: `const stories = await this.searchDocsStory("notice");`,
-    },
-    {
-      name: "searchCount<Model>(text)",
-      desc: l.trans({
-        en: "Count documents that match search text.",
-        ko: "검색어와 일치하는 document 수를 반환합니다.",
-      }),
-      example: `const count = await this.searchCountStory("notice");`,
-    },
   ];
 
   const queryMethods: IntroItem[] = [
@@ -476,12 +452,40 @@ serve(db.user, ({ use }) => ({ githubApp: use<GithubApp>() }), ...user.services)
 
         <Docs.SubTitle>Query Based Methods</Docs.SubTitle>
         <Docs.Description>
-          {l.trans({
-            en: "Query based methods are generated from filters declared in the document file.",
-            ko: "Query based method는 document 파일에 선언한 filter를 기준으로 생성됩니다.",
-          })}
+          <div>
+            {l.trans({
+              en: "Query based methods are generated from filters declared in the document file.",
+              ko: "Query based method는 document 파일에 선언한 filter를 기준으로 생성됩니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Full-text search is one of them, not a method of its own: a filter whose query calls{" "}
+                  <code>q.search()</code> generates the same fourteen methods every other filter does.
+                </span>
+              ),
+              ko: (
+                <span>
+                  전문 검색도 별도의 method가 아니라 이 중 하나입니다. query에서 <code>q.search()</code>를 호출하는
+                  filter는 다른 filter와 똑같이 열네 개의 method를 생성합니다.
+                </span>
+              ),
+            })}
+          </div>
         </Docs.Description>
         <Docs.IntroTable type="method" items={queryMethods} />
+        <Code.Snippet
+          className="w-full"
+          title="story.document.ts | story.service.ts"
+          code={`bySearch: filter()
+  .arg("text", String)
+  .query((text, q) => q.search(text, { prefix: true })),
+
+const stories = await this.listBySearch(text, { sort: "relevance" });
+const count = await this.countBySearch(text);`}
+        />
       </Scroll.Slide>
       <Divider />
 
@@ -760,10 +764,12 @@ async archiveDbBackup(dbBackupId: string) {
         <div className="space-y-3">
           <Code.Snippet
             className="w-full"
-            title="pre/post database hooks"
-            code={`override async _preCreate(data: DataInputOf<db.DbBackupInput, db.DbBackup>) {
+            title="dbBackup.service.ts"
+            code={`import { Err } from "../dict";
+
+override async _preCreate(data: DataInputOf<db.DbBackupInput, db.DbBackup>) {
   if (await this.dbBackupModel.workingBackupExists(data.devApp, data.branch)) {
-    throw new Error("Working backup exists");
+    throw new Err("dbBackup.error.workingBackupExists");
   }
   return data;
 }
@@ -772,6 +778,33 @@ override async _postCreate(doc: db.DbBackup) {
   await this.dbBackupSignal.archiveDbBackup(doc.id);
   return doc;
 }`}
+          />
+          <Docs.Description>
+            {l.trans({
+              en: (
+                <span>
+                  Never <code>throw new Error</code> in server code — <code>no-throw-raw-error</code> breaks the build,
+                  and a bare <code>Error</code> is generalized to "Internal Server Error" on the way out. Throw an{" "}
+                  <code>Err</code> keyed to the module's dictionary, and register the key there as an{" "}
+                  <code>[en, ko]</code> pair:
+                </span>
+              ),
+              ko: (
+                <span>
+                  server code에서 <code>throw new Error</code>를 쓰지 마세요. <code>no-throw-raw-error</code>가 빌드를
+                  깨뜨리고, 맨 <code>Error</code>는 나가는 길에 "Internal Server Error"로 일반화됩니다. module
+                  dictionary의 key를 가리키는 <code>Err</code>를 던지고, 그 key를 <code>[en, ko]</code> 쌍으로
+                  등록합니다:
+                </span>
+              ),
+            })}
+          </Docs.Description>
+          <Code.Snippet
+            className="w-full"
+            title="dbBackup.dictionary.ts"
+            code={`.error({
+  workingBackupExists: ["A backup is already running for this branch", "이 브랜치에서 이미 백업이 실행 중입니다."],
+})`}
           />
           <Code.Snippet
             className="w-full"

@@ -53,14 +53,28 @@ export default page().render(() => {
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title={l.trans({ en: "Developer API page", ko: "개발자 API page" })}
+          title="apps/myapp/ui/ApiDocs.tsx"
           code={`"use client";
 import { fetch } from "@apps/myapp/client";
 import { Signal } from "akanjs/ui";
 
-export default function ApiDocsPage() {
-  return <Signal.Doc.Zone fetch={fetch} refName="base" openAll />;
-}`}
+export const ApiDocs = () => <Signal.Doc.Zone fetch={fetch} refName="base" openAll />;`}
+        />
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "The Zone holds the client boundary, so the route itself stays a server page:",
+              ko: "Client 경계는 Zone이 들고 있으므로 route 자체는 server page로 남습니다:",
+            })}
+          </div>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title="apps/myapp/page/(admin)/api/_index.tsx"
+          code={`import { ApiDocs } from "@apps/myapp/ui";
+import { page } from "akanjs/client";
+
+export default page().render(() => <ApiDocs />);`}
         />
       </Scroll.Slide>
       <Divider />

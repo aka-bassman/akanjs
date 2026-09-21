@@ -1,6 +1,6 @@
 {
   "name": "@akanjs/devkit",
-  "version": "3.0.0-beta.14",
+  "version": "3.0.0-beta.17",
   "sourceType": "module",
   "type": "module",
   "publishConfig": {
@@ -28,6 +28,7 @@
     "./akanConfig": "./akanConfig/index.ts",
     "./artifact": "./artifact/index.ts",
     "./cloud": "./cloud/index.ts",
+    "./codeAgent": "./codeAgent/index.ts",
     "./commandDecorators": "./commandDecorators/index.ts",
     "./frontendBuild": "./frontendBuild/index.ts",
     "./incrementalBuilder": "./incrementalBuilder/index.ts",
@@ -38,10 +39,16 @@
     "./*": "./*.ts"
   },
   "dependencies": {
+    "@earendil-works/chord": "0.86.1",
+    "@earendil-works/pi-agent-core": "0.86.1",
+    "@earendil-works/pi-ai": "0.86.1",
+    "@earendil-works/pi-coding-agent": "0.86.1",
+    "@earendil-works/pi-telemetry": "0.86.1",
+    "@earendil-works/pi-tui": "0.86.1",
     "@inquirer/prompts": "^8.4.3",
     "@tailwindcss/node": "^4.3.0",
     "@trapezedev/project": "^7.1.4",
-    "akanjs": "3.0.0-beta.14",
+    "akanjs": "3.0.0-beta.17",
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
     "dayjs": "^1.11.20",
@@ -53,6 +60,7 @@
     "subset-font": "^2.5.0",
     "tailwind-scrollbar": "^4.0.2",
     "tailwindcss": "^4.3.0",
+    "typebox": "1.1.38",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {

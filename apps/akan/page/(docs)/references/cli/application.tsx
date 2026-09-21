@@ -53,7 +53,7 @@ const regenerateOption: ReferenceRow = {
   desc: "Delete and regenerate native project.",
 };
 const allowLocalReleaseOption: ReferenceRow = {
-  name: "--allowLocalRelease",
+  name: "--allow-local-release",
   type: "Boolean",
   defaultValue: "false",
   enumOrFlag: "flag: -l",
@@ -147,6 +147,102 @@ docker exec -it myapp sh -lc 'AKAN_CONSOLE=1 bun console.js'
 kubectl exec -it -n prod pod/myapp-xxxxx -c myapp -- sh -lc 'AKAN_CONSOLE=1 bun console.js'`,
     },
     {
+      name: "logs",
+      signature:
+        "akan logs <app> [--level <level>] [--grep <text>] [--endpoint <glob>] [--trace <traceId>] [--child <idx>] [--role <role>] [--origin <origin>] [--since <since>] [--replay <n>] [--json <boolean>] [--follow <boolean>] [--runtime-dir <dir>]",
+      desc: "Tail a running application's logs, filtered, by attaching to its `akan-control.sock`.\nEvery record carries the traceId, endpoint, and origin of the call that produced it, so the filters below narrow by call rather than by text alone. The same filters are available inside `akan console` as `.tail` and `.trace <id>`.",
+      options: [
+        {
+          name: "--level",
+          type: "String",
+          defaultValue: "-",
+          enumOrFlag: "trace | verbose | debug | info | warn | error",
+          desc: "Minimum level to print.",
+        },
+        {
+          name: "--grep",
+          type: "String",
+          defaultValue: "-",
+          enumOrFlag: "nullable",
+          desc: "Substring the message must contain.",
+        },
+        {
+          name: "--endpoint",
+          type: "String",
+          defaultValue: "-",
+          enumOrFlag: "nullable",
+          desc: "Endpoint glob(s), comma-separated: `mutation:*`, `query:userList`.",
+        },
+        {
+          name: "--trace",
+          type: "String",
+          defaultValue: "-",
+          enumOrFlag: "nullable",
+          desc: "One request's traceId, which collects every line that request produced.",
+        },
+        {
+          name: "--child",
+          type: "String",
+          defaultValue: "-",
+          enumOrFlag: "nullable",
+          desc: "Replica index(es), comma-separated.",
+        },
+        {
+          name: "--role",
+          type: "String",
+          defaultValue: "-",
+          enumOrFlag: "flag: -R",
+          desc: "Process role(s): gateway, all, batch, rsc-worker.",
+        },
+        {
+          name: "--origin",
+          type: "String",
+          defaultValue: "-",
+          enumOrFlag: "nullable",
+          desc: "Call origin(s): http, websocket, mcp, internal, page.",
+        },
+        {
+          name: "--since",
+          type: "String",
+          defaultValue: "-",
+          enumOrFlag: "nullable",
+          desc: "Only records newer than this: 5m, 30s, or epoch ms.",
+        },
+        {
+          name: "--replay",
+          type: "Number",
+          defaultValue: "0",
+          enumOrFlag: "flag: -n",
+          desc: "Records to replay from the buffer before following.",
+        },
+        {
+          name: "--json",
+          type: "Boolean",
+          defaultValue: "false",
+          enumOrFlag: "-",
+          desc: "Print NDJSON records instead of rendered lines.",
+        },
+        {
+          name: "--follow",
+          type: "Boolean",
+          defaultValue: "true",
+          enumOrFlag: "-",
+          desc: "Keep streaming. Pass `--follow false` for history only.",
+        },
+        {
+          name: "--runtime-dir",
+          type: "String",
+          defaultValue: "local/apps/<app>/runtime",
+          enumOrFlag: "flag: -d",
+          desc: "Runtime dir holding akan-control.sock.",
+        },
+      ],
+      examples: `akan logs myapp --level warn
+akan logs myapp --endpoint 'mutation:*' --replay 200
+akan logs myapp --trace 0f3c9a1b --follow false
+akan logs myapp --json true | jq 'select(.attrs.userId)'`,
+    },
+    {
       name: "build",
       signature: "akan build <app> [--write <boolean>] [--fast <boolean>] [--quiet <boolean>]",
       desc: "Build the application for production, including frontend SSR output and backend/runtime artifacts.\n`--write` refreshes generated code first, while `--fast` and `--quiet` tune build speed and terminal output.",
@@ -161,7 +257,7 @@ kubectl exec -it -n prod pod/myapp-xxxxx -c myapp -- sh -lc 'AKAN_CONSOLE=1 bun 
           desc: "Hide build progress output.",
         },
       ],
-      notes: [{ name: "short", desc: "true" }],
+      notes: [{ name: "alias", desc: "`akan b` runs this command." }],
       examples: `akan build myapp
 akan build myapp --write true --fast false --quiet false`,
     },
@@ -186,7 +282,7 @@ akan build myapp --write true --fast false --quiet false`,
           desc: "Reuse TypeScript incremental cache.",
         },
       ],
-      notes: [{ name: "short", desc: "true" }],
+      notes: [{ name: "alias", desc: "`akan t` runs this command." }],
       examples: `akan typecheck myapp
 akan typecheck myapp --clean true --incremental false`,
     },
@@ -203,7 +299,7 @@ akan test util --write false`,
       signature: "akan build-ios <app> [--target <target>] [--env <env>] [--write <boolean>] [--regenerate <boolean>]",
       desc: "Build the iOS native project for an Akan application through Capacitor.\nUse `--target` to choose a mobile target, `--env` to bind the backend environment, and `--regenerate` when native project files must be recreated.",
       options: [targetOption, debugEnvOption, writeOption, regenerateOption],
-      notes: [{ name: "short", desc: "true" }],
+      notes: [{ name: "alias", desc: "`akan bi` runs this command." }],
       examples: "akan build-ios myapp --target all --env debug",
     },
     {
@@ -212,13 +308,13 @@ akan test util --write false`,
         "akan build-android <app> [--target <target>] [--env <env>] [--write <boolean>] [--regenerate <boolean>]",
       desc: "Build the Android native project for an Akan application through Capacitor.\nUse `--target` for the mobile target, `--env` for the backend environment, and `--regenerate` when native project files need a fresh generation.",
       options: [targetOption, debugEnvOption, writeOption, regenerateOption],
-      notes: [{ name: "short", desc: "true" }],
+      notes: [{ name: "alias", desc: "`akan ba` runs this command." }],
       examples: "akan build-android myapp --target all --env debug",
     },
     {
       name: "start",
       signature:
-        "akan start [apps...] [--plain <boolean>] [--kill <boolean>] [--concurrency <number>] [--dbup <boolean>] [--open <boolean>] [--write <boolean>]",
+        "akan start [apps...] [--plain <boolean>] [--kill <boolean>] [--concurrency <number>] [--dbup <boolean>] [--open <boolean>] [--share <boolean>] [--write <boolean>]",
       desc: "Start the local development server for frontend SSR and backend runtime together.\nSeveral apps run under one supervised session — name them space- or comma-separated, pass `all`, or omit them to pick interactively — and the full-screen view is the default at every app count.",
       options: [
         {
@@ -250,12 +346,20 @@ akan test util --write false`,
           desc: "Start the local database first. The session brings up the union of the modes its apps declare, and takes down only what it started.",
         },
         { name: "--open", type: "Boolean", defaultValue: "false", enumOrFlag: "-", desc: "Open web browser." },
+        {
+          name: "--share",
+          type: "Boolean",
+          defaultValue: "false",
+          enumOrFlag: "-",
+          desc: "Also share each app on a public URL through an akan tunnel. In the full-screen view, `s` copies the selected app's public URL.",
+        },
         writeOption,
       ],
-      notes: [{ name: "short", desc: "true" }],
+      notes: [{ name: "alias", desc: "`akan s` runs this command." }],
       examples: `akan start myapp
 akan start myapp,admin --concurrency 2
-akan start all --kill true --plain true`,
+akan start all --kill true --plain true
+akan start myapp --share true`,
     },
     {
       name: "start-ios",
@@ -271,7 +375,7 @@ akan start all --kill true --plain true`,
         regenerateOption,
       ],
       notes: [
-        { name: "short", desc: "true" },
+        { name: "alias", desc: "`akan si` runs this command." },
         { name: "operation", desc: "release when --release is true, otherwise local" },
       ],
       examples: "akan start-ios myapp --target all --env local --open true",
@@ -290,7 +394,7 @@ akan start all --kill true --plain true`,
         regenerateOption,
       ],
       notes: [
-        { name: "short", desc: "true" },
+        { name: "alias", desc: "`akan sa` runs this command." },
         { name: "operation", desc: "release when --release is true, otherwise local" },
       ],
       examples: "akan start-android myapp --target all --env local --open true",
@@ -298,19 +402,19 @@ akan start all --kill true --plain true`,
     {
       name: "release-ios",
       signature:
-        "akan release-ios <app> [--target <target>] [--env <env>] [--write <boolean>] [--regenerate <boolean>] [--allowLocalRelease <boolean>]",
-      desc: "Build and package the iOS app for App Store release workflows.\nThe command defaults to the `main` backend environment and requires explicit `--allowLocalRelease` if a local release environment must be allowed.",
+        "akan release-ios <app> [--target <target>] [--env <env>] [--write <boolean>] [--regenerate <boolean>] [--allow-local-release <boolean>]",
+      desc: "Build and package the iOS app for App Store release workflows.\nThe command defaults to the `main` backend environment and requires explicit `--allow-local-release` if a local release environment must be allowed.",
       options: [targetOption, releaseEnvOption, writeOption, regenerateOption, allowLocalReleaseOption],
       examples: "akan release-ios myapp --target all --env main",
     },
     {
       name: "release-android",
       signature:
-        "akan release-android <app> [--assembleType <type>] [--target <target>] [--env <env>] [--write <boolean>] [--regenerate <boolean>] [--allowLocalRelease <boolean>]",
-      desc: "Build and package the Android app for Play Store release workflows.\n`--assembleType` selects APK or AAB output, while environment, target, regeneration, and local-release options control the release artifact.",
+        "akan release-android <app> [--assemble-type <type>] [--target <target>] [--env <env>] [--write <boolean>] [--regenerate <boolean>] [--allow-local-release <boolean>]",
+      desc: "Build and package the Android app for Play Store release workflows.\n`--assemble-type` selects APK or AAB output, while environment, target, regeneration, and local-release options control the release artifact.",
       options: [
         {
-          name: "--assembleType",
+          name: "--assemble-type",
           type: "String",
           defaultValue: "apk",
           enumOrFlag: "apk | aab",
@@ -322,13 +426,13 @@ akan start all --kill true --plain true`,
         regenerateOption,
         allowLocalReleaseOption,
       ],
-      examples: `akan release-android myapp --assembleType apk --target all --env main
-akan release-android myapp --assembleType aab --target all --env main`,
+      examples: `akan release-android myapp --assemble-type apk --target all --env main
+akan release-android myapp --assemble-type aab --target all --env main`,
     },
     {
       name: "release-source",
       signature:
-        "akan release-source <app> [--rebuild <boolean>] [--buildNum <number>] [--environment <environment>] [--local <boolean>]",
+        "akan release-source <app> [--rebuild <boolean>] [--build-num <number>] [--environment <environment>] [--local <boolean>]",
       desc: "Release application source code for mobile OTA-oriented update workflows.\nUse build number, environment, rebuild, and local flags to describe the source release payload sent through the update process.",
       options: [
         {
@@ -338,11 +442,11 @@ akan release-android myapp --assembleType aab --target all --env main`,
           enumOrFlag: "-",
           desc: "Rebuild before release source.",
         },
-        { name: "--buildNum", type: "Number", defaultValue: "0", enumOrFlag: "-", desc: "Build number." },
+        { name: "--build-num", type: "Number", defaultValue: "0", enumOrFlag: "-", desc: "Build number." },
         { name: "--environment", type: "String", defaultValue: "debug", enumOrFlag: "-", desc: "Environment." },
         { name: "--local", type: "Boolean", defaultValue: "true", enumOrFlag: "-", desc: "Local mode." },
       ],
-      examples: "akan release-source myapp --environment debug --buildNum 12 --local true",
+      examples: "akan release-source myapp --environment debug --build-num 12 --local true",
     },
     {
       name: "codepush",

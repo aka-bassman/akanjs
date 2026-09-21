@@ -130,9 +130,12 @@ export class RequestUserMiddleware implements Middleware {
 
   async use() {
     return async (context: SignalContext, next: () => Promise<unknown>) => {
-      const req = context.getHttpContext<{ user?: { id: string } }>().req;
-      req.user = await resolveUserFromRequest(req);
-      return next();
+      // Middleware is the one place that branches on transport: it writes the value every guard
+      // and InternalArg later reads back through context.get(...).
+      const req =
+        context.transport === "http" ? context.getHttpContext().req : context.getWebSocketContext().ws.data;
+      Object.assign(req, { account: await resolveAccountFromRequest(req) });
+      return await next();
     };
   }
 }`}
@@ -230,23 +233,37 @@ Exec --> Service["Service logic"]`}
               <Code.Snippet
                 className="w-full"
                 title="srvkit/guards.ts"
-                code={`import type { Guard, SignalContext } from "akanjs/signal";
+                code={`import type { Guard, GuardScope, SignalContext } from "akanjs/signal";
 
 export class SignedIn implements Guard {
+  // fetch serializes guard names and the API explorer filters on them; deleting this breaks that UI.
   static name = "SignedIn";
+  static scope: GuardScope = "account";
 
   canPass(context: SignalContext): boolean {
-    const user = context.getHttpContext<{ user?: { id: string } }>().req.user;
-    return !!user;
+    return !!context.get<{ self?: { id: string } }>("account")?.self;
+  }
+}
+
+export class CanCancelOrder implements Guard {
+  static name = "CanCancelOrder";
+  static scope: GuardScope = "resource";
+
+  async canPass(context: SignalContext): Promise<boolean> {
+    const self = context.get<{ self?: { id: string } }>("account")?.self;
+    const orderId = context.getArg<string>("orderId");
+    if (!self || !orderId) return false;
+    const order = await orderModel.findById(orderId);
+    return order?.owner === self.id;
   }
 }`}
               />
               <Code.Snippet
                 className="w-full"
                 title="order.signal.ts"
-                code={`import { SignedIn } from "@apps/myapp/srvkit";
+                code={`import { CanCancelOrder, SignedIn } from "@apps/myapp/srvkit";
 export class OrderEndpoint extends endpoint(srv.order, ({ pubsub, query, mutation }) => ({
-  cancelOrder: mutation(cnst.Order, { guards: [SignedIn] }) // [!code highlight:1]
+  cancelOrder: mutation(cnst.Order, { guards: [SignedIn, CanCancelOrder] }) // [!code highlight:1]
     .param("orderId", ID)
     .exec(async function (orderId) {
       return await this.orderService.cancelOrder(orderId);
@@ -254,6 +271,51 @@ export class OrderEndpoint extends endpoint(srv.order, ({ pubsub, query, mutatio
 })) {}`}
               />
             </div>
+            <Docs.Description>
+              <div>
+                {l.trans({
+                  en: (
+                    <span>
+                      <code>static scope</code> is required with no default. <code>"account"</code> means the verdict
+                      reads the caller and nothing about the call, so an MCP listing can evaluate it with no arguments
+                      and hide what this caller certainly cannot use. <code>"resource"</code> means it needs the call's
+                      arguments, so it is never evaluated for a listing — the entry stays visible and is stopped at call
+                      time.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      <code>static scope</code>는 기본값 없이 반드시 선언합니다. <code>"account"</code>는 판정이
+                      호출자만 읽고 호출 내용은 보지 않는다는 뜻이라, MCP listing이 인자 없이 평가해 이 호출자가 확실히
+                      쓸 수 없는 항목을 숨길 수 있습니다. <code>"resource"</code>는 호출의 인자가 필요하다는 뜻이라
+                      listing에서는 평가하지 않습니다. 항목은 그대로 보이고 호출 시점에 막힙니다.
+                    </span>
+                  ),
+                })}
+              </div>
+              <div>
+                {l.trans({
+                  en: (
+                    <span>
+                      Guards run on websocket calls too, and a pubsub room re-runs them whenever the socket's credential
+                      changes — so read the caller with <code>context.get("account")</code> rather than branching on{" "}
+                      <code>getHttpContext()</code>, and keep the body side-effect free and safe to re-run. They fail
+                      closed: no resource named means <code>false</code>, and a load that throws means{" "}
+                      <code>logger.warn</code> then <code>false</code>.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      Guard는 websocket 호출에서도 실행되고, pubsub room은 socket의 credential이 바뀔 때마다 guard를
+                      다시 실행합니다. 그러므로 <code>getHttpContext()</code>로 분기하지 말고{" "}
+                      <code>context.get("account")</code>로 호출자를 읽고, 본문은 side effect 없이 다시 실행해도
+                      안전하게 유지합니다. Guard는 fail closed입니다. 가리키는 resource가 없으면 <code>false</code>,
+                      조회가 throw하면 <code>logger.warn</code> 후 <code>false</code>입니다.
+                    </span>
+                  ),
+                })}
+              </div>
+            </Docs.Description>
           </div>
           <div className={panelRecipe({ radius: "2xl" })}>
             <Docs.Description>
@@ -273,16 +335,16 @@ export class OrderEndpoint extends endpoint(srv.order, ({ pubsub, query, mutatio
 
 export class CurrentUserId implements InternalArg {
   getArg(context: SignalContext) {
-    return context.getHttpContext<{ user?: { id: string } }>().req.user?.id ?? null;
+    return context.get<{ self?: { id: string } }>("account")?.self?.id ?? null;
   }
 }`}
               />
               <Code.Snippet
                 className="w-full"
                 title="signal exec shape"
-                code={`import { SignedIn } from "@apps/myapp/srvkit";
+                code={`import { CanCancelOrder, SignedIn } from "@apps/myapp/srvkit";
 export class OrderEndpoint extends endpoint(srv.order, ({ pubsub, query, mutation }) => ({
-  cancelOrder: mutation(cnst.Order)
+  cancelOrder: mutation(cnst.Order, { guards: [SignedIn, CanCancelOrder] })
     .param("orderId", ID)
     .with(CurrentUserId, { nullable: true }) // [!code highlight:2]
     .exec(async function (orderId, currentUserId) {
@@ -311,15 +373,35 @@ export class OrderEndpoint extends endpoint(srv.order, ({ pubsub, query, mutatio
             })}
           </div>
         </Docs.Description>
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: (
+              <span>
+                The <code>option.ts</code> + <code>use&lt;T&gt;()</code> pair below is the legacy shape, kept because
+                existing code is written in it. New adapters are an <code>adapt()</code> class injected with{" "}
+                <code>plug()</code> — the next slide — which self-registers and needs no <code>option.ts</code> entry.
+                Recognise this shape; do not copy it forward.
+              </span>
+            ),
+            ko: (
+              <span>
+                아래의 <code>option.ts</code> + <code>use&lt;T&gt;()</code> 조합은 기존 코드가 이 형태로 작성돼 있어
+                유지되는 legacy shape입니다. 새 adapter는 다음 슬라이드의 <code>adapt()</code> class이고{" "}
+                <code>plug()</code>로 주입하며, 스스로 등록하므로 <code>option.ts</code> 항목이 필요 없습니다. 이 형태는
+                알아보되 새로 쓰지는 마세요.
+              </span>
+            ),
+          })}
+        </Docs.Alert>
         <div className={cardGridRecipe()}>
           <Code.Snippet
             className="w-full"
             title="srvkit/createHash.ts"
             code={`import { createHash } from "crypto";
 
-export function createOrderHash(orderId: string) {
+export const createOrderHash = (orderId: string) => {
   return createHash("sha256").update(orderId).digest("hex");
-}`}
+};`}
           />
           <Code.Snippet
             className="w-full"
@@ -386,7 +468,7 @@ interface PaymentOptions {
   endpoint: string;
 }
 
-export class PaymentApi extends adapt("paymentApi", ({ env }) => ({
+export class PaymentApi extends adapt("paymentApi" as const, ({ env }) => ({
   endpoint: env((option: PaymentOptions) => option.endpoint),
 })) {
   async requestPayment(orderId: string, amount: number) {

@@ -101,16 +101,16 @@ const position = await getPosition();`,
     {
       name: "usePushNotification",
       desc: l.trans({
-        en: "Unified push notification client hook for web and native apps. It requests permission, registers the runtime, returns a PushToken, and bridges notification clicks through `data.url` when supported.",
-        ko: "web/native 앱을 위한 통합 push notification client hook입니다. permission 요청, runtime 등록, PushToken 반환을 처리하고 지원되는 경우 notification click을 `data.url` deep link로 연결합니다.",
+        en: "Moved out of the framework: push lives in `@libs/util/webkit`, not `akanjs/webkit`. The hook is unchanged — it reports support, requests permission, registers the runtime, returns a PushToken, and bridges notification clicks through `data.url` — but an app reaches it through the util library it already depends on.",
+        ko: "framework에서 빠졌습니다. push는 `akanjs/webkit`이 아니라 `@libs/util/webkit`에 있습니다. hook 자체는 그대로여서 지원 여부 확인, permission 요청, runtime 등록, PushToken 반환, `data.url` deep link 연결을 처리하지만, app은 이미 의존하고 있는 util library를 통해 접근합니다.",
       }),
-      code: `import { usePushNotification } from "akanjs/webkit";
+      code: `import { type PushToken, usePushNotification } from "@libs/util/webkit";
 
 const push = usePushNotification();
-const pushToken = await push.register();
+const pushToken: PushToken | undefined = await push.register();
 
 if (pushToken) {
-  await appApi.registerPushToken(pushToken);
+  await onPushToken(pushToken);
 }`,
     },
     {
@@ -146,8 +146,8 @@ const form: LoginForm = {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "`akanjs/webkit` contains browser-only React helpers and native-capability hooks. Import it for lazy browser components, debounce/throttle/interval hooks, promise state, CSR navigation state, and Capacitor camera/contact/location/push flows.",
-              ko: "`akanjs/webkit`은 browser-only React helper와 native-capability hook을 제공합니다. lazy browser component, debounce/throttle/interval hook, promise state, CSR navigation state, Capacitor camera/contact/location/push flow에 사용합니다.",
+              en: "`akanjs/webkit` contains browser-only React helpers and native-capability hooks. Import it for lazy browser components, debounce/throttle/interval hooks, promise state, CSR navigation state, and Capacitor camera/contact/location flows. Push notification moved to `@libs/util/webkit` and is listed below under its new home.",
+              ko: "`akanjs/webkit`은 browser-only React helper와 native-capability hook을 제공합니다. lazy browser component, debounce/throttle/interval hook, promise state, CSR navigation state, Capacitor camera/contact/location flow에 사용합니다. push notification은 `@libs/util/webkit`으로 옮겨 갔고 아래에 새 위치와 함께 정리해 두었습니다.",
             })}
           </div>
         </Docs.Description>

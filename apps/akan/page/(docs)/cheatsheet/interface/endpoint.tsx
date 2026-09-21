@@ -68,16 +68,40 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Keep the endpoint thin. It receives parameters, checks guards if needed, and calls the service method.",
-              ko: "Endpoint는 얇게 유지하세요. 필요한 값을 받고, guard를 확인하고, service method를 호출하면 됩니다.",
+              en: "Keep the endpoint thin. It receives parameters, names its guards, and calls the service method.",
+              ko: "Endpoint는 얇게 유지하세요. 필요한 값을 받고, guard를 선언하고, service method를 호출하면 됩니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Every custom mutation names its own <code>guards</code> array. A slice-level guard map never reaches a
+                  custom endpoint, so one declared without guards is both unauthorized and silently refused from the MCP
+                  catalogue.
+                </span>
+              ),
+              ko: (
+                <span>
+                  모든 custom mutation은 자기 <code>guards</code> 배열을 직접 선언합니다. Slice의 guard map은 custom
+                  endpoint까지 닿지 않기 때문에, guard 없이 선언한 endpoint는 인가가 비어 있을 뿐 아니라 MCP
+                  카탈로그에서도 조용히 제외됩니다.
+                </span>
+              ),
             })}
           </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title={l.trans({ en: "Publish endpoint", ko: "발행 endpoint" })}
-          code={`export class PostEndpoint extends endpoint(srv.post, ({ mutation }) => ({
-  publishPost: mutation(cnst.Post)
+          title="apps/myapp/lib/post/post.signal.ts"
+          code={`import { Owner } from "@libs/shared/srvkit";
+import { ID } from "akanjs/base";
+import { endpoint } from "akanjs/signal";
+import * as cnst from "../cnst";
+import * as srv from "../srv";
+
+export class PostEndpoint extends endpoint(srv.post, ({ mutation }) => ({
+  publishPost: mutation(cnst.Post, { guards: [Owner] })
     .param("postId", ID)
     .exec(async function (postId) {
       return await this.postService.publishPost(postId);
@@ -96,17 +120,67 @@ export default page().render(() => {
               ko: "Service는 업무 규칙을 쓰는 곳입니다. 예를 들어 게시글은 제목과 내용이 있을 때만 발행할 수 있습니다.",
             })}
           </div>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  A refusal is always <code>new Err("&lt;module&gt;.error.&lt;key&gt;")</code>. A raw{" "}
+                  <code>throw new Error</code> breaks the build, and it also carries no key the dictionary could
+                  translate for the reader.
+                </span>
+              ),
+              ko: (
+                <span>
+                  거절은 항상 <code>new Err("&lt;module&gt;.error.&lt;key&gt;")</code>입니다.{" "}
+                  <code>throw new Error</code>는 build를 깨뜨리고, dictionary가 번역할 key도 남기지 않습니다.
+                </span>
+              ),
+            })}
+          </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title={l.trans({ en: "Service method", ko: "Service method" })}
-          code={`export class PostService extends serve(db.post, () => ({})) {
+          title="apps/myapp/lib/post/post.service.ts"
+          code={`import { serve } from "akanjs/service";
+import * as db from "../db";
+import { Err } from "../dict";
+
+export class PostService extends serve(db.post, () => ({})) {
   async publishPost(postId: string) {
     const post = await this.getPost(postId);
-    if (!post.title || !post.content) throw new Error("Post is not ready");
+    if (!post.title || !post.content) throw new Err("post.error.notReady");
     return await post.set({ status: "published" }).save();
   }
 }`}
+        />
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "The key only exists once the module dictionary registers it as an [en, ko] pair:",
+              ko: "그 key는 module dictionary에 [en, ko] 쌍으로 등록해야 존재합니다:",
+            })}
+          </div>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title="apps/myapp/lib/post/post.dictionary.ts"
+          code={`export const dictionary = modelDictionary(["en", "ko"])
+  .of((t) => t(["Post", "게시글"]).desc(["A post a member writes", "회원이 작성하는 게시글"]))
+  // [!code collapse:5]
+  .model<Post>((t) => ({}))
+  .insight<PostInsight>((t) => ({}))
+  .query<PostFilter>((fn) => ({}))
+  .sort<PostFilter>((t) => ({}))
+  .slice<PostSlice>((fn) => ({}))
+  .endpoint<PostEndpoint>((fn) => ({
+    publishPost: fn(["Publish Post", "게시글 발행"]).desc([
+      "Publish a draft post so readers can see it",
+      "초안 게시글을 발행해 독자에게 공개합니다",
+    ]),
+  }))
+  .error({
+    notReady: ["Post is not ready to publish", "게시글을 발행할 준비가 되지 않았습니다"],
+  });`}
         />
       </Scroll.Slide>
       <Divider />
@@ -147,14 +221,17 @@ export default page().render(() => {
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title={l.trans({ en: "Publish button", ko: "발행 버튼" })}
+          title="apps/myapp/lib/post/Post.Util.tsx"
           code={`"use client";
+import { st, usePage } from "@apps/myapp/client";
+import { buttonRecipe } from "akanjs/ui";
+
 interface PublishProps {
   className?: string;
   postId: string;
 }
 
-export const Publish = ({ postId }: PublishProps) => {
+export const Publish = ({ className, postId }: PublishProps) => {
   const { l } = usePage();
   return (
     <button className={buttonRecipe({ variant: "primary" }, className)} onClick={() => st.do.publishPost(postId)}>

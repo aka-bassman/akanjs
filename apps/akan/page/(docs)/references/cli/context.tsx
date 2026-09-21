@@ -51,7 +51,7 @@ akan context --module user`,
     },
     {
       name: "doctor",
-      signature: "akan doctor [--format <format>] [--strict <boolean>]",
+      signature: "akan doctor [--format <format>] [--strict <boolean>] [--ios <boolean>]",
       desc: "Report Akan workspace convention diagnostics.\nUse it before or after agent changes to catch unsupported files, missing module abstracts, and convention drift in machine-readable form.",
       options: [
         {
@@ -68,6 +68,13 @@ akan context --module user`,
           enumOrFlag: "-",
           desc: "Treat recommended conventions such as missing module abstracts as errors.",
         },
+        {
+          name: "--ios",
+          type: "Boolean",
+          defaultValue: "false",
+          enumOrFlag: "-",
+          desc: "Also report iOS/mobile config diagnostics, such as a placeholder bundle id that Apple's portal already has claimed.",
+        },
       ],
       examples: `akan doctor
 akan doctor --format json
@@ -75,16 +82,30 @@ akan doctor --format json --strict true`,
     },
     {
       name: "mcp",
-      signature: "akan mcp",
-      desc: "Start the read-only Akan MCP server over stdio.\nThe server exposes workspace context, module context, guideline instructions, command explanations, diagnostics, and resources for MCP-aware coding agents.",
+      signature: "akan mcp [--mode <readonly|plan|apply>]",
+      desc: "Start the Akan MCP server over stdio.\nThe server exposes workspace context, module context, guideline instructions, command explanations, diagnostics, and resources for MCP-aware coding agents.\nHow much it may do is the `--mode` option, and the default is the narrowest one.",
+      options: [
+        {
+          name: "--mode",
+          type: "String",
+          defaultValue: "readonly",
+          enumOrFlag: "readonly | plan | apply",
+          desc: "Permission mode. `readonly` answers questions only. `plan` adds `list_workflows`, `explain_workflow`, and `plan_workflow`, which write a plan file and nothing else. `apply` adds `apply_workflow`, `run_validation`, and the repair tools, so it edits source.",
+        },
+      ],
       notes: [
-        { name: "mode", desc: "Read-only. It does not write files, scaffold modules, or call LLM providers." },
+        {
+          name: "workflow policy",
+          desc: "The agent guide tells agents to inspect with `--mode plan` and then apply with `--mode apply`, preferring a workflow to a direct source edit.",
+        },
         {
           name: "module context",
           desc: "`get_module_context` returns the module abstract first, then surrounding module file metadata.",
         },
       ],
-      examples: "akan mcp",
+      examples: `akan mcp
+akan mcp --mode plan
+akan mcp --mode apply`,
     },
   ];
 
@@ -101,8 +122,8 @@ akan doctor --format json --strict true`,
           </div>
           <div>
             {l.trans({
-              en: "Use `context` to understand the workspace, `doctor` to validate conventions, and `mcp` when an MCP-aware client should query the same information over stdio.",
-              ko: "`context`는 workspace 이해에, `doctor`는 convention 검증에, `mcp`는 MCP client가 같은 정보를 stdio로 조회해야 할 때 사용합니다.",
+              en: "Use `context` to understand the workspace, `doctor` to validate conventions, and `mcp` when an MCP-aware client should reach the same information over stdio. What that client may do is the `--mode` option on `mcp`, not a property of the command.",
+              ko: "`context`는 workspace 이해에, `doctor`는 convention 검증에, `mcp`는 MCP client가 같은 정보를 stdio로 접근해야 할 때 사용합니다. 그 client가 무엇까지 할 수 있는지는 command 자체가 아니라 `mcp`의 `--mode` option이 결정합니다.",
             })}
           </div>
         </Docs.Description>

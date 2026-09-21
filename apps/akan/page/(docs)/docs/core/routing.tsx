@@ -548,8 +548,8 @@ export default rootLayout()
             {
               name: ".reconnect(boolean)",
               desc: l.trans({
-                en: "Controls whether the client tries to reconnect to realtime runtime channels.",
-                ko: "클라이언트가 실시간 런타임 채널에 다시 연결할지 정합니다.",
+                en: "Mounts the connection-lost overlay that appears when the socket drops and reports when it is back. The socket reconnects on its own either way. Defaults to on when operationMode is local.",
+                ko: "소켓이 끊겼을 때 나타나고 복구되면 알려주는 연결 끊김 오버레이를 띄울지 정합니다. 오버레이와 무관하게 소켓은 스스로 재연결합니다. operationMode가 local이면 기본값은 켜짐입니다.",
               }),
             },
             {

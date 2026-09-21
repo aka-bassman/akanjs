@@ -224,7 +224,7 @@ export const dictionary = modelDictionary(["en", "ko"])
             title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Template.tsx"
             code={`
 "use client"; // [!code collapse:4]
-import { Field, Layout, buttonRecipe } from "akanjs/ui";
+import { Field, Layout } from "akanjs/ui";
 import { cnst, st, usePage } from "@apps/koyo/client";
 
 interface GeneralProps {
@@ -279,7 +279,7 @@ export const General = ({ className, showServeType = true }: GeneralProps) => { 
             title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Unit.tsx"
             code={`
 import { cn, type ModelProps } from "akanjs/client"; // [!code collapse:7]
-import { Model } from "akanjs/ui";
+import { Model, buttonRecipe } from "akanjs/ui";
 import { cnst, fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
 
 interface CardProps extends ModelProps<"icecreamOrder", cnst.LightIcecreamOrder> {

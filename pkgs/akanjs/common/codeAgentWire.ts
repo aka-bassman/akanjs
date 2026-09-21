@@ -29,6 +29,9 @@ export const codeAgentLabelChars = 200;
 /** A tool result on the wire. The model's own copy is not clipped. */
 export const codeAgentOutputChars = 2_000;
 
+/** How hard the model is asked to think before it answers. */
+export type CodeAgentEffort = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface CodeAgentSessionInfo {
   sessionId: string;
   cwd: string;
@@ -37,6 +40,10 @@ export interface CodeAgentSessionInfo {
   tools: string[];
   /** Absent when the model reports no window, which is not the same as a window of zero. */
   contextTokens: number | undefined;
+  /** Absent when the model does no reasoning at all — which is not the same as reasoning turned `off`. */
+  effort: CodeAgentEffort | undefined;
+  /** What this session calls itself, once it has been asked something. */
+  name: string | undefined;
   /**
    * Whether asking a person ends the turn, read once instead of inferred per question.
    *
@@ -147,6 +154,23 @@ export interface CodeAgentApprovalRequest {
   policy: CodeAgentApprovalPolicy;
 }
 
+/**
+ * One sub-agent the `task` tool is currently running.
+ *
+ * `tokens` is read at the moment the frame is made, so a host that draws this rail sees the child's spend
+ * climb rather than learning it only once the child is gone — which is the number that decides whether to
+ * let it keep going. A finished sub-agent leaves the list: what it did is already in the tool row it closed.
+ */
+export interface CodeAgentSubagent {
+  /** The `task` call that opened it, so a host can line the row up with the tool row above. */
+  id: string;
+  kind: string;
+  /** The three-to-five words the model named the task with. */
+  description: string;
+  startedAt: number;
+  tokens: number;
+}
+
 export type CodeAgentEventBody =
   | { type: "session"; info: CodeAgentSessionInfo }
   | { type: "turn_start"; turnId: string }
@@ -173,6 +197,15 @@ export type CodeAgentEventBody =
   | { type: "retry"; attempt: number; maxAttempts: number; delayMs: number; message: string }
   | { type: "queue"; steering: string[]; followUp: string[] }
   | { type: "notice"; level: "info" | "warning" | "error"; message: string }
+  /**
+   * Every sub-agent running right now, whole rather than as a delta.
+   *
+   * A list is re-sent on every change and on a slow tick while any child runs, so a host that missed a frame
+   * converges on the next one instead of holding a row for a child that finished. It is the one thing a turn
+   * does that the transcript cannot show: a `task` call is one tool row that stays open for minutes while its
+   * child spends tokens nobody watching sees spent.
+   */
+  | { type: "subagent"; agents: CodeAgentSubagent[] }
   | { type: "error"; message: string; fatal: boolean }
   | { type: "idle" }
   /**
@@ -229,6 +262,7 @@ export const codeAgentEventPersistence: { [key in CodeAgentEventType]: "live" | 
   retry: "live",
   queue: "live",
   notice: "live",
+  subagent: "live",
   error: "persist",
   idle: "live",
   host: "live",
@@ -244,6 +278,29 @@ export const codeAgentEventPersistence: { [key in CodeAgentEventType]: "live" | 
  * side and diverge the first time one of them handed the other its own form.
  */
 export type CodeAgentImage = { path: string } | { data: string; mime: string };
+
+/**
+ * The name a session takes from the first thing it was asked.
+ *
+ * Derived from the text rather than written by the model: a session name is worth one glance in a list, and
+ * generating one would be a second request standing between the person and their first answer — charged again
+ * on every session that is opened and abandoned.
+ */
+export const codeAgentSessionName = (text: string, max = 40) => {
+  const words = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => !!word);
+  const name: string[] = [];
+  for (const word of words) {
+    if (name.length && [...name, word].join("-").length > max) break;
+    name.push(word);
+  }
+  return name.join("-").slice(0, max) || "session";
+};
 
 export type CodeAgentCommand =
   | { type: "prompt"; message: string; images?: CodeAgentImage[]; deliverAs?: "steer" | "followUp" }
@@ -352,6 +409,10 @@ export const codeAgentEventLabel = (event: CodeAgentEventBody): string => {
       return `queued ${event.steering.length} steering, ${event.followUp.length} follow-up`;
     case "notice":
       return `[${event.level}] ${event.message}`;
+    case "subagent":
+      return event.agents.length
+        ? event.agents.map((agent) => `${agent.kind} · ${agent.description}`).join(" | ")
+        : "no sub-agent running";
     case "error":
       return `error: ${event.message}`;
     case "idle":

@@ -9,11 +9,11 @@ export default page().render(() => {
   const commands: CommandReferenceItem[] = [
     {
       name: "create-crud-page",
-      signature: "akan create-crud-page <app> <module> [--basePath <basePath>] [--single <boolean>]",
-      desc: "Create CRUD page routes for an existing module inside a selected application.\nThe generator creates list, detail, create, and edit surfaces, with `--basePath` for section routing and `--single` for a single-page CRUD flow.",
+      signature: "akan create-crud-page <app> <module> [--base-path <basePath>] [--single <boolean>]",
+      desc: "Create CRUD page routes for an existing module inside a selected application.\nThe generator creates list, detail, create, and edit surfaces, with `--base-path` for section routing and `--single` for a single-page CRUD flow.",
       options: [
         {
-          name: "--basePath",
+          name: "--base-path",
           type: "String",
           defaultValue: "-",
           enumOrFlag: "nullable",
@@ -28,7 +28,7 @@ export default page().render(() => {
         },
       ],
       examples: `akan create-crud-page shop Product
-akan create-crud-page shop Product --basePath admin
+akan create-crud-page shop Product --base-path admin
 akan create-crud-page shop Product --single true`,
     },
   ];

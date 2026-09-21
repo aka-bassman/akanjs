@@ -6,23 +6,24 @@ import { Code } from "../Code";
 export interface OptionItem {
   key: string;
   desc: ReactNode;
-  example: string;
+  example?: string;
   type: string;
   default?: string;
 }
 export const OptionTable = ({ items }: { items: OptionItem[] }) => {
   const { l } = usePage();
+  const hasExample = items.some((item) => !!item.example);
 
   return (
     <>
       <div className="hidden overflow-x-auto lg:block">
         <table className="table w-full table-fixed">
           <colgroup>
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "30%" }} />
-            <col style={{ width: "40%" }} />
+            <col style={{ width: hasExample ? "10%" : "16%" }} />
+            <col style={{ width: hasExample ? "10%" : "16%" }} />
+            <col style={{ width: hasExample ? "10%" : "16%" }} />
+            <col style={{ width: hasExample ? "30%" : "52%" }} />
+            {hasExample ? <col style={{ width: "40%" }} /> : null}
           </colgroup>
           <thead>
             <tr className="bg-border">
@@ -30,7 +31,9 @@ export const OptionTable = ({ items }: { items: OptionItem[] }) => {
               <th className="text-foreground text-xs lg:text-sm">{l.trans({ en: "Type", ko: "타입" })}</th>
               <th className="text-foreground text-xs lg:text-sm">{l.trans({ en: "Default", ko: "기본값" })}</th>
               <th className="text-foreground text-xs lg:text-sm">{l.trans({ en: "Description", ko: "설명" })}</th>
-              <th className="text-foreground text-xs lg:text-sm">{l.trans({ en: "Example", ko: "예제" })}</th>
+              {hasExample ? (
+                <th className="text-foreground text-xs lg:text-sm">{l.trans({ en: "Example", ko: "예제" })}</th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -40,9 +43,9 @@ export const OptionTable = ({ items }: { items: OptionItem[] }) => {
                 <td className="font-mono text-xs lg:text-sm">{item.type}</td>
                 <td className="text-xs lg:text-sm">{item.default ?? "-"}</td>
                 <td className="text-xs lg:text-sm">{item.desc}</td>
-                <td>
-                  <Code.Raw language="typescript" code={item.example} />
-                </td>
+                {hasExample ? (
+                  <td>{item.example ? <Code.Raw language="typescript" code={item.example} /> : null}</td>
+                ) : null}
               </tr>
             ))}
           </tbody>
@@ -60,7 +63,7 @@ export const OptionTable = ({ items }: { items: OptionItem[] }) => {
               <span className="font-mono text-secondary text-sm">{item.default ?? "-"}</span>
             </div>
             <p className="mb-3 text-foreground text-sm leading-relaxed">{item.desc}</p>
-            <Code.Raw language="typescript" code={item.example} />
+            {item.example ? <Code.Raw language="typescript" code={item.example} /> : null}
           </div>
         ))}
       </div>

@@ -272,8 +272,8 @@ export const option = new AkanOption<ModulesOptions>()
           </div>
           <div>
             {l.trans({
-              en: "Reading is per key, not per store: a key the screen does not read stays unreadable even while a sibling key of the same store is live, and every read is masked by the model that key declares. hidden and secret fields never cross the boundary. Base-store plumbing is subscribed with `{ agent: false }` so routing and the caller's credential stay off the surface; a component that wants an agent to read a base key opts it in, as ThemeToggle does for theme.",
-              ko: "읽기는 스토어 단위가 아니라 키 단위입니다. 같은 스토어의 형제 키가 live여도 화면이 읽지 않는 키는 읽히지 않고, 모든 읽기는 그 키가 선언한 모델로 마스킹됩니다. hidden·secret 필드는 경계를 넘지 않습니다. base 스토어의 plumbing은 `{ agent: false }`로 구독해서 라우팅과 호출자의 자격증명이 표면에 올라가지 않게 하고, 에이전트가 읽어야 하는 키는 ThemeToggle의 theme처럼 옵트인합니다.",
+              en: "Reading is per key, not per store: a key the screen does not read stays unreadable even while a sibling key of the same store is live, and every read is masked by the model that key declares. hidden and secret fields never cross the boundary. Readability is opt-out, not opt-in: a subscribed key joins the surface unless the read says otherwise, and base-store plumbing says otherwise — routing, the caller's credential and the UI operation are all subscribed with `{ agent: false }`. A component that wants an agent to read a base key writes a plain read, as ThemeToggle does for theme.",
+              ko: "읽기는 스토어 단위가 아니라 키 단위입니다. 같은 스토어의 형제 키가 live여도 화면이 읽지 않는 키는 읽히지 않고, 모든 읽기는 그 키가 선언한 모델로 마스킹됩니다. hidden·secret 필드는 경계를 넘지 않습니다. 읽기는 옵트인이 아니라 옵트아웃입니다. 구독한 키는 따로 막지 않는 한 표면에 올라가며, base 스토어의 plumbing은 그것을 막습니다 — 라우팅, 호출자의 자격증명, UI operation은 모두 `{ agent: false }`로 구독합니다. 에이전트가 읽어야 하는 base 키는 ThemeToggle의 theme처럼 그냥 평범하게 읽으면 됩니다.",
             })}
           </div>
         </Docs.Description>

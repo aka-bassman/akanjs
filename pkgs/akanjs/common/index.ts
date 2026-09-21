@@ -8,6 +8,7 @@ export {
   readAuthToken,
 } from "./authToken";
 export { CodeAgentClient, type CodeAgentTransport } from "./CodeAgentClient";
+export { CodeTranscript, type CodeTranscriptPart } from "./CodeTranscript";
 export { capitalize } from "./capitalize";
 export { clamp } from "./clamp";
 export {
@@ -21,11 +22,13 @@ export {
   type CodeAgentBuiltinTool,
   type CodeAgentInteractionMode,
   type CodeAgentMcpServerRef,
+  type CodeAgentMcpStatus,
   type CodeAgentPresetName,
   type CodeAgentProfile,
   type CodeAgentSubagentBudget,
   codeAgentDeniedPaths,
   codeAgentPresets,
+  codeAgentReadOnlyBuiltins,
   isCodeAgentPresetName,
 } from "./codeAgentProfile";
 export {
@@ -33,6 +36,7 @@ export {
   type CodeAgentApprovalRequest,
   type CodeAgentCommand,
   type CodeAgentCommandType,
+  type CodeAgentEffort,
   type CodeAgentEvent,
   type CodeAgentEventBody,
   type CodeAgentEventType,
@@ -46,6 +50,7 @@ export {
   type CodeAgentStartOptions,
   type CodeAgentState,
   type CodeAgentStopReason,
+  type CodeAgentSubagent,
   type CodeAgentToolOp,
   type CodeAgentToolOutcome,
   type CodeAgentToolSummary,
@@ -55,6 +60,7 @@ export {
   codeAgentLabelChars,
   codeAgentOutputChars,
   codeAgentRenderAnswer,
+  codeAgentSessionName,
   codeAgentShouldPersist,
   codeAgentWireVersion,
   isCodeAgentReply,
@@ -110,6 +116,9 @@ export {
   registerLogContextReader,
 } from "./logContext";
 export { lowerlize } from "./lowerlize";
+export { type MarkdownBlock, MarkdownBlocks, type MarkdownItem } from "./markdownBlocks";
+export { type MarkdownSpan, MarkdownSpans } from "./markdownSpans";
+export { type Align, MarkdownTable, type TableBlock } from "./markdownTable";
 export {
   isMcpDescribableArg,
   type McpExposureEndpoint,

@@ -14,8 +14,19 @@ class FakeStdout extends EventEmitter {
     this.frames.push(frame);
     return true;
   };
+  /**
+   * The last frame that drew something.
+   *
+   * With a cursor position set, Ink follows a content frame with a cursor-only write, so the literal last
+   * frame is a move sequence and nothing else.
+   */
   get lastFrame() {
-    return (this.frames.at(-1) ?? "").replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
+    const csi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[a-zA-Z]`, "g");
+    for (let at = this.frames.length - 1; at >= 0; at -= 1) {
+      const text = (this.frames[at] ?? "").replace(csi, "");
+      if (text.trim()) return text;
+    }
+    return "";
   }
 }
 
@@ -44,7 +55,7 @@ const keys = {
   backspace: String.fromCharCode(127),
 };
 
-const lineOf = (key: string, text: string): CodeTuiLine => ({ key, text });
+const lineOf = (key: string, text: string): CodeTuiLine => ({ key, spans: [{ text }] });
 
 interface Harness {
   stdout: FakeStdout;
@@ -63,16 +74,27 @@ const mount = (patch: Partial<CodeTuiSnapshot> = {}): Harness => {
   const stdin = makeStdin();
   const calls: string[] = [];
   const snapshot: CodeTuiSnapshot = {
-    header: "session s1 · DeepSeek V4 Flash · 1000k ctx · local",
-    headerDetail: "4% ctx (42k)",
+    topRule: [
+      { text: "─".repeat(80), dim: true },
+      { text: " 01a0bcae ─", dim: true },
+    ],
+    bottomRule: [
+      { text: "─".repeat(40), dim: true },
+      { text: " DeepSeek V4 Flash · 4% of 1000k · local ─", dim: true },
+    ],
+    overlay: null,
+    offered: false,
+    subagents: [],
     lines: [lineOf("a", "› add a comment module"), lineOf("b", "✓ list_modules")],
     above: 0,
     below: 0,
     following: true,
     status: "",
     mode: "input",
-    input: "",
-    inputExtra: 0,
+    input: [""],
+    cursor: { x: 2, y: 14 },
+    menu: [],
+    menuSelected: 0,
     placeholder: "ask for something, / for commands",
     prompt: "",
     options: [],
@@ -82,7 +104,7 @@ const mount = (patch: Partial<CodeTuiSnapshot> = {}): Harness => {
     notice: "",
     hint: "enter send · ↑↓ history · esc interrupt",
     columns: 90,
-    terminalRows: 16,
+    frameRows: 16,
     bodyHeight: 13,
     ...patch,
   };
@@ -90,10 +112,13 @@ const mount = (patch: Partial<CodeTuiSnapshot> = {}): Harness => {
     subscribe: () => () => undefined,
     snapshot: () => snapshot,
     type: (text) => calls.push(`type:${text}`),
-    backspace: () => calls.push("backspace"),
+    edit: (action) => calls.push(`edit:${action}`),
     submit: () => calls.push("submit"),
-    historyPrev: () => calls.push("historyPrev"),
-    historyNext: () => calls.push("historyNext"),
+    newline: () => calls.push("newline"),
+    paste: () => calls.push("paste"),
+    pasted: (text) => calls.push(`pasted:${text}`),
+    complete: () => calls.push("complete"),
+    vertical: (delta) => calls.push(`vertical:${delta}`),
     scroll: (delta) => calls.push(`scroll:${delta}`),
     move: (delta) => calls.push(`move:${delta}`),
     toggle: () => calls.push("toggle"),
@@ -129,18 +154,41 @@ describe("CodeTuiApp", () => {
     const { stdout } = mount();
     await nextFrame();
     const frame = stdout.lastFrame;
-    // The declared window is on screen: a self-consistent but wrong model descriptor is caught by nothing else.
-    expect(frame).toContain("1000k ctx");
-    expect(frame).toContain("4% ctx (42k)");
+    // The prompt's own frame carries the session and the model, so neither costs a row of conversation.
+    expect(frame).toContain("01a0bcae");
+    expect(frame).toContain("4% of 1000k");
     expect(frame).toContain("add a comment module");
     expect(frame).toContain("ask for something, / for commands");
     expect(frame).toContain("enter send");
   });
 
-  test("a paused pane says how far from the tail it is", async () => {
-    const { stdout } = mount({ following: false, above: 12, below: 34 });
+  /**
+   * The rail is under the prompt and above the model line, which is what makes it a status rather than a row
+   * of conversation: it stays put while the transcript scrolls past it.
+   */
+  test("running sub-agents draw between the prompt and the model line", async () => {
+    const { stdout } = mount({
+      subagents: [
+        lineOf("agents:self", "❯ ⏺ main"),
+        lineOf("agents:c0", "  ◯ explore  Counting desc strings        12m 30s · ↓ 301.3k tokens"),
+      ],
+    });
     await nextFrame();
-    expect(stdout.lastFrame).toContain("▲12 ▼34 paused");
+    const frame = stdout.lastFrame;
+    expect(frame).toContain("◯ explore");
+    expect(frame).toContain("↓ 301.3k tokens");
+    expect(frame.indexOf("ask for something")).toBeLessThan(frame.indexOf("◯ explore"));
+    expect(frame.indexOf("◯ explore")).toBeLessThan(frame.indexOf("4% of 1000k"));
+  });
+
+  test("an overlay covers the transcript and says how much of itself is off screen", async () => {
+    const { stdout } = mount({
+      overlay: { title: "help", lines: [lineOf("h", "/help · /tools")], above: 0, below: 7, selectable: false },
+    });
+    await nextFrame();
+    expect(stdout.lastFrame).toContain("help");
+    expect(stdout.lastFrame).toContain("▼7");
+    expect(stdout.lastFrame).not.toContain("add a comment module");
   });
 
   test("typing goes to the input and enter sends it", async () => {
@@ -150,11 +198,11 @@ describe("CodeTuiApp", () => {
     expect(harness.calls).toEqual(["type:hi", "submit"]);
   });
 
-  test("the arrows walk prompt history while the input has focus", async () => {
+  test("the arrows move within the prompt; the controller falls through to history at its edges", async () => {
     const harness = mount();
     await harness.press(keys.up);
     await harness.press(keys.down);
-    expect(harness.calls).toEqual(["historyPrev", "historyNext"]);
+    expect(harness.calls).toEqual(["vertical:-1", "vertical:1"]);
   });
 
   test("page keys scroll in every mode, so a question never hides what led to it", async () => {
@@ -220,9 +268,9 @@ describe("CodeTuiApp", () => {
   });
 
   test("backspace deletes rather than typing a control character", async () => {
-    const harness = mount({ input: "abc" });
+    const harness = mount({ input: ["abc"] });
     await harness.press(keys.backspace);
-    expect(harness.calls).toEqual(["backspace"]);
+    expect(harness.calls).toEqual(["edit:backspace"]);
   });
 
   test("a working turn changes the input marker so the state is visible while typing", async () => {

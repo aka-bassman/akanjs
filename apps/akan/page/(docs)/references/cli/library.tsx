@@ -37,15 +37,15 @@ akan create-library design-system`,
     },
     {
       name: "install-library",
-      signature: "akan install-library [libName]",
-      desc: "Install a pre-built library template such as shared or util into the workspace.\nThe library name is optional, allowing the install flow to prompt or choose defaults when the target template is not supplied.\nRe-runnable: the copy overwrites the library source, the existing testing env is left alone, and the origin is recorded as `akan.source` in the library package.json so `library-status` can report later edits.",
+      signature: "akan install-library <libName>",
+      desc: "Install a pre-built library template such as shared or util into the workspace.\nThe library name is required. It has no default and is not nullable, so omitting it on the command line makes the command ask for it rather than choose one.\nRe-runnable: the copy overwrites the library source, the existing testing env is left alone, and the origin is recorded as `akan.source` in the library package.json so `library-status` can report later edits.",
       args: [
         {
           name: "libName",
           type: "String",
-          required: "no",
+          required: "yes",
           defaultValue: "-",
-          desc: "Library template name. Nullable.",
+          desc: "Library template name. Prompted for when not passed.",
         },
       ],
       examples: `akan install-library

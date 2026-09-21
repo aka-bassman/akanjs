@@ -85,8 +85,8 @@ export class ProductInput extends via((field) => ({
         ├── price.constant.ts
         ├── price.dictionary.ts
         ├── price.document.ts
-        ├── price.Template.tsx
-        └── price.Unit.tsx`}
+        ├── Price.Template.tsx
+        └── Price.Unit.tsx`}
         />
         <Docs.Description>
           <DocsList>

@@ -11,7 +11,13 @@ export default page().render(() => {
     {
       title: "Workspace",
       href: "/references/cli/workspace",
-      commands: ["create-workspace <workspaceName> --app <app>", "lint <target>", "lint-all", "sync-all"],
+      commands: [
+        "create-workspace <workspaceName> --app <app>",
+        "lint <target>",
+        "lint-all",
+        "sync-all",
+        "subspace <action> [name]",
+      ],
       desc: l.trans({
         en: "Create a workspace and keep repository-wide generated surfaces synchronized.",
         ko: "workspace를 생성하고 repository 전체 generated surface를 동기화합니다.",
@@ -26,6 +32,7 @@ export default page().render(() => {
         "sync <system>",
         "script <app> [filename]",
         "console <app>",
+        "logs <app>",
         "build <app>",
         "typecheck <app>",
         "test <target>",
@@ -50,7 +57,13 @@ export default page().render(() => {
     {
       title: "Library",
       href: "/references/cli/library",
-      commands: ["create-library <libName>", "remove-library <lib>", "sync-library <lib>", "install-library [libName]"],
+      commands: [
+        "create-library <libName>",
+        "remove-library <lib>",
+        "sync-library <lib>",
+        "install-library <libName>",
+        "library-status",
+      ],
       desc: l.trans({
         en: "Create, install, remove, and sync shared libraries used by apps.",
         ko: "app이 사용하는 shared library를 생성, 설치, 삭제, 동기화합니다.",
@@ -65,6 +78,7 @@ export default page().render(() => {
         "remove-package <pkg>",
         "sync-package <pkg>",
         "build-package <pkg>",
+        "verify-dist-package <pkg>",
       ],
       desc: l.trans({
         en: "Manage framework/tooling packages under pkgs/akanjs.",
@@ -76,14 +90,15 @@ export default page().render(() => {
       href: "/references/cli/module",
       commands: [
         "create-module <moduleName>",
+        "create-service <serviceName>",
         "remove-module <module>",
         "create-view <module>",
         "create-unit <module>",
         "create-template <module>",
       ],
       desc: l.trans({
-        en: "Generate domain modules and optional module UI companion files.",
-        ko: "domain module과 선택적인 module UI companion file을 생성합니다.",
+        en: "Generate database modules, service modules, and optional module UI companion files.",
+        ko: "database module, service module, 그리고 선택적인 module UI companion file을 생성합니다.",
       }),
     },
     {
@@ -107,7 +122,7 @@ export default page().render(() => {
     {
       title: "Cloud",
       href: "/references/cli/cloud",
-      commands: ["login", "logout", "update"],
+      commands: ["login", "logout", "update", "download-env", "upload-env"],
       desc: l.trans({
         en: "Configure optional cloud authentication, environment transfer, and framework updates.",
         ko: "선택적인 cloud authentication, environment 전송, framework update를 설정합니다.",
@@ -122,11 +137,11 @@ export default page().render(() => {
         "guideline list",
         "guideline show framework",
         "agent install cursor",
-        "mcp",
+        "mcp --mode plan",
       ],
       desc: l.trans({
-        en: "Expose workspace context, module abstracts, diagnostics, guideline instructions, agent rules, and read-only MCP tools.",
-        ko: "workspace context, module abstract, diagnostic, guideline instruction, agent rule, read-only MCP tool을 제공합니다.",
+        en: "Expose workspace context, module abstracts, diagnostics, guideline instructions, agent rules, and the MCP tools, whose reach is set per run by --mode.",
+        ko: "workspace context, module abstract, diagnostic, guideline instruction, agent rule과 MCP tool을 제공합니다. MCP tool의 범위는 실행할 때 --mode로 정합니다.",
       }),
     },
   ];
@@ -149,6 +164,57 @@ export default page().render(() => {
             })}
           </div>
         </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="shared-behaviour" title={l.trans({ en: "Shared Behaviour", ko: "공통 동작" })}>
+        <Docs.Title>{l.trans({ en: "Shared Behaviour", ko: "공통 동작" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Three things hold for every command and are not repeated on the detail pages.",
+              ko: "모든 command에 공통으로 적용되며 detail page에서는 반복하지 않는 세 가지입니다.",
+            })}
+          </div>
+        </Docs.Description>
+        <div className="my-4 space-y-3">
+          <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-primary">🔍</span>
+              <strong className="text-primary">-v, --verbose</strong>
+            </div>
+            <div className="text-foreground/70 text-sm">
+              {l.trans({
+                en: "Registered on every command. It turns on the executor's verbose output, so each spawned process and its arguments are printed as they run.",
+                ko: "모든 command에 등록되어 있습니다. executor의 verbose 출력을 켜서 실행되는 process와 그 argument를 그대로 출력합니다.",
+              })}
+            </div>
+          </div>
+          <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-primary">🔡</span>
+              <strong className="text-primary">{"--kebab-case"}</strong>
+            </div>
+            <div className="text-foreground/70 text-sm">
+              {l.trans({
+                en: "An option declared as `allowLocalRelease` is registered as `--allow-local-release`. The camelCase spelling is the name in the source, never the flag you type.",
+                ko: "`allowLocalRelease`로 선언한 option은 `--allow-local-release`로 등록됩니다. camelCase는 source의 이름일 뿐 입력하는 flag가 아닙니다.",
+              })}
+            </div>
+          </div>
+          <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-primary">⌨️</span>
+              <strong className="text-primary">{"akan <initials>"}</strong>
+            </div>
+            <div className="text-foreground/70 text-sm">
+              {l.trans({
+                en: "A command that declares a short alias also answers to the first letter of each dashed word: `akan ba` is `akan build-android`. A required argument left off the line is asked for rather than defaulted.",
+                ko: "short alias를 선언한 command는 dash로 나뉜 각 단어의 첫 글자로도 실행됩니다. `akan ba`는 `akan build-android`입니다. 필수 argument를 생략하면 기본값을 고르지 않고 물어봅니다.",
+              })}
+            </div>
+          </div>
+        </div>
       </Scroll.Slide>
       <Divider />
 

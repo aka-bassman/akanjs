@@ -57,9 +57,9 @@ export default page().render(() => {
               snippetTitle: "webkit/copyText.ts",
               code: `"use client";
 
-export function copyText(value: string) {
+export const copyText = (value: string) => {
   return navigator.clipboard.writeText(value);
-}`,
+};`,
             },
             {
               title: l.trans({ en: "Web hooks", ko: "Web hook" }),
@@ -72,7 +72,7 @@ export function copyText(value: string) {
 
 import { useEffect, useState } from "react";
 
-export function useViewportWidth() {
+export const useViewportWidth = () => {
   const [width, setWidth] = useState(0);
 
   useEffect(() => {
@@ -83,7 +83,7 @@ export function useViewportWidth() {
   }, []);
 
   return width;
-}`,
+};`,
             },
             {
               title: l.trans({ en: "External web wrappers", ko: "외부 웹 라이브러리 wrapper" }),
@@ -107,11 +107,11 @@ export const qrCodeCanvas = QRCodeCanvas;`,
               snippetTitle: "webkit/getSignedInUser.ts",
               code: `import { getAccount, router } from "akanjs/client";
 
-export function getSignedInUser() {
+export const getSignedInUser = () => {
   const user = getAccount<{ user?: { nickname: string } }>().user;
   if (!user) router.replace("/signin");
   return user;
-}`,
+};`,
             },
           ].map(({ title, desc, snippetTitle, code }) => (
             <div key={title} className={panelRecipe()}>
@@ -167,12 +167,20 @@ export const downloadFile = async (url: string, filename: string) => {
           />
           <Code.Snippet
             className="w-full"
-            title="page.tsx"
-            code={`import { downloadFile } from "@libs/shared/webkit";
+            title="ui/DownloadButton.tsx"
+            code={`"use client";
 
-export function DownloadButton() {
-  return <button onClick={() => downloadFile("/invoice.pdf", "invoice.pdf")}>Download</button>;
-}`}
+import { usePage } from "@apps/myapp/client";
+import { downloadFile } from "@libs/shared/webkit";
+
+export const DownloadButton = () => {
+  const { l } = usePage();
+  return (
+    <button onClick={() => downloadFile("/invoice.pdf", "invoice.pdf")}>
+      {l.trans({ en: "Download", ko: "다운로드" })}
+    </button>
+  );
+};`}
           />
         </div>
       </Scroll.Slide>

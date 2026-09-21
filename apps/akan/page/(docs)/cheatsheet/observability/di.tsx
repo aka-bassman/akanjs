@@ -17,23 +17,29 @@ export default page().render(() => {
               ko: "의존성 주입은 service가 필요한 것을 직접 만들지 않고 받아서 쓰는 방식입니다. 이렇게 하면 비즈니스 코드는 작아지고, 외부 시스템도 쉽게 교체할 수 있습니다.",
             })}
           </div>
+          <div>
+            {l.trans({
+              en: "Reach for them in this order. The first that fits is the right one:",
+              ko: "다음 순서로 고르세요. 먼저 맞는 것이 맞는 답입니다:",
+            })}
+          </div>
           <DocsList>
             <li>
               {l.trans({
-                en: "`use` receives values registered in app or library options.",
-                ko: "`use`는 app 또는 library option에 등록한 값을 받습니다.",
+                en: "`service` connects one service to another service's business method.",
+                ko: "`service`는 한 service를 다른 service의 업무 method에 연결합니다.",
               })}
             </li>
             <li>
               {l.trans({
-                en: "`adapt` and `plug` are good for replaceable tools such as storage, cache, or message APIs.",
-                ko: "`adapt`와 `plug`는 storage, cache, message API처럼 교체 가능한 도구에 좋습니다.",
+                en: "`adapt` and `plug` are for replaceable tools such as storage, cache, or message APIs.",
+                ko: "`adapt`와 `plug`는 storage, cache, message API처럼 교체 가능한 도구에 사용합니다.",
               })}
             </li>
             <li>
               {l.trans({
-                en: "`service` connects one service to another service.",
-                ko: "`service`는 service끼리 연결합니다.",
+                en: "`use` reaches a legacy singleton registered in `option.ts`. Recognise it; do not write new ones.",
+                ko: "`use`는 `option.ts`에 등록된 legacy singleton을 가져옵니다. 알아보기만 하고, 새로 쓰지는 마세요.",
               })}
             </li>
             <li>
@@ -44,77 +50,6 @@ export default page().render(() => {
             </li>
           </DocsList>
         </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
-
-      <Scroll.Slide id="use" title={l.trans({ en: "Register With use", ko: "use로 등록하기" })}>
-        <Docs.Title>{l.trans({ en: "Register With use", ko: "use로 등록하기" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: "`AkanOption.use()` is a simple place to prepare global values. Put API clients, generated secrets, host values, and shared settings there.",
-              ko: "`AkanOption.use()`는 글로벌 값을 준비하는 단순한 자리입니다. API client, 생성된 secret, host 값, 공통 설정을 여기에 둡니다.",
-            })}
-          </div>
-        </Docs.Description>
-        <Code.Snippet
-          className="w-full"
-          title={l.trans({ en: "Option registers values", ko: "Option에서 값 등록" })}
-          code={`export const option = new AkanOption<AppEnv>().use((env) => ({
-  mailApi: env.mail ? new MailApi(env.mail) : null,
-  storageApi: env.storage ? new CloudStorage(env.storage) : new LocalStorage(),
-  appHost: env.operationMode === "local" ? "localhost" : env.hostname,
-}));`}
-        />
-        <Code.Snippet
-          className="w-full"
-          title={l.trans({ en: "Service receives values", ko: "Service에서 값 받기" })}
-          code={`export class ArticleService extends serve(db.article, ({ use }) => ({
-  mailApi: use<MailApi>(),
-  storageApi: use<StorageApi>(),
-  appHost: use<string>(),
-})) {
-  async sendPublishedMail(articleId: string) {
-    await this.mailApi.send(\`\${this.appHost}/article/\${articleId}\`);
-  }
-}`}
-        />
-      </Scroll.Slide>
-      <Divider />
-
-      <Scroll.Slide id="adaptor" title={l.trans({ en: "Adapt And Plug", ko: "adapt와 plug" })}>
-        <Docs.Title>{l.trans({ en: "Adapt And Plug", ko: "adapt와 plug" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: "Use an adaptor when a tool has behavior and can be replaced later. The service only asks for the role it needs.",
-              ko: "도구가 동작을 가지고 있고 나중에 교체될 수 있다면 adaptor를 사용하세요. Service는 필요한 역할만 요청하면 됩니다.",
-            })}
-          </div>
-        </Docs.Description>
-        <Code.Snippet
-          className="w-full"
-          title={l.trans({ en: "Declare adaptor", ko: "Adaptor 선언" })}
-          code={`export class ImageStorage extends adapt("imageStorage", ({ env }) => ({
-  bucket: env((env: AppEnv) => env.imageBucket),
-})) {
-  async upload(file: File) {
-    return await uploadToBucket(this.bucket, file);
-  }
-}`}
-        />
-        <Code.Snippet
-          className="w-full"
-          title={l.trans({ en: "Plug adaptor into service", ko: "Service에 plug하기" })}
-          code={`export class ArticleService extends serve(db.article, ({ plug }) => ({
-  imageStorage: plug(ImageStorage),
-})) {
-  async setCover(articleId: string, file: File) {
-    const url = await this.imageStorage.upload(file);
-    return await this.articleModel.update(articleId, { cover: url });
-  }
-}`}
-        />
       </Scroll.Slide>
       <Divider />
 
@@ -139,6 +74,83 @@ export default page().render(() => {
     const article = await this.articleModel.update(articleId, { status: "published" });
     await this.notificationService.notify("articlePublished", article.id);
     return article;
+  }
+}`}
+        />
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="adaptor" title={l.trans({ en: "Adapt And Plug", ko: "adapt와 plug" })}>
+        <Docs.Title>{l.trans({ en: "Adapt And Plug", ko: "adapt와 plug" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Use an adaptor when a tool has behavior and can be replaced later. The service only asks for the role it needs.",
+              ko: "도구가 동작을 가지고 있고 나중에 교체될 수 있다면 adaptor를 사용하세요. Service는 필요한 역할만 요청하면 됩니다.",
+            })}
+          </div>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title={l.trans({ en: "Declare adaptor", ko: "Adaptor 선언" })}
+          code={`export class ImageStorage extends adapt("imageStorage" as const, ({ env }) => ({
+  bucket: env((env: AppEnv) => env.imageBucket),
+})) {
+  async upload(file: File) {
+    return await uploadToBucket(this.bucket, file);
+  }
+}`}
+        />
+        <Code.Snippet
+          className="w-full"
+          title={l.trans({ en: "Plug adaptor into service", ko: "Service에 plug하기" })}
+          code={`export class ArticleService extends serve(db.article, ({ plug }) => ({
+  imageStorage: plug(ImageStorage),
+})) {
+  async setCover(articleId: string, file: File) {
+    const url = await this.imageStorage.upload(file);
+    return await this.articleModel.update(articleId, { cover: url });
+  }
+}`}
+        />
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="use" title={l.trans({ en: "Legacy: Register With use", ko: "Legacy: use로 등록하기" })}>
+        <Docs.Title>{l.trans({ en: "Legacy: Register With use", ko: "Legacy: use로 등록하기" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "`AkanOption.use()` registers a plain singleton that services then reach with `use<T>()`. It still works and older code is full of it, so learn to recognise it — but write new singletons as `adapt()` classes, which self-register and need no `option.ts` entry at all.",
+              ko: "`AkanOption.use()`는 평범한 singleton을 등록하고, service는 `use<T>()`로 가져옵니다. 지금도 동작하고 오래된 코드에 많이 남아 있으니 알아볼 수는 있어야 합니다. 다만 새 singleton은 `adapt()` class로 쓰세요. 스스로 등록하므로 `option.ts` 항목이 필요 없습니다.",
+            })}
+          </div>
+        </Docs.Description>
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: "Never register an `adapt()` class in `option.ts`. It self-registers, and `plug(Class)` uses the class itself as the token — a second registration under the same key fails the boot.",
+            ko: "`adapt()` class는 `option.ts`에 등록하지 마세요. 스스로 등록하고 `plug(Class)`가 class 자체를 token으로 쓰므로, 같은 key로 한 번 더 등록하면 부팅이 실패합니다.",
+          })}
+        </Docs.Alert>
+        <Code.Snippet
+          className="w-full"
+          title={l.trans({ en: "Option registers values", ko: "Option에서 값 등록" })}
+          code={`export const option = new AkanOption<AppEnv>().use((env) => ({
+  mailApi: env.mail ? new MailApi(env.mail) : null,
+  storageApi: env.storage ? new CloudStorage(env.storage) : new LocalStorage(),
+  appHost: env.operationMode === "local" ? "localhost" : env.hostname,
+}));`}
+        />
+        <Code.Snippet
+          className="w-full"
+          title={l.trans({ en: "Service receives values", ko: "Service에서 값 받기" })}
+          code={`export class ArticleService extends serve(db.article, ({ use }) => ({
+  mailApi: use<MailApi>(),
+  storageApi: use<StorageApi>(),
+  appHost: use<string>(),
+})) {
+  async sendPublishedMail(articleId: string) {
+    await this.mailApi.send(\`\${this.appHost}/article/\${articleId}\`);
   }
 }`}
         />
@@ -207,8 +219,8 @@ export default page().render(() => {
           <DocsList>
             <li>
               {l.trans({
-                en: "Do not create external clients inside every method. Register them once with `use` or `adapt`.",
-                ko: "외부 client를 method마다 만들지 마세요. `use` 또는 `adapt`로 한 번 등록하세요.",
+                en: "Do not create external clients inside every method. Declare one `adapt()` class and `plug()` it.",
+                ko: "외부 client를 method마다 만들지 마세요. `adapt()` class로 한 번 선언하고 `plug()`로 받으세요.",
               })}
             </li>
             <li>
@@ -225,8 +237,8 @@ export default page().render(() => {
             </li>
             <li>
               {l.trans({
-                en: "If a value is shared across many services, `AkanOption.use()` is usually the cleanest home.",
-                ko: "여러 service가 공유하는 값은 보통 `AkanOption.use()`에 두는 것이 가장 깔끔합니다.",
+                en: "`adapt()` is for singletons only. A per-use value object stays a plain class you `new` at the call site.",
+                ko: "`adapt()`는 singleton 전용입니다. 호출마다 새로 만드는 값 객체는 호출 지점에서 `new` 하는 평범한 class로 두세요.",
               })}
             </li>
           </DocsList>

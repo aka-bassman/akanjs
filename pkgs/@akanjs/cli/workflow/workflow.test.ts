@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { CommandContainer } from "@akanjs/devkit/commandDecorators";
+import { cleanupCliTempWorkspace, createTempModule, writeText } from "@akanjs/devkit/testHelpers";
 import {
   createWorkflowStepRegistry,
   type WorkflowApplyReport,
@@ -13,7 +14,6 @@ import { ModuleRunner } from "../module/module.runner";
 import { ModuleScript } from "../module/module.script";
 import { PrimitiveScript } from "../primitive/primitive.script";
 import { ScalarScript } from "../scalar/scalar.script";
-import { cleanupCliTempWorkspace, createTempModule, writeText } from "../testHelpers";
 import { WorkflowRunner } from "./workflow.runner";
 
 const tempRoots: string[] = [];

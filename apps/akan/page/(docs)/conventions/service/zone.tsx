@@ -25,8 +25,8 @@ export default page().render(() => {
           </div>
           <div>
             {l.trans({
-              en: "Because service modules are workflow-oriented, service Zones are fairly flexible. Treat them as client components where you can freely compose the controls, result views, and domain-specific UI that the service needs.",
-              ko: "Service module은 workflow 중심이기 때문에 service Zone의 자유도는 꽤 높은 편입니다. service에 필요한 control, result view, domain-specific UI를 자유롭게 조합하는 client component로 보면 됩니다.",
+              en: "A Zone is a client component, but that is a cost, not a licence. Keep it to the store reads and the controls that need them, and push the markup down to a server component it renders as children — every element left in the Zone ships twice, as HTML and as bundled JS the browser re-runs.",
+              ko: "Zone은 client component지만, 그것은 허가가 아니라 비용입니다. store 읽기와 그것이 필요한 control만 남기고 markup은 children으로 렌더링하는 server component로 내립니다. Zone에 남은 element는 HTML과 브라우저가 다시 실행하는 bundle JS로 두 번 전송됩니다.",
             })}
           </div>
         </Docs.Description>
@@ -51,22 +51,34 @@ export default page().render(() => {
               ko: "재사용되는 작은 interaction은 service Util 파일에서 가져다 쓰면 됩니다. Zone은 그런 Util 조각과 domain component를 배치해서 최종 page section을 구성합니다.",
             })}
           </div>
+          <div>
+            {l.trans({
+              en: "Seed the store from the route instead of loading on mount. The page fetches and hands the result down as a prop; a useEffect with an empty dependency array is a round trip the server could have made before the first byte.",
+              ko: "mount 시점에 load하지 말고 route에서 store를 채웁니다. page가 fetch해서 결과를 prop으로 내려주면 됩니다. dependency 배열이 빈 useEffect는 server가 첫 바이트 이전에 끝낼 수 있었던 왕복입니다.",
+            })}
+          </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title="minimal service zone"
+          title="Search.Zone.tsx"
           code={`"use client";
 
-export const Database = () => {
+export const Database = ({ indexNames }: DatabaseProps) => {
   const searchIndexName = st.use.searchIndexName();
   const searchResult = st.use.searchResult();
 
-  useEffect(() => {
-    void st.do.getSearchIndexNames();
-  }, []);
-
-  return <SearchResults result={searchResult} disabled={!searchIndexName} />;
+  return (
+    <SearchResults result={searchResult} indexNames={indexNames} disabled={!searchIndexName} />
+  );
 };`}
+        />
+        <Code.Snippet
+          className="w-full"
+          title="apps/myapp/page/search/_index.tsx"
+          code={`export default page().render(async () => {
+  const indexNames = await fetch.getSearchIndexNames();
+  return <Search.Zone.Database indexNames={indexNames} />;
+});`}
         />
       </Scroll.Slide>
       <Divider />

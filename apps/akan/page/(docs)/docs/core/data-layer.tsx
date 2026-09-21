@@ -92,7 +92,7 @@ export default page().render(() => {
           <Code.Snippet
             className="w-full"
             title="apps/shop/lib/product/product.constant.ts"
-            code={`import { enumOf, Int } from "akanjs/base";
+            code={`import { Int } from "akanjs/base";
 import { via } from "akanjs/constant";
 
 export class ProductInput extends via((field) => ({
@@ -108,7 +108,11 @@ export class LightProduct extends via(
   ProductObject,
   ["name", "stock"] as const,
   (resolve) => ({}),
-) {}`}
+) {}
+
+export class Product extends via(ProductObject, LightProduct, (resolve) => ({})) {}
+
+export class ProductInsight extends via(Product, (field) => ({})) {}`}
           />
         </Docs.Description>
         <div className="space-y-1">
@@ -132,6 +136,20 @@ export class LightProduct extends via(
               desc: l.trans({
                 en: "A smaller view for lists, cards, and embedded references.",
                 ko: "목록, 카드, 연결된 데이터에 쓰기 좋은 가벼운 형태입니다.",
+              }),
+            },
+            {
+              title: "Full",
+              desc: l.trans({
+                en: "The whole record, returned by a detail query. Write all five classes, in this order, in every constant file.",
+                ko: "상세 조회가 돌려주는 전체 레코드입니다. constant 파일에는 언제나 이 순서로 다섯 클래스를 모두 씁니다.",
+              }),
+            },
+            {
+              title: "Insight",
+              desc: l.trans({
+                en: "Aggregate numbers a list query reports alongside the rows. Declare it even when it is empty.",
+                ko: "목록 쿼리가 행과 함께 돌려주는 집계 값입니다. 비어 있어도 선언합니다.",
               }),
             },
           ].map(({ title, desc }) => (
@@ -211,9 +229,11 @@ export class ProductService extends serve(db.product, ({ use, service }) => ({})
           <Code.Snippet
             className="w-full"
             title="apps/shop/lib/product/product.signal.ts"
-            code={`import { Admin } from "@libs/shared/srvkit"; // [!code collapse:17]
+            code={`import { Admin } from "@libs/shared/srvkit"; // [!code collapse:19]
+import { ID, Int } from "akanjs/base";
 import { endpoint, internal, Public, slice } from "akanjs/signal";
 
+import * as cnst from "../cnst";
 import * as srv from "../srv";
 
 export class ProductInternal extends internal(srv.product, ({ interval }) => ({})) {}
@@ -229,14 +249,20 @@ export class ProductSlice extends slice(
 ) {}
 
 export class ProductEndpoint extends endpoint(srv.product, ({ query, mutation }) => ({
-  addStock: mutation()
-    .param("productId", String)
+  addStock: mutation(cnst.Product, { guards: [Admin] })
+    .param("productId", ID)
     .param("count", Int)
     .exec(function (productId, count) {
       return this.productService.addStock(productId, count);
     }),
 })) {}`}
           />
+          <div>
+            {l.trans({
+              en: "Every custom endpoint names its own guards array, and the slice names one per verb. The guards are also the MCP exposure decision: an endpoint that declares none is refused from the agent catalogue, so a missing guards array costs visibility as well as authorization.",
+              ko: "custom endpoint는 각각 자기 guards 배열을 선언하고, slice는 verb별로 guard를 지정합니다. guards는 MCP 노출 여부까지 결정합니다. guards를 선언하지 않은 endpoint는 agent 카탈로그에서 거부되므로, guards 배열을 빠뜨리면 권한뿐 아니라 노출까지 잃습니다.",
+            })}
+          </div>
           <div className="space-y-1">
             {[
               {
@@ -319,15 +345,16 @@ export class ProductEndpoint extends endpoint(srv.product, ({ query, mutation })
             title="Server action: call addStock with fetch"
             code={`import { fetch } from "@apps/shop/client";
 
-export const addProductStock = async (productId: string, quantity: number) => {
-  const { product } = await fetch.addStock({
-    productId,
-    quantity,
-  });
-
-  return product;
+export const addProductStock = async (productId: string, count: number) => {
+  return await fetch.addStock(productId, count);
 };`}
           />
+          <div>
+            {l.trans({
+              en: "Endpoint arguments are positional and in declaration order, and the call resolves to whatever the endpoint returns. addStock returns cnst.Product, so the awaited value is the product itself, not a wrapper object.",
+              ko: "endpoint 인자는 선언 순서대로 위치 인자로 넘깁니다. 호출 결과는 endpoint가 선언한 반환값 그대로입니다. addStock은 cnst.Product를 반환하므로 await한 값도 감싸는 객체가 아니라 상품 자체입니다.",
+            })}
+          </div>
           <div>
             {l.trans({
               en: "This pattern is useful when a page, action, or server-side helper needs to run a business operation. The generated fetch instance calls the server endpoint and returns the typed result.",

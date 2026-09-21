@@ -12,21 +12,21 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Apps and libraries can both have an asset folder. Use public for files that the browser can request, and private for files that only server code should read.",
-              ko: "앱과 라이브러리는 모두 asset 폴더를 가질 수 있습니다. 브라우저가 요청할 수 있는 파일은 public에 두고, 서버 코드만 읽어야 하는 파일은 private에 둡니다.",
+              en: "Apps and libraries both hold their assets in two folders at the root, beside lib and ui. Use public for files that the browser can request, and private for files that only server code should read. There is no asset folder wrapping them — akan sync rejects any root entry outside the allowlist.",
+              ko: "앱과 라이브러리 모두 애셋을 루트의 두 폴더에 두며, lib나 ui와 같은 위치입니다. 브라우저가 요청할 수 있는 파일은 public에, 서버 코드만 읽어야 하는 파일은 private에 둡니다. 둘을 감싸는 asset 폴더는 없습니다. akan sync는 허용 목록 밖의 루트 항목을 거부합니다.",
             })}
           </div>
           <div className={cardGridRecipe({ cols: "mdTwo" })}>
             {[
               {
-                title: "asset/public/",
+                title: "public/",
                 desc: l.trans({
                   en: "Served as static assets. Use it for images, PDF files, downloadable JSON, icons, and other files that can be public.",
                   ko: "정적 애셋으로 서빙됩니다. 이미지, PDF, 다운로드 가능한 JSON, 아이콘처럼 공개되어도 되는 파일에 사용합니다.",
                 }),
               },
               {
-                title: "asset/private/",
+                title: "private/",
                 desc: l.trans({
                   en: "Available only to server-side code. Use it for seed data, private JSON, model files, and resources used by server jobs.",
                   ko: "서버 코드에서만 사용할 수 있습니다. seed data, private JSON, 모델 파일, 서버 작업용 리소스에 사용합니다.",
@@ -48,8 +48,8 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Files under asset/public are copied to the app's public surface and served by the server. The browser can request them directly by URL.",
-              ko: "asset/public 아래 파일은 앱의 public surface로 복사되고 서버가 정적 파일로 서빙합니다. 브라우저는 URL로 직접 요청할 수 있습니다.",
+              en: "Files under public are served by the server as static assets. The browser can request them directly by URL, with the folder itself dropped from the path.",
+              ko: "public 아래 파일은 서버가 정적 애셋으로 서빙합니다. 브라우저는 URL로 직접 요청할 수 있으며 폴더 이름 자체는 경로에서 빠집니다.",
             })}
           </div>
         </Docs.Description>
@@ -57,9 +57,9 @@ export default page().render(() => {
           className="w-full"
           title="public asset examples"
           language="bash"
-          code={`apps/myapp/asset/public/docs/product-guide.pdf
-apps/myapp/asset/public/data/sample-products.json
-apps/myapp/asset/public/images/hero.png
+          code={`apps/myapp/public/docs/product-guide.pdf
+apps/myapp/public/data/sample-products.json
+apps/myapp/public/images/hero.png
 
 # Web requests
 /docs/product-guide.pdf
@@ -70,18 +70,21 @@ apps/myapp/asset/public/images/hero.png
         <Code.Snippet
           className="w-full"
           title="Link to a PDF"
-          code={`import { Link } from "akanjs/ui";              
-export function GetProductGuide() {
-  return <Link href="/docs/product-guide.pdf">Open product guide</Link>;
-}`}
+          code={`import { usePage } from "@apps/myapp/client";
+import { Link } from "akanjs/ui";
+
+export const GetProductGuide = () => {
+  const { l } = usePage();
+  return <Link href="/docs/product-guide.pdf">{l.trans({ en: "Open product guide", ko: "제품 가이드 열기" })}</Link>;
+};`}
         />
         <Code.Snippet
           className="w-full"
           title="Fetch static JSON"
-          code={`export async function loadSampleProducts() {
+          code={`export const loadSampleProducts = async () => {
   const res = await fetch("/data/sample-products.json");
   return res.json();
-}`}
+};`}
         />
       </Scroll.Slide>
       <Divider />
@@ -101,7 +104,7 @@ export function GetProductGuide() {
           title="HeroImage.tsx"
           code={`import { Image } from "akanjs/ui";
 
-export function HeroImage() {
+export const HeroImage = () => {
   return (
     <Image
       src="/images/hero.png"
@@ -111,7 +114,7 @@ export function HeroImage() {
       priority
     />
   );
-}`}
+};`}
         />
       </Scroll.Slide>
       <Divider />
@@ -121,8 +124,8 @@ export function HeroImage() {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Files under asset/private are for server-only resources. Put files here when the browser should not download them directly, but the server needs them to load data, run inference, or initialize a service.",
-              ko: "asset/private 아래 파일은 서버 전용 리소스입니다. 브라우저가 직접 다운로드하면 안 되지만 서버가 데이터 로딩, 추론, 서비스 초기화에 사용해야 하는 파일을 여기에 둡니다.",
+              en: "Files under private are for server-only resources. Put files here when the browser should not download them directly, but the server needs them to load data, run inference, or initialize a service.",
+              ko: "private 아래 파일은 서버 전용 리소스입니다. 브라우저가 직접 다운로드하면 안 되지만 서버가 데이터 로딩, 추론, 서비스 초기화에 사용해야 하는 파일을 여기에 둡니다.",
             })}
           </div>
         </Docs.Description>
@@ -130,26 +133,26 @@ export function HeroImage() {
           className="w-full"
           title="private asset examples"
           language="bash"
-          code={`apps/myapp/asset/private/seed/products.json
-apps/myapp/asset/private/model/yolo.onnx
-libs/shared/asset/private/recommendation/default-rules.json`}
+          code={`apps/myapp/private/seed/products.json
+apps/myapp/private/model/yolo.onnx
+libs/shared/private/recommendation/default-rules.json`}
         />
         <Code.Snippet
           className="w-full"
           title="Load private JSON on the server"
-          code={`export async function loadInitialProducts() {
+          code={`export const loadInitialProducts = async () => {
   const file = Bun.file("./private/seed/products.json");
   return file.json();
-}`}
+};`}
         />
         <Code.Snippet
           className="w-full"
           title="Use a private model file on the server"
-          code={`export async function detectObjects(image: ArrayBuffer) {
+          code={`export const detectObjects = async (image: ArrayBuffer) => {
   const file = Bun.file("./private/model/yolo.onnx");
   const model = await loadYoloModel(file);
   return model.detect(image);
-}`}
+};`}
         />
       </Scroll.Slide>
       <Divider />
@@ -169,8 +172,8 @@ libs/shared/asset/private/recommendation/default-rules.json`}
           title="library asset mapping"
           language="bash"
           code={`# Source in a library
-libs/shared/asset/public/banner/logo.png
-libs/shared/asset/private/recommendation/default-rules.json
+libs/shared/public/banner/logo.png
+libs/shared/private/recommendation/default-rules.json
 
 # Linked into an app as public assets
 apps/myapp/public/libs/shared/banner/logo.png
@@ -189,7 +192,7 @@ dist/apps/myapp/public/libs/shared/banner/logo.png
           title="Use synced public library asset"
           code={`import { Image } from "akanjs/ui";
 
-export function SharedLogo() {
+export const SharedLogo = () => {
   return (
     <Image
       src="/libs/shared/banner/logo.png"
@@ -198,15 +201,15 @@ export function SharedLogo() {
       height={80}
     />
   );
-}`}
+};`}
         />
         <Code.Snippet
           className="w-full"
           title="Use synced private library asset"
-          code={`export async function loadDefaultRules() {
+          code={`export const loadDefaultRules = async () => {
   const file = Bun.file("./private/libs/shared/recommendation/default-rules.json");
   return file.json();
-}`}
+};`}
         />
       </Scroll.Slide>
       <Divider />
@@ -229,8 +232,8 @@ export function SharedLogo() {
                 ko: "서버 최적화가 필요한 public UI 이미지는 akanjs/ui의 Image를 사용합니다.",
               }),
               l.trans({
-                en: "Put reusable public files in a library asset folder when multiple apps need the same asset.",
-                ko: "여러 앱이 같은 파일을 사용한다면 library asset 폴더에 reusable public 파일로 둡니다.",
+                en: "Put reusable public files in a library's own public folder when multiple apps need the same asset.",
+                ko: "여러 앱이 같은 파일을 사용한다면 라이브러리 자신의 public 폴더에 둡니다.",
               }),
             ].map((rule) => (
               <div key={rule} className={panelRecipe({ padding: "row" }, "text-foreground/70")}>

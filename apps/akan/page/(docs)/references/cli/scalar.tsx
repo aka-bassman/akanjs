@@ -9,8 +9,8 @@ export default page().render(() => {
   const commands: CommandReferenceItem[] = [
     {
       name: "create-scalar",
-      signature: "akan create-scalar <scalarName>",
-      desc: "Create a new scalar type for reusable value objects or simple data shapes that do not need DB persistence.\nThe generator normalizes the scalar name and creates the scalar files used by constants, documents, dictionaries, and typed business code.",
+      signature: "akan create-scalar <scalarName> [sys] [--format <markdown|json>]",
+      desc: "Create a new scalar type for reusable value objects or simple data shapes that do not need DB persistence.\nThe generator normalizes the scalar name, writes the files under `lib/__scalar/<scalar>`, and prints what it wrote.",
       args: [
         {
           name: "scalarName",
@@ -20,12 +20,21 @@ export default page().render(() => {
           desc: "Scalar name. Spaces are removed and the first letter is lowercased.",
         },
       ],
+      options: [
+        {
+          name: "--format",
+          type: "String",
+          defaultValue: "markdown",
+          enumOrFlag: "markdown | json (flag: -o)",
+          desc: "How the report of written files is printed. Use json in an agent loop.",
+        },
+      ],
       examples: `akan create-scalar Coordinate
-akan create-scalar Address`,
+akan create-scalar Address --format json`,
     },
     {
       name: "remove-scalar",
-      signature: "akan remove-scalar <scalarName>",
+      signature: "akan remove-scalar <scalarName> [sys]",
       desc: "Remove an existing scalar type from an app or library.\nUse it after checking usages, because scalar definitions are often imported by modules, dictionaries, templates, and service payload types.",
       args: [
         { name: "scalarName", type: "String", required: "yes", defaultValue: "-", desc: "Scalar name to remove." },

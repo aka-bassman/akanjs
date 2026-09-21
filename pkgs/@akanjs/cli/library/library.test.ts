@@ -9,7 +9,7 @@ import {
   createFakeExecutor,
   createTempLib,
   writeJson,
-} from "../testHelpers";
+} from "@akanjs/devkit/testHelpers";
 import { LibraryRunner } from "./library.runner";
 import { LibraryScript } from "./library.script";
 

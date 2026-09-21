@@ -163,8 +163,14 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Some Zones compose more than a simple list. They may combine local UI state, store state, Unit components, Util controls, and Model wrappers for a complete page section.",
-              ko: "일부 Zone은 단순 list보다 더 많은 것을 조립합니다. 완성된 page section을 위해 local UI state, store state, Unit component, Util control, Model wrapper를 함께 사용할 수 있습니다.",
+              en: "Some Zones compose more than a simple list. They may combine store state, Unit components, Util controls, and Model wrappers for a complete page section.",
+              ko: "일부 Zone은 단순 list보다 더 많은 것을 조립합니다. 완성된 page section을 위해 store state, Unit component, Util control, Model wrapper를 함께 사용할 수 있습니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "Keep the Zone itself free of local UI state. A mode switch is Tab from akanjs/ui, which holds the state in the provider and the menu so every panel body stays a server component; a useState mode switch pulls all of them into the bundle.",
+              ko: "Zone 자체에는 local UI state를 두지 않습니다. mode 전환은 akanjs/ui의 Tab을 사용합니다. Tab은 provider와 menu에만 state를 두므로 panel body는 모두 server component로 남습니다. useState mode 전환은 그 panel들을 전부 bundle로 끌어옵니다.",
             })}
           </div>
         </Docs.Description>
@@ -173,7 +179,6 @@ export default page().render(() => {
             className="w-full"
             title="Ticket.Zone.tsx"
             code={`export const Kanban = ({ init, slice = fetch.slice.ticket }: KanbanProps) => {
-  const [tab, setTab] = useState("open");
   return (
     <Load.Units
       init={init}
@@ -223,16 +228,19 @@ export default page().render(() => {
               ko: "section 전체가 store state, subscription, client-only layout behavior에 의존한다면 Zone은 dashboard 또는 live section이 될 수도 있습니다.",
             })}
           </div>
+          <div>
+            {l.trans({
+              en: "Never hand-roll a loading branch. Load.View and Load.Units already own the pending, empty, and error states, and the route fetches the data before the first byte. A subscribe-with-cleanup is the one shape useEffect is still for — a useEffect that loads on mount is a round trip the server had already made.",
+              ko: "loading 분기를 직접 만들지 마세요. Load.View와 Load.Units가 pending, empty, error 상태를 이미 담당하고, route가 첫 바이트 이전에 data를 가져옵니다. useEffect는 subscribe-with-cleanup에만 쓰고, mount 시점에 load하는 useEffect는 server가 이미 마친 왕복을 한 번 더 하는 것입니다.",
+            })}
+          </div>
         </Docs.Description>
         <div className={cardGridRecipe()}>
           <Code.Snippet
             className="w-full"
             title="Summary.Zone.tsx"
-            code={`export const Dashboard = () => {
-  const summary = st.use.summary();
-  const summaryLoading = st.use.summaryLoading();
-  if (summaryLoading || !summary) return <Loading.Skeleton active />;
-  return <Summary.View.General summary={summary} />;
+            code={`export const Dashboard = ({ view }: DashboardProps) => {
+  return <Load.View view={view} renderView={(summary) => <Summary.View.General summary={summary} />} />;
 };`}
           />
           <Code.Snippet

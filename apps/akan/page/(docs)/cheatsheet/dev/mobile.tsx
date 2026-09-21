@@ -1,25 +1,10 @@
 import { usePage } from "@apps/akan/client";
-import { Code, cardGridRecipe, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { Code, cardGridRecipe, Divider, Docs, DocsToc, ExternalLink, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
-import { Link } from "akanjs/ui";
-import { FaLink } from "react-icons/fa";
 
 export default page().render(() => {
   const { l } = usePage();
-  const ExternalLink = ({ href, label }: { href: string; label: string }) => (
-    <Link
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="ml-1 inline-flex size-5 -translate-y-px items-center justify-center rounded-full bg-foreground/50 align-baseline text-white transition-colors hover:bg-foreground/70"
-      aria-label={label}
-      title={label}
-    >
-      <FaLink className="size-2.5" />
-    </Link>
-  );
-
   return (
     <Scroll>
       <Scroll.Slide id="overview" title={l.trans({ en: "Mobile Setup Flow", ko: "모바일 설정 흐름" })}>
@@ -470,8 +455,8 @@ akan release-ios myapp --target default --env main`}
               <ul className="mt-2 list-disc space-y-1 pl-5 text-foreground/70 text-sm">
                 <li>
                   {l.trans({
-                    en: "Serving /firebase-messaging-sw.js for web push.",
-                    ko: "web push용 /firebase-messaging-sw.js 서빙.",
+                    en: "Writing public/firebase-messaging-sw.js on akan sync, so the static fallback serves your own copy.",
+                    ko: "akan sync 때 public/firebase-messaging-sw.js 생성. static fallback이 앱의 파일을 그대로 서빙합니다.",
                   })}
                 </li>
                 <li>
@@ -822,21 +807,31 @@ akan release-ios myapp --target default --env main`}
           </div>
           <Code.Snippet
             className="w-full"
-            title="Client registration"
-            code={`import { fetch } from "@apps/myapp/client";
-import { usePushNotification } from "akanjs/webkit";
+            title="apps/myapp/lib/userDevice/UserDevice.Util.tsx"
+            code={`"use client";
+import { st, usePage } from "@apps/myapp/client";
+import { usePushNotification } from "@libs/util/webkit";
+import { buttonRecipe } from "akanjs/ui";
 
-export function EnablePushButton() {
+interface EnablePushProps {
+  className?: string;
+}
+export const EnablePush = ({ className }: EnablePushProps) => {
+  const { l } = usePage();
   const push = usePushNotification();
-
-  const handleClick = async () => {
-    const pushToken = await push.register();
-    if (!pushToken) return;
-    await fetch.registerPushToken(pushToken);
-  };
-
-  return <button onClick={handleClick}>Enable push</button>;
-}`}
+  return (
+    <button
+      className={buttonRecipe({ variant: "primary" }, className)}
+      onClick={async () => {
+        const pushToken = await push.register();
+        if (pushToken) await st.do.registerPushToken(pushToken);
+      }}
+      type="button"
+    >
+      {l("userDevice.signal.registerPushToken")}
+    </button>
+  );
+};`}
           />
           <Docs.Alert type="info">
             {l.trans({
@@ -913,7 +908,7 @@ export function EnablePushButton() {
 export class PushPlatform extends enumOf("pushPlatform", ["web", "android", "ios"] as const) {}
 
 export class UserDeviceToken extends via((field) => ({
-  userId: field(String),
+  userId: field(ID, { ref: "user" }),
   token: field(String),
   platform: field(PushPlatform),
   provider: field(PushProvider),
@@ -943,40 +938,38 @@ export class UserDeviceToken extends via((field) => ({
           />
           <Code.Snippet
             className="w-full"
-            title="apps/myapp/ui/PushTokenRegister.tsx"
-            code={`import { fetch } from "@apps/myapp/client";
-import { usePushNotification } from "akanjs/webkit";
+            title="apps/myapp/lib/userDevice/userDevice.store.ts"
+            code={`import { msg } from "@apps/myapp/client";
+import type { PushToken } from "@libs/util/webkit";
+import { store } from "akanjs/store";
+import { fetch, sig } from "../useClient";
 
-const push = usePushNotification();
-const pushToken = await push.register();
-
-if (pushToken) {
-  await fetch.registerPushToken({
-    token: pushToken.token,
-    platform: pushToken.platform,
-    provider: pushToken.provider,
-    deviceId: pushToken.deviceId,
-  });
+export class UserDeviceStore extends store(sig.userDevice, () => ({})) {
+  async registerPushToken(pushToken: PushToken) {
+    await fetch.registerPushToken(pushToken);
+    msg.success("userDevice.pushTokenRegistered");
+  }
 }`}
           />
           <Code.Snippet
             className="w-full"
-            title="Server send"
-            code={`await pushNotificationServer.send({
-  token,
-  title: "Order update",
-  body: "Your order is ready",
-  url: "/orders/detail",
-});`}
-          />
-          <Code.Snippet
-            className="w-full"
-            title="Cleanup after failed send"
-            code={`try {
-  await pushNotificationServer.send({ token, title, body, url });
-} catch (error) {
-  if (isInvalidPushTokenError(error)) {
-    await fetch.invalidatePushToken(token);
+            title="apps/myapp/lib/userDevice/userDevice.service.ts"
+            code={`import { PushNotificationServer } from "@libs/util/srvkit";
+import { serve } from "akanjs/service";
+import * as db from "../db";
+
+export class UserDeviceService extends serve(db.userDevice, ({ plug }) => ({
+  pushNotificationServer: plug(PushNotificationServer),
+})) {
+  async notify(token: string, title: string, body: string, url: string) {
+    try {
+      return await this.pushNotificationServer.send({ token, title, body, url });
+    } catch (error) {
+      // FCM answers a token the device no longer holds with this code, and keeps answering it forever.
+      if ((error as { code?: string }).code !== "messaging/registration-token-not-registered") throw error;
+      await this.invalidatePushToken(token);
+      return null;
+    }
   }
 }`}
           />

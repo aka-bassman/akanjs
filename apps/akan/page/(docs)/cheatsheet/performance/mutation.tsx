@@ -1,6 +1,6 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsList, DocsToc } from "@apps/akan/ui";
-import { Scroll } from "@libs/util/ui";
+import { Scroll, tableRecipe } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
 export default page().render(() => {
@@ -206,26 +206,28 @@ await this.Post.updateOne({ id }, ({ pull }) => ({ tags: pull("featured") }));`}
           </div>
         </Docs.Description>
         <div className="overflow-x-auto">
-          <table className="table w-full table-fixed">
+          <table className={tableRecipe({ size: "sm" }, "table-fixed")}>
             <thead>
-              <tr>
-                <th className="w-[160px]">{l.trans({ en: "Update helper", ko: "Update helper" })}</th>
-                <th className="w-[320px]">{l.trans({ en: "Document update", ko: "Document update" })}</th>
-                <th className="w-[440px]">{l.trans({ en: "SQL fragment", ko: "SQL 조각" })}</th>
+              <tr className="bg-muted">
+                <th className="w-[160px] text-foreground">{l.trans({ en: "Update helper", ko: "Update helper" })}</th>
+                <th className="w-[320px] text-foreground">
+                  {l.trans({ en: "Document update", ko: "Document update" })}
+                </th>
+                <th className="w-[440px] text-foreground">{l.trans({ en: "SQL fragment", ko: "SQL 조각" })}</th>
               </tr>
             </thead>
             <tbody>
               {sqlExamples.map((example) => (
                 <tr key={example.helper}>
-                  <td className="align-top font-semibold">
+                  <td className="border-border/60 border-t align-top font-semibold">
                     <code>{example.helper}</code>
                   </td>
-                  <td className="align-top">
+                  <td className="border-border/60 border-t align-top">
                     <pre className="whitespace-pre-wrap rounded bg-muted p-2 text-xs">
                       <code>{example.update}</code>
                     </pre>
                   </td>
-                  <td className="align-top">
+                  <td className="border-border/60 border-t align-top">
                     <pre className="whitespace-pre-wrap rounded bg-muted p-2 text-xs">
                       <code>{example.sql}</code>
                     </pre>
@@ -247,26 +249,60 @@ await this.Post.updateOne({ id }, ({ pull }) => ({ tags: pull("featured") }));`}
           <div className="space-y-2">
             <div className="font-bold">
               {l.trans({
-                en: "Query updates do not run document hooks.",
-                ko: "Query update는 document hook을 실행하지 않습니다.",
+                en: "A query write fires no hooks, and therefore no cascade.",
+                ko: "Query write는 hook을 발화하지 않고, 따라서 cascade도 일어나지 않습니다.",
               })}
             </div>
             <DocsList>
               <li>
                 {l.trans({
-                  en: "`updateOne`, `updateMany`, `removeOne`, `removeMany`, and `bulkWrite` write directly in the database and do not fire save/update/remove hooks.",
-                  ko: "`updateOne`, `updateMany`, `removeOne`, `removeMany`, `bulkWrite`는 데이터베이스에 직접 쓰며 save/update/remove hook을 발화하지 않습니다.",
+                  en: "`updateOne`, `updateMany`, `removeOne`, `removeMany`, and `bulkWrite` push one atomic statement to the database, so no save/update/remove hook runs — and neither does `_postRemove` nor any `cascade` edge declared on the model. A removed row's files, children, and counters stay behind, and removal is soft, so nothing reports the loss.",
+                  ko: "`updateOne`, `updateMany`, `removeOne`, `removeMany`, `bulkWrite`는 데이터베이스에 단일 원자적 문을 보냅니다. 따라서 save/update/remove hook이 실행되지 않고, `_postRemove`와 model에 선언한 `cascade` edge도 동작하지 않습니다. 지워진 행의 파일, 자식 document, 카운터가 그대로 남고, 삭제는 soft라서 아무도 그 손실을 알려주지 않습니다.",
                 })}
               </li>
               <li>
                 {l.trans({
-                  en: "When a per-document rule must always run, use a document path: `Model.update(id, patch)`, `Model.remove(id)`, or `doc.set(...).save()`.",
-                  ko: "document마다 항상 실행되어야 하는 규칙이 있다면 document 경로를 사용하세요: `Model.update(id, patch)`, `Model.remove(id)`, 또는 `doc.set(...).save()`.",
+                  en: "`updateById(id, patch)` and `removeById(id)` are the same query write narrowed to one id — not the document path. They look identical to the document call and fire nothing.",
+                  ko: "`updateById(id, patch)`와 `removeById(id)`는 id 하나로 좁힌 같은 query write이며, document 경로가 아닙니다. Document 호출과 똑같이 생겼지만 아무것도 발화하지 않습니다.",
+                })}
+              </li>
+              <li>
+                {l.trans({
+                  en: "`removeOne` and `updateOne` hit the newest match, always, and report only counts. They are for “there is at most one of these”, never for claiming the next item off a queue.",
+                  ko: "`removeOne`과 `updateOne`은 언제나 가장 최근 match 하나를 건드리고 개수만 돌려줍니다. “이런 것은 많아야 하나”일 때 쓰는 것이지, 큐에서 다음 항목을 가져오는 용도가 아닙니다.",
                 })}
               </li>
             </DocsList>
           </div>
         </Docs.Alert>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "When a per-document rule must run, take a document path instead:",
+              ko: "document마다 규칙이 실행되어야 한다면 document 경로를 사용하세요:",
+            })}
+          </div>
+          <DocsList>
+            <li>
+              {l.trans({
+                en: "The service's generated `update<Model>(id, patch)` and `remove<Model>(id)` load the document, apply the change, and save it, so every hook and cascade runs.",
+                ko: "Service에 생성된 `update<Model>(id, patch)`와 `remove<Model>(id)`는 document를 읽어 변경을 적용하고 저장하므로 모든 hook과 cascade가 실행됩니다.",
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: "`pickAndWrite(id, data)` and `pickOneAndWrite(query, data)` are the write-through pair on the model facade: pick the document, write into it, save it. Reach for those when the write has to be seen by the save hooks.",
+                ko: "`pickAndWrite(id, data)`와 `pickOneAndWrite(query, data)`는 model facade의 write-through 쌍입니다. Document를 집어 값을 쓰고 저장합니다. 변경이 save hook에 보여야 한다면 이 둘을 쓰세요.",
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: "`doc.set(...).save()` is the same thing spelled out when you already hold the document.",
+                ko: "이미 document를 들고 있다면 `doc.set(...).save()`가 같은 일을 직접 쓰는 방식입니다.",
+              })}
+            </li>
+          </DocsList>
+        </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
@@ -276,8 +312,8 @@ await this.Post.updateOne({ id }, ({ pull }) => ({ tags: pull("featured") }));`}
           <DocsList>
             <li>
               {l.trans({
-                en: "Prefer query updates for counters and bulk state changes; prefer document methods when hooks or rich domain logic must run.",
-                ko: "카운터나 대량 상태 변경에는 query update를, hook이나 풍부한 도메인 로직이 필요할 때는 document method를 선호하세요.",
+                en: "Prefer query updates for counters and bulk state changes on a model that carries no removal side effect; take a document path whenever hooks, a cascade, or rich domain logic must run.",
+                ko: "삭제 부수효과가 없는 model의 카운터나 대량 상태 변경에는 query update를 쓰고, hook·cascade·도메인 로직이 실행되어야 한다면 document 경로를 사용하세요.",
               })}
             </li>
             <li>

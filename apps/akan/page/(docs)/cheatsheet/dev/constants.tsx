@@ -20,23 +20,32 @@ export default page().render(() => {
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title={l.trans({ en: "Developer schema page", ko: "개발자 스키마 page" })}
-          code={`import "@apps/myapp/lib/cnst";
+          title="apps/myapp/ui/SchemaDocs.tsx"
+          code={`"use client";
+
+import "@apps/myapp/lib/cnst";
+
 import { Constant } from "akanjs/ui";
 
-export default function SchemaDocsPage() {
-  return <Constant.Doc.Zone models={["user", "bizContract"]} openAll />;
-}`}
+export const SchemaDocs = () => <Constant.Doc.Zone models={["user", "bizContract"]} openAll />;
+
+export const PrintableSchemaDocs = () => <Constant.Doc.Print models={["user", "bizContract"]} />;`}
         />
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Each one then gets a route of its own, and the route stays a server page:",
+              ko: "각각에 route를 하나씩 주면 되고, route는 server page로 남습니다:",
+            })}
+          </div>
+        </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title={l.trans({ en: "Printable schema definition", ko: "출력용 스키마 정의서" })}
-          code={`import "@apps/myapp/lib/cnst";
-import { Constant } from "akanjs/ui";
+          title="apps/myapp/page/(admin)/schema/_index.tsx"
+          code={`import { SchemaDocs } from "@apps/myapp/ui";
+import { page } from "akanjs/client";
 
-export default function PrintableSchemaDocsPage() {
-  return <Constant.Doc.Print models={["user", "bizContract"]} />;
-}`}
+export default page().render(() => <SchemaDocs />);`}
         />
       </Scroll.Slide>
       <Divider />

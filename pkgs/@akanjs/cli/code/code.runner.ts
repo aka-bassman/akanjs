@@ -1,7 +1,10 @@
+// Reached at the leaf rather than through `@akanjs/devkit/codeAgent`: that barrel loads the engine, and this
+// module is imported for `akan --help` like every other runner.
+import { akanCodeDefaultModel, type CodeAgentModelRef } from "@akanjs/devkit/codeAgent/agent/akanCodeModel";
+import { CodeAgentStreamPrinter } from "@akanjs/devkit/codeAgent/agent/CodeAgentStreamPrinter";
 import { runner, type Workspace } from "@akanjs/devkit/commandDecorators";
 import { type CodeAgentProfile, codeAgentPresets, isCodeAgentPresetName } from "akanjs/common";
-import { akanCodeDefaultModel, type CodeAgentModelRef } from "./akanCodeModel";
-import { CodeAgentStreamPrinter } from "./CodeAgentStreamPrinter";
+import type { CodeTuiExit } from "./CodeTui";
 
 export interface CodeRunOptions {
   workspace: Workspace;
@@ -10,6 +13,7 @@ export interface CodeRunOptions {
   model?: string;
   json: boolean;
   thinking: boolean;
+  resume?: string;
 }
 
 export class CodeRunner extends runner("code") {
@@ -20,10 +24,10 @@ export class CodeRunner extends runner("code") {
    * or anything the engine logs while loading lands on stdout and corrupts the very first frame.
    */
   async serve(options: CodeRunOptions) {
-    await import("./consoleToStderr");
+    await import("@akanjs/devkit/codeAgent/agent/consoleToStderr");
     const [{ CodeAgent }, { CodeAgentRpcHost }] = await Promise.all([
-      import("./CodeAgent"),
-      import("./CodeAgentRpcHost"),
+      import("@akanjs/devkit/codeAgent/agent/CodeAgent"),
+      import("@akanjs/devkit/codeAgent/agent/CodeAgentRpcHost"),
     ]);
     const profile = CodeRunner.profileOf(options);
     const agent = await CodeAgent.create({
@@ -44,20 +48,41 @@ export class CodeRunner extends runner("code") {
    * contract carries — see {@link CodeTui}.
    */
   async tui(options: CodeRunOptions, seed: string) {
-    const [{ CodeAgent }, { CodeTui }] = await Promise.all([import("./CodeAgent"), import("./CodeTui")]);
+    const [{ CodeAgent }, { CodeTui }] = await Promise.all([
+      import("@akanjs/devkit/codeAgent/agent/CodeAgent"),
+      import("./CodeTui"),
+    ]);
     const profile = CodeRunner.profileOf(options);
-    const agent = await CodeAgent.create({
-      workspace: options.workspace,
-      cwd: profile.paths.root,
-      profile,
-      apps: options.app ? [options.app] : await options.workspace.getApps(),
-      model: CodeRunner.modelOf(options.model),
-      mode: "tui",
-    });
-    try {
-      await new CodeTui(agent).run(seed);
-    } finally {
-      agent.dispose();
+    const apps = options.app ? [options.app] : await options.workspace.getApps();
+    let resume = options.resume;
+    let prompt = seed;
+    let notice: string | undefined;
+    // Switching sessions builds a new agent rather than re-pointing this one: the engine binds its extensions,
+    // its tool registry and its context to the session at construction, so half of what a session is would
+    // stay behind. The host is cheap to rebuild; the session is not cheap to swap.
+    for (;;) {
+      const agent = await CodeAgent.create({
+        workspace: options.workspace,
+        cwd: profile.paths.root,
+        profile,
+        apps,
+        model: CodeRunner.modelOf(options.model),
+        mode: "tui",
+        ...(resume ? { resume } : {}),
+      });
+      let next: CodeTuiExit | undefined;
+      try {
+        next = await new CodeTui(agent, {
+          thinking: options.thinking,
+          ...(notice ? { notice } : {}),
+        }).run(prompt);
+      } finally {
+        agent.dispose();
+      }
+      if (!next) return;
+      resume = next.id;
+      notice = next.notice;
+      prompt = "";
     }
   }
 
@@ -70,7 +95,7 @@ export class CodeRunner extends runner("code") {
   async run(prompt: string, options: CodeRunOptions) {
     // The engine costs ~122MiB resident on import, and `akan --help` loads every command module. Importing it
     // here rather than at the top of the file keeps that cost on the one command that needs it.
-    const { CodeAgent } = await import("./CodeAgent");
+    const { CodeAgent } = await import("@akanjs/devkit/codeAgent/agent/CodeAgent");
     const profile = CodeRunner.profileOf(options);
     const agent = await CodeAgent.create({
       workspace: options.workspace,

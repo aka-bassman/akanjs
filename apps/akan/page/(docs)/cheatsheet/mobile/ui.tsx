@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Docs } from "@apps/akan/ui";
+import { Code, Divider, Docs } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
@@ -109,7 +109,7 @@ export default page()
           </div>
         </Docs.Description>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide
         id="keyboard-accessory"
@@ -239,8 +239,9 @@ export default page()
             </div>
           </div>
           <Code.Snippet
-            title="Bottom composer"
-            code={`import { page } from "akanjs/client";
+            title="apps/myapp/page/chat/_index.tsx"
+            code={`import { ChatMessage } from "@apps/myapp/client";
+import { page } from "akanjs/client";
 import { Layout } from "akanjs/ui";
 
 export default page()
@@ -248,14 +249,33 @@ export default page()
   .render(() => (
     <div>
       <div>{/* scrollable content */}</div>
-      <Layout.BottomInset
-        keyboardSticky
-        contentAnchor="bottom"
-      >
-        <input placeholder="Type message..." />
+      <Layout.BottomInset keyboardSticky contentAnchor="bottom">
+        <ChatMessage.Zone.Composer />
       </Layout.BottomInset>
     </div>
   ));`}
+          />
+          <Code.Snippet
+            title="apps/myapp/lib/chatMessage/ChatMessage.Zone.tsx"
+            code={`"use client";
+import { st, usePage } from "@apps/myapp/client";
+import { Field } from "akanjs/ui";
+
+interface ComposerProps {
+  className?: string;
+}
+export const Composer = ({ className }: ComposerProps) => {
+  const { l } = usePage();
+  const chatMessageForm = st.use.chatMessageForm();
+  return (
+    <Field.Text
+      className={className}
+      label={l("chatMessage.content")}
+      value={chatMessageForm.content}
+      onChange={st.do.setContentOnChatMessage}
+    />
+  );
+};`}
           />
           <div className="space-y-1">
             {[
@@ -293,14 +313,14 @@ export default page()
 
 import { useLayoutEffect } from "react";
 
-export function ScrollToBottomOnMount() {
+export const ScrollToBottomOnMount = () => {
   useLayoutEffect(() => {
     const pageContent = document.getElementById("pageContent");
     pageContent?.scrollTo({ top: pageContent.scrollHeight });
   }, []);
 
   return null;
-}`}
+};`}
           />
           <Docs.Alert type="info">
             {l.trans({

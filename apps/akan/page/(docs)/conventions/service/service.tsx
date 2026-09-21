@@ -39,7 +39,7 @@ export default page().render(() => {
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title="minimal service"
+          title="libs/util/lib/_security/security.service.ts"
           code={`export class SecurityService extends serve("security" as const, ({ use }) => ({
   jwtSecret: use<string>(),
 })) {
@@ -63,7 +63,7 @@ export default page().render(() => {
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title="runtime injection"
+          title="libs/util/lib/_security/security.service.ts"
           code={`export class SecurityService extends serve("security" as const, ({ use }) => ({
   jwtSecret: use<string>(),
   aeskey: use<string>(),
@@ -73,6 +73,32 @@ export default page().render(() => {
   }
 }`}
         />
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: (
+              <span>
+                This is the legacy shape, kept because existing services are written in it. <code>use&lt;T&gt;()</code>{" "}
+                reaches a singleton registered in <code>lib/option.ts</code>; new adapters are an <code>adapt()</code>{" "}
+                class in <code>srvkit/</code> injected with <code>plug(TheClass)</code>, which self-registers and needs
+                no <code>option.ts</code> entry. The preference order inside a service is{" "}
+                <code>service&lt;srv.XService&gt;()</code>, then <code>plug()</code>, then <code>use&lt;T&gt;()</code>{" "}
+                for legacy singletons, then <code>env()</code>. Whichever shape you use, resolve a secret inside a
+                function — never at module scope, where it is read before the runtime has one.
+              </span>
+            ),
+            ko: (
+              <span>
+                이것은 기존 service들이 이 형태로 작성돼 있어 유지되는 legacy shape입니다. <code>use&lt;T&gt;()</code>는{" "}
+                <code>lib/option.ts</code>에 등록된 singleton에 닿습니다. 새 adapter는 <code>srvkit/</code>의{" "}
+                <code>adapt()</code> class이고 <code>plug(TheClass)</code>로 주입하며, 스스로 등록하므로{" "}
+                <code>option.ts</code> 항목이 필요 없습니다. service 안에서의 우선순위는{" "}
+                <code>service&lt;srv.XService&gt;()</code>, <code>plug()</code>, legacy singleton용{" "}
+                <code>use&lt;T&gt;()</code>, <code>env()</code> 순입니다. 어느 형태든 secret은 function 안에서
+                해석합니다. module scope에서는 runtime이 값을 갖기 전에 읽히므로 절대 두지 않습니다.
+              </span>
+            ),
+          })}
+        </Docs.Alert>
       </Scroll.Slide>
       <Divider />
 

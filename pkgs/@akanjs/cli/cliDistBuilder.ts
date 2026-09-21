@@ -164,7 +164,7 @@ export class CliDistBuilder {
     await $`rm -rf ${this.#outDir}/templates ${this.#outDir}/guidelines ${this.#outDir}/skills`;
     await $`cp -R ${this.#cliDir}/templates ${this.#outDir}/templates`;
     await $`cp -R ${this.#cliDir}/guidelines ${this.#outDir}/guidelines`;
-    await $`cp -R ${this.#cliDir}/skills ${this.#outDir}/skills`;
+    await $`cp -R ${this.#devkitDir}/codeAgent/skills ${this.#outDir}/skills`;
     const distPackageJson = {
       ...packageJson,
       bin: { akan: "./index.js" },

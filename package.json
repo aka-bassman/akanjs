@@ -8,9 +8,11 @@
     "pkgs/@akanjs/*"
   ],
   "overrides": {
-    "@earendil-works/pi-agent-core": "0.80.6",
-    "@earendil-works/pi-ai": "0.80.6",
-    "@earendil-works/pi-tui": "0.80.6"
+    "@earendil-works/chord": "0.86.1",
+    "@earendil-works/pi-agent-core": "0.86.1",
+    "@earendil-works/pi-ai": "0.86.1",
+    "@earendil-works/pi-telemetry": "0.86.1",
+    "@earendil-works/pi-tui": "0.86.1"
   },
   "scripts": {
     "uploadEnv": "chmod +x infra/master/jenkins/uploadEnv.sh && chmod +x infra/master/jenkins/getSecrets.sh && bash infra/master/jenkins/uploadEnv.sh",
@@ -85,7 +87,7 @@
     "@dnd-kit/modifiers": "^9.0.0",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
-    "@earendil-works/pi-coding-agent": "0.80.6",
+    "@earendil-works/pi-coding-agent": "0.86.1",
     "@inquirer/prompts": "^8.4.3",
     "@kubernetes/client-node": "^1.4.0",
     "@lexical/plain-text": "^0.51.0",
@@ -166,6 +168,7 @@
     "simple-peer": "^9.11.1",
     "solapi": "^5.5.4",
     "ssh2": "^1.17.0",
+    "string-width": "^8.2.1",
     "subset-font": "^2.5.0",
     "swiper": "^12.1.4",
     "tailwind-merge": "^3.3.1",

@@ -546,7 +546,8 @@ export class IcecreamOrderService extends serve(db.icecreamOrder, ({ use, servic
             className="w-full"
             title="apps/koyo/lib/inventory/inventory.signal.ts"
             code={`
-import { endpoint, internal, Public, slice } from "akanjs/signal"; // [!code collapse:17]
+import { Admin } from "@libs/shared/srvkit"; // [!code collapse:18]
+import { endpoint, internal, Public, slice } from "akanjs/signal";
 import * as cnst from "../cnst";
 import * as srv from "../srv";
 
@@ -554,7 +555,7 @@ export class InventoryInternal extends internal(srv.inventory, ({ interval }) =>
 
 export class InventorySlice extends slice(
   srv.inventory,
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin } },
   (init) => ({
     inPublic: init().exec(function () {
       return this.inventoryService.queryAny();
@@ -678,10 +679,9 @@ export class InventoryStore extends store(sig.inventory, () => ({
             code={`
 "use client"; // [!code collapse:4]
 import { cn } from "akanjs/client";
-import { Field, Layout, buttonRecipe } from "akanjs/ui";
+import { Field, Layout } from "akanjs/ui";
 import { cnst, st, usePage } from "@apps/koyo/client";
-import { Loading } from "akanjs/ui"; // [!code ++:2]
-import { useEffect } from "react";
+import { Loading } from "akanjs/ui"; // [!code ++]
 // [!code collapse:5]
 interface GeneralProps {
   className?: string;
@@ -691,10 +691,7 @@ interface GeneralProps {
 export const General = ({ className, showServeType = true }: GeneralProps) => {
   const { l } = usePage();
   const icecreamOrderForm = st.use.icecreamOrderForm();
-  const todaysInventory = st.use.todaysInventory(); // [!code ++:7]
-  useEffect(() => {
-    void st.do.loadTodaysInventory();
-  }, []);
+  const todaysInventory = st.use.todaysInventory(); // [!code ++:4]
   if (!todaysInventory) return <Loading.Area />;
   else if (!todaysInventory.isInStock("yogurtIcecream"))
     return <div className="flex size-full items-center justify-center text-xl">{l("inventory.outOfStock")}</div>;
@@ -776,12 +773,12 @@ export const General = ({ className, showServeType = true }: GeneralProps) => {
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-primary">🔄</span>
-                <strong className="text-primary">loadTodaysInventory</strong>
+                <strong className="text-primary">{"st.use.todaysInventory()"}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
                 {l.trans({
-                  en: `Called in useEffect to load inventory data when the component mounts. Shows a loading spinner until data is ready.`,
-                  ko: `컴포넌트가 마운트될 때 재고 데이터를 로드하기 위해 useEffect에서 호출됩니다. 데이터가 준비될 때까지 로딩 스피너를 보여줍니다.`,
+                  en: `The form only reads the store, and shows a spinner until the value is there. Inventory.Zone.Today, which the route mounts below, is what calls loadTodaysInventory - a mount-time fetch inside a Template is what akan quality ssr reports as client-mount-load.`,
+                  ko: `폼은 스토어를 읽기만 하고, 값이 들어올 때까지 스피너를 보여줍니다. loadTodaysInventory를 호출하는 쪽은 아래에서 라우트가 마운트하는 Inventory.Zone.Today입니다 - Template 안의 마운트 시점 페칭은 akan quality ssr이 client-mount-load로 보고하는 패턴입니다.`,
                 })}
               </div>
             </div>
@@ -857,7 +854,6 @@ export class InventoryInsight extends via(Inventory, (field) => ({})) {}`}
             title="apps/koyo/lib/inventory/Inventory.Util.tsx"
             code={`
 "use client";
-import { cn } from "akanjs/client";
 import { st, usePage } from "@apps/koyo/client";
 import { buttonRecipe } from "akanjs/ui";
 import { BiRefresh } from "react-icons/bi";
@@ -1068,7 +1064,7 @@ export const Today = ({ className }: TodayProps) => {
             className="w-full"
             title="apps/koyo/page/_index.tsx"
             code={`
-import { Load, Model } from "akanjs/ui"; // [!code collapse:3]
+import { Model, buttonRecipe } from "akanjs/ui"; // [!code collapse:3]
 import { cnst, fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
 import { page } from "akanjs/client";
 import { Inventory } from "@apps/koyo/client"; // [!code ++]
@@ -1088,7 +1084,7 @@ export default page().render(() => {
       <div className="flex items-center gap-4 text-5xl font-black"> // [!code collapse:16]
         <div className="text-5xl font-bold">{l("icecreamOrder.modelName")}</div>
         <Model.New
-          className={buttonRecipe({ variant: "primary" })}
+          trigger={<button className={buttonRecipe({ variant: "primary" })}>{l("base.new")}</button>}
           slice={fetch.slice.icecreamOrderInPublic}
           renderTitle="name"
           partial={icecreamOrderForm}

@@ -69,7 +69,7 @@ export default layout().render(({ children }) => {
         { name: l.trans({ en: "Docker", ko: "도커" }), href: "/cheatsheet/dev/docker" },
         { name: l.trans({ en: "Kubernetes", ko: "쿠버네티스" }), href: "/cheatsheet/dev/k8s" },
         { name: l.trans({ en: "PWA", ko: "PWA" }), href: "/cheatsheet/dev/pwa" },
-        // { name: l.trans({ en: "Testing", ko: "테스트" }), href: "/cheatsheet/dev/test" },
+        { name: l.trans({ en: "Testing", ko: "테스트" }), href: "/cheatsheet/dev/test" },
       ],
     },
   ];

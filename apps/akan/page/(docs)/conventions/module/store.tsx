@@ -7,55 +7,172 @@ export default page().render(() => {
   const { l } = usePage();
 
   const baseVariables: IntroItem[] = [
-    { name: "st.<model>: Full | null", desc: "The cached full model instance." },
-    { name: "st.<model>Loading: string | boolean", desc: "Loading status for the model instance." },
-    { name: "st.<model>Form: Default", desc: "Form state for create or update flows." },
-    { name: "st.<model>FormLoading: string | boolean", desc: "Loading status for form submission." },
-    { name: "st.<model>Submit: Submit", desc: "Latest submit state." },
-    { name: "st.<model>ViewAt: Date", desc: "Time when the detailed view was opened." },
-    { name: "st.<model>Modal: string | null", desc: "Modal key associated with this model." },
+    {
+      name: "st.<model>: Full | null",
+      desc: l.trans({ en: "The cached full model instance.", ko: "cache된 full model instance입니다." }),
+    },
+    {
+      name: "st.<model>Loading: string | boolean",
+      desc: l.trans({ en: "Loading status for the model instance.", ko: "model instance의 loading 상태입니다." }),
+    },
+    {
+      name: "st.<model>Form: Default",
+      desc: l.trans({
+        en: "Form state for create or update flows.",
+        ko: "create 또는 update 흐름의 form state입니다.",
+      }),
+    },
+    {
+      name: "st.<model>FormLoading: string | boolean",
+      desc: l.trans({ en: "Loading status for form submission.", ko: "form 제출의 loading 상태입니다." }),
+    },
+    {
+      name: "st.<model>Submit: Submit",
+      desc: l.trans({ en: "Latest submit state.", ko: "가장 최근 submit state입니다." }),
+    },
+    {
+      name: "st.<model>ViewAt: Date",
+      desc: l.trans({ en: "Time when the detailed view was opened.", ko: "상세 view가 열린 시각입니다." }),
+    },
+    {
+      name: "st.<model>Modal: string | null",
+      desc: l.trans({ en: "Modal key associated with this model.", ko: "이 model에 연결된 modal key입니다." }),
+    },
   ];
 
   const baseMethods: IntroItem[] = [
-    { name: "create<Class>InForm(options?)", desc: "Create a document using form state." },
-    { name: "update<Class>InForm(options?)", desc: "Update a document using form state." },
-    { name: "create<Class>(data, options?)", desc: "Create a new document with data." },
-    { name: "update<Class>(id, data, options?)", desc: "Update an existing document." },
-    { name: "remove<Class>(id, options?)", desc: "Remove a document." },
-    { name: "check<Class>Submitable(disabled?)", desc: "Check whether the form can be submitted." },
-    { name: "submit<Class>(options?)", desc: "Submit the form for create or update." },
-    { name: "new<Class>(partial?, options?)", desc: "Initialize form state for creation." },
-    { name: "edit<Class>(model, options?)", desc: "Initialize form state for editing." },
-    { name: "merge<Class>(model, data, options?)", desc: "Merge data into an existing cached document." },
-    { name: "view<Class>(model, options?)", desc: "Open detailed view state." },
-    { name: "set<Class>(...models)", desc: "Manually set model cache." },
-    { name: "reset<Class>(model?)", desc: "Reset model state." },
+    {
+      name: "create<Class>InForm(options?)",
+      desc: l.trans({ en: "Create a document using form state.", ko: "form state로 document를 생성합니다." }),
+    },
+    {
+      name: "update<Class>InForm(options?)",
+      desc: l.trans({ en: "Update a document using form state.", ko: "form state로 document를 수정합니다." }),
+    },
+    {
+      name: "create<Class>(data, options?)",
+      desc: l.trans({ en: "Create a new document with data.", ko: "data로 새 document를 생성합니다." }),
+    },
+    {
+      name: "update<Class>(id, data, options?)",
+      desc: l.trans({ en: "Update an existing document.", ko: "기존 document를 수정합니다." }),
+    },
+    { name: "remove<Class>(id, options?)", desc: l.trans({ en: "Remove a document.", ko: "document를 제거합니다." }) },
+    {
+      name: "check<Class>Submitable(disabled?)",
+      desc: l.trans({ en: "Check whether the form can be submitted.", ko: "form을 제출할 수 있는지 확인합니다." }),
+    },
+    {
+      name: "submit<Class>(options?)",
+      desc: l.trans({ en: "Submit the form for create or update.", ko: "create 또는 update로 form을 제출합니다." }),
+    },
+    {
+      name: "new<Class>(partial?, options?)",
+      desc: l.trans({ en: "Initialize form state for creation.", ko: "생성용 form state를 초기화합니다." }),
+    },
+    {
+      name: "edit<Class>(model, options?)",
+      desc: l.trans({ en: "Initialize form state for editing.", ko: "수정용 form state를 초기화합니다." }),
+    },
+    {
+      name: "merge<Class>(model, data, options?)",
+      desc: l.trans({
+        en: "Merge data into an existing cached document.",
+        ko: "cache된 기존 document에 data를 병합합니다.",
+      }),
+    },
+    {
+      name: "view<Class>(model, options?)",
+      desc: l.trans({ en: "Open detailed view state.", ko: "상세 view state를 엽니다." }),
+    },
+    {
+      name: "set<Class>(...models)",
+      desc: l.trans({ en: "Manually set model cache.", ko: "model cache를 직접 설정합니다." }),
+    },
+    { name: "reset<Class>(model?)", desc: l.trans({ en: "Reset model state.", ko: "model state를 초기화합니다." }) },
   ];
 
   const sliceVariables: IntroItem[] = [
-    { name: "st.default<Class>: Default", desc: "Default value for the slice." },
-    { name: "st.<slice>List: DataList<Light>", desc: "List loaded by init or refresh." },
-    { name: "st.<slice>ListLoading: boolean", desc: "Loading status of the list." },
-    { name: "st.<slice>InitList: DataList<Light>", desc: "Initial list snapshot." },
-    { name: "st.<slice>InitAt: Date", desc: "Time when the list was initialized." },
-    { name: "st.<slice>Selection: DataList<Light>", desc: "Selected items in the list." },
-    { name: "st.<slice>Insight: Insight", desc: "Insight data for the list." },
-    { name: "st.lastPageOf<Slice>: number", desc: "Last accessed page number." },
-    { name: "st.pageOf<Slice>: number", desc: "Current page number." },
-    { name: "st.limitOf<Slice>: number", desc: "Items per page." },
-    { name: "st.queryArgsOf<Slice>: QueryArgs", desc: "Current query arguments." },
-    { name: "st.sortOf<Slice>: Sort", desc: "Current sort setting." },
+    {
+      name: "st.default<Class>: Default",
+      desc: l.trans({ en: "Default value for the slice.", ko: "slice의 default 값입니다." }),
+    },
+    {
+      name: "st.<slice>List: DataList<Light>",
+      desc: l.trans({ en: "List loaded by init or refresh.", ko: "init 또는 refresh가 불러온 list입니다." }),
+    },
+    {
+      name: "st.<slice>ListLoading: boolean",
+      desc: l.trans({ en: "Loading status of the list.", ko: "list의 loading 상태입니다." }),
+    },
+    {
+      name: "st.<slice>InitList: DataList<Light>",
+      desc: l.trans({ en: "Initial list snapshot.", ko: "최초 list snapshot입니다." }),
+    },
+    {
+      name: "st.<slice>InitAt: Date",
+      desc: l.trans({ en: "Time when the list was initialized.", ko: "list가 초기화된 시각입니다." }),
+    },
+    {
+      name: "st.<slice>Selection: DataList<Light>",
+      desc: l.trans({ en: "Selected items in the list.", ko: "list에서 선택된 항목입니다." }),
+    },
+    {
+      name: "st.<slice>Insight: Insight",
+      desc: l.trans({ en: "Insight data for the list.", ko: "list의 insight data입니다." }),
+    },
+    {
+      name: "st.lastPageOf<Slice>: number",
+      desc: l.trans({ en: "Last accessed page number.", ko: "마지막으로 접근한 page 번호입니다." }),
+    },
+    {
+      name: "st.pageOf<Slice>: number",
+      desc: l.trans({ en: "Current page number.", ko: "현재 page 번호입니다." }),
+    },
+    { name: "st.limitOf<Slice>: number", desc: l.trans({ en: "Items per page.", ko: "page당 항목 수입니다." }) },
+    {
+      name: "st.queryArgsOf<Slice>: QueryArgs",
+      desc: l.trans({ en: "Current query arguments.", ko: "현재 query 인자입니다." }),
+    },
+    { name: "st.sortOf<Slice>: Sort", desc: l.trans({ en: "Current sort setting.", ko: "현재 sort 설정입니다." }) },
   ];
 
   const sliceMethods: IntroItem[] = [
-    { name: "init<Slice>(...args)", desc: "Initialize list with query args." },
-    { name: "refresh<Slice>(initForm?)", desc: "Reload list with strict consistency." },
-    { name: "select<Slice>(model, options?)", desc: "Update selection state." },
-    { name: "setPageOf<Slice>(page, options?)", desc: "Change page and reload." },
-    { name: "loadMoreOf<Slice>(options?)", desc: "Append the rows after the ones loaded." },
-    { name: "setLimitOf<Slice>(limit, options?)", desc: "Change list limit and reload." },
-    { name: "setQueryArgsOf<Slice>(...args)", desc: "Change query arguments and reload." },
-    { name: "setSortOf<Slice>(sort, options?)", desc: "Change sort and reload." },
+    {
+      name: "init<Slice>(...args)",
+      desc: l.trans({ en: "Initialize list with query args.", ko: "query 인자로 list를 초기화합니다." }),
+    },
+    {
+      name: "refresh<Slice>(initForm?)",
+      desc: l.trans({ en: "Reload list with strict consistency.", ko: "엄격한 일관성으로 list를 다시 불러옵니다." }),
+    },
+    {
+      name: "select<Slice>(model, options?)",
+      desc: l.trans({ en: "Update selection state.", ko: "선택 state를 갱신합니다." }),
+    },
+    {
+      name: "setPageOf<Slice>(page, options?)",
+      desc: l.trans({ en: "Change page and reload.", ko: "page를 바꾸고 다시 불러옵니다." }),
+    },
+    {
+      name: "loadMoreOf<Slice>(options?)",
+      desc: l.trans({
+        en: "Append the rows after the ones loaded.",
+        ko: "이미 불러온 행 다음의 행을 이어 붙입니다.",
+      }),
+    },
+    {
+      name: "setLimitOf<Slice>(limit, options?)",
+      desc: l.trans({ en: "Change list limit and reload.", ko: "list limit을 바꾸고 다시 불러옵니다." }),
+    },
+    {
+      name: "setQueryArgsOf<Slice>(...args)",
+      desc: l.trans({ en: "Change query arguments and reload.", ko: "query 인자를 바꾸고 다시 불러옵니다." }),
+    },
+    {
+      name: "setSortOf<Slice>(sort, options?)",
+      desc: l.trans({ en: "Change sort and reload.", ko: "sort를 바꾸고 다시 불러옵니다." }),
+    },
   ];
 
   const stateManagementMethods: IntroItem[] = [
@@ -355,33 +472,26 @@ export class UserStore extends store(
           code={`st.do.setTicketModal(null);
 st.set({ ticketModal: null });`}
         />
-      </Scroll.Slide>
-      <Divider />
-
-      <Scroll.Slide
-        id="rootstore-access"
-        title={l.trans({ en: "Other Stores With RootStore", ko: "RootStore로 다른 store 접근" })}
-      >
-        <Docs.Title>{l.trans({ en: "Other Stores With RootStore", ko: "RootStore로 다른 store 접근" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: "Store instances are merged into one app-level RootStore type. Use RootStore casting only for rare cross-store coordination, because broad cross-store coupling makes actions harder to reason about.",
-              ko: "store instance는 app-level RootStore type으로 merge됩니다. cross-store coordination이 꼭 필요할 때만 RootStore casting을 사용하세요. 너무 넓은 cross-store coupling은 action 이해를 어렵게 만듭니다.",
-            })}
-          </div>
-        </Docs.Description>
-        <Code.Snippet
-          className="w-full"
-          title="user.store.ts"
-          code={`import type { RootStore } from "../st";
-
-async applyUserProfile() {
-  const { self } = (this as unknown as RootStore).get();
-  await (this as unknown as RootStore).refreshJwt();
-  this.set({ self });
-}`}
-        />
+        <Docs.Alert type="error">
+          {l.trans({
+            en: (
+              <span>
+                Never write <code>import type &#123; RootStore &#125; from "../st"</code> in a store, and never cast
+                with <code>this as unknown as RootStore</code>. The import pulls every store into one module graph and
+                crashes <code>akan build</code> with a Bun SSR segfault. A store coordinates through its own state, so
+                write what the other store needs into this store's state instead.
+              </span>
+            ),
+            ko: (
+              <span>
+                store에서 <code>import type &#123; RootStore &#125; from "../st"</code>를 쓰지 말고,{" "}
+                <code>this as unknown as RootStore</code> casting도 하지 마세요. 이 import는 모든 store를 하나의 module
+                graph로 끌어와 <code>akan build</code>를 Bun SSR segfault로 크래시시킵니다. store는 자기 state로
+                조율하므로, 다른 store가 필요로 하는 값은 이 store의 state에 기록합니다.
+              </span>
+            ),
+          })}
+        </Docs.Alert>
       </Scroll.Slide>
       <Divider />
 
@@ -411,8 +521,8 @@ async applyUserProfile() {
                 ko: "app 전용 state와 action을 추가하기 전에 ...model.stores로 generated 또는 library store를 확장합니다.",
               }),
               l.trans({
-                en: "Use RootStore casting sparingly for cross-store coordination.",
-                ko: "cross-store coordination에는 RootStore casting을 필요한 만큼만 사용합니다.",
+                en: "Return nothing from a store action. Every method dispatches through st.do, so write the result into state with this.set instead.",
+                ko: "store action은 값을 반환하지 않습니다. 모든 method는 st.do를 통해 dispatch되므로 결과는 this.set으로 state에 기록합니다.",
               }),
             ].map((rule) => (
               <div key={rule} className={panelRecipe({ padding: "row" }, "text-foreground/70")}>

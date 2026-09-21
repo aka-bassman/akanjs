@@ -342,14 +342,15 @@ export class IcecreamOrderService extends serve(db.icecreamOrder, ({ use, servic
         <Docs.Description>
           <div>
             {l.trans({
-              en: `Think of signal endpoints as the communication system between the frontend (like the shop's order display screen) and the backend (the kitchen and management system). When staff clicks a "Process" button on the screen, it needs to communicate with the backend to actually update the order. Akan.js automatically creates both REST and GraphQL versions of these endpoints, so different parts of your system can communicate however they prefer.`,
-              ko: `시그널 엔드포인트를 프론트엔드(가게의 주문 표시 화면 같은)와 백엔드(주방과 관리 시스템) 사이의 의사소통 시스템이라고 생각해보세요. 직원이 화면의 "작업시작" 버튼을 클릭하면, 실제로 주문을 업데이트하기 위해 백엔드와 통신해야 합니다. Akan.js는 이러한 엔드포인트의 REST와 GraphQL 버전을 자동으로 생성하므로, 시스템의 다른 부분들이 원하는 방식으로 통신할 수 있습니다.`,
+              en: `Think of signal endpoints as the communication system between the frontend (like the shop's order display screen) and the backend (the kitchen and management system). When staff clicks a "Process" button on the screen, it needs to communicate with the backend to actually update the order. Akan.js serves every endpoint over HTTP and over the websocket, and publishes it to AI agents over MCP when its guards allow, so every caller reaches the same kitchen through the same hatch.`,
+              ko: `시그널 엔드포인트를 프론트엔드(가게의 주문 표시 화면 같은)와 백엔드(주방과 관리 시스템) 사이의 의사소통 시스템이라고 생각해보세요. 직원이 화면의 "작업시작" 버튼을 클릭하면, 실제로 주문을 업데이트하기 위해 백엔드와 통신해야 합니다. Akan.js는 모든 엔드포인트를 HTTP와 websocket으로 함께 제공하고, guard가 허용하면 MCP를 통해 AI 에이전트에게도 공개하므로, 모든 호출자가 같은 창구로 같은 주방에 도달합니다.`,
             })}
           </div>
           <Code.Snippet
             className="w-full"
             title="apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts"
             code={`
+import { Admin } from "@libs/shared/srvkit";
 import { ID } from "akanjs/base"; // [!code ++]
 import { endpoint, internal, Public, slice } from "akanjs/signal"; // [!code collapse:18]
 
@@ -360,7 +361,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder,
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init().exec(function () {
       return this.icecreamOrderService.queryAny();
@@ -395,6 +396,12 @@ export class IcecreamOrderEndpoint extends endpoint(srv.icecreamOrder, ({ query,
             {l.trans({
               en: `Each signal endpoint is defined using the mutation() builder, specifying the return type and accepting the order ID as a parameter via .param(). The .exec() callback delegates to the corresponding service method to perform the actual business logic.`,
               ko: `각 시그널 엔드포인트는 mutation() 빌더를 사용하여 정의되며, .param()을 통해 주문 ID를 매개변수로 받습니다. .exec() 콜백은 해당 서비스 메서드에 위임하여 실제 비즈니스 로직을 수행합니다.`,
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: `The second argument to slice() is the guard map, not boilerplate: root is the generated admin query API and is always Admin, get covers reads, and cru covers create, update and remove — create is opened on its own here because the kiosk takes anonymous orders. Leaving root: Public hands that admin query API to every anonymous caller, and to every AI agent through /mcp.`,
+              ko: `slice()의 두 번째 인자는 guard map이며 형식적인 boilerplate가 아닙니다. root는 생성된 admin query API라서 항상 Admin이고, get은 읽기, cru는 create/update/remove를 담당합니다 — 여기서는 키오스크가 익명 주문을 받으므로 create만 따로 열었습니다. root: Public으로 두면 그 admin query API가 모든 익명 호출자에게, 그리고 /mcp를 통해 모든 AI 에이전트에게 그대로 열립니다.`,
             })}
           </div>
           <div>
@@ -579,8 +586,7 @@ export class IcecreamOrderStore extends store(sig.icecreamOrder, () => ({
             className="w-full"
             title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Util.tsx"
             code={`
-"use client"; // [!code collapse:4]
-import { cn } from "akanjs/client";
+"use client"; // [!code collapse:3]
 import { st, usePage } from "@apps/koyo/client";
 import { buttonRecipe } from "akanjs/ui";
 

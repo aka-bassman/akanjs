@@ -100,7 +100,7 @@ export class File extends via(FileObject, LightFile, (resolve) => ({})) {}`}
 import { endpoint } from "akanjs/signal";
 
 export class FileEndpoint extends endpoint(srv.file, ({ mutation }) => ({
-  uploadFiles: mutation([cnst.File])
+  uploadFiles: mutation([cnst.File], { guards: [User] })
     .body("files", [Upload])
     .body("purpose", String, { example: "profile" })
     .exec(async function (files, purpose) {
@@ -140,9 +140,12 @@ export class FileEndpoint extends endpoint(srv.file, ({ mutation }) => ({
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title="file.service.ts"
-          code={`export class FileService extends serve(db.file, ({ use }) => ({
-  storageApi: use<StorageApi>(),
+          title="apps/myapp/lib/file/file.service.ts"
+          code={`import { serve, StorageAdaptorRole } from "akanjs/service";
+import * as db from "../db";
+
+export class FileService extends serve(db.file, ({ plug }) => ({
+  storage: plug(StorageAdaptorRole),
 })) {
   async uploadFiles(files: File[], purpose: string) {
     return await Promise.all(files.map((file) => this.uploadFile(file, purpose)));
@@ -160,7 +163,7 @@ export class FileEndpoint extends endpoint(srv.file, ({ mutation }) => ({
 
     const path = \`\${purpose}/\${record.id}-\${file.name}\`;
 
-    this.storageApi.uploadDataFromStream({
+    this.storage.uploadDataFromStream({
       path,
       body: file.stream(),
       mimetype: file.type,
@@ -221,8 +224,8 @@ return (
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Mark one upload mutation with `{ fileUpload: true }`. The framework then auto-generates the `add{Model}Files` fetch helper and the form-field upload action (`add{Field}FilesOn{Model}`) that the `Field` and `Upload` components use, so a model's file field uploads and attaches automatically.",
-              ko: "업로드 mutation 하나에 `{ fileUpload: true }`를 달면, 프레임워크가 `add{Model}Files` fetch 헬퍼와 폼 필드 업로드 액션(`add{Field}FilesOn{Model}`)을 자동 생성합니다. `Field`/`Upload` 컴포넌트가 이를 사용해 모델의 파일 field가 자동으로 업로드·연결됩니다.",
+              en: "Mark one upload mutation with `{ fileUpload: true }`. The framework then auto-generates the `add{Model}Files` fetch helper and the form-field upload action (`upload{Field}On{Model}`) that the `Field` and `Upload` components use, so a model's file field uploads and attaches automatically.",
+              ko: "업로드 mutation 하나에 `{ fileUpload: true }`를 달면, 프레임워크가 `add{Model}Files` fetch 헬퍼와 폼 필드 업로드 액션(`upload{Field}On{Model}`)을 자동 생성합니다. `Field`/`Upload` 컴포넌트가 이를 사용해 모델의 파일 field가 자동으로 업로드·연결됩니다.",
             })}
           </div>
           <DocsList>
@@ -303,16 +306,16 @@ return (
 })) {}`}
         />
         <Code.Snippet
-          title="file.service.ts — where the storage call already lives"
-          code={`export class FileService extends serve(db.file, ({ use }) => ({ storageApi: use<StorageApi>() })) {
+          title="apps/myapp/lib/file/file.service.ts"
+          code={`export class FileService extends serve(db.file, ({ plug }) => ({ storage: plug(StorageAdaptorRole) })) {
   override async _postRemove(file: db.File) {
-    await this.storageApi.deleteData(file.url);
+    await this.storage.deleteData(file.url);
     return file;
   }
 }`}
         />
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="grow-later" title={l.trans({ en: "Grow Later", ko: "나중에 확장하기" })}>
         <Docs.Title>{l.trans({ en: "Grow Later", ko: "나중에 확장하기" })}</Docs.Title>
@@ -338,8 +341,8 @@ return (
             </li>
             <li>
               {l.trans({
-                en: "Same service: keep upload logic behind `storageApi`.",
-                ko: "Same service: 업로드 로직은 `storageApi` 뒤에 숨겨둡니다.",
+                en: "Same service: keep upload logic behind the injected `StorageAdaptorRole`.",
+                ko: "Same service: 업로드 로직은 주입된 `StorageAdaptorRole` 뒤에 숨겨둡니다.",
               })}
             </li>
           </DocsList>

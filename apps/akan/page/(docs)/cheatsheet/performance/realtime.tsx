@@ -76,12 +76,30 @@ export default page().render(() => {
               ko: "서버가 room 안의 모든 사람에게 이벤트 하나를 보내야 한다면 `pubsub`을 사용합니다. 새 채팅 메시지가 가장 쉬운 예입니다.",
             })}
           </div>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  A <code>pubsub</code> is unguarded unless it says so. The slice-level guard map reaches only the
+                  generated query and mutation endpoints, so a room without its own <code>guards</code> array is open to
+                  anyone who can open a socket.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>pubsub</code>은 스스로 선언하지 않으면 guard가 없습니다. Slice의 guard map은 생성된
+                  query·mutation endpoint에만 적용되므로, <code>guards</code> 배열이 없는 room은 socket을 열 수 있는
+                  누구에게나 열려 있습니다.
+                </span>
+              ),
+            })}
+          </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title={l.trans({ en: "Chat broadcast", ko: "채팅 broadcast" })}
+          title="apps/myapp/lib/chat/chat.signal.ts"
           code={`export class ChatEndpoint extends endpoint(srv.chat, ({ pubsub }) => ({
-  messageAdded: pubsub(cnst.ChatMessage)
+  messageAdded: pubsub(cnst.ChatMessage, { guards: [User] })
     .room("chatId", ID)
     .with(Ws)
     .exec(async function (chatId, ws) {
@@ -107,7 +125,7 @@ export default page().render(() => {
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title={l.trans({ en: "Save then publish", ko: "저장 후 publish" })}
+          title="apps/myapp/lib/chat/chat.service.ts"
           code={`async addMessage(chatId: string, content: string, senderId: string) {
   const message = await this.chatModel.createMessage({
     chat: chatId,
@@ -121,28 +139,61 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "On the client, subscribe to the room and update local UI state when a new message arrives. Keep the subscription close to the screen that owns the list.",
-              ko: "클라이언트에서는 room을 구독하고 새 message가 도착하면 로컬 UI 상태를 갱신합니다. 구독 코드는 목록을 소유한 화면 가까이에 두세요.",
+              en: "The browser never subscribes to get the list it already needs. The route loads the slice before the first byte and hands the snapshot down as an `init` prop, so the first paint is server HTML.",
+              ko: "브라우저는 이미 필요한 목록을 받으려고 구독하지 않습니다. Route가 첫 바이트 전에 slice를 불러 snapshot을 `init` prop으로 넘기므로, 첫 화면은 서버 HTML입니다.",
             })}
           </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title={l.trans({ en: "Client subscription", ko: "클라이언트 구독" })}
+          title="apps/myapp/page/chat/[chatId]/_index.tsx"
+          code={`export default page()
+  .param("chatId", ID)
+  .render(async ({ chatId }) => {
+    const { chatMessageInitInChat } = await fetch.initChatMessageInChat(chatId);
+    return <ChatMessage.Zone.List init={chatMessageInitInChat} />;
+  });`}
+        />
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  <code>Load.Units</code> seeds the store from that snapshot, and a slice that declared{" "}
+                  <code>.live()</code> keeps the window in sync from there. Nothing in the Zone fetches, and no
+                  <code>useState</code> holds server data.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>Load.Units</code>가 그 snapshot으로 store를 채우고, <code>.live()</code>를 선언한 slice는 그
+                  뒤부터 목록을 직접 동기화합니다. Zone 안에서는 아무것도 fetch하지 않고, 서버 데이터를{" "}
+                  <code>useState</code>에 담지도 않습니다.
+                </span>
+              ),
+            })}
+          </div>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title="apps/myapp/lib/chatMessage/ChatMessage.Zone.tsx"
           code={`"use client";
+import { ChatMessage, type cnst } from "@apps/myapp/client";
+import type { ClientInit } from "akanjs/fetch";
+import { Load } from "akanjs/ui";
 
-export const ChatMessages = ({ chatId }: { chatId: string }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-
-  useEffect(() => {
-    const unsubscribe = fetch.subscribeMessageAdded(chatId, (message) => {
-      setMessages((prev) => [...prev, message]);
-    });
-
-    return () => unsubscribe();
-  }, [chatId]);
-
-  return <Chat.MessageList messages={messages} />;
+interface ListProps {
+  className?: string;
+  init: ClientInit<"chatMessage", cnst.LightChatMessage>;
+}
+export const List = ({ className, init }: ListProps) => {
+  return (
+    <Load.Units
+      className={className}
+      init={init}
+      renderItem={(chatMessage) => <ChatMessage.Unit.Row key={chatMessage.id} chatMessage={chatMessage} />}
+    />
+  );
 };`}
         />
       </Scroll.Slide>

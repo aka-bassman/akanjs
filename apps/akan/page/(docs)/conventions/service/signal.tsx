@@ -36,12 +36,30 @@ export default page().render(() => {
               ko: "Service module endpoint는 model CRUD가 없어도 일반 typed query나 mutation이 될 수 있습니다. `_search` endpoint는 param과 search value를 받은 뒤 `searchService`를 호출합니다.",
             })}
           </div>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Every custom endpoint names its own <code>guards</code> array — a service module has no slice to
+                  inherit a default from. The guards are also the MCP exposure decision: an endpoint that names none is
+                  unauthorized and silently refused from the agent catalogue.
+                </span>
+              ),
+              ko: (
+                <span>
+                  모든 custom endpoint는 자기 <code>guards</code> 배열을 적습니다. service module에는 기본값을 물려줄
+                  slice가 없습니다. guard는 MCP 노출 결정이기도 해서, 아무 guard도 적지 않은 endpoint는 인가되지 않을 뿐
+                  아니라 agent catalogue에서도 조용히 거부됩니다.
+                </span>
+              ),
+            })}
+          </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
           title="minimal query endpoint"
           code={`export class SearchEndpoint extends endpoint(srv.search, ({ query }) => ({
-  getSearchResult: query(cnst.SearchResult)
+  getSearchResult: query(cnst.SearchResult, { guards: [Public] })
     .param("searchIndexName", String)
     .search("searchString", String)
     .exec(async function (searchIndexName, searchString) {
@@ -61,12 +79,30 @@ export default page().render(() => {
               ko: "data 변경, token 생성, message 전송, side effect 실행 같은 service action에는 mutation을 사용합니다. endpoint는 얇게 유지하고 실제 작업은 service에 위임합니다.",
             })}
           </div>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  A crypto primitive is the clearest case for a narrow guard. Encrypting arbitrary input with the app's
+                  own key is an oracle, so <code>encrypt</code> takes <code>Admin</code> rather than
+                  <code> Public</code>; a mutation whose only guard is <code>Public</code> is refused from MCP outright.
+                </span>
+              ),
+              ko: (
+                <span>
+                  crypto primitive는 좁은 guard가 가장 분명하게 필요한 경우입니다. 임의의 입력을 app의 key로 암호화하는
+                  것은 oracle이므로 <code>encrypt</code>에는 <code>Public</code>이 아니라 <code>Admin</code>을 적습니다.
+                  guard가 <code>Public</code> 하나뿐인 mutation은 MCP에서 아예 거부됩니다.
+                </span>
+              ),
+            })}
+          </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
           title="minimal mutation endpoint"
           code={`export class SecurityEndpoint extends endpoint(srv.security, ({ mutation }) => ({
-  encrypt: mutation(String)
+  encrypt: mutation(String, { guards: [Admin] })
     .body("data", String)
     .exec(async function (data) {
       return await this.securityService.encrypt(data);
@@ -83,6 +119,22 @@ export default page().render(() => {
             {l.trans({
               en: "Internal signals are for server-side work that is not called directly from browser UI. Cron jobs can be scoped to a server mode, which is common for batch service modules.",
               ko: "Internal signal은 browser UI에서 직접 호출하지 않는 server-side work에 사용합니다. Cron job은 server mode에 묶을 수 있고, batch service module에서 자주 사용합니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  An internal signal names no <code>guards</code>: the runtime is its only caller, so there is no
+                  request to authorize and <code>internal()</code> takes no guards option at all.
+                </span>
+              ),
+              ko: (
+                <span>
+                  Internal signal에는 <code>guards</code>를 적지 않습니다. 호출자가 runtime뿐이라 인가할 request가 없고,{" "}
+                  <code>internal()</code>에는 guards option 자체가 없습니다.
+                </span>
+              ),
             })}
           </div>
         </Docs.Description>
@@ -112,7 +164,7 @@ export default page().render(() => {
           className="w-full"
           title="prefixless endpoint"
           code={`export class LocalFileEndpoint extends endpoint(srv.localFile, ({ query }) => ({
-  getBlob: query(Any, { path: "localFile/getBlob/*" })
+  getBlob: query(Any, { guards: [Public], path: "localFile/getBlob/*" })
     .with(Req)
     .exec(async function (req) {
       return new Response(await this.localFileService.readLocalFile(req.url));

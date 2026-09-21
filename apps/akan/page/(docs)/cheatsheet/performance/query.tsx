@@ -1,6 +1,6 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsList, DocsToc } from "@apps/akan/ui";
-import { Scroll } from "@libs/util/ui";
+import { Scroll, tableRecipe } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
 export default page().render(() => {
@@ -213,6 +213,12 @@ export default page().render(() => {
     ),
   ),`}
         />
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: "“Has no value” is `q.empty`, never `q.missing`. `q.missing` is the key being absent from the stored JSON, which a document written once and saved again no longer is: reading it materializes an explicit null, and the key is there from then on. Reach for `q.missing` only to find rows written before the field was declared.",
+            ko: "“값이 없다”는 `q.empty`이고 `q.missing`이 아닙니다. `q.missing`은 저장된 JSON에 key 자체가 없는 상태인데, 한 번 읽어 다시 저장한 document는 더 이상 그렇지 않습니다. 읽는 순간 명시적 null이 만들어져 key가 생기기 때문입니다. `q.missing`은 해당 field를 선언하기 전에 쓰인 행을 찾을 때만 쓰세요.",
+          })}
+        </Docs.Alert>
       </Scroll.Slide>
       <Divider />
 
@@ -258,7 +264,7 @@ export default page().render(() => {
           className="w-full"
           title={l.trans({ en: "Score threshold", ko: "점수 조건" })}
           code={`popular: filter()
-  .arg("minScore", Number)
+  .arg("minScore", Float)
   .query((minScore, q) =>
     q.all(
       { status: "published" },
@@ -280,26 +286,28 @@ export default page().render(() => {
           </div>
         </Docs.Description>
         <div className="overflow-x-auto">
-          <table className="table w-full table-fixed">
+          <table className={tableRecipe({ size: "sm" }, "table-fixed")}>
             <thead>
-              <tr>
-                <th className="w-[160px]">{l.trans({ en: "Query helper", ko: "Query helper" })}</th>
-                <th className="w-[300px]">{l.trans({ en: "Document query", ko: "Document query" })}</th>
-                <th className="w-[420px]">{l.trans({ en: "SQL condition text", ko: "SQL 조건문 텍스트" })}</th>
+              <tr className="bg-muted">
+                <th className="w-[160px] text-foreground">{l.trans({ en: "Query helper", ko: "Query helper" })}</th>
+                <th className="w-[300px] text-foreground">{l.trans({ en: "Document query", ko: "Document query" })}</th>
+                <th className="w-[420px] text-foreground">
+                  {l.trans({ en: "SQL condition text", ko: "SQL 조건문 텍스트" })}
+                </th>
               </tr>
             </thead>
             <tbody>
               {sqlExamples.map((example) => (
                 <tr key={example.helper}>
-                  <td className="align-top font-semibold">
+                  <td className="border-border/60 border-t align-top font-semibold">
                     <code>{example.helper}</code>
                   </td>
-                  <td className="align-top">
+                  <td className="border-border/60 border-t align-top">
                     <pre className="whitespace-pre-wrap rounded bg-muted p-2 text-xs">
                       <code>{example.query}</code>
                     </pre>
                   </td>
-                  <td className="align-top">
+                  <td className="border-border/60 border-t align-top">
                     <pre className="whitespace-pre-wrap rounded bg-muted p-2 text-xs">
                       <code>{example.sql}</code>
                     </pre>

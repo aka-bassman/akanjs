@@ -479,7 +479,7 @@ export default config;`}
           })}
         </Docs.Alert>
       </Scroll.Slide>
-      <div className="divider" />
+      <Divider />
 
       <Scroll.Slide id="external-libs" title="externalLibs">
         <Docs.Title>externalLibs</Docs.Title>
@@ -492,21 +492,31 @@ export default config;`}
           </div>
           <div>
             {l.trans({
-              en: "Akan includes externalLibs in the production package dependencies together with the required SSR runtime packages.",
-              ko: "Akan은 externalLibs를 필수 SSR runtime package와 함께 production package dependencies에 포함합니다.",
+              en: "An app's resolved externalLibs is its own list plus the list every library in the workspace declares, deduped with the app's entries first. Every workspace library is read, not only the app's dependencies, so a library can declare its own runtime package once and no app has to repeat it.",
+              ko: "app의 externalLibs는 자기 목록에 workspace의 모든 라이브러리가 선언한 목록을 더한 뒤 중복을 제거한 것이며, app 항목이 앞에 옵니다. app의 의존성만이 아니라 workspace의 모든 라이브러리를 읽으므로, 라이브러리가 자기 runtime package를 한 번 선언하면 어느 app도 다시 적지 않아도 됩니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "Akan includes the merged list in the production package dependencies together with the required SSR runtime packages.",
+              ko: "Akan은 병합된 목록을 필수 SSR runtime package와 함께 production package dependencies에 포함합니다.",
             })}
           </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
-          title="apps/media/akan.config.ts"
-          code={`import type { AppConfig } from "akanjs";
-
+          title="apps/media/akan.config.ts | libs/report/akan.config.ts"
+          code={`// apps/media/akan.config.ts
 const config: AppConfig = {
+  externalLibs: ["shiki"],
+};
+
+// libs/report/akan.config.ts
+const libConfig: LibConfig = {
   externalLibs: ["puppeteer"],
 };
 
-export default config;`}
+// apps/media resolves to ["shiki", "puppeteer"]`}
         />
         <Docs.Alert type="info">
           {l.trans({

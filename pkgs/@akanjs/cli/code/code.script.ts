@@ -9,6 +9,7 @@ export interface CodeScriptOptions {
   thinking: boolean;
   rpc: boolean;
   interactive: boolean;
+  resume: string | null;
 }
 
 export class CodeScript extends script("code", [CodeRunner]) {
@@ -20,6 +21,7 @@ export class CodeScript extends script("code", [CodeRunner]) {
       ...(options.model ? { model: options.model } : {}),
       json: options.json,
       thinking: options.thinking,
+      ...(options.resume ? { resume: options.resume } : {}),
     };
     if (options.rpc) return await this.codeRunner.serve(run);
     // The interactive host is the default when there is a terminal to draw on and nothing to run headlessly.

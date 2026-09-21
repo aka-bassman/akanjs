@@ -746,8 +746,8 @@ apps/api/secrets/**/*
             {
               title: l.trans({ en: "Mobile", ko: "모바일" }),
               desc: l.trans({
-                en: "appName defaults to the app name, appId defaults to com.appName.app, version defaults to 0.0.1, and buildNum defaults to 1.",
-                ko: "appName은 앱 이름, appId는 com.appName.app, version은 0.0.1, buildNum은 1이 기본값입니다.",
+                en: "appName defaults to the app name, appId defaults to com.<repoName>.<appName>, version defaults to 0.0.1, and buildNum defaults to 1. Pin a real reverse-DNS appId before you ship: akan doctor rejects placeholder ids such as com.example.app, which Apple's portal has almost always already claimed.",
+                ko: "appName은 앱 이름, appId는 com.<repoName>.<appName>, version은 0.0.1, buildNum은 1이 기본값입니다. 출시 전에는 조직의 실제 reverse-DNS appId를 지정해야 합니다. akan doctor는 com.example.app 같은 placeholder id를 거부하며, 이런 id는 Apple 포털에서 이미 선점되어 있는 경우가 대부분입니다.",
               }),
             },
             {

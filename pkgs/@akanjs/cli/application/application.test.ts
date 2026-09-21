@@ -10,7 +10,7 @@ import {
   createTempLib,
   createTempPackage,
   writeText,
-} from "../testHelpers";
+} from "@akanjs/devkit/testHelpers";
 import { ApplicationCommand } from "./application.command";
 import { ApplicationRunner } from "./application.runner";
 import { ApplicationScript } from "./application.script";

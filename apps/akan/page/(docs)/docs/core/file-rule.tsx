@@ -197,55 +197,55 @@ export default page().render(() => {
           </div>
           <div>
             {l.trans({
-              en: "A business model usually appears in several screen sizes: a small badge, a list row, a detail card, an admin panel, and sometimes a full dashboard section. UI files help you keep those screen pieces close to the model they represent.",
-              ko: "하나의 비즈니스 모델은 여러 화면 크기로 등장합니다. 작은 배지, 목록 행, 상세 카드, 관리자 패널, 대시보드 섹션처럼 다양한 형태가 생깁니다. UI 파일은 이런 화면 조각을 해당 모델 가까이에 모아두도록 도와줍니다.",
+              en: "The five UI suffixes are not five sizes of component. Each one answers a different question: how the user edits one record, how one record looks in a list, how one record looks on its own page, how a page section is assembled, and what extra action the model offers.",
+              ko: "UI 접미사 다섯 개는 컴포넌트의 크기 다섯 단계가 아닙니다. 각각 다른 질문에 답합니다. 사용자가 한 레코드를 어떻게 편집하는지, 목록에서 한 레코드가 어떻게 보이는지, 단독 페이지에서 어떻게 보이는지, 페이지 구역이 어떻게 조립되는지, 그리고 모델이 제공하는 부가 동작이 무엇인지입니다.",
             })}
           </div>
           <Code.Snippet
             className="w-full"
-            title="lib/bizCard/"
+            title="lib/product/"
             language="bash"
-            code={`BizCard.View.tsx      # how a biz card is displayed
-BizCard.Unit.tsx      # small reusable UI pieces
-BizCard.Template.tsx  # repeated layout or template
-BizCard.Util.tsx      # UI actions or helpers
-BizCard.Zone.tsx      # large screen areas such as admin/list/detail`}
+            code={`Product.Template.tsx  # the create/edit form, bound to the store form state
+Product.Unit.tsx      # one item in a list or grid, built on LightProduct
+Product.View.tsx      # one record in full detail
+Product.Zone.tsx      # a composed page section that reads the store
+Product.Util.tsx      # a domain UI action such as Remove or Refund`}
           />
           <div className="space-y-1">
             {[
               {
-                title: "Model.View.tsx",
+                title: "Model.Template.tsx",
                 desc: l.trans({
-                  en: "Use it for display components, such as ProductCard, OrderSummary, UserProfile, or InvoicePreview.",
-                  ko: "ProductCard, OrderSummary, UserProfile, InvoicePreview처럼 데이터를 보여주는 컴포넌트에 사용합니다.",
+                  en: "The create and edit form. Every field reads st.use.productForm() and writes through a generated setter such as st.do.setTitleOnProduct, passed by reference.",
+                  ko: "생성과 수정 폼입니다. 모든 필드는 st.use.productForm()을 읽고 st.do.setTitleOnProduct 같은 생성된 setter를 참조로 넘겨 값을 씁니다.",
                 }),
               },
               {
                 title: "Model.Unit.tsx",
                 desc: l.trans({
-                  en: "Use it for small reusable units inside the model UI, such as status badges, price rows, or avatar blocks.",
-                  ko: "상태 배지, 가격 행, 아바타 블록처럼 모델 UI 안에서 재사용되는 작은 단위 컴포넌트에 사용합니다.",
+                  en: "One item in a list or grid: the row, the card, the search hit. It takes LightProduct, the trimmed shape a list query returns.",
+                  ko: "목록이나 그리드의 한 항목입니다. 행, 카드, 검색 결과 하나가 여기에 해당하며, 목록 쿼리가 돌려주는 축약 형태인 LightProduct를 받습니다.",
                 }),
               },
               {
-                title: "Model.Template.tsx",
+                title: "Model.View.tsx",
                 desc: l.trans({
-                  en: "Use it for repeated screen templates or layout patterns, such as a standard admin detail layout.",
-                  ko: "표준 관리자 상세 레이아웃처럼 반복되는 화면 템플릿이나 레이아웃 패턴에 사용합니다.",
-                }),
-              },
-              {
-                title: "Model.Util.tsx",
-                desc: l.trans({
-                  en: "Use it for UI-level actions or helper components, such as remove buttons, edit modal triggers, or upload controls.",
-                  ko: "삭제 버튼, 수정 모달 트리거, 업로드 컨트롤처럼 UI 레벨 액션이나 보조 컴포넌트에 사용합니다.",
+                  en: "One record in full detail. It takes the full model and renders the fields a list never loads.",
+                  ko: "레코드 하나의 상세 화면입니다. 전체 모델을 받아 목록에서는 불러오지 않는 필드까지 그립니다.",
                 }),
               },
               {
                 title: "Model.Zone.tsx",
                 desc: l.trans({
-                  en: "Use it for larger areas, such as admin screens, list/detail zones, tab content, or dashboard sections.",
-                  ko: "관리자 화면, 목록/상세 영역, 탭 콘텐츠, 대시보드 섹션처럼 큰 화면 구역에 사용합니다.",
+                  en: "A composed page section. It reads the store, hands the data to Load.Units or Load.View, and leaves the markup to Unit and View.",
+                  ko: "페이지 구역을 조립하는 컴포넌트입니다. 스토어를 읽어 Load.Units나 Load.View에 데이터를 넘기고, 마크업은 Unit과 View에 맡깁니다.",
+                }),
+              },
+              {
+                title: "Model.Util.tsx",
+                desc: l.trans({
+                  en: "A domain UI helper named for the endpoint verb minus the model noun: Remove, Refund, Complete, Terminate.",
+                  ko: "도메인 UI 보조 컴포넌트입니다. 이름은 endpoint 동사에서 모델 명사를 뺀 형태로 짓습니다. Remove, Refund, Complete, Terminate처럼 씁니다.",
                 }),
               },
             ].map(({ title, desc }) => (
@@ -256,6 +256,12 @@ BizCard.Zone.tsx      # large screen areas such as admin/list/detail`}
               </div>
             ))}
           </div>
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: 'The client boundary follows the suffix, not your judgment. Template, Zone, and Util always carry "use client" on line 1; Unit and View never do, so they render on the server and ship no JavaScript.',
+              ko: '클라이언트 경계는 판단이 아니라 접미사를 따릅니다. Template, Zone, Util은 언제나 1번 줄에 "use client"를 두고, Unit과 View는 절대 두지 않습니다. 그래서 Unit과 View는 서버에서 렌더링되고 JavaScript를 전송하지 않습니다.',
+            })}
+          </Docs.Alert>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -523,12 +529,20 @@ export const Product = { Unit, Util, View, Zone };`}
                 desc: "model.signal.ts",
               },
               {
-                title: l.trans({ en: "Does it show data?", ko: "데이터를 보여주나요?" }),
+                title: l.trans({ en: "Does one record get its own page?", ko: "레코드 하나가 자기 페이지를 갖나요?" }),
                 desc: "Model.View.tsx",
               },
               {
-                title: l.trans({ en: "Is it a small UI action?", ko: "작은 UI 액션인가요?" }),
-                desc: "Model.Unit.tsx or Model.Util.tsx",
+                title: l.trans({ en: "Is it one item in a list?", ko: "목록의 한 항목인가요?" }),
+                desc: "Model.Unit.tsx",
+              },
+              {
+                title: l.trans({ en: "Does the user fill it in?", ko: "사용자가 값을 입력하나요?" }),
+                desc: "Model.Template.tsx",
+              },
+              {
+                title: l.trans({ en: "Is it a domain UI action?", ko: "도메인 UI 액션인가요?" }),
+                desc: "Model.Util.tsx",
               },
               {
                 title: l.trans({ en: "Is it a large screen area?", ko: "큰 화면 영역인가요?" }),

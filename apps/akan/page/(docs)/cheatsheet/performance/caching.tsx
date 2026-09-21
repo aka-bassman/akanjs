@@ -88,7 +88,7 @@ export default page().render(() => {
           code={`export class ArticleService extends serve(db.article, ({ memory }) => ({
   latestArticleId: memory(String),
   articleSummaries: memory(Map, { of: String }),
-  localHitCount: memory(Number, { local: true, default: 0 }),
+  localHitCount: memory(Int, { local: true, default: 0 }),
 })) {
   async rememberSummary(articleId: string, summary: string) {
     await this.latestArticleId.set(articleId);

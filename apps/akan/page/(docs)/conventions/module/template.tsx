@@ -252,10 +252,11 @@ export const General = ({ className }: TicketEditProps) => {
             className="w-full"
             title="Submit component"
             code={`export const SubmitPhone = ({ userId, redirect }: SubmitPhoneProps) => {
+  const { l } = usePage();
   const phone = st.use.phone();
   return (
     <button disabled={!isPhoneNumber(phone)} onClick={() => st.do.setPhoneInPrepareUser(userId, phone, { redirect })}>
-      Send Code
+      {l("user.sendPhoneCode")}
     </button>
   );
 };`}
@@ -350,7 +351,7 @@ export const General = ({ className }: TicketEditProps) => {
           className="w-full"
           title="Release.Zone.tsx"
           code={`<Model.NewWrapper partial={{ devApp }} slice={fetch.slice.releaseInDevApp}>
-  <button className={buttonRecipe({ variant: "secondary" })}>+ New</button>
+  <button className={buttonRecipe({ variant: "secondary" })}>{l("release.newRelease")}</button>
 </Model.NewWrapper>`}
         />
       </Scroll.Slide>
