@@ -47,11 +47,15 @@ Use Load.View when a Zone receives ClientView detail data. Load.View hydrates th
 
 Section Orchestration Zones
 
-Some Zones compose more than a simple list. They may combine local UI state, store state, Unit components, Util controls, and Model wrappers for a complete page section.
+Some Zones compose more than a simple list. They may combine store state, Unit components, Util controls, and Model wrappers for a complete page section.
+
+Keep the Zone itself free of local UI state. A mode switch is Tab from akanjs/ui, which holds the state in the provider and the menu so every panel body stays a server component; a useState mode switch pulls all of them into the bundle.
 
 Live And Dashboard Zones
 
 A Zone can also be a dashboard or a live section when the whole section depends on store state, subscriptions, or client-only layout behavior.
+
+Never hand-roll a loading branch. Load.View and Load.Units already own the pending, empty, and error states, and the route fetches the data before the first byte. A subscribe-with-cleanup is the one shape useEffect is still for — a useEffect that loads on mount is a round trip the server had already made.
 
 When To Use Zone
 
@@ -116,7 +120,6 @@ export const View = ({ className, view, self }: ViewProps) => {
 
 ```ts
 export const Kanban = ({ init, slice = fetch.slice.ticket }: KanbanProps) => {
-  const [tab, setTab] = useState("open");
   return (
     <Load.Units
       init={init}
@@ -155,11 +158,8 @@ export const Card = ({ init }: CardProps) => {
 ### Summary.Zone.tsx
 
 ```ts
-export const Dashboard = () => {
-  const summary = st.use.summary();
-  const summaryLoading = st.use.summaryLoading();
-  if (summaryLoading || !summary) return <Loading.Skeleton active />;
-  return <Summary.View.General summary={summary} />;
+export const Dashboard = ({ view }: DashboardProps) => {
+  return <Load.View view={view} renderView={(summary) => <Summary.View.General summary={summary} />} />;
 };
 ```
 

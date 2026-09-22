@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Divider, Docs, ExternalLink } from "@apps/akan/ui";
+import { Code, cardGridRecipe, Divider, Docs, DocsToc, ExternalLink, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
@@ -22,7 +22,7 @@ export default page().render(() => {
               ko: "먼저 모바일 식별자를 정하고, 앱에서 실제로 쓰는 Capacitor 플러그인만 선언한 뒤, Android와 iOS 빌드를 준비합니다. Push notification과 deep link는 선택 기능이므로 앱에 필요할 때만 설정하세요.",
             })}
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className={cardGridRecipe({ cols: "mdTwo" })}>
             {[
               {
                 title: "1. mobile config",
@@ -46,7 +46,7 @@ export default page().render(() => {
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className="rounded-xl border border-background/30 bg-background px-4 py-3">
+              <div key={title} className={panelRecipe({ padding: "none" }, "px-4 py-3")}>
                 <div className="font-mono font-semibold text-primary">{title}</div>
                 <div className="mt-1 text-foreground/70 text-sm">{desc}</div>
               </div>
@@ -66,6 +66,7 @@ export default page().render(() => {
             })}
           </div>
           <Code.Snippet
+            className="w-full"
             title="apps/myapp/akan.config.ts"
             code={`import type { AppConfig } from "akanjs";
 
@@ -119,8 +120,8 @@ export default config;`}
               {
                 title: "permissions",
                 desc: l.trans({
-                  en: 'Native capability hints such as "camera", "contacts", "location", and "push". They prepare Akan-side native metadata, but plugin-specific setup can still be required.',
-                  ko: '"camera", "contacts", "location", "push" 같은 네이티브 기능 힌트입니다. Akan 쪽 네이티브 metadata를 준비하지만, 플러그인별 세부 설정은 여전히 필요할 수 있습니다.',
+                  en: 'Native capability hints, and the list is closed: "camera", "contacts", "location", "push", "speech". They prepare Akan-side native metadata, but plugin-specific setup can still be required.',
+                  ko: '네이티브 기능 힌트이며 목록은 닫혀 있습니다. "camera", "contacts", "location", "push", "speech"입니다. Akan 쪽 네이티브 metadata를 준비하지만, 플러그인별 세부 설정은 여전히 필요할 수 있습니다.',
                 }),
               },
               {
@@ -131,7 +132,7 @@ export default config;`}
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className="rounded-xl border border-background/30 bg-background px-4 py-0">
+              <div key={title} className={panelRecipe({ padding: "row" })}>
                 <span className="font-mono font-semibold text-primary">{title}: </span>
                 <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
@@ -157,6 +158,7 @@ export default config;`}
             })}
           </div>
           <Code.Snippet
+            className="w-full"
             title="Base mobile shell dependencies"
             code={`{
   "dependencies": {
@@ -170,6 +172,7 @@ export default config;`}
 }`}
           />
           <Code.Snippet
+            className="w-full"
             title="Push notification add-on dependencies"
             code={`{
   "dependencies": {
@@ -214,7 +217,7 @@ export default config;`}
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className="rounded-xl border border-background/30 bg-background px-4 py-0">
+              <div key={title} className={panelRecipe({ padding: "row" })}>
                 <span className="font-mono font-semibold text-primary">{title}: </span>
                 <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
@@ -233,7 +236,7 @@ export default config;`}
               ko: "Android 설정은 에뮬레이터나 실기기에서 빌드/실행 가능한 Android 프로젝트를 준비하는 과정입니다. 핵심은 package name 일치입니다. mobile.appId와 생성된 Android applicationId가 같아야 합니다.",
             })}
           </div>
-          <div className="rounded-xl border border-background/30 bg-background p-4">
+          <div className={panelRecipe()}>
             <div className="font-bold text-foreground">{l.trans({ en: "Prerequisites", ko: "준비물" })}</div>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-foreground/70 text-sm">
               <li>
@@ -260,6 +263,7 @@ export default config;`}
             </ul>
           </div>
           <Code.Snippet
+            className="w-full"
             title="1. Configure local toolchain"
             language="bash"
             code={`brew install openjdk@21
@@ -268,6 +272,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 export ANDROID_HOME="$HOME/Library/Android/sdk"`}
           />
           <Code.Snippet
+            className="w-full"
             title="2. Set Android package identity"
             code={`const config: AppConfig = {
   mobile: {
@@ -284,6 +289,7 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"`}
 };`}
           />
           <Code.Snippet
+            className="w-full"
             title="3. Sync and build"
             language="bash"
             code={`akan start-android myapp --target default
@@ -314,13 +320,13 @@ akan release-android myapp --target default --env main --assembleType aab`}
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className="rounded-xl border border-background/30 bg-background px-4 py-0">
+              <div key={title} className={panelRecipe({ padding: "row" })}>
                 <span className="font-mono font-semibold text-primary">{title}: </span>
                 <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
             ))}
           </div>
-          <div className="rounded-xl border border-background/30 bg-background p-4">
+          <div className={panelRecipe()}>
             <div className="font-bold text-foreground">{l.trans({ en: "Success check", ko: "성공 확인" })}</div>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-foreground/70 text-sm">
               <li>
@@ -356,7 +362,7 @@ akan release-android myapp --target default --env main --assembleType aab`}
               ko: "iOS 설정은 Xcode 프로젝트, bundle identity, signing, 시뮬레이터 실행, 스토어 빌드를 준비하는 과정입니다. Push 알림은 Push Setup에서 다룹니다.",
             })}
           </div>
-          <div className="rounded-xl border border-background/30 bg-background p-4">
+          <div className={panelRecipe()}>
             <div className="font-bold text-foreground">{l.trans({ en: "Prerequisites", ko: "준비물" })}</div>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-foreground/70 text-sm">
               <li>
@@ -385,7 +391,7 @@ akan release-android myapp --target default --env main --assembleType aab`}
               </li>
             </ul>
           </div>
-          <div className="rounded-xl border border-background/30 bg-background p-4">
+          <div className={panelRecipe()}>
             <div className="font-bold text-foreground">{l.trans({ en: "Xcode checks", ko: "Xcode 확인" })}</div>
             <ol className="mt-2 list-decimal space-y-1 pl-5 text-foreground/70">
               <li>
@@ -415,6 +421,7 @@ akan release-android myapp --target default --env main --assembleType aab`}
             </ol>
           </div>
           <Code.Snippet
+            className="w-full"
             title="1. Sync and build"
             language="bash"
             code={`akan start-ios myapp --target default
@@ -430,6 +437,7 @@ akan release-ios myapp --target default --env main`}
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
+
       <Scroll.Slide id="verify" title={l.trans({ en: "Verify Setup", ko: "Verify Setup" })}>
         <Docs.Title>{l.trans({ en: "Verify Setup", ko: "Verify Setup" })}</Docs.Title>
         <Docs.Description>
@@ -470,7 +478,7 @@ akan release-ios myapp --target default --env main`}
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className="rounded-xl border border-background/30 bg-background px-4 py-0">
+              <div key={title} className={panelRecipe({ padding: "row" })}>
                 <span className="font-mono font-semibold text-primary">{title}: </span>
                 <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
@@ -478,7 +486,7 @@ akan release-ios myapp --target default --env main`}
           </div>
         </Docs.Description>
       </Scroll.Slide>
-      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 lg:flex" />
+      <DocsToc />
     </Scroll>
   );
 });

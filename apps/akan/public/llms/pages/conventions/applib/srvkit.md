@@ -20,11 +20,25 @@
 
 Server Utils (srvkit/)
 
+Pure, isomorphic, zero-dependency. It may import a sibling common/* file and akanjs/base, and nothing else — not Err, which is why throwing code stays out of it.
+
+Touches window, navigator or Capacitor, or is a React hook. The browser half of what common/ cannot hold.
+
+Touches node:*, Bun, process.env, a secret, or a server SDK. The server half, and the only place a vendor package is imported directly.
+
+Renders JSX and is not bound to one model. A component tied to a model belongs in that module as a Unit, View, Template, Util or Zone instead.
+
+A build-time or CLI-time AkanPlugin, registered in akan.config.ts and re-exported from the generated barrel.
+
 Server Utility Overview
 
 The srvkit folder contains server-only logic used by services, signals, and server jobs. Put reusable server abstractions here so convention files can stay focused on business behavior.
 
 This is also the safe place to wrap external libraries. Major convention files such as *.service.ts are intentionally strict about arbitrary external imports, so vendor SDKs and low-level server APIs should usually pass through srvkit first.
+
+The five folders answer one question each, and the test is what the code touches rather than what it is for. Reading them together is faster than reading any one of them, so the same table opens all three pages.
+
+Folder
 
 What Belongs In Srvkit
 
@@ -102,9 +116,12 @@ export class RequestUserMiddleware implements Middleware {
 
   async use() {
     return async (context: SignalContext, next: () => Promise<unknown>) => {
-      const req = context.getHttpContext<{ user?: { id: string } }>().req;
-      req.user = await resolveUserFromRequest(req);
-      return next();
+      // Middleware is the one place that branches on transport: it writes the value every guard
+      // and InternalArg later reads back through context.get(...).
+      const req =
+        context.transport === "http" ? context.getHttpContext().req : context.getWebSocketContext().ws.data;
+      Object.assign(req, { account: await resolveAccountFromRequest(req) });
+      return await next();
     };
   }
 }
@@ -136,14 +153,28 @@ export const option = new AkanOption()
 ### srvkit/guards.ts
 
 ```ts
-import type { Guard, SignalContext } from "akanjs/signal";
+import type { Guard, GuardScope, SignalContext } from "akanjs/signal";
 
 export class SignedIn implements Guard {
+  // fetch serializes guard names and the API explorer filters on them; deleting this breaks that UI.
   static name = "SignedIn";
+  static scope: GuardScope = "account";
 
   canPass(context: SignalContext): boolean {
-    const user = context.getHttpContext<{ user?: { id: string } }>().req.user;
-    return !!user;
+    return !!context.get<{ self?: { id: string } }>("account")?.self;
+  }
+}
+
+export class CanCancelOrder implements Guard {
+  static name = "CanCancelOrder";
+  static scope: GuardScope = "resource";
+
+  async canPass(context: SignalContext): Promise<boolean> {
+    const self = context.get<{ self?: { id: string } }>("account")?.self;
+    const orderId = context.getArg<string>("orderId");
+    if (!self || !orderId) return false;
+    const order = await orderModel.findById(orderId);
+    return order?.owner === self.id;
   }
 }
 ```
@@ -151,9 +182,9 @@ export class SignedIn implements Guard {
 ### order.signal.ts
 
 ```ts
-import { SignedIn } from "@apps/myapp/srvkit";
+import { CanCancelOrder, SignedIn } from "@apps/myapp/srvkit";
 export class OrderEndpoint extends endpoint(srv.order, ({ pubsub, query, mutation }) => ({
-  cancelOrder: mutation(cnst.Order, { guards: [SignedIn] }) // [!code highlight:1]
+  cancelOrder: mutation(cnst.Order, { guards: [SignedIn, CanCancelOrder] }) // [!code highlight:1]
     .param("orderId", ID)
     .exec(async function (orderId) {
       return await this.orderService.cancelOrder(orderId);
@@ -168,7 +199,7 @@ import type { InternalArg, SignalContext } from "akanjs/signal";
 
 export class CurrentUserId implements InternalArg {
   getArg(context: SignalContext) {
-    return context.getHttpContext<{ user?: { id: string } }>().req.user?.id ?? null;
+    return context.get<{ self?: { id: string } }>("account")?.self?.id ?? null;
   }
 }
 ```
@@ -176,9 +207,9 @@ export class CurrentUserId implements InternalArg {
 ### signal exec shape
 
 ```ts
-import { SignedIn } from "@apps/myapp/srvkit";
+import { CanCancelOrder, SignedIn } from "@apps/myapp/srvkit";
 export class OrderEndpoint extends endpoint(srv.order, ({ pubsub, query, mutation }) => ({
-  cancelOrder: mutation(cnst.Order)
+  cancelOrder: mutation(cnst.Order, { guards: [SignedIn, CanCancelOrder] })
     .param("orderId", ID)
     .with(CurrentUserId, { nullable: true }) // [!code highlight:2]
     .exec(async function (orderId, currentUserId) {
@@ -192,9 +223,9 @@ export class OrderEndpoint extends endpoint(srv.order, ({ pubsub, query, mutatio
 ```ts
 import { createHash } from "crypto";
 
-export function createOrderHash(orderId: string) {
+export const createOrderHash = (orderId: string) => {
   return createHash("sha256").update(orderId).digest("hex");
-}
+};
 ```
 
 ### srvkit/EmailClient.ts
@@ -250,7 +281,7 @@ interface PaymentOptions {
   endpoint: string;
 }
 
-export class PaymentApi extends adapt("paymentApi", ({ env }) => ({
+export class PaymentApi extends adapt("paymentApi" as const, ({ env }) => ({
   endpoint: env((option: PaymentOptions) => option.endpoint),
 })) {
   async requestPayment(orderId: string, amount: number) {

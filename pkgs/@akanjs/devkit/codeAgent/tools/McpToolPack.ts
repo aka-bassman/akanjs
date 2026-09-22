@@ -7,8 +7,9 @@ import {
   codeAgentOutputChars,
 } from "akanjs/common";
 import { Type } from "typebox";
-import { McpClient, type McpToolInfo } from "./McpClient";
+import { McpClient, type McpToolInfo, McpUnauthorized } from "./McpClient";
 import { McpServerConfig } from "./McpServerConfig";
+import { McpSignIn } from "./McpSignIn";
 
 export interface McpToolPackOptions {
   workspaceRoot: string;
@@ -45,12 +46,24 @@ export class McpToolPack {
     const pack = new McpToolPack();
     for (const ref of refs) {
       const base = { name: ref.name, transport: ref.transport, target: McpServerConfig.targetOf(ref) };
+      // Stored or refreshed, never asked for: connecting runs inside `CodeAgent.create`, and a browser round
+      // trip there would hold the session on a screen that has not been drawn yet — see {@link McpSignIn}.
+      const token = ref.transport === "http" ? await McpSignIn.token(ref, options.onNotice) : undefined;
       try {
-        const client = await new McpClient(ref).connect();
+        const client = await new McpClient(ref, token).connect();
         const tools = await client.listTools();
         pack.#clients.push({ client, tools });
-        pack.#status.push({ ...base, tools: tools.map((tool) => McpToolPack.#nameOf(ref.name, tool.name)) });
+        pack.#status.push({
+          ...base,
+          tools: tools.map((tool) => McpToolPack.#nameOf(ref.name, tool.name)),
+          auth: token ? "authorized" : "none",
+        });
       } catch (error) {
+        if (error instanceof McpUnauthorized) {
+          options.onNotice?.(`MCP server "${ref.name}" needs signing in — /mcp login ${ref.name}`);
+          pack.#status.push({ ...base, tools: [], auth: "required" });
+          continue;
+        }
         // One unreachable integration must not cost the agent its turn, so it costs only its own tools.
         options.onNotice?.(`MCP server "${ref.name}" is unavailable: ${String(error)}`);
         pack.#status.push({ ...base, tools: [], error: String(error) });

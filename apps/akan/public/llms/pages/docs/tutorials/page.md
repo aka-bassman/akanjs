@@ -74,7 +74,7 @@ The page needs to handle query parameters from the landing page and provide an i
 
 Let's understand the key components of this order form page:
 
-Next.js provides searchParams as a Promise that contains URL query parameters. We extract the serveType to pre-fill the order form with the customer's choice from the landing page.
+The page declares the query key it reads with .search("serveType", cnst.ServeType), so .render() receives serveType already typed as the enum's union — a value outside the enum is dropped, the way an absent one is. We use it to pre-fill the order form with the customer's choice from the landing page.
 
 The Load.Edit component handles form state management, validation, and submission. It connects to the slice for data persistence and automatically navigates to the success page on submit.
 
@@ -270,7 +270,7 @@ export const dictionary = modelDictionary(["en", "ko"])
 
 ```ts
 "use client"; // [!code collapse:4]
-import { Field, Layout, buttonRecipe } from "akanjs/ui";
+import { Field, Layout } from "akanjs/ui";
 import { cnst, st, usePage } from "@apps/koyo/client";
 
 interface GeneralProps {
@@ -319,7 +319,7 @@ export const General = ({ className, showServeType = true }: GeneralProps) => { 
 
 ```ts
 import { cn, type ModelProps } from "akanjs/client"; // [!code collapse:7]
-import { Model } from "akanjs/ui";
+import { Model, buttonRecipe } from "akanjs/ui";
 import { cnst, fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
 
 interface CardProps extends ModelProps<"icecreamOrder", cnst.LightIcecreamOrder> {
@@ -390,8 +390,9 @@ export const Card = ({ icecreamOrder, showControls = true }: CardProps) => {
 ```ts
 import { Link } from "akanjs/ui";
 import { usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-linear-to-br from-background via-muted to-border p-6">
@@ -442,7 +443,7 @@ export default function Page() {
       </div>
     </div>
   );
-}
+});
 ```
 
 ### apps/koyo/page/icecreamOrder/success.tsx
@@ -450,8 +451,9 @@ export default function Page() {
 ```ts
 import { Link } from "akanjs/ui";
 import { usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default function Page() {
+export default page().render(() => {
   const { l } = usePage();
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-linear-to-br from-background via-muted to-border p-6">
@@ -494,7 +496,7 @@ export default function Page() {
       </div>
     </div>
   );
-}
+});
 ```
 
 ### apps/koyo/page/icecreamOrder/new.tsx
@@ -502,45 +504,42 @@ export default function Page() {
 ```ts
 import { Load } from "akanjs/ui";
 import { cnst, fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-interface PageProps {
-  searchParams: {
-    serveType?: cnst.ServeType["value"];
-  };
-}
-export default function Page({ searchParams }: PageProps) {
-  const { l } = usePage();
-  const { serveType } = searchParams;
-  const icecreamOrderForm: Partial<cnst.IcecreamOrder> = { serveType };
-        
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-linear-to-br from-background via-muted to-border p-6">
-      <div className="w-full max-w-2xl space-y-8">
-        <div className="space-y-4 text-center">
-          <div className="flex justify-center">
-            <span className="text-8xl">🍦</span>
+export default page()
+  .search("serveType", cnst.ServeType, { desc: "How the order is served: forHere, takeOut or delivery." })
+  .render(({ serveType }) => {
+    const { l } = usePage();
+    const icecreamOrderForm: Partial<cnst.IcecreamOrder> = { serveType };
+
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-linear-to-br from-background via-muted to-border p-6">
+        <div className="w-full max-w-2xl space-y-8">
+          <div className="space-y-4 text-center">
+            <div className="flex justify-center">
+              <span className="text-8xl">🍦</span>
+            </div>
+            <h1 className="bg-linear-to-r from-background via-muted to-border text-5xl font-bold text-primary md:text-6xl">
+              {l("base.createModel", { model: l("icecreamOrder.modelName") })}
+            </h1>
+            <p className="text-xl font-light text-primary">
+              {l.trans({ en: "Customize your perfect treat", ko: "나만의 완벽한 디저트를 만들어보세요" })}
+            </p>
           </div>
-          <h1 className="bg-linear-to-r from-background via-muted to-border text-5xl font-bold text-primary md:text-6xl">
-            {l("base.createModel", { model: l("icecreamOrder.modelName") })}
-          </h1>
-          <p className="text-xl font-light text-primary">
-            {l.trans({ en: "Customize your perfect treat", ko: "나만의 완벽한 디저트를 만들어보세요" })}
-          </p>
+          <Load.Edit
+            className="flex flex-col items-center"
+            slice={fetch.slice.icecreamOrderInPublic}
+            edit={icecreamOrderForm}
+            type="form"
+            onCancel="back"
+            onSubmit="/icecreamOrder/success"
+          >
+            <IcecreamOrder.Template.General showServeType={false} />
+          </Load.Edit>
         </div>
-        <Load.Edit
-          className="flex flex-col items-center"
-          slice={fetch.slice.icecreamOrderInPublic}
-          edit={icecreamOrderForm}
-          type="form"
-          onCancel="back"
-          onSubmit="/icecreamOrder/success"
-        >
-          <IcecreamOrder.Template.General showServeType={false} />
-        </Load.Edit>
       </div>
-    </div>
-  );
-}
+    );
+  });
 ```
 
 ### apps/koyo/lib/icecreamOrder/IcecreamOrder.Template.tsx

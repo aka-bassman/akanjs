@@ -11,6 +11,7 @@
 - Data Layer (#data-layer)
 - Model Shape (#model-shape)
 - Document And Service (#document-and-service)
+- What A Filter Generates (#filter-methods)
 - Signal To UI (#signal-to-ui)
 - Fetch And Store Instances (#fetch-and-st)
 - Streaming Page Data (#streaming-page-data)
@@ -50,15 +51,33 @@ The base object shape used to build other model views.
 
 A smaller view for lists, cards, and embedded references.
 
+The whole record, returned by a detail query. Write all five classes, in this order, in every constant file.
+
+Aggregate numbers a list query reports alongside the rows. Declare it even when it is empty.
+
 Document And Service
 
 The document file turns the model shape into stored data. It defines the database-facing model and the filter shape used when the application searches or sorts records.
 
 The service file is where business behavior lives. In this simple example, the document knows how to increase its own stock, and the service decides which product should be loaded and saved.
 
+What A Filter Generates
+
+A query you declare in the document file is not one method. Akan generates fourteen from it, named after the filter key: declare byOwner and you have listByOwner, countByOwner, updateOneByOwner, and eleven more, on both the model and the service.
+
+Nine of the fourteen read, one only builds a query descriptor, and the remaining four write. Those four are the ones to be careful with: each is a single atomic statement against the database, so none of the model's document hooks run:
+
+Method
+
+Reach for the four writes only on a model whose removal carries no side effect. A model with a cascade, a _postRemove that deletes a stored file, or a live list watching it must be removed one document at a time through remove<Model>(id) — one atomic UPDATE cannot run any of that.
+
+Every model already carries an any filter, so listAny and countAny exist before you declare anything. One name is refused: a filter may not be keyed after its own model, case aside. A filter named chat on model chat would generate a removeChat that quietly replaces the single-document one with a hookless version, so Akan fails the boot instead.
+
 Signal To UI
 
 Signal is the layer that makes server behavior available to pages. A slice is useful when the page needs a list or dashboard view. An endpoint is useful when the page needs to run a specific action, such as adding product stock.
+
+Every custom endpoint names its own guards array, and the slice names one per verb. The guards are also the MCP exposure decision: an endpoint that declares none is refused from the agent catalogue, so a missing guards array costs visibility as well as authorization.
 
 Use it for data views such as public list, admin list, dashboard, or search result.
 
@@ -75,6 +94,8 @@ Use fetch when you need to call server data or pass slice metadata into Akan UI 
 Generated request instance. It calls endpoints, initializes slices, loads views, and exposes fetch.slice.* metadata.
 
 Generated client store instance. It provides st.use.* hooks for reading state and st.do.* actions for changing state.
+
+Endpoint arguments are positional and in declaration order, and the call resolves to whatever the endpoint returns. addStock returns cnst.Product, so the awaited value is the product itself, not a wrapper object.
 
 This pattern is useful when a page, action, or server-side helper needs to run a business operation. The generated fetch instance calls the server endpoint and returns the typed result.
 
@@ -102,19 +123,7 @@ Common Decisions
 
 When you are not sure where to put code, start with the business question. The data layer is easier to design when each file answers one kind of question.
 
-What fields does it have?
-
-Which fields are text searchable?
-
-How is it stored or searched?
-
-What business rule should run?
-
-What should a page call?
-
-What should users see?
-
-What state is shared on the client?
+Question
 
 Keep page files focused on user experience. If the rule would still matter when another page, mobile app, or admin screen uses the same feature, it usually belongs in the data layer.
 
@@ -123,7 +132,7 @@ Keep page files focused on user experience. If the rule would still matter when 
 ### apps/shop/lib/product/product.constant.ts
 
 ```ts
-import { enumOf, Int } from "akanjs/base";
+import { Int } from "akanjs/base";
 import { via } from "akanjs/constant";
 
 export class ProductInput extends via((field) => ({
@@ -140,6 +149,10 @@ export class LightProduct extends via(
   ["name", "stock"] as const,
   (resolve) => ({}),
 ) {}
+
+export class Product extends via(ProductObject, LightProduct, (resolve) => ({})) {}
+
+export class ProductInsight extends via(Product, (field) => ({})) {}
 ```
 
 ### apps/shop/lib/product/product.document.ts
@@ -179,12 +192,27 @@ export class ProductService extends serve(db.product, ({ use, service }) => ({})
 }
 ```
 
+### apps/shop/lib/product/product.document.ts
+
+```ts
+export class ProductFilter extends from(cnst.Product, (filter) => ({
+  query: {
+    byOwner: filter()
+      .arg("ownerId", ID)
+      .query((ownerId) => ({ owner: ownerId })),
+  },
+  sort: {},
+})) {}
+```
+
 ### apps/shop/lib/product/product.signal.ts
 
 ```ts
-import { Admin } from "@libs/shared/srvkit"; // [!code collapse:17]
+import { Admin } from "@libs/shared/srvkit"; // [!code collapse:19]
+import { ID, Int } from "akanjs/base";
 import { endpoint, internal, Public, slice } from "akanjs/signal";
 
+import * as cnst from "../cnst";
 import * as srv from "../srv";
 
 export class ProductInternal extends internal(srv.product, ({ interval }) => ({})) {}
@@ -200,8 +228,8 @@ export class ProductSlice extends slice(
 ) {}
 
 export class ProductEndpoint extends endpoint(srv.product, ({ query, mutation }) => ({
-  addStock: mutation()
-    .param("productId", String)
+  addStock: mutation(cnst.Product, { guards: [Admin] })
+    .param("productId", ID)
     .param("count", Int)
     .exec(function (productId, count) {
       return this.productService.addStock(productId, count);
@@ -214,13 +242,8 @@ export class ProductEndpoint extends endpoint(srv.product, ({ query, mutation })
 ```ts
 import { fetch } from "@apps/shop/client";
 
-export const addProductStock = async (productId: string, quantity: number) => {
-  const { product } = await fetch.addStock({
-    productId,
-    quantity,
-  });
-
-  return product;
+export const addProductStock = async (productId: string, count: number) => {
+  return await fetch.addStock(productId, count);
 };
 ```
 
@@ -285,24 +308,28 @@ export const General = () => {
 
 ```ts
 import { fetch, Order, Product, usePage } from "@apps/shop/client";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
 import { Load } from "akanjs/ui";
 
-export default async function Page({ params }: PageProps) {
-  const { l } = usePage();
-  const { productInitInShop, productListInShop } = fetch.initProductInShop(params.shopId);
-  const { orderInitInShop } = fetch.initOrderInShop(params.shopId, { insight: false });
+export default page()
+  .param("shopId", ID, { desc: "The shop whose products and orders to show." })
+  .render(({ shopId }) => {
+    const { l } = usePage();
+    const { productInitInShop, productListInShop } = fetch.initProductInShop(shopId);
+    const { orderInitInShop } = fetch.initOrderInShop(shopId, { insight: false });
 
-  return (
-    <div className="space-y-4">
-      <h1 className="font-bold text-3xl">{l("shop.modelName")}</h1>
-      <Product.Zone.Card init={productInitInShop} />
-      <Order.Zone.Card init={orderInitInShop} />
-      <Load.Stream of={productListInShop}>
-        {(productList) => <Product.Unit.Total count={productList.length} />}
-      </Load.Stream>
-    </div>
-  );
-}
+    return (
+      <div className="space-y-4">
+        <h1 className="font-bold text-3xl">{l("shop.modelName")}</h1>
+        <Product.Zone.Card init={productInitInShop} />
+        <Order.Zone.Card init={orderInitInShop} />
+        <Load.Stream of={productListInShop}>
+          {(productList) => <Product.Unit.Total count={productList.length} />}
+        </Load.Stream>
+      </div>
+    );
+  });
 ```
 
 ## Agent Notes

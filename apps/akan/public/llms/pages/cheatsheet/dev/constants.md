@@ -1,9 +1,9 @@
-# Constant Schema Docs
+# Schema Docs
 
 - Source: /cheatsheet/dev/constants
 - Mirror: /llms/pages/cheatsheet/dev/constants.md
 - Section: cheatsheet
-- Category: cheatsheet
+- Category: Development
 - Priority: P2
 
 ## Headings
@@ -14,13 +14,13 @@
 
 ## Content
 
+Schema Docs
+
 Constant Schema Docs
 
 Akan can render schema definition tables and model relationship diagrams directly from ConstantRegistry.
 
-Developer schema page
-
-Printable schema definition
+Each one then gets a route of its own, and the route stays a server page:
 
 Generated Schema
 
@@ -30,26 +30,27 @@ Printable Definition
 
 ## Code Examples
 
-### Code
+### apps/myapp/ui/SchemaDocs.tsx
 
 ```ts
+"use client";
+
 import "@apps/myapp/lib/cnst";
+
 import { Constant } from "akanjs/ui";
 
-export default function SchemaDocsPage() {
-  return <Constant.Doc.Zone models={["user", "bizContract"]} openAll />;
-}
+export const SchemaDocs = () => <Constant.Doc.Zone models={["user", "bizContract"]} openAll />;
+
+export const PrintableSchemaDocs = () => <Constant.Doc.Print models={["user", "bizContract"]} />;
 ```
 
-### Code
+### apps/myapp/page/(admin)/schema/_index.tsx
 
 ```ts
-import "@apps/myapp/lib/cnst";
-import { Constant } from "akanjs/ui";
+import { SchemaDocs } from "@apps/myapp/ui";
+import { page } from "akanjs/client";
 
-export default function PrintableSchemaDocsPage() {
-  return <Constant.Doc.Print models={["user", "bizContract"]} />;
-}
+export default page().render(() => <SchemaDocs />);
 ```
 
 ## Agent Notes

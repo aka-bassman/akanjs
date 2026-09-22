@@ -16,7 +16,7 @@ Cloud
 
 Cloud CLI
 
-Cloud commands configure optional Akan Cloud helpers: authentication, LLM settings, project questions, and framework updates.
+Cloud commands cover the optional Akan Cloud helpers: authentication, environment value transfer, and framework updates. Everything that talks to a cloud takes `--host`, so a self-hosted one is reached with the same commands.
 
 Internal deployment commands marked `devOnly: true` are intentionally not documented here.
 

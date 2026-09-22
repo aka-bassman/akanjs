@@ -10,7 +10,7 @@ import { Shiki_Client } from "./Shiki_Client";
 // The variable → color wiring lives in ./styles.css.
 const highlighter = createHighlighter({
   themes: ["github-light", "github-dark"],
-  langs: ["typescript", "bash"],
+  langs: ["typescript", "tsx", "bash", "yaml", "json", "markdown"],
 });
 
 const transformerLineNumbers: ShikiTransformer = {

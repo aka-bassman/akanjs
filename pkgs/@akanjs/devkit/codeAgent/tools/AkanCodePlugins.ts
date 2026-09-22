@@ -1,5 +1,5 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
-import type { CodeAgentMcpStatus, CodeAgentProfile, CodeAgentSubagent } from "akanjs/common";
+import type { CodeAgentMcpStatus, CodeAgentProfile, CodeAgentQuestion, CodeAgentSubagent } from "akanjs/common";
 import type { Workspace } from "../../commandDecorators";
 import type { CodeMailbox } from "../agent/CodeMailbox";
 import { SubagentPool } from "../agent/SubagentPool";
@@ -9,6 +9,7 @@ import { PreviewView } from "../feedback/PreviewView";
 import { TurnFeedback, type TurnFeedbackSource } from "../feedback/TurnFeedback";
 import { VerifyFeedback } from "../feedback/VerifyFeedback";
 import { AkanToolPack } from "./AkanToolPack";
+import { AskToolPack } from "./AskToolPack";
 import { MailToolPack } from "./MailToolPack";
 import { McpToolPack } from "./McpToolPack";
 import { SessionToolPack } from "./SessionToolPack";
@@ -29,6 +30,8 @@ export interface AkanCodePluginsOptions {
   mailbox: () => CodeMailbox | undefined;
   onNotice?: (message: string) => void;
   onAgents?: (agents: CodeAgentSubagent[]) => void;
+  /** How `ask_user` reaches the person. Absent on a host that has nobody to reach. */
+  onAsk?: (question: Omit<CodeAgentQuestion, "questionId">) => Promise<string | undefined>;
 }
 
 /**
@@ -67,10 +70,21 @@ export class AkanCodePlugins {
     const sessionExtension = sessions.extension();
     const mail = new MailToolPack({ profile: options.profile, mailbox: options.mailbox });
     const mailExtension = mail.extension();
+    const onAsk = options.onAsk;
+    const ask = onAsk ? new AskToolPack({ profile: options.profile, ask: onAsk }) : undefined;
+    const askExtension = ask?.extension();
     if (!options.profile.tools.akan)
       return {
-        extensions: [mcp?.extension(), webExtension, sessionExtension, mailExtension].filter((entry) => !!entry),
-        toolNames: [...(mcp?.toolNames ?? []), ...web.names(), ...sessions.names(), ...mail.names()],
+        extensions: [mcp?.extension(), webExtension, sessionExtension, mailExtension, askExtension].filter(
+          (entry) => !!entry,
+        ),
+        toolNames: [
+          ...(mcp?.toolNames ?? []),
+          ...web.names(),
+          ...sessions.names(),
+          ...mail.names(),
+          ...(ask?.names() ?? []),
+        ],
         mcp: mcpStatus,
         dispose,
       };
@@ -102,6 +116,7 @@ export class AkanCodePlugins {
     if (webExtension) extensions.push(webExtension);
     if (sessionExtension) extensions.push(sessionExtension);
     if (mailExtension) extensions.push(mailExtension);
+    if (askExtension) extensions.push(askExtension);
     return {
       extensions,
       toolNames: [
@@ -111,6 +126,7 @@ export class AkanCodePlugins {
         ...web.names(),
         ...sessions.names(),
         ...mail.names(),
+        ...(ask?.names() ?? []),
       ],
       mcp: mcpStatus,
       dispose,

@@ -102,45 +102,48 @@ export const General = () => {
 ### Code
 
 ```ts
-export default async function Page({ params }: PageProps) {
-  const { boardId } = params;
-  const { board } = await fetch.viewBoard(boardId);
-  const articleForm: Partial<cnst.Article> = {
-    board: board.id,
-    status: "draft",
-  };
+export default page()
+  .param("boardId", ID)
+  .render(async ({ boardId }) => {
+    const { board } = await fetch.viewBoard(boardId);
+    const articleForm: Partial<cnst.Article> = {
+      board: board.id,
+      status: "draft",
+    };
 
-  return (
-    <Load.Edit
-      slice={fetch.slice.articleInBoard}
-      edit={articleForm}
-      type="form"
-      onCancel="back"
-      onSubmit={`/board/${board.id}`}
-    >
-      <Article.Template.General />
-    </Load.Edit>
-  );
-}
+    return (
+      <Load.Edit
+        slice={fetch.slice.articleInBoard}
+        edit={articleForm}
+        type="form"
+        onCancel="back"
+        onSubmit={`/board/${board.id}`}
+      >
+        <Article.Template.General />
+      </Load.Edit>
+    );
+  });
 ```
 
 ### Code
 
 ```ts
-export default async function Page({ params }: PageProps) {
-  const { article, articleEdit } = await fetch.editArticle(params.articleId);
+export default page()
+  .param("articleId", ID)
+  .render(async ({ articleId }) => {
+    const { article, articleEdit } = await fetch.editArticle(articleId);
 
-  return (
-    <Load.Edit
-      slice={fetch.slice.articleInBoard}
-      edit={articleEdit}
-      type="form"
-      onSubmit={`/article/${article.id}`}
-    >
-      <Article.Template.General />
-    </Load.Edit>
-  );
-}
+    return (
+      <Load.Edit
+        slice={fetch.slice.articleInBoard}
+        edit={articleEdit}
+        type="form"
+        onSubmit={`/article/${article.id}`}
+      >
+        <Article.Template.General />
+      </Load.Edit>
+    );
+  });
 ```
 
 ### Code

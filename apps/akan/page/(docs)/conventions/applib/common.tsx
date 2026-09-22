@@ -1,10 +1,53 @@
 import { usePage } from "@apps/akan/client";
-import { Code, cardGridRecipe, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { Code, cardGridRecipe, Divider, Docs, DocsToc, type IntroItem, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
 export default page().render(() => {
   const { l } = usePage();
+
+  const layerPlacement: IntroItem[] = [
+    {
+      name: "common/",
+      desc: l.trans({
+        en: "Pure, isomorphic, zero-dependency. It may import a sibling common/* file and akanjs/base, and nothing else — not Err, which is why throwing code stays out of it.",
+        ko: "순수하고, 양쪽 런타임에서 돌고, 의존성이 없습니다. 형제 common/* 파일과 akanjs/base만 import할 수 있고 그 밖에는 없습니다. Err도 없으므로 던지는 코드는 여기 두지 않습니다.",
+      }),
+      example: "libs/util/common/isHttpUri.ts\n// camelCase file, filename equals the single export",
+    },
+    {
+      name: "webkit/",
+      desc: l.trans({
+        en: "Touches window, navigator or Capacitor, or is a React hook. The browser half of what common/ cannot hold.",
+        ko: "window, navigator, Capacitor를 건드리거나 React hook입니다. common/이 담을 수 없는 것의 브라우저 쪽 절반입니다.",
+      }),
+      example: "libs/util/webkit/useGeoLocation.tsx\n// use<Thing>.tsx — .tsx even with no JSX",
+    },
+    {
+      name: "srvkit/",
+      desc: l.trans({
+        en: "Touches node:*, Bun, process.env, a secret, or a server SDK. The server half, and the only place a vendor package is imported directly.",
+        ko: "node:*, Bun, process.env, secret, server SDK를 건드립니다. 서버 쪽 절반이고, vendor 패키지를 직접 import하는 유일한 곳입니다.",
+      }),
+      example: "libs/util/srvkit/cloudflareApi.ts\n// camelCase file, PascalCase class",
+    },
+    {
+      name: "ui/",
+      desc: l.trans({
+        en: "Renders JSX and is not bound to one model. A component tied to a model belongs in that module as a Unit, View, Template, Util or Zone instead.",
+        ko: "JSX를 그리고 model 하나에 묶이지 않습니다. model에 묶인 component는 그 module의 Unit, View, Template, Util, Zone으로 갑니다.",
+      }),
+      example: "apps/akan/ui/BrowserMockup.tsx\n// PascalCase component, camelCase sidecar",
+    },
+    {
+      name: "plugin/",
+      desc: l.trans({
+        en: "A build-time or CLI-time AkanPlugin, registered in akan.config.ts and re-exported from the generated barrel.",
+        ko: "빌드 시점 또는 CLI 시점의 AkanPlugin입니다. akan.config.ts에 등록하고 생성된 barrel에서 re-export합니다.",
+      }),
+      example: "libs/util/plugin/pushNotification.plugin.ts\n// <name>.plugin.ts",
+    },
+  ];
   return (
     <Scroll>
       <Scroll.Slide id="common-overview" title={l.trans({ en: "Common Overview", ko: "Common 개요" })}>
@@ -22,6 +65,13 @@ export default page().render(() => {
               ko: "서버 전용 로직은 srvkit, 브라우저 또는 웹 렌더링 로직은 webkit, service, signal, page, component가 함께 쓰는 cross-runtime 로직은 common에 둡니다.",
             })}
           </div>
+          <div>
+            {l.trans({
+              en: "The five folders answer one question each, and the test is what the code touches rather than what it is for. Reading them together is faster than reading any one of them, so the same table opens all three pages.",
+              ko: "다섯 folder가 각각 질문 하나에 답하고, 기준은 그 코드가 무엇을 위한 것인지가 아니라 무엇을 건드리는지입니다. 하나씩 읽는 것보다 함께 읽는 편이 빠르므로, 같은 표가 세 문서를 모두 엽니다.",
+            })}
+          </div>
+          <Docs.IntroTable type={l.trans({ en: "Folder", ko: "폴더" })} items={layerPlacement} />
         </Docs.Description>
       </Scroll.Slide>
       <Divider />

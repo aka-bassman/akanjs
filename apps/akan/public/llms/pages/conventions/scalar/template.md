@@ -38,7 +38,7 @@ The parent module keeps its normal form state. It passes the embedded scalar val
 
 Field Or Custom UI
 
-Use Field components when they match the scalar input. If the scalar needs a special interaction, it is fine to use plain inputs, buttons, or an app-specific component.
+Use a Field component for every scalar field — a bare input is never right for one, because Field is what carries the label, the validation surface and the data-akan-action annotation. When the scalar needs an interaction no Field covers, build an app-specific component that takes value and onChange the same way.
 
 For example, `Address.Template` might use normal text fields, while `Coordinate.Template` might use a map picker.
 
@@ -51,10 +51,10 @@ lib/
 └── __scalar/
     └── price/
         ├── price.constant.ts
-        └── price.Template.tsx
+        └── Price.Template.tsx
 ```
 
-### price.Template.tsx
+### Price.Template.tsx
 
 ```ts
 "use client";
@@ -69,45 +69,33 @@ interface GeneralProps {
 
 export const General = ({ value, onChange }: GeneralProps) => {
   const { l } = usePage();
+  const patch = (next: Partial<cnst.Price>) => onChange(new cnst.Price().set(value).set(next));
 
   return (
     <div className="space-y-4">
-      <Field.Number
-        label={l("price.amount")}
-        value={value.amount}
-        onChange={(amount) => onChange({ ...value, amount })}
-      />
-      <Field.Text
-        label={l("price.currency")}
-        value={value.currency}
-        onChange={(currency) => onChange({ ...value, currency })}
-      />
+      <Field.Number label={l("price.amount")} value={value.amount} onChange={(amount) => patch({ amount })} />
+      <Field.Text label={l("price.currency")} value={value.currency} onChange={(currency) => patch({ currency })} />
     </div>
   );
 };
 ```
 
-### product.Template.tsx
+### Product.Template.tsx
 
 ```ts
 "use client";
 
-import { st } from "@apps/myapp/client";
-import * as Price from "../__scalar/price/price.Template";
+import { Price, st, usePage } from "@apps/myapp/client";
+import { Field } from "@libs/shared/ui";
 
 export const General = () => {
+  const { l } = usePage();
   const productForm = st.use.productForm();
 
   return (
     <div className="space-y-6">
-      <input
-        value={productForm.name}
-        onChange={(event) => st.do.setNameOnProduct(event.target.value)}
-      />
-      <Price.General
-        value={productForm.price}
-        onChange={st.do.setPriceOnProduct}
-      />
+      <Field.Text label={l("product.name")} value={productForm.name} onChange={st.do.setNameOnProduct} />
+      <Price.Template.General value={productForm.price} onChange={st.do.setPriceOnProduct} />
     </div>
   );
 };

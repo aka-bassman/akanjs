@@ -14,7 +14,7 @@
 
 Workspace
 
-Create a new Akan.js workspace and optionally bootstrap the first application in the same step. The command normalizes names to lowercase kebab-case and uses the selected update tag, install-lib choice, and initialization flag to prepare the repository.
+Create a new Akan.js workspace and bootstrap the first application in the same step. The command normalizes both names to lowercase kebab-case, and the install-lib choice, initialization flag, MCP config, and agent rules are all decided here rather than afterwards.
 
 Run lint and formatting for a selected app, library, or package target. `--fix` defaults to true, so the command applies formatter/linter fixes unless the option is explicitly disabled.
 
@@ -26,7 +26,7 @@ Workspace CLI
 
 Workspace commands create a new Akan.js workspace and keep the whole repository synchronized. Use them when you are starting a project, fixing generated surfaces, or applying lint across apps and libraries.
 
-The commands below come from `workspace.command.ts` — `create-workspace`, `lint`, `lint-all`, `sync-all` — plus `fleet`, which mirrors this workspace out to the customer repos it serves.
+The commands below come from `workspace.command.ts` — `create-workspace`, `lint`, `lint-all`, `sync-all` — plus `subspace`, which mirrors this workspace out to the customer repos it serves.
 
 ## Code Examples
 

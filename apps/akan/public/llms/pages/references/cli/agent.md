@@ -16,7 +16,7 @@ Agent
 
 Agent CLI
 
-Agent commands install project guidance files for coding assistants. They are intentionally separate from the MCP server: rules are persistent project instructions, while MCP provides live read-only context.
+Agent commands install project guidance files for coding assistants. They are intentionally separate from the MCP server: rules are persistent project instructions an agent always carries, while MCP answers live questions and, in apply mode, runs the workflows the rules point at.
 
 Use this after creating a workspace or when you want Cursor, Claude Code, Codex-style agents, and similar tools to follow Akan conventions consistently.
 

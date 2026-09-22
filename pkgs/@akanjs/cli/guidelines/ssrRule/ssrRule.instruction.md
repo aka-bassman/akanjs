@@ -129,8 +129,10 @@ eight queries threw; per-section boundaries put each rejection at its own bounda
 soft-redirect script, so `getSelf({ unauthorize: "/signin" })` stays in `_layout.tsx` or the page body — never
 inside a streamed section.
 
-**⑥ Use named `ReactNode` slots, not just `children`.** `Layout.Navbar` accepts `title`, `back`, `left`, `right`,
-and `children`, so a client shell composes server-rendered content in five places instead of absorbing it.
+**⑥ Use named `ReactNode` slots, not just `children`.** A client shell that takes one slot per region lets a
+server component supply each of them, instead of absorbing the whole subtree into the bundle. `Layout.Navbar`
+declares `title` / `left` / `right` alongside `back` and `children`, but its render body uses only `back` and
+`children` — copy the shape, not that component.
 
 **⑦ Let the server do the derived work.** Display and predicate logic belongs on `Light<Model>` (`isNew()`,
 `canWrite(user?)`, `formatTimes()`), and enum→class lookups belong in a module-scope `as const` map. Both sides call

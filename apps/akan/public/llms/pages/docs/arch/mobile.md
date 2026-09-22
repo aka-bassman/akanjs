@@ -33,13 +33,13 @@ Android, iOS, and web clients call the same Akan services and can share auth, pe
 
 Mobile Targets
 
-A mobile target is one native package built from an Akan app. A single Akan app can publish multiple mobile packages by pointing each target at a different basePath while reusing the same backend modules.
+A mobile target is one native package built from an Akan app. A single Akan app can publish multiple mobile packages by pointing each target at a different basePath while reusing the same backend modules. Give each basePath its own host: the server resolves an incoming host to exactly one basePath, so two basePaths sharing a domain leave one of them unreachable.
 
 Use targets when packages need different app IDs, display names, entry surfaces, permissions, deep links, or store release tracks.
 
 CSR Runtime
 
-Inside the native shell, Akan uses the CSR router and mobile page frame. Page transitions, safe area, navbar/bottom inset layers, keyboard accessories, and page cache are handled at the client runtime layer instead of requiring a native UI rewrite.
+Inside the native shell, Akan uses the CSR router and mobile page frame. Page transitions, safe area, navbar/bottom inset layers, keyboard accessories, and page cache are handled at the client runtime layer instead of requiring a native UI rewrite. A page declares them with the .config() stage of its page() chain.
 
 Controls CSR page motion so mobile navigation can feel closer to native apps.
 
@@ -76,8 +76,8 @@ import type { AppConfig } from "akanjs";
 
 const config: AppConfig = {
   routes: [
-    { domains: { main: ["example.com"] }, basePath: "store" },
-    { domains: { main: ["example.com"] }, basePath: "admin" },
+    { domains: { main: ["store.example.com"] }, basePath: "store" },
+    { domains: { main: ["admin.example.com"] }, basePath: "admin" },
   ],
   mobile: {
     appName: "Example App",
@@ -97,21 +97,21 @@ export default config;
 ### page/store/product/[productId].tsx
 
 ```ts
-import type { PageConfig } from "akanjs/client";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
 import { Layout } from "akanjs/ui";
 
-export default function Page() {
-  return (
-    <>
-      <Layout.Navbar back>Product detail</Layout.Navbar>
-      <div>Product detail</div>
-    </>
-  );
-}
-
-export const pageConfig = {
-  transition: "stack",
-} satisfies PageConfig;
+export default page()
+  .param("productId", ID, { desc: "The product to show." })
+  .config({ transition: "stack" })
+  .render(({ productId }) => {
+    return (
+      <>
+        <Layout.Navbar back>Product detail</Layout.Navbar>
+        <div>Product {productId}</div>
+      </>
+    );
+  });
 ```
 
 ## Agent Notes

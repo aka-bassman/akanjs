@@ -16,12 +16,91 @@
 - Standard Model API (#standard-api)
 - Slice Auto-Generated Features (#slice-features)
 - Usage Patterns (#usage-patterns)
-- Other Stores With RootStore (#rootstore-access)
 - Practical Rules (#practical-rules)
 
 ## Content
 
 model.store.ts
+
+The cached full model instance.
+
+Loading status for the model instance.
+
+Form state for create or update flows.
+
+Loading status for form submission.
+
+Latest submit state.
+
+Time when the detailed view was opened.
+
+Modal key associated with this model.
+
+Create a document using form state.
+
+Update a document using form state.
+
+Create a new document with data.
+
+Update an existing document.
+
+Remove a document.
+
+Check whether the form can be submitted.
+
+Submit the form for create or update.
+
+Initialize form state for creation.
+
+Initialize form state for editing.
+
+Merge data into an existing cached document.
+
+Open detailed view state.
+
+Manually set model cache.
+
+Reset model state.
+
+Default value for the slice.
+
+List loaded by init or refresh.
+
+Loading status of the list.
+
+Initial list snapshot.
+
+Time when the list was initialized.
+
+Selected items in the list.
+
+Insight data for the list.
+
+Last accessed page number.
+
+Current page number.
+
+Items per page.
+
+Current query arguments.
+
+Current sort setting.
+
+Initialize list with query args.
+
+Reload list with strict consistency.
+
+Update selection state.
+
+Change page and reload.
+
+Append the rows after the ones loaded.
+
+Change list limit and reload.
+
+Change query arguments and reload.
+
+Change sort and reload.
 
 Get the current snapshot of the store state.
 
@@ -73,10 +152,6 @@ Use this.get, this.pick, this.set, generated fetch clients, and generated setter
 
 Auto-Generated Setters
 
-Other Stores With RootStore
-
-Store instances are merged into one app-level RootStore type. Use RootStore casting only for rare cross-store coordination, because broad cross-store coupling makes actions harder to reason about.
-
 Practical Rules
 
 Keep UI orchestration in store: fetch calls, loading state, toast messages, modal state, and navigation.
@@ -89,7 +164,7 @@ Use generated fetch clients inside store actions and generated setters like this
 
 Extend generated or library stores with ...model.stores before adding app-specific state and actions.
 
-Use RootStore casting sparingly for cross-store coordination.
+Return nothing from a store action. Every method dispatches through st.do, so write the result into state with this.set instead.
 
 ## Code Examples
 
@@ -194,18 +269,6 @@ const ticket = st.use.ticket();
 ```ts
 st.do.setTicketModal(null);
 st.set({ ticketModal: null });
-```
-
-### user.store.ts
-
-```ts
-import type { RootStore } from "../st";
-
-async applyUserProfile() {
-  const { self } = (this as unknown as RootStore).get();
-  await (this as unknown as RootStore).refreshJwt();
-  this.set({ self });
-}
 ```
 
 ## Agent Notes

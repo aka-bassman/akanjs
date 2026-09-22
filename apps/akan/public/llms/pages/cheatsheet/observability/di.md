@@ -9,9 +9,9 @@
 ## Headings
 
 - Dependency Injection (#overview)
-- Register With use (#use)
-- Adapt And Plug (#adaptor)
 - Inject Services (#service)
+- Adapt And Plug (#adaptor)
+- Legacy: Register With use (#use)
 - Read Environment (#env)
 - One Key, One Owner (#duplicate)
 - Tips (#tips)
@@ -22,21 +22,21 @@ Dependency Injection
 
 Dependency injection means a service receives what it needs instead of creating everything by itself. This keeps business code small and makes external systems easier to replace.
 
-`use` receives values registered in app or library options.
+Reach for them in this order. The first that fits is the right one:
 
-`adapt` and `plug` are good for replaceable tools such as storage, cache, or message APIs.
+`service` connects one service to another service's business method.
 
-`service` connects one service to another service.
+`adapt` and `plug` are for replaceable tools such as storage, cache, or message APIs.
+
+`use` reaches a legacy singleton registered in `option.ts`. Recognise it; do not write new ones.
 
 `env` reads runtime configuration without passing it through every function.
 
-Register With use
+Inject Services
 
-`AkanOption.use()` is a simple place to prepare global values. Put API clients, generated secrets, host values, and shared settings there.
+Use `service()` when one service needs another service's business method. This is clearer than importing and creating the other service yourself.
 
-Option registers values
-
-Service receives values
+Service to service
 
 Adapt And Plug
 
@@ -46,11 +46,15 @@ Declare adaptor
 
 Plug adaptor into service
 
-Inject Services
+Legacy: Register With use
 
-Use `service()` when one service needs another service's business method. This is clearer than importing and creating the other service yourself.
+`AkanOption.use()` registers a plain singleton that services then reach with `use<T>()`. It still works and older code is full of it, so learn to recognise it — but write new singletons as `adapt()` classes, which self-register and need no `option.ts` entry at all.
 
-Service to service
+Never register an `adapt()` class in `option.ts`. It self-registers, and `plug(Class)` uses the class itself as the token — a second registration under the same key fails the boot.
+
+Option registers values
+
+Service receives values
 
 Read Environment
 
@@ -68,36 +72,27 @@ The check is per key, not per registration. One adaptor class reached from two s
 
 Tips
 
-Do not create external clients inside every method. Register them once with `use` or `adapt`.
+Do not create external clients inside every method. Declare one `adapt()` class and `plug()` it.
 
 Use `service()` for business collaboration, and `plug()` for replaceable infrastructure.
 
 Keep secrets in env/options and inject prepared clients, not raw credentials, when possible.
 
-If a value is shared across many services, `AkanOption.use()` is usually the cleanest home.
+`adapt()` is for singletons only. A per-use value object stays a plain class you `new` at the call site.
 
 ## Code Examples
 
 ### Code
 
 ```ts
-export const option = new AkanOption<AppEnv>().use((env) => ({
-  mailApi: env.mail ? new MailApi(env.mail) : null,
-  storageApi: env.storage ? new CloudStorage(env.storage) : new LocalStorage(),
-  appHost: env.operationMode === "local" ? "localhost" : env.hostname,
-}));
-```
-
-### Code
-
-```ts
-export class ArticleService extends serve(db.article, ({ use }) => ({
-  mailApi: use<MailApi>(),
-  storageApi: use<StorageApi>(),
-  appHost: use<string>(),
+export class ArticleService extends serve(db.article, ({ service }) => ({
+  fileService: service<srv.FileService>(),
+  notificationService: service<srv.NotificationService>(),
 })) {
-  async sendPublishedMail(articleId: string) {
-    await this.mailApi.send(`${this.appHost}/article/${articleId}`);
+  async publish(articleId: string) {
+    const article = await this.articleModel.update(articleId, { status: "published" });
+    await this.notificationService.notify("articlePublished", article.id);
+    return article;
   }
 }
 ```
@@ -105,7 +100,7 @@ export class ArticleService extends serve(db.article, ({ use }) => ({
 ### Code
 
 ```ts
-export class ImageStorage extends adapt("imageStorage", ({ env }) => ({
+export class ImageStorage extends adapt("imageStorage" as const, ({ env }) => ({
   bucket: env((env: AppEnv) => env.imageBucket),
 })) {
   async upload(file: File) {
@@ -130,14 +125,23 @@ export class ArticleService extends serve(db.article, ({ plug }) => ({
 ### Code
 
 ```ts
-export class ArticleService extends serve(db.article, ({ service }) => ({
-  fileService: service<srv.FileService>(),
-  notificationService: service<srv.NotificationService>(),
+export const option = new AkanOption<AppEnv>().use((env) => ({
+  mailApi: env.mail ? new MailApi(env.mail) : null,
+  storageApi: env.storage ? new CloudStorage(env.storage) : new LocalStorage(),
+  appHost: env.operationMode === "local" ? "localhost" : env.hostname,
+}));
+```
+
+### Code
+
+```ts
+export class ArticleService extends serve(db.article, ({ use }) => ({
+  mailApi: use<MailApi>(),
+  storageApi: use<StorageApi>(),
+  appHost: use<string>(),
 })) {
-  async publish(articleId: string) {
-    const article = await this.articleModel.update(articleId, { status: "published" });
-    await this.notificationService.notify("articlePublished", article.id);
-    return article;
+  async sendPublishedMail(articleId: string) {
+    await this.mailApi.send(`${this.appHost}/article/${articleId}`);
   }
 }
 ```

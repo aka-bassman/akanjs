@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Docs, ExternalLink } from "@apps/akan/ui";
+import { Code, Divider, Docs, DocsToc, ExternalLink, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
@@ -23,6 +23,7 @@ export default page().render(() => {
             })}
           </Docs.Alert>
           <Code.Snippet
+            className="w-full"
             title="apps/myapp/akan.config.ts"
             code={`const config: AppConfig = {
   mobile: {
@@ -45,57 +46,84 @@ export default page().render(() => {
   },
 };`}
           />
-          <div className="space-y-1">
-            {[
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="deep-link-fields" title={l.trans({ en: "The deepLinks Block", ko: "deepLinks 블록" })}>
+        <Docs.Title>{l.trans({ en: "The deepLinks Block", ko: "deepLinks 블록" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Every field is optional, and each platform reads only the half it needs. Declare the ones the link style you chose actually requires:",
+              ko: "모든 필드는 optional이고, 플랫폼은 자기에게 필요한 절반만 읽습니다. 고른 link 방식이 실제로 요구하는 것만 적으면 됩니다:",
+            })}
+          </div>
+          <Docs.OptionTable
+            items={[
               {
-                title: "schemes",
+                key: "schemes",
+                type: "string[]",
                 desc: l.trans({
                   en: "Custom app-only URLs such as shop://orders/1. Easy to test, but not domain-verified.",
                   ko: "shop://orders/1 같은 앱 전용 URL입니다. 테스트하기 쉽지만 도메인 검증 링크는 아닙니다.",
                 }),
               },
               {
-                title: "domains",
+                key: "domains",
+                type: "string[]",
                 desc: l.trans({
                   en: "Verified HTTPS links such as https://shop.example.com/orders/1. iOS uses apple-app-site-association; Android uses assetlinks.json.",
                   ko: "https://shop.example.com/orders/1 같은 검증된 HTTPS 링크입니다. iOS는 apple-app-site-association, Android는 assetlinks.json을 사용합니다.",
                 }),
-                links: [
-                  {
-                    href: "https://developer.apple.com/documentation/xcode/supporting-universal-links-in-your-app",
-                    label: "Open Apple Universal Links docs",
-                  },
-                  {
-                    href: "https://developer.android.com/training/app-links",
-                    label: "Open Android App Links docs",
-                  },
-                ],
               },
               {
-                title: "ios.teamId",
+                key: "ios.teamId",
+                type: "string",
                 desc: l.trans({
                   en: "Apple Developer Team ID used for universal link association files.",
                   ko: "universal link association file에 사용하는 Apple Developer Team ID입니다.",
                 }),
               },
               {
-                title: "android.sha256CertFingerprints",
+                key: "android.sha256CertFingerprints",
+                type: "string[]",
                 desc: l.trans({
-                  en: "Signing certificate fingerprints used by Android app links. Debug builds and release builds usually have different fingerprints.",
-                  ko: "Android app link 검증에 사용하는 서명 인증서 fingerprint입니다. Debug build와 release build는 보통 fingerprint가 다릅니다.",
+                  en: "Signing certificate fingerprints used by Android app links. Debug builds and release builds usually have different fingerprints, so list both.",
+                  ko: "Android app link 검증에 사용하는 서명 인증서 fingerprint입니다. Debug build와 release build는 보통 fingerprint가 다르므로 둘 다 적습니다.",
                 }),
               },
-            ].map(({ title, desc, links }) => (
-              <div key={title} className="rounded-xl border border-foreground/10 bg-background px-4 py-0">
-                <span className="font-mono font-semibold text-primary">{title}: </span>
-                <span className="text-foreground/70 text-sm">{desc}</span>
-                {links?.map((link) => (
-                  <ExternalLink key={link.href} href={link.href} label={link.label} />
-                ))}
-              </div>
-            ))}
+            ]}
+          />
+          <div className={panelRecipe({ radius: "lg" }, "my-4")}>
+            <div className="mb-2 font-semibold text-primary">
+              {l.trans({ en: "Platform verification docs:", ko: "플랫폼 검증 문서:" })}
+            </div>
+            <ul className="list-disc space-y-1 pl-5 text-foreground/70 text-sm">
+              <li>
+                {l.trans({ en: "iOS — Universal Links", ko: "iOS — Universal Links" })}
+                <ExternalLink
+                  href="https://developer.apple.com/documentation/xcode/supporting-universal-links-in-your-app"
+                  label="Open Apple Universal Links docs"
+                />
+              </li>
+              <li>
+                {l.trans({ en: "Android — App Links", ko: "Android — App Links" })}
+                <ExternalLink
+                  href="https://developer.android.com/training/app-links"
+                  label="Open Android App Links docs"
+                />
+              </li>
+            </ul>
+          </div>
+          <div>
+            {l.trans({
+              en: "Read the Android debug fingerprint out of the debug keystore every machine already has, then add the release one from whatever keystore Play signing uses:",
+              ko: "Android debug fingerprint는 어느 기기에나 있는 debug keystore에서 읽고, release fingerprint는 Play signing이 쓰는 keystore에서 따로 가져와 함께 적습니다:",
+            })}
           </div>
           <Code.Snippet
+            className="w-full"
             title="Android debug SHA-256"
             language="bash"
             code={`keytool -list -v \\
@@ -106,7 +134,7 @@ export default page().render(() => {
           />
         </Docs.Description>
       </Scroll.Slide>
-      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 lg:flex" />
+      <DocsToc />
     </Scroll>
   );
 });

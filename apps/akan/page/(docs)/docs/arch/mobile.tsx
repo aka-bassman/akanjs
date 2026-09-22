@@ -228,7 +228,7 @@ export default page()
               })}
             </span>
             <Link
-              href="/cheatsheet/dev/mobile"
+              href="/cheatsheet/mobile/setup"
               className="text-primary underline underline-offset-4 hover:no-underline"
             >
               {l.trans({ en: "Cheatsheet > Development > Mobile", ko: "Cheatsheet > 개발 > 모바일" })}

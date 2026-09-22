@@ -58,7 +58,7 @@ These are plain custom properties, not a Tailwind @theme extension: the color vo
 
 Font Declaration
 
-Fonts are declared from the root layout. Export a fonts array with a font name, file paths, weights, and an optional default flag. Akan then exposes those fonts as Tailwind-like classes, so components can use className values such as font-pretendard or font-lemonmilk.
+Fonts are declared from the root layout. Hand the .fonts() stage of the rootLayout() chain an array with a font name, file paths, weights, and an optional default flag. Akan then exposes those fonts as Tailwind-like classes, so components can use className values such as font-pretendard or font-lemonmilk.
 
 ## Code Examples
 
@@ -131,19 +131,22 @@ Fonts are declared from the root layout. Export a fonts array with a font name, 
 ### apps/myapp/page/akanjs/_layout.tsx
 
 ```typescript
-import type { Font } from "akanjs/client";
+import "./styles.css";
+import { rootLayout } from "akanjs/client";
 
-export const fonts: Font[] = [
-  {
-    name: "pretendard",
-    default: true,
-    paths: [
-      { src: "/libs/shared/fonts/Pretendard-Regular.woff2", weight: 400 },
-      { src: "/libs/shared/fonts/Pretendard-SemiBold.woff2", weight: 600 },
-      { src: "/libs/shared/fonts/Pretendard-Bold.woff2", weight: 700 },
-    ],
-  },
-];
+export default rootLayout()
+  .fonts([
+    {
+      name: "pretendard",
+      default: true,
+      paths: [
+        { src: "/libs/shared/fonts/Pretendard-Regular.woff2", weight: 400 },
+        { src: "/libs/shared/fonts/Pretendard-SemiBold.woff2", weight: 600 },
+        { src: "/libs/shared/fonts/Pretendard-Bold.woff2", weight: 700 },
+      ],
+    },
+  ])
+  .render(({ children }) => children);
 ```
 
 ### Using font classes

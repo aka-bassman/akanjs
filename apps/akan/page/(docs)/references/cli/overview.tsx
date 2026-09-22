@@ -120,12 +120,82 @@ export default page().render(() => {
       }),
     },
     {
+      title: "Primitive",
+      href: "/references/cli/primitive",
+      commands: ["create-ui --module <module>", "add-field --field <field>", "add-enum-field --values <a,b,c>"],
+      desc: l.trans({
+        en: "Scaffold into a module that already exists: one UI surface, one field, or one enum field.",
+        ko: "이미 존재하는 module에 scaffold합니다. UI surface 하나, field 하나, enum field 하나입니다.",
+      }),
+    },
+    {
+      title: "Workflow",
+      href: "/references/cli/workflow",
+      commands: [
+        "workflow list",
+        "workflow explain <name>",
+        "workflow plan <name> --out <path>",
+        "workflow apply <planPath>",
+        "workflow validate <runId>",
+        "workflow report <runId>",
+        "repair <kind>",
+      ],
+      desc: l.trans({
+        en: "Plan a change, read the plan, apply it, validate what it did, and repair what validation caught.",
+        ko: "변경을 계획하고, 계획을 읽고, 적용하고, 결과를 검증하고, 검증이 잡아낸 것을 repair합니다.",
+      }),
+    },
+    {
+      title: "Quality",
+      href: "/references/cli/quality",
+      commands: ["quality scan", "quality ssr", "quality ssr --format json"],
+      desc: l.trans({
+        en: "Report code quality warnings across every app and lib, and measure the server render share per scope.",
+        ko: "모든 app과 lib의 code quality warning을 보고하고, scope별 server render share를 측정합니다.",
+      }),
+    },
+    {
+      title: "Validation",
+      href: "/references/cli/application",
+      commands: [
+        "sync <app-or-lib>",
+        "lint <app-or-lib-or-pkg>",
+        "typecheck <app>",
+        "test <app-or-lib-or-pkg>",
+        "build <app>",
+        "doctor --strict --format json",
+        "quality scan",
+      ],
+      desc: l.trans({
+        en: "The order the agent guide prescribes, in one place: sync, lint, typecheck, test, build. `doctor` reports convention drift and `quality` measures code shape; neither is a gate, and both are worth reading before a review.",
+        ko: "agent guide가 규정하는 순서를 한곳에 모았습니다. sync, lint, typecheck, test, build. `doctor`는 convention 이탈을, `quality`는 code 형태를 보고합니다. 둘 다 gate는 아니지만 review 전에 읽어둘 만합니다.",
+      }),
+    },
+    {
       title: "Cloud",
       href: "/references/cli/cloud",
       commands: ["login", "logout", "update", "download-env", "upload-env"],
       desc: l.trans({
         en: "Configure optional cloud authentication, environment transfer, and framework updates.",
         ko: "선택적인 cloud authentication, environment 전송, framework update를 설정합니다.",
+      }),
+    },
+    {
+      title: "Tunnel",
+      href: "/references/cli/tunnel",
+      commands: ["tunnel [app]", "tunnel --list", "tunnel --stop <code>"],
+      desc: l.trans({
+        en: "Share a locally running app on a public URL, as a standalone command rather than part of a dev session.",
+        ko: "local에서 돌고 있는 app을 public URL로 공유합니다. dev session의 일부가 아니라 독립 command입니다.",
+      }),
+    },
+    {
+      title: "Code Agent",
+      href: "/references/cli/code",
+      commands: ["code [prompt]", "code --profile review", "code --resume <session-id>"],
+      desc: l.trans({
+        en: "Run the Akan coding agent in the terminal, carrying the workspace's own tools and skills.",
+        ko: "workspace의 tool과 skill을 지닌 Akan coding agent를 terminal에서 실행합니다.",
       }),
     },
     {

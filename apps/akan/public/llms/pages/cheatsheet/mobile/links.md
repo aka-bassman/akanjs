@@ -9,6 +9,7 @@
 ## Headings
 
 - Deep Link Setup (#deep-link-setup)
+- The deepLinks Block (#deep-link-fields)
 
 ## Content
 
@@ -20,13 +21,25 @@ Deep links open a CSR route from outside the app. Use schemes for app-only URLs 
 
 Think of deep link as the feature, and schemes/domains as the two common ways to implement it. Scheme links such as shop://orders/1 are easy to test and app-only. Domain links such as https://shop.example.com/orders/1 require iOS/Android verification, but they behave like normal web links and are better for sharing, emails, and push notification URLs.
 
+The deepLinks Block
+
+Every field is optional, and each platform reads only the half it needs. Declare the ones the link style you chose actually requires:
+
 Custom app-only URLs such as shop://orders/1. Easy to test, but not domain-verified.
 
 Verified HTTPS links such as https://shop.example.com/orders/1. iOS uses apple-app-site-association; Android uses assetlinks.json.
 
 Apple Developer Team ID used for universal link association files.
 
-Signing certificate fingerprints used by Android app links. Debug builds and release builds usually have different fingerprints.
+Signing certificate fingerprints used by Android app links. Debug builds and release builds usually have different fingerprints, so list both.
+
+Platform verification docs:
+
+iOS — Universal Links
+
+Android — App Links
+
+Read the Android debug fingerprint out of the debug keystore every machine already has, then add the release one from whatever keystore Play signing uses:
 
 ## Code Examples
 

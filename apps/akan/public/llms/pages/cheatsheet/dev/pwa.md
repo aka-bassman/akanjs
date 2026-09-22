@@ -43,7 +43,7 @@ Use this when you already have a `manifest.json` file or want to edit the exact 
 
 Layout Manifest Object
 
-Akan can also read a `manifest` export from the root layout. The object is converted into a manifest link for the document head.
+Akan can also take the manifest from the root layout chain with `rootLayout().manifest({...})`. The object is converted into a manifest link for the document head.
 
 Write author-facing keys in camelCase, such as `shortName`, `startUrl`, and `themeColor`.
 
@@ -108,57 +108,52 @@ Use the layout object when you want TypeScript help and app metadata in one plac
 ### apps/myapp/page/_layout.tsx
 
 ```ts
-import type { LayoutProps } from "akanjs/client";
+import { rootLayout } from "akanjs/client";
 
-export const head = (
-  <>
-    <title>My Akan App</title>
-    <link rel="icon" href="/favicon.ico" />
-    <link rel="manifest" href="/manifest.json" />
-  </>
-);
-
-export default function Layout({ children }: LayoutProps) {
-  return <>{children}</>;
-}
+export default rootLayout()
+  .head(
+    <>
+      <title>My Akan App</title>
+      <link rel="icon" href="/favicon.ico" />
+      <link rel="manifest" href="/manifest.json" />
+    </>,
+  )
+  .render(({ children }) => <>{children}</>);
 ```
 
 ### apps/myapp/page/_layout.tsx
 
 ```ts
-import type { LayoutProps, WebAppManifest } from "akanjs/client";
+import { rootLayout } from "akanjs/client";
 
-export const manifest: WebAppManifest = {
-  name: "My Akan App",
-  shortName: "MyApp",
-  description: "A simple Akan app",
-  startUrl: "/",
-  scope: "/",
-  display: "standalone",
-  orientation: "portrait",
-  themeColor: "#0C1E3E",
-  backgroundColor: "#ffffff",
-  icons: [
-    {
-      src: "/icon-192x192.png",
-      sizes: "192x192",
-      type: "image/png",
-      purpose: "any maskable",
-    },
-    {
-      src: "/icon-512x512.png",
-      sizes: "512x512",
-      type: "image/png",
-      purpose: "any maskable",
-    },
-  ],
-};
-
-export const head = <title>My Akan App</title>;
-
-export default function Layout({ children }: LayoutProps) {
-  return <>{children}</>;
-}
+export default rootLayout()
+  .manifest({
+    name: "My Akan App",
+    shortName: "MyApp",
+    description: "A simple Akan app",
+    startUrl: "/",
+    scope: "/",
+    display: "standalone",
+    orientation: "portrait",
+    themeColor: "#0C1E3E",
+    backgroundColor: "#ffffff",
+    icons: [
+      {
+        src: "/icon-192x192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any maskable",
+      },
+      {
+        src: "/icon-512x512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any maskable",
+      },
+    ],
+  })
+  .head(<title>My Akan App</title>)
+  .render(({ children }) => <>{children}</>);
 ```
 
 ## Agent Notes

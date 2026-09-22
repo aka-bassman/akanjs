@@ -1,10 +1,121 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Divider, Docs, DocsToc, type IntroItem, panelRecipe } from "@apps/akan/ui";
+import { Code, Divider, Docs, DocsToc, type IntroItem, type OptionItem, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
 export default page().render(() => {
   const { l } = usePage();
+
+  const endpointOptions: OptionItem[] = [
+    {
+      key: "guards",
+      type: "GuardCls[]",
+      default: "none",
+      desc: l.trans({
+        en: "Runs in declaration order after every middleware; the first refusal wins. An empty list is a loop that never runs, not a default policy. It is also the MCP exposure decision.",
+        ko: "모든 middleware 뒤에 선언 순서대로 실행되고, 첫 거절이 이깁니다. 빈 배열은 기본 정책이 아니라 한 번도 돌지 않는 루프입니다. MCP 노출 결정이기도 합니다.",
+      }),
+    },
+    {
+      key: "timeout",
+      type: "number (ms)",
+      default: "client's 30 s",
+      desc: l.trans({
+        en: "Bounds both ends: the Timeout middleware rejects the call with base.error.gatewayTimeout, and the same value is serialized to the client as that call's request budget. Losing the race does not cancel the work — the handler runs to completion with nobody holding its result.",
+        ko: "양쪽 끝을 모두 제한합니다. Timeout middleware가 base.error.gatewayTimeout으로 호출을 거절하고, 같은 값이 그 호출의 요청 예산으로 클라이언트에 직렬화됩니다. 경주에서 져도 작업은 취소되지 않습니다. handler는 결과를 받을 사람 없이 끝까지 실행됩니다.",
+      }),
+    },
+    {
+      key: "cache",
+      type: "number (ms)",
+      default: "nothing cached",
+      desc: l.trans({
+        en: "Only a query taking no internal argument may carry one — an endpoint that learns who is asking would hand one caller's answer to the next. Guards run on every hit, and resolveReturn still masks per call. A cache backend that is down is warned about and the call runs uncached.",
+        ko: "internal argument를 받지 않는 query만 쓸 수 있습니다. 누가 묻는지를 아는 endpoint라면 한 호출자의 답을 다음 호출자에게 건네게 됩니다. hit마다 guard가 실행되고, resolveReturn은 호출마다 여전히 마스킹합니다. 캐시 backend가 죽어 있으면 경고를 남기고 캐시 없이 실행됩니다.",
+      }),
+    },
+    {
+      key: "mcp",
+      type: "boolean",
+      default: "true",
+      desc: l.trans({
+        en: "An opt-out from the agent catalogue that leaves the guards alone. Curation, not authorization: HTTP serves the endpoint exactly as before. Reach for it on a step of a UI-driven state machine that is perfectly guarded and still a mistake for a model to reach.",
+        ko: "guard는 그대로 두고 agent 카탈로그에서만 빠지는 opt-out입니다. 권한 부여가 아니라 큐레이션이며 HTTP는 이전과 똑같이 제공합니다. guard는 완벽하지만 모델이 닿아서는 곤란한, UI가 이끄는 상태 기계의 한 단계에 씁니다.",
+      }),
+    },
+    {
+      key: "method",
+      type: '"POST" | "PATCH" | "PUT" | "DELETE"',
+      default: '"POST"',
+      desc: l.trans({
+        en: "A mutation only; declared on a query or a realtime endpoint it is ignored and named in the boot log. One path may carry several verbs, and two endpoints claiming the same path and verb fail the boot. Reach for it only when a foreign wire protocol forces the verb.",
+        ko: "mutation에만 적용됩니다. query나 realtime endpoint에 적으면 무시되고 부팅 로그에 이름이 남습니다. 경로 하나가 여러 verb를 가질 수 있고, 같은 경로와 같은 verb를 주장하는 endpoint가 둘이면 부팅이 실패합니다. 외부 와이어 프로토콜이 verb를 강제할 때만 씁니다.",
+      }),
+    },
+    {
+      key: "fileUpload",
+      type: "boolean",
+      default: "false",
+      desc: l.trans({
+        en: "Marks the one mutation that is the framework's upload endpoint. The generated upload action refuses to run when no endpoint carries it, and warns when more than one does. The shared file library already marks one.",
+        ko: "framework의 업로드 endpoint가 될 mutation 하나를 표시합니다. 이 표시를 단 endpoint가 없으면 생성된 업로드 action이 실행을 거부하고, 둘 이상이면 경고합니다. shared file 라이브러리가 이미 하나를 표시해 두었습니다.",
+      }),
+    },
+    {
+      key: "path",
+      type: "string",
+      default: "the endpoint name",
+      desc: l.trans({
+        en: "A literal route, for a protocol that looks in a fixed place. A trailing * captures the rest of the path.",
+        ko: "정해진 자리를 들여다보는 프로토콜을 위한 리터럴 경로입니다. 끝의 *는 경로의 나머지를 잡습니다.",
+      }),
+    },
+    {
+      key: "prefix",
+      type: "false | string",
+      default: "the module refName",
+      desc: l.trans({
+        en: "Drops or replaces the module segment Akan puts in front of the path.",
+        ko: "Akan이 경로 앞에 붙이는 module 구간을 없애거나 다른 것으로 바꿉니다.",
+      }),
+    },
+    {
+      key: "globalPrefix",
+      type: "false",
+      default: "the api prefix",
+      desc: l.trans({
+        en: "Drops the api segment, which puts the route at the origin root. Needed together with prefix for a well-known document.",
+        ko: "api 구간을 없애 route를 origin 루트에 둡니다. well-known 문서라면 prefix와 함께 필요합니다.",
+      }),
+    },
+    {
+      key: "nullable",
+      type: "boolean",
+      default: "false",
+      desc: l.trans({
+        en: "The return may be null. Without it, a handler resolving to null raises rather than answering one.",
+        ko: "반환이 null일 수 있습니다. 이것이 없으면 null로 끝난 handler는 null을 답하는 대신 예외를 냅니다.",
+      }),
+    },
+    {
+      key: "backpressure",
+      type: '"coalesce" | "queue"',
+      default: '"coalesce"',
+      desc: l.trans({
+        en: "A pubsub(Binary) room under load: keep only the newest frame, which is what telemetry and video want, or queue every one when the frames are a sequence a subscriber must see in full.",
+        ko: "부하를 받는 pubsub(Binary) room의 동작입니다. 최신 frame만 남기거나 — 텔레메트리와 영상이 원하는 쪽입니다 — 구독자가 빠짐없이 봐야 하는 연속된 frame이라면 전부 큐에 쌓습니다.",
+      }),
+    },
+    {
+      key: "middlewares",
+      type: "MiddlewareCls[]",
+      default: "none",
+      desc: l.trans({
+        en: "Appended after the registered chain, for this endpoint only.",
+        ko: "등록된 체인 뒤에 덧붙으며, 이 endpoint에만 적용됩니다.",
+      }),
+    },
+  ];
 
   const internalTypes: IntroItem[] = [
     {
@@ -46,6 +157,14 @@ export default page().render(() => {
         ko: "background queue job을 정의합니다. msg(...)로 job payload를 설명합니다.",
       }),
       example: "archive: process(Boolean).msg(...)",
+    },
+    {
+      name: "timeout(ms)",
+      desc: l.trans({
+        en: "Runs once, this many milliseconds after the process starts. Locked by default like the other timers, so two replicas do not both run it.",
+        ko: "프로세스 시작 뒤 이만큼의 millisecond가 지나면 한 번 실행됩니다. 다른 timer처럼 기본으로 잠기므로 replica 둘이 함께 돌지 않습니다.",
+      }),
+      example: "warmup: timeout(5000).exec(...)",
     },
   ];
 
@@ -438,6 +557,143 @@ const unsubscribe = fetch.subscribeChatAdded(rootId, (chat) => {
       </Scroll.Slide>
       <Divider />
 
+      <Scroll.Slide id="endpoint-options" title={l.trans({ en: "The Options Object", ko: "옵션 객체" })}>
+        <Docs.Title>{l.trans({ en: "The Options Object", ko: "옵션 객체" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "The second argument to query, mutation, message and pubsub is the same object in all four, and it is where an endpoint declares everything about itself that is not an argument. Most of it decides what happens before your handler runs.",
+              ko: "query, mutation, message, pubsub의 두 번째 인자는 넷 모두 같은 객체이고, endpoint가 인자가 아닌 모든 것을 선언하는 자리입니다. 그 대부분은 handler가 실행되기 전에 무슨 일이 일어날지를 정합니다.",
+            })}
+          </div>
+          <Docs.Mermaid
+            title={l.trans({ en: "What runs before exec", ko: "exec 앞에서 도는 것" })}
+            highlightNodes={["guards"]}
+            chart={`flowchart TB
+  call["fetch.createStory(data)"] --> logging["Logging<br/>one record per call"]
+  logging --> timeout["Timeout<br/>the endpoint's own timeout ms"]
+  timeout --> cache["Cache<br/>a query with no internal argument only"]
+  cache --> account["AccountMiddleware<br/>and any the app registered"]
+  account --> guards["guards, in declaration order"]
+  guards --> internal["Internal arguments<br/>.with(Self) · .with(Me)"]
+  internal --> handler["exec() handler"]
+  handler --> resolve["resolveReturn<br/>hidden and secret fields masked"]
+  guards -.->|"first false"| denied["403 Forbidden"]
+  timeout -.->|"budget spent"| gateway["gatewayTimeout<br/>the handler keeps running"]
+  cache -.->|"hit"| hit["stored result<br/>guards run anyway"]`}
+          />
+          <div>
+            {l.trans({
+              en: "Logging, Timeout and Cache are registered by default and stand aside for every endpoint that declares nothing, so the chain costs nothing until an option turns one of them on. Guards run last, inside the handler's own wrapper — which is why a cache hit has to re-run them explicitly rather than skipping them with the handler.",
+              ko: "Logging, Timeout, Cache는 기본으로 등록되어 있고 아무것도 선언하지 않은 endpoint에서는 비켜섭니다. 그래서 옵션 하나가 켜기 전까지 이 체인에는 비용이 없습니다. guard는 handler 자신의 wrapper 안에서 마지막에 돕니다. cache hit이 handler를 건너뛰면서도 guard만은 다시 실행해야 하는 이유입니다.",
+            })}
+          </div>
+          <Docs.OptionTable items={endpointOptions} />
+          <Docs.Alert type="error">
+            {l.trans({
+              en: (
+                <span>
+                  Never re-declare a generated CRUD name. Every model already has <code>{"<model>"}</code> plus{" "}
+                  <code>light</code>, <code>create</code>, <code>update</code>, <code>remove</code>, <code>view</code>,{" "}
+                  <code>edit</code> and <code>merge</code> forms of it. The service layer surfaces the collision as a
+                  typecheck error, but the signal layer can pass sync, typecheck and build and fail only at runtime —
+                  treat it as an error whether or not the build is green. <code>no-redeclare-predefined-endpoint</code>{" "}
+                  catches it in <code>*.signal.ts</code>.
+                </span>
+              ),
+              ko: (
+                <span>
+                  생성된 CRUD 이름을 다시 선언하지 마세요. 모든 model에는 이미 <code>{"<model>"}</code>과{" "}
+                  <code>light</code>, <code>create</code>, <code>update</code>, <code>remove</code>, <code>view</code>,{" "}
+                  <code>edit</code>, <code>merge</code> 형태가 있습니다. service 계층은 충돌을 typecheck 에러로
+                  드러내지만, signal 계층은 sync·typecheck·build를 모두 통과하고 runtime에서만 실패할 수 있습니다.
+                  빌드가 초록색인지와 무관하게 에러로 다루세요. <code>*.signal.ts</code>에서는{" "}
+                  <code>no-redeclare-predefined-endpoint</code>가 잡아 줍니다.
+                </span>
+              ),
+            })}
+          </Docs.Alert>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="argument-types" title={l.trans({ en: "What An Argument May Be", ko: "인자가 될 수 있는 것" })}>
+        <Docs.Title>{l.trans({ en: "What An Argument May Be", ko: "인자가 될 수 있는 것" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Every parameter builder takes the same kinds of type: a registered scalar, a model reference, an enumOf class, or an array of one of those. Three of the mistakes are worth knowing in advance, because two of them are not type errors.",
+              ko: "모든 parameter builder는 같은 종류의 타입을 받습니다. 등록된 scalar, model 참조, enumOf class, 또는 그중 하나의 배열입니다. 실수 세 가지는 미리 알아 둘 만한데, 그중 둘은 타입 에러가 아니기 때문입니다.",
+            })}
+          </div>
+          <div className="my-4 space-y-3">
+            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-primary">🔢</span>
+                <strong className="text-primary">
+                  {l.trans({ en: "Int or Float, never Number", ko: "Number가 아니라 Int 또는 Float" })}
+                </strong>
+              </div>
+              <div className="text-foreground/70 text-sm">
+                {l.trans({
+                  en: "String, Boolean and Date are monkey-patched into scalars and pass; the Number constructor is deliberately left alone, so it is not in the accepted union and the call does not typecheck. Choose the one the field actually is — a count is Int, a price is Float.",
+                  ko: "String, Boolean, Date는 scalar로 패치되어 통과하지만 Number 생성자는 일부러 건드리지 않았습니다. 허용된 union에 없으므로 호출이 typecheck를 통과하지 못합니다. 그 값이 실제로 무엇인지 고르세요. 개수는 Int, 가격은 Float입니다.",
+                })}
+              </div>
+            </div>
+            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-primary">📎</span>
+                <strong className="text-primary">
+                  {l.trans({ en: "Upload is a body, never a field", ko: "Upload는 body이지 field가 아니다" })}
+                </strong>
+              </div>
+              <div className="text-foreground/70 text-sm">
+                {l.trans({
+                  en: "An Upload body argument on a mutation is what switches request parsing to multipart, and the mutation that owns the upload flow declares fileUpload: true. A model never declares one — an image or file field is a relation to the File model instead.",
+                  ko: "mutation의 Upload body 인자가 요청 파싱을 multipart로 바꾸고, 업로드 흐름을 소유한 mutation은 fileUpload: true를 선언합니다. model은 절대 선언하지 않습니다. 이미지나 파일 field는 File model에 대한 관계입니다.",
+                })}
+              </div>
+            </div>
+            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-primary">🧬</span>
+                <strong className="text-primary">
+                  {l.trans({ en: "Bytes are Binary, never Any", ko: "바이트는 Any가 아니라 Binary" })}
+                </strong>
+              </div>
+              <div className="text-foreground/70 text-sm">
+                {l.trans({
+                  en: "Binary is Uint8Array on both sides and accepts base64 in either direction, so one declaration serves a JSON body and a websocket binary frame. Any passes a Buffer through untouched, and JSON.stringify then spells it as a type-and-data object that JSON.parse never restores — 3.6x the wire and a shape that only breaks at the first byte-offset read.",
+                  ko: "Binary는 양쪽에서 Uint8Array이고 어느 방향으로든 base64를 받으므로, 선언 하나가 JSON body와 websocket binary frame 모두를 감당합니다. Any는 Buffer를 그대로 통과시키고, JSON.stringify는 그것을 type과 data를 가진 객체로 적는데 JSON.parse는 결코 되돌리지 못합니다. 와이어는 3.6배가 되고, 그 모양은 첫 바이트 오프셋을 읽는 순간에야 깨집니다.",
+                })}
+              </div>
+            </div>
+          </div>
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: (
+                <span>
+                  <code>Binary</code> is not storable. The class build refuses <code>field(Binary)</code> and names the{" "}
+                  <code>File</code> model instead, because every non-base field lives in the document's JSON column and
+                  bytes would sit there as base64 and ride every read of the row. MCP refuses a <code>Binary</code>{" "}
+                  return and an <code>Any</code> one for the same reason.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>Binary</code>는 저장할 수 없습니다. class 빌드가 <code>field(Binary)</code>를 거부하고 대신{" "}
+                  <code>File</code> model을 알려 줍니다. base가 아닌 모든 field는 document의 JSON 열에 살고, 바이트는
+                  거기에 base64로 앉아 그 행의 모든 읽기에 함께 실려 다니기 때문입니다. MCP도 같은 이유로{" "}
+                  <code>Binary</code> 반환과 <code>Any</code> 반환을 거부합니다.
+                </span>
+              ),
+            })}
+          </Docs.Alert>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
       <Scroll.Slide id="standard-signal" title={l.trans({ en: "Standard Model APIs", ko: "표준 Model API" })}>
         <Docs.Title>{l.trans({ en: "Standard Model APIs", ko: "표준 Model API" })}</Docs.Title>
         <Docs.Description>
@@ -501,57 +757,11 @@ const unsubscribe = fetch.subscribeChatAdded(rootId, (chat) => {
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="builder-types" title={l.trans({ en: "Builder Function Types", ko: "Builder 함수 타입" })}>
-        <Docs.Title>{l.trans({ en: "Builder Function Types", ko: "Builder 함수 타입" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: "The builder functions above map directly to framework types: endpoint builders create EndpointInfo, slice init creates SliceInfo, and internal builders create InternalInfo.",
-              ko: "위 builder 함수들은 framework type과 직접 연결됩니다. endpoint builder는 EndpointInfo, slice init은 SliceInfo, internal builder는 InternalInfo를 만듭니다.",
-            })}
-          </div>
-        </Docs.Description>
-        <div className="space-y-3">
-          {[
-            {
-              title: "Endpoint builders",
-              desc: "query(Return), mutation(Return), message(Return), pubsub(Return)",
-            },
-            {
-              title: "Slice builder",
-              desc: "init(signalOption?)",
-            },
-            {
-              title: "Internal builders",
-              desc: "resolveField(Return), interval(ms), cron(expr), timeout(ms), initialize(), destroy(), process(Return)",
-            },
-          ].map(({ title, desc }) => (
-            <div key={title} className={panelRecipe({ padding: "row" })}>
-              <div className="font-bold text-foreground">{title}</div>
-              <div className="text-foreground/70">{desc}</div>
-            </div>
-          ))}
-        </div>
-      </Scroll.Slide>
-      <Divider />
-
       <Scroll.Slide id="practical-rules" title={l.trans({ en: "Practical Rules", ko: "실전 규칙" })}>
         <Docs.Title>{l.trans({ en: "Practical Rules", ko: "실전 규칙" })}</Docs.Title>
         <Docs.Description>
           <div className="space-y-1">
             {[
-              l.trans({
-                en: "Use Internal for server-only jobs, resolved fields, queue processes, and lifecycle hooks.",
-                ko: "server-only job, resolved field, queue process, lifecycle hook에는 Internal을 사용합니다.",
-              }),
-              l.trans({
-                en: "Use Endpoint for explicit client calls, mutations, websocket messages, and pubsub subscriptions.",
-                ko: "명시적인 client call, mutation, websocket message, pubsub subscription에는 Endpoint를 사용합니다.",
-              }),
-              l.trans({
-                en: "Use Slice for list surfaces that need generated stores, pagination, or insight loading.",
-                ko: "generated store, pagination, insight loading이 필요한 list surface에는 Slice를 사용합니다.",
-              }),
               l.trans({
                 en: "Use ...model.internals, ...model.slices, and ...model.endpoints when extending generated or library domains.",
                 ko: "generated 또는 library domain을 확장할 때는 ...model.internals, ...model.slices, ...model.endpoints를 사용합니다.",
@@ -559,10 +769,6 @@ const unsubscribe = fetch.subscribeChatAdded(rootId, (chat) => {
               l.trans({
                 en: "Use srv.model.with(otherSrv) when the signal needs another service in this.*Service.",
                 ko: "signal에서 다른 service를 this.*Service로 사용해야 하면 srv.model.with(otherSrv)를 사용합니다.",
-              }),
-              l.trans({
-                en: "Put nullable arguments near the end because required arguments cannot follow nullable ones.",
-                ko: "required argument가 nullable argument 뒤에 올 수 없으므로 nullable argument는 뒤쪽에 둡니다.",
               }),
               l.trans({
                 en: "An endpoint that names a real guard is reachable by an AI agent; one that names none is not. There is no per-endpoint opt-in — mcp: false only opts an already-guarded endpoint out, and on a slice mcp: { cru: false } mirrors the guards map for the root slice and generated CRUD.",

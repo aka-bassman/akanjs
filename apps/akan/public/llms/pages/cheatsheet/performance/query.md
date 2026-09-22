@@ -40,6 +40,8 @@ Optional filters should add conditions only when the user actually selected some
 
 Filter by assignees
 
+“Has no value” is `q.empty`, never `q.missing`. `q.missing` is the key being absent from the stored JSON, which a document written once and saved again no longer is: reading it materializes an explicit null, and the key is there from then on. Reach for `q.missing` only to find rows written before the field was declared.
+
 Range And OR
 
 Use `q.between` for periods and `q.any` for OR. This keeps date dashboards and status boards readable.
@@ -140,7 +142,7 @@ inPeriod: filter()
 
 ```ts
 popular: filter()
-  .arg("minScore", Number)
+  .arg("minScore", Float)
   .query((minScore, q) =>
     q.all(
       { status: "published" },

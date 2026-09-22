@@ -75,8 +75,8 @@ lib/
         ├── price.constant.ts
         ├── price.dictionary.ts
         ├── price.document.ts
-        ├── price.Template.tsx
-        └── price.Unit.tsx
+        ├── Price.Template.tsx
+        └── Price.Unit.tsx
 ```
 
 ### price.constant.ts

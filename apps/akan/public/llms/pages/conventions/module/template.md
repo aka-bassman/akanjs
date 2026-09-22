@@ -191,10 +191,11 @@ export const Phone = ({ userId, redirect }: PhoneProps) => {
 
 ```ts
 export const SubmitPhone = ({ userId, redirect }: SubmitPhoneProps) => {
+  const { l } = usePage();
   const phone = st.use.phone();
   return (
     <button disabled={!isPhoneNumber(phone)} onClick={() => st.do.setPhoneInPrepareUser(userId, phone, { redirect })}>
-      Send Code
+      {l("user.sendPhoneCode")}
     </button>
   );
 };
@@ -203,7 +204,7 @@ export const SubmitPhone = ({ userId, redirect }: SubmitPhoneProps) => {
 ### new.tsx
 
 ```ts
-export default async function Page() {
+export default page().render(async () => {
   const pickupInPhoneForm: Partial<cnst.Pickup> = {};
   return (
     <Load.Edit
@@ -216,7 +217,7 @@ export default async function Page() {
       <Pickup.Template.General />
     </Load.Edit>
   );
-}
+});
 ```
 
 ### edit.tsx
@@ -241,7 +242,7 @@ const { story, storyEdit } = await fetch.editStory(storyId);
 
 ```ts
 <Model.NewWrapper partial={{ devApp }} slice={fetch.slice.releaseInDevApp}>
-  <button className={buttonRecipe({ variant: "secondary" })}>+ New</button>
+  <button className={buttonRecipe({ variant: "secondary" })}>{l("release.newRelease")}</button>
 </Model.NewWrapper>
 ```
 

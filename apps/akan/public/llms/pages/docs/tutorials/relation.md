@@ -205,7 +205,7 @@ export class DeliveryService extends serve(db.delivery, ({ use, service }) => ({
 
 ```ts
 "use client";
-import { Field, Layout, buttonRecipe } from "akanjs/ui";
+import { Field, Layout } from "akanjs/ui";
 import { cnst, fetch, st, usePage } from "@apps/koyo/client";
 
 interface GeneralProps {
@@ -236,7 +236,8 @@ export const General = ({ className }: GeneralProps) => {
 ### apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts
 
 ```ts
-import { ID } from "akanjs/base"; // [!code collapse:13]
+import { Admin } from "@libs/shared/srvkit"; // [!code collapse:14]
+import { ID } from "akanjs/base";
 import { endpoint, internal, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
@@ -250,7 +251,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder, // [!code collapse:2]
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init() // [!code collapse:11]
       .search("statuses", [cnst.IcecreamOrderStatus])
@@ -487,7 +488,7 @@ import { Load } from "akanjs/ui";
 import { cnst, Delivery, fetch } from "@apps/koyo/client";
 import type { ClientInit, ClientView } from "akanjs/fetch";
 import { st, usePage } from "@apps/koyo/client"; // [!code ++:2]
-import { Model } from "akanjs/ui";
+import { Model, buttonRecipe } from "akanjs/ui";
 // [!code collapse:25]
 interface CardProps {
   className?: string;
@@ -549,12 +550,13 @@ export const New = ({ className }: NewProps) => {
 ### apps/koyo/page/_index.tsx
 
 ```ts
-import { Load, Model } from "akanjs/ui"; // [!code collapse:2]
+import { Model, buttonRecipe } from "akanjs/ui"; // [!code collapse:3]
 import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 import { Tab } from "akanjs/ui"; // [!code ++:2]
 import { Delivery } from "@apps/koyo/client";
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
   const { deliveryInitInPublic } = fetch.initDeliveryInPublic(); // [!code highlight]
@@ -580,7 +582,7 @@ export default async function Page() {
             <div className="text-5xl font-bold">{l("icecreamOrder.modelName")}</div>
             <IcecreamOrder.Util.PublicQueryMaker />
             <Model.New
-              className={buttonRecipe({ variant: "primary" })}
+              trigger={<button className={buttonRecipe({ variant: "primary" })}>{l("base.new")}</button>}
               slice={fetch.slice.icecreamOrderInPublic}
               renderTitle="name"
               partial={icecreamOrderForm}
@@ -589,7 +591,7 @@ export default async function Page() {
             </Model.New>
           </div>
           <IcecreamOrder.Zone.Insight slice={fetch.slice.icecreamOrderInPublic} />
-          <IcecreamOrder.Zone.Card className="space-y-2" init={icecreamOrderInitInPublic} />
+          <IcecreamOrder.Zone.Card className="space-y-2" init={icecreamOrderInitInPublic} slice={fetch.slice.icecreamOrderInPublic} />
         </Tab.Panel>
         <Tab.Panel menu="delivery" className="p-2">
           <div className="flex items-center gap-4 font-black">
@@ -601,7 +603,7 @@ export default async function Page() {
       </Tab>
     </div>
   );
-}
+});
 ```
 
 ## Agent Notes

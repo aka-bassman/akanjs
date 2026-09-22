@@ -41,39 +41,13 @@ Module Files
 
 These files describe the data, server logic, API surface, and state around a business model. If you are building products, orders, users, invoices, or reservations, these are the files you will touch most often.
 
-For example, an order feature may keep order status values in order.constant.ts, saved order fields in order.document.ts, payment completion logic in order.service.ts, and page-callable actions in order.signal.ts.
-
 The abstract file is not only for LLMs. It keeps domain knowledge beside the code, so people and agents can understand business invariants before changing implementation files.
 
-Business intent, domain rules, workflows, and agent notes kept next to the module code. Example: order cancellation rules or status transition policy.
+The five UI suffixes are not five sizes of component either. Each one answers a different question: how the user edits one record, how one record looks in a list, how one record looks on its own page, how a page section is assembled, and what extra action the model offers. The first column of each row is which side of the client boundary the file lives on:
 
-Constants, status values, default options, and shared model types. Example: order status such as pending, paid, shipped.
+File
 
-Labels, field names, and text keys used by the model. Example: product name, price, stock labels.
-
-Stored data shape, filters, and document model definition. Example: what fields an invoice saves and how it can be queried.
-
-Server-side business logic. Example: create an order, apply a coupon, calculate shipping, or complete payment.
-
-Public actions, slices, endpoints, and internal jobs that pages can call. Example: load order list or request OCR.
-
-Client or model state used across screens. Example: selected filters, cart state, or temporary form state.
-
-UI Files
-
-UI files describe how a model appears on screen. They use PascalCase because they export React components or UI groups.
-
-A business model usually appears in several screen sizes: a small badge, a list row, a detail card, an admin panel, and sometimes a full dashboard section. UI files help you keep those screen pieces close to the model they represent.
-
-Use it for display components, such as ProductCard, OrderSummary, UserProfile, or InvoicePreview.
-
-Use it for small reusable units inside the model UI, such as status badges, price rows, or avatar blocks.
-
-Use it for repeated screen templates or layout patterns, such as a standard admin detail layout.
-
-Use it for UI-level actions or helper components, such as remove buttons, edit modal triggers, or upload controls.
-
-Use it for larger areas, such as admin screens, list/detail zones, tab content, or dashboard sections.
+The client boundary follows the suffix, not your judgment. Template, Zone, and Util always carry "use client" on line 1; Unit and View never do, so they render on the server and ship no JavaScript.
 
 Naming Rule
 
@@ -115,11 +89,7 @@ Not every folder type uses every file type. Database modules can have the full s
 
 Choose the file set by the business role of the folder. product is a thing you store, so it can have document and store files. _payment is something you do, so it usually focuses on service and signal files. money is a reusable value shape, so it stays small and definition-oriented.
 
-Can use abstract, constant, dictionary, document, service, signal, store, Template, Unit, Util, View, and Zone.
-
-Can use abstract, dictionary, service, signal, store, Template, Unit, Util, View, and Zone. The abstract filename drops the folder underscore, such as payment.abstract.md in lib/_payment/.
-
-Can use abstract, constant, dictionary, document, Template, Unit, Util, View, and Zone.
+A file the column marks with a dash is not merely unusual there — akan sync refuses it by name, so a Product.View.tsx placed in lib/__scalar/money/ fails the scan rather than being quietly ignored. The abstract file is the one whose name changes: a service module drops the folder's underscore, so lib/_payment/ holds payment.abstract.md.
 
 Codegen And Choices
 
@@ -135,17 +105,7 @@ When you are not sure which file to create, start from the business question you
 
 For example, 'Can the customer see the order?' points to View. 'Can the customer cancel the order?' points to signal and service. 'What fields does an order save?' points to document.
 
-Do we store this data?
-
-Does the server process it?
-
-Should a page call it?
-
-Does it show data?
-
-Is it a small UI action?
-
-Is it a large screen area?
+Question
 
 ## Code Examples
 
@@ -165,16 +125,6 @@ lib/product/
 ├── Product.Util.tsx
 ├── Product.View.tsx
 └── Product.Zone.tsx
-```
-
-### lib/bizCard/
-
-```bash
-BizCard.View.tsx      # how a biz card is displayed
-BizCard.Unit.tsx      # small reusable UI pieces
-BizCard.Template.tsx  # repeated layout or template
-BizCard.Util.tsx      # UI actions or helpers
-BizCard.Zone.tsx      # large screen areas such as admin/list/detail
 ```
 
 ### Code

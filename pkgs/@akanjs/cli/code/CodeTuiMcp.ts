@@ -25,6 +25,8 @@ export class CodeTuiMcp {
   static readonly usage = [
     "/mcp add <name> <command> [args…]   declare a server this session starts",
     "/mcp add <name> <https://…>         declare one it reaches over http",
+    "/mcp login <name>                   sign in through the browser (OAuth)",
+    "/mcp logout <name>                  forget the token, leaving the server declared",
     "/mcp remove <name>                  undeclare it",
     "/mcp reload                         reopen this session so the file takes effect",
   ];
@@ -78,9 +80,13 @@ export class CodeTuiMcp {
   static #stateOf(entry: { ref?: CodeAgentMcpServerRef; disabled?: boolean; live?: CodeAgentMcpStatus }) {
     if (entry.disabled) return "disabled in the file";
     if (!entry.live) return "declared · /mcp reload to connect";
+    // Before the error branch: a 401 is a server answering correctly, and calling it broken sends somebody to
+    // debug one that is working exactly as its owner intended.
+    if (entry.live.auth === "required") return `sign-in needed · /mcp login ${entry.live.name}`;
     if (entry.live.error) return `unreachable — ${entry.live.error}`;
-    if (!entry.ref) return `${entry.live.tools.length} tools · removed from the file`;
-    return `${entry.live.tools.length} tool${entry.live.tools.length === 1 ? "" : "s"}`;
+    const tools = `${entry.live.tools.length} tool${entry.live.tools.length === 1 ? "" : "s"}`;
+    if (!entry.ref) return `${tools} · removed from the file`;
+    return entry.live.auth === "authorized" ? `${tools} · signed in` : tools;
   }
 
   static targetOf(ref: CodeAgentMcpServerRef | undefined) {

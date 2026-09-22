@@ -94,4 +94,35 @@ describe("CodeTuiEditor", () => {
   test("an empty buffer still lays out one row, so the caret has somewhere to sit", () => {
     expect(new CodeTuiEditor().layout(40)).toEqual({ rows: [{ text: "", at: 0 }], row: 0, col: 0 });
   });
+  /**
+   * Shift+enter is not a key a plain terminal reports, so the usual binding sends the shell's line
+   * continuation — a backslash and then the return — and the backslash is not something anybody typed.
+   */
+  test("the continuation backslash a terminal sends with shift+enter does not land in the prompt", () => {
+    const editor = new CodeTuiEditor();
+    editor.insert("first\\");
+    editor.newline();
+    editor.insert("second");
+    expect(editor.text).toBe("first\nsecond");
+  });
+
+  test("only the one immediately before the break goes", () => {
+    const editor = new CodeTuiEditor();
+    editor.insert("a\\\\");
+    editor.newline();
+    expect(editor.text).toBe("a\\\n");
+  });
+
+  test("a newline typed with nothing before it is still a newline", () => {
+    const editor = new CodeTuiEditor();
+    editor.newline();
+    expect(editor.text).toBe("\n");
+  });
+
+  /** A paste is not a keypress: a backslash inside pasted code is part of what was copied. */
+  test("a pasted backslash before a newline is kept", () => {
+    const editor = new CodeTuiEditor();
+    editor.insert("const re = /\\\n/;");
+    expect(editor.text).toBe("const re = /\\\n/;");
+  });
 });

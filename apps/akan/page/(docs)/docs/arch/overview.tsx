@@ -159,8 +159,16 @@ export default page().render(() => {
                 area: l.trans({ en: "UI Architecture", ko: "UI 아키텍처" }),
                 href: "/docs/arch/frontend",
                 desc: l.trans({
-                  en: "First view, SSR, rendering boundary, client components, st, fetch, generated helpers, i18n, and client targets.",
-                  ko: "첫 화면, SSR, 렌더링 경계, client component, st, fetch, generated helper, i18n, client target.",
+                  en: "First view, SSR, the rendering boundary, what earns a client component, and the akan quality ssr server-share floor.",
+                  ko: "첫 화면, SSR, 렌더링 경계, 무엇이 client component가 되는지, 그리고 akan quality ssr의 server share 하한선.",
+                }),
+              },
+              {
+                area: l.trans({ en: "UI Composition", ko: "UI 구성" }),
+                href: "/docs/arch/ui-composition",
+                desc: l.trans({
+                  en: "Composing a screen from akanjs/ui: Load, Model, Field, the generated store and fetch helpers, and i18n.",
+                  ko: "akanjs/ui로 화면을 조립하기: Load, Model, Field, generated store·fetch helper, i18n.",
                 }),
               },
               {
@@ -246,6 +254,14 @@ export default page().render(() => {
                 }),
                 area: l.trans({ en: "UI Architecture", ko: "UI 아키텍처" }),
                 href: "/docs/arch/frontend",
+              },
+              {
+                need: l.trans({
+                  en: "Build a list, a detail view, or a create and edit form",
+                  ko: "목록, 상세 화면, 생성·수정 폼을 만들어야 한다",
+                }),
+                area: l.trans({ en: "UI Composition", ko: "UI 구성" }),
+                href: "/docs/arch/ui-composition",
               },
               {
                 need: l.trans({

@@ -13,6 +13,15 @@ const builtinSkillsDir = () => {
 };
 
 /**
+ * Where `akan code` keeps what belongs to the person rather than to the repo.
+ *
+ * `AKAN_CODE_HOME` moves the whole set. A container that mounts no home directory, a CI job that must not
+ * write to one, and a second checkout that wants its own credentials all need the same thing, and moving the
+ * files apart would let a `models.json` and the `auth.json` it names drift into different directories.
+ */
+const globalDir = () => process.env.AKAN_CODE_HOME ?? path.join(homedir(), ".akan", "code");
+
+/**
  * Sessions live in the workspace — they are project history, and a second checkout of the same repo is a
  * different project. Credentials live in the home directory instead: a repo directory is the one place a key
  * must never be, because it is the place that gets committed, zipped and shared.
@@ -25,7 +34,9 @@ export const akanCodePaths = {
   mailDir: (workspaceRoot: string) => path.join(workspaceRoot, ".akan", "code", "mail"),
   builtinSkillsDir,
   mcpFile: (workspaceRoot: string) => path.join(workspaceRoot, ".akan", "code", "mcp.json"),
-  globalDir: () => path.join(homedir(), ".akan", "code"),
-  authFile: () => path.join(homedir(), ".akan", "code", "auth.json"),
-  modelsFile: () => path.join(homedir(), ".akan", "code", "models.json"),
+  globalDir,
+  authFile: () => path.join(globalDir(), "auth.json"),
+  /** MCP bearer tokens, beside the provider keys and for the same reason: never in a directory that is shared. */
+  mcpAuthFile: () => path.join(globalDir(), "mcpAuth.json"),
+  modelsFile: () => path.join(globalDir(), "models.json"),
 } as const;

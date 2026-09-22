@@ -18,7 +18,7 @@ Context CLI
 
 Context commands expose Akan workspace structure in forms that people, agents, CI jobs, and MCP clients can consume.
 
-Use `context` to understand the workspace, `doctor` to validate conventions, and `mcp` when an MCP-aware client should query the same information over stdio.
+Use `context` to understand the workspace, `doctor` to validate conventions, and `mcp` when an MCP-aware client should reach the same information over stdio. What that client may do is the `--mode` option on `mcp`, not a property of the command.
 
 ## Code Examples
 

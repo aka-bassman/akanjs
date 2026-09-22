@@ -33,6 +33,7 @@ describe("/mcp", () => {
     expect(text).toContain("No MCP server is declared.");
     expect(text).toContain(file);
     expect(text).toContain("/mcp add");
+    expect(text).toContain("/mcp login");
   });
 
   test("a connected server reads as its transport, its target and its tool count", () => {
@@ -76,6 +77,27 @@ describe("/mcp", () => {
     expect(row).toContain("disabled in the file");
     // Not "declared · /mcp reload to connect": reloading would connect nothing, the file having turned it off.
     expect(row).not.toContain("reload");
+  });
+
+  /** A 401 is the server working: it answered, and it said who may call it. */
+  test("a server asking for sign-in is not reported as broken", () => {
+    const status = live("linear", { transport: "http", target: "https://x", tools: [], auth: "required" });
+    const text = CodeTuiMcp.list(view({ status: [status], declared: [{ ref: ref("linear"), disabled: false }] }));
+    expect(text).toContain("sign-in needed · /mcp login linear");
+    expect(text).not.toContain("unreachable");
+  });
+
+  test("a signed-in server says so beside its tool count", () => {
+    const status = live("github", { auth: "authorized" });
+    const text = CodeTuiMcp.list(view({ status: [status], declared: [{ ref: ref("github"), disabled: false }] }));
+    expect(text).toContain("2 tools · signed in");
+  });
+
+  test("a server needing no credential says nothing about one", () => {
+    const status = live("local", { auth: "none" });
+    const text = CodeTuiMcp.list(view({ status: [status], declared: [{ ref: ref("local"), disabled: false }] }));
+    expect(text).not.toContain("signed in");
+    expect(text).not.toContain("sign-in");
   });
 
   test("a broken file is named above the list rather than read as an empty one", () => {

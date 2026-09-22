@@ -9,7 +9,18 @@ export default page().render(() => {
   const slotGroups = [
     {
       title: l.trans({ en: "Leaf primitives", ko: "Leaf primitive" }),
-      slots: ["Modal", "Empty", "Pagination", "Popconfirm", "Dropdown", "Table", "Menu", "Unauthorized"],
+      slots: [
+        "Badge",
+        "Modal",
+        "Empty",
+        "Pagination",
+        "Popconfirm",
+        "Dropdown",
+        "Table",
+        "Menu",
+        "Tooltip",
+        "Unauthorized",
+      ],
     },
     { title: l.trans({ en: "Generic", ko: "Generic" }), slots: ["Button", "Select"] },
     {
@@ -31,6 +42,50 @@ export default page().render(() => {
     },
     { title: l.trans({ en: "Toast (compound)", ko: "Toast (compound)" }), slots: ["Toast", "ToastItem"] },
     { title: l.trans({ en: "Edit shell", ko: "Edit shell" }), slots: ["DraftBar"] },
+    {
+      title: l.trans({ en: "In-page chat", ko: "인페이지 채팅" }),
+      slots: [
+        "AgentChat",
+        "AgentLauncher",
+        "AgentBubble",
+        "AgentSteps",
+        "AgentComposer",
+        "AgentApproval",
+        "AgentQuestion",
+        "AgentQueued",
+        "AgentMenu",
+        "AgentMarkdown",
+        "AgentToolCard",
+        "AgentCode",
+      ],
+    },
+  ];
+
+  const recipeSlots = [
+    {
+      key: "button",
+      type: "(variants?: ButtonVariants, className?: ClassValue) => string",
+      desc: l.trans({
+        en: "Every framework client component that draws a button — `Button`, the add and remove controls inside `Field.List` and `Field.TextList`, the pager, the modal footers.",
+        ko: "버튼을 그리는 모든 framework client component입니다. `Button`, `Field.List`와 `Field.TextList` 안의 추가·삭제 control, pager, modal footer가 여기 해당합니다.",
+      }),
+    },
+    {
+      key: "badge",
+      type: "(variants?: BadgeVariants, className?: ClassValue) => string",
+      desc: l.trans({
+        en: "`Badge` and the tag chips `Field.Tags` draws.",
+        ko: "`Badge`와 `Field.Tags`가 그리는 태그 chip입니다.",
+      }),
+    },
+    {
+      key: "input",
+      type: "(variants?: InputSurfaceVariants, className?: ClassValue) => string",
+      desc: l.trans({
+        en: "The field shell `Input`, `TextArea`, and `Select` share.",
+        ko: "`Input`, `TextArea`, `Select`가 공유하는 field 껍데기입니다.",
+      }),
+    },
   ];
 
   const brandComponentCode = `"use client";
@@ -65,7 +120,7 @@ export default override({ Modal: AdminModal, Table: AdminTable });`;
 
   const genericCode = `// The public <Button<Todo> … /> keeps full generic inference at every call site.
 // Your override is authored against the widest prop type — no generics required of you.
-import type { AkanUiOverrides } from "akanjs/ui";
+import { type AkanUiOverrides, buttonRecipe } from "akanjs/ui";
 
 export const BrandButton: AkanUiOverrides["Button"] = ({ children, onClick, ...rest }) => (
   <button
@@ -77,6 +132,29 @@ export const BrandButton: AkanUiOverrides["Button"] = ({ children, onClick, ...r
     {children}
   </button>
 );`;
+
+  const recipeCode = `// apps/<app>/ui/Recipe/neonButton.ts — the full framework variant contract, restyled.
+import { recipe, tv } from "akanjs/ui";
+
+export const neonButtonRecipe = recipe(
+  tv({
+    base: "inline-flex items-center justify-center rounded-none uppercase tracking-widest",
+    variants: {
+      variant: { default: "…", primary: "…", secondary: "…", accent: "…", neutral: "…", outline: "…",
+                 ghost: "…", destructive: "…", success: "…", warning: "…", info: "…", link: "…" },
+      size: { xs: "…", sm: "…", md: "…", lg: "…", icon: "…" },
+      shape: { default: "", square: "…", circle: "…" },
+      outline: { true: "…" },
+    },
+    defaultVariants: { variant: "primary", size: "md", shape: "default" },
+  }),
+);
+
+// apps/<app>/page/(brand)/_overrides.tsx — component slots and recipe slots in one manifest.
+import { neonButtonRecipe } from "@apps/<app>/ui";
+import { override } from "akanjs/ui";
+
+export default override({ Modal: BrandModal, recipes: { button: neonButtonRecipe } });`;
 
   const compoundCode = `// Each compound leaf is its own slot: InputPassword, InputCheckbox, RadioItem,
 // DatePickerRangePicker, LoadingSpin, … so you re-skin exactly one field.
@@ -158,8 +236,14 @@ export default override({ InputCheckbox: BrandCheckbox });
         <Docs.Description>
           <div>
             {l.trans({
-              en: "The framework exposes these slots. Behavioral/infrastructure components (Portal, InfiniteScroll, ClientSide, …) are intentionally not overridable — they are wiring, not skins.",
-              ko: "framework가 제공하는 slot 목록입니다. 동작/인프라 성격의 컴포넌트(Portal, InfiniteScroll, ClientSide, …)는 skin이 아니라 wiring이므로 의도적으로 override 대상에서 제외했습니다.",
+              en: "The framework exposes 46 slots. Behavioral and infrastructure components (Portal, InfiniteScroll, ClientSide, …) are intentionally not overridable — they are wiring, not skins.",
+              ko: "framework가 제공하는 slot은 46개입니다. 동작/인프라 성격의 컴포넌트(Portal, InfiniteScroll, ClientSide, …)는 skin이 아니라 wiring이므로 의도적으로 override 대상에서 제외했습니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "The one you are most likely to reach for and not find is the toast stack — `System`'s `Messages`. It is not a slot because it is not a skin: it keeps the `msg.*` wiring, the store read, the body-level portal, and the dismiss timers. `Toast` and `ToastItem` are the slots instead, so a replacement re-skins the surface without re-implementing when a toast appears and goes away.",
+              ko: "찾아보고 없어서 가장 당황하기 쉬운 것은 toast 더미, 즉 `System`의 `Messages`입니다. skin이 아니라서 slot이 아닙니다. `msg.*` 배선, store 읽기, body 수준 portal, 자동 닫힘 타이머를 스스로 들고 있기 때문입니다. 대신 `Toast`와 `ToastItem`이 slot이므로, 언제 toast가 뜨고 사라지는지를 다시 구현하지 않고 표면만 바꿀 수 있습니다.",
             })}
           </div>
         </Docs.Description>
@@ -208,6 +292,33 @@ export default override({ InputCheckbox: BrandCheckbox });
           title={l.trans({ en: "Compound leaf override", ko: "Compound leaf override" })}
           code={compoundCode}
         />
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="recipe-slots" title={l.trans({ en: "Recipe slots", ko: "Recipe slot" })}>
+        <Docs.Title>{l.trans({ en: "Recipe slots", ko: "Recipe slot" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Replacing a component to change how it looks is more than you need when the structure is already right. The manifest takes a second kind of key for that: `recipes`, typed by `AkanUiRecipes`, swaps the className factory a framework component resolves through and leaves its structure and behavior — async states, focus handling, a11y — completely alone.",
+              ko: "구조는 그대로 두고 모양만 바꾸고 싶은데 컴포넌트를 통째로 교체하는 것은 과합니다. manifest는 그런 경우를 위해 두 번째 종류의 key를 받습니다. `AkanUiRecipes`로 타입이 정해진 `recipes`는 framework component가 사용하는 className factory만 바꾸고, 구조와 동작 — async 상태, 포커스 처리, 접근성 — 은 손대지 않습니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "A replacement must accept the framework recipe's full variant contract, because every existing call site keeps working. Adding an axis of your own is allowed by the type but only reachable from code that knows your recipe's type — extending the vocabulary is not this slot's job. Add the axis to the framework recipe, or author an app recipe under `apps/<app>/ui/Recipe/`.",
+              ko: "교체본은 framework recipe의 variant 계약 전체를 받아야 합니다. 기존 호출부가 그대로 동작해야 하기 때문입니다. 축을 더 얹는 것은 타입상 허용되지만, 그 축은 교체본의 타입을 아는 코드에서만 닿습니다. 어휘를 넓히는 것은 이 slot의 일이 아닙니다. framework recipe에 축을 더하거나, `apps/<app>/ui/Recipe/` 아래에 앱 recipe를 작성하세요.",
+            })}
+          </div>
+        </Docs.Description>
+        <Docs.OptionTable items={recipeSlots} />
+        <Docs.CodeSnippet title={l.trans({ en: "Recipe slot", ko: "Recipe slot" })} code={recipeCode} />
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: "A recipe slot is a client-side, route-scoped restyle. It reaches framework client components, which resolve through `useUiRecipe(...)`. It does not reach a `buttonRecipe(...)` call written directly in app JSX — that import is static and has no context — and it does not reach server components (`Unit`, `View`), which render the canonical framework recipe on purpose.",
+            ko: "recipe slot은 client 쪽에서, route 범위로 다시 칠하는 장치입니다. `useUiRecipe(...)`로 recipe를 찾는 framework client component에만 닿습니다. 앱 JSX에 직접 쓴 `buttonRecipe(...)` 호출에는 닿지 않으며 — 그 import는 정적이라 context가 없습니다 — server component(`Unit`, `View`)에도 닿지 않습니다. 그쪽은 의도적으로 framework 기본 recipe를 렌더합니다.",
+          })}
+        </Docs.Alert>
       </Scroll.Slide>
 
       <DocsToc />

@@ -18,11 +18,25 @@
 
 Common Utils (common/)
 
+Pure, isomorphic, zero-dependency. It may import a sibling common/* file and akanjs/base, and nothing else — not Err, which is why throwing code stays out of it.
+
+Touches window, navigator or Capacitor, or is a React hook. The browser half of what common/ cannot hold.
+
+Touches node:*, Bun, process.env, a secret, or a server SDK. The server half, and the only place a vendor package is imported directly.
+
+Renders JSX and is not bound to one model. A component tied to a model belongs in that module as a Unit, View, Template, Util or Zone instead.
+
+A build-time or CLI-time AkanPlugin, registered in akan.config.ts and re-exported from the generated barrel.
+
 Common Overview
 
 The common folder contains logic that can run in both server and client environments. Use it for pure helpers, shared formatting, validation, metadata builders, and transforms that should not depend on browser-only or server-only APIs.
 
 Use srvkit for server-only logic, webkit for browser or web-rendering logic, and common for cross-runtime logic shared by services, signals, pages, and components.
+
+The five folders answer one question each, and the test is what the code touches rather than what it is for. Reading them together is faster than reading any one of them, so the same table opens all three pages.
+
+Folder
 
 What Belongs In Common
 
@@ -96,14 +110,14 @@ export class OrderService extends serve(db.order, () => ({})) {
 }
 ```
 
-### page.tsx
+### ui/PreviewCode.tsx
 
 ```ts
 import { randomCode } from "@libs/util/common";
 
-export function PreviewCode() {
+export const PreviewCode = () => {
   return <span>{randomCode(8)}</span>;
-}
+};
 ```
 
 ## Agent Notes

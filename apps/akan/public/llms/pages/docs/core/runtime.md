@@ -9,7 +9,9 @@
 ## Headings
 
 - Akan Runtime (#akan-runtime)
-- Root-level Env Variables (#dev-prod)
+- Identity And Environment (#env-identity)
+- Text Search Variables (#env-search)
+- Logging Variables (#env-logging)
 - getEnv() (#get-env)
 - OpenAPI JSON (#openapi-json)
 - Selective Module Boot (#module-selection)
@@ -31,137 +33,95 @@ SSR Pages (Web): web pages rendered by the server and sent to the browser.
 
 CSR Page (Android, iOS): client-rendered pages used by mobile targets.
 
-One Akan App can run one or more Akan Server processes. AKAN_REPLICA controls how many server processes are started for each role, so the same app can scale web traffic and background work separately. For browser traffic, Akan App also load-balances requests across ready federation and all servers.
+AKAN_REPLICA decides how many server processes each role gets, and it defaults to 0,0,1 everywhere: one all server and nothing else. With a single traffic replica there is nothing to balance, so Akan App runs that server inside its own process instead of spawning it and proxying to it. The container holds one process, and every request skips a proxy hop.
+
+all: runs both federation and batch behavior in one server process. This is the default, and the shape almost every deployment ships.
 
 federation: serves browser traffic such as pages, API calls, and WebSocket connections.
 
 batch: runs background work such as queues, timers, and scheduled jobs.
 
-all: runs both federation and batch behavior in one server process. This is the simple local default.
+Five things bring the gateway back: two or more replicas, a batch-only replica that never listens, AKAN_SOLO=false, passing replica to new AkanApp(...), and akan start, which always runs it because the gateway is also the dev server's build relay and error overlay. Then Akan App spawns the servers and load-balances browser traffic across the ready federation and all processes.
 
 A single Akan App has built-in clustering. You can run multiple server replicas and let Akan App distribute traffic, without setting up separate local load-balancing tools such as nginx, docker compose, or pm2.
 
-With one traffic replica there is nothing to balance, so Akan App runs that server in its own process instead of spawning it and proxying to it. The container then holds one process rather than two, and every request skips a proxy hop. Two or more replicas, or a batch-only replica that never listens, bring the gateway back. Set AKAN_SOLO=false to keep the gateway for a single replica; akan start always runs it, because the gateway is also the dev server's build relay and error overlay.
-
-Root-level Env Variables
+Identity And Environment
 
 The root .env file decides which organization, domain, environment, operation mode, and log level the app uses while it runs. Most projects keep these values stable, but changing them lets the same app behave like a local, debug, develop, or production-like service.
 
 Environment variables prefixed with AKAN_PUBLIC_ are public. They can be read by browser code, so never store secrets, private tokens, or credentials in them.
 
-Project owner
+Four of those names answer who this app is and where it runs. getEnv() reads them once and caches the result, and it throws rather than guessing when the first two are missing:
 
-Organization or repository namespace. Usually fixed for the project.
+required
 
-Public domain
+Organization or repository namespace, usually fixed for the life of the project. getEnv() throws when it is missing instead of falling back.
 
-Used when the app creates links, callbacks, and domain-based routes.
+The domain the app builds links, callbacks, and domain-based routes from. Also throws when missing.
 
-Data environment
+Which data set the app runs against. local is your machine and your test data, debug is shared test data for reproduction, develop is the team integration check, and main is production-like behavior.
 
-Choose local, debug, develop, or main depending on which data set you want to use.
+local when ENV=local, else cloud
 
-Connection target
+Where clients connect. local talks to the local runtime, cloud talks to cloud services, and edge uses the edge-facing paths. module is in the type and no runtime branch reads it.
 
-Choose whether clients connect to local runtime, edge paths, or cloud services.
+In practice you move two of them together. Build a feature with ENV=local and OPERATION_MODE=local, switch ENV to debug or develop when you need shared data or shared services, and deploy with ENV=main against whichever operation mode the cluster serves:
 
-Log detail
+Text Search Variables
 
-Choose how much runtime output you want to see in the terminal.
+Full-text search is on unless you switch it off, and both of its variables are deployment-wide decisions rather than per-process ones. A process cannot clean up triggers for models it does not mount, so give every process in one deployment the same pair.
 
-Text search index
+unset means on
 
-Unset means on. Set 0 to switch the full-text index off; indexed data is kept and re-enabling reconciles every model. Give every process in a deployment the same value, because a process cannot clean up triggers for models it does not mount.
+Switches the full-text index off. Indexed data is kept and re-enabling reconciles every model, so turning it off is reversible. An unrecognised value fails the boot rather than guessing.
 
-Search tokenizer
+The fts5 tokenizer the index is built with; database.search.tokenizer in the app config takes precedence. Changing it rebuilds the index from the mirror on the next boot, so no data is re-read from the model tables — but the rebuild takes no cross-process claim, so a fleet restarted at once repeats it in every process. Stagger the restart when the mirror is large. A value this SQLite build cannot provide fails the boot and names the fix, rather than starting a server whose every search would raise; writes are left alone, so the models on that database keep accepting them and the next healthy boot recovers the index in full.
 
-The fts5 tokenizer the index is built with. Defaults to unicode61 remove_diacritics 2. Changing it rebuilds the index from the mirror on the next boot, so no data is re-read from the model tables. The rebuild takes no cross-process claim, so a fleet restarted at once repeats it in every process; stagger the restart when the mirror is large. database.search.tokenizer in the app config takes precedence. A value this SQLite build cannot provide fails the boot and names the fix, rather than starting a server whose every search would raise. That boot failure leaves writes alone: the index is dropped but nothing else is, so the models on that database keep accepting writes and the next healthy boot recovers the index in full.
+Logging Variables
 
-File log detail
+The level ladder is trace, verbose, debug, info, warn, error, and three destinations read it independently: the container's stdout, the rotating log file, and any sink the app registered. Everything else here decides how much structure travels with a record and who is allowed to ask for more.
 
-Choose how much structured Logger output is written to files. Defaults to trace, independent from terminal log level.
+How much runtime output the console carries. log is a deprecated seventh name that now means info and warns once.
 
-File logging
+What goes to the container's stdout, in either format. kubelet and the docker json-file driver rotate container logs by size, so a stdout at trace can outrun the collector; info is the production recommendation, with the flight recorder promoting detail for failed calls only.
 
-AkanApp writes gateway and child process logs to runtime/logs by default. Set this to 0 to disable file logging. The generated Dockerfile sets 0: a container's writable layer is ephemeral and stdout is the collection path.
+How much structured Logger output is written to files, independent from the terminal log level.
 
-Request context on log records
+text is the human console line. ndjson makes the container's stdout one JSON record per line, written only by the gateway or the solo replica: every other server process turns its console off and forwards its records instead, and a child's crash stack is wrapped as a raw record so the stream stays valid JSON. ndjson-only writes the rotating file as JSON too. Give every process the same value.
 
-Every request, websocket call, MCP call, internal trigger and page render runs under a lightweight trace, so its log records carry traceId, endpoint and origin. On by default; 0 switches it off. Independent from AKAN_TRACE, which adds span and query aggregation.
+AkanApp writes gateway and child process logs to runtime/logs by default. Set 0 to disable file logging; the generated Dockerfile sets 0, because a container's writable layer is ephemeral and stdout is the collection path.
 
-Always forward records
-
-A child forwards log records to the gateway over IPC only while akan logs or a console .tail is subscribed at that level. 1 keeps forwarding on regardless.
-
-Log ring buffer
-
-How many records, and how many megabytes, the gateway (or solo replica) keeps for akan logs --replay and .trace. Both limits apply; the older record goes first.
-
-Log output format
-
-text is the human console line. ndjson makes the container's stdout one JSON record per line, written only by the gateway (or the solo replica): every other server process turns its console off and forwards its records instead, and a child's crash stack is wrapped as a raw record so the stream stays valid JSON. ndjson-only writes the rotating file as JSON too. Give every process the same value.
-
-Container stdout detail
-
-What goes to the container's stdout, in either format. Defaults to AKAN_PUBLIC_LOG_LEVEL. kubelet and the docker json-file driver rotate container logs by size, so a stdout at trace can outrun the collector; info is the production recommendation, with the flight recorder promoting detail for failed calls only.
-
-Log stream route
-
-Set it and GET /_akan/app/logs serves the ring buffer and live records as text/event-stream to a matching bearer token; the LogQuery is the query string, each event's id is the hub seq, Last-Event-ID resumes and an evicted range arrives as an explicit gap event. Unset, the route does not exist. A session tool for one pod — collection is stdout.
-
-Canonical request line
-
-One record per call at its end: ok or error, the endpoint, ms, status, userId, and under AKAN_TRACE=1 the db and cache figures. 1 or all writes every call; slow keeps only failed calls and those over AKAN_LOG_FLIGHT_MS. Off by default because it grows with QPS.
-
-Flight recorder
-
-AKAN_LOG_FLIGHT=1 keeps each call's own last 64 records that fell below the level and promotes them, marked flight=true, only when the call failed or ran past AKAN_LOG_FLIGHT_MS (default 1000). AKAN_LOG_FLIGHT_MAX (default 65536 records) caps what the process holds at once; a call past the cap runs unrecorded. Measured cost on a clean call: about 190ns.
-
-Per-request debug header
-
-A request carrying x-akan-debug logs at trace for its own duration, whatever the process level. Honoured unconditionally in local; elsewhere only when the header value equals this secret, compared in constant time, because a client that can lower a server's log level is a log-volume vector.
-
-Log directory
-
-Override the default runtime/logs directory used by file logging.
-
-Log rotation size
+Where file logging writes, when the default directory is not where the volume is mounted.
 
 Create the next sequence file when a process log reaches this size.
 
-Log retention
-
 Keep this many rotated files per process key, such as gateway or child-0.
 
-AKAN_PUBLIC_ENV modes
+Every request, websocket call, MCP call, internal trigger and page render runs under a lightweight trace, so its log records carry traceId, endpoint and origin. 0 switches it off. Independent from AKAN_TRACE, which adds span and query aggregation.
 
-My machine, my test data.
+A child forwards log records to the gateway over IPC only while akan logs or a console .tail is subscribed at that level. 1 keeps forwarding on regardless.
 
-Shared test data for reproduction.
+unset — route absent
 
-Team integration checks.
+Set it and GET /_akan/app/logs serves the ring buffer and live records as text/event-stream to a matching bearer token; the LogQuery is the query string, each event's id is the hub seq, Last-Event-ID resumes and an evicted range arrives as an explicit gap event. Unset, the route does not exist. A session tool for one pod — collection is stdout.
 
-Production-like behavior.
+One record per call at its end: ok or error, the endpoint, ms, status, userId, and under AKAN_TRACE=1 the db and cache figures. 1 or all writes every call; slow keeps only failed calls and those over AKAN_LOG_FLIGHT_MS. Off by default because it grows with QPS.
 
-AKAN_PUBLIC_OPERATION_MODE modes
+Keeps each call's own last 64 records that fell below the level and promotes them, marked flight=true, only when the call failed or ran past the threshold. Measured cost on a clean call: about 190ns.
 
-Client talks to local runtime.
+A call at least this long is slow, for both the flight recorder and the slow canonical mode.
 
-Client talks to cloud services.
+Caps the records the process holds at once; a call past the cap runs unrecorded.
 
-Client uses edge-facing paths.
+How many records the in-memory hub keeps for akan logs and the SSE stream to replay. Oldest are dropped first; a reader that falls behind gets an explicit gap event rather than a silent hole.
 
-Common setup scenarios
+The same buffer's byte ceiling, whichever limit is reached first. Raise it when records carry large attrs; the hub is per process, so the cost is multiplied by the replica count.
 
-Build a feature locally
+unset — local only
 
-Reproduce with shared test data
+A request carrying x-akan-debug logs at trace for its own duration, whatever the process level. Honoured unconditionally in local; elsewhere only when the header value equals this secret, compared in constant time, because a client that can lower a server's log level is a log-volume vector.
 
-Deploy production to cloud server
-
-Deploy production to edge server
-
-A common setup is ENV=local and OPERATION_MODE=local while building features, then switching ENV to debug or develop when you need to test with shared data or shared services.
+The ring the gateway (or the solo replica) keeps for akan logs --replay and .trace is not an environment decision: it holds 2,000 records or 4 MB, whichever fills first, and the older record goes first.
 
 getEnv()
 
@@ -205,11 +165,13 @@ Dependencies are followed for you, so you list entry points instead of the whole
 
 Boot log
 
+disableModules and disableLibs are the same idea from the other end: mount everything except what you name and whatever reaches it. disableModules takes module names, disableLibs takes the name of a library and stands for every module that library registered, so it does not drift as the library gains modules. Reach for either when the process serves most of the app and a library it depends on is one it does not use — server.ts is generated from the dependency graph, so a library cannot be dropped by editing it. Both are accepted in all three places modules is, as AKAN_DISABLE_MODULES and AKAN_DISABLE_LIBS in the environment. Naming a module in both modules and an exclusion leaves it out, because modules says what a process is for and the exclusions say what it must not run.
+
 Use this when the entry point itself decides which modules the process serves. Every replica it spawns gets the same selection.
 
 Use this when deployment decides the split, so one image can run as different processes without a second entry point.
 
-A name no module registered fails the boot instead of being ignored, so a typo cannot quietly drop a module. Selection narrows the enabled set rather than replacing it, so it never turns on a module whose service is disabled. Endpoints of a module left out do not exist, so a client that calls one gets a 404.
+An unregistered name fails the boot instead of being ignored, in all three options: a typo in modules quietly drops a module, and a typo in an exclusion quietly keeps one running. Selection narrows the enabled set rather than replacing it, so it never turns on a module whose service is disabled. A module that reaches a disabled one goes with it, and the boot log names the ones you did not ask for. Endpoints of a module left out do not exist, so a client that calls one gets a 404.
 
 Health, Metrics, Logs
 
@@ -236,7 +198,7 @@ Start with health when the app does not respond. Use metrics when the app respon
 ### apps/myapp/main.ts
 
 ```ts
-import { AkanApp } from "akanjs/server";
+import { AkanApp } from "akanjs/server/akanApp";
 
 const run = async () => {
   await new AkanApp().start();
@@ -256,33 +218,25 @@ AKAN_SEARCH_ENABLED=1
 AKAN_SEARCH_TOKENIZER="unicode61 remove_diacritics 2"
 ```
 
-### Code
+### .env
 
 ```bash
+# Build a feature locally
 AKAN_PUBLIC_ENV=local
 AKAN_PUBLIC_OPERATION_MODE=local
 AKAN_PUBLIC_LOG_LEVEL=debug
-```
 
-### Code
-
-```bash
+# Reproduce with shared test data
 AKAN_PUBLIC_ENV=debug
 AKAN_PUBLIC_OPERATION_MODE=local
 AKAN_PUBLIC_LOG_LEVEL=debug
-```
 
-### Code
-
-```bash
+# Deploy production to a cloud server
 AKAN_PUBLIC_ENV=main
 AKAN_PUBLIC_OPERATION_MODE=cloud
 AKAN_PUBLIC_LOG_LEVEL=info
-```
 
-### Code
-
-```bash
+# Deploy production to an edge server
 AKAN_PUBLIC_ENV=main
 AKAN_PUBLIC_OPERATION_MODE=edge
 AKAN_PUBLIC_LOG_LEVEL=info
@@ -323,7 +277,7 @@ serverWsUri=wss://myapp-main.mydomain.com
 ### apps/myapp/main.ts
 
 ```ts
-import { AkanApp } from "akanjs/server";
+import { AkanApp } from "akanjs/server/akanApp";
 
 const run = async () => {
   await new AkanApp("./server", { openapi: true }).start();
@@ -340,7 +294,7 @@ curl http://localhost:8282/openapi.json
 ### apps/myapp/main.ts
 
 ```ts
-import { AkanApp } from "akanjs/server";
+import { AkanApp } from "akanjs/server/akanApp";
 
 const run = async () => {
   await new AkanApp("./server", { modules: ["article"] }).start();
@@ -352,6 +306,23 @@ void run();
 
 ```bash
 [DiLifecycle] INFO  Mounting 3 of 12 module(s): article, file, user
+```
+
+### apps/myapp/main.ts
+
+```ts
+import { AkanApp } from "akanjs/server/akanApp";
+
+const run = async () => {
+  await new AkanApp("./server", { disableLibs: ["social"], disableModules: ["legacyImport"] }).start();
+};
+void run();
+```
+
+### Code
+
+```bash
+[DiLifecycle] INFO  disableModules/disableLibs also dropped 2 dependent module(s): digest, notification
 ```
 
 ### health

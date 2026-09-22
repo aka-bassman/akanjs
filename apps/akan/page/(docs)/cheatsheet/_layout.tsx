@@ -9,6 +9,10 @@ export default layout().render(({ children }) => {
       name: l.trans({ en: "General", ko: "일반" }),
       subMenus: [
         { name: l.trans({ en: "Authorization", ko: "인증" }), href: "/cheatsheet/general/auth" },
+        {
+          name: l.trans({ en: "OAuth For Agents", ko: "에이전트를 위한 OAuth" }),
+          href: "/cheatsheet/general/mcp-auth",
+        },
         { name: l.trans({ en: "Schema Design", ko: "스키마 설계" }), href: "/cheatsheet/general/schema" },
         { name: l.trans({ en: "Text Search", ko: "텍스트 검색" }), href: "/cheatsheet/general/search" },
         { name: l.trans({ en: "Edge Computing", ko: "엣지 컴퓨팅" }), href: "/cheatsheet/general/edge" },
@@ -23,6 +27,7 @@ export default layout().render(({ children }) => {
         { name: l.trans({ en: "CRUD", ko: "CRUD" }), href: "/cheatsheet/interface/crud" },
         { name: l.trans({ en: "Endpoint", ko: "Endpoint" }), href: "/cheatsheet/interface/endpoint" },
         { name: l.trans({ en: "MCP Server", ko: "MCP 서버" }), href: "/cheatsheet/interface/mcp" },
+        { name: l.trans({ en: "Agent Chat", ko: "에이전트 채팅" }), href: "/cheatsheet/interface/agent-chat" },
         { name: l.trans({ en: "Form", ko: "Form" }), href: "/cheatsheet/interface/form" },
       ],
     },
@@ -63,9 +68,9 @@ export default layout().render(({ children }) => {
       name: l.trans({ en: "Development", ko: "개발" }),
       subMenus: [
         { name: l.trans({ en: "Documentation", ko: "문서화" }), href: "/cheatsheet/dev/docs" },
+        { name: l.trans({ en: "Schema Docs", ko: "스키마 문서" }), href: "/cheatsheet/dev/constants" },
         { name: l.trans({ en: "Script", ko: "스크립트" }), href: "/cheatsheet/dev/script" },
         { name: l.trans({ en: "Console", ko: "콘솔" }), href: "/cheatsheet/dev/console" },
-        { name: l.trans({ en: "Mobile", ko: "모바일" }), href: "/cheatsheet/dev/mobile" },
         { name: l.trans({ en: "Docker", ko: "도커" }), href: "/cheatsheet/dev/docker" },
         { name: l.trans({ en: "Kubernetes", ko: "쿠버네티스" }), href: "/cheatsheet/dev/k8s" },
         { name: l.trans({ en: "PWA", ko: "PWA" }), href: "/cheatsheet/dev/pwa" },

@@ -9,284 +9,212 @@
 ## Headings
 
 - UI Architecture (#ui-overview)
-- What Is Server-Side Rendering? (#server-side-rendering)
-- Rendering Boundary (#rendering-boundary)
-- Page Composition Pattern (#page-composition)
-- Client State With st (#client-state-st)
-- Server Calls With fetch (#server-calls-fetch)
-- Generated Helpers Summary (#generated-client)
-- i18n (#i18n)
-- Client Targets (#client-targets)
+- How A Page Reaches The Browser (#server-side-rendering)
+- What Earns A Client Component (#client-boundary)
+- In Domain UI The Rule Is Mechanical (#file-roles)
+- Splitting One Screen (#splitting-a-screen)
+- Measuring The Split (#quality-ssr)
 
 ## Content
 
 UI Architecture
 
-Akan UI is the user-facing interface layer of the app. When a customer opens a product page, a manager edits stock, or a partner checks orders from another client, the interface decides what appears immediately, what becomes interactive, and how user actions reach the backend.
+Server. One row, one card, one tile. Takes the model as a prop and renders it. Never carries the directive.
 
-Fast first screen
+Server. The detail surface for one record. Takes the full model as a prop. Never carries the directive.
 
-Server-rendered pages can show catalog, article, or dashboard content before the browser becomes interactive.
+Client. The composed page section that reads the store and hydrates from an init or view prop. Always "use client" on line 1, and it should hold almost no markup of its own.
 
-Interactive work
+Client. The form. Every field is bound to the store, so a Template contains zero useState. Always "use client" on line 1.
 
-Client components handle forms, filters, stock changes, realtime dashboards, and browser/device APIs.
+Client. One domain action as a control — Serve, Refund, Remove. Always "use client" on line 1, and it takes ids rather than model instances.
 
-Generated helpers
+The directive is there but the file uses no client-only capability at all. Delete it.
 
-Generated fetch, store, and model namespaces reduce hand-written API and state glue.
+A component in a client file renders four or more JSX elements with zero client-only capability. It is server-renderable markup sitting in the bundle.
 
-Many client surfaces
+Ten or more JSX elements wrapped around one or two client-only touches. Split it: the touch stays client, the subtree goes server.
 
-Customer web, admin console, partner site, and mobile apps can share backend logic while showing different screens.
+A useEffect with an empty dependency array loads server data. The route can fetch it before the first byte. A reactive effect with real dependencies is not flagged.
 
-What Is Server-Side Rendering?
+A module renders only from Template, Zone and Util and declares no Unit or View at all, so every consumer pays for hydration just to display the model.
 
-Server-side rendering means the server prepares the first visible HTML before the browser finishes loading the full app. Users can see useful content earlier, even before every button, input, and realtime feature becomes interactive.
+A Template holds form state in useState instead of the store. Bind the field with value={xForm.field} and onChange={st.do.setFieldOnX}.
 
-The server prepares
+You add "use client" to a file because one button in it has an onClick. The file is two hundred lines of product markup and one handler, and now all two hundred lines ship twice: once as the HTML the server already rendered, and again as JavaScript the browser has to download, parse and re-run before that one button works.
 
-The server reads route, params, language, and initial data, then prepares the page users will see first.
+Akan is SSR-first. Every element that renders on the server ships as markup and costs nothing to hydrate, so the default is server and the directive is a cost you justify per component rather than a habit. This page is about where that line falls, why it is mechanical rather than a judgment call, and how to see where your app currently sits.
 
-The browser shows
+How A Page Reaches The Browser
 
-The browser can paint meaningful content quickly, so users are not staring at an empty app shell.
+Server-side rendering means the server prepares the first visible HTML before the browser has finished loading the app. A customer reads the order list, the price and the policy text while the filter and the submit button are still arriving. Viewing and interacting do not have to happen at the same moment.
 
-The client activates
+One request, end to end
 
-After the first view appears, client components attach event handlers for typing, clicking, filtering, and live updates.
+How quickly the user can read something meaningful: order titles, sizes, prices, the first rows, the policy text. Server rendering is what moves this.
 
-SSR Timeline
+How quickly the user can type, click, filter or receive a live update. Only the hydrated islands move this, and every element you keep on the server makes them smaller.
 
-The important point is that viewing and interacting do not have to happen at the exact same moment.
+The shell does not have to wait for every query. fetch.init<Model><Suffix>, fetch.view<Model> and fetch.edit<Model> are awaitable and destructurable: destructuring hands out one promise per field with both queries already in flight, so a route can send the shell and give each section its own promise. Awaiting instead keeps that section in the shell, which is what SEO snapshots, prerendering and pre-hydration E2E read — so await what the page needs immediately and stream the rest.
 
-Server
+The heading is server markup. The Zone is the only thing in the tree that hydrates, and it receives the unawaited promise rather than an awaited value, so the heading is on the wire while the slice query is still running. A promise that no Zone consumes goes to a Load.Stream instead, which the composition page covers.
 
-Prepare first HTML from route, params, language, and initial data.
+What Earns A Client Component
 
-Browser View
+There are exactly five capabilities that require the browser. Everything else on a screen — including all the markup around them — is server work. This is the whole decision, and it is the same table akan quality ssr reads when it decides whether a directive was earned.
 
-Paint useful content quickly so the user can understand the page.
+Capability
 
-Client Areas
+In Domain UI The Rule Is Mechanical
 
-Activate forms, filters, modals, realtime updates, st, and fetch actions.
+Inside a domain module you never make the call above. The file role decides it: Template, Zone and Util always carry the directive on line 1, and Unit and View never do. If a file's role and its directive disagree, one of the two is wrong.
 
-Business Example
+File
 
-On a shopping page, customers should see product names, prices, and the first list quickly. The add-to-cart button, stock filter, and recommendation carousel can become interactive after the first view is already visible.
+The pair below is the shape the rule produces. The Zone is client because it hydrates the store from init; it holds no markup of its own and delegates every row to a server Unit.
 
-Step 01 does not have to wait for every query. fetch.init<Model><Suffix>, fetch.view<Model>, and fetch.edit<Model> return a handle whose fields are promises, so a route can send the shell and hand each section its own promise — the section streams in behind its own boundary as its data lands.
+The Unit takes the model as a prop and renders it. No directive, no import of st, nothing to hydrate — a hundred rows on screen cost the bundle exactly one component, the Zone.
 
-SSR is not the opposite of client-side UI. It is the first step of the experience: show useful content early, then let client components handle the parts that need interaction.
+Splitting One Screen
 
-Rendering Boundary
+Outside a domain module — an app shell, a marketing section, a dashboard — you place the boundary yourself. Push it down until it sits on the leaf that actually needs the browser, and let everything above and inside it stay server markup:
 
-Before deciding server-side or client-side, think about two moments in the user experience: when the user can see useful content, and when the user can interact with it.
+Wrap, do not absorb
 
-How quickly users can see meaningful content. A customer should see product names, prices, article text, or reservation details before every button becomes interactive.
+A client component that adds one behaviour and renders children untouched keeps its whole subtree on the server.
 
-How quickly users can type, click, filter, open modals, or receive realtime updates. These actions need browser-side state and event handlers.
+Split compound components
 
-Why Both Sides Exist
+Tab, Tab.Menus, Tab.Menu and Tab.Panel are four small client shells; the panel bodies arrive as children and never enter the bundle. One client file with a mode useState and every panel inlined is the opposite.
 
-Server-side first content
+Use named slots
 
-Good for content users should understand immediately: catalog lists, article pages, pricing, profile summaries, and policy text.
+Layout.Navbar takes title, back, left, right and children, so a client shell composes server content in five places instead of absorbing it.
 
-Client-side working areas
+Derive on the server
 
-Good for parts that must react to the user: stock forms, filters, chat input, dashboards, maps, camera, or local device APIs.
+Display and predicate logic belongs on Light<Model>, which both sides hold; enum-to-class lookups belong in a module-scope as const map.
 
-A Simpler Way To Decide
+Keep the heavy island late
 
-Start with what the user should see first, then add browser-side work only where the user actually interacts.
+A map, an editor or a chart goes behind the ui/<Folder>/index_.tsx and lazy() pair, with a server-safe index.tsx beside it. Collapsing the pair into one file breaks RSC.
 
-Show stable content
+That file is the whole client cost of a copy button: one handler and one children pass-through. The label, the icon and the receipt block around it are written in the page and stay server markup, however large they grow.
 
-Render product names, article text, prices, summaries, and first lists on the server.
+Measuring The Split
 
-Wrap working areas
+None of the above is a style preference, so it is measured rather than reviewed. akan quality ssr counts JSX elements per side and reports the share each app and lib keeps on the server, plus the six findings below. It reads the .tsx files under ui/ and lib/ in every app and lib — page/ and webkit/ are outside the measurement, so moving markup into a route neither helps nor hurts the number.
 
-Use "use client" only around forms, filters, modals, realtime status, or device/browser APIs.
+Rule
 
-Connect actions
+Three things are deliberately not flagged. A client-only third-party package and an index_.tsx lazy() boundary are legitimate reasons for the directive; a Zone, Template or Util inside a module is exempt because its role requires the directive whether or not today's body uses it; and an interaction-driven fetch — a lookup inside an onClick — is work the server could not have done. Only mount-time loads are findings.
 
-Use st for client state and fetch when the action needs a business answer from the server.
-
-Start with a readable screen
-
-If users should immediately see product names, prices, articles, or summaries, keep that part server-rendered.
-
-Add client only for work
-
-Use a client component when users type, click, open modals, filter lists, or keep a screen changing after load.
-
-Put use client at the boundary
-
-Do not turn the whole page into a client page by default. Put "use client" on the smallest component that needs interaction.
-
-Mix them per screen area
-
-A product page can be mostly server-rendered while only the filter, cart button, or stock form runs in the browser.
-
-How To Split One Screen
-
-Think of a screen as stable information plus working areas. Keep stable information server-rendered, then wrap only the working areas with a client component.
-
-Stable information
-
-Use this for content users should see right away: title, price, summary, first list, policy text, or article body.
-
-Working area
-
-Use "use client" here for forms, filters, modals, live status, stock actions, or anything that needs browser-side state.
-
-Product catalog
-
-Render the title and first products on the server so customers see content quickly.
-
-Stock editor
-
-Use a client component because the manager changes form values and clicks actions.
-
-Live dashboard
-
-Use client state and realtime updates because the screen keeps changing after load.
-
-Page Composition Pattern
-
-A typical business screen combines a server-rendered shell with client-side areas. A product listing page may render the title and first data on the server, then hand the list area to a client zone for pagination, filtering, realtime updates, or user actions.
-
-Example model
-
-A single model creates a predictable UI stack from page entry points to backend calls.
-
-Business screens and URL-level entry points.
-
-Reusable screen parts for display, forms, actions, and client zones.
-
-Client-side state for lists, forms, selected records, and modals.
-
-Generated calls that connect UI actions to backend signals.
-
-signals, services, database
-
-Typical Model Screen Flow
-
-A model usually starts from a list screen. Users create a new record, open a detail page, then move to an edit page when they need to change existing data.
-
-Index pages are optimized for discovery: search, scan, paginate, and choose an item.
-
-New and edit pages focus on controlled input through Edit components and submit actions.
-
-View pages present one record clearly, then expose follow-up actions like edit or related utilities.
-
-Product listing
-
-Show the page title and first products quickly, then let the client zone handle filtering, pagination, and updates.
-
-Admin stock page
-
-Render product summary on the server, then use a client form to add stock through generated fetch or store helpers.
-
-Client State With st
-
-After the page and components are clear, decide what state the browser owns. Use st for working state such as form values, selected rows, loading flags, filters, and derived labels.
-
-Declare writable state that can change while the user works, such as stockDraft and saving.
-
-Declare values computed from writable state, such as canSubmitStock from stockDraft and saving.
-
-Read and update state inside store actions before and after business work.
-
-Components subscribe to fields with st.use.*, and model forms use generated setters such as setNameOnProduct.
-
-Use local component state for tiny UI-only details such as focus, hover, or a one-off input draft. Use st when several components share the value, when an action needs it, or when it should survive across a screen flow.
-
-Server Calls With fetch
-
-Use fetch after the component has collected enough state and the action needs a server-side business decision. The server declares a signal endpoint, Akan generates the client function, and the store action calls it.
-
-Call fetch directly
-
-Good for simple initial data or one-off reads where the component does not need to coordinate much state.
-
-Wrap fetch in a store action
-
-Good for forms and business actions because the action can read state, call fetch, then update loading, auth, list, or form state.
-
-Keep business rules in the service. The client store should collect form state, call fetch, and update UI state; it should not duplicate password, permission, stock, or payment rules.
-
-Generated Helpers Summary
-
-Akan exposes app-specific helpers from @apps/<app>/client. After you understand the screen shape, st, and fetch, these helpers become the daily entry points for UI work.
-
-How They Work Together
-
-A page usually uses usePage for route and language context, Model.* for the domain UI pieces, st for browser-side state, and fetch when a user action needs a server-side business answer.
-
-Reads and updates client state through generated hooks and actions.
-
-Calls generated endpoints or prepares initial data for pages and zones.
-
-Gives each domain a predictable place for Unit, View, Edit, Zone, and Util components.
-
-Provides language, params, and page context for business screens.
-
-You do not need to introduce all helpers at once. Start from the page and component, then add st only when state is shared, and add fetch only when the action needs a business response from the server.
-
-i18n
-
-Akan pages usually read the language helper from usePage, then render dictionary keys with l("model.dictKey"). This keeps UI text close to each domain dictionary instead of scattering raw strings through components.
-
-Declare text once
-
-Dictionary files hold the English and Korean text for a domain.
-
-Use keys in UI
-
-Components render l("user.signWithGoogle") instead of hard-coded text.
-
-Share across clients
-
-Customer, admin, partner, and mobile screens can reuse the same business vocabulary.
-
-Client Targets
-
-The same company may have a customer web site, an admin console, a partner portal, and a mobile field app. Akan UI architecture treats these as different client surfaces that can share backend logic while presenting different screens.
-
-Web SSR
-
-Use for public pages, landing pages, docs, product catalogs, and content that should appear quickly or be indexed well.
-
-Web CSR
-
-Use for app-like screens where most value comes after login: admin consoles, editors, realtime dashboards, and internal tools.
-
-Multi-client web
-
-Use when customer, admin, and partner screens need different routes, layouts, and permissions while sharing the same business services.
-
-Mobile target
-
-Use for field apps, mobile webviews, or device-oriented screens that still talk to the same generated fetch and business services.
-
-Client target is a product decision before it is an infrastructure decision. First decide who uses the screen and what they need to do; Runtime And Infra explains where that client is deployed and routed.
-
-Final Practical Checklist
-
-Start with server-rendered pages when users should see meaningful content quickly.
-
-Use client components only where interaction, state, realtime behavior, or browser/device APIs are needed.
-
-Keep domain UI close to model modules, and use ui/ for app-wide reusable visual components.
-
-Let generated fetch and st handle server communication and client state before writing custom API glue.
+Run it before and after any change that touches .tsx, and treat --format json as the hook for CI. With the boundary settled, the next page is about what fills the space on either side of it: the akanjs/ui shells that render a list, a detail view and a form without you writing a loading state, and the generated helpers underneath them.
 
 ## Code Examples
 
-No code snippets were extracted from this page.
+### apps/koyo/page/(public)/icecreamOrder/_index.tsx
+
+```ts
+import { fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
+
+export default page().render(() => {
+  const { l } = usePage();
+  const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
+  return (
+    <div className="p-4">
+      <h1 className="font-bold text-2xl">{l("icecreamOrder.modelName")}</h1>
+      <IcecreamOrder.Zone.Card init={icecreamOrderInitInPublic} />
+    </div>
+  );
+});
+```
+
+### apps/koyo/lib/icecreamOrder/IcecreamOrder.Zone.tsx
+
+```ts
+"use client";
+import { IcecreamOrder, type cnst } from "@apps/koyo/client";
+import type { ClientInit } from "akanjs/fetch";
+import { Load } from "akanjs/ui";
+
+interface CardProps {
+  className?: string;
+  init: ClientInit<"icecreamOrder", cnst.LightIcecreamOrder>;
+}
+export const Card = ({ className, init }: CardProps) => {
+  return (
+    <Load.Units
+      className={className}
+      init={init}
+      renderItem={(icecreamOrder) => (
+        <IcecreamOrder.Unit.Card key={icecreamOrder.id} icecreamOrder={icecreamOrder} />
+      )}
+    />
+  );
+};
+```
+
+### apps/koyo/lib/icecreamOrder/IcecreamOrder.Unit.tsx
+
+```ts
+import type { cnst } from "@apps/koyo/client";
+import type { ModelProps } from "akanjs/client";
+import { Link } from "akanjs/ui";
+
+export const Card = ({ icecreamOrder, href }: ModelProps<"icecreamOrder", cnst.LightIcecreamOrder>) => {
+  return (
+    <Link href={href} className="flex w-full rounded-lg shadow-sm hover:shadow-lg">
+      <div>{icecreamOrder.size}</div>
+      <div>{icecreamOrder.status}</div>
+    </Link>
+  );
+};
+```
+
+### apps/koyo/ui/CopyOrderId.tsx
+
+```ts
+"use client";
+import type { ReactNode } from "react";
+
+interface CopyOrderIdProps {
+  className?: string;
+  orderId: string;
+  children: ReactNode;
+}
+export const CopyOrderId = ({ className, orderId, children }: CopyOrderIdProps) => {
+  return (
+    <button type="button" className={className} onClick={() => void navigator.clipboard.writeText(orderId)}>
+      {children}
+    </button>
+  );
+};
+```
+
+### Terminal
+
+```bash
+$ akan quality ssr
+
+Akan SSR Balance Scan
+scanned files: 827
+ssr warnings: 14
+
+Server render share (component files, JSX elements rendered per side):
+
+  apps/koyo: 43% server (163 of 381 JSX elements, 218 client)  <- below the 50% target
+  libs/shared: 62% server (460 of 742 JSX elements, 282 client)
+
+Warnings:
+
+apps/koyo/ui/OrderPanel.tsx:189:1 - warning akan.ssr.client-static-markup: Client component
+"OrderPanel" renders 16 JSX elements around only 1 client-only touch (onClick). Most of this
+subtree does not need the client bundle.
+  fix: Keep the interactive element in the client component and hoist the static subtree into a
+  server component, then accept it as `children` or render it through a Unit/View reference.
+```
 
 ## Agent Notes
 

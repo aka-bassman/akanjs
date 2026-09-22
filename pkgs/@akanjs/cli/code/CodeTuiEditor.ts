@@ -71,7 +71,17 @@ export class CodeTuiEditor {
     this.set(this.#text.slice(0, this.#caret) + clean + this.#text.slice(this.#caret), this.#caret + clean.length);
   }
 
+  /**
+   * A line break, without the backslash that arrives ahead of it.
+   *
+   * Shift+enter is not a key a plain terminal can report, so the usual way to bind it is to send the two
+   * characters a shell reads as a line continuation — `\` then the return. The continuation is meant for the
+   * shell; what the person meant here was one prompt written on two lines, and the backslash is an artifact of
+   * how the key had to be delivered rather than anything they typed.
+   */
   newline() {
+    if (this.#text.slice(0, this.#caret).endsWith("\\"))
+      this.set(this.#text.slice(0, this.#caret - 1) + this.#text.slice(this.#caret), this.#caret - 1);
     this.insert("\n");
   }
 

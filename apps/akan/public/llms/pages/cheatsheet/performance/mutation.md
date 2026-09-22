@@ -63,15 +63,25 @@ SQL fragment
 
 These SQL snippets are simplified to show the idea, and reflect the SQLite/libsql dialect. Postgres uses the equivalent jsonb functions. Every operator reads the pre-update document, so all changes in one call see the same original values.
 
-Query updates do not run document hooks.
+A query write fires no hooks, and therefore no cascade.
 
-`updateOne`, `updateMany`, `removeOne`, `removeMany`, and `bulkWrite` write directly in the database and do not fire save/update/remove hooks.
+`updateOne`, `updateMany`, `removeOne`, `removeMany`, and `bulkWrite` push one atomic statement to the database, so no save/update/remove hook runs — and neither does `_postRemove` nor any `cascade` edge declared on the model. A removed row's files, children, and counters stay behind, and removal is soft, so nothing reports the loss.
 
-When a per-document rule must always run, use a document path: `Model.update(id, patch)`, `Model.remove(id)`, or `doc.set(...).save()`.
+`updateById(id, patch)` and `removeById(id)` are the same query write narrowed to one id — not the document path. They look identical to the document call and fire nothing.
+
+`removeOne` and `updateOne` hit the newest match, always, and report only counts. They are for “there is at most one of these”, never for claiming the next item off a queue.
+
+When a per-document rule must run, take a document path instead:
+
+The service's generated `update<Model>(id, patch)` and `remove<Model>(id)` load the document, apply the change, and save it, so every hook and cascade runs.
+
+`pickAndWrite(id, data)` and `pickOneAndWrite(query, data)` are the write-through pair on the model facade: pick the document, write into it, save it. Reach for those when the write has to be seen by the save hooks.
+
+`doc.set(...).save()` is the same thing spelled out when you already hold the document.
 
 Tips
 
-Prefer query updates for counters and bulk state changes; prefer document methods when hooks or rich domain logic must run.
+Prefer query updates for counters and bulk state changes on a model that carries no removal side effect; take a document path whenever hooks, a cascade, or rich domain logic must run.
 
 Use the builder form instead of importing update helpers at module scope.
 

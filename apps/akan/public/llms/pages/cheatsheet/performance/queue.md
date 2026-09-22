@@ -66,7 +66,7 @@ Return quickly from endpoint. Do the slow work in process.
 
 ```ts
 export class ReportEndpoint extends endpoint(srv.report, ({ mutation }) => ({
-  queueGenerateReport: mutation(cnst.Report)
+  queueGenerateReport: mutation(cnst.Report, { guards: [Owner] })
     .param("reportId", ID)
     .exec(async function (reportId) {
       return await this.reportService.queueGenerateReport(reportId);

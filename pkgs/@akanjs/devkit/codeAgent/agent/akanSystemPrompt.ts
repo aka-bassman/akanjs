@@ -28,6 +28,10 @@ export const akanSystemPrompt = (profile: CodeAgentProfile) => {
     lines.push(
       '- Hand a self-contained search or read to `task` — `type: "explore"` reads and reports, `type: "code"` makes the change. Only its answer comes back, so give it everything it needs and ask for exactly what you want returned. Do it yourself when the reading is short or when you need the files in front of you.',
     );
+  if (profile.ui.canPrompt)
+    lines.push(
+      "- Ask with `ask_user` when two readings of the request would lead to materially different work, and offer the options you can name. Do not ask for a choice that has an obvious default, and do not ask permission for work you were already asked to do — make the call, say the assumption, and carry on.",
+    );
   if (profile.approval !== "never")
     lines.push(
       `- Some tool calls need the user's approval (policy: ${profile.approval}). A refusal is an answer; do not retry it a different way.`,

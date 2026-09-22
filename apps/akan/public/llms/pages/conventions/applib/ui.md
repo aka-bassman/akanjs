@@ -97,10 +97,9 @@ export { StepBox } from "./StepBox";
 
 ```ts
 import { AutoClose } from "@apps/myapp/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
-  return <AutoClose timeout={1000} />;
-}
+export default page().render(() => <AutoClose timeout={1000} />);
 ```
 
 ### Only/Web.tsx
@@ -151,10 +150,9 @@ export { Only } from "./Only";
 
 ```ts
 import { Only } from "@libs/shared/ui";
+import { page } from "akanjs/client";
 
-export default function Page() {
-  return <Only.Web>Desktop content</Only.Web>;
-}
+export default page().render(() => <Only.Web>Desktop content</Only.Web>);
 ```
 
 ## Agent Notes

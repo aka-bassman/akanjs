@@ -21,6 +21,7 @@ export {
   type CodeAgentApprovalPolicy,
   type CodeAgentBuiltinTool,
   type CodeAgentInteractionMode,
+  type CodeAgentMcpAuthState,
   type CodeAgentMcpServerRef,
   type CodeAgentMcpStatus,
   type CodeAgentPresetName,

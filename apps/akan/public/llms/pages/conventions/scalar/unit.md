@@ -49,10 +49,10 @@ lib/
 └── __scalar/
     └── price/
         ├── price.constant.ts
-        └── price.Unit.tsx
+        └── Price.Unit.tsx
 ```
 
-### price.Unit.tsx
+### Price.Unit.tsx
 
 ```ts
 import { cnst } from "@apps/myapp/client";
@@ -69,33 +69,49 @@ export const Label = ({ price, className }: LabelProps) => (
 );
 ```
 
-### product.Unit.tsx
+### Product.Unit.tsx
 
 ```ts
-import { Layout } from "akanjs/ui";
 import { cnst, Price } from "@apps/myapp/client";
+import { Layout } from "akanjs/ui";
 
-export const Card = ({ product }: { product: cnst.Product }) => (
+interface CardProps {
+  product: cnst.Product;
+}
+export const Card = ({ product }: CardProps) => (
   <Layout.Unit className="rounded-xl border border-border p-4">
     <div className="font-bold">{product.name}</div>
-    <Price.Label price={product.price} className="text-foreground/70" />
+    <Price.Unit.Label price={product.price} className="text-foreground/70" />
   </Layout.Unit>
 );
 ```
 
-### price.Unit.tsx
+### Price.Unit.tsx
 
 ```ts
-export const Compact = ({ price }: { price: Price }) => (
-  <span>{price.amount.toLocaleString()}</span>
-);
+import { cnst, usePage } from "@apps/myapp/client";
 
-export const Detail = ({ price }: { price: Price }) => (
-  <div>
-    <div>Amount: {price.amount.toLocaleString()}</div>
-    <div>Currency: {price.currency}</div>
-  </div>
-);
+interface CompactProps {
+  price: cnst.Price;
+}
+export const Compact = ({ price }: CompactProps) => <span>{price.amount.toLocaleString()}</span>;
+
+interface DetailProps {
+  price: cnst.Price;
+}
+export const Detail = ({ price }: DetailProps) => {
+  const { l } = usePage();
+  return (
+    <div>
+      <div>
+        {l("price.amount")}: {price.amount.toLocaleString()}
+      </div>
+      <div>
+        {l("price.currency")}: {price.currency}
+      </div>
+    </div>
+  );
+};
 ```
 
 ## Agent Notes

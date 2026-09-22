@@ -273,8 +273,10 @@ are, because those are the ones the server could have done.
    SEO snapshots, prerendering and pre-hydration E2E read, so await what the page needs immediately and stream
    the rest. `xListInY` / `xInsightInY` hold hydrated model instances that React Flight refuses as client props:
    consume them in a server component, never as a `Zone` prop.
-6. **Use named `ReactNode` slots, not just `children`** — `Layout.Navbar` takes `title`, `back`, `left`, `right`,
-   and `children`, so a client shell composes server content in five places instead of absorbing it.
+6. **Use named `ReactNode` slots, not just `children`** — a client shell that takes one slot per region lets a
+   server component supply each of them, instead of absorbing the whole subtree into the bundle. `Layout.Navbar`
+   declares `title` / `left` / `right` alongside `back` and `children`, but renders only the last two today, so
+   copy the shape rather than the component.
 7. **Let the server do the derived work.** Display and predicate logic belongs on `Light<Model>`; enum→class
    lookups belong in a module-scope `as const` map.
 8. **Gate auth on the server** — `getSelf({ unauthorize: "/signin" })` in `_layout.tsx`, before any HTML is sent.
@@ -548,8 +550,11 @@ Full contract — filter-arg `ref` pickers, `getQueryMeta` summary counters, `la
   first "more". `isCumulativeOf<Model>` is the mode.
 - **"Is there more" is `hasMoreOf<Model>`, never `count > page * limit`.** It comes from the length of the batch
   the server returned, so it survives `{ insight: false }` and cannot drift from a count a live event moved.
-- **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`);
-  client fetch results are raw `GetStateObject` plain data, functions stripped.
+- **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`),
+  and so do client fetch results — `FetchClient` parses every return with `crystalize` defaulting to **true**
+  (`pkgs/akanjs/fetch/client/fetchClient.ts`). The raw `GetStateObject` shape is what the `<ref>Obj` /
+  `<ref>ObjList` / `<ref>ObjInsight` handles carry, because those pass `crystalize: false` on purpose so the
+  value can cross the RSC boundary as a client prop.
 - Every filter generates fourteen methods: `list` · `listIds` · `find` · `findId` · `pick` · `pickId` · `exists` ·
   `count` · `insight` · `query` · **`remove`** · **`removeOne`** · **`update`** · **`updateOne`**. The last four
   are query-level writes — one atomic UPDATE, **no hooks**, and therefore no `_postRemove` and no cascade. Use
@@ -663,9 +668,11 @@ it.
   names itself as the issuer, so `/mcp` demands a bearer token, verifies its signature, and refuses one carrying no
   `aud`. A token is the app's own access JWT plus `aud`/`iss`/`client_id`, so `AccountMiddleware` and the guards
   judge it unchanged; there is no scope. Per-app knobs live in `env.server.*` under `oauth` (`consentPath` and
-  `signinPath` with the basePath, `clients`, `dynamicRegistration`, `allowedRedirectSchemes`, `clientIdMetadata`,
-  `enabled`). `/mcp` reads the `Authorization` header only — a cookie is dropped at the door — and `JWT_SECRET` is
-  mandatory outside `local`, because the derived fallback is forgeable from three public names. A grant is revoked
+  `signinPath` with the basePath, `clients`, `dynamicRegistration`, `allowedRedirectSchemes`, `accessTokenSeconds`,
+  `clientIdMetadata`, `enabled`, plus `issuer` / `resource` — set those when a tunnel or an edge makes the derived
+  origin wrong, because an MCP client compares the issuer byte for byte). `/mcp` reads the `Authorization` header only — a cookie is dropped at the door — and `JWT_SECRET` (or
+  `security.jwtSecret`) is mandatory whenever `operationMode` is not `local`, because the derived fallback is
+  forgeable from three public names; `AKAN_ALLOW_DERIVED_JWT_SECRET=1` accepts that risk explicitly. A grant is revoked
   whole — `POST /oauth/revoke` (RFC 7009) by the client, `fetch.revokeOAuthConnection(sessionId)` by the account's
   owner, `fetch.listOAuthConnections()` to see them — and a revoked access token is refused at its next call.
 - **A person may, a model may not.** An agent's token names its `client_id` and `aud`; a browser session has

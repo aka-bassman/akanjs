@@ -109,6 +109,32 @@ export default page().render(() => {
               ko: "레이아웃에 채팅을 한 번 마운트하세요. 프레임워크가 모든 앱에 runAgentTurn을 기본 제공합니다. option.setLlm으로 키를 주고, AKAN_AGENT=false로 표면 전체를 내립니다.",
             })}
           </div>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  This page is the surface a component declares. The panel itself — its controlled <code>open</code>{" "}
+                  pair, the twelve <code>_overrides.tsx</code> slots it is assembled from, card tools, the{" "}
+                  <code>@</code> menu, the queue and the transcript store — is on{" "}
+                  <Link href="/cheatsheet/interface/agent-chat" className="text-primary">
+                    Agent Chat
+                  </Link>
+                  .
+                </span>
+              ),
+              ko: (
+                <span>
+                  이 페이지는 컴포넌트가 선언하는 표면을 다룹니다. 패널 자체 — controlled <code>open</code> 쌍, 이것을
+                  조립하는 <code>_overrides.tsx</code> 슬롯 열두 개, card 툴, <code>@</code> 메뉴, 대기열, 대화 보관 —
+                  는{" "}
+                  <Link href="/cheatsheet/interface/agent-chat" className="text-primary">
+                    Agent Chat
+                  </Link>
+                  에 있습니다.
+                </span>
+              ),
+            })}
+          </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
@@ -194,8 +220,8 @@ export const option = new AkanOption<ModulesOptions>()
           </div>
           <div>
             {l.trans({
-              en: "Six tools are on every screen whatever it declares:",
-              ko: "화면이 무엇을 선언하든 항상 실리는 툴이 여섯 있습니다.",
+              en: "Six tools are on every screen whatever it declares. Five come from the store surface, so builtins narrows them; askUser is the session's own and stays whatever you pass:",
+              ko: "화면이 무엇을 선언하든 항상 실리는 툴이 여섯 있습니다. 그중 다섯은 store surface가 싣는 것이라 builtins로 줄일 수 있고, askUser는 session 자신의 것이라 builtins에 무엇을 넘기든 남습니다.",
             })}
           </div>
           <div className="space-y-1">
@@ -276,6 +302,12 @@ export const option = new AkanOption<ModulesOptions>()
               ko: "읽기는 스토어 단위가 아니라 키 단위입니다. 같은 스토어의 형제 키가 live여도 화면이 읽지 않는 키는 읽히지 않고, 모든 읽기는 그 키가 선언한 모델로 마스킹됩니다. hidden·secret 필드는 경계를 넘지 않습니다. 읽기는 옵트인이 아니라 옵트아웃입니다. 구독한 키는 따로 막지 않는 한 표면에 올라가며, base 스토어의 plumbing은 그것을 막습니다 — 라우팅, 호출자의 자격증명, UI operation은 모두 `{ agent: false }`로 구독합니다. 에이전트가 읽어야 하는 base 키는 ThemeToggle의 theme처럼 그냥 평범하게 읽으면 됩니다.",
             })}
           </div>
+          <div>
+            {l.trans({
+              en: "Return what answers the question, not the record. One tool result is capped at 20,000 characters — past that the JSON is clipped mid-structure and a note tells the model what happened — and once it is in the transcript it rides every later turn, which compaction cannot save because it summarizes what is above the cut and a result arrives below it. A field that is bulky and useless to a model is fixed once at the model rather than in every tool that touches it: field.visual keeps it stored, searchable, formable and rendered on the page, and strips it from every agent read and every MCP result. It is cost, not secrecy — nothing is refused over one.",
+              ko: "레코드가 아니라 질문의 답을 돌려주세요. 툴 결과 하나는 20,000자에서 잘리고 — 그 너머는 JSON이 구조 중간에서 끊기며, 무슨 일이 있었는지 알려주는 note가 붙습니다 — 한 번 대화에 들어가면 이후 모든 턴에 함께 실립니다. 압축도 이것은 구하지 못합니다. 압축은 자른 지점 위를 요약하는데 결과는 그 아래에 도착하기 때문입니다. 덩치가 크고 모델에게는 쓸모없는 필드는 그것을 만지는 모든 툴이 아니라 모델에서 한 번에 처리합니다. field.visual은 저장·검색·폼·페이지 렌더를 그대로 두고, 모든 에이전트 읽기와 모든 MCP 결과에서만 값을 벗겨냅니다. 비밀이 아니라 비용의 문제이고, 그것 때문에 거절되는 것은 없습니다.",
+            })}
+          </div>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
@@ -302,15 +334,36 @@ st.expose("selectedWaypointId", ID)
             {
               title: "st.tool(name).desc(…).arg(…).opt(…).exec(fn)",
               desc: l.trans({
-                en: "The only way an action reaches an agent. desc is required and comes first; arg is what the caller must pass and opt what it may. Both take a scalar, an enum, or one array level of either — [String], [TaskStatus] — so a list never has to be taught as a string format. Returns the callable to wire to onClick; a remove* name confirms by default.",
-                ko: "액션이 에이전트에게 닿는 유일한 경로입니다. desc는 필수이고 맨 앞에 옵니다. arg는 호출자가 반드시 넘겨야 하는 인자, opt는 생략할 수 있는 인자입니다. 둘 다 스칼라·enum, 그리고 그 배열 한 겹까지 받습니다 — [String], [TaskStatus] — 그래서 목록을 문자열 포맷으로 가르칠 일이 없습니다. onClick에 연결할 callable을 돌려주고, remove* 이름은 기본으로 승인을 받습니다.",
+                en: 'The only way an action reaches an agent. desc is required and comes first; arg is what the caller must pass and opt what it may — an opt the caller omits arrives null. Both take a scalar, an enum, or one array level of either — [String], [TaskStatus] — so a list never has to be taught as a string format, and a third argument narrows the value set at render time: .arg("branch", String, { oneOf: branchCodes }) is the runtime half of enumOf, for values only known once the component has its data. Returns the callable to wire to onClick.',
+                ko: '액션이 에이전트에게 닿는 유일한 경로입니다. desc는 필수이고 맨 앞에 옵니다. arg는 호출자가 반드시 넘겨야 하는 인자, opt는 생략할 수 있는 인자이며 생략된 opt는 null로 들어옵니다. 둘 다 스칼라·enum, 그리고 그 배열 한 겹까지 받습니다 — [String], [TaskStatus] — 그래서 목록을 문자열 포맷으로 가르칠 일이 없습니다. 세 번째 인자는 렌더 시점에 값 집합을 좁힙니다. .arg("branch", String, { oneOf: branchCodes })는 enumOf의 런타임 쪽 짝으로, 컴포넌트가 데이터를 받은 뒤에야 알 수 있는 값에 씁니다. onClick에 연결할 callable을 돌려줍니다.',
               }),
             },
             {
-              title: "st.expose(name, Type) · st.useState(name, Type)",
+              title: "st.tool(name, { confirm, settle })",
               desc: l.trans({
-                en: "Derived values and local state. The declared type typechecks what you hand over and masks how it reads — a model class strips its own hidden, secret, and visual fields; Any passes untouched. Read-only unless set: true.",
-                ko: "파생 값과 로컬 상태입니다. 선언한 타입이 넘기는 값을 typecheck하고 읽히는 형태를 결정합니다 — 모델 클래스는 그 모델의 hidden·secret·visual을 벗겨내고, Any는 그대로 통과시킵니다. set: true 전에는 읽기 전용입니다.",
+                en: "confirm parks the call on the approval card before it runs — true always, or a function of the arguments for the calls that deserve it. A remove* name confirms by default, destructiveness read off the key the way MCP hints are, so declaring { confirm: false } is how one opts out. settle: false says the call is a read that returns what is already there, so the turn does not wait for the DOM to hold still before reporting; the default waits, because a write may still be landing when exec resolves.",
+                ko: "confirm은 호출을 실행 전에 승인 카드에 세웁니다. true로 항상, 또는 인자를 받는 함수로 그럴 만한 호출에만. remove* 이름은 기본으로 승인을 받습니다 — MCP 힌트가 그러듯 파괴성을 이름에서 읽습니다 — 그래서 빠지려면 { confirm: false }를 적습니다. settle: false는 이 호출이 이미 있는 것을 돌려주는 읽기라는 선언이라, 턴은 DOM이 멎기를 기다리지 않고 보고합니다. 기본값이 기다리는 쪽인 이유는 exec이 resolve된 뒤에도 쓰기가 아직 착지 중일 수 있기 때문입니다.",
+              }),
+            },
+            {
+              title: 'st.tool(canRefund && "refundOrder")',
+              desc: l.trans({
+                en: "A falsy name declares the tool without publishing it: the callable still drives the click a person makes, and nothing reaches the agent. Every chain ends in a hook, so a conditional surface withholds the name rather than skipping the declaration — and the name follows the render, so a control that appears later publishes and one that goes away stops. An argument nothing can describe withdraws the whole tool the same way, reported on the console rather than thrown, because a page must not lose its render over an agent-tooling mistake.",
+                ko: "falsy한 이름은 툴을 선언하되 발행하지는 않습니다. callable은 사람이 누르는 클릭을 그대로 처리하고, 에이전트에게는 아무것도 가지 않습니다. 모든 체인은 훅으로 끝나므로, 조건부 표면은 선언을 건너뛰는 대신 이름을 비웁니다. 이름은 렌더를 따라가므로 나중에 나타난 컨트롤은 발행되고 사라진 컨트롤은 발행을 멈춥니다. 설명할 수 없는 타입의 인자도 같은 방식으로 툴 전체를 거둬들이며, 던지지 않고 콘솔에 보고합니다. 에이전트 도구화의 실수 때문에 페이지가 렌더를 잃어서는 안 되기 때문입니다.",
+              }),
+            },
+            {
+              title: "st.expose(name, Type).desc(…).value(v) · st.useState(name, Type).desc(…).init(v)",
+              desc: l.trans({
+                en: "Derived values and local state. Each ends in its own one hook: .value() takes the value the component already holds — a thunk when it is assembled out of a ref the children fill in — and .init() is useState, returning the same pair. The declared type typechecks what you hand over and masks how it reads: a model class strips its own hidden, secret and visual fields; Any passes untouched. Read-only unless set: true, which publishes a set<Name> tool writing that same type. { report: false } keeps a key out of post-call diff reports, for a value that changes on its own every second.",
+                ko: "파생 값과 로컬 상태입니다. 각각 자기 훅 하나로 끝납니다. .value()는 컴포넌트가 이미 쥐고 있는 값을 받고 — 자식이 채우는 ref에서 조립되는 값이라면 thunk를 받습니다 — .init()은 useState 그 자체라 같은 쌍을 돌려줍니다. 선언한 타입이 넘기는 값을 typecheck하고 읽히는 형태를 결정합니다. 모델 클래스는 그 모델의 hidden·secret·visual을 벗겨내고, Any는 그대로 통과시킵니다. set: true 전에는 읽기 전용이며, set: true는 같은 타입을 쓰는 set<Name> 툴을 발행합니다. { report: false }는 그 키를 호출 후 변경 보고에서 빼냅니다. 초마다 저절로 바뀌는 값을 위한 것입니다.",
+              }),
+            },
+            {
+              title: "agentAttrs(handler, key)",
+              desc: l.trans({
+                en: "The data-akan-* attributes for a handler passed by reference, and {} for an inline arrow — a closure the caller wrote says nothing about what it does, and a guessed annotation is worse than none. Every akanjs/ui control already spreads it, so an app writes it only on a control of its own. key names which of several namesake controls this one is, in the same vocabulary the call's argument uses: a tab's menus share one tool, and without the key the page can say what the agent did but never where, so the pointer draws nothing rather than ringing the wrong row.",
+                ko: "레퍼런스로 넘긴 핸들러의 data-akan-* 속성이고, 인라인 화살표에는 {}입니다. 호출자가 그 자리에서 쓴 클로저는 자기가 무엇을 하는지 말해주지 않고, 추측한 표식은 표식이 없는 것보다 나쁩니다. akanjs/ui의 모든 컨트롤이 이미 펼쳐 넣으므로, 앱은 자기가 만든 컨트롤에만 적습니다. key는 같은 이름의 컨트롤 여럿 중 어느 것인지를, 호출 인자와 같은 어휘로 말합니다. 탭의 메뉴들은 툴 하나를 공유하므로, key가 없으면 페이지는 에이전트가 무엇을 했는지는 말해도 어디서 했는지는 말하지 못합니다. 그래서 포인터는 엉뚱한 행에 링을 거는 대신 아무것도 그리지 않습니다.",
               }),
             },
             {

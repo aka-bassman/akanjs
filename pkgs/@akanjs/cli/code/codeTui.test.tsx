@@ -338,6 +338,70 @@ describe("CodeTui", () => {
     expect(harness.stdout.lastFrame).toContain("not on disk yet");
   });
 
+  const question = {
+    questionId: "q1",
+    prompt: "Which database?",
+    kind: "select" as const,
+    options: [
+      { key: "0", label: "Postgres" },
+      { key: "1", label: "SQLite", recommended: true },
+    ],
+    freeText: true,
+  };
+
+  /** "You decide" is the most common answer there is, so it should cost one keypress and not a hunt. */
+  test("a recommended option is labelled and waiting under the cursor", async () => {
+    const harness = mount();
+    await settle();
+    await harness.emit({ type: "question", question });
+    expect(harness.stdout.lastFrame).toContain("SQLite (recommended)");
+    await harness.press("\r");
+    expect(harness.agent.calls).toEqual(['answer:q1:{"keys":["1"]}']);
+  });
+
+  test("a question offering free text grows a choice that opens the prompt", async () => {
+    const harness = mount();
+    await settle();
+    await harness.emit({ type: "question", question });
+    expect(harness.stdout.lastFrame).toContain("Something else…");
+    // Past SQLite, onto the synthetic entry, which answers nothing and starts typing instead.
+    await harness.press("\u001b[B");
+    await harness.press("\r");
+    expect(harness.agent.calls).toEqual([]);
+    expect(harness.stdout.lastFrame).toContain("esc back to the choices");
+    await harness.press("mysql, actually");
+    await harness.press("\r");
+    expect(harness.agent.calls).toEqual(['answer:q1:{"text":"mysql, actually"}']);
+  });
+
+  test("escape out of typing goes back to the choices rather than skipping the question", async () => {
+    const harness = mount();
+    await settle();
+    await harness.emit({ type: "question", question });
+    await harness.press("\u001b[B");
+    await harness.press("\r");
+    await harness.press("\u001b");
+    expect(harness.agent.calls).toEqual([]);
+    expect(harness.stdout.lastFrame).toContain("SQLite (recommended)");
+    // The cursor is where it was left — on the choice that opened the prompt — so getting back to an option
+    // is the same arrow it took to leave.
+    await harness.press("\u001b[A");
+    await harness.press("\r");
+    expect(harness.agent.calls).toEqual(['answer:q1:{"keys":["1"]}']);
+  });
+
+  test("a question with no options is answered in prose", async () => {
+    const harness = mount();
+    await settle();
+    await harness.emit({
+      type: "question",
+      question: { questionId: "q2", prompt: "Why is it slow?", kind: "text", freeText: true },
+    });
+    await harness.press("the index is missing");
+    await harness.press("\r");
+    expect(harness.agent.calls).toEqual(['answer:q2:{"text":"the index is missing"}']);
+  });
+
   test("escape interrupts a running turn instead of clearing the line", async () => {
     const harness = mount();
     await settle();

@@ -16,9 +16,9 @@ Module
 
 Module CLI
 
-Module commands create and maintain domain modules inside an app or library. Use them when adding a new model-backed feature or adding common UI companion files to an existing module.
+Module commands create and maintain modules inside an app or library. `create-module` is for a feature centered on a stored model, `create-service` for behavior that is not, and the three component commands add a UI companion file to a module that already exists.
 
-Module names are normalized with lower-case first-letter style after spaces are removed, matching Akan module file conventions.
+Module names are normalized with lower-case first-letter style after spaces are removed, matching Akan module file conventions. Every command here prints the files it wrote, as markdown by default and as JSON with `-o json`.
 
 ## Code Examples
 

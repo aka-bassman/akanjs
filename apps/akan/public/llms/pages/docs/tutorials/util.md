@@ -79,9 +79,11 @@ This pattern ensures that business rules are enforced at the document level whil
 
 Create Signal Endpoints
 
-Think of signal endpoints as the communication system between the frontend (like the shop's order display screen) and the backend (the kitchen and management system). When staff clicks a "Process" button on the screen, it needs to communicate with the backend to actually update the order. Akan.js automatically creates both REST and GraphQL versions of these endpoints, so different parts of your system can communicate however they prefer.
+Think of signal endpoints as the communication system between the frontend (like the shop's order display screen) and the backend (the kitchen and management system). When staff clicks a "Process" button on the screen, it needs to communicate with the backend to actually update the order. Akan.js serves every endpoint over HTTP and over the websocket, and publishes it to AI agents over MCP when its guards allow, so every caller reaches the same kitchen through the same hatch.
 
 Each signal endpoint is defined using the mutation() builder, specifying the return type and accepting the order ID as a parameter via .param(). The .exec() callback delegates to the corresponding service method to perform the actual business logic.
+
+The second argument to slice() is the guard map, not boilerplate: root is the generated admin query API and is always Admin, get covers reads, and cru covers create, update and remove — create is opened on its own here because the kiosk takes anonymous orders. Leaving root: Public hands that admin query API to every anonymous caller, and to every AI agent through /mcp.
 
 We also need to add dictionary entries for these API endpoints so they display properly in the UI:
 
@@ -337,6 +339,7 @@ export class IcecreamOrderService extends serve(db.icecreamOrder, ({ use, servic
 ### apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts
 
 ```ts
+import { Admin } from "@libs/shared/srvkit";
 import { ID } from "akanjs/base"; // [!code ++]
 import { endpoint, internal, Public, slice } from "akanjs/signal"; // [!code collapse:18]
 
@@ -347,7 +350,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder,
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init().exec(function () {
       return this.icecreamOrderService.queryAny();
@@ -488,8 +491,7 @@ export class IcecreamOrderStore extends store(sig.icecreamOrder, () => ({
 ### apps/koyo/lib/icecreamOrder/IcecreamOrder.Util.tsx
 
 ```ts
-"use client"; // [!code collapse:4]
-import { cn } from "akanjs/client";
+"use client"; // [!code collapse:3]
 import { st, usePage } from "@apps/koyo/client";
 import { buttonRecipe } from "akanjs/ui";
 

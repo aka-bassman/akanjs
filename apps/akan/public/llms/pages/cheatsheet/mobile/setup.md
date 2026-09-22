@@ -43,7 +43,7 @@ version is the user-facing version. buildNum is the store build number and must 
 
 The Akan client route opened by the native app. Use separate targets when one app repo ships separate customer/admin/partner apps.
 
-Native capability hints such as "camera", "contacts", "location", and "push". They prepare Akan-side native metadata, but plugin-specific setup can still be required.
+Native capability hints, and the list is closed: "camera", "contacts", "location", "push", "speech". They prepare Akan-side native metadata, but plugin-specific setup can still be required.
 
 Copies app-owned files into generated native project paths. Use it for native config files that must live inside Android or iOS projects.
 

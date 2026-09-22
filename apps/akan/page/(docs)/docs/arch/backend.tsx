@@ -1,7 +1,8 @@
 import { usePage } from "@apps/akan/client";
-import { Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
+import { Link } from "akanjs/ui";
 
 export default page().render(() => {
   const { l } = usePage();
@@ -15,394 +16,246 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Akan business service is the server-side execution layer for business behavior. When a customer places an order, a manager adds stock, a reservation status changes, or a nightly report is generated, the business service decides what runs now, what changes stored data, what should run in the background, and which clients need to be notified.",
-              ko: "Akan 비즈니스 서비스는 비즈니스 동작이 서버 측에서 실행되는 계층입니다. 고객이 주문하고, 관리자가 재고를 추가하고, 예약 상태가 바뀌고, 야간 리포트가 생성될 때 비즈니스 서비스는 지금 실행할 작업, 저장 데이터를 바꿀 작업, 백그라운드로 넘길 작업, 다른 클라이언트에 알려야 할 변경을 결정합니다.",
+              en: "A customer taps Order on the kiosk, and that one button has to do four things: refuse the order when the mango has run out, write the order down, hand back a receipt now, and put the ticket on the kitchen screen before the customer turns away. None of that is drawing a screen.",
+              ko: "고객이 키오스크에서 주문 버튼을 누르면, 그 버튼 하나가 네 가지 일을 해야 합니다. 망고가 떨어졌으면 주문을 거절하고, 주문을 기록하고, 지금 영수증을 돌려주고, 고객이 돌아서기 전에 주방 화면에 티켓을 띄우는 일입니다. 어느 것도 화면을 그리는 일이 아닙니다.",
             })}
           </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: l.trans({ en: "Request actions", ko: "요청 액션" }),
-                desc: l.trans({
-                  en: "The user clicks a button and expects a clear result, such as submit order, add stock, or approve request.",
-                  ko: "사용자가 버튼을 누르고 주문 제출, 재고 추가, 요청 승인처럼 명확한 결과를 기대하는 작업입니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Business services", ko: "비즈니스 서비스" }),
-                desc: l.trans({
-                  en: "Rules and orchestration live here: stock rules, payment status, reservation conflicts, and external APIs.",
-                  ko: "재고 규칙, 결제 상태, 예약 충돌, 외부 API 연동 같은 규칙과 조율이 여기에 놓입니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Background work", ko: "백그라운드 작업" }),
-                desc: l.trans({
-                  en: "Slow, repeated, scheduled, or non-blocking tasks can run after the screen receives a quick response.",
-                  ko: "느리거나 반복되거나 예약되었거나 화면을 막을 필요가 없는 작업은 빠른 응답 후 실행할 수 있습니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Realtime updates", ko: "실시간 업데이트" }),
-                desc: l.trans({
-                  en: "When dashboards, devices, or other users should see a change, the business service publishes the updated result.",
-                  ko: "대시보드, 장비, 다른 사용자가 변경을 봐야 할 때 비즈니스 서비스는 변경된 결과를 전달합니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-bold text-foreground">{title}: </span>
+          <div>
+            {l.trans({
+              en: "That work — the request action, the business rule, the background job it starts, and the change other screens must be told about — is the business service. Three files split it, and the split never changes. Traffic arrives at the API port, signal decides whether this caller may ask at all, service decides what should happen, and document owns how the record is stored and which state changes it will accept.",
+              ko: "요청 액션, 비즈니스 규칙, 그 액션이 시작하는 백그라운드 작업, 다른 화면에 알려야 하는 변경 — 이 네 가지가 비즈니스 서비스입니다. 이 일을 파일 세 개가 나눠 갖고, 나누는 기준은 바뀌지 않습니다. 트래픽이 API 포트에 도착하고, signal이 이 호출자가 물어봐도 되는지 판단하고, service가 무엇이 일어나야 하는지 결정하며, document는 기록이 어떻게 저장되는지와 어떤 상태 전이를 허용할지를 소유합니다.",
+            })}
+          </div>
+          <Docs.Mermaid
+            title={l.trans({ en: "One module, right to left", ko: "모듈 하나, 오른쪽에서 왼쪽으로" })}
+            highlightNodes={["service"]}
+            chart={`flowchart LR
+  caller["Browser · mobile app · agent"] --> api["API port<br/>8282/api"]
+  api --> signal["icecreamOrder.signal.ts<br/>endpoint · slice · internal"]
+  signal --> service["icecreamOrder.service.ts<br/>rules · other services · external APIs"]
+  service --> document["icecreamOrder.document.ts<br/>schema · filters · chain methods"]
+  document --> stored[("Stored data")]`}
+          />
+          <Docs.Alert type="info">
+            {l.trans({
+              en: "The layers are not a formality. A rule written into the kiosk screen ships once per client and drifts; the same rule on the service is one answer for the kiosk, the admin console, the mobile app and an AI agent, because all four arrive through the same endpoint.",
+              ko: "이 계층 분리는 형식이 아닙니다. 키오스크 화면에 적어 넣은 규칙은 클라이언트마다 한 벌씩 배포되고 서로 어긋나기 시작합니다. 같은 규칙을 service에 두면 키오스크, 관리자 콘솔, 모바일 앱, AI 에이전트에게 하나의 답이 됩니다. 넷 다 같은 endpoint로 들어오기 때문입니다.",
+            })}
+          </Docs.Alert>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
 
-                <span className="text-foreground/70 text-sm">{desc}</span>
+      <Scroll.Slide id="two-actions" title={l.trans({ en: "Two Actions, End To End", ko: "두 액션, 처음부터 끝까지" })}>
+        <Docs.Title>{l.trans({ en: "Two Actions, End To End", ko: "두 액션, 처음부터 끝까지" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Start from the counter. Creating an order is generated CRUD, so no endpoint is written for it; what is written is the rule that an order takes stock out of today's inventory, and the mutation a staff member uses to move that order to the next status.",
+              ko: "카운터에서 시작합니다. 주문 생성은 생성된 CRUD라 endpoint를 따로 쓰지 않습니다. 직접 쓰는 것은 주문이 오늘 재고를 차감한다는 규칙과, 직원이 그 주문을 다음 상태로 옮길 때 쓰는 mutation입니다.",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts"
+            code={`import { Admin, Every } from "@libs/shared/srvkit";
+import { ID } from "akanjs/base";
+import { endpoint, internal, Public, slice } from "akanjs/signal";
+
+import * as cnst from "../cnst";
+import * as srv from "../srv";
+
+export class IcecreamOrderInternal extends internal(srv.icecreamOrder, () => ({})) {}
+
+export class IcecreamOrderSlice extends slice(
+  srv.icecreamOrder,
+  { guards: { root: Admin, get: Public, cru: Every } },
+  (init) => ({
+    byStatuses: init()
+      .search("statuses", [cnst.IcecreamOrderStatus])
+      .exec(function (statuses) {
+        return this.icecreamOrderService.queryByStatuses(statuses);
+      }),
+  }),
+) {}
+
+export class IcecreamOrderEndpoint extends endpoint(srv.icecreamOrder, ({ mutation }) => ({
+  processIcecreamOrder: mutation(cnst.IcecreamOrder, { guards: [Admin] })
+    .param("icecreamOrderId", ID)
+    .exec(async function (icecreamOrderId) {
+      return await this.icecreamOrderService.processIcecreamOrder(icecreamOrderId);
+    }),
+})) {}`}
+          />
+          <div>
+            {l.trans({
+              en: "The endpoint is one line of delegation, because the decision is not its to make. The service is where the order meets a second module — inventory — and where the two documents are loaded before either is saved:",
+              ko: "endpoint는 위임 한 줄입니다. 판단은 endpoint의 몫이 아니기 때문입니다. 주문이 두 번째 모듈인 inventory와 만나는 자리, 그리고 두 document를 모두 불러온 뒤에야 저장하는 자리가 service입니다:",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/koyo/lib/icecreamOrder/icecreamOrder.service.ts"
+            code={`import { serve } from "akanjs/service";
+
+import * as db from "../db";
+import type * as srv from "../srv";
+
+export class IcecreamOrderService extends serve(db.icecreamOrder, ({ service }) => ({
+  inventoryService: service<srv.InventoryService>(),
+})) {
+  override async _preCreate(data: db.IcecreamOrderInput) {
+    await this.inventoryService.useStocks([
+      { type: "yogurtIcecream", quantity: data.size },
+      ...data.toppings.map((topping) => ({ type: topping, quantity: 1 })),
+    ]);
+    return data;
+  }
+  async processIcecreamOrder(icecreamOrderId: string) {
+    const icecreamOrder = await this.getIcecreamOrder(icecreamOrderId);
+    return await icecreamOrder.process().save();
+  }
+}`}
+          />
+          <div>
+            {l.trans({
+              en: "The manager's half is the mirror image: the same three files, a different guard, and no state machine — refilling today's inventory is allowed whenever an admin asks. Each layer keeps its own kind of decision:",
+              ko: "관리자의 몫은 거울상입니다. 같은 파일 세 개, 다른 guard, 그리고 상태 기계가 없습니다. 오늘 재고 보충은 admin이 요청하면 언제든 허용되기 때문입니다. 각 계층은 자기 종류의 결정만 붙듭니다:",
+            })}
+          </div>
+          <div className="my-4 space-y-3">
+            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-primary">☎️</span>
+                <strong className="text-primary">signal</strong>
               </div>
-            ))}
+              <div className="text-foreground/70 text-sm">
+                {l.trans({
+                  en: "The phone operator. Takes the call, refuses the ones that should never reach the floor, and hands valid work to the right service.",
+                  ko: "전화 상담원입니다. 연락을 받고, 현장까지 가서는 안 될 요청을 돌려보내고, 유효한 일을 알맞은 service에 넘깁니다.",
+                })}
+              </div>
+            </div>
+            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-primary">🧑‍🍳</span>
+                <strong className="text-primary">service</strong>
+              </div>
+              <div className="text-foreground/70 text-sm">
+                {l.trans({
+                  en: "The business owner. Stock rules, payment status, reservation conflicts and external APIs are combined here into one meaningful action.",
+                  ko: "업무 담당자입니다. 재고 규칙, 결제 상태, 예약 충돌, 외부 API 연동이 여기서 하나의 의미 있는 액션으로 합쳐집니다.",
+                })}
+              </div>
+            </div>
+            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-primary">🗄️</span>
+                <strong className="text-primary">document</strong>
+              </div>
+              <div className="text-foreground/70 text-sm">
+                {l.trans({
+                  en: "The archive and its rulebook. The stored form, the query filters, and the state changes a record will accept. A chain method mutates and returns this; the caller saves.",
+                  ko: "문서고와 그 처리 규칙입니다. 저장 형태, query filter, 그리고 레코드가 받아들일 상태 전이를 정합니다. chain method는 값을 바꾸고 this를 돌려주며, 저장은 호출한 쪽이 합니다.",
+                })}
+              </div>
+            </div>
+          </div>
+          <div>
+            {l.trans({
+              en: "The rule of thumb is short: if the code answers a business question, it belongs in service logic. If it only draws a screen or holds temporary UI state, it stays on the UI side.",
+              ko: "기준은 짧습니다. 코드가 비즈니스 질문에 답한다면 service 로직에 두고, 화면을 그리거나 임시 UI 상태만 다룬다면 UI 쪽에 둡니다.",
+            })}
           </div>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
       <Scroll.Slide
-        id="request-to-business-action"
-        title={l.trans({ en: "Request To Business Action", ko: "요청에서 비즈니스 액션까지" })}
+        id="signal-shapes"
+        title={l.trans({ en: "Endpoint, Slice, Internal", ko: "Endpoint, Slice, Internal" })}
       >
-        <Docs.Title>{l.trans({ en: "Request To Business Action", ko: "요청에서 비즈니스 액션까지" })}</Docs.Title>
+        <Docs.Title>{l.trans({ en: "Endpoint, Slice, Internal", ko: "Endpoint, Slice, Internal" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "The most common business service path starts from a UI action. A generated client helper calls a signal endpoint, the endpoint delegates the business decision to a service, and the result updates stored data or returns a useful response to the screen.",
-              ko: "가장 흔한 비즈니스 서비스 경로는 UI 액션에서 시작합니다. 생성된 클라이언트 헬퍼가 signal endpoint를 호출하고, endpoint는 비즈니스 판단을 service에 맡기며, 결과는 저장 데이터를 바꾸거나 화면에 필요한 응답으로 돌아갑니다.",
+              en: "A model's signal file exports exactly three classes, and every module declares all three even when two of them are empty. Which one you reach for is decided by who starts the call.",
+              ko: "모델의 signal 파일은 클래스 셋을 내보내고, 둘이 비어 있더라도 모든 모듈이 셋을 모두 선언합니다. 어느 것을 쓸지는 누가 그 호출을 시작하느냐가 결정합니다.",
             })}
           </div>
-          <div className={panelRecipe({ radius: "2xl", padding: "lg" })}>
-            <div className="mb-4">
-              <div className="font-bold text-foreground">
-                {l.trans({ en: "Example: Article Server Module", ko: "예시: Article 서버 모듈" })}
-              </div>
-              <div className="mt-1 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "A business service module can be read from right to left: traffic reaches the API port, signal exposes callable endpoints and auth boundaries, service makes the business decision, and document handles storage details.",
-                  ko: "비즈니스 서비스 모듈은 오른쪽에서 왼쪽으로 읽으면 이해하기 쉽습니다. 트래픽이 API 포트에 도달하고, signal이 호출 가능한 endpoint와 auth 경계를 노출하고, service가 비즈니스 판단을 하며, document가 저장 세부사항을 처리합니다.",
-                })}
-              </div>
-            </div>
-            <div className="grid items-stretch gap-3 xl:grid-cols-[1.4fr_auto_1fr_auto_1fr]">
-              <div className="rounded-xl border border-border bg-muted p-4">
-                <div className="font-mono font-semibold text-foreground">Article.document.ts</div>
-                <div className="mt-2 text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Defines the archive rulebook: schema, query filters, sort options, and document-level helpers.",
-                    ko: "문서고의 처리 규칙을 정의합니다. schema, query filter, sort option, document-level helper를 담당합니다.",
-                  })}
-                </div>
-                <div className={panelRecipe({ radius: "lg", padding: "sm" }, "mt-3")}>
-                  <div className="text-foreground/60 text-xs">schema from Article.constant.ts</div>
-                  <div className="mt-2 rounded-lg border border-border bg-muted p-3 font-mono text-foreground/70 text-xs">
-                    title
-                    <br />
-                    authors
-                  </div>
-                </div>
-                <div className="mt-3 space-y-1">
-                  <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-                    <div className="font-mono text-foreground text-xs">methods</div>
-                    <div className="mt-1 text-foreground/70 text-xs">addAuthor</div>
-                  </div>
-                  <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-                    <div className="font-mono text-foreground text-xs">statics</div>
-                    <div className="mt-1 text-foreground/70 text-xs">findAllByAuthorName</div>
-                  </div>
-                </div>
-              </div>
-              <div className="hidden items-center justify-center text-primary xl:flex">
-                <div className="h-px w-10 bg-primary/40" />
-              </div>
-              <div className="rounded-xl border border-border bg-muted p-4">
-                <div className="font-mono font-semibold text-foreground">Article.service.ts</div>
-                <div className="mt-2 text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Owns business logic: who can change an article, how authors are added, and which document methods to call.",
-                    ko: "게시글을 누가 바꿀 수 있는지, 작성자를 어떻게 추가할지, 어떤 document method를 호출할지 같은 비즈니스 로직을 가집니다.",
-                  })}
-                </div>
-              </div>
-              <div className="hidden items-center justify-center text-primary xl:flex">
-                <div className="h-px w-10 bg-primary/40" />
-              </div>
-              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-                <div className="font-mono font-semibold text-primary">Article.signal.ts</div>
-                <div className="mt-2 text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Exposes callable endpoints through 8282/api and applies auth boundaries before delegating to service logic.",
-                    ko: "8282/api를 통해 호출 가능한 endpoint를 노출하고, service 로직에 위임하기 전에 auth 경계를 적용합니다.",
-                  })}
-                </div>
-                <div className="mt-3 rounded-lg border border-primary/20 bg-background p-3 font-mono text-foreground/70 text-xs">
-                  endpoint
-                  <br />
-                  slice
-                  <br />
-                  internal
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 flex flex-col gap-2 rounded-xl border border-border bg-muted p-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="font-mono font-semibold text-foreground">API endpoint port</div>
-                <div className="mt-1 text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Signal endpoints are exposed through the API port, so generated clients can call business actions through the same surface.",
-                    ko: "Signal endpoint는 API 포트를 통해 노출되므로, 생성된 client는 같은 surface로 비즈니스 액션을 호출할 수 있습니다.",
-                  })}
-                </div>
-              </div>
-              <div
-                className={panelRecipe(
-                  { radius: "lg", padding: "none" },
-                  "px-4 py-2 font-mono text-foreground/70 text-sm",
-                )}
-              >
-                8282/api
-              </div>
-            </div>
-            <div className="mt-4 space-y-1">
-              {[
-                {
-                  title: l.trans({ en: "signal: phone operator", ko: "signal: 전화 상담원" }),
-                  desc: l.trans({
-                    en: "Receives calls for specific requests, filters spam or unsafe calls, manages operational pressure, and sends valid work to the right service.",
-                    ko: "특정 요청을 하는 연락을 받고, 스팸전화나 위험한 요청을 필터링하며, 전화가 너무 많이 몰릴 때 운영적으로 조절하고, 유효한 일을 알맞은 service에 전달합니다.",
-                  }),
-                },
-                {
-                  title: l.trans({ en: "service: business owner", ko: "service: 업무 담당자" }),
-                  desc: l.trans({
-                    en: "Performs the actual work, decides how it should be done, and exchanges work with other domain owners when needed.",
-                    ko: "실제 일을 수행하고, 일을 어떻게 처리할지 정리하며, 필요하면 다른 도메인 담당자와 업무를 주고받습니다.",
-                  }),
-                },
-                {
-                  title: l.trans({ en: "document: archive rulebook", ko: "document: 문서고와 처리 규칙" }),
-                  desc: l.trans({
-                    en: "Defines the document form, processing order, and organization rules used while the work is stored and handled.",
-                    ko: "일을 진행하는 문서 양식, 처리 순서, 문서 정리 방법을 정해둔 문서고와 같습니다.",
-                  }),
-                },
-              ].map(({ title, desc }) => (
-                <div key={title} className={panelRecipe({ padding: "row" })}>
-                  <span className="font-bold text-foreground">{title}: </span>
-
-                  <span className="text-foreground/70 text-sm">{desc}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
-
-      <Scroll.Slide id="service-layer" title={l.trans({ en: "Service Layer", ko: "서비스 계층" })}>
-        <Docs.Title>{l.trans({ en: "Service Layer", ko: "서비스 계층" })}</Docs.Title>
-        <Docs.Description>
+          <Docs.IntroTable
+            type={l.trans({ en: "Class", ko: "클래스" })}
+            items={[
+              {
+                name: "endpoint",
+                desc: l.trans({
+                  en: (
+                    <span>
+                      Called by a user, through <code>fetch.*</code> — the actions you expose on the API surface.
+                      Request-response work is <code>query</code> / <code>mutation</code>; an open connection is{" "}
+                      <code>message</code> / <code>pubsub</code>.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      사용자가 <code>fetch.*</code>로 호출합니다. API surface에 노출하는 액션입니다. 요청-응답 작업은{" "}
+                      <code>query</code> / <code>mutation</code>이고, 열린 연결은 <code>message</code> /{" "}
+                      <code>pubsub</code>입니다.
+                    </span>
+                  ),
+                }),
+              },
+              {
+                name: "slice",
+                desc: l.trans({
+                  en: (
+                    <span>
+                      Called by a screen. The route calls <code>fetch.initXInY(...)</code>, <code>Load.Units</code> /{" "}
+                      <code>Load.View</code> seed the store from the result, and the client reloads through{" "}
+                      <code>st.do.initXInY()</code>. One slice binds guards, params, searches and a document filter into
+                      one named view.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      화면이 호출합니다. 라우트가 <code>fetch.initXInY(...)</code>를 부르면 <code>Load.Units</code> /{" "}
+                      <code>Load.View</code>가 그 결과로 store를 채우고, 클라이언트는 <code>st.do.initXInY()</code>로
+                      다시 불러옵니다. slice 하나가 guard, param, search, document filter를 이름 붙은 뷰 하나로
+                      묶습니다.
+                    </span>
+                  ),
+                }),
+              },
+              {
+                name: "internal",
+                desc: l.trans({
+                  en: (
+                    <span>
+                      Called by the server itself — <code>cron</code>, <code>interval</code>, <code>timeout</code>,{" "}
+                      <code>initialize</code>, <code>destroy</code> and queued <code>process</code> jobs. Never exposed
+                      as a public action.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      서버 자신이 호출합니다. <code>cron</code>, <code>interval</code>, <code>timeout</code>,{" "}
+                      <code>initialize</code>, <code>destroy</code>와 queue에 들어가는 <code>process</code> 작업입니다.
+                      공개 액션으로는 노출되지 않습니다.
+                    </span>
+                  ),
+                }),
+              },
+            ]}
+          />
           <div>
             {l.trans({
-              en: "A service is the business owner who performs the actual work. It decides how the work should be done, combines rules, saved data, other services, external APIs, and side effects into one meaningful business action.",
-              ko: "service는 실제 일을 하는 업무 담당자입니다. 일이 어떻게 수행되어야 하는지 결정하고, 규칙, 저장 데이터, 다른 서비스, 외부 API, 부수 효과를 하나의 의미 있는 비즈니스 액션으로 조합합니다.",
+              en: "Start from the product behavior, not from the class list. Does the user need an answer now, a live conversation, a broadcast to many screens, or a job that finishes later?",
+              ko: "클래스 목록이 아니라 제품 동작에서 시작하세요. 사용자가 지금 답을 받아야 하는지, 열린 연결로 대화해야 하는지, 여러 화면에 알려야 하는지, 나중에 끝나는 작업인지에 따라 고릅니다.",
             })}
           </div>
-          <div className="space-y-1 px-4">
-            {[
-              {
-                title: l.trans({ en: "Product stock", ko: "상품 재고" }),
-                desc: l.trans({
-                  en: "Check whether stock can be added, reserved, or reduced before updating inventory.",
-                  ko: "재고를 추가, 예약, 차감해도 되는지 확인한 뒤 재고를 업데이트합니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Payment flow", ko: "결제 흐름" }),
-                desc: l.trans({
-                  en: "Coordinate a payment provider, order status, receipt record, and notification.",
-                  ko: "결제 제공자, 주문 상태, 영수증 기록, 알림을 함께 조율합니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Reservation rule", ko: "예약 규칙" }),
-                desc: l.trans({
-                  en: "Prevent overlapping bookings and decide whether a time slot can be confirmed.",
-                  ko: "예약 시간이 겹치지 않도록 막고, 해당 시간대를 확정할 수 있는지 판단합니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Report generation", ko: "리포트 생성" }),
-                desc: l.trans({
-                  en: "Gather data from several models and prepare a summary that can be viewed or exported.",
-                  ko: "여러 모델의 데이터를 모아 화면에서 보거나 내보낼 수 있는 요약을 준비합니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "none" }, "space-x-2")}>
-                <span className="font-bold text-foreground">{title}: </span>
-                <span className="text-foreground/70">{desc}</span>
-              </div>
-            ))}
-          </div>
-          <Docs.Alert type="info">
-            {l.trans({
-              en: "A good rule of thumb: if the code answers a business question, put it in service logic. If it only draws a screen or stores temporary UI state, keep it on the UI side.",
-              ko: "간단한 기준은 이렇습니다. 코드가 비즈니스 질문에 답한다면 service 로직에 두고, 화면을 그리거나 임시 UI 상태만 다룬다면 UI 쪽에 둡니다.",
-            })}
-          </Docs.Alert>
-          <div className={panelRecipe({ radius: "2xl", padding: "lg" })}>
-            <div className="font-bold text-foreground">
-              {l.trans({ en: "Dependency Injection", ko: "의존성 주입" })}
-            </div>
-            <div className="mt-1 text-foreground/70 text-sm">
-              {l.trans({
-                en: "A service can receive the tools it needs instead of creating them by hand. This is how one business owner asks another domain owner, shared API, signal, or runtime adaptor for help.",
-                ko: "service는 필요한 도구를 직접 만들지 않고 주입받을 수 있습니다. 이는 한 업무 담당자가 다른 도메인 담당자, 공유 API, signal, 런타임 adaptor에게 도움을 요청하는 방식입니다.",
-              })}
-            </div>
-            <div className="mt-4 space-y-1">
-              {[
-                {
-                  title: "service",
-                  desc: l.trans({
-                    en: "Inject another domain service, such as admin using security or ticket using notification.",
-                    ko: "admin이 security를 쓰거나 ticket이 notification을 쓰는 것처럼 다른 도메인 service를 주입합니다.",
-                  }),
-                },
-                {
-                  title: "use / env",
-                  desc: l.trans({
-                    en: "Inject configured values or external APIs such as storage, email, payment, or device APIs.",
-                    ko: "storage, email, payment, device API 같은 설정값이나 외부 API를 주입합니다.",
-                  }),
-                },
-                {
-                  title: "signal",
-                  desc: l.trans({
-                    en: "Inject a server signal when service logic needs to publish or call signal-level behavior.",
-                    ko: "service 로직이 signal 수준의 동작을 publish하거나 호출해야 할 때 server signal을 주입합니다.",
-                  }),
-                },
-                {
-                  title: "plug",
-                  desc: l.trans({
-                    en: "Inject an adaptor singleton: plug(TheClass) for an adapt() class, or plug(StorageAdaptorRole) for a role. Which implementation a role resolves to is decided once by option.applyAdaptor(role, TheClass), not here.",
-                    ko: "adaptor 싱글턴을 주입합니다. adapt() 클래스는 plug(TheClass), role은 plug(StorageAdaptorRole) 형태로 씁니다. role이 어떤 구현으로 연결될지는 여기가 아니라 option.applyAdaptor(role, TheClass)가 한 번 결정합니다.",
-                  }),
-                },
-                {
-                  title: "database",
-                  desc: l.trans({
-                    en: "Inject another module's database model when the service reads or writes it directly.",
-                    ko: "service가 다른 모듈의 데이터를 직접 읽거나 써야 할 때 그 모듈의 database 모델을 주입합니다.",
-                  }),
-                },
-                {
-                  title: "memory",
-                  desc: l.trans({
-                    en: "Use memory for service-owned runtime state that may live locally or through a cache adaptor.",
-                    ko: "memory는 service가 소유하는 런타임 상태를 로컬 또는 cache adaptor를 통해 보관할 때 사용합니다.",
-                  }),
-                },
-              ].map(({ title, desc }) => (
-                <div key={title} className="rounded-xl border border-border bg-muted px-4 py-0">
-                  <span className="font-mono font-semibold text-primary">{title}: </span>
-
-                  <span className="text-foreground/70 text-sm">{desc}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
-
-      <Scroll.Slide id="signal-surface" title={l.trans({ en: "Signal Surface", ko: "Signal 표면" })}>
-        <Docs.Title>{l.trans({ en: "Signal Surface", ko: "Signal 표면" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: "A signal is like a phone operator for the business service. It receives calls from pages and generated clients, filters invalid or unsafe requests, manages the callable surface, and passes valid work to the right service.",
-              ko: "signal은 비즈니스 서비스의 전화 상담원과 비슷합니다. page와 생성된 client의 연락을 받고, 유효하지 않거나 위험한 요청을 필터링하고, 호출 가능한 표면을 관리하며, 유효한 일을 알맞은 service에 전달합니다.",
-            })}
-          </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: "endpoint",
-                desc: l.trans({
-                  en: "User-callable actions exposed through the API surface. Endpoint can be HTTP-like query/mutation, or WebSocket-style message/pubsub.",
-                  ko: "API surface를 통해 사용자가 호출할 수 있는 액션입니다. endpoint는 HTTP 성격의 query/mutation 또는 WebSocket 성격의 message/pubsub로 나뉩니다.",
-                }),
-              },
-              {
-                title: "slice",
-                desc: l.trans({
-                  en: "Screen-readable list/detail surface. Slice combines guards, params, searches, and document filters so UI can load consistent screen data.",
-                  ko: "화면이 읽는 목록/상세 데이터 surface입니다. slice는 guard, param, search, document filter를 묶어 UI가 일관된 화면 데이터를 불러오게 합니다.",
-                }),
-              },
-              {
-                title: "internal",
-                desc: l.trans({
-                  en: "Server-only work that can be scheduled, queued, or executed by internal processes without exposing it as a public UI action.",
-                  ko: "공개 UI 액션으로 노출하지 않고 schedule, queue, internal process로 실행할 수 있는 서버 전용 작업입니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-mono font-semibold text-primary">{title}: </span>
-
-                <span className="text-foreground/70 text-sm">{desc}</span>
-              </div>
-            ))}
-          </div>
-          <div className="space-y-1">
-            <div className={panelRecipe()}>
-              <div className="font-bold text-foreground">
-                {l.trans({ en: "Endpoint transport", ko: "Endpoint 전송 방식" })}
-              </div>
-              <div className="mt-2 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "Use query/mutation for request-response API work. Use message/pubsub when the screen needs WebSocket behavior, realtime messages, or room-based publish/subscribe.",
-                  ko: "요청-응답 API 작업에는 query/mutation을 사용합니다. 화면에 WebSocket 동작, 실시간 메시지, room 기반 publish/subscribe가 필요하면 message/pubsub를 사용합니다.",
-                })}
-              </div>
-            </div>
-            <div className={panelRecipe()}>
-              <div className="font-bold text-foreground">{l.trans({ en: "Operation controls", ko: "운영 제어" })}</div>
-              <div className="mt-2 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "Signal is also where parameters, search inputs, and message inputs are described, alongside the endpoint options that bound a call: guards, timeout, cache, mcp, and the HTTP method a mutation answers on.",
-                  ko: "signal은 parameter, search input, message input을 기술하는 자리이자, 호출의 경계를 정하는 endpoint 옵션을 두는 자리입니다. guards, timeout, cache, mcp, 그리고 mutation이 응답할 HTTP method가 여기에 놓입니다.",
-                })}
-              </div>
-            </div>
-            <div className={panelRecipe()}>
-              <div className="font-bold text-foreground">{l.trans({ en: "Guards", ko: "Guard" })}</div>
-              <div className="mt-2 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "Every slice names a guard per verb and every custom endpoint names its own guards array. The guards are also the MCP exposure decision: an endpoint that declares none is refused from the agent catalogue, so a missing array costs visibility as well as authorization.",
-                  ko: "모든 slice는 verb별로 guard를 지정하고, 모든 custom endpoint는 자기 guards 배열을 선언합니다. guards는 MCP 노출 여부까지 결정합니다. guards를 선언하지 않은 endpoint는 agent 카탈로그에서 거부되므로, 배열을 빠뜨리면 권한뿐 아니라 노출까지 잃습니다.",
-                })}
-              </div>
-            </div>
-          </div>
-          <div className={panelRecipe({ radius: "2xl", padding: "lg" })}>
-            <div className="font-bold text-foreground">
-              {l.trans({ en: "How To Choose A Signal Shape", ko: "Signal 형태 선택하기" })}
-            </div>
-            <div className="mt-1 text-foreground/70 text-sm">
-              {l.trans({
-                en: "Start from the product behavior. Does the user need an answer now, a live conversation, a broadcast to many screens, or a background job that finishes later?",
-                ko: "제품 동작에서 시작하세요. 사용자가 지금 답을 받아야 하는지, 열린 연결로 대화해야 하는지, 여러 화면에 알림을 보내야 하는지, 나중에 끝나는 백그라운드 작업인지에 따라 선택합니다.",
-              })}
-            </div>
-            <Docs.Mermaid
-              title="Signal shape choice"
-              chart={`flowchart TB
+          <Docs.Mermaid
+            title={l.trans({ en: "Signal shape choice", ko: "Signal 형태 선택" })}
+            chart={`flowchart TB
   need["What does the screen need?"] --> now["Answer now"]
   need --> live["Keep talking while open"]
   need --> many["Notify many screens"]
@@ -411,69 +264,46 @@ export default page().render(() => {
   live --> message["Use message"]
   many --> pubsub["Use pubsub"]
   later --> internal["Use process or schedule"]`}
-            />
-            <div className="mt-4 space-y-1">
-              <div className="rounded-xl border border-border bg-muted p-4">
-                <div className="font-semibold text-foreground">{l.trans({ en: "Answer now", ko: "지금 답하기" })}</div>
-                <div className="text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Use query or mutation when the screen asks once and expects one result. Good for loading a list, saving a form, approving a request, or adding stock.",
-                    ko: "화면이 한 번 요청하고 한 번의 결과를 기대한다면 query 또는 mutation을 사용합니다. 목록 불러오기, 폼 저장, 요청 승인, 재고 추가에 적합합니다.",
-                  })}
-                </div>
-                <div
-                  className={panelRecipe({ radius: "lg", padding: "sm" }, "mt-3 font-mono text-foreground/70 text-xs")}
-                >
-                  screen calls 8282/api, business service returns result
-                </div>
+          />
+          <div className="my-4 space-y-2">
+            <div className="flex items-start gap-2">
+              <span className="text-primary">↩️</span>
+              <div>
+                <strong>query / mutation</strong>:{" "}
+                {l.trans({
+                  en: "the screen asks once and expects one result — load a list, save a form, approve a request, add stock.",
+                  ko: "화면이 한 번 묻고 한 번의 결과를 기대합니다. 목록 불러오기, 폼 저장, 요청 승인, 재고 추가입니다.",
+                })}
               </div>
-              <div className="rounded-xl border border-border bg-muted p-4">
-                <div className="font-semibold text-foreground">
-                  {l.trans({ en: "Keep talking", ko: "연결을 유지하며 대화" })}
-                </div>
-                <div className="text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Use message when an open screen needs a WebSocket-style conversation with the server, such as device control, live operation panels, or guided workflows.",
-                    ko: "열려 있는 화면이 서버와 WebSocket 방식으로 대화해야 한다면 message를 사용합니다. 장비 제어, 실시간 운영 패널, 단계형 작업 흐름에 적합합니다.",
-                  })}
-                </div>
-                <div
-                  className={panelRecipe({ radius: "lg", padding: "sm" }, "mt-3 font-mono text-foreground/70 text-xs")}
-                >
-                  open connection, send message, receive reply
-                </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-primary">💬</span>
+              <div>
+                <strong>message</strong>:{" "}
+                {l.trans({
+                  en: "an open screen keeps a websocket conversation going — device control, a live operation panel, a guided workflow.",
+                  ko: "열린 화면이 websocket 대화를 이어갑니다. 장비 제어, 실시간 운영 패널, 단계형 작업 흐름입니다.",
+                })}
               </div>
-              <div className="rounded-xl border border-border bg-muted p-4">
-                <div className="font-semibold text-foreground">
-                  {l.trans({ en: "Notify many screens", ko: "여러 화면에 알림" })}
-                </div>
-                <div className="text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Use pubsub when one business change should be pushed to multiple open screens, dashboards, devices, or users.",
-                    ko: "하나의 비즈니스 변경을 여러 열린 화면, 대시보드, 장비, 사용자에게 밀어줘야 한다면 pubsub를 사용합니다.",
-                  })}
-                </div>
-                <div
-                  className={panelRecipe({ radius: "lg", padding: "sm" }, "mt-3 font-mono text-foreground/70 text-xs")}
-                >
-                  service changes data, publish, subscribers update
-                </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-primary">📡</span>
+              <div>
+                <strong>pubsub</strong>:{" "}
+                {l.trans({
+                  en: "one business change is pushed into a room that many screens, dashboards, devices or users subscribe to.",
+                  ko: "하나의 비즈니스 변경을 여러 화면, 대시보드, 장비, 사용자가 구독하는 room으로 밀어줍니다.",
+                })}
               </div>
-              <div className="rounded-xl border border-border bg-muted p-4">
-                <div className="font-semibold text-foreground">
-                  {l.trans({ en: "Finish later", ko: "나중에 끝내기" })}
-                </div>
-                <div className="text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Use process, cron, interval, timeout, initialize, or destroy when work is queued, scheduled, repeated, or tied to server lifecycle.",
-                    ko: "작업이 queue에 들어가거나, 예약되거나, 반복되거나, 서버 생명주기와 연결된다면 process, cron, interval, timeout, initialize, destroy를 사용합니다.",
-                  })}
-                </div>
-                <div
-                  className={panelRecipe({ radius: "lg", padding: "sm" }, "mt-3 font-mono text-foreground/70 text-xs")}
-                >
-                  request or schedule, worker, save or publish result
-                </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-primary">⏱️</span>
+              <div>
+                <strong>process / cron / interval</strong>:{" "}
+                {l.trans({
+                  en: "the work is queued, scheduled, repeated, or tied to the server lifecycle rather than to a caller.",
+                  ko: "작업이 queue에 들어가거나, 예약되거나, 반복되거나, 호출자가 아니라 서버 생명주기에 묶입니다.",
+                })}
               </div>
             </div>
           </div>
@@ -481,184 +311,640 @@ export default page().render(() => {
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide
-        id="business-service-scenarios"
-        title={l.trans({ en: "Business Service Scenarios", ko: "비즈니스 서비스 시나리오" })}
-      >
-        <Docs.Title>{l.trans({ en: "Business Service Scenarios", ko: "비즈니스 서비스 시나리오" })}</Docs.Title>
+      <Scroll.Slide id="endpoint-options" title={l.trans({ en: "Bounding A Call", ko: "호출에 경계 두기" })}>
+        <Docs.Title>{l.trans({ en: "Bounding A Call", ko: "호출에 경계 두기" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Choose the business service path from the product situation. Some screens need a direct answer, some need a background worker, and some need to notify open screens after the data changes.",
-              ko: "제품 상황에서 비즈니스 서비스 경로를 고르세요. 어떤 화면은 즉시 답이 필요하고, 어떤 작업은 백그라운드 worker가 필요하며, 어떤 변경은 데이터가 바뀐 뒤 열린 화면에 알려야 합니다.",
+              en: "Every endpoint takes an option object, and guards is only the first field in it. Here is the manager's half of the shift — a read the whole shop shares, and a write only an admin may make and that a stock provider can make slow.",
+              ko: "모든 endpoint는 option 객체를 받고, guards는 그중 첫 번째 필드일 뿐입니다. 아래는 관리자의 몫입니다. 가게 전체가 공유하는 읽기 하나와, admin만 할 수 있고 재고 공급처 사정으로 느려질 수 있는 쓰기 하나입니다.",
             })}
           </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: l.trans({ en: "Simple request and response", ko: "단순 요청/응답" }),
-                desc: l.trans({
-                  en: "Use this when the user clicks once and expects the result now, such as add stock, approve request, cancel reservation, or save profile.",
-                  ko: "사용자가 한 번 클릭하고 지금 결과를 기대할 때 사용합니다. 재고 추가, 요청 승인, 예약 취소, 프로필 저장이 여기에 해당합니다.",
-                }),
-                shape: "endpoint(query/mutation), service, document, response",
-                config: l.trans({
-                  en: "Signal exposes the action as an endpoint. Service checks rules and updates data. The screen receives the result immediately.",
-                  ko: "Signal은 액션을 endpoint로 노출합니다. Service는 규칙을 확인하고 데이터를 변경합니다. 화면은 결과를 즉시 받습니다.",
-                }),
-                code: `export class StockEndpoint extends endpoint(srv.stock, ({ mutation }) => ({
-  addStock: mutation(cnst.Stock, { guards: [Admin] })
-    .param("productId", ID)
-    .param("amount", Int)
-    .exec(async function (productId, amount) {
-      return await this.stockService.addStock(productId, amount);
-    }),
-})) {}
+          <Code.Snippet
+            className="w-full"
+            title="apps/koyo/lib/inventory/inventory.signal.ts"
+            code={`import { Admin } from "@libs/shared/srvkit";
+import { endpoint, internal, Public, slice } from "akanjs/signal";
 
-export class StockService extends serve(db.stock, () => ({})) {
-  async addStock(productId: string, amount: number) {
-    const stock = await this.stockModel.getByProductId(productId);
-    return await stock.addAmount(amount).save();
-  }
-}`,
+import * as cnst from "../cnst";
+import * as srv from "../srv";
+
+export class InventoryInternal extends internal(srv.inventory, () => ({})) {}
+
+export class InventorySlice extends slice(
+  srv.inventory,
+  { guards: { root: Admin, get: Public, cru: Admin } },
+  (init) => ({
+    inPublic: init().exec(function () {
+      return this.inventoryService.queryAny();
+    }),
+  }),
+) {}
+
+export class InventoryEndpoint extends endpoint(srv.inventory, ({ query, mutation }) => ({
+  getTodaysInventory: query(cnst.Inventory, { guards: [Public], cache: 1000 }).exec(async function () { // [!code highlight]
+    return await this.inventoryService.getTodaysInventory();
+  }),
+  refillTodaysInventory: mutation(cnst.Inventory, { guards: [Admin], timeout: 60_000 }).exec(async function () { // [!code highlight]
+    return await this.inventoryService.refillTodaysInventory();
+  }),
+})) {}`}
+          />
+          <Docs.OptionTable
+            items={[
+              {
+                key: "guards",
+                type: "GuardCls[]",
+                desc: l.trans({
+                  en: (
+                    <span>
+                      Who may call this. An endpoint that names none runs zero checks — the loop iterates{" "}
+                      <code>guards ?? []</code>, which is not a default policy.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      누가 호출할 수 있는지입니다. 아무것도 적지 않은 endpoint는 검사를 하나도 하지 않습니다. 루프는{" "}
+                      <code>guards ?? []</code>를 순회하고, 그것은 기본 정책이 아닙니다.
+                    </span>
+                  ),
+                }),
               },
               {
-                title: l.trans({ en: "Background operation", ko: "백그라운드 작업" }),
+                key: "timeout",
+                type: "number",
+                default: "30000 (client)",
                 desc: l.trans({
-                  en: "Use this when the business should run on a schedule, such as expiring old reservations, syncing partner data, or retrying failed device work every few minutes.",
-                  ko: "오래된 예약 만료, 파트너 데이터 동기화, 실패한 장비 작업 재시도처럼 일정에 따라 반복 실행해야 하는 작업에 사용합니다.",
+                  en: (
+                    <span>
+                      Milliseconds this call may take. It bounds both ends: the <code>Timeout</code> middleware rejects
+                      with <code>base.error.gatewayTimeout</code>, and the same value is serialized to the client as
+                      that call&apos;s request budget.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      이 호출이 쓸 수 있는 밀리초입니다. 양쪽 끝을 모두 묶습니다. <code>Timeout</code> middleware가{" "}
+                      <code>base.error.gatewayTimeout</code>으로 거절하고, 같은 값이 클라이언트에 직렬화되어 그 호출의
+                      요청 예산이 됩니다.
+                    </span>
+                  ),
                 }),
-                shape: "cron signal, batch runtime, service checks targets, saved result",
-                config: l.trans({
-                  en: "Internal signal declares the cron schedule. The batch runtime runs it repeatedly. Service finds the work that is due and applies the business rule.",
-                  ko: "Internal signal이 cron 일정을 선언합니다. Batch runtime이 이를 반복 실행합니다. Service는 처리 시점이 된 대상을 찾고 비즈니스 규칙을 적용합니다.",
+              },
+              {
+                key: "cache",
+                type: "number",
+                desc: l.trans({
+                  en: (
+                    <span>
+                      Milliseconds the answer may be reused. <strong>Only a query taking no internal argument</strong>{" "}
+                      may carry one; anything else is named in the log and left uncached. Guards still run on every hit.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      응답을 재사용할 수 있는 밀리초입니다. <strong>internal argument가 없는 query만</strong> 가질 수
+                      있고, 나머지는 로그에 이름이 남은 채 캐시되지 않습니다. guard는 캐시 적중 시에도 매번 실행됩니다.
+                    </span>
+                  ),
                 }),
-                code: `export class ReservationInternal extends internal(srv.reservation, ({ cron }) => ({
-  expireOldReservations: cron("*/10 * * * *", { serverMode: "batch" }).exec(async function () {
-    await this.reservationService.expireOldReservations();
+              },
+              {
+                key: "mcp",
+                type: "boolean",
+                default: "true",
+                desc: l.trans({
+                  en: (
+                    <span>
+                      Whether this endpoint belongs on an agent&apos;s shelf. <code>false</code> takes it out of the MCP
+                      catalogue without touching its guards — curation, not authorization.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      이 endpoint를 에이전트의 선반에 올릴지입니다. <code>false</code>는 guard를 건드리지 않고 MCP
+                      카탈로그에서만 내립니다. 권한 부여가 아니라 큐레이션입니다.
+                    </span>
+                  ),
+                }),
+              },
+              {
+                key: "method",
+                type: '"POST" | "PATCH" | "PUT" | "DELETE"',
+                default: '"POST"',
+                desc: l.trans({
+                  en: (
+                    <span>
+                      The HTTP verb a <code>mutation</code> answers on. Reach for it only when a foreign wire protocol
+                      forces the verb; two endpoints on the same path and verb fail the boot.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      <code>mutation</code>이 응답할 HTTP verb입니다. 바꿀 수 없는 외부 와이어 프로토콜이 verb를 강제할
+                      때만 씁니다. 같은 경로와 같은 verb를 주장하는 endpoint 둘은 부팅에 실패합니다.
+                    </span>
+                  ),
+                }),
+              },
+            ]}
+          />
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: (
+                <span>
+                  An endpoint that declares no <code>timeout</code> still dies at <strong>30 seconds</strong> — that is
+                  the client&apos;s own default, and the transport error it raises does not say whether the server ever
+                  received the call. Provisioning, a firmware flow, an external orchestration: declare one.{" "}
+                  <strong>Losing the race does not cancel the work</strong> — the handler runs to completion with nobody
+                  holding its result, so a deadline is an answer to the caller, not an undo.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>timeout</code>을 적지 않은 endpoint도 <strong>30초</strong>에 끊깁니다. 클라이언트 자체
+                  기본값이고, 그때 나는 전송 에러는 서버가 호출을 받기라도 했는지 말해주지 않습니다. 프로비저닝, 펌웨어
+                  절차, 외부 오케스트레이션이라면 직접 적으세요.{" "}
+                  <strong>경주에서 져도 작업은 취소되지 않습니다.</strong> handler는 결과를 받을 사람 없이 끝까지
+                  돌아갑니다. 마감 시한은 호출자에게 주는 답이지 되돌리기가 아닙니다.
+                </span>
+              ),
+            })}
+          </Docs.Alert>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide
+        id="beyond-the-request"
+        title={l.trans({ en: "Work That Outlives The Request", ko: "요청보다 오래 사는 작업" })}
+      >
+        <Docs.Title>{l.trans({ en: "Work That Outlives The Request", ko: "요청보다 오래 사는 작업" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Some work has no caller waiting for it. Served ice cream melts on its own schedule, and orders nobody collected have to be closed out overnight. Both are internal signals, and the batch replica is what runs them — while the pubsub room below is an endpoint nobody calls, because the server is what publishes into it.",
+              ko: "호출자가 기다리지 않는 작업도 있습니다. 내어준 아이스크림은 자기 일정대로 녹고, 아무도 찾아가지 않은 주문은 밤사이 정리해야 합니다. 둘 다 internal signal이고, 이를 실제로 돌리는 것은 batch replica입니다. 아래의 pubsub room은 아무도 호출하지 않는 endpoint입니다. 그곳에 publish하는 것은 서버이기 때문입니다.",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts"
+            code={`import { Admin, Every } from "@libs/shared/srvkit"; // [!code collapse:6]
+import { ID } from "akanjs/base";
+import { endpoint, internal, Public, slice } from "akanjs/signal";
+
+import * as cnst from "../cnst";
+import * as srv from "../srv";
+
+export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ cron, interval }) => ({
+  warnIcecreamMeltingAll: interval(10000).exec(async function () { // [!code ++:6]
+    await this.icecreamOrderService.warnIcecreamMeltingAll();
+  }),
+  cancelStaleOrders: cron("0 4 * * *", { serverMode: "batch", operationMode: ["cloud"] }).exec(async function () {
+    await this.icecreamOrderService.cancelStaleOrders();
   }),
 })) {}
 
-export class ReservationService extends serve(db.reservation, () => ({})) {
-  async expireOldReservations() {
-    const reservations = await this.reservationModel.queryExpiredPending();
-    for (const reservation of reservations) {
-      await reservation.set({ status: "expired" }).save();
-    }
-  }
-}`,
-              },
-              {
-                title: l.trans({ en: "Report generation", ko: "리포트 생성" }),
-                desc: l.trans({
-                  en: "Use this when the user asks for a heavy export, monthly summary, settlement file, or analytics report.",
-                  ko: "사용자가 무거운 내보내기, 월간 요약, 정산 파일, 분석 리포트를 요청할 때 사용합니다.",
-                }),
-                shape: "endpoint starts report, process builds file, slice shows status",
-                config: l.trans({
-                  en: "Endpoint starts the report job. Internal process builds the file or summary. Slice lets the screen read progress, status, and download result.",
-                  ko: "Endpoint가 리포트 작업을 시작합니다. Internal process가 파일이나 요약을 생성합니다. Slice는 화면이 진행률, 상태, 다운로드 결과를 읽게 합니다.",
-                }),
-                code: `export class SalesReportInternal extends internal(srv.salesReport, ({ process }) => ({
-  buildMonthlyReport: process(Boolean)
-    .msg("reportId", ID)
-    .exec(async function (reportId) {
-      await this.salesReportService.buildMonthlyReport(reportId);
-      return true;
-    }),
-})) {}
-// [!code collapse:9]
-export class SalesReportSlice extends slice(srv.salesReport, { guards: { root: Admin, get: Admin, cru: Admin } }, (init) => ({
-  byMonth: init()
-    .param("month", String)
-    .exec(function (month) {
-      return this.salesReportService.queryByMonth(month);
-    }),
-})) {}
+export class IcecreamOrderSlice extends slice( // [!code collapse:11]
+  srv.icecreamOrder,
+  { guards: { root: Admin, get: Public, cru: Every } },
+  (init) => ({
+    byStatuses: init()
+      .search("statuses", [cnst.IcecreamOrderStatus])
+      .exec(function (statuses) {
+        return this.icecreamOrderService.queryByStatuses(statuses);
+      }),
+  }),
+) {}
 
-export class SalesReportEndpoint extends endpoint(srv.salesReport, ({ mutation }) => ({
-  createMonthlyReport: mutation(cnst.SalesReport, { guards: [Admin] })
-    .param("month", String)
-    .exec(async function (month) {
-      return await this.salesReportService.queueMonthlyReport(month);
+export class IcecreamOrderEndpoint extends endpoint(srv.icecreamOrder, ({ mutation, pubsub }) => ({
+  processIcecreamOrder: mutation(cnst.IcecreamOrder, { guards: [Admin] }) // [!code collapse:5]
+    .param("icecreamOrderId", ID)
+    .exec(async function (icecreamOrderId) {
+      return await this.icecreamOrderService.processIcecreamOrder(icecreamOrderId);
     }),
-})) {}
+  icecreamOrderEntered: pubsub(cnst.LightIcecreamOrder, { guards: [Admin] }) // [!code ++:3]
+    .room("status", cnst.IcecreamOrderStatus)
+    .exec(() => undefined),
+})) {}`}
+          />
+          <div>
+            {l.trans({
+              en: "A kitchen screen is already open when an order moves to processing, and nobody is going to press refresh. The service reaches its own signal through an injected field and publishes the saved order into the room named by its new status, so every screen subscribed to that status appends the ticket:",
+              ko: "주문이 processing으로 넘어갈 때 주방 화면은 이미 열려 있고, 아무도 새로고침을 누르지 않습니다. service는 주입받은 필드로 자기 signal에 닿아, 저장된 주문을 새 상태 이름의 room으로 publish합니다. 그 상태를 구독하는 화면마다 티켓이 덧붙습니다:",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/koyo/lib/icecreamOrder/icecreamOrder.service.ts"
+            code={`import { serve } from "akanjs/service"; // [!code collapse:5]
 
-export class SalesReportService extends serve(db.salesReport, ({ signal }) => ({
-  salesReportSignal: signal<sig.SalesReport>(),
+import * as db from "../db";
+import type * as sig from "../sig";
+import type * as srv from "../srv";
+
+export class IcecreamOrderService extends serve(db.icecreamOrder, ({ service, signal }) => ({
+  inventoryService: service<srv.InventoryService>(),
+  icecreamOrderSignal: signal<sig.IcecreamOrder>(), // [!code ++]
 })) {
-  async queueMonthlyReport(month: string) {
-    const report = await this.createMonthlyReport({ month, status: "queued" });
-    await this.salesReportSignal.buildMonthlyReport(report.id);
-    return report;
+  async processIcecreamOrder(icecreamOrderId: string) {
+    const icecreamOrder = await this.getIcecreamOrder(icecreamOrderId);
+    const processed = await icecreamOrder.process().save(); // [!code ++:3]
+    await this.icecreamOrderSignal.icecreamOrderEntered(processed.status, processed);
+    return processed;
   }
-
-  async buildMonthlyReport(reportId: string) {
-    const report = await this.salesReportModel.getSalesReport(reportId);
-    // build file
-    return await report.setReady().save();
-  }
-}`,
-              },
-              {
-                title: l.trans({ en: "Realtime chat", ko: "실시간 채팅" }),
-                desc: l.trans({
-                  en: "Use this when a message written by one user should appear on other open chat screens immediately.",
-                  ko: "한 사용자가 보낸 메시지가 다른 사용자의 열린 채팅 화면에 즉시 보여야 할 때 사용합니다.",
-                }),
-                shape: "message/mutation saves chat, pubsub publishes to room, open chat screens update",
-                config: l.trans({
-                  en: "Endpoint receives the chat action and service saves the message. Pubsub publishes the saved chat to the chat room so every open screen can append it.",
-                  ko: "Endpoint가 채팅 액션을 받고 service가 메시지를 저장합니다. Pubsub는 저장된 채팅을 채팅방에 전달해 열린 화면들이 메시지를 바로 추가할 수 있게 합니다.",
-                }),
-                code: `export class ChatRoomSlice extends slice(srv.chatRoom, { guards: { root: Admin, get: Every, cru: Every } }, (init) => ({
-  chats: init()
-    .param("roomId", ID)
-    .exec(function (roomId) {
-      return this.chatRoomService.queryChats(roomId);
-    }),
-})) {}
-
-export class ChatRoomEndpoint extends endpoint(srv.chatRoom, ({ mutation, pubsub }) => ({
-  sendChat: mutation(cnst.Chat, { guards: [Every] })
-    .param("roomId", ID)
-    .param("text", String)
-    .exec(async function (roomId, text) {
-      return await this.chatRoomService.sendChat(roomId, text);
-    }),
-  chatAdded: pubsub(cnst.Chat, { guards: [Every] })
-    .room("roomId", ID)
-    .exec(async () => {
-      // The runtime delivers the published chat to subscribers in this room.
-    }),
-})) {}
-
-export class ChatRoomService extends serve(db.chatRoom, ({ signal }) => ({
-  chatRoomSignal: signal<sig.ChatRoom>(),
-})) {
-  async sendChat(roomId: string, text: string) {
-    // add or save Chat
-    await this.chatRoomSignal.chatAdded(roomId, chat);
-    return chat;
-  }
-}`,
-              },
-            ].map(({ title, desc, shape, config, code }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <div className="font-bold text-foreground">{title}</div>
-                <div className="mt-2 text-foreground/70 text-sm">{desc}</div>
-                <div className="mt-3 rounded-lg border border-border bg-muted p-3 font-mono text-foreground/70 text-xs">
-                  {shape}
-                </div>
-                <div className="mt-3 text-foreground/70 text-sm">{config}</div>
-                <Docs.CodeSnippet className="mt-3 w-full" code={code} title={title} />
-              </div>
-            ))}
+}`}
+          />
+          <div className={panelRecipe({ radius: "lg" }, "my-4")}>
+            <div className="mb-2 font-semibold text-primary">
+              {l.trans({ en: "A heavy job uses all three at once:", ko: "무거운 작업은 셋을 한꺼번에 씁니다:" })}
+            </div>
+            <ol className="list-decimal space-y-2 pl-5 text-foreground/70 text-sm">
+              <li>
+                {l.trans({
+                  en: "A mutation starts the monthly settlement report and returns the queued record immediately.",
+                  ko: "mutation이 월간 정산 리포트를 시작하고, queue에 올라간 레코드를 즉시 돌려줍니다.",
+                })}
+              </li>
+              <li>
+                {l.trans({
+                  en: "An internal process, reached from the service through an injected signal, builds the file.",
+                  ko: "주입된 signal을 통해 service가 부르는 internal process가 파일을 만듭니다.",
+                })}
+              </li>
+              <li>
+                {l.trans({
+                  en: "A slice lets the screen read progress, status, and the download result as the record changes.",
+                  ko: "slice는 레코드가 바뀌는 동안 화면이 진행률, 상태, 다운로드 결과를 읽게 합니다.",
+                })}
+              </li>
+            </ol>
           </div>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
+      <Scroll.Slide
+        id="service-dependencies"
+        title={l.trans({ en: "What A Service Is Handed", ko: "Service가 건네받는 것" })}
+      >
+        <Docs.Title>{l.trans({ en: "What A Service Is Handed", ko: "Service가 건네받는 것" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "A service never constructs the things it needs. It declares them in the builder argument of serve(), and the container resolves each one before any handler runs — which is what lets a payment provider, a cache backend or a whole sibling module be swapped without editing the business method that uses it.",
+              ko: "service는 필요한 것을 직접 만들지 않습니다. serve()의 builder 인자에 선언하면, handler가 하나라도 돌기 전에 컨테이너가 전부 해결합니다. 덕분에 결제 제공자, 캐시 백엔드, 옆 모듈 전체를 그것을 쓰는 업무 method를 고치지 않고 교체할 수 있습니다.",
+            })}
+          </div>
+          <Docs.OptionTable
+            items={[
+              {
+                key: "service",
+                type: "<T extends Service>() => T",
+                desc: l.trans({
+                  en: (
+                    <span>
+                      Another module&apos;s service. The field name must end in <code>Service</code> — the injector
+                      strips the suffix to derive the registry key, so <code>inventoryService</code> resolves{" "}
+                      <code>inventory</code>.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      다른 모듈의 service입니다. 필드 이름은 반드시 <code>Service</code>로 끝나야 합니다. 주입기가
+                      접미사를 떼어 레지스트리 키를 만들기 때문에 <code>inventoryService</code>는 <code>inventory</code>
+                      로 풀립니다.
+                    </span>
+                  ),
+                }),
+                example: "inventoryService: service<srv.InventoryService>()",
+              },
+              {
+                key: "plug",
+                type: "(adaptor: AdaptorCls) => Adaptor",
+                desc: l.trans({
+                  en: (
+                    <span>
+                      An adaptor singleton — an <code>adapt()</code> class directly, or a role such as{" "}
+                      <code>StorageAdaptorRole</code>. Which implementation a role resolves to is decided once by{" "}
+                      <code>option.applyAdaptor(role, TheClass)</code>, not here.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      adaptor 싱글턴입니다. <code>adapt()</code> 클래스를 직접 주거나, <code>StorageAdaptorRole</code>{" "}
+                      같은 role을 줍니다. role이 어떤 구현으로 연결될지는 여기가 아니라{" "}
+                      <code>option.applyAdaptor(role, TheClass)</code>가 한 번 결정합니다.
+                    </span>
+                  ),
+                }),
+                example: "posTerminal: plug(PosTerminal)",
+              },
+              {
+                key: "signal",
+                type: "<S>() => S",
+                desc: l.trans({
+                  en: (
+                    <span>
+                      The module&apos;s own server signal, so service logic can publish a <code>pubsub</code> room or
+                      enqueue a <code>process</code>. The field name must end in <code>Signal</code>.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      그 모듈의 server signal입니다. service 로직이 <code>pubsub</code> room에 publish하거나{" "}
+                      <code>process</code>를 큐에 넣을 때 씁니다. 필드 이름은 <code>Signal</code>로 끝나야 합니다.
+                    </span>
+                  ),
+                }),
+                example: "icecreamOrderSignal: signal<sig.IcecreamOrder>()",
+              },
+              {
+                key: "env",
+                type: "(fn: (env) => T) => T",
+                desc: l.trans({
+                  en: "A value read out of the backend environment at wiring time, so no configuration has to be threaded through every function that needs it.",
+                  ko: "배선 시점에 백엔드 환경에서 읽는 값입니다. 설정을 필요한 함수마다 인자로 넘겨줄 필요가 없어집니다.",
+                }),
+                example: "pos: env((option: PosTerminalOptions) => option.pos)",
+              },
+              {
+                key: "memory",
+                type: "(ref, opts?) => Store",
+                desc: l.trans({
+                  en: (
+                    <span>
+                      Service-owned runtime state, held through the cache adaptor so every replica sees it. It takes a
+                      scalar or a model class, not only a primitive — never hand-encode JSON into a <code>String</code>{" "}
+                      memory.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      service가 소유하는 런타임 상태입니다. cache adaptor를 통해 보관되므로 모든 replica가 같은 값을
+                      봅니다. 원시값뿐 아니라 스칼라나 모델 클래스도 받습니다. <code>String</code> memory에 JSON을 직접
+                      인코딩하지 마세요.
+                    </span>
+                  ),
+                }),
+                example: "openTickets: memory(Map, { of: String })",
+              },
+              {
+                key: "use",
+                type: "<T>() => T",
+                desc: l.trans({
+                  en: (
+                    <span>
+                      Legacy. Reaches a constructor-style singleton registered in <code>lib/option.ts</code>. Recognise
+                      it; write new adapters as <code>adapt()</code> classes instead.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      legacy입니다. <code>lib/option.ts</code>에 등록된 생성자 방식 싱글턴을 가져옵니다. 알아보기만
+                      하고, 새 adapter는 <code>adapt()</code> 클래스로 쓰세요.
+                    </span>
+                  ),
+                }),
+                example: "alarmApi: use<AlarmApi>()",
+              },
+            ]}
+          />
+          <div>
+            {l.trans({
+              en: "An adaptor is the unit you plug. It is a class built on adapt(), it self-registers under the name it is given, and it takes the same injectors minus service and signal — so an adaptor can hold config, another adaptor, and shared state, but not business logic:",
+              ko: "plug의 단위는 adaptor입니다. adapt()로 만든 클래스이고, 주어진 이름으로 스스로 등록하며, service와 signal을 뺀 같은 주입기를 받습니다. 그래서 adaptor는 설정, 다른 adaptor, 공유 상태를 가질 수 있지만 비즈니스 로직은 갖지 않습니다:",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/koyo/srvkit/posTerminal.ts"
+            code={`import { adapt } from "akanjs/service";
+
+import { Err } from "../lib/dict";
+
+export interface PosTerminalOptions {
+  pos: { endpoint: string; storeId: string };
+}
+
+export class PosTerminal extends adapt("posTerminal" as const, ({ env, memory }) => ({
+  pos: env((option: PosTerminalOptions) => option.pos),
+  openTickets: memory(Map, { of: String }),
+})) {
+  override async onInit() {
+    await this.openTickets.clear();
+  }
+
+  async charge(icecreamOrderId: string, amount: number) {
+    const ticket = await this.#api<{ ticketId: string }>("/charge", {
+      method: "POST",
+      body: JSON.stringify({ storeId: this.pos.storeId, amount }),
+    });
+    await this.openTickets.set(icecreamOrderId, ticket.ticketId);
+    return ticket.ticketId;
+  }
+
+  async #api<T>(path: string, init?: RequestInit): Promise<T> {
+    const response = await fetch(\`\${this.pos.endpoint}\${path}\`, {
+      ...init,
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) throw new Err("koyo.error.posUnavailable");
+    return (await response.json()) as T;
+  }
+}`}
+          />
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  A database-backed service also receives its own model as <code>this.&lt;refName&gt;Model</code>{" "}
+                  without declaring anything — <code>serve(db.inventory, …)</code> is what adds it. The worked walk
+                  through each injector, including how a role is bound, is on{" "}
+                  <Link href="/cheatsheet/observability/di" className="text-primary">
+                    Dependency Injection
+                  </Link>
+                  .
+                </span>
+              ),
+              ko: (
+                <span>
+                  데이터베이스 기반 service는 자기 모델을 <code>this.&lt;refName&gt;Model</code>로 아무것도 선언하지
+                  않고 받습니다. <code>serve(db.inventory, …)</code>가 붙여주기 때문입니다. 주입기별 상세한 사용법과
+                  role을 묶는 방법은{" "}
+                  <Link href="/cheatsheet/observability/di" className="text-primary">
+                    의존성 주입
+                  </Link>
+                  에 있습니다.
+                </span>
+              ),
+            })}
+          </div>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="error-placement" title={l.trans({ en: "Where An Error Belongs", ko: "에러가 놓일 자리" })}>
+        <Docs.Title>{l.trans({ en: "Where An Error Belongs", ko: "에러가 놓일 자리" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Refusing an order out of mango and refusing an order from a customer who is not signed in are not the same refusal, and they are not written in the same file. Each layer throws what only it can know.",
+              ko: "망고가 없어서 주문을 거절하는 것과 로그인하지 않은 고객의 주문을 거절하는 것은 같은 거절이 아니고, 같은 파일에 쓰지도 않습니다. 각 계층은 자기만 알 수 있는 것을 던집니다.",
+            })}
+          </div>
+          <Docs.Mermaid
+            title={l.trans({ en: "Which layer refuses", ko: "어느 계층이 거절하는가" })}
+            highlightNodes={["document"]}
+            chart={`flowchart TB
+  call["A call arrives"] --> guard["signal.ts guards<br/>may this caller do this at all?"]
+  guard -->|"no"| denied["401 or 403 · the guard returns false"]
+  guard -->|"yes"| service["service.ts<br/>does another document forbid it?"]
+  service --> document["document.ts<br/>is this record in a state that allows it?"]
+  document --> saved["chain method mutates · caller saves"]
+  service -.->|"throw new Err"| dict["dictionary .error key<br/>translated for the caller"]
+  document -.->|"throw new Err"| dict`}
+          />
+          <div>
+            {l.trans({
+              en: "A chain method is the smallest version of this: it validates, mutates, and returns this — never saving, so that chains compose and the caller decides when the write happens.",
+              ko: "chain method가 이 규칙의 가장 작은 형태입니다. 검증하고, 값을 바꾸고, this를 돌려줍니다. 저장은 하지 않습니다. 그래야 chain이 이어 붙고, 쓰기 시점은 호출한 쪽이 정합니다.",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/koyo/lib/icecreamOrder/icecreamOrder.document.ts"
+            code={`import { by, from, into } from "akanjs/document";
+
+import * as cnst from "../cnst";
+import { Err } from "../dict";
+
+export class IcecreamOrderFilter extends from(cnst.IcecreamOrder, (filter) => ({ // [!code collapse:10]
+  query: {
+    byStatuses: filter()
+      .opt("statuses", [cnst.IcecreamOrderStatus])
+      .query((statuses, q) => ({
+        ...(statuses?.length ? { status: q.oneOf(statuses) } : {}),
+      })),
+  },
+  sort: {},
+})) {}
+
+export class IcecreamOrder extends by(cnst.IcecreamOrder) {
+  process() {
+    if (this.status !== "active") throw new Err("icecreamOrder.error.onlyActiveCanBeProcessed");
+    this.status = "processing";
+    return this;
+  }
+  serve() {
+    if (this.status !== "processing") throw new Err("icecreamOrder.error.onlyProcessingCanBeServed");
+    this.status = "served";
+    return this;
+  }
+}
+
+export class IcecreamOrderModel extends into(IcecreamOrder, IcecreamOrderFilter, cnst.icecreamOrder, () => ({})) {}`}
+          />
+          <Docs.Alert type="error">
+            {l.trans({
+              en: (
+                <span>
+                  Never <code>throw new Error</code>. A raw error is generalized to <code>Internal Server Error</code>{" "}
+                  on the way out, so the customer is told nothing and the log is told no key. Throw{" "}
+                  <code>new Err(&quot;&lt;module&gt;.error.&lt;key&gt;&quot;)</code> and register the key as an{" "}
+                  <code>[en, ko]</code> pair in that module&apos;s dictionary <code>.error(&#123;&#125;)</code> stage —
+                  that is what makes the refusal readable in the caller&apos;s own language.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>throw new Error</code>는 쓰지 마세요. 날것의 에러는 나가는 길에{" "}
+                  <code>Internal Server Error</code>로 일반화되므로, 고객은 아무것도 듣지 못하고 로그에도 키가 남지
+                  않습니다. <code>new Err(&quot;&lt;module&gt;.error.&lt;key&gt;&quot;)</code>를 던지고, 그 키를 해당
+                  모듈 dictionary의 <code>.error(&#123;&#125;)</code> 단계에 <code>[en, ko]</code> 쌍으로 등록하세요.
+                  거절이 호출자의 언어로 읽히는 이유가 그것입니다.
+                </span>
+              ),
+            })}
+          </Docs.Alert>
+          <div>
+            {l.trans({
+              en: "Best-effort code does not throw at all. An adaptor that cannot reach a provider logs and returns null, a guard that cannot load a record warns and returns false, and the caller decides whether that is an error. There are no Result wrappers anywhere in the stack.",
+              ko: "최선을 다하는 정도의 코드는 아예 던지지 않습니다. 제공처에 닿지 못한 adaptor는 로그를 남기고 null을 돌려주고, 레코드를 불러오지 못한 guard는 warn 후 false를 돌려주며, 그것이 에러인지는 호출한 쪽이 정합니다. 이 스택 어디에도 Result 래퍼는 없습니다.",
+            })}
+          </div>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide
+        id="agent-shelf"
+        title={l.trans({ en: "The Same Endpoints, For Agents", ko: "같은 Endpoint, 에이전트에게는" })}
+      >
+        <Docs.Title>
+          {l.trans({ en: "The Same Endpoints, For Agents", ko: "같은 Endpoint, 에이전트에게는" })}
+        </Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Every signal is also served to AI agents as an MCP server on POST /mcp, mounted by default. There is no per-endpoint opt-in and nothing extra to write in a signal file: exposure follows the guards, because the guards are already the authorization decision and a second switch would only guarantee that endpoints added later are invisible until somebody remembers them.",
+              ko: "모든 signal은 기본 마운트되는 POST /mcp에서 MCP 서버로 AI 에이전트에게도 제공됩니다. endpoint별 opt-in도 없고 signal 파일에 따로 적을 것도 없습니다. 노출은 guard를 따릅니다. guard가 이미 권한 부여 결정이고, 스위치를 하나 더 두면 나중에 추가되는 endpoint가 누군가 기억해 낼 때까지 보이지 않게 될 뿐이기 때문입니다.",
+            })}
+          </div>
+          <div className={panelRecipe({ radius: "lg" }, "my-4")}>
+            <div className="mb-2 font-semibold text-primary">
+              {l.trans({ en: "What the guards decide for agents:", ko: "Guard가 에이전트에 대해 정하는 것:" })}
+            </div>
+            <ul className="list-disc space-y-1 pl-5 text-foreground/70 text-sm">
+              <li>
+                {l.trans({
+                  en: "An endpoint that declares a real guard is published; one that declares none is refused, and the boot log names it. So a missing guards array now costs visibility as well as authorization.",
+                  ko: "실질 guard를 선언한 endpoint는 게시되고, 아무것도 선언하지 않은 endpoint는 거부되며 부팅 로그에 이름이 남습니다. guards 배열을 빠뜨리면 권한뿐 아니라 노출까지 잃습니다.",
+                })}
+              </li>
+              <li>
+                {l.trans({
+                  en: "A mutation whose only guard is Public is refused too, and so are pubsub, message, file uploads, and any endpoint returning Any or Binary.",
+                  ko: "guard가 Public뿐인 mutation도 거부되고, pubsub, message, 파일 업로드, Any나 Binary를 반환하는 endpoint도 마찬가지입니다.",
+                })}
+              </li>
+              <li>
+                {l.trans({
+                  en: "mcp: false takes an endpoint off the shelf without touching its guards — the right answer for a step of a UI-driven state machine that is perfectly guarded and still no business of a model.",
+                  ko: "mcp: false는 guard를 건드리지 않고 endpoint를 선반에서만 내립니다. guard는 완벽하지만 모델이 건드릴 일은 아닌, UI가 이끄는 상태 기계의 한 단계에 맞는 답입니다.",
+                })}
+              </li>
+            </ul>
+          </div>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  The business service you already wrote is therefore the agent surface too — the same guards, the same{" "}
+                  <code>Err</code>, the same service method. What changes is the cost of the catalogue and who may be on
+                  the other end. The wire, the OAuth metadata, the rate limits and the <code>Person</code> guard are on{" "}
+                  <Link href="/cheatsheet/interface/mcp" className="text-primary">
+                    MCP Server
+                  </Link>
+                  .
+                </span>
+              ),
+              ko: (
+                <span>
+                  그래서 이미 작성한 비즈니스 서비스가 곧 에이전트 표면입니다. 같은 guard, 같은 <code>Err</code>, 같은
+                  service method입니다. 달라지는 것은 카탈로그의 비용과 반대편에 누가 있을 수 있는가입니다. 와이어,
+                  OAuth 메타데이터, rate limit, <code>Person</code> guard 이야기는{" "}
+                  <Link href="/cheatsheet/interface/mcp" className="text-primary">
+                    MCP 서버
+                  </Link>
+                  에 있습니다.
+                </span>
+              ),
+            })}
+          </div>
+        </Docs.Description>
+      </Scroll.Slide>
       <DocsToc />
     </Scroll>
   );

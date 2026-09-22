@@ -1,10 +1,143 @@
 import { usePage } from "@apps/akan/client";
-import { Code, cardGridRecipe, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { Code, cardGridRecipe, Divider, Docs, DocsToc, type OptionItem, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
 export default page().render(() => {
   const { l } = usePage();
+
+  const read = l.trans({ en: "read", ko: "읽기" });
+  const noHooks = l.trans({ en: "no hooks", ko: "훅 없음" });
+  const filterMethods: OptionItem[] = [
+    {
+      key: "list<Filter>",
+      type: "Promise<Doc[]>",
+      default: read,
+      desc: l.trans({
+        en: "Every match. Takes a trailing option object for sort, skip, limit and select.",
+        ko: "매치된 전부입니다. sort, skip, limit, select를 담은 옵션 객체를 마지막 인자로 받습니다.",
+      }),
+    },
+    {
+      key: "listIds<Filter>",
+      type: "Promise<string[]>",
+      default: read,
+      desc: l.trans({
+        en: "The same window, ids only — the cheap read when you are about to load something else by id.",
+        ko: "같은 창을 id만으로 읽습니다. 곧바로 다른 것을 id로 불러올 참이라면 이쪽이 저렴합니다.",
+      }),
+    },
+    {
+      key: "find<Filter>",
+      type: "Promise<Doc | null>",
+      default: read,
+      desc: l.trans({
+        en: "One match or null. Takes a find option object.",
+        ko: "매치 하나 또는 null입니다. find 옵션 객체를 받습니다.",
+      }),
+    },
+    {
+      key: "findId<Filter>",
+      type: "Promise<string | null>",
+      default: read,
+      desc: l.trans({
+        en: "The same, id only.",
+        ko: "같은 것을 id만으로 읽습니다.",
+      }),
+    },
+    {
+      key: "pick<Filter>",
+      type: "Promise<Doc>",
+      default: read,
+      desc: l.trans({
+        en: "One match, and it throws when there is none. Use it when the absence is a bug rather than a branch.",
+        ko: "매치 하나이고, 없으면 예외를 냅니다. 없는 것이 분기가 아니라 버그일 때 씁니다.",
+      }),
+    },
+    {
+      key: "pickId<Filter>",
+      type: "Promise<string>",
+      default: read,
+      desc: l.trans({
+        en: "The same, id only.",
+        ko: "같은 것을 id만으로 읽습니다.",
+      }),
+    },
+    {
+      key: "exists<Filter>",
+      type: "Promise<string | null>",
+      default: read,
+      desc: l.trans({
+        en: "The matching id, or null. Not a boolean — convenient, and wrong in a strict comparison.",
+        ko: "매치된 id 또는 null입니다. boolean이 아닙니다. 편리하지만 엄격 비교에서는 틀립니다.",
+      }),
+    },
+    {
+      key: "count<Filter>",
+      type: "Promise<number>",
+      default: read,
+      desc: l.trans({
+        en: "How many match.",
+        ko: "몇 개가 매치되는지입니다.",
+      }),
+    },
+    {
+      key: "insight<Filter>",
+      type: "Promise<Insight>",
+      default: read,
+      desc: l.trans({
+        en: "The accumulated Insight class over the same query — count is a number, insight is every counter the Insight class declared.",
+        ko: "같은 query 위에 누적된 Insight class입니다. count는 숫자 하나이고, insight는 Insight class가 선언한 모든 카운터입니다.",
+      }),
+    },
+    {
+      key: "query<Filter>",
+      type: "QueryOf<Doc>",
+      default: l.trans({ en: "builder", ko: "빌더" }),
+      desc: l.trans({
+        en: "The compiled query descriptor, for composing into something else. Synchronous, and it never touches the store. A slice's exec returns one of these.",
+        ko: "다른 것에 합성해 넣을 컴파일된 query 서술자입니다. 동기 함수이고 store를 건드리지 않습니다. slice의 exec이 돌려주는 것이 이것입니다.",
+      }),
+    },
+    {
+      key: "remove<Filter>",
+      type: "Promise<UpdateResult>",
+      default: noHooks,
+      desc: l.trans({
+        en: "One atomic UPDATE stamping every match as removed. Reports counts only.",
+        ko: "매치된 전부를 삭제 표시하는 원자적 UPDATE 한 번입니다. 개수만 보고합니다.",
+      }),
+    },
+    {
+      key: "removeOne<Filter>",
+      type: "Promise<UpdateResult>",
+      default: noHooks,
+      desc: l.trans({
+        en: "The same, on the newest match only.",
+        ko: "같은 것을 가장 최근 매치 하나에만 적용합니다.",
+      }),
+    },
+    {
+      key: "update<Filter>",
+      type: "UpdateChain<Doc>",
+      default: noHooks,
+      desc: l.trans({
+        en: "A chain, not a call: the patch cannot trail filter arguments that may be optional, so it lands on a terminal .set(). Building the chain touches nothing.",
+        ko: "호출이 아니라 체인입니다. 선택일 수 있는 filter 인자 뒤에 patch를 둘 수 없으므로 마지막 .set()에 놓입니다. 체인을 만드는 것만으로는 아무 일도 일어나지 않습니다.",
+      }),
+      example: 'await updateInProject(projectId).set({ status: "archived" })',
+    },
+    {
+      key: "updateOne<Filter>",
+      type: "UpdateChain<Doc>",
+      default: noHooks,
+      desc: l.trans({
+        en: "The same, on the newest match only.",
+        ko: "같은 것을 가장 최근 매치 하나에만 적용합니다.",
+      }),
+    },
+  ];
+
   return (
     <Scroll>
       <Scroll.Slide id="document-overview" title="model.document.ts">
@@ -169,19 +302,56 @@ export class TicketModel extends into(Ticket, TicketFilter, cnst.ticket, () => (
             </div>
           ))}
         </div>
-        <div className={cardGridRecipe()}>
-          <div className={panelRecipe()}>
-            <div className="font-bold text-foreground">CRUD helpers</div>
-            <div className="mt-2 text-foreground/70">get, load, loadMany, create, update, remove</div>
-          </div>
-          <div className={panelRecipe()}>
-            <div className="font-bold text-foreground">Query helpers</div>
-            <div className="mt-2 text-foreground/70">
-              list, listIds, find, findId, pick, pickId, exists, count, insight, query, remove, removeOne, update,
-              updateOne
-            </div>
-          </div>
+        <div className={panelRecipe()}>
+          <div className="font-bold text-foreground">CRUD helpers</div>
+          <div className="mt-2 text-foreground/70">get, load, loadMany, create, update, remove</div>
         </div>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Every declared filter generates fourteen methods, on the model and on the service alike. Ten of them read. The third column answers the only question that changes what you may safely call: does this method go through a document, firing the hooks, or straight to the database as one statement?",
+              ko: "선언한 filter 하나마다 method 열네 개가 생성되고, model과 service 양쪽에 똑같이 붙습니다. 그중 열 개는 읽기입니다. 세 번째 열은 무엇을 안전하게 호출할 수 있는지를 가르는 유일한 질문에 답합니다. 이 method는 document를 거쳐 훅을 태우는가, 아니면 문장 하나로 데이터베이스에 바로 가는가?",
+            })}
+          </div>
+          <Docs.OptionTable items={filterMethods} />
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: (
+                <span>
+                  The four query-level writes push a single atomic UPDATE and fire <strong>no document hooks</strong> —
+                  so no <code>_postRemove</code>, and <strong>no cascade</strong>. On a model whose removal deletes a
+                  stored object, closes a child, or cleans up a counter, <code>remove&lt;Filter&gt;</code> leaves every
+                  one of those undone and reports a count that looks like success. Use them on a model that carries no
+                  removal side effect; otherwise remove documents one at a time through{" "}
+                  <code>remove&lt;Model&gt;(id)</code>. The facade's <code>removeById</code> and <code>updateById</code>{" "}
+                  are those same hookless writes narrowed to one id, not the document path.
+                </span>
+              ),
+              ko: (
+                <span>
+                  query 단위 쓰기 네 개는 원자적 UPDATE 한 번을 밀어 넣고 <strong>document 훅을 태우지 않습니다</strong>
+                  . <code>_postRemove</code>도 없고 <strong>캐스케이드도 없습니다</strong>. 삭제가 저장된 객체를
+                  지우거나 자식을 닫거나 카운터를 정리하는 model이라면, <code>remove&lt;Filter&gt;</code>는 그 전부를
+                  하지 않은 채 성공처럼 보이는 개수를 보고합니다. 삭제 부수효과가 없는 model에만 쓰고, 그렇지 않으면{" "}
+                  <code>remove&lt;Model&gt;(id)</code>로 document를 하나씩 지우세요. facade의 <code>removeById</code>와{" "}
+                  <code>updateById</code>도 같은 훅 없는 쓰기를 id 하나로 좁힌 것이지 document 경로가 아닙니다.
+                </span>
+              ),
+            })}
+          </Docs.Alert>
+          <div>
+            {l.trans({
+              en: 'Two smaller traps live in the same table. exists<Filter> resolves to the matching id or null rather than a boolean, which is convenient and reads wrong in a strict comparison. And removeOne and updateOne always hit the newest match — they are for "there is at most one of these", never for claiming the next item off a queue.',
+              ko: '같은 표 안에 더 작은 함정이 둘 있습니다. exists<Filter>는 boolean이 아니라 매치된 id 또는 null로 해소됩니다. 편리하지만 엄격 비교에서는 잘못 읽힙니다. 그리고 removeOne과 updateOne은 언제나 가장 최근 매치를 건드립니다. "이런 것은 많아야 하나"를 위한 것이지, 큐에서 다음 항목을 집어 오는 용도가 아닙니다.',
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "A filter may not be keyed after its own model. A filter named ticket on model ticket would silently swap the single-document removeTicket and updateTicket for the hookless query-level pair, so the class build throws at boot instead.",
+              ko: "filter에 자기 model의 이름을 붙일 수 없습니다. model ticket에 ticket이라는 filter를 선언하면 단일 document용 removeTicket과 updateTicket이 조용히 훅 없는 query 단위 쌍으로 바뀌게 되므로, 그 대신 부팅 시점에 class 빌드가 예외를 냅니다.",
+            })}
+          </div>
+        </Docs.Description>
         <Code.Snippet
           className="w-full"
           title="ticket.service.ts | ticket.document.ts"

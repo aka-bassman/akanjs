@@ -1,6 +1,8 @@
 import type { CodeAgent, CodeSessionEntry } from "@akanjs/devkit/codeAgent";
 import { SubagentPool } from "@akanjs/devkit/codeAgent/agent/SubagentPool";
 import { McpServerConfig } from "@akanjs/devkit/codeAgent/tools/McpServerConfig";
+import { McpSignIn } from "@akanjs/devkit/codeAgent/tools/McpSignIn";
+import { McpTokenStore } from "@akanjs/devkit/codeAgent/tools/McpTokenStore";
 import {
   type CodeAgentAnswer,
   type CodeAgentApprovalRequest,
@@ -10,6 +12,7 @@ import {
   codeAgentClip,
 } from "akanjs/common";
 import { render } from "ink";
+import { openBrowser } from "../openBrowser";
 import {
   CodeTuiApp,
   type CodeTuiEditKey,
@@ -107,6 +110,14 @@ export class CodeTui {
   static readonly title = "Akan — write one line, deploy every stack";
   /** How an attachment appears in the prompt, and the only place it can be removed from. */
   static readonly imageMark = /\[image #(\d+)] ?/g;
+  /**
+   * The extra choice a question with `freeText` grows, under the options the model wrote.
+   *
+   * Host-only: choosing it opens the prompt rather than answering, so the key never reaches the core. A list
+   * of options is the model's guess at what the answers are, and the person is the one who knows when none of
+   * them is it.
+   */
+  static readonly freeTextKey = "__free_text__";
 
   /**
    * Bracketed paste, which is what makes `cmd+v` reach us at all.
@@ -131,6 +142,8 @@ export class CodeTui {
   /** Index of the last visible transcript row, or null while following the tail. */
   #anchor: number | null = null;
   #selected = 0;
+  /** Whether the open question is being answered in prose rather than from its list — see {@link freeTextKey}. */
+  #typing = false;
   #menuAt = 0;
   #checked: string[] = [];
   #overlay: CodeTuiOverlay | null = null;
@@ -200,6 +213,7 @@ export class CodeTui {
     if (this.#opening) this.#say(this.#opening);
     this.#unsubscribe = this.#agent.on((event) => {
       this.#transcript.apply(event);
+      if (event.type === "question") this.#openQuestion(event.question);
       this.#scheduleFrame();
     });
     this.#agent.announce();
@@ -310,7 +324,7 @@ export class CodeTui {
     const frameRows = CodeTui.frameRowsOf(Math.max(10, this.#stdout.rows || 24));
     const question = this.#transcript.question;
     const approval = this.#transcript.approval;
-    const mode = CodeTui.#modeOf(question, approval);
+    const mode = this.#typing ? "input" : CodeTui.#modeOf(question, approval);
     const subagents = this.#railRows(columns);
     // The prompt is measured against a frame the rail has already taken its rows out of: Ink draws a row that
     // runs past the frame over the one below it instead of dropping it, so the two cannot both assume the
@@ -341,14 +355,14 @@ export class CodeTui {
       status: this.#status(),
       subagents,
       mode,
-      placeholder: this.#transcript.streaming ? "type to steer, esc to interrupt" : "ask for something, / for commands",
+      placeholder: this.#placeholder(),
       offered: this.#offered,
       prompt: CodeTui.#promptOf(question, approval),
       selected: ask.selected,
       checked: this.#checked,
       multiSelect: !!question?.multiSelect,
       notice: this.#notice,
-      hint: this.#overlay ? "esc close · ↑↓ scroll" : CodeTui.#hintOf(mode, !!question?.multiSelect),
+      hint: this.#overlay ? "esc close · ↑↓ scroll" : this.#hint(mode, !!question?.multiSelect),
       columns,
       frameRows,
       bodyHeight,
@@ -618,11 +632,13 @@ export class CodeTui {
   }
 
   static #optionsOf(question: CodeAgentQuestion | undefined): CodeTuiOption[] {
-    return (question?.options ?? []).map((option) => ({
+    const options = (question?.options ?? []).map((option) => ({
       key: option.key,
-      label: option.label,
+      label: option.recommended ? `${option.label} (recommended)` : option.label,
       ...(option.detail ? { detail: option.detail } : {}),
     }));
+    if (!options.length || !question?.freeText) return options;
+    return [...options, { key: CodeTui.freeTextKey, label: "Something else…", detail: "answer in your own words" }];
   }
 
   static #promptOf(question: CodeAgentQuestion | undefined, approval: CodeAgentApprovalRequest | undefined) {
@@ -630,11 +646,18 @@ export class CodeTui {
     return question ? `? ${question.prompt}` : "";
   }
 
-  static #hintOf(mode: CodeTuiSnapshot["mode"], multiSelect: boolean) {
+  #hint(mode: CodeTuiSnapshot["mode"], multiSelect: boolean) {
+    if (this.#typing) return "enter answer · esc back to the choices";
     if (mode === "confirm") return "y yes · n no · esc no";
     if (mode === "select")
       return `↑↓ choose${multiSelect ? " · space toggle" : ""} · enter answer · esc skip · pgup/pgdn scroll`;
     return "enter send · shift+enter newline · ↑↓ move · esc interrupt · pgup/pgdn scroll · ^c quit · /help";
+  }
+
+  #placeholder() {
+    if (this.#typing) return "your answer";
+    if (this.#transcript.question) return "type an answer, or esc to skip";
+    return this.#transcript.streaming ? "type to steer, esc to interrupt" : "ask for something, / for commands";
   }
 
   #type = (text: string) => {
@@ -751,14 +774,14 @@ export class CodeTui {
       picker.at = Math.max(0, Math.min(picker.entries.length - 1, picker.at + delta));
       return this.#renderNow();
     }
-    const count = this.#transcript.question?.options?.length ?? 0;
+    const count = CodeTui.#optionsOf(this.#transcript.question).length;
     if (!count) return;
     this.#selected = (this.#selected + delta + count) % count;
     this.#renderNow();
   };
 
   #toggle = () => {
-    const option = this.#transcript.question?.options?.[this.#selected];
+    const option = CodeTui.#optionsOf(this.#transcript.question)[this.#selected];
     if (!option) return;
     this.#checked = this.#checked.includes(option.key)
       ? this.#checked.filter((key) => key !== option.key)
@@ -775,6 +798,13 @@ export class CodeTui {
 
   #cancel = () => {
     if (this.#overlay || this.#picker) return this.#dismiss();
+    // Back to the choices, not out of the question: reaching the prompt was a keypress, and undoing it should
+    // cost the same rather than throwing away a question the model is still waiting on.
+    if (this.#typing && this.#transcript.question?.options?.length) {
+      this.#typing = false;
+      this.#editor.clear();
+      return this.#renderNow();
+    }
     const approval = this.#transcript.approval;
     if (approval) return void this.#agent.approve(approval.approvalId, false);
     const question = this.#transcript.question;
@@ -946,13 +976,42 @@ export class CodeTui {
     }
   }
 
+  /**
+   * A question arriving takes the cursor, and the recommendation takes the cursor inside it.
+   *
+   * Offered under the cursor rather than merely labelled: "you decide" is the most common answer there is, and
+   * it should cost one keypress rather than a hunt down the list for the row that says so.
+   */
+  #openQuestion(question: CodeAgentQuestion) {
+    this.#typing = false;
+    this.#checked = [];
+    this.#selected = Math.max(
+      0,
+      (question.options ?? []).findIndex((option) => option.recommended),
+    );
+  }
+
   #answerCurrent(questionId: string) {
-    const options = this.#transcript.question?.options ?? [];
-    const answer: CodeAgentAnswer = options.length
-      ? { keys: this.#transcript.question?.multiSelect ? this.#checked : [options[this.#selected]?.key ?? ""] }
-      : { text: this.#editor.text.trim() };
+    const question = this.#transcript.question;
+    const shown = CodeTui.#optionsOf(question);
+    if (this.#typing || !shown.length) {
+      const text = this.#editor.text.trim();
+      this.#editor.clear();
+      this.#typing = false;
+      return void this.#answer(questionId, { text });
+    }
+    if (shown[this.#selected]?.key === CodeTui.freeTextKey) {
+      this.#typing = true;
+      this.#editor.clear();
+      return this.#renderNow();
+    }
+    // The synthetic choice is filtered rather than refused: it can be ticked in a multi-select, and what it
+    // means there is the same thing it means alone — that the list did not have the answer.
+    const keys = question?.multiSelect
+      ? this.#checked.filter((key) => key !== CodeTui.freeTextKey)
+      : [shown[this.#selected]?.key ?? ""];
     this.#editor.clear();
-    void this.#answer(questionId, answer);
+    void this.#answer(questionId, { keys });
   }
 
   async #answer(questionId: string, answer: CodeAgentAnswer) {
@@ -1041,6 +1100,7 @@ export class CodeTui {
     const root = this.#agent.workspaceRoot;
     if (!verb) return this.#open("mcp", CodeTuiMcp.list(this.#mcpView()));
     if (verb === "reload") return this.#reload("reconnected the MCP servers");
+    if (verb === "login" || verb === "logout") return this.#mcpAuth(verb, name);
     if (verb !== "add" && verb !== "remove") {
       const status = this.#agent.mcpServers().find((entry) => entry.name === verb);
       if (status) return this.#open(`mcp · ${verb}`, CodeTuiMcp.tools(status));
@@ -1059,6 +1119,28 @@ export class CodeTui {
     } catch (error: unknown) {
       this.#fail(error);
     }
+  }
+
+  /**
+   * Signing a server in, or forgetting that it ever was.
+   *
+   * The sign-in is left running rather than awaited: it opens a browser and waits for a person, which is
+   * minutes, and holding the command would freeze the prompt for all of them. The session reloads itself when
+   * the token lands, because a token this session did not start with reaches no tool registry until it does.
+   */
+  #mcpAuth(verb: "login" | "logout", name: string | undefined) {
+    const root = this.#agent.workspaceRoot;
+    if (!name) return this.#open("mcp", [`Usage: /mcp ${verb} <name>`, "", ...CodeTuiMcp.usage].join("\n"));
+    if (verb === "logout") {
+      if (!McpTokenStore.clear(name)) return this.#open("mcp", `"${name}" is not signed in.`);
+      return this.#reload(`signed out of ${name}`);
+    }
+    const ref = McpServerConfig.read(root).find((entry) => entry.name === name);
+    if (!ref) return this.#open("mcp", `No server named "${name}" is declared.`);
+    this.#say(`signing in to ${name} — finish in the browser`);
+    void McpSignIn.run(ref, { open: (url) => void openBrowser(url), onNotice: (message) => this.#say(message) })
+      .then(() => this.#reload(`signed in to ${name}`))
+      .catch((error: unknown) => this.#fail(error));
   }
 
   #mcpView() {

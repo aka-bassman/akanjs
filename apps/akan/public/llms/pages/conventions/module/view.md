@@ -132,10 +132,12 @@ export const General = ({ order }: OrderViewProps) => {
 ### detail page
 
 ```ts
-export default async function Page({ params }: PageProps) {
-  const { releaseView } = fetch.viewRelease(params.releaseId);
-  return <Release.Zone.View view={releaseView} />;
-}
+export default page()
+  .param("releaseId", ID)
+  .render(async ({ releaseId }) => {
+    const { releaseView } = fetch.viewRelease(releaseId);
+    return <Release.Zone.View view={releaseView} />;
+  });
 ```
 
 ### Release.Zone.tsx

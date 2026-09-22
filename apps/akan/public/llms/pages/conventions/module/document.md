@@ -23,6 +23,36 @@
 
 model.document.ts
 
+read
+
+no hooks
+
+Every match. Takes a trailing option object for sort, skip, limit and select.
+
+The same window, ids only — the cheap read when you are about to load something else by id.
+
+One match or null. Takes a find option object.
+
+The same, id only.
+
+One match, and it throws when there is none. Use it when the absence is a bug rather than a branch.
+
+The matching id, or null. Not a boolean — convenient, and wrong in a strict comparison.
+
+How many match.
+
+The accumulated Insight class over the same query — count is a number, insight is every counter the Insight class declared.
+
+builder
+
+The compiled query descriptor, for composing into something else. Synchronous, and it never touches the store. A slice's exec returns one of these.
+
+One atomic UPDATE stamping every match as removed. Reports counts only.
+
+The same, on the newest match only.
+
+A chain, not a call: the patch cannot trail filter arguments that may be optional, so it lands on a terminal .set(). Building the chain touches nothing.
+
 A document file defines the database behavior of a module. The constant file describes the data shape, while the document file explains how to query, mutate, load, index, and operate on stored documents.
 
 A normal document file usually contains search conditions, document-level behavior, and database model helpers used by services.
@@ -50,6 +80,14 @@ Required input for the query. Required args must come before optional args.
 Optional input. Build the query conditionally when the value exists.
 
 Use helpers like all, any, not, oneOf, notOneOf, between, gte, lte, contains, exists, empty, and search.
+
+Every declared filter generates fourteen methods, on the model and on the service alike. Ten of them read. The third column answers the only question that changes what you may safely call: does this method go through a document, firing the hooks, or straight to the database as one statement?
+
+Two smaller traps live in the same table. exists<Filter> resolves to the matching id or null rather than a boolean, which is convenient and reads wrong in a strict comparison. And removeOne and updateOne always hit the newest match — they are for "there is at most one of these", never for claiming the next item off a queue.
+
+A filter may not be keyed after its own model. A filter named ticket on model ticket would silently swap the single-document removeTicket and updateTicket for the hookless query-level pair, so the class build throws at boot instead.
+
+Full-Text Search
 
 Text Search Query
 
@@ -175,6 +213,21 @@ const ticket = await this.pickInProject(projectId);
 const count: number = await this.countInProject(projectId);
 const exists = await this.existsInProject(projectId);
 const ticketInsight: db.TicketInsight = await this.insightInProject(projectId);
+```
+
+### libs/shared/lib/admin/admin.document.ts
+
+```ts
+export class AdminFilter extends from(cnst.Admin, (filter) => ({
+  query: {
+    bySearch: filter()
+      .opt("text", String)
+      .query((text, q) => (text ? q.search(text, { prefix: true }) : {})),
+  },
+  sort: {},
+})) {}
+
+const admins = await this.listBySearch(text, { sort: "relevance" });
 ```
 
 ### ticket.document.ts

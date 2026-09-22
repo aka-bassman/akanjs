@@ -1,10 +1,288 @@
 import { usePage } from "@apps/akan/client";
-import { Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
 export default page().render(() => {
   const { l } = usePage();
+
+  const boundaryRows = [
+    {
+      name: "useState · useEffect · any use* hook",
+      desc: l.trans({
+        en: (
+          <span>
+            <strong>Client.</strong> React runs hooks in the browser. <code>usePage()</code>, <code>getSelf()</code> and{" "}
+            <code>useServer()</code> are the three exceptions — they read request-scoped server context and stay legal
+            in a server component.
+          </span>
+        ),
+        ko: (
+          <span>
+            <strong>클라이언트.</strong> React는 hook을 브라우저에서 실행합니다. 예외는 <code>usePage()</code>,{" "}
+            <code>getSelf()</code>, <code>useServer()</code> 셋뿐입니다. 이들은 요청 단위 서버 context를 읽으므로 server
+            component에서도 그대로 씁니다.
+          </span>
+        ),
+      }),
+    },
+    {
+      name: "onClick · onChange · any on* handler",
+      desc: l.trans({
+        en: (
+          <span>
+            <strong>Client.</strong> A function attached to a DOM event has to exist in the browser, so the component
+            holding it does too.
+          </span>
+        ),
+        ko: (
+          <span>
+            <strong>클라이언트.</strong> DOM 이벤트에 붙는 함수는 브라우저에 존재해야 하므로, 그 함수를 가진 component도
+            브라우저로 갑니다.
+          </span>
+        ),
+      }),
+    },
+    {
+      name: "st.use.* · st.do.*",
+      desc: l.trans({
+        en: (
+          <span>
+            <strong>Client.</strong> The store is a runtime singleton that only exists in the client bundle. Importing{" "}
+            <code>st</code> is what forces the directive, whether you read or write.
+          </span>
+        ),
+        ko: (
+          <span>
+            <strong>클라이언트.</strong> store는 client bundle에만 존재하는 런타임 싱글턴입니다. 읽든 쓰든{" "}
+            <code>st</code>를 import하는 것 자체가 directive를 강제합니다.
+          </span>
+        ),
+      }),
+    },
+    {
+      name: "window · document · navigator · localStorage",
+      desc: l.trans({
+        en: (
+          <span>
+            <strong>Client.</strong> Browser globals, plus <code>matchMedia</code>, the three observers,{" "}
+            <code>requestAnimationFrame</code> and <code>WebSocket</code>. None of them exist while the server renders.
+          </span>
+        ),
+        ko: (
+          <span>
+            <strong>클라이언트.</strong> 브라우저 전역 객체입니다. <code>matchMedia</code>, 세 가지 observer,{" "}
+            <code>requestAnimationFrame</code>, <code>WebSocket</code>도 같습니다. 서버 렌더링 시점에는 어느 것도
+            없습니다.
+          </span>
+        ),
+      }),
+    },
+    {
+      name: "a client-only third-party package",
+      desc: l.trans({
+        en: (
+          <span>
+            <strong>Client.</strong> A map, an editor, a chart library that touches the DOM on import. This is the one
+            reason the directive is never questioned — reach it through a lib re-export, never a direct import.
+          </span>
+        ),
+        ko: (
+          <span>
+            <strong>클라이언트.</strong> import 시점에 DOM을 건드리는 지도, 에디터, 차트 라이브러리입니다. directive를
+            문제 삼지 않는 유일한 이유이며, 직접 import하지 말고 lib re-export를 거칩니다.
+          </span>
+        ),
+      }),
+    },
+    {
+      name: "rendering markup · mapping over data",
+      desc: l.trans({
+        en: (
+          <span>
+            <strong>Server.</strong> A list of cards built from an array is HTML the server can finish. It costs nothing
+            to hydrate because there is nothing to hydrate.
+          </span>
+        ),
+        ko: (
+          <span>
+            <strong>서버.</strong> 배열로 만든 카드 목록은 서버가 끝까지 만들 수 있는 HTML입니다. hydrate할 것이 없으니
+            hydrate 비용도 없습니다.
+          </span>
+        ),
+      }),
+    },
+    {
+      name: "usePage() · l() · l.trans()",
+      desc: l.trans({
+        en: (
+          <span>
+            <strong>Server.</strong> Translation resolves on both sides, so a localized screen never needs the directive
+            for its text.
+          </span>
+        ),
+        ko: (
+          <span>
+            <strong>서버.</strong> 번역은 양쪽에서 해결되므로, 다국어 화면이 문구 때문에 directive를 달 일은 없습니다.
+          </span>
+        ),
+      }),
+    },
+    {
+      name: "route params and search values",
+      desc: l.trans({
+        en: (
+          <span>
+            <strong>Server.</strong> <code>.param()</code> and <code>.search()</code> hand the render callback typed
+            values before the first byte.
+          </span>
+        ),
+        ko: (
+          <span>
+            <strong>서버.</strong> <code>.param()</code>과 <code>.search()</code>는 첫 바이트가 나가기 전에 타입이
+            맞춰진 값을 render callback에 넘깁니다.
+          </span>
+        ),
+      }),
+    },
+    {
+      name: "fetch.* inside a route",
+      desc: l.trans({
+        en: (
+          <span>
+            <strong>Server.</strong> A route calls the endpoint directly. The same call from a mounted client component
+            is two extra round-trips for a shell the browser already painted.
+          </span>
+        ),
+        ko: (
+          <span>
+            <strong>서버.</strong> route는 endpoint를 직접 호출합니다. 같은 호출을 마운트된 client component에서 하면,
+            브라우저가 이미 그린 화면을 위해 왕복 두 번을 더 치릅니다.
+          </span>
+        ),
+      }),
+    },
+    {
+      name: "getSelf({ unauthorize })",
+      desc: l.trans({
+        en: (
+          <span>
+            <strong>Server.</strong> Gate auth in <code>_layout.tsx</code> before any HTML is sent, not in a component
+            that renders and then redirects.
+          </span>
+        ),
+        ko: (
+          <span>
+            <strong>서버.</strong> 인증은 HTML이 나가기 전에 <code>_layout.tsx</code>에서 막습니다. 렌더링한 뒤
+            redirect하는 component에서 하지 않습니다.
+          </span>
+        ),
+      }),
+    },
+    {
+      name: "showing and hiding a panel",
+      desc: l.trans({
+        en: (
+          <span>
+            <strong>Server, usually.</strong> A <code>data-*</code> attribute with <code>group-data-</code> variants, or{" "}
+            <code>details</code> and <code>summary</code>, keeps both branches server-rendered. Reach for state only
+            when the visibility itself is business state.
+          </span>
+        ),
+        ko: (
+          <span>
+            <strong>대개 서버.</strong> <code>data-*</code> 속성과 <code>group-data-</code> variant, 혹은{" "}
+            <code>details</code>/<code>summary</code>를 쓰면 양쪽 분기가 모두 서버에서 렌더링됩니다. 보이고 숨기는 것
+            자체가 비즈니스 상태일 때만 state를 씁니다.
+          </span>
+        ),
+      }),
+    },
+  ];
+
+  const roleRows = [
+    {
+      name: "<Model>.Unit.tsx",
+      desc: l.trans({
+        en: "Server. One row, one card, one tile. Takes the model as a prop and renders it. Never carries the directive.",
+        ko: "서버. 행 하나, 카드 하나, 타일 하나입니다. 모델을 prop으로 받아 렌더링하며, directive를 달지 않습니다.",
+      }),
+    },
+    {
+      name: "<Model>.View.tsx",
+      desc: l.trans({
+        en: "Server. The detail surface for one record. Takes the full model as a prop. Never carries the directive.",
+        ko: "서버. 레코드 하나의 상세 화면입니다. full 모델을 prop으로 받으며, directive를 달지 않습니다.",
+      }),
+    },
+    {
+      name: "<Model>.Zone.tsx",
+      desc: l.trans({
+        en: 'Client. The composed page section that reads the store and hydrates from an init or view prop. Always "use client" on line 1, and it should hold almost no markup of its own.',
+        ko: '클라이언트. store를 읽고 init/view prop으로 hydrate하는 구성 section입니다. 1행에 항상 "use client"가 있고, 자체 마크업은 거의 갖지 않습니다.',
+      }),
+    },
+    {
+      name: "<Model>.Template.tsx",
+      desc: l.trans({
+        en: 'Client. The form. Every field is bound to the store, so a Template contains zero useState. Always "use client" on line 1.',
+        ko: '클라이언트. 폼입니다. 모든 field가 store에 묶이므로 Template에는 useState가 하나도 없습니다. 1행에 항상 "use client"가 있습니다.',
+      }),
+    },
+    {
+      name: "<Model>.Util.tsx",
+      desc: l.trans({
+        en: 'Client. One domain action as a control — Serve, Refund, Remove. Always "use client" on line 1, and it takes ids rather than model instances.',
+        ko: '클라이언트. 도메인 액션 하나를 컨트롤로 만든 것입니다. Serve, Refund, Remove 같은 것들이죠. 1행에 항상 "use client"가 있고, 모델 인스턴스가 아니라 id를 받습니다.',
+      }),
+    },
+  ];
+
+  const ssrRuleRows = [
+    {
+      name: "akan.ssr.unnecessary-use-client",
+      desc: l.trans({
+        en: "The directive is there but the file uses no client-only capability at all. Delete it.",
+        ko: "directive는 있는데 파일이 클라이언트 전용 기능을 하나도 쓰지 않습니다. 지우세요.",
+      }),
+    },
+    {
+      name: "akan.ssr.client-static-component",
+      desc: l.trans({
+        en: "A component in a client file renders four or more JSX elements with zero client-only capability. It is server-renderable markup sitting in the bundle.",
+        ko: "client 파일 안의 component가 클라이언트 전용 기능 없이 JSX 엘리먼트를 4개 이상 렌더링합니다. 번들에 들어앉은 서버 렌더링 가능한 마크업입니다.",
+      }),
+    },
+    {
+      name: "akan.ssr.client-static-markup",
+      desc: l.trans({
+        en: "Ten or more JSX elements wrapped around one or two client-only touches. Split it: the touch stays client, the subtree goes server.",
+        ko: "클라이언트 전용 접점 한두 개를 JSX 엘리먼트 10개 이상이 감싸고 있습니다. 접점만 클라이언트에 남기고 서브트리는 서버로 나눕니다.",
+      }),
+    },
+    {
+      name: "akan.ssr.client-mount-load",
+      desc: l.trans({
+        en: "A useEffect with an empty dependency array loads server data. The route can fetch it before the first byte. A reactive effect with real dependencies is not flagged.",
+        ko: "의존성 배열이 빈 useEffect가 서버 데이터를 불러옵니다. route가 첫 바이트 전에 가져올 수 있습니다. 실제 의존성이 있는 반응형 effect는 보고되지 않습니다.",
+      }),
+    },
+    {
+      name: "akan.ssr.module-missing-server-view",
+      desc: l.trans({
+        en: "A module renders only from Template, Zone and Util and declares no Unit or View at all, so every consumer pays for hydration just to display the model.",
+        ko: "모듈이 Template, Zone, Util에서만 렌더링하고 Unit이나 View를 전혀 선언하지 않습니다. 모델을 보여주기만 하려는 소비자도 hydration 비용을 냅니다.",
+      }),
+    },
+    {
+      name: "akan.ssr.template-client-state",
+      desc: l.trans({
+        en: "A Template holds form state in useState instead of the store. Bind the field with value={xForm.field} and onChange={st.do.setFieldOnX}.",
+        ko: "Template이 폼 상태를 store가 아니라 useState에 들고 있습니다. value={xForm.field}와 onChange={st.do.setFieldOnX}로 묶으세요.",
+      }),
+    },
+  ];
+
   return (
     <Scroll>
       <Scroll.Slide id="ui-overview" title={l.trans({ en: "UI Architecture", ko: "UI 아키텍처" })}>
@@ -12,1136 +290,416 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Akan UI is the user-facing interface layer of the app. When a customer opens a product page, a manager edits stock, or a partner checks orders from another client, the interface decides what appears immediately, what becomes interactive, and how user actions reach the backend.",
-              ko: "Akan UI는 앱에서 사용자가 직접 마주하는 인터페이스 계층입니다. 고객이 상품 페이지를 열고, 관리자가 재고를 수정하고, 파트너가 다른 클라이언트에서 주문을 확인할 때 UI는 무엇을 즉시 보여줄지, 무엇을 인터랙티브하게 만들지, 사용자 행동을 백엔드로 어떻게 전달할지 결정합니다.",
+              en: 'You add "use client" to a file because one button in it has an onClick. The file is two hundred lines of product markup and one handler, and now all two hundred lines ship twice: once as the HTML the server already rendered, and again as JavaScript the browser has to download, parse and re-run before that one button works.',
+              ko: '어떤 파일에 버튼 하나가 onClick을 가졌다는 이유로 "use client"를 답니다. 그 파일은 상품 마크업 200줄과 핸들러 하나로 이루어져 있고, 이제 200줄 전체가 두 번 전송됩니다. 한 번은 서버가 이미 렌더링한 HTML로, 또 한 번은 그 버튼 하나가 동작하기 전에 브라우저가 내려받고 파싱하고 다시 실행해야 하는 JavaScript로요.',
             })}
           </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: l.trans({ en: "Fast first screen", ko: "빠른 첫 화면" }),
-                desc: l.trans({
-                  en: "Server-rendered pages can show catalog, article, or dashboard content before the browser becomes interactive.",
-                  ko: "서버 렌더링 페이지는 브라우저가 인터랙티브해지기 전에도 카탈로그, 글, 대시보드 내용을 먼저 보여줄 수 있습니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Interactive work", ko: "인터랙티브 작업" }),
-                desc: l.trans({
-                  en: "Client components handle forms, filters, stock changes, realtime dashboards, and browser/device APIs.",
-                  ko: "클라이언트 컴포넌트는 폼, 필터, 재고 변경, 실시간 대시보드, 브라우저/디바이스 API를 처리합니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Generated helpers", ko: "생성된 헬퍼" }),
-                desc: l.trans({
-                  en: "Generated fetch, store, and model namespaces reduce hand-written API and state glue.",
-                  ko: "생성된 fetch, store, model namespace가 직접 작성해야 하는 API/상태 연결 코드를 줄여줍니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Many client surfaces", ko: "여러 클라이언트 표면" }),
-                desc: l.trans({
-                  en: "Customer web, admin console, partner site, and mobile apps can share backend logic while showing different screens.",
-                  ko: "고객 웹, 관리자 콘솔, 파트너 사이트, 모바일 앱은 백엔드 로직을 공유하면서 서로 다른 화면을 보여줄 수 있습니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-bold text-foreground">{title}: </span>
-
-                <span className="text-foreground/70 text-sm">{desc}</span>
-              </div>
-            ))}
+          <div>
+            {l.trans({
+              en: "Akan is SSR-first. Every element that renders on the server ships as markup and costs nothing to hydrate, so the default is server and the directive is a cost you justify per component rather than a habit. This page is about where that line falls, why it is mechanical rather than a judgment call, and how to see where your app currently sits.",
+              ko: "Akan은 SSR이 기본입니다. 서버에서 렌더링된 엘리먼트는 마크업으로만 전송되고 hydrate 비용이 없습니다. 그래서 기본값은 서버이고, directive는 습관이 아니라 component마다 근거를 대야 하는 비용입니다. 이 페이지는 그 선이 어디에 그어지는지, 왜 그것이 판단이 아니라 기계적인 규칙인지, 그리고 지금 내 앱이 어디에 서 있는지 보는 법을 다룹니다.",
+            })}
           </div>
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: (
+                <span>
+                  <code>akan quality ssr</code> prints the server render share per app and lib — server-rendered JSX
+                  elements over the total. <strong>50% is the floor</strong>, and a falling share is a regression. If a
+                  change moves markup to the client, say why, or move it back.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>akan quality ssr</code>은 app과 lib별 server render share를 출력합니다. 전체 JSX 엘리먼트 중
+                  서버에서 렌더링된 비율입니다. <strong>50%가 하한선</strong>이고, 비율이 떨어지면 그것은 회귀입니다.
+                  어떤 변경이 마크업을 클라이언트로 옮겼다면 이유를 밝히거나, 되돌리세요.
+                </span>
+              ),
+            })}
+          </Docs.Alert>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
       <Scroll.Slide
         id="server-side-rendering"
-        title={l.trans({ en: "What Is Server-Side Rendering?", ko: "서버사이드 렌더링이란?" })}
+        title={l.trans({ en: "How A Page Reaches The Browser", ko: "페이지가 브라우저에 닿는 경로" })}
       >
-        <Docs.Title>{l.trans({ en: "What Is Server-Side Rendering?", ko: "서버사이드 렌더링이란?" })}</Docs.Title>
+        <Docs.Title>
+          {l.trans({ en: "How A Page Reaches The Browser", ko: "페이지가 브라우저에 닿는 경로" })}
+        </Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Server-side rendering means the server prepares the first visible HTML before the browser finishes loading the full app. Users can see useful content earlier, even before every button, input, and realtime feature becomes interactive.",
-              ko: "서버사이드 렌더링은 브라우저가 전체 앱을 모두 불러오기 전에 서버가 먼저 보이는 HTML을 준비해 보내는 방식입니다. 모든 버튼, 입력, 실시간 기능이 동작 가능해지기 전에도 사용자는 유용한 콘텐츠를 더 빨리 볼 수 있습니다.",
-            })}
-          </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: l.trans({ en: "The server prepares", ko: "서버가 먼저 준비" }),
-                desc: l.trans({
-                  en: "The server reads route, params, language, and initial data, then prepares the page users will see first.",
-                  ko: "서버는 route, params, language, 초기 데이터를 읽고 사용자가 처음 볼 페이지를 준비합니다.",
-                }),
-                example: "product list, article body, reservation summary",
-              },
-              {
-                title: l.trans({ en: "The browser shows", ko: "브라우저가 먼저 표시" }),
-                desc: l.trans({
-                  en: "The browser can paint meaningful content quickly, so users are not staring at an empty app shell.",
-                  ko: "브라우저는 의미 있는 콘텐츠를 빠르게 그릴 수 있어, 사용자는 빈 앱 껍데기만 보고 기다리지 않아도 됩니다.",
-                }),
-                example: "title, price, first rows, policy text",
-              },
-              {
-                title: l.trans({ en: "The client activates", ko: "클라이언트가 활성화" }),
-                desc: l.trans({
-                  en: "After the first view appears, client components attach event handlers for typing, clicking, filtering, and live updates.",
-                  ko: "첫 화면이 보인 뒤 클라이언트 컴포넌트가 입력, 클릭, 필터링, 실시간 업데이트를 위한 이벤트 핸들러를 붙입니다.",
-                }),
-                example: "forms, filters, modals, st, fetch",
-              },
-            ].map(({ title, desc, example }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <div className="font-bold text-foreground">{title}</div>
-                <div className="mt-2 text-foreground/70 text-sm">{desc}</div>
-                <div className="mt-3 rounded-lg border border-border bg-muted px-3 py-2 font-mono text-foreground/70 text-xs">
-                  {example}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className={panelRecipe({ radius: "2xl", padding: "lg" })}>
-            <div className="mb-4">
-              <div className="font-bold text-foreground">{l.trans({ en: "SSR Timeline", ko: "SSR 동작 흐름" })}</div>
-              <div className="mt-1 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "The important point is that viewing and interacting do not have to happen at the exact same moment.",
-                  ko: "중요한 점은 화면을 보는 순간과 조작할 수 있는 순간이 꼭 같은 시점일 필요는 없다는 것입니다.",
-                })}
-              </div>
-            </div>
-            <div className="grid items-stretch gap-3 xl:grid-cols-[1fr_auto_1fr_auto_1fr]">
-              <div className="rounded-xl border border-info/30 bg-info/5 p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="font-bold text-info">{l.trans({ en: "Server", ko: "서버" })}</div>
-                  <div className="rounded-full bg-info/10 px-3 py-1 font-mono text-info text-xs">01</div>
-                </div>
-                <div className="text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Prepare first HTML from route, params, language, and initial data.",
-                    ko: "route, params, language, 초기 데이터로 첫 HTML을 준비합니다.",
-                  })}
-                </div>
-                <div className="mt-3 rounded-lg border border-info/20 bg-background px-3 py-2 font-mono text-foreground/70 text-xs">
-                  article title, product list
-                </div>
-              </div>
-              <div className="hidden items-center text-primary xl:flex">
-                <div className="h-px w-10 bg-primary/40" />
-                <span className="px-2 font-mono">→</span>
-                <div className="h-px w-10 bg-primary/40" />
-              </div>
-              <div className="rounded-xl border border-success/30 bg-success/5 p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="font-bold text-success">{l.trans({ en: "Browser View", ko: "브라우저 표시" })}</div>
-                  <div className="rounded-full bg-success/10 px-3 py-1 font-mono text-success text-xs">02</div>
-                </div>
-                <div className="text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Paint useful content quickly so the user can understand the page.",
-                    ko: "사용자가 페이지를 이해할 수 있도록 유용한 콘텐츠를 빠르게 그립니다.",
-                  })}
-                </div>
-                <div className="mt-3 rounded-lg border border-success/20 bg-background px-3 py-2 font-mono text-foreground/70 text-xs">
-                  Time to View
-                </div>
-              </div>
-              <div className="hidden items-center text-primary xl:flex">
-                <div className="h-px w-10 bg-primary/40" />
-                <span className="px-2 font-mono">→</span>
-                <div className="h-px w-10 bg-primary/40" />
-              </div>
-              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="font-bold text-primary">{l.trans({ en: "Client Areas", ko: "클라이언트 영역" })}</div>
-                  <div className="rounded-full bg-primary/10 px-3 py-1 font-mono text-primary text-xs">03</div>
-                </div>
-                <div className="text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Activate forms, filters, modals, realtime updates, st, and fetch actions.",
-                    ko: "폼, 필터, 모달, 실시간 업데이트, st, fetch 액션을 활성화합니다.",
-                  })}
-                </div>
-                <div className="mt-3 rounded-lg border border-primary/20 bg-background px-3 py-2 font-mono text-foreground/70 text-xs">
-                  Time to Interaction
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className={panelRecipe({ radius: "2xl", padding: "lg" })}>
-            <div className="font-bold text-foreground">{l.trans({ en: "Business Example", ko: "비즈니스 예시" })}</div>
-            <div className="mt-2 text-foreground/70 text-sm">
-              {l.trans({
-                en: "On a shopping page, customers should see product names, prices, and the first list quickly. The add-to-cart button, stock filter, and recommendation carousel can become interactive after the first view is already visible.",
-                ko: "쇼핑 페이지에서는 고객이 상품명, 가격, 첫 목록을 빠르게 봐야 합니다. 장바구니 버튼, 재고 필터, 추천 캐러셀은 첫 화면이 이미 보인 뒤 인터랙티브해져도 됩니다.",
-              })}
-            </div>
-          </div>
-          <Docs.Alert type="info">
-            {l.trans({
-              en: "Step 01 does not have to wait for every query. fetch.init<Model><Suffix>, fetch.view<Model>, and fetch.edit<Model> return a handle whose fields are promises, so a route can send the shell and hand each section its own promise — the section streams in behind its own boundary as its data lands.",
-              ko: "01 단계가 모든 쿼리를 기다려야 하는 것은 아닙니다. fetch.init<Model><Suffix>, fetch.view<Model>, fetch.edit<Model>는 필드가 promise인 handle을 반환하므로, route는 shell을 먼저 보내고 각 section에 자기 promise를 넘길 수 있습니다 — 그 section은 자기 데이터가 도착하는 대로 자체 boundary 뒤에서 스트리밍됩니다.",
-            })}
-          </Docs.Alert>
-          <Docs.Alert type="info">
-            {l.trans({
-              en: "SSR is not the opposite of client-side UI. It is the first step of the experience: show useful content early, then let client components handle the parts that need interaction.",
-              ko: "SSR은 클라이언트 UI의 반대 개념이 아닙니다. 사용자 경험의 첫 단계입니다. 유용한 콘텐츠를 먼저 보여주고, 상호작용이 필요한 부분은 클라이언트 컴포넌트가 맡습니다.",
-            })}
-          </Docs.Alert>
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
-
-      <Scroll.Slide id="rendering-boundary" title={l.trans({ en: "Rendering Boundary", ko: "렌더링 경계" })}>
-        <Docs.Title>{l.trans({ en: "Rendering Boundary", ko: "렌더링 경계" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: "Before deciding server-side or client-side, think about two moments in the user experience: when the user can see useful content, and when the user can interact with it.",
-              ko: "서버사이드와 클라이언트사이드를 나누기 전에 사용자 경험의 두 순간을 먼저 생각하세요. 사용자가 유용한 내용을 볼 수 있는 순간과, 그 화면을 실제로 조작할 수 있는 순간입니다.",
-            })}
-          </div>
-          <div className="space-y-1">
-            <div className="rounded-2xl border border-info/30 bg-info/5 p-5">
-              <div className="font-bold text-info">Time to View</div>
-              <div className="mt-2 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "How quickly users can see meaningful content. A customer should see product names, prices, article text, or reservation details before every button becomes interactive.",
-                  ko: "사용자가 의미 있는 내용을 얼마나 빨리 볼 수 있는지입니다. 모든 버튼이 동작 가능해지기 전이라도 고객은 상품명, 가격, 글 본문, 예약 정보를 먼저 볼 수 있어야 합니다.",
-                })}
-              </div>
-              <div className="mt-3 rounded-lg border border-info/20 bg-background px-3 py-2 font-mono text-foreground/70 text-xs">
-                Server-side rendering helps here
-              </div>
-            </div>
-            <div className="rounded-2xl border border-primary/30 bg-primary/5 p-5">
-              <div className="font-bold text-primary">Time to Interaction</div>
-              <div className="mt-2 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "How quickly users can type, click, filter, open modals, or receive realtime updates. These actions need browser-side state and event handlers.",
-                  ko: "사용자가 입력, 클릭, 필터링, 모달 열기, 실시간 업데이트 수신을 얼마나 빨리 할 수 있는지입니다. 이런 작업에는 브라우저 쪽 상태와 이벤트 핸들러가 필요합니다.",
-                })}
-              </div>
-              <div className="mt-3 rounded-lg border border-primary/20 bg-background px-3 py-2 font-mono text-foreground/70 text-xs">
-                Client-side components help here
-              </div>
-            </div>
-          </div>
-          <div className={panelRecipe({ radius: "2xl", padding: "lg" })}>
-            <div className="font-bold text-foreground">
-              {l.trans({ en: "Why Both Sides Exist", ko: "왜 두 방식을 함께 쓰는가" })}
-            </div>
-            <div className="mt-2 space-y-1">
-              <div className="rounded-xl border border-border bg-muted p-4">
-                <div className="font-semibold text-foreground">
-                  {l.trans({ en: "Server-side first content", ko: "서버사이드 첫 콘텐츠" })}
-                </div>
-                <div className="mt-2 text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Good for content users should understand immediately: catalog lists, article pages, pricing, profile summaries, and policy text.",
-                    ko: "사용자가 즉시 이해해야 하는 콘텐츠에 좋습니다. 카탈로그 목록, 글 페이지, 가격, 프로필 요약, 정책 문구가 여기에 해당합니다.",
-                  })}
-                </div>
-              </div>
-              <div className="rounded-xl border border-border bg-muted p-4">
-                <div className="font-semibold text-foreground">
-                  {l.trans({ en: "Client-side working areas", ko: "클라이언트사이드 작업 영역" })}
-                </div>
-                <div className="mt-2 text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Good for parts that must react to the user: stock forms, filters, chat input, dashboards, maps, camera, or local device APIs.",
-                    ko: "사용자 행동에 반응해야 하는 부분에 좋습니다. 재고 폼, 필터, 채팅 입력, 대시보드, 지도, 카메라, 로컬 디바이스 API가 여기에 해당합니다.",
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className={panelRecipe({ radius: "2xl", padding: "lg" })}>
-            <div className="mb-4">
-              <div className="font-bold text-foreground">
-                {l.trans({ en: "A Simpler Way To Decide", ko: "더 쉬운 결정 순서" })}
-              </div>
-              <div className="mt-1 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "Start with what the user should see first, then add browser-side work only where the user actually interacts.",
-                  ko: "사용자가 먼저 봐야 하는 것부터 시작하고, 실제로 상호작용이 필요한 영역에만 브라우저 작업을 추가합니다.",
-                })}
-              </div>
-            </div>
-            <div className="space-y-1">
-              {[
-                {
-                  step: "01",
-                  title: l.trans({ en: "Show stable content", ko: "안정적인 콘텐츠 표시" }),
-                  desc: l.trans({
-                    en: "Render product names, article text, prices, summaries, and first lists on the server.",
-                    ko: "상품명, 글 본문, 가격, 요약, 첫 목록은 서버에서 렌더링합니다.",
-                  }),
-                  example: "page.tsx, layout, first data",
-                },
-                {
-                  step: "02",
-                  title: l.trans({ en: "Wrap working areas", ko: "작업 영역 감싸기" }),
-                  desc: l.trans({
-                    en: 'Use "use client" only around forms, filters, modals, realtime status, or device/browser APIs.',
-                    ko: '폼, 필터, 모달, 실시간 상태, 디바이스/브라우저 API 주변에만 "use client"를 사용합니다.',
-                  }),
-                  example: "Edit, filter, modal, live status",
-                },
-                {
-                  step: "03",
-                  title: l.trans({ en: "Connect actions", ko: "액션 연결" }),
-                  desc: l.trans({
-                    en: "Use st for client state and fetch when the action needs a business answer from the server.",
-                    ko: "클라이언트 상태는 st로 다루고, 서버의 비즈니스 응답이 필요하면 fetch를 사용합니다.",
-                  }),
-                  example: "st.use, st.do, fetch",
-                },
-              ].map(({ step, title, desc, example }) => (
-                <div key={step} className="space-y-1 rounded-xl border border-border bg-muted px-4 py-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-bold text-foreground">{title}</div>
-                    <div className="rounded-full bg-primary/10 px-3 py-1 font-mono text-primary text-xs">{step}</div>
-                  </div>
-                  <div className="text-foreground/70 text-sm">{desc}</div>
-                  <div
-                    className={panelRecipe(
-                      { radius: "lg", padding: "none" },
-                      "px-3 py-2 font-mono text-foreground/70 text-xs",
-                    )}
-                  >
-                    {example}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: l.trans({ en: "Start with a readable screen", ko: "먼저 읽히는 화면으로 시작" }),
-                desc: l.trans({
-                  en: "If users should immediately see product names, prices, articles, or summaries, keep that part server-rendered.",
-                  ko: "사용자가 상품명, 가격, 글, 요약 정보를 즉시 봐야 한다면 그 부분은 서버 렌더링으로 둡니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Add client only for work", ko: "작업이 필요한 곳만 클라이언트" }),
-                desc: l.trans({
-                  en: "Use a client component when users type, click, open modals, filter lists, or keep a screen changing after load.",
-                  ko: "사용자가 입력, 클릭, 모달 열기, 목록 필터링을 하거나 로드 후 화면이 계속 바뀌어야 할 때 클라이언트 컴포넌트를 사용합니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Put use client at the boundary", ko: "경계에 use client 선언" }),
-                desc: l.trans({
-                  en: 'Do not turn the whole page into a client page by default. Put "use client" on the smallest component that needs interaction.',
-                  ko: '기본적으로 전체 페이지를 클라이언트 페이지로 만들지 않습니다. 인터랙션이 필요한 가장 작은 컴포넌트에 "use client"를 둡니다.',
-                }),
-              },
-              {
-                title: l.trans({ en: "Mix them per screen area", ko: "화면 영역별로 섞어서 사용" }),
-                desc: l.trans({
-                  en: "A product page can be mostly server-rendered while only the filter, cart button, or stock form runs in the browser.",
-                  ko: "상품 페이지 대부분은 서버 렌더링으로 두고, 필터, 장바구니 버튼, 재고 폼 같은 영역만 브라우저에서 실행할 수 있습니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-bold text-foreground">{title}: </span>
-
-                <span className="text-foreground/70 text-sm">{desc}</span>
-              </div>
-            ))}
-          </div>
-          <div className={panelRecipe({ radius: "2xl", padding: "lg" })}>
-            <div className="mb-4">
-              <div className="font-bold text-foreground">
-                {l.trans({ en: "How To Split One Screen", ko: "한 화면을 나누는 방법" })}
-              </div>
-              <div className="mt-1 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "Think of a screen as stable information plus working areas. Keep stable information server-rendered, then wrap only the working areas with a client component.",
-                  ko: "화면을 안정적인 정보와 작업 영역으로 나눠 생각하세요. 안정적인 정보는 서버 렌더링으로 두고, 작업이 필요한 영역만 클라이언트 컴포넌트로 감쌉니다.",
-                })}
-              </div>
-            </div>
-            <div className="grid gap-3 lg:grid-cols-[1fr_auto_1fr]">
-              <div className="rounded-xl border border-border bg-muted p-4">
-                <div className="font-semibold text-foreground">
-                  {l.trans({ en: "Stable information", ko: "안정적인 정보" })}
-                </div>
-                <div className="mt-2 text-foreground/70 text-sm">
-                  {l.trans({
-                    en: "Use this for content users should see right away: title, price, summary, first list, policy text, or article body.",
-                    ko: "사용자가 바로 봐야 하는 제목, 가격, 요약, 첫 목록, 정책 문구, 글 본문에 사용합니다.",
-                  })}
-                </div>
-                <div
-                  className={panelRecipe(
-                    { radius: "lg", padding: "none" },
-                    "mt-3 px-3 py-2 font-mono text-foreground/70 text-xs",
-                  )}
-                >
-                  Product title, price, first list, summary
-                </div>
-              </div>
-              <div className="hidden items-center text-primary lg:flex">
-                <div className="h-px w-12 bg-primary/40" />
-                <span className="px-2 text-sm">add only where needed</span>
-                <div className="h-px w-12 bg-primary/40" />
-              </div>
-              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-                <div className="font-semibold text-primary">{l.trans({ en: "Working area", ko: "작업 영역" })}</div>
-                <div className="mt-2 text-foreground/70 text-sm">
-                  {l.trans({
-                    en: 'Use "use client" here for forms, filters, modals, live status, stock actions, or anything that needs browser-side state.',
-                    ko: '폼, 필터, 모달, 실시간 상태, 재고 액션처럼 브라우저 쪽 상태가 필요한 부분에 "use client"를 사용합니다.',
-                  })}
-                </div>
-                <div className="mt-3 rounded-lg border border-primary/20 bg-background px-3 py-2 font-mono text-foreground/70 text-xs">
-                  Search, add stock, edit form, live status
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: l.trans({ en: "Product catalog", ko: "상품 카탈로그" }),
-                desc: l.trans({
-                  en: "Render the title and first products on the server so customers see content quickly.",
-                  ko: "고객이 빠르게 내용을 볼 수 있도록 제목과 첫 상품 목록은 서버에서 렌더링합니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Stock editor", ko: "재고 수정 화면" }),
-                desc: l.trans({
-                  en: "Use a client component because the manager changes form values and clicks actions.",
-                  ko: "관리자가 폼 값을 바꾸고 액션을 클릭해야 하므로 클라이언트 컴포넌트를 사용합니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Live dashboard", ko: "실시간 대시보드" }),
-                desc: l.trans({
-                  en: "Use client state and realtime updates because the screen keeps changing after load.",
-                  ko: "로드 후에도 화면이 계속 바뀌므로 클라이언트 상태와 실시간 업데이트를 사용합니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-bold text-foreground">{title}: </span>
-
-                <span className="text-foreground/70 text-sm">{desc}</span>
-              </div>
-            ))}
-          </div>
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
-
-      <Scroll.Slide id="page-composition" title={l.trans({ en: "Page Composition Pattern", ko: "페이지 구성 패턴" })}>
-        <Docs.Title>{l.trans({ en: "Page Composition Pattern", ko: "페이지 구성 패턴" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: "A typical business screen combines a server-rendered shell with client-side areas. A product listing page may render the title and first data on the server, then hand the list area to a client zone for pagination, filtering, realtime updates, or user actions.",
-              ko: "일반적인 비즈니스 화면은 서버에서 렌더링되는 껍데기와 클라이언트에서 동작하는 영역을 함께 사용합니다. 상품 목록 페이지는 제목과 첫 데이터를 서버에서 렌더링하고, 목록 영역은 페이지네이션, 필터, 실시간 업데이트, 사용자 액션을 위해 클라이언트 zone에 넘길 수 있습니다.",
-            })}
-          </div>
-          <div className={panelRecipe({ radius: "2xl", padding: "lg" })}>
-            <div className="grid gap-5 xl:grid-cols-[240px_1fr]">
-              <div className="flex flex-col justify-between rounded-xl border border-primary/20 bg-primary/5 p-5">
-                <div>
-                  <div className="text-foreground/60 text-sm">{l.trans({ en: "Example model", ko: "예시 모델" })}</div>
-                  <div className="mt-3 w-fit rounded-full border border-primary/30 bg-primary/10 px-5 py-2 font-bold text-primary">
-                    Article
-                  </div>
-                  <div className="mt-4 text-foreground/70 text-sm">
-                    {l.trans({
-                      en: "A single model creates a predictable UI stack from page entry points to backend calls.",
-                      ko: "하나의 모델은 page 진입점부터 backend 호출까지 예측 가능한 UI 계층을 만듭니다.",
-                    })}
-                  </div>
-                </div>
-                <div className="mt-6 hidden items-center gap-3 text-primary xl:flex">
-                  <div className="h-px flex-1 bg-primary/30" />
-                  <span className="font-mono text-xl">→</span>
-                </div>
-              </div>
-              <div className="grid gap-3 lg:grid-cols-2">
-                <div className="rounded-xl border border-border bg-muted p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="font-mono font-semibold text-foreground">page</div>
-                      <div className="mt-1 text-foreground/70 text-sm">index, new, [id], [id]/edit</div>
-                    </div>
-                    <div className="rounded-full bg-primary/10 px-3 py-1 text-primary text-xs">01</div>
-                  </div>
-                  <div className="mt-2 text-foreground/60 text-xs">
-                    {l.trans({
-                      en: "Business screens and URL-level entry points.",
-                      ko: "비즈니스 화면과 URL 단위 진입점입니다.",
-                    })}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-border bg-muted p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="font-mono font-semibold text-foreground">component</div>
-                      <div className="mt-1 text-foreground/70 text-sm">Unit, Edit, View, Util, Zone</div>
-                    </div>
-                    <div className="rounded-full bg-primary/10 px-3 py-1 text-primary text-xs">02</div>
-                  </div>
-                  <div className="mt-2 text-foreground/60 text-xs">
-                    {l.trans({
-                      en: "Reusable screen parts for display, forms, actions, and client zones.",
-                      ko: "표시, 폼, 액션, 클라이언트 zone을 위한 재사용 화면 조각입니다.",
-                    })}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-border bg-muted p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="font-mono font-semibold text-foreground">store</div>
-                      <div className="mt-1 text-foreground/70 text-sm">model, modelList, modelForm, modelModal</div>
-                    </div>
-                    <div className="rounded-full bg-primary/10 px-3 py-1 text-primary text-xs">03</div>
-                  </div>
-                  <div className="mt-2 text-foreground/60 text-xs">
-                    {l.trans({
-                      en: "Client-side state for lists, forms, selected records, and modals.",
-                      ko: "목록, 폼, 선택된 데이터, 모달을 위한 클라이언트 상태입니다.",
-                    })}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-border bg-muted p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="font-mono font-semibold text-foreground">fetch</div>
-                      <div className="mt-1 text-foreground/70 text-sm">initModel, createModel, updateModel...</div>
-                    </div>
-                    <div className="rounded-full bg-primary/10 px-3 py-1 text-primary text-xs">04</div>
-                  </div>
-                  <div className="mt-2 text-foreground/60 text-xs">
-                    {l.trans({
-                      en: "Generated calls that connect UI actions to backend signals.",
-                      ko: "UI 액션을 백엔드 signal에 연결하는 생성 호출입니다.",
-                    })}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-border bg-muted p-4 lg:col-span-2">
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="font-mono font-semibold text-foreground">backend</span>
-                    <div className="h-px flex-1 bg-border" />
-                    <span className="text-foreground/60 text-xs">
-                      {l.trans({ en: "signals, services, database", ko: "signal, service, database" })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className={panelRecipe({ radius: "2xl", padding: "lg" })}>
-            <div className="mb-4">
-              <div className="font-bold text-foreground">
-                {l.trans({ en: "Typical Model Screen Flow", ko: "일반적인 모델 화면 흐름" })}
-              </div>
-              <div className="mt-1 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "A model usually starts from a list screen. Users create a new record, open a detail page, then move to an edit page when they need to change existing data.",
-                  ko: "모델 화면은 보통 목록 화면에서 시작합니다. 사용자는 새 데이터를 만들거나, 상세 화면을 열고, 기존 데이터를 수정해야 할 때 edit 화면으로 이동합니다.",
-                })}
-              </div>
-            </div>
-            <div className="grid items-center gap-4 xl:grid-cols-[1fr_auto_1.1fr_auto_1fr]">
-              <div className="rounded-2xl border border-info/30 bg-info/5 p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <div className="font-bold text-foreground">index page</div>
-                    <div className="text-foreground/60 text-xs">Model</div>
-                  </div>
-                  <div className={panelRecipe({ radius: "lg", padding: "none" }, "px-3 py-1 font-mono text-xs")}>
-                    +New
-                  </div>
-                </div>
-                <div
-                  className={panelRecipe(
-                    { radius: "lg", padding: "none" },
-                    "px-3 py-2 text-center text-foreground/70 text-sm",
-                  )}
-                >
-                  Search bar
-                </div>
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  {Array.from({ length: 9 }).map((_, idx) => (
-                    <div
-                      key={idx}
-                      className="rounded-lg border border-info/30 bg-info/10 px-2 py-3 text-center text-info text-xs"
-                    >
-                      Unit
-                    </div>
-                  ))}
-                </div>
-                <div
-                  className={panelRecipe(
-                    { radius: "lg", padding: "none" },
-                    "mt-3 px-3 py-2 text-center text-foreground/70 text-sm",
-                  )}
-                >
-                  Pagination
-                </div>
-              </div>
-              <div className="hidden text-center text-primary xl:block">
-                <div className="font-mono text-2xl">↗</div>
-                <div className="my-12 font-mono text-2xl">↘</div>
-              </div>
-              <div className="grid gap-4">
-                <div className="rounded-2xl border border-warning/30 bg-warning/5 p-4">
-                  <div className="mb-3">
-                    <div className="font-bold text-foreground">new page</div>
-                    <div className="text-foreground/60 text-xs">New Model</div>
-                  </div>
-                  <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-12 text-center font-semibold text-warning">
-                    Edit
-                  </div>
-                  <div className="mt-3 flex justify-end gap-2">
-                    <div className={panelRecipe({ radius: "lg", padding: "none" }, "px-3 py-1 text-sm")}>cancel</div>
-                    <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1 text-primary text-sm">
-                      submit
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-success/30 bg-success/5 p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-bold text-foreground">view page</div>
-                      <div className="text-foreground/60 text-xs">Model 1</div>
-                    </div>
-                    <div className={panelRecipe({ radius: "lg", padding: "none" }, "px-3 py-1 font-mono text-xs")}>
-                      edit
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-success/30 bg-success/10 px-4 py-12 text-center font-semibold text-success">
-                    View
-                  </div>
-                  <div
-                    className={panelRecipe(
-                      { radius: "lg", padding: "none" },
-                      "mt-3 px-3 py-2 text-center text-foreground/70 text-sm",
-                    )}
-                  >
-                    etc
-                  </div>
-                </div>
-              </div>
-              <div className="hidden text-center text-primary xl:block">
-                <div className="font-mono text-2xl">→</div>
-              </div>
-              <div className="rounded-2xl border border-warning/30 bg-warning/5 p-4">
-                <div className="mb-3">
-                  <div className="font-bold text-foreground">edit page</div>
-                  <div className="text-foreground/60 text-xs">Model 1 - Edit</div>
-                </div>
-                <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-16 text-center font-semibold text-warning">
-                  Edit
-                </div>
-                <div className="mt-3 flex justify-end gap-2">
-                  <div className={panelRecipe({ radius: "lg", padding: "none" }, "px-3 py-1 text-sm")}>cancel</div>
-                  <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1 text-primary text-sm">
-                    submit
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 space-y-1 text-foreground/70 text-sm">
-              <div>
-                {l.trans({
-                  en: "Index pages are optimized for discovery: search, scan, paginate, and choose an item.",
-                  ko: "Index 페이지는 탐색에 최적화됩니다. 검색하고, 훑어보고, 페이지를 넘기고, 항목을 선택합니다.",
-                })}
-              </div>
-              <div>
-                {l.trans({
-                  en: "New and edit pages focus on controlled input through Edit components and submit actions.",
-                  ko: "New/Edit 페이지는 Edit 컴포넌트와 submit 액션을 통한 입력 제어에 집중합니다.",
-                })}
-              </div>
-              <div>
-                {l.trans({
-                  en: "View pages present one record clearly, then expose follow-up actions like edit or related utilities.",
-                  ko: "View 페이지는 하나의 데이터를 명확히 보여주고, edit 같은 후속 액션이나 관련 유틸리티를 제공합니다.",
-                })}
-              </div>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <div className={panelRecipe()}>
-              <div className="font-bold text-foreground">{l.trans({ en: "Product listing", ko: "상품 목록" })}</div>
-              <div className="mt-2 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "Show the page title and first products quickly, then let the client zone handle filtering, pagination, and updates.",
-                  ko: "페이지 제목과 첫 상품 목록을 빠르게 보여주고, 필터링, 페이지네이션, 업데이트는 클라이언트 zone이 처리하게 합니다.",
-                })}
-              </div>
-            </div>
-            <div className={panelRecipe()}>
-              <div className="font-bold text-foreground">
-                {l.trans({ en: "Admin stock page", ko: "관리자 재고 화면" })}
-              </div>
-              <div className="mt-2 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "Render product summary on the server, then use a client form to add stock through generated fetch or store helpers.",
-                  ko: "상품 요약은 서버에서 렌더링하고, 재고 추가는 생성된 fetch 또는 store 헬퍼를 사용하는 클라이언트 폼에서 처리합니다.",
-                })}
-              </div>
-            </div>
-          </div>
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
-
-      <Scroll.Slide id="client-state-st" title={l.trans({ en: "Client State With st", ko: "st 클라이언트 상태관리" })}>
-        <Docs.Title>{l.trans({ en: "Client State With st", ko: "st 클라이언트 상태관리" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: "After the page and components are clear, decide what state the browser owns. Use st for working state such as form values, selected rows, loading flags, filters, and derived labels.",
-              ko: "page와 component 구조가 정리되면 브라우저가 가져야 할 상태를 정합니다. st는 폼 값, 선택된 행, 로딩 상태, 필터, 파생 라벨처럼 작업 중인 상태에 사용합니다.",
+              en: "Server-side rendering means the server prepares the first visible HTML before the browser has finished loading the app. A customer reads the order list, the price and the policy text while the filter and the submit button are still arriving. Viewing and interacting do not have to happen at the same moment.",
+              ko: "서버사이드 렌더링은 브라우저가 앱을 다 불러오기 전에 서버가 먼저 보일 HTML을 준비해 보내는 방식입니다. 필터와 제출 버튼이 아직 도착하는 중에도 고객은 주문 목록과 가격과 정책 문구를 읽습니다. 보는 순간과 조작하는 순간이 같을 필요는 없습니다.",
             })}
           </div>
           <Docs.Mermaid
-            title="UI action state flow"
-            chart={`flowchart LR
-  component["Client Component"] --> useField["st.use.field"]
-  component --> action["st.do.action"]
-  action --> getState["this.get"]
-  action --> setState["this.set"]
-  setState --> rerender["Component Rerenders"]`}
+            title={l.trans({ en: "One request, end to end", ko: "요청 하나의 전 구간" })}
+            highlightNodes={["Route"]}
+            chart={`sequenceDiagram
+  actor User
+  participant Browser
+  participant Route as page().render()
+  participant Fetch as fetch.init and fetch.view
+  participant Server as Akan server
+  User->>Browser: opens /en/icecreamOrder
+  Browser->>Route: request
+  Route->>Fetch: fetch.initIcecreamOrderInPublic()
+  Fetch->>Server: slice query
+  Server-->>Fetch: init payload
+  Route-->>Browser: shell HTML, server components already rendered
+  Note over Browser: the user can read the page here
+  Route-->>Browser: each section streams in as its own promise lands
+  Browser->>Browser: hydrate the client islands only
+  Note over Browser: the user can now type and click`}
           />
-          <div className="space-y-1">
-            {[
-              {
-                title: "stateBuilder",
-                desc: l.trans({
-                  en: "Declare writable state that can change while the user works, such as stockDraft and saving.",
-                  ko: "사용자가 작업하는 동안 바뀌는 writable state를 선언합니다. stockDraft, saving 같은 값입니다.",
-                }),
-              },
-              {
-                title: "derivedState",
-                desc: l.trans({
-                  en: "Declare values computed from writable state, such as canSubmitStock from stockDraft and saving.",
-                  ko: "writable state에서 계산되는 값을 선언합니다. stockDraft와 saving으로 만든 canSubmitStock 같은 값입니다.",
-                }),
-              },
-              {
-                title: "st.get / st.set",
-                desc: l.trans({
-                  en: "Read and update state inside store actions before and after business work.",
-                  ko: "store action 안에서 비즈니스 작업 전후의 상태를 읽고 변경합니다.",
-                }),
-              },
-              {
-                title: "st.use.field / st.do.setField",
-                desc: l.trans({
-                  en: "Components subscribe to fields with st.use.*, and model forms use generated setters such as setNameOnProduct.",
-                  ko: "컴포넌트는 st.use.*로 field를 구독하고, 모델 폼은 setNameOnProduct 같은 생성 setter를 사용합니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-mono font-semibold text-primary">{title}: </span>
-
-                <span className="text-foreground/70 text-sm">{desc}</span>
+          <div className="my-4 space-y-3">
+            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-primary">👀</span>
+                <strong className="text-primary">Time to View</strong>
               </div>
-            ))}
+              <div className="text-foreground/70 text-sm">
+                {l.trans({
+                  en: "How quickly the user can read something meaningful: order titles, sizes, prices, the first rows, the policy text. Server rendering is what moves this.",
+                  ko: "사용자가 의미 있는 내용을 얼마나 빨리 읽을 수 있는가입니다. 주문 제목, 사이즈, 가격, 첫 행들, 정책 문구요. 이 값을 움직이는 것이 서버 렌더링입니다.",
+                })}
+              </div>
+            </div>
+            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-primary">🖱️</span>
+                <strong className="text-primary">Time to Interaction</strong>
+              </div>
+              <div className="text-foreground/70 text-sm">
+                {l.trans({
+                  en: "How quickly the user can type, click, filter or receive a live update. Only the hydrated islands move this, and every element you keep on the server makes them smaller.",
+                  ko: "사용자가 얼마나 빨리 입력하고, 클릭하고, 필터링하고, 실시간 갱신을 받을 수 있는가입니다. 이 값을 움직이는 것은 hydrate되는 섬들뿐이고, 서버에 남기는 엘리먼트마다 그 섬이 작아집니다.",
+                })}
+              </div>
+            </div>
           </div>
-          <Docs.Alert type="info">
+          <div>
             {l.trans({
-              en: "Use local component state for tiny UI-only details such as focus, hover, or a one-off input draft. Use st when several components share the value, when an action needs it, or when it should survive across a screen flow.",
-              ko: "focus, hover, 일회성 입력 초안처럼 작은 UI 전용 값은 컴포넌트 local state로 충분합니다. 여러 컴포넌트가 공유하거나, action에서 필요하거나, 화면 흐름 동안 유지되어야 하는 값은 st에 둡니다.",
+              en: "The shell does not have to wait for every query. fetch.init<Model><Suffix>, fetch.view<Model> and fetch.edit<Model> are awaitable and destructurable: destructuring hands out one promise per field with both queries already in flight, so a route can send the shell and give each section its own promise. Awaiting instead keeps that section in the shell, which is what SEO snapshots, prerendering and pre-hydration E2E read — so await what the page needs immediately and stream the rest.",
+              ko: "shell이 모든 query를 기다릴 필요는 없습니다. fetch.init<Model><Suffix>, fetch.view<Model>, fetch.edit<Model>은 await할 수도 있고 구조 분해할 수도 있습니다. 구조 분해하면 두 query가 이미 출발한 상태로 field마다 promise 하나씩을 내주므로, route는 shell을 먼저 보내고 각 section에 자기 promise를 넘길 수 있습니다. 반대로 await하면 그 section이 shell 안에 남는데, SEO 스냅샷과 prerendering과 hydration 이전 E2E가 읽는 것이 바로 그 shell입니다. 그러니 페이지가 당장 필요한 것은 await하고 나머지는 스트리밍하세요.",
             })}
-          </Docs.Alert>
-          <Docs.CodeSnippet
-            title="Stock store with state and derivedState"
-            code={`export class StockStore extends store(
-  "stock",
-  () => ({
-    stockDraft: 0,
-    saving: false,
-  }),
-  ({ computed }) => ({
-    canSubmitStock: computed(["stockDraft", "saving"], (stockDraft, saving) => {
-      return stockDraft > 0 && !saving;
-    }),
-  }),
-) {
-  async addStock(productId: string) {
-    const { stockDraft } = this.get();
-    this.set({ saving: true });
-    await fetch.addStock(productId, stockDraft);
-    this.set({ stockDraft: 0, saving: false });
-  }
-}`}
-          />
-          <Docs.CodeSnippet
-            title="Using st in a component"
-            code={`"use client";
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/koyo/page/(public)/icecreamOrder/_index.tsx"
+            code={`import { fetch, IcecreamOrder, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-import { st } from "@apps/shop/client";
-
-export function StockEditor({ productId }: { productId: string }) {
-  const stockDraft = st.use.stockDraft();
-  const canSubmitStock = st.use.canSubmitStock();
-
+export default page().render(() => {
+  const { l } = usePage();
+  const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
   return (
-    <div>
-      <input
-        type="number"
-        value={stockDraft}
-        onChange={(e) => st.do.setStockDraft(Number(e.target.value))}
-      />
-      <button disabled={!canSubmitStock} onClick={() => st.do.addStock(productId)}>
-        Add stock
-      </button>
+    <div className="p-4">
+      <h1 className="font-bold text-2xl">{l("icecreamOrder.modelName")}</h1>
+      <IcecreamOrder.Zone.Card init={icecreamOrderInitInPublic} />
     </div>
   );
-}`}
+});`}
           />
+          <div>
+            {l.trans({
+              en: "The heading is server markup. The Zone is the only thing in the tree that hydrates, and it receives the unawaited promise rather than an awaited value, so the heading is on the wire while the slice query is still running. A promise that no Zone consumes goes to a Load.Stream instead, which the composition page covers.",
+              ko: "제목은 서버 마크업입니다. 트리에서 hydrate되는 것은 Zone뿐이고, Zone은 await된 값이 아니라 await하지 않은 promise를 받습니다. 그래서 slice query가 아직 도는 동안 제목은 이미 전송된 상태입니다. Zone이 소비하지 않는 promise는 대신 Load.Stream으로 보내는데, 이는 구성 문서에서 다룹니다.",
+            })}
+          </div>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="server-calls-fetch" title={l.trans({ en: "Server Calls With fetch", ko: "fetch 서버 호출" })}>
-        <Docs.Title>{l.trans({ en: "Server Calls With fetch", ko: "fetch 서버 호출" })}</Docs.Title>
+      <Scroll.Slide
+        id="client-boundary"
+        title={l.trans({ en: "What Earns A Client Component", ko: "무엇이 클라이언트 컴포넌트를 정당화하는가" })}
+      >
+        <Docs.Title>
+          {l.trans({ en: "What Earns A Client Component", ko: "무엇이 클라이언트 컴포넌트를 정당화하는가" })}
+        </Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Use fetch after the component has collected enough state and the action needs a server-side business decision. The server declares a signal endpoint, Akan generates the client function, and the store action calls it.",
-              ko: "컴포넌트가 필요한 상태를 모았고 서버 측 비즈니스 판단이 필요할 때 fetch를 사용합니다. 서버는 signal endpoint를 선언하고, Akan은 클라이언트 함수를 생성하며, store action은 이를 호출합니다.",
+              en: "There are exactly five capabilities that require the browser. Everything else on a screen — including all the markup around them — is server work. This is the whole decision, and it is the same table akan quality ssr reads when it decides whether a directive was earned.",
+              ko: "브라우저를 반드시 필요로 하는 기능은 정확히 다섯 가지입니다. 화면의 나머지 전부는, 그 다섯 가지를 둘러싼 마크업을 포함해 서버의 일입니다. 결정은 이것이 전부이며, akan quality ssr이 directive가 정당했는지 판단할 때 읽는 표도 같습니다.",
             })}
           </div>
-
-          <div className="space-y-1">
-            <div className={panelRecipe()}>
-              <div className="font-bold text-foreground">
-                {l.trans({ en: "Call fetch directly", ko: "fetch 직접 호출" })}
-              </div>
-              <div className="mt-2 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "Good for simple initial data or one-off reads where the component does not need to coordinate much state.",
-                  ko: "컴포넌트가 많은 상태를 조율하지 않는 단순 초기 데이터나 일회성 조회에 적합합니다.",
-                })}
-              </div>
-              <Docs.Mermaid
-                title="Fetch directly flow"
-                chart={`flowchart LR
-  click["Button Click"] --> fetchCall["fetch.signinManager"]
-  fetchCall --> endpoint["Signal Endpoint"]
-  endpoint --> service["Business Service"]`}
-              />
-            </div>
-            <div className={panelRecipe()}>
-              <div className="font-bold text-foreground">
-                {l.trans({ en: "Wrap fetch in a store action", ko: "store action으로 감싸기" })}
-              </div>
-              <div className="mt-2 text-foreground/70 text-sm">
-                {l.trans({
-                  en: "Good for forms and business actions because the action can read state, call fetch, then update loading, auth, list, or form state.",
-                  ko: "폼과 비즈니스 액션에 적합합니다. action이 상태를 읽고 fetch를 호출한 뒤 loading, auth, list, form 상태를 갱신할 수 있습니다.",
-                })}
-              </div>
-              <Docs.Mermaid
-                title="Fetch with store action flow"
-                chart={`flowchart LR
-  click["Button Click"] --> storeAction["st.do.signinManager"]
-  storeAction --> formState["this.get().signinForm"]
-  formState --> fetchCall["fetch.signinManager"]
-  fetchCall --> endpoint["Signal Endpoint"]
-  endpoint --> service["Business Service"]`}
-              />
-            </div>
-          </div>
-          <Docs.CodeSnippet
-            title="Business signal endpoint"
-            code={`export class AccountEndpoint extends endpoint(srv.account, ({ mutation }) => ({
-  signinManager: mutation(String)
-    .body("accountId", String)
-    .body("password", String)
-    .exec(async function (accountId, password) {
-      return await this.accountService.signinManager(accountId, password);
-    }),
-})) {}`}
-          />
-          <Docs.CodeSnippet
-            title="Calling generated fetch"
-            code={`const token = await fetch.signinManager(accountId, password);`}
-          />
-          <Docs.Alert type="info">
+          <Docs.IntroTable type={l.trans({ en: "Capability", ko: "기능" })} items={boundaryRows} />
+          <div>
             {l.trans({
-              en: "Keep business rules in the service. The client store should collect form state, call fetch, and update UI state; it should not duplicate password, permission, stock, or payment rules.",
-              ko: "비즈니스 규칙은 service에 둡니다. 클라이언트 store는 폼 상태를 모으고 fetch를 호출하고 UI 상태를 갱신하는 역할을 맡으며, 비밀번호/권한/재고/결제 규칙을 중복 구현하지 않습니다.",
+              en: (
+                <span>
+                  Notice that only the capability crosses, never the markup around it. The smallest useful client
+                  component adds one behaviour and renders <code>children</code> untouched, so everything inside it
+                  stays server markup. Wrap the interaction, not the UI.
+                </span>
+              ),
+              ko: (
+                <span>
+                  경계를 넘는 것은 기능뿐이고 그 둘레의 마크업은 넘지 않는다는 점에 주목하세요. 가장 쓸모 있는 최소
+                  client component는 동작 하나를 더하고 <code>children</code>은 손대지 않고 렌더링합니다. 그 안의 모든
+                  것은 서버 마크업으로 남습니다. UI가 아니라 인터랙션을 감싸세요.
+                </span>
+              ),
             })}
-          </Docs.Alert>
+          </div>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="generated-client" title={l.trans({ en: "Generated Helpers Summary", ko: "생성된 헬퍼 요약" })}>
-        <Docs.Title>{l.trans({ en: "Generated Helpers Summary", ko: "생성된 헬퍼 요약" })}</Docs.Title>
+      <Scroll.Slide
+        id="file-roles"
+        title={l.trans({ en: "In Domain UI The Rule Is Mechanical", ko: "도메인 UI에서 규칙은 기계적입니다" })}
+      >
+        <Docs.Title>
+          {l.trans({ en: "In Domain UI The Rule Is Mechanical", ko: "도메인 UI에서 규칙은 기계적입니다" })}
+        </Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Akan exposes app-specific helpers from @apps/<app>/client. After you understand the screen shape, st, and fetch, these helpers become the daily entry points for UI work.",
-              ko: "Akan은 @apps/<app>/client에서 앱 전용 헬퍼를 제공합니다. 화면 구조, st, fetch를 이해하고 나면 이 헬퍼들이 UI 작업의 일상적인 진입점이 됩니다.",
+              en: "Inside a domain module you never make the call above. The file role decides it: Template, Zone and Util always carry the directive on line 1, and Unit and View never do. If a file's role and its directive disagree, one of the two is wrong.",
+              ko: "도메인 모듈 안에서는 위의 판단을 할 일이 없습니다. 파일의 역할이 결정합니다. Template, Zone, Util은 1행에 언제나 directive가 있고, Unit과 View에는 절대 없습니다. 파일의 역할과 directive가 어긋난다면 둘 중 하나가 잘못된 것입니다.",
             })}
           </div>
-          <div className={panelRecipe({ radius: "2xl", padding: "lg" })}>
-            <div className="font-bold text-foreground">
-              {l.trans({ en: "How They Work Together", ko: "함께 쓰이는 방식" })}
-            </div>
-            <div className="mt-2 text-foreground/70 text-sm">
-              {l.trans({
-                en: "A page usually uses usePage for route and language context, Model.* for the domain UI pieces, st for browser-side state, and fetch when a user action needs a server-side business answer.",
-                ko: "하나의 page는 보통 usePage로 route와 language context를 읽고, Model.*에서 도메인 UI 조각을 가져오며, 브라우저 상태는 st로 다루고, 사용자 액션이 서버 비즈니스 응답을 필요로 할 때 fetch를 호출합니다.",
-              })}
-            </div>
-            <div className="mt-4 space-y-1">
-              {[
-                { label: "usePage", detail: "params, l, page context" },
-                { label: "Model.*", detail: "Unit, View, Edit, Zone" },
-                { label: "st", detail: "state, derived, actions" },
-                { label: "fetch", detail: "endpoint calls" },
-              ].map(({ label, detail }) => (
-                <div key={label} className="rounded-xl border border-border bg-muted px-4 py-0">
-                  <div className="font-mono font-semibold text-primary">{label}</div>
-                  <div className="mt-2 text-foreground/70 text-sm">{detail}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: "st",
-                desc: l.trans({
-                  en: "Reads and updates client state through generated hooks and actions.",
-                  ko: "생성된 hook과 action으로 클라이언트 상태를 읽고 변경합니다.",
-                }),
-              },
-              {
-                title: "fetch",
-                desc: l.trans({
-                  en: "Calls generated endpoints or prepares initial data for pages and zones.",
-                  ko: "생성된 endpoint를 호출하거나 page와 zone에 필요한 초기 데이터를 준비합니다.",
-                }),
-              },
-              {
-                title: "Model.*",
-                desc: l.trans({
-                  en: "Gives each domain a predictable place for Unit, View, Edit, Zone, and Util components.",
-                  ko: "각 도메인에서 Unit, View, Edit, Zone, Util 컴포넌트를 찾는 예측 가능한 진입점입니다.",
-                }),
-              },
-              {
-                title: "usePage",
-                desc: l.trans({
-                  en: "Provides language, params, and page context for business screens.",
-                  ko: "비즈니스 화면에서 언어, params, page context를 사용할 수 있게 합니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-mono font-semibold text-primary">{title}: </span>
-
-                <span className="text-foreground/70 text-sm">{desc}</span>
-              </div>
-            ))}
-          </div>
-          <Docs.Alert type="info">
-            {l.trans({
-              en: "You do not need to introduce all helpers at once. Start from the page and component, then add st only when state is shared, and add fetch only when the action needs a business response from the server.",
-              ko: "모든 헬퍼를 한 번에 도입할 필요는 없습니다. page와 component에서 시작하고, 상태가 공유될 때 st를 추가하며, 액션이 서버의 비즈니스 응답을 필요로 할 때 fetch를 추가하세요.",
-            })}
-          </Docs.Alert>
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
-
-      <Scroll.Slide id="i18n" title={l.trans({ en: "i18n", ko: "다국어" })}>
-        <Docs.Title>{l.trans({ en: "i18n", ko: "다국어" })}</Docs.Title>
-        <Docs.Description>
+          <Docs.IntroTable type={l.trans({ en: "File", ko: "파일" })} items={roleRows} />
           <div>
             {l.trans({
-              en: 'Akan pages usually read the language helper from usePage, then render dictionary keys with l("model.dictKey"). This keeps UI text close to each domain dictionary instead of scattering raw strings through components.',
-              ko: 'Akan page는 보통 usePage에서 language helper를 가져오고, l("model.dictKey") 방식으로 dictionary key를 렌더링합니다. 이렇게 하면 UI 문구를 컴포넌트 곳곳에 직접 흩뿌리지 않고 각 도메인 dictionary 가까이에 둘 수 있습니다.',
+              en: "The pair below is the shape the rule produces. The Zone is client because it hydrates the store from init; it holds no markup of its own and delegates every row to a server Unit.",
+              ko: "아래 한 쌍이 이 규칙이 만들어내는 모양입니다. Zone은 init으로 store를 hydrate하기 때문에 클라이언트이며, 자체 마크업 없이 모든 행을 server Unit에 위임합니다.",
             })}
           </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: l.trans({ en: "Declare text once", ko: "문구를 한 곳에 선언" }),
-                desc: l.trans({
-                  en: "Dictionary files hold the English and Korean text for a domain.",
-                  ko: "dictionary 파일은 도메인별 영어/한국어 문구를 보관합니다.",
-                }),
-                example: "user.dictionary.ts",
-              },
-              {
-                title: l.trans({ en: "Use keys in UI", ko: "UI에서 key 사용" }),
-                desc: l.trans({
-                  en: 'Components render l("user.signWithGoogle") instead of hard-coded text.',
-                  ko: '컴포넌트는 하드코딩 문구 대신 l("user.signWithGoogle")를 렌더링합니다.',
-                }),
-                example: 'l("user.signWithGoogle")',
-              },
-              {
-                title: l.trans({ en: "Share across clients", ko: "클라이언트 간 공유" }),
-                desc: l.trans({
-                  en: "Customer, admin, partner, and mobile screens can reuse the same business vocabulary.",
-                  ko: "고객, 관리자, 파트너, 모바일 화면이 같은 비즈니스 용어를 재사용할 수 있습니다.",
-                }),
-                example: "web, admin, mobile",
-              },
-            ].map(({ title, desc, example }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <div className="font-bold text-foreground">{title}</div>
-                <div className="mt-2 text-foreground/70 text-sm">{desc}</div>
-                <div className="mt-3 rounded-lg border border-border bg-muted px-3 py-2 font-mono text-foreground/70 text-xs">
-                  {example}
-                </div>
-              </div>
-            ))}
-          </div>
-          <Docs.CodeSnippet
-            title="user.dictionary.ts"
-            code={`import { modelDictionary } from "akanjs/dictionary"; // [!code collapse:4]
+          <Code.Snippet
+            className="w-full"
+            title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Zone.tsx"
+            code={`"use client";
+import { IcecreamOrder, type cnst } from "@apps/koyo/client";
+import type { ClientInit } from "akanjs/fetch";
+import { Load } from "akanjs/ui";
 
-import type { User } from "./user.constant";
-
-export const dictionary = modelDictionary(["en", "ko"])
-  .of((t) => t(["User", "사용자"]).desc(["User", "사용자"])) // [!code collapse:4]
-  .model<User>((t) => ({
-    name: t(["Name", "이름"]).desc(["Name", "이름"]),
-  }))
-  .translate({
-    signWithGoogle: ["Sign in with Google", "구글로 시작하기"],
-  });`}
-          />
-          <Docs.CodeSnippet
-            title="UserSigninButton.tsx"
-            code={`"use client"; // [!code collapse:2]
-
-import { usePage } from "@apps/shop/client";
-
-export function UserSigninButton() {
-  const { l } = usePage();
-
+interface CardProps {
+  className?: string;
+  init: ClientInit<"icecreamOrder", cnst.LightIcecreamOrder>;
+}
+export const Card = ({ className, init }: CardProps) => {
   return (
-    <button>
-      {l("user.signWithGoogle")}
+    <Load.Units
+      className={className}
+      init={init}
+      renderItem={(icecreamOrder) => (
+        <IcecreamOrder.Unit.Card key={icecreamOrder.id} icecreamOrder={icecreamOrder} />
+      )}
+    />
+  );
+};`}
+          />
+          <div>
+            {l.trans({
+              en: "The Unit takes the model as a prop and renders it. No directive, no import of st, nothing to hydrate — a hundred rows on screen cost the bundle exactly one component, the Zone.",
+              ko: "Unit은 모델을 prop으로 받아 렌더링합니다. directive도 없고, st import도 없고, hydrate할 것도 없습니다. 화면에 행이 100개여도 번들이 치르는 비용은 component 하나, Zone뿐입니다.",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/koyo/lib/icecreamOrder/IcecreamOrder.Unit.tsx"
+            code={`import type { cnst } from "@apps/koyo/client";
+import type { ModelProps } from "akanjs/client";
+import { Link } from "akanjs/ui";
+
+export const Card = ({ icecreamOrder, href }: ModelProps<"icecreamOrder", cnst.LightIcecreamOrder>) => {
+  return (
+    <Link href={href} className="flex w-full rounded-lg shadow-sm hover:shadow-lg">
+      <div>{icecreamOrder.size}</div>
+      <div>{icecreamOrder.status}</div>
+    </Link>
+  );
+};`}
+          />
+          <Docs.Alert type="error">
+            {l.trans({
+              en: (
+                <span>
+                  A <code>Util</code> or <code>Zone</code> prop is never a model instance. Both roles are always client
+                  components, so a <code>cnst.IcecreamOrder</code> prop is a class the server has to hand across the
+                  boundary. Take <code>icecreamOrderId: string</code> and read the model from the store instead.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>Util</code>과 <code>Zone</code>의 prop은 모델 인스턴스가 아닙니다. 두 역할 모두 언제나 client
+                  component이므로 <code>cnst.IcecreamOrder</code> prop은 서버가 경계 너머로 넘겨야 하는 클래스입니다.
+                  대신 <code>icecreamOrderId: string</code>을 받고 모델은 store에서 읽으세요.
+                </span>
+              ),
+            })}
+          </Docs.Alert>
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="splitting-a-screen" title={l.trans({ en: "Splitting One Screen", ko: "한 화면을 나누기" })}>
+        <Docs.Title>{l.trans({ en: "Splitting One Screen", ko: "한 화면을 나누기" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Outside a domain module — an app shell, a marketing section, a dashboard — you place the boundary yourself. Push it down until it sits on the leaf that actually needs the browser, and let everything above and inside it stay server markup:",
+              ko: "도메인 모듈 밖에서는 — 앱 셸, 마케팅 섹션, 대시보드에서는 — 경계를 직접 놓게 됩니다. 실제로 브라우저가 필요한 잎까지 경계를 밀어 내리고, 그 위와 그 안은 서버 마크업으로 남겨 두세요:",
+            })}
+          </div>
+          <div className="my-4 space-y-3">
+            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-primary">🎁</span>
+                <strong className="text-primary">
+                  {l.trans({ en: "Wrap, do not absorb", ko: "감싸되 삼키지 않기" })}
+                </strong>
+              </div>
+              <div className="text-foreground/70 text-sm">
+                {l.trans({
+                  en: "A client component that adds one behaviour and renders children untouched keeps its whole subtree on the server.",
+                  ko: "동작 하나만 더하고 children은 손대지 않고 렌더링하는 client component는 서브트리 전체를 서버에 남깁니다.",
+                })}
+              </div>
+            </div>
+            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-primary">🧩</span>
+                <strong className="text-primary">
+                  {l.trans({ en: "Split compound components", ko: "복합 컴포넌트를 쪼개기" })}
+                </strong>
+              </div>
+              <div className="text-foreground/70 text-sm">
+                {l.trans({
+                  en: "Tab, Tab.Menus, Tab.Menu and Tab.Panel are four small client shells; the panel bodies arrive as children and never enter the bundle. One client file with a mode useState and every panel inlined is the opposite.",
+                  ko: "Tab, Tab.Menus, Tab.Menu, Tab.Panel은 작은 client 셸 네 개이고, 패널 본문은 children으로 들어와 번들에 닿지 않습니다. mode용 useState 하나에 모든 패널을 인라인한 client 파일 하나는 그 반대입니다.",
+                })}
+              </div>
+            </div>
+            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-primary">🪟</span>
+                <strong className="text-primary">
+                  {l.trans({ en: "Use named slots", ko: "이름 있는 슬롯 쓰기" })}
+                </strong>
+              </div>
+              <div className="text-foreground/70 text-sm">
+                {l.trans({
+                  en: "Layout.Navbar takes title, back, left, right and children, so a client shell composes server content in five places instead of absorbing it.",
+                  ko: "Layout.Navbar는 title, back, left, right, children을 받습니다. client 셸이 서버 콘텐츠를 삼키는 대신 다섯 자리에서 조립합니다.",
+                })}
+              </div>
+            </div>
+            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-primary">🧮</span>
+                <strong className="text-primary">
+                  {l.trans({ en: "Derive on the server", ko: "파생 계산은 서버에서" })}
+                </strong>
+              </div>
+              <div className="text-foreground/70 text-sm">
+                {l.trans({
+                  en: "Display and predicate logic belongs on Light<Model>, which both sides hold; enum-to-class lookups belong in a module-scope as const map.",
+                  ko: "표시와 판별 로직은 양쪽이 모두 들고 있는 Light<Model>에 둡니다. enum에서 클래스를 찾는 표는 모듈 스코프의 as const 맵에 둡니다.",
+                })}
+              </div>
+            </div>
+            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-primary">💤</span>
+                <strong className="text-primary">
+                  {l.trans({ en: "Keep the heavy island late", ko: "무거운 섬은 나중에" })}
+                </strong>
+              </div>
+              <div className="text-foreground/70 text-sm">
+                {l.trans({
+                  en: "A map, an editor or a chart goes behind the ui/<Folder>/index_.tsx and lazy() pair, with a server-safe index.tsx beside it. Collapsing the pair into one file breaks RSC.",
+                  ko: "지도, 에디터, 차트는 ui/<Folder>/index_.tsx와 lazy() 쌍 뒤에 두고, 옆에 서버에서 안전한 index.tsx를 둡니다. 이 쌍을 한 파일로 합치면 RSC가 깨집니다.",
+                })}
+              </div>
+            </div>
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/koyo/ui/CopyOrderId.tsx"
+            code={`"use client";
+import type { ReactNode } from "react";
+
+interface CopyOrderIdProps {
+  className?: string;
+  orderId: string;
+  children: ReactNode;
+}
+export const CopyOrderId = ({ className, orderId, children }: CopyOrderIdProps) => {
+  return (
+    <button type="button" className={className} onClick={() => void navigator.clipboard.writeText(orderId)}>
+      {children}
     </button>
   );
-}`}
+};`}
           />
+          <div>
+            {l.trans({
+              en: "That file is the whole client cost of a copy button: one handler and one children pass-through. The label, the icon and the receipt block around it are written in the page and stay server markup, however large they grow.",
+              ko: "저 파일이 복사 버튼의 클라이언트 비용 전부입니다. 핸들러 하나와 children 전달 하나죠. 라벨과 아이콘과 그 둘레의 영수증 블록은 page에 쓰이고, 아무리 커져도 서버 마크업으로 남습니다.",
+            })}
+          </div>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="client-targets" title={l.trans({ en: "Client Targets", ko: "클라이언트 대상" })}>
-        <Docs.Title>{l.trans({ en: "Client Targets", ko: "클라이언트 대상" })}</Docs.Title>
+      <Scroll.Slide id="quality-ssr" title={l.trans({ en: "Measuring The Split", ko: "경계를 측정하기" })}>
+        <Docs.Title>{l.trans({ en: "Measuring The Split", ko: "경계를 측정하기" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "The same company may have a customer web site, an admin console, a partner portal, and a mobile field app. Akan UI architecture treats these as different client surfaces that can share backend logic while presenting different screens.",
-              ko: "같은 회사도 고객 웹사이트, 관리자 콘솔, 파트너 포털, 모바일 현장 앱을 함께 가질 수 있습니다. Akan UI 아키텍처는 이들을 서로 다른 클라이언트 표면으로 다루면서도 백엔드 로직은 공유할 수 있게 합니다.",
+              en: "None of the above is a style preference, so it is measured rather than reviewed. akan quality ssr counts JSX elements per side and reports the share each app and lib keeps on the server, plus the six findings below. It reads the .tsx files under ui/ and lib/ in every app and lib — page/ and webkit/ are outside the measurement, so moving markup into a route neither helps nor hurts the number.",
+              ko: "위의 어느 것도 취향의 문제가 아니므로, 리뷰가 아니라 측정으로 다룹니다. akan quality ssr은 양쪽의 JSX 엘리먼트를 세어 app과 lib마다 서버에 남긴 비율을 보고하고, 아래 여섯 가지를 함께 알려줍니다. 읽는 대상은 각 app과 lib의 ui/와 lib/ 아래 .tsx 파일입니다. page/와 webkit/은 측정 밖이므로, 마크업을 route로 옮기는 것은 수치를 올리지도 내리지도 않습니다.",
             })}
           </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: l.trans({ en: "Web SSR", ko: "웹 SSR" }),
-                desc: l.trans({
-                  en: "Use for public pages, landing pages, docs, product catalogs, and content that should appear quickly or be indexed well.",
-                  ko: "공개 페이지, 랜딩 페이지, 문서, 상품 카탈로그처럼 빠르게 보여야 하거나 검색 노출이 중요한 콘텐츠에 사용합니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Web CSR", ko: "웹 CSR" }),
-                desc: l.trans({
-                  en: "Use for app-like screens where most value comes after login: admin consoles, editors, realtime dashboards, and internal tools.",
-                  ko: "로그인 이후의 상호작용이 핵심인 앱형 화면에 사용합니다. 관리자 콘솔, 편집기, 실시간 대시보드, 내부 도구가 여기에 해당합니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Multi-client web", ko: "다중 클라이언트 웹" }),
-                desc: l.trans({
-                  en: "Use when customer, admin, and partner screens need different routes, layouts, and permissions while sharing the same business services.",
-                  ko: "고객, 관리자, 파트너 화면이 서로 다른 route, layout, permission을 가지면서 같은 비즈니스 서비스를 공유해야 할 때 사용합니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Mobile target", ko: "모바일 대상" }),
-                desc: l.trans({
-                  en: "Use for field apps, mobile webviews, or device-oriented screens that still talk to the same generated fetch and business services.",
-                  ko: "현장 앱, 모바일 웹뷰, 장비 중심 화면처럼 같은 generated fetch와 비즈니스 서비스에 연결되는 모바일 표면에 사용합니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-bold text-foreground">{title}: </span>
+          <Code.Snippet
+            className="w-full"
+            title="Terminal"
+            language="bash"
+            showLineNumbers={false}
+            copy={false}
+            code={`$ akan quality ssr
 
-                <span className="text-foreground/70 text-sm">{desc}</span>
-              </div>
-            ))}
-          </div>
-          <Docs.Alert type="info">
+Akan SSR Balance Scan
+scanned files: 827
+ssr warnings: 14
+
+Server render share (component files, JSX elements rendered per side):
+
+  apps/koyo: 43% server (163 of 381 JSX elements, 218 client)  <- below the 50% target
+  libs/shared: 62% server (460 of 742 JSX elements, 282 client)
+
+Warnings:
+
+apps/koyo/ui/OrderPanel.tsx:189:1 - warning akan.ssr.client-static-markup: Client component
+"OrderPanel" renders 16 JSX elements around only 1 client-only touch (onClick). Most of this
+subtree does not need the client bundle.
+  fix: Keep the interactive element in the client component and hoist the static subtree into a
+  server component, then accept it as \`children\` or render it through a Unit/View reference.`}
+          />
+          <Docs.IntroTable type={l.trans({ en: "Rule", ko: "규칙" })} items={ssrRuleRows} />
+          <div>
             {l.trans({
-              en: "Client target is a product decision before it is an infrastructure decision. First decide who uses the screen and what they need to do; Runtime And Infra explains where that client is deployed and routed.",
-              ko: "클라이언트 대상은 인프라 결정이기 전에 제품 결정입니다. 먼저 누가 그 화면을 쓰고 무엇을 해야 하는지 정하세요. 해당 클라이언트가 어디에 배포되고 라우팅되는지는 Runtime And Infra에서 다룹니다.",
+              en: "Three things are deliberately not flagged. A client-only third-party package and an index_.tsx lazy() boundary are legitimate reasons for the directive; a Zone, Template or Util inside a module is exempt because its role requires the directive whether or not today's body uses it; and an interaction-driven fetch — a lookup inside an onClick — is work the server could not have done. Only mount-time loads are findings.",
+              ko: "세 가지는 일부러 보고하지 않습니다. 클라이언트 전용 서드파티 패키지와 index_.tsx의 lazy() 경계는 directive의 정당한 이유입니다. 모듈 안의 Zone, Template, Util은 오늘의 본문이 그 기능을 쓰든 말든 역할 자체가 directive를 요구하므로 예외입니다. 그리고 인터랙션으로 시작되는 fetch — onClick 안의 조회 — 는 서버가 대신할 수 없었던 일입니다. 마운트 시점의 로드만 findings입니다.",
             })}
-          </Docs.Alert>
-          <div className={panelRecipe({ radius: "2xl", padding: "lg" })}>
-            <div className="font-bold text-foreground">
-              {l.trans({ en: "Final Practical Checklist", ko: "마지막 실용 체크리스트" })}
-            </div>
-            <div className="mt-4 space-y-1">
-              {[
-                l.trans({
-                  en: "Start with server-rendered pages when users should see meaningful content quickly.",
-                  ko: "사용자가 의미 있는 내용을 빠르게 봐야 한다면 서버 렌더링 페이지로 시작하세요.",
-                }),
-                l.trans({
-                  en: "Use client components only where interaction, state, realtime behavior, or browser/device APIs are needed.",
-                  ko: "상호작용, 상태, 실시간 동작, 브라우저/디바이스 API가 필요한 부분에만 클라이언트 컴포넌트를 사용하세요.",
-                }),
-                l.trans({
-                  en: "Keep domain UI close to model modules, and use ui/ for app-wide reusable visual components.",
-                  ko: "도메인 UI는 모델 모듈 가까이에 두고, 앱 전체에서 재사용되는 시각 컴포넌트는 ui/에 두세요.",
-                }),
-                l.trans({
-                  en: "Let generated fetch and st handle server communication and client state before writing custom API glue.",
-                  ko: "직접 API 연결 코드를 만들기 전에 생성된 fetch와 st가 서버 통신과 클라이언트 상태를 처리하게 하세요.",
-                }),
-              ].map((desc) => (
-                <div key={desc} className={panelRecipe({ padding: "row" }, "text-foreground/70 text-sm")}>
-                  {desc}
-                </div>
-              ))}
-            </div>
+          </div>
+          <div>
+            {l.trans({
+              en: "Run it before and after any change that touches .tsx, and treat --format json as the hook for CI. With the boundary settled, the next page is about what fills the space on either side of it: the akanjs/ui shells that render a list, a detail view and a form without you writing a loading state, and the generated helpers underneath them.",
+              ko: ".tsx를 건드리는 변경 전후로 실행하고, CI에 걸 때는 --format json을 씁니다. 경계가 정리되었으니 다음 문서는 그 양쪽을 무엇이 채우는지 다룹니다. 로딩 상태를 직접 쓰지 않고도 목록과 상세와 폼을 렌더링해 주는 akanjs/ui 셸들, 그리고 그 아래의 생성된 helper들입니다.",
+            })}
           </div>
         </Docs.Description>
       </Scroll.Slide>
-      <Divider />
-
       <DocsToc />
     </Scroll>
   );

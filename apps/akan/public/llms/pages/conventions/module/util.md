@@ -93,16 +93,19 @@ export const Remove = ({ productId }: RemoveProps) => {
 
 ```ts
 export const SetOrg = ({ bizLicenseId }: SetOrgProps) => {
+  const { l } = usePage();
   const [orgId, setOrgId] = useState<string | null>(null);
   return (
     <Dialog>
       <Dialog.Trigger>
-        <button className={buttonRecipe()}>Set Org</button>
+        <button className={buttonRecipe()}>{l("bizLicense.setOrg")}</button>
       </Dialog.Trigger>
       <Dialog.Modal>
         <Field.ParentId value={orgId} onChange={setOrgId} slice={fetch.slice.orgInSelf} />
         <Dialog.Action>
-          <button onClick={() => orgId && st.do.setOrgInBizLicense(bizLicenseId, orgId)}>Save</button>
+          <button onClick={() => orgId && st.do.setOrgInBizLicense(bizLicenseId, orgId)}>
+            {l.trans({ en: "Save", ko: "저장" })}
+          </button>
         </Dialog.Action>
       </Dialog.Modal>
     </Dialog>
@@ -114,12 +117,15 @@ export const SetOrg = ({ bizLicenseId }: SetOrgProps) => {
 
 ```ts
 export const Resolve = ({ report }: ResolveProps) => {
+  const { l } = usePage();
   const reportModal = st.use.reportModal();
   return (
     <>
-      <button onClick={() => st.do.editReport(report.id, { modal: `resolve-${report.id}` })}>Resolve</button>
+      <button onClick={() => st.do.editReport(report.id, { modal: `resolve-${report.id}` })}>
+        {l("report.resolveReport")}
+      </button>
       <Modal open={reportModal === `resolve-${report.id}`} onCancel={st.do.resetReport}>
-        <button onClick={() => st.do.resolveReport(report.id)}>Confirm</button>
+        <button onClick={() => st.do.resolveReport(report.id)}>{l.trans({ en: "Confirm", ko: "확인" })}</button>
       </Modal>
     </>
   );
@@ -130,12 +136,11 @@ export const Resolve = ({ report }: ResolveProps) => {
 
 ```ts
 export const QueryMakerInSelf = () => {
+  const { l } = usePage();
   const [projectIds, userIds] = st.use.queryArgsOfTicketInSelf();
   return (
-    <button
-      onClick={() => st.do.setQueryArgsOfTicketInSelf([projectIds ?? [], userIds])}
-    >
-      Apply Filter
+    <button onClick={() => st.do.setQueryArgsOfTicketInSelf([projectIds ?? [], userIds])}>
+      {l.trans({ en: "Apply Filter", ko: "필터 적용" })}
     </button>
   );
 };
@@ -144,10 +149,14 @@ export const QueryMakerInSelf = () => {
 ### Board.Util.tsx
 
 ```ts
-export const BackButton = ({ id }: { id: string }) => {
+interface BackButtonProps {
+  id: string;
+}
+export const BackButton = ({ id }: BackButtonProps) => {
+  const { l } = usePage();
   const path = st.use.path({ agent: false });
   if (!path.startsWith(`/board/${id}/`)) return null;
-  return <Link.Back>Back</Link.Back>;
+  return <Link.Back>{l.trans({ en: "Back", ko: "뒤로" })}</Link.Back>;
 };
 ```
 

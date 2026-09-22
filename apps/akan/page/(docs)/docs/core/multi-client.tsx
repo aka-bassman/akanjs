@@ -3,10 +3,91 @@ import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
+const situations = [
+  {
+    en: "A customer storefront and an admin console",
+    ko: "고객 사이트와 관리자 콘솔",
+    split: true,
+    whyEn:
+      "They share products, orders, users, and permissions, but need different domains, layouts, and release targets.",
+    whyKo: "상품, 주문, 사용자, 권한을 공유하지만 도메인, 화면 구성, 배포 대상이 다릅니다.",
+  },
+  {
+    en: "A consumer client, a partner portal, and an internal tool",
+    ko: "일반 고객 화면, 파트너 포털, 내부 운영 도구",
+    split: true,
+    whyEn: "One backend, three audiences. Each gets its own home screen and navigation without a second app.",
+    whyKo: "백엔드는 하나이고 대상은 셋입니다. 앱을 새로 만들지 않고도 각자 홈 화면과 내비게이션을 가집니다.",
+  },
+  {
+    en: "Android and iOS packages released per brand, region, or user type",
+    ko: "브랜드·지역·사용자 유형별로 따로 출시하는 Android·iOS 패키지",
+    split: true,
+    whyEn: "A mobile target points at a basePath, so each package opens its own client from the same backend.",
+    whyKo: "모바일 target이 basePath를 가리키므로, 각 패키지가 같은 백엔드에서 자기 클라이언트를 엽니다.",
+  },
+  {
+    en: "White-label or regional sites on shared business rules",
+    ko: "같은 비즈니스 규칙을 쓰는 화이트라벨·지역 사이트",
+    split: true,
+    whyEn: "Different domains, names, and first screens over the same domain models — the case basePath exists for.",
+    whyKo: "같은 도메인 모델 위에 도메인, 이름, 첫 화면만 다릅니다. basePath가 있는 이유가 이것입니다.",
+  },
+  {
+    en: "Account settings, dashboards, tabs, grouped screens",
+    ko: "계정 설정, 대시보드, 탭 화면, 그룹 화면",
+    split: false,
+    whyEn:
+      "These are sections inside one client. A route group such as (user) organizes them without adding a URL segment.",
+    whyKo: "하나의 클라이언트 안의 구역입니다. (user) 같은 route group이 URL 세그먼트를 더하지 않고 정리해 줍니다.",
+  },
+  {
+    en: "A section that only some signed-in users may open",
+    ko: "일부 로그인 사용자만 열 수 있는 구역",
+    split: false,
+    whyEn:
+      "Authorization is a guard and a layout gate, not a deployment boundary. Splitting on it buys nothing and costs a domain.",
+    whyKo:
+      "권한은 guard와 layout에서 막는 문제이지 배포 경계가 아닙니다. 이것 때문에 나누면 얻는 것 없이 도메인만 하나 더 씁니다.",
+  },
+];
+
 export default page().render(() => {
   const { l } = usePage();
   return (
     <Scroll>
+      <Scroll.Slide id="when-to-use" title={l.trans({ en: "When To Split", ko: "언제 나눌까" })}>
+        <Docs.Title>{l.trans({ en: "When To Split", ko: "언제 나눌까" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Your app has grown a second audience. The storefront and the admin console want different domains, different first screens, maybe different mobile packages — but the same products, the same orders, the same permissions. Creating a second app would duplicate all of that. Splitting the pages with basePath does not.",
+              ko: "앱에 두 번째 사용자층이 생겼습니다. 스토어와 관리자 콘솔은 서로 다른 도메인, 다른 첫 화면, 때로는 다른 모바일 패키지를 원하지만 상품도 주문도 권한도 같습니다. 앱을 하나 더 만들면 그 전부가 복제됩니다. basePath로 페이지를 나누면 그러지 않아도 됩니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "The test is whether the surfaces are sold, deployed, or reached as separate products. If they are, split them; if one is a section of the other, a route group is enough:",
+              ko: "기준은 그 화면들이 제품·배포·접근 단위로 나뉘는지입니다. 나뉘면 basePath로 분리하고, 한쪽이 다른 쪽의 구역이라면 route group으로 충분합니다:",
+            })}
+          </div>
+          <Docs.IntroTable
+            type={l.trans({ en: "Situation", ko: "상황" })}
+            items={situations.map(({ en, ko, split, whyEn, whyKo }) => ({
+              name: <span className="font-sans">{l.trans({ en, ko })}</span>,
+              desc: (
+                <>
+                  <code>{split ? "basePath" : l.trans({ en: "normal routing", ko: "일반 라우팅" })}</code>
+                  {" — "}
+                  {l.trans({ en: whyEn, ko: whyKo })}
+                </>
+              ),
+            }))}
+          />
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
       <Scroll.Slide id="multi-client" title={l.trans({ en: "Multi Client", ko: "다중 클라이언트" })}>
         <Docs.Title>{l.trans({ en: "Multi Client", ko: "다중 클라이언트" })}</Docs.Title>
         <Docs.Description>
@@ -85,101 +166,28 @@ export default page().render(() => {
   ],
 };`}
         />
-        <div className="space-y-1">
-          <div className={panelRecipe()}>
-            <div className="font-mono font-semibold text-primary">basePath</div>
-            <div className="mt-2 text-foreground/70 text-sm">
-              {l.trans({
-                en: "The first page folder and the client boundary. For basePath: store, pages live under page/store.",
-                ko: "첫 번째 page 폴더이자 클라이언트의 경계입니다. basePath가 store이면 page/store 아래에 페이지를 둡니다.",
-              })}
-            </div>
-          </div>
-          <div className={panelRecipe()}>
-            <div className="font-mono font-semibold text-primary">domains</div>
-            <div className="mt-2 text-foreground/70 text-sm">
-              {l.trans({
-                en: "Domains that should open this basePath, keyed by deployment branch: main, develop, debug, or a branch name you add. When the domain matches, users see the site without the basePath segment.",
-                ko: "이 basePath를 열 도메인이며, 배포 branch를 키로 씁니다. main, develop, debug 또는 직접 추가한 branch 이름을 키로 둡니다. 도메인이 매칭되면 사용자는 basePath 세그먼트 없이 사이트를 보게 됩니다.",
-              })}
-            </div>
-          </div>
-        </div>
-      </Scroll.Slide>
-      <Divider />
-
-      <Scroll.Slide id="when-to-use" title={l.trans({ en: "When To Use", ko: "언제 나눌까" })}>
-        <Docs.Title>{l.trans({ en: "When To Use", ko: "언제 나눌까" })}</Docs.Title>
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: "Use basePath when the business wants to operate separate client surfaces from one app. The codebase and backend stay together, but each client can have its own domain, entry page, build output, and app package.",
-              ko: "하나의 앱에서 여러 클라이언트 화면을 별도로 운영해야 할 때 basePath를 사용합니다. 코드베이스와 백엔드는 하나로 유지하면서, 각 클라이언트는 별도의 도메인, 진입 페이지, 빌드 결과물, 앱 패키지를 가질 수 있습니다.",
-            })}
-          </div>
-        </Docs.Description>
-        <div className="space-y-1">
-          <div className={panelRecipe()}>
-            <div className="font-bold text-foreground">
-              {l.trans({ en: "Use basePath", ko: "basePath를 쓰는 경우" })}
-            </div>
-            <div className="mt-2 text-foreground/70 text-sm">
-              {l.trans({
-                en: "Use it for surfaces that are sold, deployed, or accessed as separate products, even if they share the same domain logic and backend services.",
-                ko: "같은 도메인 로직과 백엔드 서비스를 공유하더라도, 제품이나 배포 단위, 접근 대상이 분리되어야 하는 화면에 사용합니다.",
-              })}
-            </div>
-          </div>
-          <div className={panelRecipe()}>
-            <div className="font-bold text-foreground">
-              {l.trans({ en: "Use normal routing", ko: "일반 라우팅을 쓰는 경우" })}
-            </div>
-            <div className="mt-2 text-foreground/70 text-sm">
-              {l.trans({
-                en: "Use it for pages that are just sections inside the same client, such as account settings, dashboards, tabs, or grouped screens.",
-                ko: "계정 설정, 대시보드, 탭 화면, 그룹 화면처럼 같은 클라이언트 안에 속한 페이지에는 일반 라우팅을 사용합니다.",
-              })}
-            </div>
-          </div>
-        </div>
-        <div className="space-y-1">
-          {[
-            [
-              l.trans({ en: "Customer-facing site and admin", ko: "고객 사이트와 관리자" }),
-              l.trans({
-                en: "A store site and an admin console often share products, orders, users, and permissions. Split them with basePath when they need different domains, layouts, or release targets.",
-                ko: "스토어 사이트와 관리자 콘솔은 상품, 주문, 사용자, 권한을 공유하는 경우가 많습니다. 하지만 도메인, 화면 구성, 배포 대상이 다르다면 basePath로 나누는 것이 좋습니다.",
+        <Docs.OptionTable
+          items={[
+            {
+              key: "basePath",
+              type: "string",
+              default: "—",
+              desc: l.trans({
+                en: "The client this route opens, and the first page folder its routes live under. For basePath store, pages live under page/store. Akan strips the slashes, so /store/ and store are the same value.",
+                ko: "이 route가 여는 클라이언트이자, 그 라우트들이 놓이는 첫 page 폴더입니다. basePath가 store이면 page/store 아래에 페이지를 둡니다. Akan이 슬래시를 떼어내므로 /store/와 store는 같은 값입니다.",
               }),
-            ],
-            [
-              l.trans({ en: "Different customer groups", ko: "고객군이 다른 서비스" }),
-              l.trans({
-                en: "For example, a consumer client, partner portal, and internal staff tool can all use the same backend while presenting different home screens and navigation.",
-                ko: "예를 들어 일반 고객용 화면, 파트너 포털, 내부 운영 도구는 같은 백엔드를 사용하면서도 서로 다른 홈 화면과 내비게이션을 가질 수 있습니다.",
+            },
+            {
+              key: "domains",
+              type: "Record<branch, string[]>",
+              default: "{}",
+              desc: l.trans({
+                en: "Hosts that open this basePath, keyed by deployment branch. main, develop, and debug always exist, and naming any other key adds that branch. When the host matches, users see the site without the basePath segment.",
+                ko: "이 basePath를 여는 호스트이며 배포 branch를 키로 씁니다. main·develop·debug는 항상 있고, 다른 키를 적으면 그 branch가 추가됩니다. 호스트가 매칭되면 사용자는 basePath 세그먼트 없이 사이트를 보게 됩니다.",
               }),
-            ],
-            [
-              l.trans({ en: "Separate mobile apps", ko: "별도 모바일 앱" }),
-              l.trans({
-                en: "If Android and iOS packages must be released separately per brand, region, or user type, each mobile target can point to a different basePath.",
-                ko: "브랜드, 지역, 사용자 유형별로 Android와 iOS 앱을 따로 출시해야 한다면 각 모바일 target이 서로 다른 basePath를 바라보게 할 수 있습니다.",
-              }),
-            ],
-            [
-              l.trans({ en: "White-label or regional sites", ko: "화이트라벨 또는 지역 사이트" }),
-              l.trans({
-                en: "When several sites share business rules but need different domains, names, or first screens, basePath keeps them separate without creating multiple apps.",
-                ko: "여러 사이트가 같은 비즈니스 규칙을 공유하지만 도메인, 이름, 첫 화면이 달라야 한다면 basePath로 앱을 여러 개 만들지 않고 분리할 수 있습니다.",
-              }),
-            ],
-          ].map(([title, desc]) => (
-            <div key={title} className={panelRecipe({ padding: "row" })}>
-              <span className="font-bold text-foreground">{title}: </span>
-
-              <span className="text-foreground/70 text-sm">{desc}</span>
-            </div>
-          ))}
-        </div>
+            },
+          ]}
+        />
       </Scroll.Slide>
       <Divider />
 
@@ -317,6 +325,12 @@ https://partner-main.example.com -> partner`}
   },
 };`}
         />
+        <Docs.Alert type="warning">
+          {l.trans({
+            en: "A target's basePath must name one the routes declared. An unknown value fails the config load rather than building a package that opens nothing.",
+            ko: "target의 basePath는 routes에 선언된 값이어야 합니다. 모르는 값이면 아무것도 열지 못하는 패키지를 만드는 대신 config 로드가 실패합니다.",
+          })}
+        </Docs.Alert>
         <Docs.Alert>
           {l.trans({
             en: "This is the main idea: multi web and multi app clients, but one Akan app, one server runtime, and one backend domain model.",

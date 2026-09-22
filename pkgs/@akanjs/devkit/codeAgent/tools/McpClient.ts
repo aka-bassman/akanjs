@@ -15,6 +15,23 @@ interface JsonRpcResponse {
 const protocolVersion = "2025-06-18";
 
 /**
+ * A server that answered correctly and asked who is calling.
+ *
+ * Its own class because the caller has to tell it apart from every other connect failure: this one is fixed by
+ * signing in, and reporting it as "unavailable" sends someone to debug a server that is working.
+ */
+export class McpUnauthorized extends Error {
+  /** The `WWW-Authenticate` value, which names the resource metadata discovery starts from. */
+  readonly challenge: string;
+
+  constructor(name: string, challenge: string) {
+    super(`MCP server "${name}" requires authentication`);
+    this.name = "McpUnauthorized";
+    this.challenge = challenge;
+  }
+}
+
+/**
  * A client for one MCP server, over stdio or streamable HTTP.
  *
  * **Every failure is non-fatal.** A server that will not start, answers nothing, or dies mid-session costs its
@@ -28,9 +45,11 @@ export class McpClient {
   #buffer = "";
   readonly #pending = new Map<number, (response: JsonRpcResponse) => void>();
   #sessionId: string | undefined;
+  readonly #token: string | undefined;
 
-  constructor(ref: CodeAgentMcpServerRef) {
+  constructor(ref: CodeAgentMcpServerRef, token?: string) {
     this.ref = ref;
+    this.#token = token;
   }
 
   async connect() {
@@ -130,11 +149,18 @@ export class McpClient {
         "content-type": "application/json",
         // Streamable HTTP lets a server answer either way; a client that omits the SSE type gets a 406.
         accept: "application/json, text/event-stream",
+        "mcp-protocol-version": protocolVersion,
+        ...this.ref.headers,
+        ...(this.#token ? { authorization: `Bearer ${this.#token}` } : {}),
         ...(this.#sessionId ? { "mcp-session-id": this.#sessionId } : {}),
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
     });
+    // Raised rather than returned as a JSON-RPC error: a 401 carries no body worth reading, and the whole of
+    // what the caller needs is in the header that came with it.
+    if (response.status === 401)
+      throw new McpUnauthorized(this.ref.name, response.headers.get("www-authenticate") ?? "");
     this.#sessionId = response.headers.get("mcp-session-id") ?? this.#sessionId;
     const text = await response.text();
     if (!text.trim()) return {};

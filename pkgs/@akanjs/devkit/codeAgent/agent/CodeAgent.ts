@@ -121,6 +121,7 @@ export class CodeAgent {
       mailbox: () => agent.#mailbox,
       onNotice: (message) => agent.#emit({ type: "notice", level: "warning", message }),
       onAgents: (agents) => agent.#emit({ type: "subagent", agents }),
+      onAsk: (question) => agent.ask(question),
     });
 
     const resourceLoader = new DefaultResourceLoader({
@@ -537,25 +538,33 @@ export class CodeAgent {
     return await this.#asks.openApproval(approvalId);
   }
 
+  /**
+   * Puts one question on the wire and waits for its answer, rendered as the labels a person chose.
+   *
+   * The single way anything asks: the engine's own UI port and the `ask_user` tool both land here, so the
+   * suspend path, the profile's refusal to prompt at all, and the id the host answers against cannot disagree
+   * between them. An empty answer is a skip, which is a real answer and not a failure.
+   */
+  async ask(spec: Omit<CodeAgentQuestion, "questionId">) {
+    if (!this.#profile.ui.canPrompt) return undefined;
+    const question: CodeAgentQuestion = { questionId: this.#asks.nextId("q"), ...spec };
+    this.#emit({ type: "question", question });
+    if (this.#profile.interaction.question === "suspend") {
+      this.#mapper.noteOutcome("awaiting");
+      return undefined;
+    }
+    return (await this.#asks.openQuestion(question)) || undefined;
+  }
+
   #ui() {
     return new CodeAgentUi({
-      ask: async (prompt, kind, choices) => {
-        if (!this.#profile.ui.canPrompt) return undefined;
-        const questionId = this.#asks.nextId("q");
-        const question: CodeAgentQuestion = {
-          questionId,
+      ask: async (prompt, kind, choices) =>
+        await this.ask({
           prompt,
           kind,
           ...(choices ? { options: choices.map((label) => ({ key: label, label })) } : {}),
           freeText: kind === "text",
-        };
-        this.#emit({ type: "question", question });
-        if (this.#profile.interaction.question === "suspend") {
-          this.#mapper.noteOutcome("awaiting");
-          return undefined;
-        }
-        return (await this.#asks.openQuestion(question)) || undefined;
-      },
+        }),
       notify: (level, message) => this.#emit({ type: "notice", level, message }),
     });
   }

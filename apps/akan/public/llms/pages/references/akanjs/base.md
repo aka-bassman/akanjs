@@ -14,21 +14,25 @@
 
 akanjs/base
 
-24 hex string uuid used for document ids and signal payload ids. It validates as a string and keeps an empty string as the default placeholder value.
+24 hex string uuid used for document ids and signal payload ids. It validates as a string and keeps an empty string as the default placeholder value. A relation is declared with the model class itself, so ID is for a bare id a model stores without a relation.
 
-Integer primitive scalar for numeric fields that must be safe integers. It is common in counters, pagination values, metric samples, and scalar constant definitions.
+Integer primitive scalar for numeric fields that must be safe integers. It is common in counters, pagination values, metric samples, and scalar constant definitions. The JS global Number is not a field type — Int or Float is.
 
 Finite number primitive scalar for decimal values such as coordinates, rates, balances, and resource metrics. Use it when fractional values are valid business data.
 
-Loose object scalar for payloads whose shape is intentionally open. Prefer explicit scalar/model fields when the shape is stable; use Any for integration blobs or flexible metadata.
+Loose object scalar for payloads whose shape is intentionally open. Prefer explicit scalar/model fields when the shape is stable; use Any for integration blobs or flexible metadata. Pass the TypeScript shape as the type argument so the field is still typed. Never carry bytes in Any — declare Binary.
 
 Raw bytes for a signal argument or return, never a model field. It is a Uint8Array on both sides and base64 on a JSON wire; a pubsub whose whole return is Binary sends its own websocket frame instead. Store a blob as a File model.
+
+File upload primitive for a signal body, and nothing else. It is valid only inside a mutation flagged with `fileUpload: true`, and a model that stores files references the File model instead.
 
 Akan re-exports the configured dayjs function and Dayjs type from base. Apps and libs use it for document dates, store state dates, service calculations, and UI formatting.
 
 Creates a typed enum scalar class from a literal value list. The generated enum exposes values, has, indexOf, find, filter, map, and forEach helpers used by constants and UI labels.
 
 Reads and caches Akan runtime environment values from public/server environment variables. It returns client/server URI data, operation mode, app identity, and render mode.
+
+Read the route prefix the running app answers on, instead of writing `/api` or `/ws` as a literal. Both fall back to the default when nothing moved them, and both read the value the server-rendered page wrote before any component ran, so a moved prefix reaches the browser too.
 
 Small id-keyed collection helper for light model arrays. It keeps a map from id to index and provides immutable-style set, delete, filter, slice, pick, and iteration helpers.
 

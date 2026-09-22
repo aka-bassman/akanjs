@@ -58,7 +58,7 @@ After upload, the UI usually uses the returned File record. For images, show `fi
 
 Auto-attach To A Model Field
 
-Mark one upload mutation with `{ fileUpload: true }`. The framework then auto-generates the `add{Model}Files` fetch helper and the form-field upload action (`add{Field}FilesOn{Model}`) that the `Field` and `Upload` components use, so a model's file field uploads and attaches automatically.
+Mark one upload mutation with `{ fileUpload: true }`. The framework then auto-generates the `add{Model}Files` fetch helper and the form-field upload action (`upload{Field}On{Model}`) that the `Field` and `Upload` components use, so a model's file field uploads and attaches automatically.
 
 Mark exactly one REST upload mutation; the marker rides the serialized signal to the client.
 
@@ -84,7 +84,7 @@ Local: easy to debug and good for development.
 
 Cloud: better for production and shared access.
 
-Same service: keep upload logic behind `storageApi`.
+Same service: keep upload logic behind the injected `StorageAdaptorRole`.
 
 Tips
 
@@ -129,7 +129,7 @@ import { Upload } from "akanjs/base";
 import { endpoint } from "akanjs/signal";
 
 export class FileEndpoint extends endpoint(srv.file, ({ mutation }) => ({
-  uploadFiles: mutation([cnst.File])
+  uploadFiles: mutation([cnst.File], { guards: [User] })
     .body("files", [Upload])
     .body("purpose", String, { example: "profile" })
     .exec(async function (files, purpose) {
@@ -138,11 +138,14 @@ export class FileEndpoint extends endpoint(srv.file, ({ mutation }) => ({
 })) {}
 ```
 
-### file.service.ts
+### apps/myapp/lib/file/file.service.ts
 
 ```ts
-export class FileService extends serve(db.file, ({ use }) => ({
-  storageApi: use<StorageApi>(),
+import { serve, StorageAdaptorRole } from "akanjs/service";
+import * as db from "../db";
+
+export class FileService extends serve(db.file, ({ plug }) => ({
+  storage: plug(StorageAdaptorRole),
 })) {
   async uploadFiles(files: File[], purpose: string) {
     return await Promise.all(files.map((file) => this.uploadFile(file, purpose)));
@@ -160,7 +163,7 @@ export class FileService extends serve(db.file, ({ use }) => ({
 
     const path = `${purpose}/${record.id}-${file.name}`;
 
-    this.storageApi.uploadDataFromStream({
+    this.storage.uploadDataFromStream({
       path,
       body: file.stream(),
       mimetype: file.type,
@@ -229,12 +232,12 @@ export class UserInput extends via((field) => ({
 })) {}
 ```
 
-### file.service.ts — where the storage call already lives
+### apps/myapp/lib/file/file.service.ts
 
 ```ts
-export class FileService extends serve(db.file, ({ use }) => ({ storageApi: use<StorageApi>() })) {
+export class FileService extends serve(db.file, ({ plug }) => ({ storage: plug(StorageAdaptorRole) })) {
   override async _postRemove(file: db.File) {
-    await this.storageApi.deleteData(file.url);
+    await this.storage.deleteData(file.url);
     return file;
   }
 }

@@ -3,6 +3,111 @@ import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
+const filterMethods = [
+  {
+    name: "list<Filter>",
+    example: "await listByOwner(ownerId, { limit: 20 })",
+    en: "Read, no hooks. Hydrated documents, newest first. Takes a trailing option with skip, limit, sort, sample and select.",
+    ko: "읽기, hook 없음. hydrate된 도큐먼트를 최신순으로 돌려줍니다. skip·limit·sort·sample·select를 담은 옵션을 마지막 인자로 받습니다.",
+  },
+  {
+    name: "listIds<Filter>",
+    example: "await listIdsByOwner(ownerId)",
+    en: "Read, no hooks. Just the ids. It takes the same option but ignores select, because the projection is already the id.",
+    ko: "읽기, hook 없음. id만 돌려줍니다. 같은 옵션을 받지만 select는 무시합니다. 이미 id만 고르기 때문입니다.",
+  },
+  {
+    name: "find<Filter>",
+    example: "await findByOwner(ownerId)",
+    en: "Read, no hooks. The newest match or null.",
+    ko: "읽기, hook 없음. 가장 최근에 맞는 하나 또는 null입니다.",
+  },
+  {
+    name: "findId<Filter>",
+    example: "await findIdByOwner(ownerId)",
+    en: "Read, no hooks. That match's id, or null.",
+    ko: "읽기, hook 없음. 그 하나의 id이거나 null입니다.",
+  },
+  {
+    name: "pick<Filter>",
+    example: "await pickByOwner(ownerId)",
+    en: "Read, no hooks. Same as find, but nothing matching throws instead of answering null — use it when the caller has already established the row exists.",
+    ko: "읽기, hook 없음. find와 같지만 맞는 것이 없으면 null 대신 예외를 냅니다. 행이 있다는 것을 이미 확인한 호출에서 씁니다.",
+  },
+  {
+    name: "pickId<Filter>",
+    example: "await pickIdByOwner(ownerId)",
+    en: "Read, no hooks. That id, or a throw.",
+    ko: "읽기, hook 없음. 그 id이거나 예외입니다.",
+  },
+  {
+    name: "exists<Filter>",
+    example: "if (await existsByOwner(ownerId)) …",
+    en: "Read, no hooks. The matching id or null — not a boolean, though it reads as one in a condition.",
+    ko: "읽기, hook 없음. boolean이 아니라 맞는 id 또는 null입니다. 조건문에서는 boolean처럼 읽힙니다.",
+  },
+  {
+    name: "count<Filter>",
+    example: "await countByOwner(ownerId)",
+    en: "Read, no hooks. How many rows match.",
+    ko: "읽기, hook 없음. 조건에 맞는 행의 개수입니다.",
+  },
+  {
+    name: "insight<Filter>",
+    example: "await insightByOwner(ownerId)",
+    en: "Read, no hooks. The model's Insight aggregate as a plain record — never a hydrated document.",
+    ko: "읽기, hook 없음. 모델의 Insight 집계를 plain record로 돌려줍니다. hydrate된 도큐먼트가 아닙니다.",
+  },
+  {
+    name: "query<Filter>",
+    example: "this.productService.queryByOwner(ownerId)",
+    en: "Neither. It returns the query descriptor synchronously and touches the database not at all — this is what a slice's exec hands back.",
+    ko: "읽기도 쓰기도 아닙니다. query descriptor를 동기로 돌려줄 뿐 데이터베이스에 닿지 않습니다. slice의 exec이 돌려주는 값이 이것입니다.",
+  },
+  {
+    name: "remove<Filter>",
+    example: "await removeByOwner(ownerId)",
+    en: "Write, NO hooks. One atomic soft delete over every match, reporting counts. No _preRemove, no _postRemove, no cascade, and no live-sync push.",
+    ko: "쓰기, hook 없음. 조건에 맞는 모든 행을 한 번의 원자적 soft delete로 지우고 개수를 돌려줍니다. _preRemove도 _postRemove도 cascade도 live-sync 전파도 없습니다.",
+  },
+  {
+    name: "removeOne<Filter>",
+    example: "await removeOneByOwner(ownerId)",
+    en: "Write, NO hooks. The same, narrowed to the newest match. The caller cannot pick which one and gets counts rather than an id, so this is for at most one of these — not for claiming the next item off a queue.",
+    ko: "쓰기, hook 없음. 같은 동작을 가장 최근 하나로 좁힙니다. 어느 행인지 고를 수 없고 id 대신 개수를 받으므로, 큐에서 다음 항목을 집는 용도가 아니라 이런 건 많아야 하나라는 뜻으로 씁니다.",
+  },
+  {
+    name: "update<Filter>",
+    example: 'await updateByOwner(ownerId).set({ status: "archived" })',
+    en: "Write, NO hooks. A chain, not a call: the patch lands on a terminal .set(), and building the chain touches nothing.",
+    ko: "쓰기, hook 없음. 호출이 아니라 체인입니다. 수정할 값은 마지막 .set()에 넘기고, 체인을 만드는 것만으로는 아무 일도 일어나지 않습니다.",
+  },
+  {
+    name: "updateOne<Filter>",
+    example: 'await updateOneByOwner(ownerId).set({ status: "archived" })',
+    en: "Write, NO hooks. The same chain, narrowed to the newest match.",
+    ko: "쓰기, hook 없음. 같은 체인을 가장 최근 하나로 좁힙니다.",
+  },
+];
+
+const layerQuestions = [
+  { en: "What fields does it have?", ko: "어떤 필드를 가지나요?", file: "model.constant.ts" },
+  { en: "Which fields are text searchable?", ko: "어떤 필드가 텍스트 검색 대상인가요?", file: "model.constant.ts" },
+  {
+    en: "How is it stored, filtered, or searched?",
+    ko: "어떻게 저장하고 필터링하고 검색하나요?",
+    file: "model.document.ts",
+  },
+  { en: "What business rule should run?", ko: "어떤 업무 규칙이 실행되나요?", file: "model.service.ts" },
+  {
+    en: "What should a page call, and who may call it?",
+    ko: "페이지가 무엇을 호출하고, 누가 호출할 수 있나요?",
+    file: "model.signal.ts",
+  },
+  { en: "What state is shared on the client?", ko: "클라이언트에서 어떤 상태를 공유하나요?", file: "model.store.ts" },
+  { en: "What should users see?", ko: "사용자에게 무엇을 보여주나요?", file: "Model.View.tsx · Model.Zone.tsx" },
+];
+
 export default page().render(() => {
   const { l } = usePage();
   return (
@@ -213,6 +318,57 @@ export class ProductService extends serve(db.product, ({ use, service }) => ({})
   }
 }`}
           />
+        </Docs.Description>
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="filter-methods" title={l.trans({ en: "What A Filter Generates", ko: "필터가 만들어 주는 것" })}>
+        <Docs.Title>{l.trans({ en: "What A Filter Generates", ko: "필터가 만들어 주는 것" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "A query you declare in the document file is not one method. Akan generates fourteen from it, named after the filter key: declare byOwner and you have listByOwner, countByOwner, updateOneByOwner, and eleven more, on both the model and the service.",
+              ko: "document 파일에 선언한 query 하나는 메서드 하나가 아닙니다. Akan은 필터 키를 붙여 열네 개를 만듭니다. byOwner를 선언하면 listByOwner, countByOwner, updateOneByOwner를 비롯한 열네 개가 model과 service 양쪽에 생깁니다.",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/shop/lib/product/product.document.ts"
+            code={`export class ProductFilter extends from(cnst.Product, (filter) => ({
+  query: {
+    byOwner: filter()
+      .arg("ownerId", ID)
+      .query((ownerId) => ({ owner: ownerId })),
+  },
+  sort: {},
+})) {}`}
+          />
+          <div>
+            {l.trans({
+              en: "Nine of the fourteen read, one only builds a query descriptor, and the remaining four write. Those four are the ones to be careful with: each is a single atomic statement against the database, so none of the model's document hooks run:",
+              ko: "열넷 중 아홉은 읽기이고, 하나는 query descriptor를 만들 뿐이며, 나머지 넷이 쓰기입니다. 조심해야 하는 쪽은 이 넷입니다. 각각 데이터베이스에 원자적 문장 하나를 보내므로 모델의 document hook이 전혀 실행되지 않습니다:",
+            })}
+          </div>
+          <Docs.IntroTable
+            type={l.trans({ en: "Method", ko: "메서드" })}
+            items={filterMethods.map(({ name, example, en, ko }) => ({
+              name,
+              example,
+              desc: l.trans({ en, ko }),
+            }))}
+          />
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: "Reach for the four writes only on a model whose removal carries no side effect. A model with a cascade, a _postRemove that deletes a stored file, or a live list watching it must be removed one document at a time through remove<Model>(id) — one atomic UPDATE cannot run any of that.",
+              ko: "이 네 개의 쓰기는 삭제에 부수 효과가 없는 모델에만 씁니다. cascade가 있거나, 저장된 파일을 지우는 _postRemove가 있거나, 실시간 목록이 지켜보고 있는 모델은 remove<Model>(id)로 한 건씩 삭제해야 합니다. 원자적 UPDATE 하나로는 그중 무엇도 실행할 수 없습니다.",
+            })}
+          </Docs.Alert>
+          <div>
+            {l.trans({
+              en: "Every model already carries an any filter, so listAny and countAny exist before you declare anything. One name is refused: a filter may not be keyed after its own model, case aside. A filter named chat on model chat would generate a removeChat that quietly replaces the single-document one with a hookless version, so Akan fails the boot instead.",
+              ko: "모든 모델에는 any 필터가 이미 있어서, 아무것도 선언하지 않아도 listAny와 countAny가 존재합니다. 거부되는 이름이 하나 있습니다. 필터 키를 자기 모델 이름으로 지을 수는 없고, 대소문자는 무시하고 비교합니다. model chat에 filter chat을 두면 단일 도큐먼트용 removeChat이 hook 없는 것으로 조용히 바뀌므로 Akan이 부팅을 실패시킵니다.",
+            })}
+          </div>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -456,6 +612,20 @@ export const General = () => {
               ko: "차이는 page가 어디서 기다리는지입니다. await한 호출은 query가 끝날 때까지 route 전체를 붙잡으므로 그 아래 아무것도 전송되지 않습니다. 반면 Zone이나 Load.Stream에 넘긴 promise는 그 component 안에서, 자체 Suspense boundary 뒤에서 await됩니다 — page의 나머지는 이미 전송된 상태이고 각 section은 자기 data가 도착하는 대로 채워집니다.",
             })}
           </div>
+          <Docs.Mermaid
+            title="Where the page waits"
+            chart={`sequenceDiagram
+  participant Browser
+  participant Route as Route render
+  participant Server as Server queries
+  Browser->>Route: GET /:lang/shop/:shopId
+  Route->>Server: fetch.initProductInShop(shopId)
+  Route->>Server: fetch.initOrderInShop(shopId)
+  Route-->>Browser: shell HTML, one boundary per section
+  Server-->>Browser: productInitInShop fills the product zone
+  Server-->>Browser: orderInitInShop fills the order zone
+  Server-->>Browser: productListInShop fills the Load.Stream`}
+          />
           <Code.Snippet
             className="w-full"
             title="Server page: hand each promise to the section that renders it"
@@ -533,47 +703,13 @@ export default page()
               ko: "코드를 어디에 둘지 헷갈릴 때는 비즈니스 질문에서 시작하면 됩니다. 각 파일이 한 종류의 질문에 답한다고 생각하면 데이터 레이어를 설계하기 쉬워집니다.",
             })}
           </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: l.trans({ en: "What fields does it have?", ko: "어떤 필드를 가지나요?" }),
-                desc: "model.constant.ts",
-              },
-              {
-                title: l.trans({ en: "Which fields are text searchable?", ko: "어떤 필드가 텍스트 검색 대상인가요?" }),
-                desc: "model.constant.ts",
-              },
-              {
-                title: l.trans({ en: "How is it stored or searched?", ko: "어떻게 저장하고 검색하나요?" }),
-                desc: "model.document.ts",
-              },
-              {
-                title: l.trans({ en: "What business rule should run?", ko: "어떤 업무 규칙이 실행되나요?" }),
-                desc: "model.service.ts",
-              },
-              {
-                title: l.trans({ en: "What should a page call?", ko: "페이지가 무엇을 호출하나요?" }),
-                desc: "model.signal.ts",
-              },
-              {
-                title: l.trans({ en: "What should users see?", ko: "사용자에게 무엇을 보여주나요?" }),
-                desc: "Model.View.tsx or Model.Zone.tsx",
-              },
-              {
-                title: l.trans({
-                  en: "What state is shared on the client?",
-                  ko: "클라이언트에서 어떤 상태를 공유하나요?",
-                }),
-                desc: "model.store.ts",
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-bold text-foreground">{title}: </span>
-
-                <span className="font-mono text-primary text-sm">{desc}</span>
-              </div>
-            ))}
-          </div>
+          <Docs.IntroTable
+            type={l.trans({ en: "Question", ko: "질문" })}
+            items={layerQuestions.map(({ en, ko, file }) => ({
+              name: <span className="font-sans">{l.trans({ en, ko })}</span>,
+              desc: <code>{file}</code>,
+            }))}
+          />
           <Docs.Alert type="warning">
             {l.trans({
               en: "Keep page files focused on user experience. If the rule would still matter when another page, mobile app, or admin screen uses the same feature, it usually belongs in the data layer.",

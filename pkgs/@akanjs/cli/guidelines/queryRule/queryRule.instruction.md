@@ -49,7 +49,7 @@ with it. `conventions` carries the invariants — this is the full contract behi
   `findBy<Filter>(...args, { select: { secretField: true } })` takes it inside the option object. The shapes do not
   swap: `{ select: … }` handed to the facade projects a field named `select`, which no model has, and the read comes
   back empty with no error. This is the only way to read a `field.secret(...)` value, which is otherwise stripped.
-- **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`); client fetch results are raw `GetStateObject` plain data (functions stripped, `pkgs/akanjs/base/types.ts`).
+- **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`), and so do client fetch results — `FetchClient` parses every return with `crystalize` defaulting to **true** (`pkgs/akanjs/fetch/client/fetchClient.ts`). The raw `GetStateObject` shape (functions stripped, `pkgs/akanjs/base/types.ts`) is what the `<ref>Obj` / `<ref>ObjList` / `<ref>ObjInsight` handles carry, because those pass `crystalize: false` on purpose so the value can cross the RSC boundary as a client prop.
 - Every filter generates fourteen methods: `list` · `listIds` · `find` · `findId` · `pick` · `pickId` · `exists` ·
   `count` · `insight` · `query` · **`remove`** · **`removeOne`** · **`update`** · **`updateOne`**. The last four are
   query-level writes — one atomic UPDATE, **no hooks**, and therefore no `_postRemove` and no cascade. Use them on a

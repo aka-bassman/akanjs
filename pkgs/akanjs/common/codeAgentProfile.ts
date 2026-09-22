@@ -29,7 +29,25 @@ export interface CodeAgentMcpServerRef {
   args?: string[];
   url?: string;
   env?: Record<string, string>;
+  /** Sent on every http request. A server behind a static token needs nothing else. */
+  headers?: Record<string, string>;
+  /**
+   * What to use when the server answers `401` and asks for OAuth.
+   *
+   * Everything here is optional because the spec is discoverable: the challenge names the resource metadata,
+   * that names the authorization server, and most hosted servers register a client on demand. It is for the
+   * ones that do not — a provider issuing client ids by hand, or one whose scopes cannot be guessed.
+   */
+  oauth?: { clientId?: string; clientSecret?: string; scope?: string };
 }
+
+/**
+ * Where a server stands with its credential.
+ *
+ * `required` is not a failure: it is a server that answered correctly and said who may talk to it. Reporting
+ * it as unreachable would send someone to debug a server that is working exactly as designed.
+ */
+export type CodeAgentMcpAuthState = "none" | "authorized" | "required";
 
 /**
  * One declared MCP server, as the session found it.
@@ -47,6 +65,8 @@ export interface CodeAgentMcpStatus {
   tools: string[];
   /** Why it published none, when it published none. */
   error?: string;
+  /** Whether a credential was needed, and whether one was held. */
+  auth?: CodeAgentMcpAuthState;
 }
 
 export interface CodeAgentSubagentBudget {

@@ -1,7 +1,76 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
-import { cn, page } from "akanjs/client";
+import { page } from "akanjs/client";
+
+const facets = [
+  {
+    name: "page/",
+    side: "client",
+    en: "Route modules only — nothing else compiles here. A library can hold one too, and an app that opts in with syncPageLibs serves its routes.",
+    ko: "라우트 모듈만 둡니다. 다른 파일은 여기서 컴파일되지 않습니다. 라이브러리도 page 폴더를 가질 수 있고, syncPageLibs로 사용을 선언한 앱이 그 라우트를 제공합니다.",
+  },
+  {
+    name: "lib/",
+    side: "shared",
+    en: "One folder per business concept: user, product, order, invoice, payment, notification. Each folder is a module, and a module's files stay inside it.",
+    ko: "비즈니스 개념마다 폴더 하나입니다. user, product, order, invoice, payment, notification 같은 것들이며, 각 폴더가 모듈이고 모듈의 파일은 그 안에 머뭅니다.",
+  },
+  {
+    name: "ui/",
+    side: "client",
+    en: "Renders JSX and is not bound to one model. PascalCase component files, camelCase sidecars. A tokens.css here is a library's one stylesheet, for colors that must not follow the theme.",
+    ko: "JSX를 그리되 특정 모델에 매이지 않는 코드입니다. 컴포넌트 파일은 PascalCase, 보조 파일은 camelCase입니다. 여기 두는 tokens.css는 테마를 따라가면 안 되는 색을 위한 라이브러리의 유일한 스타일시트입니다.",
+  },
+  {
+    name: "webkit/",
+    side: "client",
+    en: "Touches window, navigator, or Capacitor, or is a React hook. Files are use<Thing>.tsx — .tsx even when there is no JSX.",
+    ko: "window, navigator, Capacitor를 건드리거나 React hook인 코드입니다. 파일명은 use<Thing>.tsx이며 JSX가 없어도 .tsx로 씁니다.",
+  },
+  {
+    name: "common/",
+    side: "shared",
+    en: "Pure, isomorphic, zero-dependency. It may import only sibling common files and akanjs/base — which means it cannot import Err, so keep throwing code out of it. camelCase file, filename equal to its single export.",
+    ko: "순수하고 양쪽에서 동작하며 의존성이 없는 코드입니다. 형제 common 파일과 akanjs/base만 import할 수 있어서 Err도 가져올 수 없으므로, 예외를 던지는 코드는 두지 않습니다. 파일명은 camelCase이며 유일한 export 이름과 같습니다.",
+  },
+  {
+    name: "srvkit/",
+    side: "server",
+    en: "Touches node:*, Bun, process.env, a secret, or a server SDK. camelCase file, PascalCase class. Vendor clients and guards live here.",
+    ko: "node:*, Bun, process.env, 비밀값, 서버 SDK를 건드리는 코드입니다. 파일명은 camelCase, 클래스는 PascalCase입니다. 벤더 클라이언트와 guard가 여기 있습니다.",
+  },
+  {
+    name: "env/",
+    side: "shared",
+    en: "The runtime values, one file per environment, plus the type files that keep them honest. Server env files are gitignored; client env files are not.",
+    ko: "런타임 값을 환경별 파일 하나씩 두고, 그 형태를 지켜 주는 type 파일을 함께 둡니다. server env 파일은 gitignore 대상이고 client env 파일은 아닙니다.",
+  },
+  {
+    name: "plugin/",
+    side: "shared",
+    en: "Build- and CLI-time AkanPlugin declarations, named <name>.plugin.ts and registered in akan.config.ts.",
+    ko: "빌드·CLI 시점에 동작하는 AkanPlugin 선언입니다. 파일명은 <name>.plugin.ts이고 akan.config.ts에 등록합니다.",
+  },
+  {
+    name: "public/",
+    side: "client",
+    en: "Static files served as they are: logos, icons, fonts, downloadable PDFs. A library's public/ is mounted into every app that reaches it.",
+    ko: "그대로 제공되는 정적 파일입니다. 로고, 아이콘, 폰트, 다운로드용 PDF 같은 것들입니다. 라이브러리의 public/은 그 라이브러리를 쓰는 모든 앱에 마운트됩니다.",
+  },
+  {
+    name: "private/",
+    side: "server",
+    en: "Implementation-only code that must not become part of the public app or library API.",
+    ko: "앱이나 라이브러리의 공개 API가 되면 안 되는 내부 구현 코드입니다.",
+  },
+  {
+    name: "script/",
+    side: "server",
+    en: "Development scripts you run against a live Akan server. An app has this folder; a library does not, because a library is never booted.",
+    ko: "실행 중인 Akan 서버를 대상으로 돌리는 개발 스크립트입니다. 앱에는 이 폴더가 있고 라이브러리에는 없습니다. 라이브러리는 부팅되지 않기 때문입니다.",
+  },
+];
 
 export default page().render(() => {
   const { l } = usePage();
@@ -47,6 +116,22 @@ export default page().render(() => {
               </div>
             ))}
           </div>
+          <Docs.Mermaid
+            title="Which folder does this file go in"
+            highlightNodes={["role"]}
+            chart={`flowchart TD
+  owner{"Who uses it?"} -->|"one product"| app["apps/myapp/"]
+  owner -->|"several products"| lib["libs/shared/"]
+  app --> role{"What does the file do?"}
+  lib --> role
+  role -->|"a URL a user visits"| pageDir["page/"]
+  role -->|"data the business stores"| modelDir["lib/model/"]
+  role -->|"something the business does"| serviceDir["lib/_service/"]
+  role -->|"reusable markup"| uiDir["ui/"]
+  role -->|"browser API or React hook"| webkitDir["webkit/"]
+  role -->|"node, Bun, or a secret"| srvkitDir["srvkit/"]
+  role -->|"pure and isomorphic"| commonDir["common/"]`}
+          />
           <Code.Snippet
             className="w-full"
             title="Commerce app example"
@@ -159,6 +244,7 @@ export default page().render(() => {
 ├── common/
 ├── webkit/
 ├── env/
+├── plugin/
 ├── public/
 ├── srvkit/
 ├── private/
@@ -181,162 +267,31 @@ export default page().render(() => {
 ├── private/
 ├── common/
 ├── webkit/
+├── plugin/
 ├── client.ts
 ├── server.ts
 └── index.ts`}
             />
           </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: l.trans({ en: "Client", ko: "클라이언트" }),
-                type: "client",
-                desc: l.trans({
-                  en: "Runs in the browser or client app. Keep secrets out of this type.",
-                  ko: "브라우저나 클라이언트 앱에서 실행됩니다. 비밀값을 넣으면 안 됩니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Server", ko: "서버" }),
-                type: "server",
-                desc: l.trans({
-                  en: "Runs on the server. Good for private API calls, scripts, and protected logic.",
-                  ko: "서버에서 실행됩니다. 비공개 API 호출, 스크립트, 보호된 로직에 적합합니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Shared", ko: "공용" }),
-                type: "shared",
-                desc: l.trans({
-                  en: "Can be used from both server and client. Keep it pure and environment-safe.",
-                  ko: "서버와 클라이언트 양쪽에서 사용할 수 있습니다. 순수하고 환경에 안전한 코드로 유지하세요.",
-                }),
-              },
-            ].map(({ title, type, desc }) => (
-              <div
-                key={title}
-                className={cn(
-                  "rounded-xl border p-4",
-                  type === "client" && "border-success/30 bg-success/10 text-success",
-                  type === "server" && "border-primary/30 bg-primary/10 text-primary",
-                  type === "shared" && "border-warning/30 bg-warning/10 text-warning",
-                )}
-              >
-                <div className="font-bold">{title}</div>
-                <div className="mt-2 text-sm opacity-80">{desc}</div>
-              </div>
-            ))}
+          <div>
+            {l.trans({
+              en: "Each folder has an admission test rather than a theme, and the first column says which side of the client boundary its code runs on. A client folder ships to the browser, so nothing secret may reach one; a shared folder is read from both sides, so it must stay pure and environment-safe. A file that fails every test does not belong in the app or library root at all — akan sync refuses an unknown root folder by name.",
+              ko: "각 폴더에는 분위기가 아니라 들어올 수 있는 조건이 있고, 첫 열은 그 코드가 클라이언트 경계의 어느 쪽에서 도는지를 말합니다. client 폴더는 브라우저까지 전송되므로 비밀값이 닿아서는 안 되고, shared 폴더는 양쪽에서 읽으므로 순수하고 환경에 안전해야 합니다. 어떤 조건에도 맞지 않는 파일은 애초에 앱·라이브러리 루트에 들어갈 수 없습니다. akan sync는 모르는 루트 폴더를 이름으로 짚어 거부합니다.",
+            })}
           </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: "page/",
-                type: "client",
-                desc: l.trans({
-                  en: "Put pages here when a user can visit them by URL. Examples: home, sign in, product detail, admin dashboard. A library can hold one too, and apps that opt in with syncPageLibs serve its routes.",
-                  ko: "사용자가 URL로 방문하는 화면을 둡니다. 예: 홈, 로그인, 상품 상세, 관리자 대시보드. 라이브러리도 page 폴더를 가질 수 있고, syncPageLibs로 사용을 선언한 앱이 그 라우트를 서비스합니다.",
-                }),
-              },
-              {
-                title: "lib/",
-                type: "shared",
-                desc: l.trans({
-                  en: "Put business concepts here. Examples: user, product, order, invoice, payment, notification.",
-                  ko: "비즈니스 개념을 둡니다. 예: user, product, order, invoice, payment, notification.",
-                }),
-              },
-              {
-                title: "ui/",
-                type: "client",
-                desc: l.trans({
-                  en: "Put reusable visual components here. Examples: Header, ProductCard, DatePicker, EmptyState.",
-                  ko: "재사용 가능한 화면 컴포넌트를 둡니다. 예: Header, ProductCard, DatePicker, EmptyState.",
-                }),
-              },
-              {
-                title: "common/",
-                type: "shared",
-                desc: l.trans({
-                  en: "Put shared code that both server and client can access. Examples: formatters, validators, constants, and pure utilities.",
-                  ko: "서버와 클라이언트가 모두 접근할 수 있는 공유 코드를 둡니다. 예: 포맷터, 검증 함수, 상수, 순수 유틸리티.",
-                }),
-              },
-              {
-                title: "webkit/",
-                type: "client",
-                desc: l.trans({
-                  en: "Put browser/client helpers here. Examples: hooks for notifications, device APIs, local storage, or web-only behavior.",
-                  ko: "브라우저/클라이언트 헬퍼를 둡니다. 예: 알림 hook, 디바이스 API, 로컬 스토리지, 웹 전용 동작.",
-                }),
-              },
-              {
-                title: "env/",
-                type: "shared",
-                desc: l.trans({
-                  en: "Environment adapters and environment-specific files generated or used by Akan.",
-                  ko: "Akan이 생성하거나 사용하는 환경별 어댑터와 환경 파일을 둡니다.",
-                }),
-              },
-              {
-                title: "public/",
-                type: "client",
-                desc: l.trans({
-                  en: "Put static files here. Examples: logos, icons, fonts, downloadable PDFs, sample images.",
-                  ko: "정적 파일을 둡니다. 예: 로고, 아이콘, 폰트, 다운로드용 PDF, 샘플 이미지.",
-                }),
-              },
-              {
-                title: "srvkit/",
-                type: "server",
-                desc: l.trans({
-                  en: "Put server-only helpers here. Examples: payment API clients, cloud SDK wrappers, private scripts.",
-                  ko: "서버에서만 쓰는 헬퍼를 둡니다. 예: 결제 API 클라이언트, 클라우드 SDK 래퍼, 비공개 스크립트.",
-                }),
-              },
-              {
-                title: "private/",
-                type: "server",
-                desc: l.trans({
-                  en: "Put implementation-only code here when it should not become part of the public app or library API.",
-                  ko: "앱이나 라이브러리의 공개 API가 되면 안 되는 내부 구현 코드를 둡니다.",
-                }),
-              },
-              {
-                title: "script/",
-                type: "server",
-                desc: l.trans({
-                  en: "Put development scripts here when you run them while the Akan server is running.",
-                  ko: "개발 중 Akan 서버를 켠 상태에서 실행하는 스크립트를 둡니다.",
-                }),
-              },
-            ].map(({ title, type, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <div className="flex items-center gap-3">
-                  <div
-                    className={cn(
-                      "font-mono font-semibold",
-                      type === "client" && "text-success",
-                      type === "server" && "text-primary",
-                      type === "shared" && "text-warning",
-                    )}
-                  >
-                    {title}
-                  </div>
-                  <div
-                    className={cn(
-                      "rounded-full px-2 py-1 font-semibold text-xs",
-                      type === "client" && "bg-success/10 text-success",
-                      type === "server" && "bg-primary/10 text-primary",
-                      type === "shared" && "bg-warning/10 text-warning",
-                    )}
-                  >
-                    {type}
-                  </div>
-                </div>
-                <div className="mt-2 text-foreground/70 text-sm">{desc}</div>
-              </div>
-            ))}
-          </div>
+          <Docs.IntroTable
+            type={l.trans({ en: "Folder", ko: "폴더" })}
+            items={facets.map(({ name, side, en, ko }) => ({
+              name,
+              desc: (
+                <>
+                  <code>{side}</code>
+                  {" — "}
+                  {l.trans({ en, ko })}
+                </>
+              ),
+            }))}
+          />
           <Docs.Alert type="info">
             {l.trans({
               en: "When you are unsure, ask what the file does: screen goes to page/, reusable visual piece goes to ui/, saved business data goes to lib/<model>/, and private server integration goes to srvkit/ or lib/_<service>/.",

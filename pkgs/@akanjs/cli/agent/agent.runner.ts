@@ -144,7 +144,7 @@ If generated output is stale or broken, update the owning source file and run \`
 ${recipeIndex}## MCP Workflow Policy
 
 - **Prefer an Akan workflow to a direct source edit.** A direct edit is denied when an allowlisted workflow or repair tool can make the change.
-- Inspect with \`akan mcp --mode plan\` (\`list_workflows\`, \`explain_workflow\`, \`plan_workflow\`); apply with \`akan mcp --mode apply\`, which allowlists \`apply_workflow\`, \`run_validation\`, and the repair tools.
+- Inspect with \`akan mcp --mode plan\` (\`list_workflows\`, \`explain_workflow\`, \`plan_workflow\`); apply with \`akan mcp --mode apply\`, which allowlists \`apply_workflow\`, \`run_validation\`, and three of the five repair tools — \`repair_generated\`, \`repair_imports\` and \`repair_module_shape\`. \`akan repair format\` and \`akan repair dictionary\` are CLI-only.
 - If \`plan_workflow\` returns \`planPath\` or \`next.tool=apply_workflow\`, call \`apply_workflow({ planPath })\` before editing source. Then run \`run_validation\` with \`validationTarget\` when present, otherwise \`applyReportPath\`.
 - Split a compound request into workflows and apply each \`planPath\` in order, such as \`create-module\` followed by \`add-field\`.
 - When no workflow exists, or apply reports unsupported/no-op/failed diagnostics needing manual action, keep edits scoped to owning source files and never patch generated files directly.

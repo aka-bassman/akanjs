@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Code, cardGridRecipe, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { cardGridRecipe, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
@@ -314,25 +314,24 @@ export default page().render(() => {
             })}
           </div>
         </Docs.Description>
-        <div className="grid xl:grid-cols-7">
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
           {flowSteps.map(({ title, desc }) => (
-            <div key={title} className={panelRecipe({ padding: "none" }, "p-1")}>
+            <div key={title} className={panelRecipe({ padding: "sm" })}>
               <div className="font-bold text-foreground">{title}</div>
-              <div className="mt-2 text-foreground/70">{desc}</div>
+              <div className="mt-2 text-foreground/70 text-sm">{desc}</div>
             </div>
           ))}
         </div>
-        <Code.Snippet
-          className="w-full"
-          title="module flow"
-          code={`constant -> dictionary -> document -> service -> signal -> store -> UI files
-
-UI files:
-Template -> forms
-Unit -> list item display
-View -> full detail display
-Util -> small controls
-Zone -> page section composition`}
+        <Docs.Mermaid
+          title={l.trans({ en: "One module, bottom up", ko: "module 하나, 아래에서 위로" })}
+          highlightNodes={["ui"]}
+          chart={`flowchart LR
+  constant["constant"] --> dictionary["dictionary"] --> document["document"] --> service["service"] --> signal["signal"] --> store["store"] --> ui["UI files"]
+  ui --> template["Template — the form"]
+  ui --> unit["Unit — one row or card"]
+  ui --> view["View — one full record"]
+  ui --> util["Util — one control"]
+  ui --> zone["Zone — the section"]`}
         />
       </Scroll.Slide>
       <Divider />
@@ -368,12 +367,33 @@ Zone -> page section composition`}
             })}
           </div>
         </Docs.Description>
-        <div className={cardGridRecipe()}>
+        <Docs.Mermaid
+          title={l.trans({ en: "Four paths through the same folder", ko: "같은 folder를 지나는 네 가지 길" })}
+          chart={`flowchart LR
+  subgraph p1["Define a business object"]
+    direction LR
+    m1["abstract"] --> m2["constant"] --> m3["dictionary"] --> m4["document"] --> m5["service"] --> m6["signal"] --> m7["store"]
+  end
+  subgraph p2["Build a list page"]
+    direction LR
+    l1["abstract"] --> l2["signal slice"] --> l3["store"] --> l4["Zone"] --> l5["Unit"]
+  end
+  subgraph p3["Build a detail or edit page"]
+    direction LR
+    d1["abstract"] --> d2["signal view"] --> d3["store"] --> d4["Zone and View"] --> d5["Template"]
+  end
+  subgraph p4["Add one action a click runs"]
+    direction LR
+    a1["abstract"] --> a2["service"] --> a3["signal endpoint"] --> a4["store action"] --> a5["Util or Template button"]
+  end`}
+        />
+        <div className="my-4 space-y-2">
           {readingPaths.map(({ title, steps, desc }) => (
-            <div key={steps} className={panelRecipe()}>
-              <div className="font-bold text-foreground">{title}</div>
-              <div className="mt-2 font-mono text-foreground">{steps}</div>
-              <div className="mt-2 text-foreground/70">{desc}</div>
+            <div key={steps} className="flex items-start gap-2">
+              <span className="text-primary">→</span>
+              <div>
+                <strong>{title}</strong>: <span className="text-foreground/70">{desc}</span>
+              </div>
             </div>
           ))}
         </div>

@@ -64,9 +64,11 @@ The View component displays each insight metric in a responsive grid. The chef c
 
 Now create a Zone component that connects the View to the store. Zone components handle data fetching and state management:
 
-Key feature of the Zone component:
+Key features of the Zone component:
 
 Auto-generated hook that retrieves the aggregated insight data for the specified slice. The framework handles all the aggregation pipeline execution.
+
+Carried over from the slice tutorial, and still a plain 3-second poll - the insight is recounted on a timer, not pushed. A slice that declares .live() sends each change to its subscribers instead.
 
 Finally, add the Insight Zone to your page to display real-time aggregated statistics:
 
@@ -91,7 +93,8 @@ In the next tutorial, we'll explore how to relate data between different models.
 ### apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts
 
 ```ts
-import { ID } from "akanjs/base"; // [!code collapse:13]
+import { Admin } from "@libs/shared/srvkit"; // [!code collapse:14]
+import { ID } from "akanjs/base";
 import { endpoint, internal, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
@@ -105,7 +108,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder, // [!code collapse:2]
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init().exec(function () { // [!code --:3]
       return this.icecreamOrderService.queryAny();
@@ -248,8 +251,7 @@ export const dictionary = modelDictionary(["en", "ko"])
 ### apps/koyo/lib/icecreamOrder/IcecreamOrder.Util.tsx
 
 ```ts
-"use client"; // [!code collapse:3]
-import { cn } from "akanjs/client";
+"use client"; // [!code collapse:2]
 import { st, usePage } from "@apps/koyo/client";
 import { cnst } from "@apps/koyo/client"; // [!code ++:2]
 import { Select, buttonRecipe } from "akanjs/ui";
@@ -356,10 +358,11 @@ export const PublicQueryMaker = ({ className }: PublicQueryMakerProps) => {
 ### apps/koyo/page/_index.tsx
 
 ```ts
-import { Load, Model } from "akanjs/ui"; // [!code collapse:3]
+import { Model, buttonRecipe } from "akanjs/ui"; // [!code collapse:4]
 import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
@@ -374,7 +377,7 @@ export default async function Page() {
         <div className="text-5xl font-bold">{l("icecreamOrder.modelName")}</div>
         <IcecreamOrder.Util.PublicQueryMaker /> // [!code ++]
         <Model.New
-          className={buttonRecipe({ variant: "primary" })}
+          trigger={<button className={buttonRecipe({ variant: "primary" })}>{l("base.new")}</button>}
           slice={fetch.slice.icecreamOrderInPublic}
           renderTitle="name"
           partial={icecreamOrderForm}
@@ -389,7 +392,7 @@ export default async function Page() {
       />
     </div>
   );
-}
+});
 ```
 
 ### apps/koyo/lib/icecreamOrder/icecreamOrder.constant.ts
@@ -770,10 +773,11 @@ export const Insight = ({ className, slice = fetch.slice.icecreamOrder }: Insigh
 ### apps/koyo/page/_index.tsx
 
 ```ts
-import { Load, Model } from "akanjs/ui"; // [!code collapse:21]
+import { Model, buttonRecipe } from "akanjs/ui"; // [!code collapse:22]
 import { cnst, fetch, IcecreamOrder, Inventory, usePage } from "@apps/koyo/client";
+import { page } from "akanjs/client";
 
-export default async function Page() {
+export default page().render(() => {
   const { l } = usePage();
   const { icecreamOrderInitInPublic } = fetch.initIcecreamOrderInPublic();
   const icecreamOrderForm: Partial<cnst.IcecreamOrderInput> = {};
@@ -789,7 +793,7 @@ export default async function Page() {
           <div className="text-5xl font-bold">{l("icecreamOrder.modelName")}</div> // [!code collapse:10]
           <IcecreamOrder.Util.PublicQueryMaker />
           <Model.New
-            className={buttonRecipe({ variant: "primary" })}
+            trigger={<button className={buttonRecipe({ variant: "primary" })}>{l("base.new")}</button>}
             slice={fetch.slice.icecreamOrderInPublic}
             renderTitle="name"
             partial={icecreamOrderForm}
@@ -806,7 +810,7 @@ export default async function Page() {
       </div> // [!code collapse:10]
     </div>
   );
-}
+});
 ```
 
 ## Agent Notes

@@ -239,6 +239,230 @@ export const ProductModal = ({ open, close, product }) => (
 />;`,
     },
     {
+      name: "BottomSheet",
+      desc: l.trans({
+        en: "The mobile overlay: a panel that comes up from the bottom edge and is dismissed by dragging it back down. `type` is the whole decision — a `half` sheet covers part of the screen and draws a grab handle, a `full` sheet takes it all and draws a close row instead. Like `Modal` it works controlled or self-contained: give it `open` and `onCancel`, or give it a `trigger` and let it keep its own state.",
+        ko: "mobile용 overlay입니다. 아래 모서리에서 올라오고 아래로 끌어내려 닫는 패널입니다. `type`이 사실상 모든 결정입니다. `half` sheet은 화면 일부를 덮고 잡는 손잡이를 그리며, `full` sheet은 전체를 덮고 대신 닫기 행을 그립니다. `Modal`처럼 controlled로도 자체 완결형으로도 동작합니다. `open`과 `onCancel`을 주거나, `trigger`를 주고 상태를 맡기면 됩니다.",
+      }),
+      props: [
+        {
+          name: "type",
+          type: `"full" | "half"`,
+          desc: l.trans({
+            en: "Required. `half` covers part of the screen with a grab handle; `full` takes the whole screen with a close row.",
+            ko: "필수입니다. `half`는 화면 일부를 덮고 손잡이를 그리며, `full`은 전체를 덮고 닫기 행을 그립니다.",
+          }),
+        },
+        {
+          name: "open / onCancel",
+          type: "boolean / () => void",
+          desc: l.trans({
+            en: "Controlled state. Left out, the sheet opens from its own trigger and handle.",
+            ko: "controlled 상태입니다. 빼면 sheet이 자기 trigger와 손잡이로 열립니다.",
+          }),
+        },
+        {
+          name: "trigger",
+          type: "ReactNode",
+          desc: l.trans({ en: "Element that opens the sheet.", ko: "sheet을 여는 element입니다." }),
+        },
+        {
+          name: "header / handle / close",
+          type: "ReactNode",
+          desc: l.trans({
+            en: "`header` replaces the whole top row — the handle or the close row, whichever `type` draws. `handle` and `close` replace just the mark inside it.",
+            ko: "`header`는 위쪽 행 전체를 대체합니다. `type`에 따라 손잡이 행이거나 닫기 행입니다. `handle`과 `close`는 그 안의 mark만 대체합니다.",
+          }),
+        },
+        {
+          name: "bodyClassName",
+          type: "string",
+          desc: l.trans({
+            en: "Classes for the scrolling body, where `className` reaches the sheet surface.",
+            ko: "스크롤되는 본문에 적용할 class입니다. `className`은 sheet 표면에 적용됩니다.",
+          }),
+        },
+        {
+          name: "ref",
+          type: "BottomSheetRef",
+          desc: l.trans({
+            en: "`{ open, close }` — the imperative handle, for a sheet a page opens from somewhere that is not a trigger.",
+            ko: "`{ open, close }` 명령형 handle입니다. trigger가 아닌 곳에서 page가 sheet을 열 때 씁니다.",
+          }),
+        },
+      ],
+      code: `import { BottomSheet } from "akanjs/ui";
+
+export const FilterSheet = ({ children }) => (
+  <BottomSheet type="half" trigger={<button className={buttonRecipe({ size: "sm" })}>Filter</button>}>
+    {children}
+  </BottomSheet>
+);`,
+    },
+    {
+      name: "Tooltip",
+      desc: l.trans({
+        en: "A hint on hover or keyboard focus, in pure CSS — no state, no portal, no positioning pass. That buys a tooltip that costs nothing and renders on the server, and it costs viewport-edge flipping: a bubble near the edge is clipped rather than moved. It is a hint surface, so that is the right trade; when the content has to be read, it is not a tooltip. An empty `content` renders the trigger alone, so a conditional hint needs no wrapper of its own.",
+        ko: "hover나 키보드 포커스에서 뜨는 힌트이며 순수 CSS입니다. 상태도, portal도, 위치 계산도 없습니다. 그 덕에 비용이 없고 서버에서 렌더되지만, 뷰포트 가장자리에서 뒤집히지 않습니다 — 가장자리의 말풍선은 옮겨지는 대신 잘립니다. 힌트 표면이므로 그 교환이 맞습니다. 반드시 읽혀야 하는 내용이라면 그것은 tooltip이 아닙니다. `content`가 비어 있으면 trigger만 렌더하므로, 조건부 힌트에 별도 wrapper가 필요 없습니다.",
+      }),
+      props: [
+        {
+          name: "content",
+          type: "ReactNode",
+          desc: l.trans({
+            en: "The hint. Empty, null, or undefined renders `children` alone.",
+            ko: "힌트 내용입니다. 비어 있거나 null·undefined면 `children`만 렌더합니다.",
+          }),
+        },
+        {
+          name: "children",
+          type: "ReactNode",
+          desc: l.trans({ en: "The trigger the bubble is anchored to.", ko: "말풍선이 붙는 trigger입니다." }),
+        },
+        {
+          name: "side",
+          type: `"top" | "right" | "bottom" | "left"`,
+          desc: l.trans({
+            en: "Which side the bubble sits on. `top` by default.",
+            ko: "말풍선이 놓이는 방향입니다. 기본값은 `top`입니다.",
+          }),
+        },
+        {
+          name: "variant",
+          type: `"default" | "primary" | "info"`,
+          desc: l.trans({
+            en: "The bubble's colour. `Field.Label` uses `info` for the help icon beside a field description.",
+            ko: "말풍선 색입니다. `Field.Label`은 field 설명 옆 도움말 아이콘에 `info`를 씁니다.",
+          }),
+        },
+      ],
+      notes: [
+        l.trans({
+          en: "It is an override slot, so an app that needs a positioned tooltip — one that flips, or follows the pointer — binds its own in `_overrides.tsx` and every existing call site follows.",
+          ko: "override slot이므로, 위치를 계산하는 tooltip — 뒤집히거나 포인터를 따라가는 — 이 필요한 앱은 `_overrides.tsx`에서 자기 것을 bind하면 기존 호출부가 전부 따라옵니다.",
+        }),
+      ],
+      code: `import { Tooltip } from "akanjs/ui";
+
+export const SyncedAt = ({ at, detail }) => (
+  <Tooltip content={detail} side="right" variant="info">
+    <span className="text-foreground/60 text-sm">{at}</span>
+  </Tooltip>
+);`,
+    },
+    {
+      name: "Menu",
+      desc: l.trans({
+        en: "A navigation menu from a data structure rather than from markup: `items` is a tree of `{ key, label, icon?, children? }`, and the component draws the rows, the submenus, and the active state. `mode` is the axis — `inline` for a sidebar, `horizontal` for a top bar, where anything that does not fit folds into an overflow menu.",
+        ko: "markup이 아니라 데이터 구조로 만드는 navigation menu입니다. `items`는 `{ key, label, icon?, children? }`의 트리이고, 행과 submenu, 활성 상태는 component가 그립니다. `mode`가 축을 정합니다 — sidebar에는 `inline`, 상단 bar에는 `horizontal`이며, 후자는 넘치는 항목을 overflow menu로 접습니다.",
+      }),
+      props: [
+        {
+          name: "items",
+          type: "MenuItem[]",
+          desc: l.trans({
+            en: "`{ key, label, icon?, children?, type? }`. A `children` array makes the row a submenu.",
+            ko: "`{ key, label, icon?, children?, type? }`입니다. `children` 배열이 있으면 그 행이 submenu가 됩니다.",
+          }),
+        },
+        {
+          name: "mode",
+          type: `"horizontal" | "inline"`,
+          desc: l.trans({
+            en: "The axis. `inline` by default; `horizontal` folds the overflow into a trailing menu.",
+            ko: "축입니다. 기본값은 `inline`이고, `horizontal`은 넘치는 항목을 뒤쪽 menu로 접습니다.",
+          }),
+        },
+        {
+          name: "selectedKeys / defaultSelectedKeys",
+          type: "string[]",
+          desc: l.trans({
+            en: "Controlled and uncontrolled selection, by item key.",
+            ko: "item key로 지정하는 controlled·uncontrolled 선택입니다.",
+          }),
+        },
+        {
+          name: "onClick",
+          type: "(item: MenuItem) => void",
+          desc: l.trans({ en: "Receives the clicked item.", ko: "클릭된 item을 받습니다." }),
+        },
+        {
+          name: "inlineCollapsed",
+          type: "boolean",
+          desc: l.trans({
+            en: "Narrows an `inline` menu to its icons.",
+            ko: "`inline` menu를 아이콘만 남게 좁힙니다.",
+          }),
+        },
+        {
+          name: "renderItem",
+          type: "(item, active) => ReactNode",
+          desc: l.trans({
+            en: "Draws one item's body. The row, its click, and any submenu stay the framework's.",
+            ko: "item 하나의 본문을 그립니다. 행과 클릭, submenu는 framework가 유지합니다.",
+          }),
+        },
+        {
+          name: "ulClassName / liClassName / labelClassName",
+          type: "string / string / (isActive) => string",
+          desc: l.trans({
+            en: "The three levels below `className`, which reaches the wrapper.",
+            ko: "wrapper에 닿는 `className` 아래의 세 층위입니다.",
+          }),
+        },
+      ],
+      notes: [
+        l.trans({
+          en: "`Menu` is a navigation structure and `Dropdown` is a transient action list — they look alike and are not interchangeable. Row actions on a list belong in a `Dropdown`.",
+          ko: "`Menu`는 navigation 구조이고 `Dropdown`은 일시적인 action 목록입니다. 겉모습이 비슷하지만 서로 대체할 수 없습니다. 목록의 행 action은 `Dropdown`의 몫입니다.",
+        }),
+      ],
+      code: `import { Menu } from "akanjs/ui";
+
+export const AdminSider = ({ selected, select }) => (
+  <Menu
+    mode="inline"
+    selectedKeys={[selected]}
+    onClick={(item) => select(item.key)}
+    items={[
+      { key: "product", label: "Products" },
+      { key: "order", label: "Orders", children: [{ key: "order.open", label: "Open" }] },
+    ]}
+  />
+);`,
+    },
+    {
+      name: "Portal",
+      desc: l.trans({
+        en: "Renders `children` into an element the page already has, named by `id`. This is the wiring behind `Layout.Navbar` — a component deep in a route puts content into the route's top inset without either one knowing about the other. It is server-aware: during SSR the content is captured for the shell rather than dropped, so a portalled navbar is in the first byte instead of appearing after hydration.",
+        ko: "`children`을 page에 이미 있는 element 안으로 `id`로 지정해 렌더합니다. `Layout.Navbar` 뒤의 배선이 이것입니다. route 깊숙한 곳의 component가 서로를 모른 채 route의 top inset에 내용을 넣습니다. 서버를 인식합니다. SSR 중에는 내용이 버려지지 않고 shell용으로 수집되므로, portal된 navbar가 hydration 이후가 아니라 첫 바이트에 들어 있습니다.",
+      }),
+      props: [
+        {
+          name: "id",
+          type: "string",
+          desc: l.trans({
+            en: "The `id` of the host element. Nothing renders until an element with it exists, so the host has to be mounted first.",
+            ko: "host element의 `id`입니다. 그 id를 가진 element가 생기기 전에는 아무것도 렌더되지 않으므로 host가 먼저 마운트되어야 합니다.",
+          }),
+        },
+        {
+          name: "children",
+          type: "ReactNode",
+          desc: l.trans({ en: "What is rendered into the host.", ko: "host 안에 렌더할 내용입니다." }),
+        },
+      ],
+      notes: [
+        l.trans({
+          en: "It is not the way to escape a clipping ancestor — `Modal`, `Dropdown`, `Select`, and `Popconfirm` already portal to `document.body` and place themselves against their trigger. Reach for `Portal` only for a named slot the app frame owns.",
+          ko: "잘리는 조상에서 빠져나오는 수단이 아닙니다. `Modal`, `Dropdown`, `Select`, `Popconfirm`은 이미 `document.body`로 portal되어 trigger 기준으로 자리를 잡습니다. `Portal`은 앱 frame이 소유한 이름 붙은 slot에만 쓰세요.",
+        }),
+      ],
+      code: `import { Portal } from "akanjs/ui";
+
+export const PrintAction = ({ children }) => <Portal id="topInsetContent">{children}</Portal>;`,
+    },
+    {
       name: "Copy",
       desc: l.trans({
         en: "Copy-to-clipboard trigger that also shows a global success message through Akan store messages.",
@@ -276,8 +500,14 @@ export const ProductModal = ({ open, close, product }) => (
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Overlay components cover modal flows, custom dialogs, destructive confirmations, dropdown menus, and copy actions. Use `Modal` for common controlled overlays and the headless `Dialog` namespace for custom composition.",
-              ko: "Overlay component는 modal flow, custom dialog, destructive confirmation, dropdown menu, copy action을 다룹니다. 일반 controlled overlay에는 `Modal`, custom composition에는 headless `Dialog` namespace를 사용합니다.",
+              en: "Overlay components cover modal flows, custom dialogs, destructive confirmations, bottom sheets, menus, hints, and copy actions. Use `Modal` for common controlled overlays and the headless `Dialog` namespace for custom composition.",
+              ko: "Overlay component는 modal flow, custom dialog, destructive confirmation, bottom sheet, menu, 힌트, copy action을 다룹니다. 일반 controlled overlay에는 `Modal`, custom composition에는 headless `Dialog` namespace를 사용합니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "Four of them portal to `document.body` and place themselves against their trigger — `Modal`, `Dropdown`, `Popconfirm`, and `Select` — so none of them is clipped by a scrolling modal body or a table's overflow container. `Portal` is the named-slot version of the same mechanism, and `Tooltip` deliberately does none of it.",
+              ko: "이 중 넷 — `Modal`, `Dropdown`, `Popconfirm`, `Select` — 은 `document.body`로 portal되어 trigger 기준으로 자리를 잡으므로, 스크롤되는 modal 본문이나 table의 overflow container에 잘리지 않습니다. `Portal`은 같은 장치를 이름 붙은 slot에 쓰는 형태이고, `Tooltip`은 의도적으로 그 어느 것도 하지 않습니다.",
             })}
           </div>
         </Docs.Description>

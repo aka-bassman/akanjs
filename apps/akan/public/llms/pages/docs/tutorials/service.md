@@ -223,7 +223,8 @@ export class IcecreamOrderModel extends into(IcecreamOrder, IcecreamOrderFilter,
 ### apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts
 
 ```ts
-import { ID } from "akanjs/base"; // [!code collapse:7]
+import { Admin } from "@libs/shared/srvkit"; // [!code collapse:8]
+import { ID } from "akanjs/base";
 import { endpoint, internal, Public, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
@@ -237,7 +238,7 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, ({ interv
 // [!code collapse:33]
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder,
-  { guards: { root: Public, get: Public, cru: Public } },
+  { guards: { root: Admin, get: Public, cru: Admin, create: Public } },
   (init) => ({
     inPublic: init().exec(function () {
       return this.icecreamOrderService.queryAny();

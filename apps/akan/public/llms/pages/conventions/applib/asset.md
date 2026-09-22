@@ -21,7 +21,7 @@ Assets (public/ private/)
 
 Asset Overview
 
-Apps and libraries can both have an asset folder. Use public for files that the browser can request, and private for files that only server code should read.
+Apps and libraries both hold their assets in two folders at the root, beside lib and ui. Use public for files that the browser can request, and private for files that only server code should read. There is no asset folder wrapping them — akan sync rejects any root entry outside the allowlist.
 
 Served as static assets. Use it for images, PDF files, downloadable JSON, icons, and other files that can be public.
 
@@ -29,7 +29,7 @@ Available only to server-side code. Use it for seed data, private JSON, model fi
 
 Public Assets
 
-Files under asset/public are copied to the app's public surface and served by the server. The browser can request them directly by URL.
+Files under public are served by the server as static assets. The browser can request them directly by URL, with the folder itself dropped from the path.
 
 Optimized Images
 
@@ -37,7 +37,7 @@ When an image is public, you can render it with the Image component from akanjs/
 
 Private Assets
 
-Files under asset/private are for server-only resources. Put files here when the browser should not download them directly, but the server needs them to load data, run inference, or initialize a service.
+Files under private are for server-only resources. Put files here when the browser should not download them directly, but the server needs them to load data, run inference, or initialize a service.
 
 Library Asset Sync
 
@@ -51,16 +51,16 @@ Use private when the file contains internal data, model weights, or server-only 
 
 Use Image from akanjs/ui for public UI images that should be optimized by the server.
 
-Put reusable public files in a library asset folder when multiple apps need the same asset.
+Put reusable public files in a library's own public folder when multiple apps need the same asset.
 
 ## Code Examples
 
 ### public asset examples
 
 ```bash
-apps/myapp/asset/public/docs/product-guide.pdf
-apps/myapp/asset/public/data/sample-products.json
-apps/myapp/asset/public/images/hero.png
+apps/myapp/public/docs/product-guide.pdf
+apps/myapp/public/data/sample-products.json
+apps/myapp/public/images/hero.png
 
 # Web requests
 /docs/product-guide.pdf
@@ -71,19 +71,22 @@ apps/myapp/asset/public/images/hero.png
 ### Link to a PDF
 
 ```ts
-import { Link } from "akanjs/ui";              
-export function GetProductGuide() {
-  return <Link href="/docs/product-guide.pdf">Open product guide</Link>;
-}
+import { usePage } from "@apps/myapp/client";
+import { Link } from "akanjs/ui";
+
+export const GetProductGuide = () => {
+  const { l } = usePage();
+  return <Link href="/docs/product-guide.pdf">{l.trans({ en: "Open product guide", ko: "제품 가이드 열기" })}</Link>;
+};
 ```
 
 ### Fetch static JSON
 
 ```ts
-export async function loadSampleProducts() {
+export const loadSampleProducts = async () => {
   const res = await fetch("/data/sample-products.json");
   return res.json();
-}
+};
 ```
 
 ### HeroImage.tsx
@@ -91,7 +94,7 @@ export async function loadSampleProducts() {
 ```ts
 import { Image } from "akanjs/ui";
 
-export function HeroImage() {
+export const HeroImage = () => {
   return (
     <Image
       src="/images/hero.png"
@@ -101,42 +104,42 @@ export function HeroImage() {
       priority
     />
   );
-}
+};
 ```
 
 ### private asset examples
 
 ```bash
-apps/myapp/asset/private/seed/products.json
-apps/myapp/asset/private/model/yolo.onnx
-libs/shared/asset/private/recommendation/default-rules.json
+apps/myapp/private/seed/products.json
+apps/myapp/private/model/yolo.onnx
+libs/shared/private/recommendation/default-rules.json
 ```
 
 ### Load private JSON on the server
 
 ```ts
-export async function loadInitialProducts() {
+export const loadInitialProducts = async () => {
   const file = Bun.file("./private/seed/products.json");
   return file.json();
-}
+};
 ```
 
 ### Use a private model file on the server
 
 ```ts
-export async function detectObjects(image: ArrayBuffer) {
+export const detectObjects = async (image: ArrayBuffer) => {
   const file = Bun.file("./private/model/yolo.onnx");
   const model = await loadYoloModel(file);
   return model.detect(image);
-}
+};
 ```
 
 ### library asset mapping
 
 ```bash
 # Source in a library
-libs/shared/asset/public/banner/logo.png
-libs/shared/asset/private/recommendation/default-rules.json
+libs/shared/public/banner/logo.png
+libs/shared/private/recommendation/default-rules.json
 
 # Linked into an app as public assets
 apps/myapp/public/libs/shared/banner/logo.png
@@ -156,7 +159,7 @@ dist/apps/myapp/public/libs/shared/banner/logo.png
 ```ts
 import { Image } from "akanjs/ui";
 
-export function SharedLogo() {
+export const SharedLogo = () => {
   return (
     <Image
       src="/libs/shared/banner/logo.png"
@@ -165,16 +168,16 @@ export function SharedLogo() {
       height={80}
     />
   );
-}
+};
 ```
 
 ### Use synced private library asset
 
 ```ts
-export async function loadDefaultRules() {
+export const loadDefaultRules = async () => {
   const file = Bun.file("./private/libs/shared/recommendation/default-rules.json");
   return file.json();
-}
+};
 ```
 
 ## Agent Notes

@@ -30,13 +30,13 @@ Capacitor contacts hook for mobile signup/social flows. It requests contact perm
 
 Capacitor geolocation hook. It requests location permissions, redirects to app settings when denied, and returns current coordinates for map or location flows.
 
-Unified push notification client hook for web and native apps. It requests permission, registers the runtime, returns a PushToken, and bridges notification clicks through `data.url` when supported.
+Moved out of the framework: push lives in `@libs/util/webkit`, not `akanjs/webkit`. The hook is unchanged — it reports support, requests permission, registers the runtime, returns a PushToken, and bridges notification clicks through `data.url` — but an app reaches it through the util library it already depends on.
 
 CSR router hooks for translating hrefs into route state and tracking navigation history. They power cached page transitions, scroll restoration, and back/forward detection.
 
 Shared login form type used by auth stores and bridge UI. It describes target auth mode, redirect behavior, unauthorized path, and optional JWT handoff.
 
-`akanjs/webkit` contains browser-only React helpers and native-capability hooks. Import it for lazy browser components, debounce/throttle/interval hooks, promise state, CSR navigation state, and Capacitor camera/contact/location/push flows.
+`akanjs/webkit` contains browser-only React helpers and native-capability hooks. Import it for lazy browser components, debounce/throttle/interval hooks, promise state, CSR navigation state, and Capacitor camera/contact/location flows. Push notification moved to `@libs/util/webkit` and is listed below under its new home.
 
 Usage
 

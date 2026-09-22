@@ -56,7 +56,7 @@ Edit a page
 
 Akan pages live under apps/<app>/page. Index pages use the _index.tsx convention, so the first screen of myapp is apps/myapp/page/_index.tsx.
 
-Change the component and refresh the local gateway to confirm your first UI change.
+A page file exports one page() chain, and the component lives in its .render() stage. Change the markup and refresh the local gateway to confirm your first UI change.
 
 Open http://localhost:8282 to see the page through the Akan gateway.
 
@@ -99,19 +99,21 @@ akan start myapp --open
 ### apps/myapp/page/_index.tsx
 
 ```ts
-export default function Page() {
+import { page } from "akanjs/client";
+
+export default page().render(() => {
   return (
     <div className="flex min-h-screen items-center justify-center text-2xl">
       Hello Akan.js! 🎉
     </div>
   );
-}
+});
 ```
 
 ### apps/myapp/main.ts
 
 ```ts
-import { AkanApp } from "akanjs/server";
+import { AkanApp } from "akanjs/server/akanApp";
 
 const run = async () => {
   await new AkanApp().start();

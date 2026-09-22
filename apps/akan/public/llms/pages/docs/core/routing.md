@@ -11,31 +11,18 @@
 - File Based Routing (#file-based-routing)
 - File Convention (#file-convention)
 - Page File Shape (#page-module)
+- Chain Stages (#chain-stages)
 - Layout File Shape (#layout-module)
+- Root Layout Stages (#root-layout-exports)
 - Base Paths (#base-paths)
 - Library Pages (#library-pages)
 - Dev Only Routes (#dev-only-routes)
-- Root Layout Exports (#root-layout-exports)
 
 ## Content
 
 File Based Routing
 
-Akan uses file-based routing. You create files under page/, and the folder structure becomes the page URL. Most pages also get a language parameter automatically, so the same file can serve localized URLs.
-
-How files become routes
-
-Page file
-
-The index file becomes the route endpoint.
-
-Layout file
-
-The layout wraps pages below the same folder.
-
-Route group
-
-Parentheses organize files without adding a URL segment.
+Akan uses file-based routing. You create files under page/, and the folder structure becomes the page URL. Every route also sits under a locale segment that Akan injects for you, so the same file serves every language you ship.
 
 File-based
 
@@ -43,7 +30,7 @@ Folders and files decide the URL shape.
 
 Locale-aware
 
-Akan injects [lang] automatically.
+Akan injects the locale segment automatically and hands it to every route as lang.
 
 Explicit files
 
@@ -51,47 +38,41 @@ Use page and layout files instead of hidden magic.
 
 File Convention
 
-A route file can be a page or a layout. _index.tsx renders the current segment, _layout.tsx wraps child segments, and route groups organize files without changing the URL.
+A route file is a page, a layout, or an overrides manifest. Everything under page/ must be a .tsx route module — no helper file, no logic file, no lowercase-free filename.
 
-Page for the folder it lives in.
+File
 
-Layout that wraps child pages below it.
-
-Organizes files without adding a URL segment.
-
-Single-file page for a path segment. project.tsx becomes /:lang/project.
-
-Single-file dynamic page. [projectId].tsx becomes /:lang/:projectId.
+_index.tsx, _layout.tsx and _overrides.tsx are the only reserved names an underscore may introduce. Any other _something.tsx under page/ fails the load, and so does a .ts, .js or .jsx route file.
 
 Page File Shape
 
-A page file must export a default component. It can also export optional helpers for page options, metadata, and loading UI.
+A page file exports one page() chain and nothing else. Every route setting is a stage of that chain: .param() and .search() declare the arguments the page reads, .config(), .metadata() or .head(), and .loading() replace the old named exports, and .render() holds the component. The render receives the declared arguments flat and typed.
 
-The page component. This is required.
+Use one metadata stage per route module: .metadata() or .head(), never both. Metadata is not merged across layouts and pages; the nearest route module wins. A page() chain is the module's only export — a named export beside it is refused, and the names in .param() and .prompt() must be string literals because akan sync reads them off the source. Coming from the legacy default-function shape? See Page Migration.
 
-Optional override for client frame behavior. If omitted, Akan applies platform defaults and frame components such as Navbar or BottomInset register their own insets.
+Chain Stages
 
-Declarative static metadata for title, description, robots, Open Graph, Twitter, canonical, and language alternates.
+There are seventeen stages, and the three chains share most of them. page() adds .prompt(); layout() adds .notFound() and .error(); rootLayout() is a layout that also carries the app-wide stages. The Chain column names every builder a stage is legal on.
 
-Dynamic declarative metadata that can use route params and search params.
+required
 
-Escape hatch for custom JSX head elements when declarative metadata is not enough.
+optional
 
-Fallback UI shown while the page is loading.
+On rootLayout(), the app-wide stages must come before .param() and .search(). Those two stages return a layout type rather than the chain's own type, so .theme() and its siblings are gone from what follows them — rootLayout().theme("dark").param("orgId", ID) compiles and the reverse order does not.
 
-Use one metadata API per route module: metadata or generateMetadata. Do not mix metadata/generateMetadata with head/generateHead. Metadata is not merged across layouts and pages; the nearest route module wins.
+lang is never declared. Every route sits under the locale, the value reaches every stage as lang, and declaring it throws. A page must declare every [x] segment of its path; a layout may leave some undeclared.
 
 Layout File Shape
 
-A layout file wraps child pages. Use it for shared headers, tabs, sidebars, guards, or page-level shells.
+A layout file wraps child pages. Use it for shared headers, tabs, sidebars, guards, or page-level shells. Its own .metadata() covers child pages that declare none, and its .notFound() and .error() are the fallback for everything below it.
 
-Layouts support default, metadata, generateMetadata, head, generateHead, Loading, NotFound, and Error. Layout metadata is used for child pages without their own metadata/head declaration, and the nearest layout fallback renders when a child route is missing or fails.
+The .notFound() and .error() stages exist on layout(), not on page(). If a layout declares neither, Akan walks up to the nearest parent layout fallback, then falls back to the framework system page. A page() chain in a _layout.tsx, or a layout() chain in a page file, is refused at load.
 
-Layout-scoped 404 UI. It renders under the layout when a child route is missing or router.notFound() is called below it.
+Root Layout Stages
 
-Layout-scoped server render error UI. It renders under the nearest layout when a child route throws during SSR.
+The root _layout.tsx of an app, or of a basePath, is a rootLayout() chain. It is still a layout, but it also carries the app-wide stages for fonts, manifest, theme, realtime connection, analytics, and mobile-style rendering. The stylesheet import stays the first line of the file.
 
-Custom NotFound and Error exports are available on _layout.tsx files, not page files. If a layout does not export one, Akan walks up to the nearest parent layout fallback, then falls back to the framework system page.
+Each of these is one row of the Chain Stages table above, and only .fonts(), .manifest(), .theme(), .reconnect(), .wsConnect(), .layoutStyle() and .gaTrackingId() are exclusive to this file. Everything else here — .config(), .head(), .loading(), .notFound(), .error(), .render() — is the ordinary layout surface.
 
 Base Paths
 
@@ -107,31 +88,9 @@ Edit the library file, never the linked copy. Apps with base paths get the libra
 
 Dev Only Routes
 
-pageConfig.devOnly keeps a route out of akan build. It still serves under akan start and is still typechecked, but nothing about it reaches production: no bundle, no route manifest entry, no URL.
+.config({ devOnly: true }) keeps a route out of akan build. It still serves under akan start and is still typechecked, but nothing about it reaches production: no bundle, no route manifest entry, no URL.
 
 On a _layout file, devOnly removes every route under that directory too, so a whole dev-only section can be marked once. Write it as a literal true or false — the build reads it from the source without running the module.
-
-Root Layout Exports
-
-The root _layout.tsx can configure app-wide behavior. It is still a layout, but it may also export extra values for fonts, manifest, theme, realtime connection, analytics, and mobile-style rendering.
-
-Registers app-wide fonts so pages can use them consistently.
-
-Defines the web app manifest used for installable/PWA-like behavior.
-
-Chooses the default theme policy, such as dark, light, system, or css.
-
-Controls whether the client tries to reconnect to realtime runtime channels.
-
-Controls whether the browser connects the client WebSocket runtime after load. The default is true. If false, message/pubsub calls warn in the browser console until fetch.instance.connect() is called.
-
-Switches the outer page container style. Use mobile for app-like mobile shells.
-
-Optional layout-level frame override inherited by child pages. Page-level pageConfig still wins for explicitly declared fields.
-
-Adds Google Analytics tracking for the app.
-
-Most extra exports are for root layouts only. Nested layouts may also export pageConfig when they need a shared mobile frame override for their child pages.
 
 ## Code Examples
 
@@ -148,6 +107,7 @@ page/
 │   └── project/
 │       └── [projectId]/
 │           ├── _layout.tsx
+│           ├── _overrides.tsx
 │           └── _index.tsx
 └── robots.txt.tsx
 ```
@@ -155,77 +115,103 @@ page/
 ### page/(user)/project/[projectId]/_index.tsx
 
 ```ts
-import type { GenerateMetadata, PageConfig } from "akanjs/client";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
 
-interface PageProps {
-  params: { lang: string; projectId: string };
-  searchParams: { [key: string]: string | string[] | undefined };
-}
-
-export default function Page({ params }: PageProps) {
-  return <div>Project {params.projectId}</div>;
-}
-
-export const pageConfig = { transition: "stack" } satisfies PageConfig;
-
-export const generateMetadata = (({ params }) => ({
-  title: `Project ${params.projectId}`,
-  description: "Project workspace",
-})) satisfies GenerateMetadata;
-
-export function Loading() {
-  return <div>Loading...</div>;
-}
+export default page()
+  .param("projectId", ID, { desc: "The project to open." })
+  .search("tab", String, { desc: "Which tab opens first." })
+  .config({ transition: "stack" })
+  .metadata(({ projectId }) => ({
+    title: `Project ${projectId}`,
+    description: "Project workspace",
+  }))
+  .loading(() => <div>Loading...</div>)
+  .render(({ projectId, tab }) => {
+    return (
+      <div>
+        Project {projectId} ({tab ?? "overview"})
+      </div>
+    );
+  });
 ```
 
 ### Static metadata example
 
 ```ts
-import type { AkanMetadata } from "akanjs/client";
+import { page } from "akanjs/client";
 
-export const metadata = {
-  title: "Projects",
-  description: "Browse your projects",
-  openGraph: { title: "Projects", images: ["/og/projects.png"] },
-  twitter: { card: "summary_large_image", images: ["/og/projects.png"] },
-  alternates: {
-    canonical: "https://example.com/projects",
-    languages: {
-      ko: "https://example.com/ko/projects",
-      en: "https://example.com/en/projects",
+export default page()
+  .metadata({
+    title: "Projects",
+    description: "Browse your projects",
+    openGraph: { title: "Projects", images: ["/og/projects.png"] },
+    twitter: { card: "summary_large_image", images: ["/og/projects.png"] },
+    alternates: {
+      canonical: "https://example.com/projects",
+      languages: {
+        ko: "https://example.com/ko/projects",
+        en: "https://example.com/en/projects",
+      },
     },
-  },
-} satisfies AkanMetadata;
+  })
+  .render(() => <div>Projects</div>);
 ```
 
 ### page/(user)/project/[projectId]/_layout.tsx
 
 ```ts
-interface LayoutProps {
-  children: React.ReactNode;
-  params: { projectId: string };
-}
+import { ID } from "akanjs/base";
+import { layout } from "akanjs/client";
 
-export default function Layout({ children, params }: LayoutProps) {
-  return (
-    <section>
-      <nav>Project {params.projectId}</nav>
-      {children}
-    </section>
-  );
-}
+export default layout()
+  .param("projectId", ID)
+  .loading(() => <div>Loading project...</div>)
+  .notFound(({ pathname }) => <div>Project route not found: {pathname}</div>)
+  .error(() => <div>Project failed to render.</div>)
+  .render(({ children, projectId }) => {
+    return (
+      <section>
+        <nav>Project {projectId}</nav>
+        {children}
+      </section>
+    );
+  });
+```
 
-export function Loading() {
-  return <div>Loading project...</div>;
-}
+### page/_layout.tsx
 
-export function NotFound({ pathname }: { pathname: string }) {
-  return <div>Project route not found: {pathname}</div>;
-}
+```ts
+import "./styles.css";
+import { rootLayout } from "akanjs/client";
 
-export function Error({ error }: { error?: unknown }) {
-  return <div>Project failed to render.</div>;
-}
+export default rootLayout()
+  .fonts([
+    {
+      name: "pretendard",
+      default: true,
+      paths: [{ src: "/fonts/pretendard.woff2", weight: 400 }],
+    },
+  ])
+  .manifest({
+    name: "Akan App",
+    shortName: "Akan",
+    startUrl: "/",
+    display: "standalone",
+    themeColor: "#111827",
+  })
+  .theme("dark")
+  .reconnect(true)
+  .wsConnect(true)
+  .layoutStyle("web")
+  .gaTrackingId("G-XXXXXXXXXX")
+  .head(
+    <>
+      <title>Akan App</title>
+      <link rel="icon" href="/favicon.ico" />
+    </>,
+  )
+  .render(({ children }) => children);
 ```
 
 ### apps/myapp/akan.config.ts
@@ -276,44 +262,11 @@ apps/myapp/page/(libs)/(shared)/login/_index.tsx
 ### page/(dev)/playground/_index.tsx
 
 ```ts
-import type { PageConfig } from "akanjs/client";
+import { page } from "akanjs/client";
 
-export const pageConfig = { devOnly: true } satisfies PageConfig;
-
-export default function Page() {
-  return <div>Component playground</div>;
-}
-```
-
-### page/_layout.tsx
-
-```ts
-import type { Font, LayoutProps, WebAppManifest } from "akanjs/client";
-
-export const fonts: Font[] = [
-  {
-    name: "pretendard",
-    faces: [{ src: "/fonts/pretendard.woff2", weight: "400" }],
-  },
-];
-
-export const manifest: WebAppManifest = {
-  name: "Akan App",
-  shortName: "Akan",
-  startUrl: "/",
-  display: "standalone",
-  themeColor: "#111827",
-};
-
-export const theme = "dark";
-export const reconnect = true;
-export const wsConnect = true;
-export const layoutStyle = "web";
-export const gaTrackingId = "G-XXXXXXXXXX";
-
-export default function Layout({ children }: LayoutProps) {
-  return <>{children}</>;
-}
+export default page()
+  .config({ devOnly: true })
+  .render(() => <div>Component playground</div>);
 ```
 
 ## Agent Notes

@@ -37,17 +37,11 @@ Use pubsub
 
 Use `pubsub` when the server needs to send one event to everyone in a room. A new chat message is the simplest example.
 
-Chat broadcast
-
 Chat Flow
 
 For data that must be saved, write to the database first and publish after the service succeeds.
 
-Save then publish
-
-On the client, subscribe to the room and update local UI state when a new message arrives. Keep the subscription close to the screen that owns the list.
-
-Client subscription
+The browser never subscribes to get the list it already needs. The route loads the slice before the first byte and hands the snapshot down as an `init` prop, so the first paint is server HTML.
 
 Design Rooms
 
@@ -83,11 +77,11 @@ export class ChatEndpoint extends endpoint(srv.chat, ({ message }) => ({
 })) {}
 ```
 
-### Code
+### apps/myapp/lib/chat/chat.signal.ts
 
 ```ts
 export class ChatEndpoint extends endpoint(srv.chat, ({ pubsub }) => ({
-  messageAdded: pubsub(cnst.ChatMessage)
+  messageAdded: pubsub(cnst.ChatMessage, { guards: [User] })
     .room("chatId", ID)
     .with(Ws)
     .exec(async function (chatId, ws) {
@@ -99,7 +93,7 @@ export class ChatEndpoint extends endpoint(srv.chat, ({ pubsub }) => ({
 })) {}
 ```
 
-### Code
+### apps/myapp/lib/chat/chat.service.ts
 
 ```ts
 async addMessage(chatId: string, content: string, senderId: string) {
@@ -113,23 +107,37 @@ async addMessage(chatId: string, content: string, senderId: string) {
 }
 ```
 
-### Code
+### apps/myapp/page/chat/[chatId]/_index.tsx
+
+```ts
+export default page()
+  .param("chatId", ID)
+  .render(async ({ chatId }) => {
+    const { chatMessageInitInChat } = await fetch.initChatMessageInChat(chatId);
+    return <ChatMessage.Zone.List init={chatMessageInitInChat} />;
+  });
+```
+
+### apps/myapp/lib/chatMessage/ChatMessage.Zone.tsx
 
 ```ts
 "use client";
+import { ChatMessage, type cnst } from "@apps/myapp/client";
+import type { ClientInit } from "akanjs/fetch";
+import { Load } from "akanjs/ui";
 
-export const ChatMessages = ({ chatId }: { chatId: string }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-
-  useEffect(() => {
-    const unsubscribe = fetch.subscribeMessageAdded(chatId, (message) => {
-      setMessages((prev) => [...prev, message]);
-    });
-
-    return () => unsubscribe();
-  }, [chatId]);
-
-  return <Chat.MessageList messages={messages} />;
+interface ListProps {
+  className?: string;
+  init: ClientInit<"chatMessage", cnst.LightChatMessage>;
+}
+export const List = ({ className, init }: ListProps) => {
+  return (
+    <Load.Units
+      className={className}
+      init={init}
+      renderItem={(chatMessage) => <ChatMessage.Unit.Row key={chatMessage.id} chatMessage={chatMessage} />}
+    />
+  );
 };
 ```
 

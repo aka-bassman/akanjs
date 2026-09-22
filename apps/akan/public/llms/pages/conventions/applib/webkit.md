@@ -17,11 +17,25 @@
 
 Web Utils (webkit/)
 
+Pure, isomorphic, zero-dependency. It may import a sibling common/* file and akanjs/base, and nothing else — not Err, which is why throwing code stays out of it.
+
+Touches window, navigator or Capacitor, or is a React hook. The browser half of what common/ cannot hold.
+
+Touches node:*, Bun, process.env, a secret, or a server SDK. The server half, and the only place a vendor package is imported directly.
+
+Renders JSX and is not bound to one model. A component tied to a model belongs in that module as a Unit, View, Template, Util or Zone instead.
+
+A build-time or CLI-time AkanPlugin, registered in akan.config.ts and re-exported from the generated barrel.
+
 Webkit Overview
 
 The webkit folder contains reusable code needed during web rendering. It is similar to srvkit, but it is for browser-side or web-rendering logic instead of server-only logic.
 
 Use it for render maps, browser helpers, web hooks, and wrappers around browser libraries. Pages can then import from the webkit barrel instead of carrying complex logic directly.
+
+The five folders answer one question each, and the test is what the code touches rather than what it is for. Reading them together is faster than reading any one of them, so the same table opens all three pages.
+
+Folder
 
 What Belongs In Webkit
 
@@ -82,14 +96,22 @@ export const downloadFile = async (url: string, filename: string) => {
 export { downloadFile } from "./downloadFile";
 ```
 
-### page.tsx
+### ui/DownloadButton.tsx
 
 ```ts
+"use client";
+
+import { usePage } from "@apps/myapp/client";
 import { downloadFile } from "@libs/shared/webkit";
 
-export function DownloadButton() {
-  return <button onClick={() => downloadFile("/invoice.pdf", "invoice.pdf")}>Download</button>;
-}
+export const DownloadButton = () => {
+  const { l } = usePage();
+  return (
+    <button onClick={() => downloadFile("/invoice.pdf", "invoice.pdf")}>
+      {l.trans({ en: "Download", ko: "다운로드" })}
+    </button>
+  );
+};
 ```
 
 ## Agent Notes

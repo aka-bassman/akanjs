@@ -125,7 +125,9 @@ externalLibs
 
 externalLibs marks dependencies that should not be bundled into app code. When declared here, Akan installs them as separate packages during the production build.
 
-Akan includes externalLibs in the production package dependencies together with the required SSR runtime packages.
+An app's resolved externalLibs is its own list plus the list every library in the workspace declares, deduped with the app's entries first. Every workspace library is read, not only the app's dependencies, so a library can declare its own runtime package once and no app has to repeat it.
+
+Akan includes the merged list in the production package dependencies together with the required SSR runtime packages.
 
 Use this for native or runtime-sensitive packages. Normal TypeScript helpers usually do not need externalLibs.
 
@@ -362,16 +364,20 @@ const config: AppConfig = {
 export default config;
 ```
 
-### apps/media/akan.config.ts
+### apps/media/akan.config.ts | libs/report/akan.config.ts
 
 ```ts
-import type { AppConfig } from "akanjs";
-
+// apps/media/akan.config.ts
 const config: AppConfig = {
+  externalLibs: ["shiki"],
+};
+
+// libs/report/akan.config.ts
+const libConfig: LibConfig = {
   externalLibs: ["puppeteer"],
 };
 
-export default config;
+// apps/media resolves to ["shiki", "puppeteer"]
 ```
 
 ### apps/admin/akan.config.ts

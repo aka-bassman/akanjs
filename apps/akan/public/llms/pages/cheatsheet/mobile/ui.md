@@ -8,127 +8,153 @@
 
 ## Headings
 
-- Gesture & Page Transitions (#gesture-transitions)
-- Keyboard Accessory Layout (#keyboard-accessory)
+- Page Transitions (#page-transitions)
+- The Back Gesture (#gesture-back)
+- The Frame Config (#frame-config)
+- The Keyboard Inset (#keyboard-inset)
+- Anchoring The Content (#content-anchor)
 
 ## Content
 
 UI & Keyboard
 
-Gesture & Page Transitions
+Page Transitions
 
-Mobile pages can opt into native-feeling CSR transitions with pageConfig.transition. Stack pages support the iOS-style back swipe by default on iOS, while Android defaults to a scale-out transition and disables edge gestures unless a page opts in.
+Your app runs inside a native shell and every screen change still lands like a web page swap. The reader cannot tell whether they went deeper or sideways, and the back button is the only way out.
 
-/csr/stack_en.mp4
+The Back Gesture
 
-Pushes a detail page over the current page. Use it for drill-down navigation such as detail, edit, or settings pages.
+Leave gesture to the platform default unless the page has a reason not to. iOS turns it on for a stack page below the root; Android and the web leave it off, matching what each platform's users already expect.
 
-/csr/bottomup_en.mp4
+Written wins
 
-Opens a focused surface from the bottom. Use it for compose, picker, camera, or modal-like flows.
+Intent before movement
 
-/csr/fade_en.mp4
+A touch is pending until it travels 8px, then locks to gesture or scroll by which axis moved more. Nothing is dismissed and the keyboard is not hidden while the intent is still pending, so ordinary content scrolling costs nothing.
 
-Changes context without implying a deeper navigation stack.
+Distance or velocity
 
-/csr/scale_en.mp4
+A stack page goes back once the drag passes a third of the screen width, or when it is released fast enough — a flick counts even though it travelled less.
 
-Uses a compact scale motion. This is the default Android-style transition for deeper routes.
+The Frame Config
 
-Controls edge-swipe navigation for page transitions. Leave it to the platform default unless the page needs to explicitly enable or disable gesture handling.
+One .config() object covers the whole page frame, and a layout's config merges down into every route under it. An unknown key is not ignored — it throws at boot.
 
-Supported values are "none", "fade", "bottomUp", "stack", and "scaleOut".
+The CSR animation played when this route is entered.
 
-Akan delays keyboard dismissal until a gesture is confirmed, so normal content scrolling does not immediately close the keyboard.
+Edge-swipe back. Only stack and bottomUp bind a drag; on the other three it is stored and never read.
 
-Keyboard Accessory Layout
+Top chrome reservation in px. true is the 48px default, false and absent are both 0.
 
-Use a keyboard-sticky BottomInset for bottom composers such as chat inputs, comment boxes, or live support inputs. The inset follows the native keyboard, while contentAnchor="bottom" keeps the scrollable page content aligned to the inset as the keyboard opens and closes.
+Bottom chrome reservation in px, with the same 48px meaning for true.
 
-Keyboard off
+Which device insets the page reserves. The android key picks how they are measured: auto takes the CSS insets only when non-zero, edge-to-edge takes the larger of device and CSS, none takes zero.
 
-Keyboard on
+Keeps the page mounted in the cached layer after navigating away, so returning to it costs no re-render.
 
-Scroll behavior
+The resolved numbers are published as CSS custom properties on the frame, so a component can reserve the same space the page did without reading any of it in JavaScript:
 
-Android / iOS demo
+The last two are the sums a page body actually wants: safe area plus inset, top and bottom.
 
-These recordings show keyboardSticky moving the BottomInset with the native keyboard and contentAnchor="bottom" keeping the scroll content aligned to the composer.
+The Keyboard Inset
 
-The WebView keeps a stable frame while Akan applies the keyboard offset, so the composer stays attached to the keyboard instead of jumping above it.
+Where the height comes from is not one thing, and which of the three answered decides how accurate the offset is:
 
-The BottomInset follows the native keyboard transition and the scroll content preserves its bottom distance from the composer.
+Source
 
-Use this when a bottom composer must remain visually attached to the software keyboard.
+The Capacitor Keyboard plugin reported a height. The exact number, with the platform's own show and hide timing.
 
-It is useful for chat, comments, support, and other bottom-input workflows.
+Android shrank the visual viewport instead of reporting a keyboard. The height is derived from how much the viewport lost.
 
-contentAnchor="bottom" is opt-in on BottomInset, so normal pages keep their existing keyboard behavior.
+Neither answered — mobile web without the plugin, most often. The layer still exists so the composer does not jump, but nothing measured it.
+
+The rest of the keyboard frame:
+
+sticky — this path registered at least one keyboardSticky slot. When it is false the whole keyboard layer is not rendered.
+
+frozen — a page transition is running. The offset is held at 0 so the accessory layer does not fight the transition.
+
+visible — there is a height and nothing is frozen. This, not height alone, is what a component should branch on.
+
+Anchoring The Content
 
 Moves the BottomInset into the keyboard accessory layer so it follows the software keyboard.
 
-Preserves the scroll container's bottom distance while the content viewport resizes. This matches messenger-style composers where messages reflow with the keyboard.
+Preserves the scroll container's bottom distance while the content viewport resizes. bottom is the only value it takes.
 
 Keep the page as a server component. If the app needs an initial scroll-to-bottom behavior, add a tiny client helper inside the page or Zone and target the Akan page content container.
 
-contentAnchor is intentionally a BottomInset option, not a pageConfig option. General forms can keep the default keyboard behavior, while messenger-style surfaces opt in locally.
-
 ## Code Examples
 
-### Page transition
+### apps/myapp/page/article/[articleId].tsx
 
 ```ts
-import type { PageConfig } from "akanjs/client";
+import { page } from "akanjs/client";
 
-export const pageConfig = {
-  transition: "stack",
-  gesture: true,
-} satisfies PageConfig;
+export default page()
+  .config({ transition: "stack", gesture: true })
+  .render(() => <ArticleDetail />);
 ```
 
-### Bottom composer
+### apps/myapp/page/chat/_index.tsx
 
 ```ts
-import type { PageConfig } from "akanjs/client";
+import { ChatMessage } from "@apps/myapp/client";
+import { page } from "akanjs/client";
 import { Layout } from "akanjs/ui";
 
-export default function Page() {
-  return (
+export default page()
+  .config({ topInset: true, bottomInset: 72, safeArea: true, transition: "stack" })
+  .render(() => (
     <div>
       <div>{/* scrollable content */}</div>
-      <Layout.BottomInset
-        keyboardSticky
-        contentAnchor="bottom"
-      >
-        <input placeholder="Type message..." />
+      <Layout.BottomInset keyboardSticky contentAnchor="bottom">
+        <ChatMessage.Zone.Composer />
       </Layout.BottomInset>
     </div>
-  );
-}
-
-export const pageConfig = {
-  topInset: 48,
-  bottomInset: 72,
-  safeArea: true,
-  transition: "stack",
-} satisfies PageConfig;
+  ));
 ```
 
-### Optional client helper
+### apps/myapp/lib/chatMessage/ChatMessage.Zone.tsx
+
+```ts
+"use client";
+import { st, usePage } from "@apps/myapp/client";
+import { Field } from "akanjs/ui";
+
+interface ComposerProps {
+  className?: string;
+}
+export const Composer = ({ className }: ComposerProps) => {
+  const { l } = usePage();
+  const chatMessageForm = st.use.chatMessageForm();
+  return (
+    <Field.Text
+      className={className}
+      label={l("chatMessage.content")}
+      value={chatMessageForm.content}
+      onChange={st.do.setContentOnChatMessage}
+    />
+  );
+};
+```
+
+### apps/myapp/ui/Chat/ScrollToBottomOnMount.tsx
 
 ```ts
 "use client";
 
 import { useLayoutEffect } from "react";
 
-export function ScrollToBottomOnMount() {
+export const ScrollToBottomOnMount = () => {
   useLayoutEffect(() => {
-    const pageContent = document.getElementById("pageContent");
+    // Every mounted path route renders id="pageContent", so query the class of the one in this tree.
+    const pageContent = document.querySelector(".akan-page-content");
     pageContent?.scrollTo({ top: pageContent.scrollHeight });
   }, []);
 
   return null;
-}
+};
 ```
 
 ## Agent Notes

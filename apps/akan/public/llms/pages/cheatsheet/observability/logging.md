@@ -15,7 +15,8 @@
 - Reading Logs (#reading-logs)
 - Live Tail (#live-tail)
 - Request Line & Flight Recorder (#request-line)
-- Collection: NDJSON stdout & SSE (#collection)
+- Collection: NDJSON stdout (#collection)
+- The SSE Stream (#log-stream)
 - Operational Checklist (#operational-checklist)
 
 ## Content
@@ -24,41 +25,43 @@ Logging
 
 Runtime Logging
 
-Akan uses Logger for structured runtime output and AkanApp stores gateway and child process logs as files. Terminal logging stays concise for development, while file logging keeps richer records for later inspection.
+A customer says their refund failed at about four o'clock. You have the container's stdout, twelve replicas' worth of it, and no way to tell which lines belonged to that one call. Every line is true and none of them is an answer.
 
-Logger API
+Akan's answer is that a log line is a record before it is a line. Every Logger call carries a level, a logger name, a process role, a replica index and — inside a request — a traceId, the endpoint, and the origin. One request's lines share a trace, so the question above becomes one command.
 
-Use named loggers in services, adaptors, scripts, and runtime code.
-
-Terminal level
-
-Controls what is printed to stdout and stderr.
-
-File level
-
-Controls what Logger output is written to log files. Defaults to trace.
+One record, from the call to the collector
 
 Using Logger
 
-Create a Logger with a component or service name, then write logs at the level that matches the intent. Add context when the same logger handles several jobs.
+Create a Logger with a component or service name, then write logs at the level that matches the intent. The second argument is a context string — add it when the same logger handles several jobs.
 
-Use trace or debug for detailed diagnosis, info/log for normal lifecycle events, warn for recoverable issues, and error when an operation failed or needs attention.
+Structured values do not belong in the message. Logger.emit puts them in LogRecord.attrs, where they render as key=value after the text and ride the JSON as an object — greppable in a terminal and queryable in a collector, from one call.
 
 Log Levels
 
-Terminal output and file output are intentionally separated. A production server can keep the terminal at info or warn while still writing trace-level Logger records to files. The ladder is trace, verbose, debug, info, warn, error; logger.log() is kept for compatibility and emits at info, and AKAN_PUBLIC_LOG_LEVEL=log means info.
+Six levels, and the numbers beside them are OpenTelemetry severity bands rather than 0 through 5. They are what ndjson output, the SSE payload and a numeric --level filter all carry, so a table that renumbers them disagrees with the wire.
 
-Terminal
+Level
 
-Controlled by AKAN_PUBLIC_LOG_LEVEL. Lower-priority messages are not printed to stdout/stderr.
+Three levels are configured separately because they answer different questions: what a human watching the terminal wants, what the container's stdout should carry to a collector, and how deep a sink that asked for nothing is allowed to go.
 
-Files
+The console level. log is accepted and means info, with a one-time deprecation warning at boot; an unrecognised name falls back silently.
 
-Controlled by AKAN_LOG_FILE_LEVEL. Defaults to trace so structured Logger messages are preserved even when the terminal is quiet.
+What the container's stdout carries, and the floor a child forwards from before the hub has asked for anything. It has no literal default — it tracks the console level.
+
+The floor for every sink that declared no minLevel — the rotating file and the hub included, not only the file. This is the most expensive default in the system.
 
 File Logging & Rotation
 
-When AkanApp starts, it writes file logs under the app runtime directory by default. Gateway logs and child process logs are separated, and each process key rotates independently by local date and file size.
+A supervised session writes file logs under the app's runtime directory. Gateway logs and child process logs are separated, and each process key rotates independently by local date and file size.
+
+Only the exact string 0 disables file logging — false does not. The Dockerfile Akan generates bakes 0, because a container's writable layer is ephemeral.
+
+Where the files are written. The runtime directory is runtime/ under NODE_ENV=production and local/apps/<app>/runtime otherwise.
+
+Roll to the next sequence file past this size. A non-positive or unparseable value falls back to the default.
+
+Files retained per process key. Applied per key, so replicas multiply the maximum disk usage.
 
 The file name format is appName-environment-operationMode-YYYY-MM-DD-processKey-sequence.log. If the date changes, sequence starts again at 0001 for that date. If an app restarts, Akan continues from the next available sequence instead of overwriting old files.
 
@@ -70,15 +73,39 @@ Direct console.log calls from child servers are captured through stdout/stderr p
 
 Live Tail
 
-Every Logger call is a record before it is a line: level, logger name, process role, replica index, and — inside a request — the traceId, the endpoint (mutation:signScContract) and the origin (http, websocket, mcp, internal, page). The running gateway, or the replica itself when it runs alone, keeps a ring buffer of them and serves a unix control socket in the runtime directory. akan logs attaches to it, and so does .tail inside akan console.
+The running gateway — or the replica itself when it runs alone — keeps a ring buffer of records and serves a unix control socket in the runtime directory, chmod 0600, with no TCP port. Filesystem permission is the whole authentication. akan logs attaches to it, and so does .tail inside akan console.
+
+Minimum level: trace, verbose, debug, info, warn, error. A bare severity number works too.
+
+Substring the message must contain.
+
+Endpoint glob(s), comma-separated: mutation:*, query:userList. Passing it always prints a notice that the primitive query fast path carries no endpoint and is not shown.
+
+One request's traceId.
+
+Replica index(es), comma-separated.
+
+Process role(s): gateway, all, batch, rsc-worker.
+
+Call origin(s): http, websocket, mcp, internal, page.
+
+Only records newer than this: 5m, 30s, or epoch ms. A value older than the ring prints what the buffer actually covers.
+
+Records to replay from the buffer before following. The default shows nothing historical unless you ask.
+
+Print NDJSON records instead of rendered lines.
+
+Keep streaming; pass --follow false for history only.
+
+Runtime dir holding akan-control.sock. Pass it for a built app running somewhere else.
 
 Filters combine
 
-Every flag ANDs with the others; a comma-separated list inside a flag is an OR. Globs use * only.
+Every flag ANDs with the others; a comma-separated list inside a flag is an OR. Globs use * only, and apply to the logger name and the endpoint.
 
 Zero cost when nobody is watching
 
-A child forwards records over IPC only while a subscriber wants that level. AKAN_LOG_STREAM=1 keeps forwarding on; AKAN_LOG_BUFFER and AKAN_LOG_BUFFER_MB size the ring.
+A child forwards records over IPC only while a subscriber wants that level. AKAN_LOG_STREAM=1 keeps forwarding on; AKAN_LOG_BUFFER and AKAN_LOG_BUFFER_MB size the ring, 2000 records and 4MB by default, and only in the hub owner.
 
 What carries no context
 
@@ -86,11 +113,21 @@ Gateway-internal lines, the scheduler's own started/finished lines, and unauthen
 
 Request Line & Flight Recorder
 
-Two opt-ins reduce noise instead of filtering it. The canonical request line writes one record per call at its end — ok or error, the endpoint, ms, status, userId, and under AKAN_TRACE=1 the db and cache figures — so a request is one line to grep, not a dozen. The flight recorder keeps each call's own sub-level records and promotes them, marked flight=true, only when the call failed or ran past the threshold: trace-level detail for the request that went wrong, with the process level left at info.
+Two opt-ins reduce noise instead of filtering it. The canonical request line writes one record per call at its end — ok or error, the endpoint, ms, status, userId, and under AKAN_TRACE=1 the db and cache figures — so a request is one line to grep, not a dozen.
 
-Structured attrs
+The flight recorder is the other half. It keeps each call's own sub-level records and promotes them, marked flight=true, only when the call failed or ran past the threshold: trace-level detail for the request that went wrong, with the process level left at info.
 
-Logger.emit({ level, name, message, attrs }) puts values in LogRecord.attrs; they render as key=value after the message and ride the JSON as an object. A key naming a secret is redacted before the record exists.
+One summary record per call. slow writes it only for failed calls and those over AKAN_LOG_FLIGHT_MS.
+
+Keep each call's last 64 sub-level records and promote them only when it failed or ran long.
+
+The slow threshold, shared by the flight recorder and canonical slow mode.
+
+Records held at once — records, not traces. Divided by the 64-record ring, that is about a thousand concurrent recorded calls; one past the cap runs unrecorded.
+
+The secret an x-akan-debug header must match to lower one request to trace. Unset, the header is honoured only when AKAN_PUBLIC_ENV is local.
+
+Adds span, db and cache figures to the canonical line.
 
 Promoted lines pass every floor
 
@@ -100,13 +137,25 @@ Cost
 
 Measured: the recorder adds about 190ns to a clean call, the gate about 20ns per rejected log call inside a trace. Both are off by default; the memory cap is an operator's decision.
 
-Collection: NDJSON stdout & SSE
+Collection: NDJSON stdout
 
-Collection and live viewing are different problems. Collection must be lossless and restart-safe, so it is the container's stdout: with AKAN_LOG_FORMAT=ndjson the gateway (or the solo replica) is the stream's only writer and emits one JSON record per line for every process it fronts — a child turns its console off and forwards, the RSC worker is piped rather than inherited, and whatever either wrote past its Logger, a crash stack included, is wrapped as a raw=true record. The node agent's parser is json. Live viewing is a session tool: GET /_akan/app/logs serves the hub as text/event-stream to a bearer token, resumable with Last-Event-ID.
+Collection and live viewing are different problems. Collection must be lossless and restart-safe, so it is the container's stdout — and under AKAN_LOG_FORMAT=ndjson the hub owner becomes that stream's only writer. Every other server process turns its console off and forwards; the RSC worker is piped rather than inherited; and whatever either wrote past its Logger, a crash stack included, is wrapped as a raw=true record so the stream stays valid JSON.
 
-One writer
+ndjson makes stdout one JSON record per line; ndjson-only writes the rotating file as JSON too. Anything else parses as text. It is a whole-deployment setting — giving processes different values corrupts the stream.
 
-Every server process shares the format through the environment. A child forwards from the stdout level on its own before the gateway asks, so a boot line is never lost; text stays the default and the image ships text.
+Pins a child's IPC forwarder on instead of letting it follow the hub's floor. Only a child has a forwarder, so it does nothing in a solo process.
+
+Records the hub owner's ring holds. Evicted whenever either this or the byte cap is reached.
+
+Byte cap on the same ring. Ignored unless it is a positive number.
+
+The SSE Stream
+
+Live viewing is a session tool. GET /_akan/app/logs serves the hub as text/event-stream to a bearer token, resumable with Last-Event-ID, taking the same filter vocabulary as akan logs. Without AKAN_LOG_STREAM_TOKEN the route is not mounted at all — not mounted and answering 403, absent.
+
+Only the hub owner has it
+
+The route is mounted by the gateway, or by a solo replica. A non-solo child does not serve it, so a token alone is not enough to reach one.
 
 Gaps are explicit
 
@@ -122,9 +171,13 @@ Keep terminal logs readable
 
 Use AKAN_PUBLIC_LOG_LEVEL=info or warn in production and increase it temporarily during live debugging.
 
-Preserve file detail
+Give every sink a floor
 
-Keep AKAN_LOG_FILE_LEVEL=trace unless log volume or sensitive fields require a narrower level.
+Pass minLevel to Logger.addSink. A floorless sink follows AKAN_LOG_FILE_LEVEL, which is trace, and makes every trace call in the process build a record.
+
+Never log per delivered record
+
+Anything that delivers records — a forwarder, a sink, the stream route — must not log per item, or it feeds on its own output.
 
 Plan disk usage
 
@@ -132,11 +185,11 @@ AKAN_LOG_MAX_SIZE_MB and AKAN_LOG_MAX_FILES are applied per process key, so repl
 
 Avoid secrets
 
-Do not log tokens, passwords, database URLs, or private payloads. File logs are designed to last longer than terminal output.
+Key-name redaction only covers attrs, and only keys naming a secret. A token interpolated into the message text is not redacted, and file logs outlive terminal output.
 
 ## Code Examples
 
-### Service logging
+### apps/myapp/lib/billing/billing.service.ts
 
 ```ts
 import { Logger } from "akanjs/common";
@@ -161,17 +214,19 @@ export class BillingService {
 }
 ```
 
-### .env
+### apps/myapp/lib/billing/billing.service.ts
 
-```bash
-# Terminal output
-AKAN_PUBLIC_LOG_LEVEL=info
+```ts
+import { Logger } from "akanjs/common";
 
-# File output for structured Logger messages
-AKAN_LOG_FILE_LEVEL=trace
-
-# Turn file logging off when needed
-AKAN_LOG_TO_FILE=0
+Logger.emit({
+  level: "info",
+  name: "BillingService",
+  message: "invoice pushed",
+  attrs: { invoiceId, vendor: "stripe", ms: elapsed },
+});
+// An attr key naming a secret — token, password, authorization, cookie, api_key, private_key —
+// is replaced with "[redacted]" while the record is built, so no sink can ever see the value.
 ```
 
 ### Default log files
@@ -181,19 +236,6 @@ local/apps/myapp/runtime/logs/
   myapp-local-local-2026-05-25-gateway-0001.log
   myapp-local-local-2026-05-25-0-all-0001.log
   myapp-local-local-2026-05-25-1-federation-0001.log
-```
-
-### Rotation configuration
-
-```bash
-# Override the log directory
-AKAN_LOG_DIR=/var/log/akan
-
-# Create the next sequence file after this size
-AKAN_LOG_MAX_SIZE_MB=50
-
-# Keep this many files per process key
-AKAN_LOG_MAX_FILES=100
 ```
 
 ### Local lookup
@@ -210,18 +252,13 @@ tail -f local/apps/myapp/runtime/logs/*-0-all-*.log
 
 # Search errors
 rg "ERROR|Unhandled|Failed" local/apps/myapp/runtime/logs
-```
 
-### Server lookup
-
-```bash
-# When AKAN_LOG_DIR is configured
+# On a server, when AKAN_LOG_DIR is configured
 ls -lh /var/log/akan
-tail -f /var/log/akan/*-gateway-*.log
 rg "invoice-sync|ERROR" /var/log/akan
 ```
 
-### akan logs
+### Terminal
 
 ```bash
 # Only warn and above whose message mentions payment, from any mutation
@@ -235,45 +272,18 @@ akan logs myapp --role rsc-worker --origin page --replay 50
 
 # History only, as NDJSON
 akan logs myapp --since 5m --follow false --json
-```
 
-### akan console
-
-```bash
+# The same vocabulary inside the operator console
 akan:myapp> .tail level=warn grep=payment endpoint=mutation:*
 akan:myapp> .trace m8x1k2-a9f3c1
 akan:myapp> .tail off
 ```
 
-### .env
-
-```bash
-# One line per call: "ok mutation:signScContract ms=132.4 status=200 userId=u_abc"
-AKAN_LOG_CANONICAL=1          # slow: only failed calls and those over AKAN_LOG_FLIGHT_MS
-
-# Keep each call's last 64 sub-level lines; promote them only when it failed or ran long
-AKAN_LOG_FLIGHT=1
-AKAN_LOG_FLIGHT_MS=1000
-AKAN_LOG_FLIGHT_MAX=65536     # records held at once; a call past the cap runs unrecorded
-
-# One request at trace, whatever the level: unconditional in local, elsewhere with this secret
-AKAN_LOG_DEBUG_HEADER=<random secret>
-```
-
-### x-akan-debug
+### Terminal
 
 ```bash
 curl -H "x-akan-debug: <secret>" https://api.example.com/api/refundPayment/ord_1
 # stdout now carries that request's trace lines, marked debug=true, and nothing else changes
-```
-
-### Deployment env
-
-```bash
-AKAN_LOG_FORMAT=ndjson          # stdout is JSON lines; ndjson-only makes the file JSON too
-AKAN_LOG_TO_FILE=0              # the image default; the writable layer is ephemeral
-AKAN_LOG_STDOUT_LEVEL=info      # kubelet and json-file rotate by size, so trace can outrun the agent
-AKAN_LOG_STREAM_TOKEN=<secret>  # optional: mounts GET /_akan/app/logs
 ```
 
 ### docker-compose.yml
@@ -283,7 +293,8 @@ services:
   app:
     environment:
       AKAN_LOG_FORMAT: ndjson
-      AKAN_LOG_TO_FILE: "0"
+      AKAN_LOG_TO_FILE: "0"              # the image default; the writable layer is ephemeral
+      AKAN_LOG_STDOUT_LEVEL: info        # kubelet and json-file rotate by size, so trace can outrun the agent
     logging:
       driver: json-file
       options: { max-size: "50m", max-file: "5" }   # json-file never rotates unless told to
@@ -305,7 +316,7 @@ services:
 # Keep traceId and userId as JSON fields, not Loki labels: labels must stay low-cardinality.
 ```
 
-### SSE
+### Terminal
 
 ```bash
 curl -N -H "Authorization: Bearer $AKAN_LOG_STREAM_TOKEN" \

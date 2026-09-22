@@ -41,12 +41,6 @@ Update a document and return the updated document.
 
 Remove or soft-remove a document through the generated database service flow.
 
-Search documents and return docs with count.
-
-Search documents and return docs only.
-
-Count documents that match search text.
-
 List documents matching a document filter.
 
 List document ids matching a document filter.
@@ -226,6 +220,17 @@ serve("myapp" as const, { serverMode: "batch" }, ({ service }) => ({
 serve(db.user, ({ use }) => ({ githubApp: use<GithubApp>() }), ...user.services);
 ```
 
+### story.document.ts | story.service.ts
+
+```ts
+bySearch: filter()
+  .arg("text", String)
+  .query((text, q) => q.search(text, { prefix: true })),
+
+const stories = await this.listBySearch(text, { sort: "relevance" });
+const count = await this.countBySearch(text);
+```
+
 ### apps/myapp/lib/user/user.service.ts
 
 ```ts
@@ -378,12 +383,14 @@ async archiveDbBackup(dbBackupId: string) {
 }
 ```
 
-### pre/post database hooks
+### dbBackup.service.ts
 
 ```ts
+import { Err } from "../dict";
+
 override async _preCreate(data: DataInputOf<db.DbBackupInput, db.DbBackup>) {
   if (await this.dbBackupModel.workingBackupExists(data.devApp, data.branch)) {
-    throw new Error("Working backup exists");
+    throw new Err("dbBackup.error.workingBackupExists");
   }
   return data;
 }
@@ -392,6 +399,14 @@ override async _postCreate(doc: db.DbBackup) {
   await this.dbBackupSignal.archiveDbBackup(doc.id);
   return doc;
 }
+```
+
+### dbBackup.dictionary.ts
+
+```ts
+.error({
+  workingBackupExists: ["A backup is already running for this branch", "이 브랜치에서 이미 백업이 실행 중입니다."],
+})
 ```
 
 ### service lifecycle

@@ -53,7 +53,9 @@ Pass `data` when the translated message needs values. The server keeps the dicti
 
 Client Handling
 
-Akan fetch restores an error response as `Err`. In UI code, catch it and pass its key and data to `msg.error()`.
+Akan fetch restores an error response as `Err`, and the store already catches it: every action runs inside a wrapper that translates the key with the caller's language and toasts it. A store action is the happy path only — never a try/catch.
+
+The button reads nothing about failure. It calls the action and lets the wrapper answer:
 
 Response Shape
 
@@ -61,7 +63,7 @@ HTTP and websocket errors use the same simple shape. Most app code does not need
 
 Tips
 
-Use `Err` for user-facing domain failures. Use normal `Error` for programmer mistakes, missing setup, or impossible states.
+Throw `Err`, always. A raw `throw new Error` is a build failure under `apps/**` and `libs/**`; only tests, `*.constant.ts`, `common/**`, and `env/**` are exempt, and those have no `Err` import path, so keep throwing code out of them.
 
 Put repeated state rules in document methods. Put cross-model checks and loading logic in services.
 
@@ -130,26 +132,41 @@ addItem(product: Product, quantity: number) {
 }
 ```
 
-### Order.Util.tsx
+### apps/myapp/lib/order/order.store.ts
 
 ```ts
-import { Err, fetch, msg } from "@apps/myApp/client";
+export class OrderStore extends store(sig.order, () => ({})) {
+  async addItem(orderId: string, productId: string, quantity: number) {
+    const order = await fetch.addItem(orderId, productId, quantity);
+    this.setOrder(order);
+    msg.success("order.addItemSuccess");
+  }
+}
+```
 
-export const AddOrderItem = ({ orderId, productId }: Props) => {
-  const addItem = async () => {
-    try {
-      await fetch.addItem(orderId, productId, 3);
-      msg.success("order.addItemSuccess");
-    } catch (error) {
-      if (error instanceof Err) {
-        msg.error(error.error, { data: error.data });
-        return;
-      }
-      msg.error("order.error.unknown");
-    }
-  };
+### apps/myapp/lib/order/Order.Util.tsx
 
-  return <button onClick={addItem}>Add item</button>;
+```ts
+"use client";
+import { st, usePage } from "@apps/myapp/client";
+import { buttonRecipe } from "akanjs/ui";
+
+interface AddItemProps {
+  className?: string;
+  orderId: string;
+  productId: string;
+}
+export const AddItem = ({ className, orderId, productId }: AddItemProps) => {
+  const { l } = usePage();
+  return (
+    <button
+      className={buttonRecipe({ variant: "primary" }, className)}
+      onClick={() => st.do.addItem(orderId, productId, 3)}
+      type="button"
+    >
+      {l("order.signal.addItem")}
+    </button>
+  );
 };
 ```
 

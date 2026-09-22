@@ -135,7 +135,7 @@ export const Gallery = ({ article, href }: ModelProps<"article", cnst.LightArtic
 ```ts
 <Load.Units
   init={articleInit}
-  renderEmpty={() => <Model.NewWrapper slice={fetch.slice.article}>+ New</Model.NewWrapper>}
+  renderEmpty={() => <Model.NewWrapper slice={fetch.slice.article}>{l("article.newArticle")}</Model.NewWrapper>}
   renderItem={(article) => <Article.Unit.Card key={article.id} article={article} />}
 />
 ```

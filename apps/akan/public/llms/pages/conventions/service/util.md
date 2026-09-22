@@ -8,51 +8,72 @@
 
 ## Headings
 
-- Service Util (#service-util)
-- Client Helper Component (#client-helper)
-- What Belongs Here (#what-belongs)
+- Service.Util.tsx (#service-util)
+- The Shape, If You Write One (#shape)
+- What Sync Will Accept (#allowlist)
 
 ## Content
 
 Service.Util.tsx
 
-Service Util
+Not one of the eight service modules in this workspace has this file. That is the most useful thing this page can tell you, and it is not an oversight waiting to be corrected — the rest of the page is about why the file is rare, and what it takes for yours to be the exception.
 
-A service Util file contains small client helper components for a service feature. It is useful for reusable controls such as action buttons, filters, toolboxes, and dialog triggers.
+A model module's Util is the verb minus the noun: Serve, Refund, Complete. It belongs to the module because the button it wraps is the module's own endpoint and the record it acts on is the module's own model. A service module has the verb and no noun — so the control usually belongs to the screen that offers it, not to the capability behind it.
 
-A service module may not need Util at first. A minimal placeholder is acceptable while the feature UI is still moving into Zone or app pages.
+Put it in ui/
 
-Client Helper Component
+The component renders JSX and is not bound to one model — which is the admission test for ui/ verbatim. A disconnect button, a permission prompt, a map control: all of them are ui/ components the service store happens to drive.
 
-Service Util components are usually client components because they handle clicks, local UI state, or store actions. Keep them small enough to be reused inside Zone, Template, or app pages.
+Put it in page/
 
-What Belongs Here
+The capability has a screen of its own rather than a section inside somebody else's. The OAuth consent page is a route in libs/shared/page/oauth, which is why _oauth ships ten endpoints and no component.
 
-Put small pieces here when they are about service interaction but are not large enough to be a full Zone. Examples include resync buttons, search filter controls, upload controls, and reusable status badges.
+Put it here
+
+Only when the control is meaningless outside this module — it reads this store, calls this endpoint, and moving it to ui/ would mean importing the module back in. Then it is a Util, and only then.
+
+The Shape, If You Write One
+
+A Util is always a client component, mechanically: "use client" on line 1, above the imports, in every .Util.tsx there is. Exports are role names, and for a service module the role is the endpoint verb.
+
+Three rules are load-bearing in those sixteen lines. The props interface sits immediately above the component with className first and is not exported. The prop is an id string rather than the order itself — a cnst model on a Util prop is a lint error, because the server would have to hand a class instance across the boundary and the methods do not survive the trip. And the label comes from the dictionary, never from a literal.
+
+What Sync Will Accept
+
+A service module folder has exactly two component roles: Service.Util.tsx and Service.Zone.tsx. There is no Template, no Unit and no View. akan sync will happily collect a file that ignores that — the rule is carried by akan quality scan, which asks for predictable module UI filenames and names service modules as Util and Zone only.
+
+Those three missing roles are the three that would need a model. Template binds to a model's form state, Unit renders one light model, View renders one full model — none of which a service module has. What is left is one client control and one client section, and the framework agrees that is all there should be: the SSR scanner exempts every lib/_ folder from the rule that warns when a module renders only from client files, because a service module owns no model to render on the server.
 
 ## Code Examples
 
-### small service control
+### apps/koyo/lib/_receipt/Receipt.Util.tsx
 
 ```ts
 "use client";
 
-export const ResyncButton = () => {
-  const searchIndexName = st.use.searchIndexName();
+import { st, usePage } from "@apps/koyo/client";
+import { Button } from "akanjs/ui";
+
+interface PrintProps {
+  className?: string;
+  icecreamOrderId: string;
+}
+export const Print = ({ className, icecreamOrderId }: PrintProps) => {
+  const { l } = usePage();
+  const printing = st.use.printing();
   return (
-    <button onClick={() => st.do.resyncSearchDocuments()} disabled={!searchIndexName}>
-      Resync
-    </button>
+    <Button className={className} disabled={printing} onClick={() => st.do.printReceipt(icecreamOrderId)}>
+      {l("receipt.print")}
+    </Button>
   );
 };
 ```
 
-### when Util is enough
+### Terminal
 
-```ts
-export const SearchInput = () => {
-  return <input onChange={(e) => st.do.setSearchString(e.target.value)} />;
-};
+```bash
+akan quality scan   # names a Template, Unit or View under lib/_<service>
+akan quality ssr    # lib/_<service> is exempt from akan.ssr.module-missing-server-view
 ```
 
 ## Agent Notes

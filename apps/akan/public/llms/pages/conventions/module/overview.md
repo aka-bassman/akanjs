@@ -105,6 +105,8 @@ Server To Client Flow
 
 A module usually grows from data shape to persistence, then to API, client state, and UI. You do not need every file for every feature, but this order keeps ownership clear.
 
+One module, bottom up
+
 Role Boundaries
 
 When a module becomes confusing, it is usually because logic moved into the wrong file. Use these boundaries before adding code.
@@ -112,6 +114,8 @@ When a module becomes confusing, it is usually because logic moved into the wron
 Recommended Reading Paths
 
 Start from the task you are trying to build. The first file in each path is the best place to inspect or design the change.
+
+Four paths through the same folder
 
 Practical Rules
 
@@ -127,18 +131,7 @@ When a section gets large, move display into Unit/View and controls into Util be
 
 ## Code Examples
 
-### module flow
-
-```ts
-constant -> dictionary -> document -> service -> signal -> store -> UI files
-
-UI files:
-Template -> forms
-Unit -> list item display
-View -> full detail display
-Util -> small controls
-Zone -> page section composition
-```
+No code snippets were extracted from this page.
 
 ## Agent Notes
 

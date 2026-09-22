@@ -1,7 +1,108 @@
 import { usePage } from "@apps/akan/client";
 import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
-import { cn, page } from "akanjs/client";
+import { page } from "akanjs/client";
+
+const moduleFiles = [
+  {
+    name: "model.abstract.md",
+    boundary: "shared",
+    en: "Business intent, domain rules, workflows, and agent notes kept next to the module code. Example: order cancellation rules or status transition policy.",
+    ko: "모듈 코드 옆에 두는 비즈니스 의도, 도메인 규칙, 워크플로우, agent 주의사항입니다. 예: 주문 취소 규칙이나 상태 전이 정책.",
+  },
+  {
+    name: "model.constant.ts",
+    boundary: "shared",
+    en: "Constants, status values, default options, and shared model types. Example: order status such as pending, paid, shipped.",
+    ko: "상수, 상태값, 기본 옵션, 모델에서 공유하는 타입을 둡니다. 예: pending, paid, shipped 같은 주문 상태.",
+  },
+  {
+    name: "model.dictionary.ts",
+    boundary: "shared",
+    en: "Labels, field names, and text keys used by the model. Example: product name, price, stock labels.",
+    ko: "모델에서 쓰는 라벨, 필드 이름, 문구 키를 둡니다. 예: 상품명, 가격, 재고 라벨.",
+  },
+  {
+    name: "model.document.ts",
+    boundary: "server",
+    en: "Stored data shape, filters, and document model definition. Example: what fields an invoice saves and how it can be queried.",
+    ko: "저장되는 데이터 형태, 필터, 문서 모델 정의를 둡니다. 예: 청구서가 어떤 필드를 저장하고 어떻게 조회되는지.",
+  },
+  {
+    name: "model.service.ts",
+    boundary: "server",
+    en: "Server-side business logic. Example: create an order, apply a coupon, calculate shipping, or complete payment.",
+    ko: "서버 측 비즈니스 로직을 둡니다. 예: 주문 생성, 쿠폰 적용, 배송비 계산, 결제 완료 처리.",
+  },
+  {
+    name: "model.signal.ts",
+    boundary: "shared",
+    en: "Public actions, slices, endpoints, and internal jobs that pages can call. Example: load order list or request OCR.",
+    ko: "페이지에서 호출할 수 있는 공개 동작, slice, endpoint, 내부 작업을 둡니다. 예: 주문 목록 불러오기, OCR 요청하기.",
+  },
+  {
+    name: "model.store.ts",
+    boundary: "client",
+    en: "Client or model state used across screens. Example: selected filters, cart state, or temporary form state.",
+    ko: "여러 화면에서 쓰는 클라이언트 상태 또는 모델 상태를 둡니다. 예: 선택된 필터, 장바구니 상태, 임시 폼 상태.",
+  },
+  {
+    name: "Model.Template.tsx",
+    boundary: "client",
+    en: "The create and edit form. Every field reads st.use.productForm() and writes through a generated setter such as st.do.setTitleOnProduct, passed by reference.",
+    ko: "생성과 수정 폼입니다. 모든 필드는 st.use.productForm()을 읽고 st.do.setTitleOnProduct 같은 생성된 setter를 참조로 넘겨 값을 씁니다.",
+  },
+  {
+    name: "Model.Unit.tsx",
+    boundary: "server",
+    en: "One item in a list or grid: the row, the card, the search hit. It takes LightProduct, the trimmed shape a list query returns.",
+    ko: "목록이나 그리드의 한 항목입니다. 행, 카드, 검색 결과 하나가 여기에 해당하며, 목록 쿼리가 돌려주는 축약 형태인 LightProduct를 받습니다.",
+  },
+  {
+    name: "Model.Util.tsx",
+    boundary: "client",
+    en: "A domain UI helper named for the endpoint verb minus the model noun: Remove, Refund, Complete, Terminate.",
+    ko: "도메인 UI 보조 컴포넌트입니다. 이름은 endpoint 동사에서 모델 명사를 뺀 형태로 짓습니다. Remove, Refund, Complete, Terminate처럼 씁니다.",
+  },
+  {
+    name: "Model.View.tsx",
+    boundary: "server",
+    en: "One record in full detail. It takes the full model and renders the fields a list never loads.",
+    ko: "레코드 하나의 상세 화면입니다. 전체 모델을 받아 목록에서는 불러오지 않는 필드까지 그립니다.",
+  },
+  {
+    name: "Model.Zone.tsx",
+    boundary: "client",
+    en: "A composed page section. It reads the store, hands the data to Load.Units or Load.View, and leaves the markup to Unit and View.",
+    ko: "페이지 구역을 조립하는 컴포넌트입니다. 스토어를 읽어 Load.Units나 Load.View에 데이터를 넘기고, 마크업은 Unit과 View에 맡깁니다.",
+  },
+];
+
+const fileChoices = [
+  { en: "Do we store this data?", ko: "이 데이터를 저장하나요?", file: "model.document.ts" },
+  { en: "Does the server process it?", ko: "서버에서 처리하나요?", file: "model.service.ts" },
+  { en: "Should a page call it?", ko: "페이지에서 호출하나요?", file: "model.signal.ts" },
+  { en: "Does one record get its own page?", ko: "레코드 하나가 자기 페이지를 갖나요?", file: "Model.View.tsx" },
+  { en: "Is it one item in a list?", ko: "목록의 한 항목인가요?", file: "Model.Unit.tsx" },
+  { en: "Does the user fill it in?", ko: "사용자가 값을 입력하나요?", file: "Model.Template.tsx" },
+  { en: "Is it a domain UI action?", ko: "도메인 UI 액션인가요?", file: "Model.Util.tsx" },
+  { en: "Is it a large screen area?", ko: "큰 화면 영역인가요?", file: "Model.Zone.tsx" },
+];
+
+const moduleMatrix = [
+  { name: "model.abstract.md", database: true, service: true, scalar: true },
+  { name: "model.constant.ts", database: true, service: false, scalar: true },
+  { name: "model.dictionary.ts", database: true, service: true, scalar: true },
+  { name: "model.document.ts", database: true, service: false, scalar: true },
+  { name: "model.service.ts", database: true, service: true, scalar: false },
+  { name: "model.signal.ts", database: true, service: true, scalar: false },
+  { name: "model.store.ts", database: true, service: true, scalar: false },
+  { name: "Model.Template.tsx", database: true, service: false, scalar: true },
+  { name: "Model.Unit.tsx", database: true, service: false, scalar: true },
+  { name: "Model.Util.tsx", database: true, service: true, scalar: false },
+  { name: "Model.View.tsx", database: true, service: false, scalar: false },
+  { name: "Model.Zone.tsx", database: true, service: true, scalar: false },
+];
 
 export default page().render(() => {
   const { l } = usePage();
@@ -92,170 +193,29 @@ export default page().render(() => {
           </div>
           <div>
             {l.trans({
-              en: "For example, an order feature may keep order status values in order.constant.ts, saved order fields in order.document.ts, payment completion logic in order.service.ts, and page-callable actions in order.signal.ts.",
-              ko: "예를 들어 주문 기능을 만든다면 order.constant.ts에는 주문 상태값을, order.document.ts에는 저장되는 주문 필드를, order.service.ts에는 결제 완료 처리 로직을, order.signal.ts에는 페이지에서 호출할 수 있는 동작을 둘 수 있습니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
               en: "The abstract file is not only for LLMs. It keeps domain knowledge beside the code, so people and agents can understand business invariants before changing implementation files.",
               ko: "abstract 파일은 LLM만을 위한 파일이 아닙니다. 도메인 지식을 코드 옆에 두어 사람과 agent가 구현 파일을 수정하기 전에 비즈니스 불변 조건을 이해할 수 있게 합니다.",
             })}
           </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: "model.abstract.md",
-                type: "shared",
-                desc: l.trans({
-                  en: "Business intent, domain rules, workflows, and agent notes kept next to the module code. Example: order cancellation rules or status transition policy.",
-                  ko: "모듈 코드 옆에 두는 비즈니스 의도, 도메인 규칙, 워크플로우, agent 주의사항입니다. 예: 주문 취소 규칙이나 상태 전이 정책.",
-                }),
-              },
-              {
-                title: "model.constant.ts",
-                type: "shared",
-                desc: l.trans({
-                  en: "Constants, status values, default options, and shared model types. Example: order status such as pending, paid, shipped.",
-                  ko: "상수, 상태값, 기본 옵션, 모델에서 공유하는 타입을 둡니다. 예: pending, paid, shipped 같은 주문 상태.",
-                }),
-              },
-              {
-                title: "model.dictionary.ts",
-                type: "shared",
-                desc: l.trans({
-                  en: "Labels, field names, and text keys used by the model. Example: product name, price, stock labels.",
-                  ko: "모델에서 쓰는 라벨, 필드 이름, 문구 키를 둡니다. 예: 상품명, 가격, 재고 라벨.",
-                }),
-              },
-              {
-                title: "model.document.ts",
-                type: "server",
-                desc: l.trans({
-                  en: "Stored data shape, filters, and document model definition. Example: what fields an invoice saves and how it can be queried.",
-                  ko: "저장되는 데이터 형태, 필터, 문서 모델 정의를 둡니다. 예: 청구서가 어떤 필드를 저장하고 어떻게 조회되는지.",
-                }),
-              },
-              {
-                title: "model.service.ts",
-                type: "server",
-                desc: l.trans({
-                  en: "Server-side business logic. Example: create an order, apply a coupon, calculate shipping, or complete payment.",
-                  ko: "서버 측 비즈니스 로직을 둡니다. 예: 주문 생성, 쿠폰 적용, 배송비 계산, 결제 완료 처리.",
-                }),
-              },
-              {
-                title: "model.signal.ts",
-                type: "shared",
-                desc: l.trans({
-                  en: "Public actions, slices, endpoints, and internal jobs that pages can call. Example: load order list or request OCR.",
-                  ko: "페이지에서 호출할 수 있는 공개 동작, slice, endpoint, 내부 작업을 둡니다. 예: 주문 목록 불러오기, OCR 요청하기.",
-                }),
-              },
-              {
-                title: "model.store.ts",
-                type: "client",
-                desc: l.trans({
-                  en: "Client or model state used across screens. Example: selected filters, cart state, or temporary form state.",
-                  ko: "여러 화면에서 쓰는 클라이언트 상태 또는 모델 상태를 둡니다. 예: 선택된 필터, 장바구니 상태, 임시 폼 상태.",
-                }),
-              },
-            ].map(({ title, type, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <div className="flex items-center justify-between">
-                  <div
-                    className={cn(
-                      "font-mono font-semibold",
-                      type === "client" && "text-success",
-                      type === "server" && "text-primary",
-                      type === "shared" && "text-warning",
-                    )}
-                  >
-                    {title}
-                  </div>
-                  <div
-                    className={cn(
-                      "rounded-full px-2 py-1 font-semibold text-xs",
-                      type === "client" && "bg-success/10 text-success",
-                      type === "server" && "bg-primary/10 text-primary",
-                      type === "shared" && "bg-warning/10 text-warning",
-                    )}
-                  >
-                    {type}
-                  </div>
-                </div>
-                <div className="mt-2 text-foreground/70 text-sm">{desc}</div>
-              </div>
-            ))}
-          </div>
-          <div className="font-bold text-foreground text-lg">{l.trans({ en: "UI Files", ko: "UI 파일" })}</div>
           <div>
             {l.trans({
-              en: "UI files describe how a model appears on screen. They use PascalCase because they export React components or UI groups.",
-              ko: "UI 파일은 모델이 화면에 어떻게 보이는지 설명합니다. React 컴포넌트나 UI 묶음을 export하므로 PascalCase 이름을 사용합니다.",
+              en: "The five UI suffixes are not five sizes of component either. Each one answers a different question: how the user edits one record, how one record looks in a list, how one record looks on its own page, how a page section is assembled, and what extra action the model offers. The first column of each row is which side of the client boundary the file lives on:",
+              ko: "UI 접미사 다섯 개도 컴포넌트의 크기 다섯 단계가 아닙니다. 각각 다른 질문에 답합니다. 사용자가 한 레코드를 어떻게 편집하는지, 목록에서 한 레코드가 어떻게 보이는지, 단독 페이지에서 어떻게 보이는지, 페이지 구역이 어떻게 조립되는지, 그리고 모델이 제공하는 부가 동작이 무엇인지입니다. 각 행의 맨 앞은 그 파일이 클라이언트 경계의 어느 쪽에 있는지입니다:",
             })}
           </div>
-          <div>
-            {l.trans({
-              en: "The five UI suffixes are not five sizes of component. Each one answers a different question: how the user edits one record, how one record looks in a list, how one record looks on its own page, how a page section is assembled, and what extra action the model offers.",
-              ko: "UI 접미사 다섯 개는 컴포넌트의 크기 다섯 단계가 아닙니다. 각각 다른 질문에 답합니다. 사용자가 한 레코드를 어떻게 편집하는지, 목록에서 한 레코드가 어떻게 보이는지, 단독 페이지에서 어떻게 보이는지, 페이지 구역이 어떻게 조립되는지, 그리고 모델이 제공하는 부가 동작이 무엇인지입니다.",
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="lib/product/"
-            language="bash"
-            code={`Product.Template.tsx  # the create/edit form, bound to the store form state
-Product.Unit.tsx      # one item in a list or grid, built on LightProduct
-Product.View.tsx      # one record in full detail
-Product.Zone.tsx      # a composed page section that reads the store
-Product.Util.tsx      # a domain UI action such as Remove or Refund`}
+          <Docs.IntroTable
+            type={l.trans({ en: "File", ko: "파일" })}
+            items={moduleFiles.map(({ name, boundary, en, ko }) => ({
+              name,
+              desc: (
+                <>
+                  <code>{boundary}</code>
+                  {" — "}
+                  {l.trans({ en, ko })}
+                </>
+              ),
+            }))}
           />
-          <div className="space-y-1">
-            {[
-              {
-                title: "Model.Template.tsx",
-                desc: l.trans({
-                  en: "The create and edit form. Every field reads st.use.productForm() and writes through a generated setter such as st.do.setTitleOnProduct, passed by reference.",
-                  ko: "생성과 수정 폼입니다. 모든 필드는 st.use.productForm()을 읽고 st.do.setTitleOnProduct 같은 생성된 setter를 참조로 넘겨 값을 씁니다.",
-                }),
-              },
-              {
-                title: "Model.Unit.tsx",
-                desc: l.trans({
-                  en: "One item in a list or grid: the row, the card, the search hit. It takes LightProduct, the trimmed shape a list query returns.",
-                  ko: "목록이나 그리드의 한 항목입니다. 행, 카드, 검색 결과 하나가 여기에 해당하며, 목록 쿼리가 돌려주는 축약 형태인 LightProduct를 받습니다.",
-                }),
-              },
-              {
-                title: "Model.View.tsx",
-                desc: l.trans({
-                  en: "One record in full detail. It takes the full model and renders the fields a list never loads.",
-                  ko: "레코드 하나의 상세 화면입니다. 전체 모델을 받아 목록에서는 불러오지 않는 필드까지 그립니다.",
-                }),
-              },
-              {
-                title: "Model.Zone.tsx",
-                desc: l.trans({
-                  en: "A composed page section. It reads the store, hands the data to Load.Units or Load.View, and leaves the markup to Unit and View.",
-                  ko: "페이지 구역을 조립하는 컴포넌트입니다. 스토어를 읽어 Load.Units나 Load.View에 데이터를 넘기고, 마크업은 Unit과 View에 맡깁니다.",
-                }),
-              },
-              {
-                title: "Model.Util.tsx",
-                desc: l.trans({
-                  en: "A domain UI helper named for the endpoint verb minus the model noun: Remove, Refund, Complete, Terminate.",
-                  ko: "도메인 UI 보조 컴포넌트입니다. 이름은 endpoint 동사에서 모델 명사를 뺀 형태로 짓습니다. Remove, Refund, Complete, Terminate처럼 씁니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-mono font-semibold text-success">{title}: </span>
-
-                <span className="text-foreground/70 text-sm">{desc}</span>
-              </div>
-            ))}
-          </div>
           <Docs.Alert type="warning">
             {l.trans({
               en: 'The client boundary follows the suffix, not your judgment. Template, Zone, and Util always carry "use client" on line 1; Unit and View never do, so they render on the server and ship no JavaScript.',
@@ -433,36 +393,22 @@ import { ProductCard } from "@apps/myapp/ui";`}
               ko: "폴더의 비즈니스 역할에 따라 파일 구성을 선택합니다. product는 저장하는 대상이므로 document와 store 파일을 가질 수 있습니다. _payment는 수행하는 기능이므로 보통 service와 signal 중심입니다. money는 재사용 값 형태이므로 작고 정의 중심으로 유지합니다.",
             })}
           </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: "lib/<model>/",
-                desc: l.trans({
-                  en: "Can use abstract, constant, dictionary, document, service, signal, store, Template, Unit, Util, View, and Zone.",
-                  ko: "abstract, constant, dictionary, document, service, signal, store, Template, Unit, Util, View, Zone을 사용할 수 있습니다.",
-                }),
-              },
-              {
-                title: "lib/_<service>/",
-                desc: l.trans({
-                  en: "Can use abstract, dictionary, service, signal, store, Template, Unit, Util, View, and Zone. The abstract filename drops the folder underscore, such as payment.abstract.md in lib/_payment/.",
-                  ko: "abstract, dictionary, service, signal, store, Util, Zone을 사용할 수 있습니다. abstract 파일명은 폴더의 밑줄을 제외해 lib/_payment/ 안에서는 payment.abstract.md를 사용합니다.",
-                }),
-              },
-              {
-                title: "lib/__scalar/<type>/",
-                desc: l.trans({
-                  en: "Can use abstract, constant, dictionary, document, Template, Unit, Util, View, and Zone.",
-                  ko: "abstract, constant, dictionary, document을 사용할 수 있습니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-mono font-semibold text-primary">{title}: </span>
-
-                <span className="text-foreground/70 text-sm">{desc}</span>
-              </div>
-            ))}
+          <Docs.IntroTable
+            type={l.trans({ en: "File", ko: "파일" })}
+            items={moduleMatrix.map(({ name, database, service, scalar }) => ({
+              name,
+              desc: [
+                `${database ? "\u2713" : "\u2013"} database`,
+                `${service ? "\u2713" : "\u2013"} service`,
+                `${scalar ? "\u2713" : "\u2013"} scalar`,
+              ].join("   \u00b7   "),
+            }))}
+          />
+          <div>
+            {l.trans({
+              en: "A file the column marks with a dash is not merely unusual there — akan sync refuses it by name, so a Product.View.tsx placed in lib/__scalar/money/ fails the scan rather than being quietly ignored. The abstract file is the one whose name changes: a service module drops the folder's underscore, so lib/_payment/ holds payment.abstract.md.",
+              ko: "열에 대시가 붙은 파일은 그 자리에서 드문 정도가 아니라 akan sync가 이름을 짚어 거부합니다. lib/__scalar/money/에 Product.View.tsx를 두면 조용히 무시되지 않고 스캔이 실패합니다. 이름이 달라지는 것은 abstract 파일 하나입니다. service 모듈은 폴더의 밑줄을 빼므로 lib/_payment/에는 payment.abstract.md를 둡니다.",
+            })}
           </div>
         </Docs.Description>
       </Scroll.Slide>
@@ -514,48 +460,13 @@ export const Product = { Unit, Util, View, Zone };`}
               ko: "예를 들어 '고객이 주문을 볼 수 있나요?'는 View로 이어집니다. '고객이 주문을 취소할 수 있나요?'는 signal과 service로 이어집니다. '주문이 어떤 필드를 저장하나요?'는 document로 이어집니다.",
             })}
           </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: l.trans({ en: "Do we store this data?", ko: "이 데이터를 저장하나요?" }),
-                desc: "model.document.ts",
-              },
-              {
-                title: l.trans({ en: "Does the server process it?", ko: "서버에서 처리하나요?" }),
-                desc: "model.service.ts",
-              },
-              {
-                title: l.trans({ en: "Should a page call it?", ko: "페이지에서 호출하나요?" }),
-                desc: "model.signal.ts",
-              },
-              {
-                title: l.trans({ en: "Does one record get its own page?", ko: "레코드 하나가 자기 페이지를 갖나요?" }),
-                desc: "Model.View.tsx",
-              },
-              {
-                title: l.trans({ en: "Is it one item in a list?", ko: "목록의 한 항목인가요?" }),
-                desc: "Model.Unit.tsx",
-              },
-              {
-                title: l.trans({ en: "Does the user fill it in?", ko: "사용자가 값을 입력하나요?" }),
-                desc: "Model.Template.tsx",
-              },
-              {
-                title: l.trans({ en: "Is it a domain UI action?", ko: "도메인 UI 액션인가요?" }),
-                desc: "Model.Util.tsx",
-              },
-              {
-                title: l.trans({ en: "Is it a large screen area?", ko: "큰 화면 영역인가요?" }),
-                desc: "Model.Zone.tsx",
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-bold text-foreground">{title}: </span>
-
-                <span className="font-mono text-primary text-sm">{desc}</span>
-              </div>
-            ))}
-          </div>
+          <Docs.IntroTable
+            type={l.trans({ en: "Question", ko: "질문" })}
+            items={fileChoices.map(({ en, ko, file }) => ({
+              name: <span className="font-sans">{l.trans({ en, ko })}</span>,
+              desc: <code>{file}</code>,
+            }))}
+          />
         </Docs.Description>
       </Scroll.Slide>
       <Divider />

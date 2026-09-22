@@ -32,7 +32,7 @@ Render A Zone
 
 Place the documentation UI inside an admin or developer-only page. The `base` signal is a good first target because it has simple ping endpoints.
 
-Developer API page
+The Zone holds the client boundary, so the route itself stays a server page:
 
 Try An Endpoint
 
@@ -58,16 +58,23 @@ Use the docs UI for quick manual checks, not as a replacement for automated test
 
 ## Code Examples
 
-### Code
+### apps/myapp/ui/ApiDocs.tsx
 
 ```ts
 "use client";
 import { fetch } from "@apps/myapp/client";
 import { Signal } from "akanjs/ui";
 
-export default function ApiDocsPage() {
-  return <Signal.Doc.Zone fetch={fetch} refName="base" openAll />;
-}
+export const ApiDocs = () => <Signal.Doc.Zone fetch={fetch} refName="base" openAll />;
+```
+
+### apps/myapp/page/(admin)/api/_index.tsx
+
+```ts
+import { ApiDocs } from "@apps/myapp/ui";
+import { page } from "akanjs/client";
+
+export default page().render(() => <ApiDocs />);
 ```
 
 ## Agent Notes

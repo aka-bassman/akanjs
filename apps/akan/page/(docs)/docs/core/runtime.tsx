@@ -420,6 +420,24 @@ AKAN_PUBLIC_LOG_LEVEL=info`}
                 }),
               },
               {
+                key: "AKAN_LOG_BUFFER",
+                type: "number",
+                default: "2000",
+                desc: l.trans({
+                  en: "How many records the in-memory hub keeps for akan logs and the SSE stream to replay. Oldest are dropped first; a reader that falls behind gets an explicit gap event rather than a silent hole.",
+                  ko: "akan logs와 SSE 스트림이 되돌려 보낼 수 있도록 메모리 허브가 들고 있는 레코드 수입니다. 오래된 것부터 버리고, 뒤처진 구독자에게는 조용한 누락 대신 명시적인 gap 이벤트를 보냅니다.",
+                }),
+              },
+              {
+                key: "AKAN_LOG_BUFFER_MB",
+                type: "number",
+                default: "4",
+                desc: l.trans({
+                  en: "The same buffer's byte ceiling, whichever limit is reached first. Raise it when records carry large attrs; the hub is per process, so the cost is multiplied by the replica count.",
+                  ko: "같은 버퍼의 바이트 상한이며 둘 중 먼저 걸리는 쪽이 적용됩니다. 레코드가 큰 attrs를 실어 나르면 올리고, 허브는 프로세스마다 하나이므로 비용은 replica 수만큼 곱해집니다.",
+                }),
+              },
+              {
                 key: "AKAN_LOG_DEBUG_HEADER",
                 type: "string",
                 default: l.trans({ en: "unset — local only", ko: "미설정 — local에서만" }),
