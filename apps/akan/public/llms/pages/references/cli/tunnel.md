@@ -1,9 +1,9 @@
-# Tunnel
+# Tunnel CLI
 
 - Source: /references/cli/tunnel
 - Mirror: /llms/pages/references/cli/tunnel.md
 - Section: references
-- Category: CLI Reference
+- Category: references
 - Priority: P0
 
 ## Headings
@@ -13,23 +13,117 @@
 
 ## Content
 
-Tunnel
-
-Share a locally running app on a public URL. The control plane issues a hostname and a connector token, and the connector runs inside this process — there is no binary to install and no step between the command and a URL to paste. Because the process is the tunnel, the command blocks until you interrupt it, and closing it hands the hostname back.
-
 Tunnel CLI
 
-A designer wants to see the screen you just built, on their phone, now. A webhook from a payment provider needs to reach the handler you are still editing. Both want a public URL pointing at the dev server on your laptop, and neither is worth a deployment.
+Check on a Phone
 
-Most of the time you want this while already running the app, and `akan start --share` does it as part of the session. `akan tunnel` is the standalone form: it shares an app that is already running and does nothing else.
+A designer opens the screen you just built on their own phone, right now.
+
+Receive a Webhook
+
+A payment provider's webhook reaches the handler you are still editing.
+
+share
+
+One local app connected to a public URL. It has a code, a URL and an expiry.
+
+code
+
+The short name of a share. `--stop` takes it.
+
+The server that issues public hostnames and tracks shares. `akan login` signs in to it.
+
+How long a share lives before it expires on its own.
+
+Share an app running on this machine on a public URL. The connection runs inside this command, so nothing needs installing before the URL appears. The share lives as long as the command does: Ctrl-C ends it and hands the address back.
+
+App to share. Taken as is when there is only one app, and picked from a list when there are several.
+
+List this account's shares with connection state, code, URL, app name and expiry, then exit.
+
+Revoke the share with this code, then exit.
+
+Akan Cloud to use. In the framework repo (`USE_AKANJS_PKGS=true`) it is `http://localhost:8283`.
+
+Local port to share. Unset, it is the dev port `akan start` gives this app.
+
+Minutes until the share expires on its own. Unset, Akan Cloud decides.
+
+Printed with its expiry and an `akan tunnel --stop <code>` line, and copied to the clipboard.
+
+The first one hands the hostname back. A second exits at once, and the share expires on its TTL.
+
+reconnect
+
+A dropped link is reported and reconnected. The share stays open.
+
+before the app
+
+The share can open before the app listens. Requests are refused until the port opens.
+
+account
+
+A share belongs to the account `akan login` signed in to on that `--host`. `--list` shows them.
+
+Neither asks for an app. They act on the account's shares.
+
+not a deployment
+
+Requests reach the dev server as they are. No auth, cache or build step is added in front.
+
+Shares
+
+Every app the session boots
+
+One app that is already running
+
+Ends when
+
+The dev session ends
+
+You stop the command
+
+Port
+
+The app's dev port
+
+The dev port, or any port with `--port`
+
+Expiry
+
+Akan Cloud's default
+
+`--ttl` minutes, or Akan Cloud's default
+
+The default address
+
+The default address, or the one given to `--host`
+
+Finding the URL
+
+Shown in the view's header and copied with `s`, or printed under `--plain`
+
+Printed and copied to the clipboard
+
+If it fails
+
+The error is printed and the session starts anyway
+
+The command exits with the error
+
+Words Used on This Page
+
+Term
 
 Share Or Tunnel
 
-They open the same kind of share against the same control plane. What differs is who owns the process, and that decides which one you want.
+Both open the same kind of share on the same Akan Cloud. What differs is which process holds it, and so when it ends.
 
-The dev session opens a share for each app it boots and keeps it for the life of the session. In the full-screen view, `s` copies the selected app's public URL — or every app's from the merged row — and the header carries it ahead of the local one.
+Aspect
 
-A second terminal against an app that is already running — including one you did not start with `--share`, or one on a port that is not the dev port. Stopping it leaves the dev server alone.
+Dev session options such as the full-screen view, `--kill` and `--concurrency`.
+
+Sign in to Akan Cloud. Shares belong to this account.
 
 ## Code Examples
 

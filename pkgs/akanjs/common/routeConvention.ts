@@ -13,9 +13,7 @@ export const PAGE_ROUTE_EXPORTS: ReadonlySet<string> = new Set([
   "default",
   "pageConfig",
   "head",
-  "metadata",
   "generateHead",
-  "generateMetadata",
   "Loading",
 ]);
 export const LAYOUT_ROUTE_EXPORTS: ReadonlySet<string> = new Set([...PAGE_ROUTE_EXPORTS, "NotFound", "Error"]);
@@ -27,7 +25,6 @@ export const ROOT_LAYOUT_ROUTE_EXPORTS: ReadonlySet<string> = new Set([
   "reconnect",
   "wsConnect",
   "layoutStyle",
-  "gaTrackingId",
 ]);
 /** Root-layout exports that are plain config rather than components, so a PascalCase check cannot allow them. */
 export const RESERVED_ROUTE_CONFIG_EXPORTS: ReadonlySet<string> = new Set(

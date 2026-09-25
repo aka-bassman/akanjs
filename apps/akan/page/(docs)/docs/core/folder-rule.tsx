@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { type BadgeVariants, badgeRecipe, Code, Divider, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
@@ -7,70 +7,78 @@ const facets = [
   {
     name: "page/",
     side: "client",
-    en: "Route modules only — nothing else compiles here. A library can hold one too, and an app that opts in with syncPageLibs serves its routes.",
-    ko: "라우트 모듈만 둡니다. 다른 파일은 여기서 컴파일되지 않습니다. 라이브러리도 page 폴더를 가질 수 있고, syncPageLibs로 사용을 선언한 앱이 그 라우트를 제공합니다.",
+    en: "A screen the user visits. When a feature has its own URL, put the page here. Example: page/orders.tsx serves /orders.",
+    ko: "사용자가 방문하는 화면입니다. 기능에 자기 URL이 있으면 여기에 페이지를 둡니다. 예: page/orders.tsx는 /orders를 엽니다.",
   },
   {
     name: "lib/",
     side: "shared",
-    en: "One folder per business concept: user, product, order, invoice, payment, notification. Each folder is a module, and a module's files stay inside it.",
-    ko: "비즈니스 개념마다 폴더 하나입니다. user, product, order, invoice, payment, notification 같은 것들이며, 각 폴더가 모듈이고 모듈의 파일은 그 안에 머뭅니다.",
+    en: "Business data and the rules that go with it. When a feature owns something you save, make it a module folder. Example: lib/order/ holds the order data and its behavior.",
+    ko: "비즈니스 데이터와 그에 딸린 규칙입니다. 기능이 저장하는 대상을 가지면 모듈 폴더로 만듭니다. 예: lib/order/에 주문 데이터와 동작을 둡니다.",
   },
   {
     name: "ui/",
     side: "client",
-    en: "Renders JSX and is not bound to one model. PascalCase component files, camelCase sidecars. A tokens.css here is a library's one stylesheet, for colors that must not follow the theme.",
-    ko: "JSX를 그리되 특정 모델에 매이지 않는 코드입니다. 컴포넌트 파일은 PascalCase, 보조 파일은 camelCase입니다. 여기 두는 tokens.css는 테마를 따라가면 안 되는 색을 위한 라이브러리의 유일한 스타일시트입니다.",
+    en: "Pieces of screen you reuse across pages and that are not tied to one model. Example: a card or a chart used in several places.",
+    ko: "여러 페이지에서 재사용하는 화면 조각이며 특정 모델에 묶이지 않습니다. 예: 여러 곳에서 쓰는 카드나 차트.",
   },
   {
     name: "webkit/",
     side: "client",
-    en: "Touches window, navigator, or Capacitor, or is a React hook. Files are use<Thing>.tsx — .tsx even when there is no JSX.",
-    ko: "window, navigator, Capacitor를 건드리거나 React hook인 코드입니다. 파일명은 use<Thing>.tsx이며 JSX가 없어도 .tsx로 씁니다.",
+    en: "Code that needs the browser or a device feature, or a React hook. Example: a clipboard helper, a camera hook.",
+    ko: "브라우저나 기기 기능이 필요하거나 React hook인 코드입니다. 예: 클립보드 헬퍼, 카메라 hook.",
   },
   {
     name: "common/",
     side: "shared",
-    en: "Pure, isomorphic, zero-dependency. It may import only sibling common files and akanjs/base — which means it cannot import Err, so keep throwing code out of it. camelCase file, filename equal to its single export.",
-    ko: "순수하고 양쪽에서 동작하며 의존성이 없는 코드입니다. 형제 common 파일과 akanjs/base만 import할 수 있어서 Err도 가져올 수 없으므로, 예외를 던지는 코드는 두지 않습니다. 파일명은 camelCase이며 유일한 export 이름과 같습니다.",
+    en: "Small pure helpers both sides use. Example: date formatting, string utilities.",
+    ko: "서버와 클라이언트가 함께 쓰는 작은 순수 헬퍼입니다. 예: 날짜 포맷, 문자열 유틸.",
   },
   {
     name: "srvkit/",
     side: "server",
-    en: "Touches node:*, Bun, process.env, a secret, or a server SDK. camelCase file, PascalCase class. Vendor clients and guards live here.",
-    ko: "node:*, Bun, process.env, 비밀값, 서버 SDK를 건드리는 코드입니다. 파일명은 camelCase, 클래스는 PascalCase입니다. 벤더 클라이언트와 guard가 여기 있습니다.",
+    en: "Connections to outside services. Example: a payment API client, a mail sender.",
+    ko: "외부 서비스에 연결하는 코드입니다. 예: 결제 API 클라이언트, 메일 발송기.",
   },
   {
     name: "env/",
     side: "shared",
-    en: "The runtime values, one file per environment, plus the type files that keep them honest. Server env files are gitignored; client env files are not.",
-    ko: "런타임 값을 환경별 파일 하나씩 두고, 그 형태를 지켜 주는 type 파일을 함께 둡니다. server env 파일은 gitignore 대상이고 client env 파일은 아닙니다.",
+    en: "Settings that differ per environment. Example: local and production API hosts.",
+    ko: "환경마다 달라지는 설정입니다. 예: local과 production의 API 호스트.",
   },
   {
     name: "plugin/",
     side: "shared",
-    en: "Build- and CLI-time AkanPlugin declarations, named <name>.plugin.ts and registered in akan.config.ts.",
-    ko: "빌드·CLI 시점에 동작하는 AkanPlugin 선언입니다. 파일명은 <name>.plugin.ts이고 akan.config.ts에 등록합니다.",
+    en: "Code that changes how the app builds or runs. Example: a plugin that generates image sizes at build time.",
+    ko: "앱이 빌드되거나 실행되는 방식을 바꾸는 코드입니다. 예: 빌드 때 이미지 크기를 생성하는 플러그인.",
   },
   {
     name: "public/",
     side: "client",
-    en: "Static files served as they are: logos, icons, fonts, downloadable PDFs. A library's public/ is mounted into every app that reaches it.",
-    ko: "그대로 제공되는 정적 파일입니다. 로고, 아이콘, 폰트, 다운로드용 PDF 같은 것들입니다. 라이브러리의 public/은 그 라이브러리를 쓰는 모든 앱에 마운트됩니다.",
+    en: "Files served as they are, with no processing. Example: images, fonts, robots.txt.",
+    ko: "가공 없이 그대로 제공되는 파일입니다. 예: 이미지, 폰트, robots.txt.",
   },
   {
     name: "private/",
     side: "server",
-    en: "Implementation-only code that must not become part of the public app or library API.",
-    ko: "앱이나 라이브러리의 공개 API가 되면 안 되는 내부 구현 코드입니다.",
+    en: "An asset folder the server reads at runtime and never serves to the browser. Example: an ONNX model file, a fixed JSON dataset.",
+    ko: "서버가 실행 중에 읽고 브라우저에는 내보내지 않는 애셋 폴더입니다. 예: ONNX 모델 파일, 고정 JSON 데이터셋.",
   },
   {
     name: "script/",
     side: "server",
-    en: "Development scripts you run against a live Akan server. An app has this folder; a library does not, because a library is never booted.",
-    ko: "실행 중인 Akan 서버를 대상으로 돌리는 개발 스크립트입니다. 앱에는 이 폴더가 있고 라이브러리에는 없습니다. 라이브러리는 부팅되지 않기 때문입니다.",
+    en: "Developer scripts you run by hand against a running app. Example: filling the database with test data.",
+    ko: "실행 중인 앱에 손으로 돌리는 개발용 스크립트입니다. 예: 테스트 데이터 넣기.",
   },
-];
+] as const;
+
+type Side = (typeof facets)[number]["side"];
+
+const sideVariant: { [key in Side]: NonNullable<BadgeVariants["variant"]> } = {
+  client: "info",
+  shared: "warning",
+  server: "error",
+} as const;
 
 export default page().render(() => {
   const { l } = usePage();
@@ -85,52 +93,88 @@ export default page().render(() => {
               ko: "Akan의 폴더는 비즈니스 소유 범위를 기준으로 나뉩니다. 새 기능을 만들 때는 먼저 간단히 물어보면 됩니다. 고객이 방문하는 페이지인가요, 앱이 소유하는 비즈니스 데이터인가요, 공유 UI인가요, 아니면 서버에서만 쓰는 연동 코드인가요?",
             })}
           </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: l.trans({ en: "Find ownership", ko: "소유 범위 찾기" }),
-                desc: l.trans({
-                  en: "If only one product uses it, put it in that app. If several products share it, move it to a library.",
-                  ko: "한 제품만 쓰면 해당 앱에 둡니다. 여러 제품이 함께 쓰면 라이브러리로 옮깁니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Keep pages separate", ko: "페이지 분리" }),
-                desc: l.trans({
-                  en: "Screens such as /orders or /admin/users go under page/. Reusable components and logic go elsewhere.",
-                  ko: "/orders, /admin/users 같은 화면은 page/ 아래에 둡니다. 재사용 컴포넌트와 로직은 다른 폴더에 둡니다.",
-                }),
-              },
-              {
-                title: l.trans({ en: "Model the business", ko: "비즈니스 모델링" }),
-                desc: l.trans({
-                  en: "Business nouns such as user, order, product, and invoice usually become folders under lib/.",
-                  ko: "user, order, product, invoice 같은 비즈니스 명사는 보통 lib/ 아래 폴더가 됩니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-bold text-foreground">{title}: </span>
-
-                <span className="text-foreground/70 text-sm">{desc}</span>
+          <div className="space-y-1 pl-2">
+            <div>
+              <div>
+                <span className="font-bold text-foreground">
+                  {l.trans({ en: "Find ownership", ko: "소유 범위 찾기" })}:{" "}
+                </span>
+                <span className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: "If only one product uses it, put it in that app. If several products share it, move it to a library.",
+                    ko: "한 제품만 쓰면 해당 앱에 둡니다. 여러 제품이 함께 쓰면 라이브러리로 옮깁니다.",
+                  })}
+                </span>
               </div>
-            ))}
+              <div>
+                <span className="font-bold text-foreground">
+                  {l.trans({ en: "Keep pages separate", ko: "페이지 분리" })}:{" "}
+                </span>
+                <span className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: "Screens such as /orders or /admin/users go under page/. Reusable components and logic go elsewhere.",
+                    ko: "/orders, /admin/users 같은 화면은 page/ 아래에 둡니다. 재사용 컴포넌트와 로직은 다른 폴더에 둡니다.",
+                  })}
+                </span>
+              </div>
+              <div>
+                <span className="font-bold text-foreground">
+                  {l.trans({ en: "Model the business", ko: "비즈니스 모델링" })}:{" "}
+                </span>
+                <span className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: "Business nouns such as user, order, product, and invoice usually become folders under lib/.",
+                    ko: "user, order, product, invoice 같은 비즈니스 명사는 보통 lib/ 아래 폴더가 됩니다.",
+                  })}
+                </span>
+              </div>
+            </div>
           </div>
-          <Docs.Mermaid
-            title="Which folder does this file go in"
-            highlightNodes={["role"]}
-            chart={`flowchart TD
-  owner{"Who uses it?"} -->|"one product"| app["apps/myapp/"]
-  owner -->|"several products"| lib["libs/shared/"]
-  app --> role{"What does the file do?"}
-  lib --> role
-  role -->|"a URL a user visits"| pageDir["page/"]
-  role -->|"data the business stores"| modelDir["lib/model/"]
-  role -->|"something the business does"| serviceDir["lib/_service/"]
-  role -->|"reusable markup"| uiDir["ui/"]
-  role -->|"browser API or React hook"| webkitDir["webkit/"]
-  role -->|"node, Bun, or a secret"| srvkitDir["srvkit/"]
-  role -->|"pure and isomorphic"| commonDir["common/"]`}
+          <Docs.Flow
+            title={l.trans({ en: "Which folder does this file go in", ko: "이 파일은 어느 folder로 가는가" })}
+            direction="LR"
+            nodes={{
+              owner: { label: l.trans({ en: "Who uses it?", ko: "누가 쓰는가?" }), tone: "info" },
+              app: { label: "apps/myapp/", lines: [l.trans({ en: "one product", ko: "제품 하나" })] },
+              lib: { label: "libs/shared/", lines: [l.trans({ en: "several products", ko: "여러 제품" })] },
+              role: { label: l.trans({ en: "What does the file do?", ko: "이 파일은 무엇을 하는가?" }), tone: "info" },
+              pageDir: { label: "page/", lines: [l.trans({ en: "a URL a user visits", ko: "사용자가 방문하는 URL" })] },
+              modelDir: {
+                label: "lib/model/",
+                lines: [l.trans({ en: "data the business stores", ko: "비즈니스가 저장하는 데이터" })],
+              },
+              serviceDir: {
+                label: "lib/_service/",
+                lines: [l.trans({ en: "something the business does", ko: "비즈니스가 하는 일" })],
+              },
+              uiDir: { label: "ui/", lines: [l.trans({ en: "reusable markup", ko: "재사용하는 마크업" })] },
+              webkitDir: {
+                label: "webkit/",
+                lines: [l.trans({ en: "browser API or React hook", ko: "browser API 또는 React hook" })],
+              },
+              srvkitDir: {
+                label: "srvkit/",
+                lines: [l.trans({ en: "node, Bun, or a secret", ko: "node, Bun, 또는 secret" })],
+              },
+              commonDir: {
+                label: "common/",
+                lines: [l.trans({ en: "pure and isomorphic", ko: "순수하고 isomorphic" })],
+              },
+            }}
+            edges={[
+              ["owner", "app"],
+              ["owner", "lib"],
+              ["app", "role"],
+              ["lib", "role"],
+              ["role", "pageDir"],
+              ["role", "modelDir"],
+              ["role", "serviceDir"],
+              ["role", "uiDir"],
+              ["role", "webkitDir"],
+              ["role", "srvkitDir"],
+              ["role", "commonDir"],
+            ]}
+            emphasis={["role"]}
           />
           <Code.Snippet
             className="w-full"
@@ -145,7 +189,7 @@ export default page().render(() => {
 │   ├── order/          # order data and behavior
 │   └── _payment/       # payment workflow
 ├── ui/
-│   └── ProductCard.tsx
+│   └── DisplayCard.tsx
 ├── srvkit/
 │   └── paymentGateway.ts
 └── public/
@@ -172,41 +216,41 @@ export default page().render(() => {
 ├── libs/   # shared product libraries
 └── pkgs/   # Akan framework packages and tools`}
           />
-          <div className="space-y-1">
-            {[
-              {
-                title: "apps/",
-                desc: l.trans({
-                  en: "A business product that can run by itself. Examples: customer web, admin portal, brand site, or mobile-backed service.",
-                  ko: "독립적으로 실행되는 비즈니스 제품입니다. 예: 커머스 플랫폼, SaaS 앱, ERP 시스템, 개인용 앱 등",
-                }),
-              },
-              {
-                title: "libs/",
-                desc: l.trans({
-                  en: "Reusable product code shared by several apps. Examples: user account, billing, file upload, social features, security, admin features, etc.",
-                  ko: "여러 앱이 공유하는 제품 코드입니다. 예: 사용자 계정, 결제, 파일 업로드, 소셜, 채팅, 보안, 관리자 기능 등.",
-                }),
-              },
-              {
-                title: "pkgs/",
-                desc: l.trans({
-                  en: "Code with special purpose, used or published as npm packages. Examples: payment gateway, robot control code, blockchain integration code, etc.",
-                  ko: "특수한 목적을 가진 코드로써, npm 패키지처럼 사용하거나 배포되는 폴더입니다. 예: 결제 연동 라이브러리, 로봇 특화 제어 코드, 블록체인 연동 코드 등",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-mono font-semibold text-primary">{title}: </span>
-
-                <span className="text-foreground/70 text-sm">{desc}</span>
+          <div className="space-y-1 pl-2">
+            <div>
+              <div>
+                <span className="font-bold text-foreground">apps/: </span>
+                <span className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: "A business product that can run by itself. Examples: customer web, admin portal, brand site, or mobile-backed service.",
+                    ko: "독립적으로 실행되는 비즈니스 제품입니다. 예: 커머스 플랫폼, SaaS 앱, ERP 시스템, 개인용 앱 등",
+                  })}
+                </span>
               </div>
-            ))}
+              <div>
+                <span className="font-bold text-foreground">libs/: </span>
+                <span className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: "Reusable product code shared by several apps. Examples: user account, billing, file upload, social features, security, admin features, etc.",
+                    ko: "여러 앱이 공유하는 제품 코드입니다. 예: 사용자 계정, 결제, 파일 업로드, 소셜, 채팅, 보안, 관리자 기능 등.",
+                  })}
+                </span>
+              </div>
+              <div>
+                <span className="font-bold text-foreground">pkgs/: </span>
+                <span className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: "Code with special purpose, used or published as npm packages. Examples: payment gateway, robot control code, etc.",
+                    ko: "특수한 목적을 가진 코드로써, npm 패키지처럼 사용하거나 배포되는 폴더입니다. 예: 결제 연동 라이브러리, 로봇 특화 제어 코드 등",
+                  })}
+                </span>
+              </div>
+            </div>
           </div>
           <Docs.Alert type="info">
             {l.trans({
-              en: "Generated folders such as .akan/ and dist/ are build outputs. They help Akan run fast, but you normally do not edit them by hand.",
-              ko: ".akan/과 dist/ 같은 생성 폴더는 빌드 결과물입니다. Akan이 빠르게 실행되도록 돕지만, 일반적으로 직접 수정하지 않습니다.",
+              en: "Generated folders such as .akan/ and dist/ are build outputs, and you normally do not edit them by hand.",
+              ko: ".akan/과 dist/ 같은 생성 폴더는 빌드 결과물이며, 일반적으로 직접 수정하지 않습니다.",
             })}
           </Docs.Alert>
           <Docs.Alert>
@@ -230,7 +274,7 @@ export default page().render(() => {
               ko: "앱은 제품이 사용자에게 보이는 공간입니다. 라이브러리는 재사용 가능한 비즈니스 기능이 사는 공간입니다. 둘 다 도메인 모듈, UI, 자산, 서버 헬퍼를 가질 수 있기 때문에 구조가 비슷합니다.",
             })}
           </div>
-          <div className="space-y-1">
+          <div className="w-full justify-center gap-2 space-y-1 lg:flex">
             <Code.Snippet
               className="w-full"
               title="apps/myapp/"
@@ -275,8 +319,8 @@ export default page().render(() => {
           </div>
           <div>
             {l.trans({
-              en: "Each folder has an admission test rather than a theme, and the first column says which side of the client boundary its code runs on. A client folder ships to the browser, so nothing secret may reach one; a shared folder is read from both sides, so it must stay pure and environment-safe. A file that fails every test does not belong in the app or library root at all — akan sync refuses an unknown root folder by name.",
-              ko: "각 폴더에는 분위기가 아니라 들어올 수 있는 조건이 있고, 첫 열은 그 코드가 클라이언트 경계의 어느 쪽에서 도는지를 말합니다. client 폴더는 브라우저까지 전송되므로 비밀값이 닿아서는 안 되고, shared 폴더는 양쪽에서 읽으므로 순수하고 환경에 안전해야 합니다. 어떤 조건에도 맞지 않는 파일은 애초에 앱·라이브러리 루트에 들어갈 수 없습니다. akan sync는 모르는 루트 폴더를 이름으로 짚어 거부합니다.",
+              en: "Each folder has an admission test rather than a theme, and the first column says which side of the client boundary its code runs on. A client folder ships to the browser, so nothing secret may reach one; a shared folder is read from both sides, so it must stay pure and environment-safe. A file that fails every test does not belong in the app or library root at all.",
+              ko: "각 폴더에는 느낌이 아니라 들어올 수 있는 조건이 있고, 첫 열은 그 코드가 클라이언트 경계의 어느 쪽에서 도는지를 말합니다. client 폴더는 브라우저까지 전송되므로 비밀값이 닿아서는 안 되고, shared 폴더는 양쪽에서 읽으므로 순수하고 환경에 안전해야 합니다. 어떤 조건에도 맞지 않는 파일은 애초에 앱·라이브러리 루트에 두지 않습니다.",
             })}
           </div>
           <Docs.IntroTable
@@ -285,7 +329,7 @@ export default page().render(() => {
               name,
               desc: (
                 <>
-                  <code>{side}</code>
+                  <span className={badgeRecipe({ variant: sideVariant[side], outline: true })}>{side}</span>
                   {" — "}
                   {l.trans({ en, ko })}
                 </>
@@ -326,36 +370,36 @@ export default page().render(() => {
     └── money/
         └── money.abstract.md`}
           />
-          <div className="space-y-1">
-            {[
-              {
-                title: "lib/<model>/",
-                desc: l.trans({
-                  en: "Use this for nouns your business owns and saves. Keep model.abstract.md here for business intent, domain rules, workflows, and agent notes.",
-                  ko: "비즈니스가 소유하고 저장하는 명사에 사용합니다. business intent, domain rule, workflow, agent note를 위해 model.abstract.md를 함께 둡니다.",
-                }),
-              },
-              {
-                title: "lib/_<service>/",
-                desc: l.trans({
-                  en: "Use this for actions, workflows, or integrations. The folder keeps the underscore, but the abstract file drops it, such as lib/_payment/payment.abstract.md.",
-                  ko: "행동, 워크플로우, 연동 기능에 사용합니다. 폴더에는 밑줄을 유지하지만 abstract 파일명은 lib/_payment/payment.abstract.md처럼 밑줄을 제외합니다.",
-                }),
-              },
-              {
-                title: "lib/__scalar/<type>/",
-                desc: l.trans({
-                  en: "Use this for reusable value shapes shared by models. Keep scalar.abstract.md here when validation meaning or reuse rules need explanation.",
-                  ko: "여러 모델이 함께 쓰는 값 형태에 사용합니다. validation 의미나 재사용 규칙 설명이 필요하면 scalar.abstract.md를 함께 둡니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-mono font-semibold text-primary">{title}: </span>
-
-                <span className="text-foreground/70 text-sm">{desc}</span>
+          <div className="space-y-1 pl-2">
+            <div>
+              <div>
+                <span className="font-bold text-foreground">lib/&lt;model&gt;/: </span>
+                <span className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: "Use this for nouns your business owns and saves. Keep model.abstract.md here for business intent, domain rules, workflows, and agent notes.",
+                    ko: "비즈니스가 소유하고 저장하는 명사에 사용합니다. business intent, domain rule, workflow, agent note를 위해 model.abstract.md를 함께 둡니다.",
+                  })}
+                </span>
               </div>
-            ))}
+              <div>
+                <span className="font-bold text-foreground">lib/_&lt;service&gt;/: </span>
+                <span className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: "Use this for actions, workflows, or integrations. The folder keeps the underscore, but the abstract file drops it, such as lib/_payment/payment.abstract.md.",
+                    ko: "행동, 워크플로우, 연동 기능에 사용합니다. 폴더에는 밑줄을 유지하지만 abstract 파일명은 lib/_payment/payment.abstract.md처럼 밑줄을 제외합니다.",
+                  })}
+                </span>
+              </div>
+              <div>
+                <span className="font-bold text-foreground">lib/__scalar/&lt;type&gt;/: </span>
+                <span className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: "Use this for reusable value shapes shared by models. Keep scalar.abstract.md here when validation meaning or reuse rules need explanation.",
+                    ko: "여러 모델이 함께 쓰는 값 형태에 사용합니다. validation 의미나 재사용 규칙 설명이 필요하면 scalar.abstract.md를 함께 둡니다.",
+                  })}
+                </span>
+              </div>
+            </div>
           </div>
           <Docs.Alert type="info">
             {l.trans({
@@ -394,36 +438,36 @@ libs/order/
 pkgs/order-sdk/
   # installable or publishable as a standalone package`}
           />
-          <div className="space-y-1">
-            {[
-              {
-                title: "apps/",
-                desc: l.trans({
-                  en: "Start here when the feature belongs to one product. This keeps early business code easy to find.",
-                  ko: "기능이 하나의 제품에만 속한다면 여기서 시작합니다. 초기 비즈니스 코드를 찾기 쉽습니다.",
-                }),
-              },
-              {
-                title: "libs/",
-                desc: l.trans({
-                  en: "Move here when two or more apps need the same business model, UI, or service flow.",
-                  ko: "두 개 이상의 앱이 같은 비즈니스 모델, UI, 서비스 흐름을 필요로 할 때 옮깁니다.",
-                }),
-              },
-              {
-                title: "pkgs/",
-                desc: l.trans({
-                  en: "Move here only when the code should stand alone with its own package boundary.",
-                  ko: "자체 패키지 경계를 가진 독립 코드가 되어야 할 때만 옮깁니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-mono font-semibold text-primary">{title}: </span>
-
-                <span className="text-foreground/70 text-sm">{desc}</span>
+          <div className="space-y-1 pl-2">
+            <div>
+              <div>
+                <span className="font-bold text-foreground">apps/: </span>
+                <span className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: "Start here when the feature belongs to one product. This keeps early business code easy to find.",
+                    ko: "기능이 하나의 제품에만 속한다면 여기서 시작합니다. 초기 비즈니스 코드를 찾기 쉽습니다.",
+                  })}
+                </span>
               </div>
-            ))}
+              <div>
+                <span className="font-bold text-foreground">libs/: </span>
+                <span className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: "Move here when two or more apps need the same business model, UI, or service flow.",
+                    ko: "두 개 이상의 앱이 같은 비즈니스 모델, UI, 서비스 흐름을 필요로 할 때 옮깁니다.",
+                  })}
+                </span>
+              </div>
+              <div>
+                <span className="font-bold text-foreground">pkgs/: </span>
+                <span className="text-foreground/70 text-sm">
+                  {l.trans({
+                    en: "Move here only when the code should stand alone with its own package boundary.",
+                    ko: "자체 패키지 경계를 가진 독립 코드가 되어야 할 때만 옮깁니다.",
+                  })}
+                </span>
+              </div>
+            </div>
           </div>
         </Docs.Description>
       </Scroll.Slide>

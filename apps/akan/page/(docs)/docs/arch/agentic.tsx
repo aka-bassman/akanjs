@@ -1,11 +1,1200 @@
 import { usePage } from "@apps/akan/client";
-import { AgentVisualDemo, Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { AgentVisualDemo, Code, cardGridRecipe, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
 
 export default page().render(() => {
   const { l } = usePage();
+
+  const termRows = [
+    {
+      name: "tool",
+      desc: l.trans({
+        en: "One action a component publishes for the agent, usually the handler its button already calls.",
+        ko: "컴포넌트가 에이전트에게 공개한 동작 하나입니다. 보통 버튼이 이미 부르는 핸들러입니다.",
+      }),
+    },
+    {
+      name: "surface",
+      desc: l.trans({
+        en: "Everything the agent can do and read on the current screen: the mounted tools and keys.",
+        ko: "지금 화면에서 에이전트가 하고 읽을 수 있는 것 전부, 즉 마운트된 툴과 키입니다.",
+      }),
+    },
+    {
+      name: "turn",
+      desc: l.trans({
+        en: "One model answer, together with every tool call it made on the way.",
+        ko: "모델의 응답 한 번과, 그 사이에 한 툴 호출 전부입니다.",
+      }),
+    },
+    {
+      name: "transcript",
+      desc: l.trans({
+        en: "The conversation so far. It is sent to the model again on every turn.",
+        ko: "지금까지의 대화입니다. 매 턴마다 모델에 다시 전송됩니다.",
+      }),
+    },
+    {
+      name: "approval card",
+      desc: l.trans({
+        en: "A card that holds a call until the user approves it.",
+        ko: "사용자가 승인할 때까지 호출을 붙잡아 두는 카드입니다.",
+      }),
+    },
+    {
+      name: "relay",
+      desc: l.trans({
+        en: "The server endpoint runAgentTurn. It passes the transcript to the LLM and never runs a tool.",
+        ko: "서버 엔드포인트 runAgentTurn입니다. 대화를 LLM에 전달할 뿐 툴은 실행하지 않습니다.",
+      }),
+    },
+    {
+      name: "zone",
+      desc: l.trans({
+        en: "A section wrapped in Agent.Zone, with a conversation of its own.",
+        ko: "Agent.Zone으로 감싼 구획입니다. 자기만의 대화를 가집니다.",
+      }),
+    },
+  ];
+
+  const runtimeRows = [
+    {
+      name: "Screen",
+      desc: l.trans({
+        en: "Mounted st.use / st.sel / st.ref keys, hook tools, and Agent.Guide text.",
+        ko: "마운트된 st.use / st.sel / st.ref 키, 훅 툴, Agent.Guide 문구.",
+      }),
+    },
+    {
+      name: "Agent.Chat",
+      desc: l.trans({
+        en: "The loop, the approval card, and the six slash commands its / menu lists.",
+        ko: "대화 루프, 승인 카드, 그리고 / 메뉴에 오르는 슬래시 커맨드 여섯 개.",
+      }),
+    },
+    {
+      name: "runAgentTurn",
+      desc: l.trans({
+        en: "A stateless HTTP relay. It spends the LLM key and never runs a tool.",
+        ko: "무상태 HTTP 릴레이입니다. LLM 키만 쓰고 툴은 실행하지 않습니다.",
+      }),
+    },
+    {
+      name: "LlmAdaptor.chat",
+      desc: l.trans({
+        en: "The whole transcript in, one assistant answer out. OpenaiLlm is the default.",
+        ko: "전체 대화가 들어가고 어시스턴트 응답 하나가 나옵니다. 기본값은 OpenaiLlm입니다.",
+      }),
+    },
+  ];
+
+  const chatOptionRows = [
+    {
+      name: "persist",
+      desc: l.trans({
+        en: 'Off by default. Keeps the transcript in sessionStorage; { storage: "local" } outlives the tab.',
+        ko: '기본값은 꺼짐입니다. 대화를 sessionStorage에 보존하고, { storage: "local" }이면 탭을 닫아도 남습니다.',
+      }),
+    },
+    {
+      name: "streaming",
+      desc: l.trans({
+        en: "Text appears as it is generated. The same endpoint answers text/event-stream; no app code.",
+        ko: "텍스트가 생성되는 대로 나타납니다. 같은 엔드포인트가 text/event-stream도 답하므로 앱 코드는 없습니다.",
+      }),
+    },
+    {
+      name: "instructions",
+      desc: l.trans({
+        en: "App-wide framing. Route-scoped guidance layers on through a mounted Agent.Guide.",
+        ko: "앱 전역 지침입니다. 라우트 범위 지침은 마운트된 Agent.Guide가 그 위에 겹칩니다.",
+      }),
+    },
+    {
+      name: "attach",
+      desc: l.trans({
+        en: "Handles files that need a parser, like a PDF's text, or uploads the file and answers a url.",
+        ko: "PDF 본문처럼 파서가 필요한 파일을 처리하거나, 업로드한 뒤 url로 답합니다.",
+      }),
+    },
+    {
+      name: "voice",
+      desc: l.trans({
+        en: "A press-to-talk microphone, and spoken replies to questions asked by voice.",
+        ko: "눌러서 말하는 마이크와, 음성으로 물은 질문에 대한 음성 응답입니다.",
+      }),
+    },
+  ];
+
+  const attachNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>Images and text files attach on their own.</strong> <code>attach</code> is only for files that need a
+          parser or an upload.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>이미지와 텍스트 파일은 알아서 첨부됩니다.</strong> <code>attach</code>는 파서나 업로드가 필요한
+          파일에만 씁니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Nothing is stored.</strong> The bytes ride one turn's request; after a reload the transcript keeps
+          only the file name.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>저장하지 않습니다.</strong> 바이트는 한 턴의 요청에만 실리고, 새로고침한 대화에는 파일 이름만
+          남습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Limits are per message:</strong> 4 MB per file, 8 MB and five files per message, and the same file
+          twice is refused by name. A provider refuses the sum, and a request that cannot be sent leaves the user
+          emptying the composer.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>상한은 메시지 단위입니다.</strong> 파일당 4MB, 메시지당 8MB와 5개이고, 같은 파일을 두 번 넣으면 이름을
+          밝혀 거절합니다. 프로바이더가 거절하는 것은 합계이고, 보낼 수 없는 요청은 사용자가 작성창을 비워야만 빠져나올
+          수 있기 때문입니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Limits count what attach produced,</strong> so a url costs nothing. <code>attachLimits</code> raises
+          them for a provider that carries more.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>상한은 attach가 만든 결과로 잽니다.</strong> 그래서 url은 비용이 없고, 더 큰 요청을 받는
+          프로바이더라면 <code>attachLimits</code>로 올립니다.
+        </>
+      ),
+    }),
+  ];
+
+  const voiceNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>Speak, then correct.</strong> What the user said lands in the composer, where it can be fixed before
+          sending.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>말하고, 고치고.</strong> 말한 내용은 작성창에 들어가므로 보내기 전에 고칠 수 있습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Spoken replies only for spoken questions.</strong> The reply is read one sentence at a time, and a
+          typed question never turns the speakers on.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>음성으로 물었을 때만 읽어 줍니다.</strong> 응답은 문장 단위로 읽고, 타이핑한 질문이 스피커를 켜는 일은
+          없습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>The engine is useSpeech</strong> from <code>@libs/util/webkit</code>: the browser's own recognition on
+          the web, and Capacitor plugins in a WebView, which has neither.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>엔진은 useSpeech입니다.</strong> <code>@libs/util/webkit</code>에 있고, 웹에서는 브라우저 내장 인식을,
+          둘 다 없는 WebView에서는 Capacitor 플러그인을 씁니다.
+        </>
+      ),
+    }),
+  ];
+
+  const surfaceBasics = [
+    l.trans({
+      en: (
+        <>
+          <strong>st.tool publishes one action</strong> and returns the callable you wire to <code>onClick</code>.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>st.tool은 동작 하나를 공개하고,</strong> <code>onClick</code>에 연결할 callable을 돌려줍니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>st.use, st.sel and st.ref make one store key readable</strong> while the component reading it is
+          mounted.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>st.use, st.sel, st.ref는 스토어 키 하나를 읽을 수 있게 합니다.</strong> 그 키를 읽는 컴포넌트가
+          마운트된 동안만입니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Unmount, and both withdraw</strong> on the next turn.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>언마운트되면 둘 다</strong> 다음 턴부터 사라집니다.
+        </>
+      ),
+    }),
+  ];
+
+  const declareCards = [
+    {
+      title: "st.tool(name).desc(…).arg(…).opt(…).exec(fn)",
+      notes: [
+        l.trans({
+          en: "The only way an action reaches an agent. It returns the callable to wire to onClick.",
+          ko: "동작이 에이전트에게 닿는 유일한 길입니다. onClick에 연결할 callable을 돌려줍니다.",
+        }),
+        l.trans({
+          en: "desc is required and comes first. arg is what the caller must pass; opt is what it may, and an omitted opt arrives as null.",
+          ko: "desc는 필수이고 맨 앞에 옵니다. arg는 반드시 넘길 인자, opt는 생략할 수 있는 인자이며 생략된 opt는 null로 들어옵니다.",
+        }),
+        l.trans({
+          en: "Both take a scalar, an enum, or one array level of either ([String], [TaskStatus]), so a list never has to be taught as a string format.",
+          ko: "둘 다 스칼라, enum, 그리고 그 배열 한 겹([String], [TaskStatus])까지 받습니다. 목록을 문자열 포맷으로 가르칠 일이 없습니다.",
+        }),
+        l.trans({
+          en: 'A third argument narrows the values at render time: .arg("branch", String, { oneOf: branchCodes }) is enumOf for values known only once the component has its data.',
+          ko: '세 번째 인자는 렌더 시점에 값을 좁힙니다. .arg("branch", String, { oneOf: branchCodes })는 컴포넌트가 데이터를 받은 뒤에야 아는 값을 위한 enumOf입니다.',
+        }),
+      ],
+    },
+    {
+      title: "st.tool(name, { confirm, settle })",
+      notes: [
+        l.trans({
+          en: "confirm holds the call on the approval card: true for every call, or a function of the arguments for the ones that deserve it.",
+          ko: "confirm은 호출을 승인 카드에 세웁니다. true면 항상, 인자를 받는 함수면 그럴 만한 호출에만 세웁니다.",
+        }),
+        l.trans({
+          en: "A remove* name confirms by default, reading destructiveness off the name as MCP hints do. Write { confirm: false } to opt out.",
+          ko: "remove*로 시작하는 이름은 MCP 힌트처럼 이름에서 파괴성을 읽어 기본으로 승인을 받습니다. 빼려면 { confirm: false }를 적습니다.",
+        }),
+        l.trans({
+          en: "settle: false marks a read of what is already there, so the turn reports without waiting for the DOM. The default waits, since a write may still be landing.",
+          ko: "settle: false는 이미 있는 것을 읽는 호출이라는 뜻이라 DOM을 기다리지 않고 보고합니다. 기본값은 기다립니다. 쓰기가 아직 착지 중일 수 있기 때문입니다.",
+        }),
+      ],
+    },
+    {
+      title: 'st.tool(canRefund && "refundOrder")',
+      notes: [
+        l.trans({
+          en: "A falsy name declares the tool without publishing it. The callable still handles a person's click; nothing reaches the agent.",
+          ko: "falsy한 이름은 툴을 선언하되 공개하지 않습니다. callable은 사람의 클릭을 그대로 처리하고, 에이전트에게는 아무것도 가지 않습니다.",
+        }),
+        l.trans({
+          en: "Every chain ends in a hook, so a conditional surface withholds the name instead of skipping the declaration.",
+          ko: "모든 체인은 훅으로 끝나므로, 조건부 표면은 선언을 건너뛰지 않고 이름을 비웁니다.",
+        }),
+        l.trans({
+          en: "The name follows the render: a control that appears later publishes, and one that goes away stops.",
+          ko: "이름은 렌더를 따라갑니다. 나중에 나타난 컨트롤은 공개되고, 사라진 컨트롤은 공개를 멈춥니다.",
+        }),
+      ],
+    },
+    {
+      title: "st.expose(name, Type).desc(…).value(v) · st.useState(name, Type).desc(…).init(v)",
+      notes: [
+        l.trans({
+          en: "Derived values and local state, each ending in one hook. .value() takes the value the component holds, or a thunk when a ref the children fill builds it; .init() is useState and returns the same pair.",
+          ko: "파생 값과 로컬 상태이며, 각각 훅 하나로 끝납니다. .value()는 컴포넌트가 쥔 값을 받고(자식이 채우는 ref로 만든 값이면 thunk), .init()은 useState라 같은 쌍을 돌려줍니다.",
+        }),
+        l.trans({
+          en: "The declared type checks what you hand over and masks how it reads: a model class strips its hidden, secret and visual fields; Any passes untouched.",
+          ko: "선언한 타입이 넘기는 값을 검사하고 읽히는 모양을 정합니다. 모델 클래스는 hidden, secret, visual 필드를 벗겨내고, Any는 그대로 통과합니다.",
+        }),
+        l.trans({
+          en: "Read-only unless set: true, which publishes a set<Name> tool of the same type. { report: false } keeps a key that changes every second out of change reports.",
+          ko: "set: true가 없으면 읽기 전용이고, set: true는 같은 타입의 set<Name> 툴을 공개합니다. { report: false }는 초마다 바뀌는 키를 변경 보고에서 뺍니다.",
+        }),
+      ],
+    },
+    {
+      title: "agentAttrs(handler, key)",
+      notes: [
+        l.trans({
+          en: "The data-akan-* attributes for a handler passed by reference, and {} for an inline arrow: a closure says nothing about what it does, and a guessed mark is worse than none.",
+          ko: "레퍼런스로 넘긴 핸들러의 data-akan-* 속성이고, 인라인 화살표에는 {}입니다. 클로저는 무엇을 하는지 말해 주지 않고, 추측한 표식은 없느니만 못합니다.",
+        }),
+        l.trans({
+          en: "Every akanjs/ui control already spreads it, so an app writes it only on a control of its own.",
+          ko: "akanjs/ui의 모든 컨트롤이 이미 넣어 두므로, 앱은 직접 만든 컨트롤에만 적습니다.",
+        }),
+        l.trans({
+          en: "key says which of several same-named controls this is, in the call argument's own words. Without it the pointer cannot tell a tab's menus apart, so it draws nothing.",
+          ko: "key는 같은 이름의 컨트롤 중 어느 것인지를 호출 인자와 같은 말로 알려 줍니다. 없으면 포인터가 탭 메뉴들을 구별하지 못해 아무것도 그리지 않습니다.",
+        }),
+      ],
+    },
+    {
+      title: "st.use.x({ agent: false })",
+      notes: [
+        l.trans({
+          en: "Subscribes without joining the surface. There is no store-level switch; a store class says nothing about agents.",
+          ko: "구독하되 표면에는 넣지 않습니다. 스토어 단위 스위치는 없습니다. 스토어 클래스는 에이전트에 대해 아무것도 말하지 않습니다.",
+        }),
+      ],
+    },
+  ];
+
+  const builtinRows = [
+    {
+      name: "navigate",
+      desc: l.trans({
+        en: "Opens an internal path through the same router Link uses.",
+        ko: "Link와 같은 라우터로 내부 경로를 엽니다.",
+      }),
+    },
+    {
+      name: "goBack",
+      desc: l.trans({
+        en: "Returns to the previous page in this session's history.",
+        ko: "이 세션 히스토리의 이전 페이지로 돌아갑니다.",
+      }),
+    },
+    {
+      name: "readScreen(section?, images?)",
+      desc: l.trans({
+        en: "Reads the rendered screen as compact text.",
+        ko: "렌더된 화면을 압축한 텍스트로 읽습니다.",
+      }),
+    },
+    {
+      name: "readState(key)",
+      desc: l.trans({
+        en: "Reads one store key, masked by its model.",
+        ko: "스토어 키 하나를 모델로 마스킹해 읽습니다.",
+      }),
+    },
+    {
+      name: "highlight(target)",
+      desc: l.trans({
+        en: "Scrolls one thing into view and flashes it, to show the user where it is.",
+        ko: "대상을 화면에 스크롤해 깜빡이며, 사용자에게 위치를 직접 보여 줍니다.",
+      }),
+    },
+    {
+      name: "askUser(question, choices?)",
+      desc: l.trans({
+        en: "Hands a decision back to the user on a question card.",
+        ko: "질문 카드로 결정을 사용자에게 되돌립니다.",
+      }),
+    },
+  ];
+
+  const builtinNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>goBack is global like navigate.</strong> History is not a control a page owns; a page that draws no
+          back link is not one you may not leave.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>goBack은 navigate처럼 전역입니다.</strong> 히스토리는 페이지가 가진 컨트롤이 아니고, 뒤로가기 링크를
+          그리지 않은 페이지라고 떠날 수 없는 것은 아닙니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>readScreen keeps a long screen reachable.</strong> Headings carry their anchor, and a truncated read
+          names the sections below the cut; pass one of those names, or a heading's text, as <code>section</code>.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>readScreen은 긴 화면도 닿게 합니다.</strong> 제목에는 앵커가 붙고, 잘린 읽기는 잘린 아래쪽 섹션 이름을
+          알려 줍니다. 그 이름이나 제목 텍스트를 <code>section</code>으로 넘기면 됩니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Images are named, addresses are opt-in.</strong> Every image is named with or without an alt;{" "}
+          <code>images: true</code> adds each address, off by default because a gallery is one long URL per thumbnail.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>이미지는 이름만, 주소는 선택입니다.</strong> alt가 없어도 이미지 자리는 남고,{" "}
+          <code>images: true</code>를 주면 주소까지 붙습니다. 갤러리 하나가 썸네일마다 긴 URL이 되므로 기본값은
+          꺼짐입니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>highlight takes many kinds of target:</strong> a tool name, a state key, a scope path, an anchor or a
+          heading's text. It flashes once the scroll lands, and nothing hidden ever resolves.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>highlight의 대상은 여러 가지입니다.</strong> 툴 이름, 상태 키, 스코프 경로, 앵커, 제목 텍스트를
+          받습니다. 스크롤이 멈추면 깜빡이고, 숨겨진 것은 절대 잡히지 않습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>askUser waits for an answer.</strong> The turn parks on the card until the user picks an option or
+          writes one; dismissing it is an error the agent reads, never a silent empty answer.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>askUser는 답을 기다립니다.</strong> 사용자가 보기를 고르거나 직접 쓸 때까지 턴이 카드에서 멈춥니다.
+          건너뛰면 조용한 빈 답이 아니라 에이전트가 읽는 오류가 됩니다.
+        </>
+      ),
+    }),
+  ];
+
+  const readNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>Per key, not per store.</strong> A key the screen does not read stays unreadable, even while a sibling
+          key of the same store is live.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>스토어가 아니라 키 단위입니다.</strong> 같은 스토어의 다른 키가 살아 있어도, 화면이 읽지 않는 키는
+          읽히지 않습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Masked by the model.</strong> Every read is masked by the model the key declares, so hidden and secret
+          fields never cross.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>모델로 마스킹됩니다.</strong> 모든 읽기는 키가 선언한 모델로 마스킹되므로 hidden, secret 필드는
+          넘어가지 않습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Opt-out, not opt-in.</strong> A subscribed key joins the surface unless the read says{" "}
+          <code>{"{ agent: false }"}</code>. Base-store plumbing does: routing, the caller's credential and the UI
+          operation. To share a base key, write a plain read, as ThemeToggle does for <code>theme</code>.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>옵트인이 아니라 옵트아웃입니다.</strong> 구독한 키는 <code>{"{ agent: false }"}</code>로 막지 않는 한
+          표면에 오릅니다. 라우팅, 호출자의 자격증명, UI operation 같은 base 스토어 배관은 막혀 있습니다. base 키를
+          읽히고 싶다면 ThemeToggle이 <code>theme</code>에 하듯 평범하게 읽으면 됩니다.
+        </>
+      ),
+    }),
+  ];
+
+  const resultNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>20,000 characters per result.</strong> Past that the JSON is clipped mid-structure, and a note tells
+          the model what happened.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>결과 하나는 20,000자까지입니다.</strong> 넘으면 JSON이 구조 중간에서 잘리고, 무슨 일이 있었는지 알려
+          주는 note가 붙습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>A result rides every later turn.</strong> Compaction cannot save it: it summarizes what is above the
+          cut, and a result arrives below it.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>결과는 이후 모든 턴에 실립니다.</strong> 압축도 구하지 못합니다. 압축은 자른 지점 위를 요약하는데
+          결과는 그 아래에 도착하기 때문입니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Fix bulky fields once, at the model.</strong> <code>field.visual</code> keeps a field stored,
+          searchable, formable and rendered, and strips it from every agent read and MCP result. It is cost, not
+          secrecy; nothing is refused over one.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>덩치 큰 필드는 모델에서 한 번에 처리합니다.</strong> <code>field.visual</code>은 저장, 검색, 폼, 화면
+          렌더는 그대로 두고 모든 에이전트 읽기와 MCP 결과에서만 벗겨냅니다. 비밀이 아니라 비용의 문제라, 그 때문에
+          거절되는 것은 없습니다.
+        </>
+      ),
+    }),
+  ];
+
+  const turnCards = [
+    {
+      title: l.trans({ en: "It waits for the screen", ko: "화면을 기다립니다" }),
+      desc: l.trans({
+        en: "router.push returns while the payload is still in flight, so navigate, and every tool not declared a read, waits for the DOM to hold still before reporting. Reading built-ins are declared, so looking around costs nothing.",
+        ko: "router.push는 페이로드가 오는 중에 반환되므로, navigate와 읽기로 선언되지 않은 모든 툴은 DOM이 멈출 때까지 기다렸다 보고합니다. 읽기 빌트인은 선언돼 있어 둘러보기엔 비용이 없습니다.",
+      }),
+    },
+    {
+      title: l.trans({ en: "Calls travel in a batch", ko: "호출은 묶여서 갑니다" }),
+      desc: l.trans({
+        en: "Every call the model makes in a turn runs in order and comes back as one tool message: one round trip. Chained one per turn, each call would cost a round trip and a resend of the transcript.",
+        ko: "모델이 한 턴에 만든 호출은 순서대로 실행되어 tool 메시지 하나로 돌아옵니다. 왕복 한 번입니다. 턴마다 하나씩 이으면 호출마다 왕복 한 번과 대화 전체 재전송이 듭니다.",
+      }),
+    },
+    {
+      title: l.trans({ en: "The turn cap asks", ko: "턴 상한은 묻습니다" }),
+      desc: l.trans({
+        en: "At maxTurns the agent asks whether to keep going. Whatever the user types instead rides as their own turn.",
+        ko: "maxTurns에 닿으면 에이전트가 계속할지 묻습니다. 사용자가 대신 입력한 말은 그 사용자의 턴으로 들어갑니다.",
+      }),
+    },
+  ];
+
+  const longWorkNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>Await, don't poll.</strong> The session awaits the tool's own promise, so an <code>.exec</code> that
+          awaits the store action finishing the job simply makes the turn that long, and the change report that follows
+          carries the result. No second call.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>폴링하지 말고 await하세요.</strong> 세션은 툴의 promise를 기다립니다. 작업을 끝내는 스토어 액션을
+          await하는 <code>.exec</code>은 턴을 그만큼 늘릴 뿐이고, 뒤따르는 변경 보고가 결과를 실어 옵니다. 두 번째
+          호출이 필요 없습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Returning early is expensive.</strong> The agent asks again and again, one round trip per look, and
+          burns the whole <code>maxTurns</code> budget in seconds on a job measured in minutes. Say so in the desc.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>일찍 반환하면 비쌉니다.</strong> 에이전트가 한 번 볼 때마다 왕복하며 계속 되묻고, 분 단위 작업에서{" "}
+          <code>maxTurns</code> 예산을 몇 초 만에 태웁니다. desc에 그 사실을 적으세요.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Work a tool cannot await</strong> (started in an earlier turn, or by a person's click) gets a waiting
+          tool of your own beside the control that starts it. A general built-in wait was removed: with no idea what any
+          key means, it got spent on whatever key looked promising.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>툴이 기다릴 수 없는 작업</strong>(이전 턴이나 사람의 클릭으로 시작된 작업)은 그 작업을 시작하는 컨트롤
+          옆에 기다리는 툴을 직접 선언합니다. 범용 대기 빌트인은 제거했습니다. 어떤 키가 무슨 뜻인지 모르니 그럴듯해
+          보이는 키에 아무렇게나 쓰였습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Stop reaches a running tool.</strong> Every call races its abort signal, which a tool reads from{" "}
+          <code>AgentAbort.current</code> (the same module slot as <code>AgentProgress</code>). Honouring it is
+          optional; it buys the tool's own cleanup. Import both from <code>akanjs/store</code>, never{" "}
+          <code>use-agentic</code>.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>Stop은 실행 중인 툴에도 닿습니다.</strong> 모든 호출은 abort 시그널과 경주하고, 툴은 그 시그널을{" "}
+          <code>AgentAbort.current</code>(<code>AgentProgress</code>와 같은 모듈 슬롯)에서 읽습니다. 존중하는 것은
+          선택이며, 얻는 것은 툴 자신의 정리입니다. 둘 다 <code>use-agentic</code>이 아니라 <code>akanjs/store</code>
+          에서 가져옵니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>A stopped turn answers its unrun calls.</strong> Every provider refuses an assistant message whose
+          tool_calls have no results, on that turn and every later one, so otherwise nothing could be sent again.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>중지된 턴은 실행하지 못한 호출에 답을 채웁니다.</strong> 모든 프로바이더는 결과 없는 tool_calls가 있는
+          assistant 메시지를 그 턴과 이후 모든 턴에서 거절하므로, 그러지 않으면 더는 아무것도 보낼 수 없습니다.
+        </>
+      ),
+    }),
+  ];
+
+  const commandRows = [
+    { name: "/new (/clear)", desc: l.trans({ en: "Start a new conversation.", ko: "새 대화를 시작합니다." }) },
+    { name: "/retry", desc: l.trans({ en: "Send the last message again.", ko: "마지막 메시지를 다시 보냅니다." }) },
+    {
+      name: "/compact",
+      desc: l.trans({ en: "Summarize the conversation so far.", ko: "지금까지의 대화를 요약합니다." }),
+    },
+    { name: "/copy", desc: l.trans({ en: "Copy this conversation.", ko: "이 대화를 복사합니다." }) },
+    { name: "/help", desc: l.trans({ en: "Show what you can do here.", ko: "여기서 할 수 있는 것을 보여 줍니다." }) },
+    { name: "/tools", desc: l.trans({ en: "List this screen's tools.", ko: "이 화면의 툴 목록을 보여 줍니다." }) },
+  ];
+
+  const commandNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>The six are the whole menu.</strong> An app cannot add one. A screen a model should read is published
+          with <code>page().prompt()</code> and reaches MCP clients as a prompt instead.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>메뉴는 이 여섯 개가 전부입니다.</strong> 앱이 추가할 수 없습니다. 모델이 읽어야 할 화면은{" "}
+          <code>page().prompt()</code>로 공개하며, MCP 클라이언트에 prompt로 전달됩니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>/new and /copy work mid-turn,</strong> ahead of the question card, so /new ends the turn it clears
+          instead of being sent into it as text.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>/new와 /copy는 턴 중에도 동작합니다.</strong> 질문 카드보다 앞서므로, /new는 답변 텍스트로 들어가지
+          않고 비우려는 턴을 끝냅니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Output stays local.</strong> A command's output shows in the transcript but is never sent: the
+          transcript is the model's history, and it would read that text as something it said.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>출력은 로컬에 남습니다.</strong> 커맨드의 출력은 대화창에 보이지만 전송되지 않습니다. 대화가 곧 모델의
+          히스토리라, 보내면 모델이 자기가 한 말로 받아들입니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>/copy is the only export.</strong> The relay keeps nothing, so copying is the one way a wrong answer
+          reaches whoever could fix it.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>/copy가 유일한 내보내기입니다.</strong> 릴레이는 아무것도 보관하지 않으므로, 잘못된 답이 고칠 수 있는
+          사람에게 닿는 길은 복사뿐입니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Keys.</strong> ↑ and ↓ walk through what was sent, seeded from the transcript so a persisted chat
+          keeps them. With the / menu open, Enter picks a row, Tab completes its name, and Escape closes the menu, then
+          the panel.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>키.</strong> ↑와 ↓로 보낸 메시지를 오갑니다. 대화 기록에서 채우므로 persist된 대화에서도 남습니다. /
+          메뉴가 열려 있으면 Enter는 줄을 고르고, Tab은 이름을 완성하며, Escape는 메뉴를 닫고 한 번 더 누르면 패널을
+          닫습니다.
+        </>
+      ),
+    }),
+  ];
+
+  const compactNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>Why it exists.</strong> The loop runs in the browser and the relay holds no session, so nothing else
+          keeps the chat inside the model's window. Uncompacted, it grows until the provider refuses the whole request.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>왜 필요한가.</strong> 루프는 브라우저에서 돌고 릴레이는 세션이 없으므로, 대화를 모델의 컨텍스트 창
+          안에 붙잡아 두는 것이 달리 없습니다. 압축하지 않으면 프로바이더가 요청 전체를 거절할 때까지 커집니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>When.</strong> Past <code>compact.at</code> estimated tokens, the history above the last{" "}
+          <code>keep</code> messages becomes one summary, before the turn that would overflow. A provider answers an
+          over-long request with a refusal, not a shorter answer.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>언제.</strong> 추정 토큰이 <code>compact.at</code>을 넘으면, 넘칠 턴이 나가기 전에 마지막{" "}
+          <code>keep</code>개 위의 히스토리가 요약 하나로 바뀝니다. 프로바이더는 너무 긴 요청에 짧은 답이 아니라 거절로
+          답합니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Where it cuts.</strong> Always at a user message, so the kept part never opens with a tool result
+          whose call was summarized away.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>어디서 자르나.</strong> 언제나 user 메시지에서 자릅니다. 그래서 남는 쪽이 호출은 요약돼 사라지고
+          결과만 남은 tool 메시지로 시작하지 않습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>How it summarizes.</strong> The summarizing turn carries no tools and no screen, and reads a bounded
+          digest rather than the transcript, which is the one thing known not to fit.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>어떻게 요약하나.</strong> 요약 턴은 툴도 화면도 싣지 않고, 대화 자체가 아니라 길이가 제한된 요약본을
+          읽습니다. 대화는 이미 들어가지 않는다고 알려진 바로 그것이니까요.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Tuning.</strong> <code>{"compact={{ at, keep }}"}</code> on Agent.Chat sets it per provider,{" "}
+          <code>{"{ at: 0 }"}</code> turns it off, and <code>/compact</code> runs it on demand keeping nothing.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>조절.</strong> Agent.Chat의 <code>{"compact={{ at, keep }}"}</code>로 프로바이더에 맞추고,{" "}
+          <code>{"{ at: 0 }"}</code>으로 끄며, <code>/compact</code>로 언제든 남기는 것 없이 실행합니다.
+        </>
+      ),
+    }),
+  ];
+
+  const zoneNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>A view, not a wall.</strong> Everything mounted inside (subscriptions, hook tools, guides) belongs to
+          the zone's conversation and still to the root agent.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>벽이 아니라 뷰입니다.</strong> 안에 마운트된 모든 것(구독, 훅 툴, 가이드)은 zone의 대화에 속하면서
+          root 에이전트에게도 그대로 보입니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>It reads its own container.</strong> A zone's <code>readScreen</code> stops at the zone's edge.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>자기 컨테이너만 읽습니다.</strong> zone의 <code>readScreen</code>은 zone 경계에서 멈춥니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>An inner chat binds itself.</strong> An Agent.Chat mounted inside joins the zone's session
+          automatically.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>안쪽 채팅은 알아서 묶입니다.</strong> 안에 마운트한 Agent.Chat은 자동으로 그 zone의 세션에
+          바인딩됩니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Guides cascade like layouts.</strong> A zone reads its ancestors' guidance plus its own, never a
+          sibling's.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>가이드는 레이아웃처럼 내려옵니다.</strong> zone은 조상과 자신의 지침을 읽고, 형제 zone의 것은 읽지
+          않습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>The root loses nothing.</strong> The root chat outside the zones keeps seeing the whole screen.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>root는 잃는 것이 없습니다.</strong> zone 밖의 root 채팅은 화면 전체를 계속 봅니다.
+        </>
+      ),
+    }),
+  ];
+
+  const skipNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>A marker stays behind.</strong> A region deleted outright reads as absent: asked about the footer, the
+          agent would say the page has none. The marker's name is a section, so naming it reads the region after all.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>이름 붙은 표시가 남습니다.</strong> 통째로 지우면 없는 영역으로 읽혀, 푸터를 물으면 에이전트가 이
+          페이지엔 푸터가 없다고 답합니다. 표시의 이름이 곧 section이라, 이름을 넘기면 결국 읽을 수 있습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>It hides text, not behaviour.</strong> Tools and state keys are declarations, not markup: an st.tool
+          inside is published as before, and highlight still reaches it. It is <code>field.visual</code> one layer up,
+          cost rather than secrecy.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>감추는 것은 텍스트이지 동작이 아닙니다.</strong> 툴과 상태 키는 마크업이 아니라 선언이라, 안에서
+          선언한 st.tool은 그대로 공개되고 highlight도 닿습니다. 한 층 위의 <code>field.visual</code>이고, 비밀이 아니라
+          비용의 문제입니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Reach for it second.</strong> Agent.Zone and <code>{"readScreen({ section })"}</code> narrow a read to
+          one container, which beats blocklisting five regions. A footer is last in the document and already past the
+          cut on a long page; the regions worth marking sit above the content.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>두 번째로 꺼낼 도구입니다.</strong> Agent.Zone과 <code>{"readScreen({ section })"}</code>으로 컨테이너
+          하나만 읽는 편이 영역 다섯 개를 빼는 것보다 낫습니다. 푸터는 문서 맨 끝이라 긴 페이지에서는 이미 잘린 뒤에
+          있으니, 표시할 만한 영역은 본문 위쪽에 있는 것들입니다.
+        </>
+      ),
+    }),
+  ];
+
+  const pointerNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>One pointer per turn, not per call.</strong> Calls arrive seconds apart with the model's writing in
+          between, so a per-call pointer kept vanishing and coming back.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>호출이 아니라 턴마다 포인터 하나.</strong> 호출 사이에는 모델이 글을 쓰는 몇 초가 끼어 있어서,
+          호출마다 사는 포인터는 계속 사라졌다 나타났습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Press, step aside, wait.</strong> It appears at the first control it presses, drifts clear and waits
+          as a spinner, then fades when the turn ends. A spinner left on the button would cover the change it caused.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>누르고, 비켜서고, 기다립니다.</strong> 처음 누르는 컨트롤에서 나타나 살짝 비켜선 자리에서 스피너로
+          기다리다가 턴이 끝나면 사라집니다. 버튼 위에 남은 스피너는 자기가 일으킨 변화를 가리기 때문입니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>No control, no pointer.</strong> An agent that only answered a question was never on the screen.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>컨트롤이 없으면 포인터도 없습니다.</strong> 질문에 답만 한 에이전트는 화면에 있었던 적이 없습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Scrolling shows a direction.</strong> While the page scrolls to the next control, the pointer holds
+          still with a chevron pointing the way the view travels, so it reads as the one scrolling, not as a pointer
+          that came loose.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>스크롤할 때는 방향을 보여 줍니다.</strong> 다음 컨트롤로 스크롤하는 동안 포인터는 제자리에서 화면이
+          가는 방향의 셰브론을 답니다. 그래야 화면에서 떨어져 나온 포인터가 아니라 스크롤하는 주체로 읽힙니다.
+        </>
+      ),
+    }),
+  ];
+
+  const refuseNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>Several controls share the name</strong> and the call's argument does not say which. A tab's menus
+          share one tool, so each menu carries its key and the pointer picks the one switched to.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>같은 이름의 컨트롤이 여럿인데</strong> 호출 인자가 어느 것인지 말하지 않을 때. 탭 메뉴들은 툴 하나를
+          공유하므로 각 메뉴가 자기 키를 달고, 포인터는 실제로 전환된 메뉴를 고릅니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>An approval or a guard turned the call back.</strong>
+        </>
+      ),
+      ko: (
+        <>
+          <strong>승인이나 가드가 호출을 되돌렸을 때.</strong>
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>The control is not really visible:</strong> under a modal's backdrop, in a drawer that slid away, or
+          faded to nothing.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>컨트롤이 실제로 보이지 않을 때.</strong> 모달 뒤, 밀려난 서랍 안, 투명해진 것이 그렇습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>The tab is in the background.</strong>
+        </>
+      ),
+      ko: (
+        <>
+          <strong>탭이 백그라운드에 있을 때.</strong>
+        </>
+      ),
+    }),
+  ];
+
+  const linkNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>No element, no drawing.</strong> A call that reaches no control on screen draws nothing, navigate
+          mostly included: a bar across the top of the page read as page chrome, not as the agent acting.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>요소가 없으면 그리지 않습니다.</strong> 화면의 컨트롤에 닿지 않는 호출은 아무것도 그리지 않고,
+          navigate도 대체로 그렇습니다. 페이지 상단에 걸었던 바는 에이전트의 동작이 아니라 페이지의 일부처럼 읽혔습니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>A visible link is pressed.</strong> When exactly one visible link goes where the navigation is going,
+          the pointer clicks it before the route moves. It is the only call the runtime waits for, capped at 600ms: a
+          click drawn on a replaced tree is no click.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>보이는 링크는 누릅니다.</strong> 목적지로 가는 보이는 링크가 정확히 하나면, 라우팅 전에 포인터가
+          그것을 누릅니다. 런타임이 기다려 주는 유일한 호출이며 상한은 600ms입니다. 라우터가 갈아치운 트리 위의 클릭은
+          클릭이 아니니까요.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Links decide the drawing, not the permission.</strong> The agent may go anywhere the user could type.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>링크는 그릴지를 정할 뿐, 허용을 정하지 않습니다.</strong> 에이전트는 사용자가 주소창에 칠 수 있는
+          곳이면 어디든 갑니다.
+        </>
+      ),
+    }),
+  ];
+
+  const adaptorRows = [
+    {
+      name: "OpenaiLlm",
+      desc: l.trans({
+        en: "The default. Speaks chat-completions to any host: OpenAI, DeepSeek, Groq, OpenRouter, Ollama.",
+        ko: "기본값입니다. host가 가리키는 곳에 chat-completions로 말합니다. OpenAI, DeepSeek, Groq, OpenRouter, Ollama.",
+      }),
+    },
+    {
+      name: "AnthropicLlm",
+      desc: l.trans({
+        en: "Speaks the Messages API, and reads a PDF as well as a picture.",
+        ko: "Messages API로 말하고, 사진뿐 아니라 PDF도 읽습니다.",
+      }),
+    },
+  ];
+
+  const llmNotes = [
+    l.trans({
+      en: (
+        <>
+          <strong>model is required.</strong> A default would age into a 404, and would decide for the app whether it
+          can see images.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>model은 필수입니다.</strong> 기본값을 두면 언젠가 404가 되고, 이미지를 볼 수 있는지를 앱 대신 정해
+          버립니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>accepts overrides what the model reads.</strong> An adaptor answers for an API, and one API serves
+          models that differ.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>accepts는 모델이 읽는 것을 덮어씁니다.</strong> 어댑터는 API 하나를 대변하고, 한 API가 서로 다른
+          모델을 섬기기 때문입니다.
+        </>
+      ),
+    }),
+    l.trans({
+      en: (
+        <>
+          <strong>Extra fields ride along.</strong> setLlm keeps whatever else it is handed, so your own adaptor reads
+          its fields with <code>{"use<MyLlmOption>()"}</code>.
+        </>
+      ),
+      ko: (
+        <>
+          <strong>추가 필드도 함께 실립니다.</strong> setLlm은 건네받은 나머지 필드도 보관하므로, 직접 쓴 어댑터는{" "}
+          <code>{"use<MyLlmOption>()"}</code>로 자기 설정을 읽습니다.
+        </>
+      ),
+    }),
+  ];
+
+  const bulletList = "my-4 list-disc space-y-2 pl-5";
+
   return (
     <Scroll>
       <Scroll.Slide id="agent-overview" title={l.trans({ en: "In-Page Agent", ko: "인페이지 에이전트" })}>
@@ -13,84 +1202,71 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Every Akan app can host a chat agent that reads the rendered screen and drives it — the assistant on this page is one. What it may do is what a component declared, and what it may read is what a component subscribed. A store class publishes nothing on its own: an agent presses the controls the screen already offers the user, and never a lever the screen does not have.",
-              ko: "모든 Akan 앱은 렌더된 화면을 읽고 조작하는 채팅 에이전트를 품을 수 있습니다. 지금 이 페이지의 어시스턴트가 바로 그것입니다. 에이전트가 할 수 있는 일은 컴포넌트가 선언한 것이고, 읽을 수 있는 것은 컴포넌트가 구독한 것입니다. 스토어 클래스만으로는 아무것도 발행되지 않습니다. 에이전트는 화면이 이미 사용자에게 주는 컨트롤을 누를 뿐, 화면에 없는 레버는 당기지 않습니다.",
+              en: "Every Akan app can host a chat agent that reads the screen and works it for the user; the assistant on this page is one. It can only press what the screen already offers, so it never gets a lever the user does not have.",
+              ko: "모든 Akan 앱에는 화면을 읽고 사용자 대신 조작하는 채팅 에이전트를 둘 수 있습니다. 지금 이 페이지의 어시스턴트가 바로 그것입니다. 에이전트는 화면이 이미 내어 준 컨트롤만 누를 수 있으므로, 사용자에게 없는 레버를 갖는 일은 없습니다.",
             })}
           </div>
-          <div className="space-y-1">
+          <div>
+            {l.trans({
+              en: "What it may do is what a component declared, and what it may read is what a component subscribed. A store class alone publishes nothing.",
+              ko: "할 수 있는 일은 컴포넌트가 선언한 것, 읽을 수 있는 것은 컴포넌트가 구독한 것입니다. 스토어 클래스만으로는 아무것도 공개되지 않습니다.",
+            })}
+          </div>
+          <div className={cardGridRecipe({ cols: "mdTwo" }, "my-4")}>
             {[
               {
                 title: l.trans({ en: "One mount", ko: "한 줄 마운트" }),
                 desc: l.trans({
-                  en: "<Agent.Chat /> in a layout is the whole integration — launcher, transcript, approval card, and a streaming loop.",
-                  ko: "레이아웃의 <Agent.Chat /> 한 줄이 통합의 전부입니다. 런처, 대화창, 승인 카드, 스트리밍 루프까지.",
+                  en: "<Agent.Chat /> in a layout is the whole integration: launcher, transcript, approval card and a streaming loop.",
+                  ko: "레이아웃의 <Agent.Chat /> 한 줄이 통합의 전부입니다. 런처, 대화창, 승인 카드, 스트리밍 루프까지 들어 있습니다.",
                 }),
               },
               {
                 title: l.trans({ en: "Tools run in the browser", ko: "툴은 브라우저에서 실행" }),
                 desc: l.trans({
-                  en: "The server is a stateless relay that never executes a tool. Every action runs in the caller's own session, gated by guards and the approval card.",
-                  ko: "서버는 툴을 절대 실행하지 않는 무상태 릴레이입니다. 모든 액션은 호출자 자신의 세션에서, 가드와 승인 카드를 거쳐 실행됩니다.",
+                  en: "The server is a stateless relay that never runs a tool. Every action runs in the user's own session, behind guards and the approval card.",
+                  ko: "서버는 툴을 실행하지 않는 무상태 릴레이입니다. 모든 동작은 사용자 자신의 세션에서, 가드와 승인 카드를 거쳐 실행됩니다.",
                 }),
               },
               {
-                title: l.trans({ en: "Framework built-in", ko: "프레임워크 내장" }),
+                title: l.trans({ en: "Built into the framework", ko: "프레임워크 내장" }),
                 desc: l.trans({
-                  en: "The relay endpoint, two LLM adaptors, and the chat UI all ship with akanjs — no extra library to mount.",
-                  ko: "릴레이 엔드포인트, LLM 어댑터 두 개, 채팅 UI가 모두 akanjs에 내장돼 있어 추가로 마운트할 라이브러리가 없습니다.",
+                  en: "The relay endpoint, two LLM adaptors and the chat UI all ship with akanjs. There is no extra library to mount.",
+                  ko: "릴레이 엔드포인트, LLM 어댑터 두 개, 채팅 UI가 모두 akanjs에 들어 있습니다. 따로 붙일 라이브러리가 없습니다.",
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-bold text-foreground">{title}: </span>
-                <span className="text-foreground/70 text-sm">{desc}</span>
+              <div key={title} className={panelRecipe({ radius: "lg", padding: "sm" })}>
+                <div className="mb-1 font-semibold text-primary">{title}</div>
+                <div className="text-foreground/70 text-sm">{desc}</div>
               </div>
             ))}
           </div>
-          <div className={panelRecipe({ radius: "2xl", padding: "lg" })}>
-            <div className="mb-4 font-bold text-foreground">{l.trans({ en: "Runtime Map", ko: "런타임 지도" })}</div>
-            <div className="space-y-1">
-              {[
-                {
-                  title: "Screen",
-                  desc: l.trans({
-                    en: "Mounted st.use / st.sel / st.ref keys, hook tools, and Agent.Guide text.",
-                    ko: "마운트된 st.use / st.sel / st.ref 키, 훅 툴, Agent.Guide 문구.",
-                  }),
-                },
-                {
-                  title: "Agent.Chat",
-                  desc: l.trans({
-                    en: "The loop, the approval card, and its own /new · /retry · /compact · /copy · /help · /tools — the only slash commands it lists.",
-                    ko: "대화 루프, 승인 카드, 자체 커맨드(/new · /retry · /compact · /copy · /help · /tools). 메뉴에 오르는 slash command는 이것이 전부입니다.",
-                  }),
-                },
-                {
-                  title: "runAgentTurn",
-                  desc: l.trans({
-                    en: "A stateless HTTP relay. It spends the LLM key and never runs a tool.",
-                    ko: "무상태 HTTP 릴레이입니다. LLM 키만 쓰고 툴은 실행하지 않습니다.",
-                  }),
-                },
-                {
-                  title: "LlmAdaptor.chat",
-                  desc: l.trans({
-                    en: "The whole transcript in, one assistant answer out. OpenaiLlm is the default and speaks the chat-completions dialect to whatever host is named; AnthropicLlm ships beside it for the Messages API.",
-                    ko: "전체 대화가 들어가고 어시스턴트 응답 하나가 나옵니다. 기본값은 OpenaiLlm이고, host가 가리키는 곳에 chat-completions 방언으로 말합니다. Messages API용 AnthropicLlm이 함께 들어 있습니다.",
-                  }),
-                },
-              ].map(({ title, desc }) => (
-                <div key={title} className="rounded-xl border border-border bg-muted px-4 py-2">
-                  <span className="font-mono font-semibold text-primary">{title}: </span>
-                  <span className="text-foreground/70 text-sm">{desc}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <Docs.Figure
+            title={l.trans({ en: "Tools run in the browser", ko: "툴은 브라우저에서 실행됩니다" })}
+            image="agent-runtime"
+            prompt={`
+              A browser window drawn large across the left two thirds of the frame, labelled "Browser" at its top.
+              Inside it on the left, a page sketch with a top bar, two short rows and two small buttons; a small mouse
+              pointer rests on one button, and that pointer and button are traced as the red accent, labelled "Tools
+              Run Here". Inside the browser on the right, a narrow chat panel holding three speech bubbles, labelled
+              "Agent.Chat". A two-headed arrow runs from the chat panel to a server outside the browser at the right,
+              labelled "Relay" with a smaller second line "never runs a tool". A two-headed arrow runs from the server
+              to a cloud at the far right, labelled "LLM".
+            `}
+            alt={l.trans({
+              en: "The chat and every tool run inside the user's browser, on the controls the page already shows. The server is only a relay that spends the LLM key and never runs a tool.",
+              ko: "채팅과 모든 툴은 사용자의 브라우저 안에서, 페이지가 이미 보여주는 컨트롤 위에서 실행됩니다. 서버는 LLM 키만 쓰는 릴레이일 뿐이며 툴을 실행하지 않습니다.",
+            })}
+          />
+          <Docs.SubSubTitle>{l.trans({ en: "Words used on this page", ko: "이 페이지에서 쓰는 말" })}</Docs.SubSubTitle>
+          <Docs.IntroTable type={l.trans({ en: "Term", ko: "용어" })} items={termRows} />
+          <Docs.SubSubTitle>{l.trans({ en: "Runtime map", ko: "런타임 지도" })}</Docs.SubSubTitle>
+          <Docs.IntroTable type={l.trans({ en: "Piece", ko: "구성 요소" })} items={runtimeRows} />
           <Docs.Alert type="info">
             {l.trans({
-              en: "External agents that call your domain over HTTP use the MCP server instead — a different catalogue, derived from signal guards.",
-              ko: "HTTP로 도메인을 호출하는 외부 agent는 MCP 서버를 씁니다. 다른 카탈로그이며, signal guard에서 파생됩니다.",
+              en: "External agents that call your domain over HTTP use the MCP server instead. It is a different catalogue, derived from signal guards.",
+              ko: "HTTP로 도메인을 호출하는 외부 에이전트는 대신 MCP 서버를 씁니다. signal 가드에서 만들어지는 별도의 카탈로그입니다.",
             })}{" "}
             <Link href="/cheatsheet/interface/mcp" className="text-primary">
               {l.trans({ en: "MCP Server", ko: "MCP 서버" })}
@@ -105,36 +1281,30 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Mount the chat once in a layout. The framework serves runAgentTurn on every app. option.setLlm gives it a key; AKAN_AGENT=false removes the whole surface.",
-              ko: "레이아웃에 채팅을 한 번 마운트하세요. 프레임워크가 모든 앱에 runAgentTurn을 기본 제공합니다. option.setLlm으로 키를 주고, AKAN_AGENT=false로 표면 전체를 내립니다.",
+              en: "Turning the agent on takes three steps: mount the chat, give it an LLM key, and name who may use it.",
+              ko: "에이전트를 켜는 데는 세 단계면 됩니다. 채팅을 마운트하고, LLM 키를 주고, 누가 쓸 수 있는지 정합니다.",
             })}
           </div>
-          <div>
-            {l.trans({
-              en: (
-                <span>
-                  This page is the surface a component declares. The panel itself — its controlled <code>open</code>{" "}
-                  pair, the twelve <code>_overrides.tsx</code> slots it is assembled from, card tools, the{" "}
-                  <code>@</code> menu, the queue and the transcript store — is on{" "}
-                  <Link href="/cheatsheet/interface/agent-chat" className="text-primary">
-                    Agent Chat
-                  </Link>
-                  .
-                </span>
-              ),
-              ko: (
-                <span>
-                  이 페이지는 컴포넌트가 선언하는 표면을 다룹니다. 패널 자체 — controlled <code>open</code> 쌍, 이것을
-                  조립하는 <code>_overrides.tsx</code> 슬롯 열두 개, card 툴, <code>@</code> 메뉴, 대기열, 대화 보관 —
-                  는{" "}
-                  <Link href="/cheatsheet/interface/agent-chat" className="text-primary">
-                    Agent Chat
-                  </Link>
-                  에 있습니다.
-                </span>
-              ),
-            })}
-          </div>
+          <ol className="my-4 list-decimal space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: "Mount <Agent.Chat /> once, in a layout. The runAgentTurn relay is already served on every app.",
+                ko: "레이아웃에 <Agent.Chat />을 한 번 마운트합니다. runAgentTurn 릴레이는 모든 앱에 이미 제공됩니다.",
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: "Give it a key with option.setLlm in lib/option.ts.",
+                ko: "lib/option.ts에서 option.setLlm으로 키를 줍니다.",
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: "Name a guard with option.setAgentAccess. Until you do, every call is refused.",
+                ko: "option.setAgentAccess로 가드를 지정합니다. 지정하기 전까지는 모든 호출이 거절됩니다.",
+              })}
+            </li>
+          </ol>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
@@ -151,61 +1321,68 @@ export const option = new AkanOption<ModulesOptions>()
         />
         <Docs.Alert type="warning">
           {l.trans({
-            en: "AgentRelayAccess refuses every call until a guard is registered — the same answer None gives. Without one the chat cannot spend the LLM key. A product with accounts names its own guard in the same option.ts, as it would on any other endpoint.",
-            ko: "AgentRelayAccess는 가드 등록 전까지 모든 호출을 None과 같이 거절합니다. 가드가 없으면 채팅이 LLM 키를 쓸 수 없습니다. 계정이 있는 제품은 다른 엔드포인트와 똑같이 같은 option.ts에서 자기 가드를 지정합니다.",
+            en: "AgentRelayAccess refuses every call until a guard is registered, the same answer None gives, so the chat cannot spend the LLM key. A product with accounts names its own guard in option.ts, as it would on any endpoint. AKAN_AGENT=false removes the whole surface.",
+            ko: "AgentRelayAccess는 가드가 등록되기 전까지 None과 똑같이 모든 호출을 거절하므로, 채팅이 LLM 키를 쓸 수 없습니다. 계정이 있는 제품은 다른 엔드포인트처럼 option.ts에서 자기 가드를 지정합니다. AKAN_AGENT=false는 표면 전체를 내립니다.",
           })}
         </Docs.Alert>
-        <div className="space-y-1">
-          {[
-            {
-              title: "persist",
-              desc: l.trans({
-                en: 'Keeps the transcript across reloads in sessionStorage. Pass { storage: "local" } to outlive the tab. Off by default.',
-                ko: '새로고침을 견디도록 대화를 sessionStorage에 보존합니다. { storage: "local" }이면 탭을 닫아도 유지됩니다. 기본값은 꺼짐입니다.',
-              }),
-            },
-            {
-              title: "streaming",
-              desc: l.trans({
-                en: "The same endpoint answers text/event-stream. Assistant text arrives as it is generated, with zero app code.",
-                ko: "같은 엔드포인트가 text/event-stream도 답합니다. 어시스턴트 텍스트가 생성되는 대로 도착하며 앱 코드는 필요 없습니다.",
-              }),
-            },
-            {
-              title: "instructions",
-              desc: l.trans({
-                en: "App-global framing on Agent.Chat. Route-scoped guidance layers on through mounted Agent.Guide.",
-                ko: "Agent.Chat의 앱 전역 프레이밍입니다. 라우트 범위 지침은 마운트된 Agent.Guide가 겹칩니다.",
-              }),
-            },
-            {
-              title: "attach",
-              desc: l.trans({
-                en: "The composer attaches images and text files on its own; attach is where an app reads what needs a parser, like a PDF's text, or uploads the file and answers a url. Nothing is stored — the bytes ride one turn's request, and a reloaded transcript keeps the name without the content. The ceilings are the message's rather than the file's — 4 MB per file, 8 MB and five files per message, and the same file twice refused by name — because what a provider refuses is the sum, and a request that cannot be sent is one the user has to empty the composer to escape. They are measured on what attach produced, so a url costs nothing, and attachLimits raises them for a provider that carries more.",
-                ko: "작성창은 이미지와 텍스트 파일을 스스로 첨부합니다. PDF 본문처럼 파서가 필요한 것, 또는 업로드하고 url로 답하는 것은 앱이 attach에서 합니다. 저장은 하지 않습니다 — 바이트는 한 턴의 요청에만 실리고, 새로고침된 대화는 내용 없이 이름만 남깁니다. 상한은 파일 하나가 아니라 메시지 단위입니다 — 파일당 4MB, 메시지당 8MB와 5개, 같은 파일은 이름을 밝히며 거절합니다. 프로바이더가 거절하는 것은 합계이고, 보낼 수 없는 요청에서 빠져나오려면 작성창을 비우는 수밖에 없기 때문입니다. 상한은 attach가 만들어낸 결과를 기준으로 재므로 url은 비용이 0이고, 더 큰 요청을 받는 프로바이더라면 attachLimits로 올립니다.",
-              }),
-            },
-            {
-              title: "voice",
-              desc: l.trans({
-                en: "A press-to-talk microphone whose transcript lands in the composer to be corrected, and a reply read aloud one sentence at a time — but only when the ask itself came in by voice, so a typed question never turns the speakers on. useSpeech from @libs/util/webkit is the engine: the browser's own recognition on the web, Capacitor plugins in a WebView, which has neither.",
-                ko: "눌러서 말하는 마이크입니다. 전사는 작성창에 들어가 고칠 수 있고, 응답은 문장 단위로 읽어줍니다. 단 음성으로 물었을 때만 읽으므로 타이핑한 질문이 스피커를 켜는 일은 없습니다. 엔진은 @libs/util/webkit의 useSpeech — 웹은 브라우저 내장 인식, WebView는 둘 다 없으므로 Capacitor 플러그인입니다.",
-              }),
-            },
-            {
-              title: "a client wrapper",
-              desc: l.trans({
-                en: "attach and voice carry functions, and a function cannot cross the RSC boundary — so a server layout cannot pass either. Mount the chat from a small client component in ui/ that calls the hook, the way apps/akan/ui/DocsAgentChat.tsx does.",
-                ko: "attach와 voice는 함수를 담고 있고 함수는 RSC 경계를 넘지 못합니다. 그래서 서버 레이아웃에서는 둘 다 넘길 수 없습니다. ui/에 훅을 호출하는 작은 클라이언트 컴포넌트를 두고 거기서 채팅을 마운트하세요 — apps/akan/ui/DocsAgentChat.tsx가 그 예입니다.",
-              }),
-            },
-          ].map(({ title, desc }) => (
-            <div key={title} className={panelRecipe({ padding: "row" })}>
-              <span className="font-mono font-semibold text-primary">{title}: </span>
-              <span className="text-foreground/70 text-sm">{desc}</span>
-            </div>
-          ))}
-        </div>
+        <Docs.Description>
+          <Docs.SubSubTitle>{l.trans({ en: "Agent.Chat options", ko: "Agent.Chat 옵션" })}</Docs.SubSubTitle>
+          <Docs.IntroTable type={l.trans({ en: "Option", ko: "옵션" })} items={chatOptionRows} />
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  The panel itself (its controlled <code>open</code> pair, the twelve <code>_overrides.tsx</code> slots,
+                  card tools, the <code>@</code> menu, the queue and the transcript store) is covered on{" "}
+                  <Link href="/cheatsheet/interface/agent-chat" className="text-primary">
+                    Agent Chat
+                  </Link>
+                  .
+                </span>
+              ),
+              ko: (
+                <span>
+                  패널 자체(controlled <code>open</code> 쌍, <code>_overrides.tsx</code> 슬롯 열두 개, card 툴,{" "}
+                  <code>@</code> 메뉴, 대기열, 대화 보관)는{" "}
+                  <Link href="/cheatsheet/interface/agent-chat" className="text-primary">
+                    Agent Chat
+                  </Link>
+                  에서 다룹니다.
+                </span>
+              ),
+            })}
+          </div>
+          <Docs.SubSubTitle>{l.trans({ en: "Attachments", ko: "첨부" })}</Docs.SubSubTitle>
+          <ul className={bulletList}>
+            {attachNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
+          <Docs.SubSubTitle>{l.trans({ en: "Voice", ko: "음성" })}</Docs.SubSubTitle>
+          <ul className={bulletList}>
+            {voiceNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
+          <Docs.Alert type="info">
+            {l.trans({
+              en: "attach and voice carry functions, and a function cannot cross the RSC boundary, so a server layout cannot pass them. Mount the chat from a small client component in ui/ instead:",
+              ko: "attach와 voice는 함수를 담고 있고, 함수는 RSC 경계를 넘지 못합니다. 그래서 서버 레이아웃에서는 넘길 수 없습니다. 대신 ui/에 작은 클라이언트 컴포넌트를 두고 거기서 채팅을 마운트하세요:",
+            })}
+          </Docs.Alert>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title="apps/akan/ui/DocsAgentChat.tsx"
+          code={`"use client";
+import { useSpeech } from "@libs/util/webkit";
+import { Agent } from "akanjs/ui";
+
+export const DocsAgentChat = () => {
+  const voice = useSpeech();
+  return <Agent.Chat persist voice={voice} />;
+};`}
+        />
       </Scroll.Slide>
       <Divider />
 
@@ -214,100 +1391,15 @@ export const option = new AkanOption<ModulesOptions>()
         <Docs.Description>
           <div>
             {l.trans({
-              en: "st.tool publishes one action and hands back the callable you wire to onClick, so the agent and the user press the same handler. st.use, st.sel, and st.ref make one store key readable while the component reading it is mounted. Unmount and both withdraw on the next turn.",
-              ko: "st.tool은 액션 하나를 발행하고 onClick에 연결할 callable을 돌려줍니다. 에이전트와 사용자가 같은 핸들러를 누르는 셈입니다. st.use·st.sel·st.ref는 그 키를 읽는 컴포넌트가 마운트된 동안 스토어 키 하나를 읽을 수 있게 합니다. 언마운트되면 다음 턴부터 둘 다 철회됩니다.",
+              en: "The agent's surface is exactly what the mounted components declare. Declare a tool beside the control that does the same thing, and the agent and the user press one handler.",
+              ko: "에이전트의 표면은 마운트된 컴포넌트가 선언한 것, 딱 그만큼입니다. 같은 일을 하는 컨트롤 바로 옆에 툴을 선언하면, 에이전트와 사용자가 같은 핸들러 하나를 누릅니다.",
             })}
           </div>
-          <div>
-            {l.trans({
-              en: "Six tools are on every screen whatever it declares. Five come from the store surface, so builtins narrows them; askUser is the session's own and stays whatever you pass:",
-              ko: "화면이 무엇을 선언하든 항상 실리는 툴이 여섯 있습니다. 그중 다섯은 store surface가 싣는 것이라 builtins로 줄일 수 있고, askUser는 session 자신의 것이라 builtins에 무엇을 넘기든 남습니다.",
-            })}
-          </div>
-          <div className="space-y-1">
-            {[
-              {
-                title: "navigate",
-                desc: l.trans({
-                  en: "Internal paths only, the same router Link rides.",
-                  ko: "내부 경로 전용입니다. Link가 타는 같은 라우터입니다.",
-                }),
-              },
-              {
-                title: "goBack",
-                desc: l.trans({
-                  en: "The previous page in this session's history. Global like navigate, because history is not a control a page owns — a page that draws no back link is not a page you may not leave.",
-                  ko: "이 세션 히스토리의 이전 페이지. navigate처럼 전역입니다 — 히스토리는 페이지가 소유한 컨트롤이 아니고, 뒤로가기 링크를 그리지 않은 페이지가 떠날 수 없는 페이지는 아니니까요.",
-                }),
-              },
-              {
-                title: "readScreen(section?, images?)",
-                desc: l.trans({
-                  en: "The rendered DOM as compact text. Headings carry their anchor and a truncated read names the sections below the cut, so a long screen stays reachable: pass one of those names — or a heading's own text — as section. Every image is named whether or not it has an alt; images: true appends each one's address, off by default because a gallery is one long URL per thumbnail.",
-                  ko: "렌더된 DOM을 압축 텍스트로. 제목에 앵커가 붙고, 잘린 읽기는 잘린 아래쪽 섹션 이름을 알려줍니다. 그래서 긴 화면도 닿을 수 있습니다 — 그 이름이나 제목 텍스트를 section으로 넘기면 됩니다. 이미지는 alt가 없어도 자리를 남기고, images: true를 주면 주소까지 붙습니다. 갤러리 하나가 썸네일 수만큼의 긴 URL이 되므로 기본값은 꺼짐입니다.",
-                }),
-              },
-              {
-                title: "readState(key)",
-                desc: l.trans({ en: "One masked store key.", ko: "마스킹된 스토어 키 하나." }),
-              },
-              {
-                title: "highlight(target)",
-                desc: l.trans({
-                  en: "Scrolls one thing into view and flashes it once the scroll lands, so the agent can show the user where a thing is instead of describing where it is. The target is a tool name, a state key, a scope path, an anchor, or a heading's text. Nothing hidden ever resolves.",
-                  ko: "대상을 화면으로 스크롤한 뒤, 스크롤이 멈추면 깜빡입니다. 어디 있는지 설명하는 대신 직접 가리킵니다. 대상은 툴 이름·상태 키·스코프 경로·앵커·제목 텍스트이고, 숨겨진 것은 절대 잡히지 않습니다.",
-                }),
-              },
-              {
-                title: "askUser(question, choices?)",
-                desc: l.trans({
-                  en: "Hands a decision back to the user. The turn parks on the question card until they pick an option or write their own answer; dismissing it is an error the agent reads, never a silent empty answer.",
-                  ko: "결정을 사용자에게 되돌립니다. 턴은 질문 카드에서 멈추고, 사용자가 보기를 고르거나 직접 답할 때까지 기다립니다. 건너뛰면 조용한 빈 답이 아니라 에이전트가 읽는 오류가 됩니다.",
-                }),
-              },
-            ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-mono font-semibold text-primary">{title}: </span>
-                <span className="text-foreground/70 text-sm">{desc}</span>
-              </div>
+          <ul className={bulletList}>
+            {surfaceBasics.map((note, idx) => (
+              <li key={idx}>{note}</li>
             ))}
-          </div>
-          <div>
-            {l.trans({
-              en: "A tool that changes the screen waits for the screen before it answers: router.push returns while the payload is still in flight, so navigate — and the session, after every tool that did not declare itself a read — waits for the DOM to hold still before reporting; the reading built-ins declare it, so a turn that only looks around pays nothing. One turn carries every call the model made in it: they run in order and come back as one tool message, so a batch costs one model round trip where the same calls chained one per turn cost a round trip and a resend of the whole transcript each. And the turn cap is a question rather than a dead end: at maxTurns the agent asks whether to keep going, and what the user types instead rides as their own turn.",
-              ko: "화면을 바꾸는 툴은 화면이 정착한 뒤에 답합니다. router.push는 페이로드가 아직 오는 중에 반환되므로, navigate는 (그리고 세션은 스스로 읽기라고 선언하지 않은 모든 툴 뒤에서) DOM이 멈출 때까지 기다린 다음 변경을 보고합니다. 읽기 빌트인은 그렇게 선언하므로, 둘러보기만 하는 턴은 아무 대가도 치르지 않습니다. 한 턴은 모델이 그 턴에 만든 호출을 전부 실어 나릅니다. 호출은 순서대로 실행되어 하나의 tool 메시지로 돌아오므로, 묶어 보낸 배치는 모델 왕복 한 번이고, 같은 호출을 턴당 하나씩 이어 붙이면 호출마다 왕복 한 번에 트랜스크립트 전체를 다시 올리는 값을 냅니다. 턴 상한도 막다른 길이 아니라 질문입니다 — maxTurns에 닿으면 계속할지 묻고, 사용자가 대신 입력한 말은 그 사용자의 턴으로 들어갑니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "Long work is awaited, not polled. The session awaits a tool's own promise, so a .exec that awaits the store action finishing the job simply makes the turn take that long — and the change report that follows carries whatever landed, so the model needs no second call to read it. A tool that returns early leaves the agent to ask again and again, one round trip per look, which burns the whole maxTurns budget in seconds on a job measured in minutes. Say so in the desc. For the job a tool cannot await — one started in an earlier turn, or by a person clicking the button — declare a waiting tool of your own beside the control that starts the work: a general built-in wait was tried and removed, because a tool reachable on every screen with no idea what any key means gets spent on whatever key looks promising, parking turns nobody asked to park. Stop reaches a tool that is still running: the session races every call against its abort signal, and the signal itself arrives through AgentAbort.current, the same module slot AgentProgress is. Honouring it is optional, since the race lands whatever the tool does; what it buys is the tool's own cleanup. Import both from akanjs/store — an app may not reach use-agentic directly. A stopped turn answers the calls it never ran: every provider dialect refuses an assistant message whose tool_calls have no results, on that turn and on every later one, so Stop landing between a call and its result would otherwise leave a transcript nothing can be sent from.",
-              ko: "긴 작업은 폴링이 아니라 await 합니다. 세션은 툴의 promise를 기다리므로, 작업을 끝내는 스토어 액션을 await 하는 .exec은 그냥 턴이 그만큼 걸리게 만듭니다. 그리고 뒤따르는 변경 보고가 그 사이 도착한 것을 실어 나르므로, 모델은 결과를 읽기 위해 두 번째 호출을 할 필요가 없습니다. 일찍 반환하는 툴은 에이전트에게 계속 되묻게 만들고, 한 번 볼 때마다 모델 왕복이 한 번이라, 분 단위 작업에서 maxTurns 예산을 몇 초 만에 태웁니다. 그 사실을 desc에 적으세요. 툴이 기다릴 수 없는 작업 — 이전 턴에서, 또는 사용자가 버튼을 눌러 시작된 작업 — 은 그 작업을 시작하는 컨트롤 옆에 기다리는 툴을 직접 선언하세요. 범용 대기 빌트인은 만들었다가 제거했습니다. 모든 화면에서 닿을 수 있으면서 어떤 키가 무슨 뜻인지는 모르는 툴은 그럴듯해 보이는 키에 아무렇게나 쓰이고, 아무도 부탁하지 않은 대기로 턴을 세워 둡니다. Stop은 아직 돌고 있는 툴에도 닿습니다. 세션이 모든 호출을 abort 시그널과 레이스시키고, 시그널 자체는 AgentProgress와 같은 모듈 슬롯인 AgentAbort.current로 옵니다. 레이스가 어떤 툴이든 멈춰 세우므로 시그널을 존중하는 것은 선택입니다. 존중해서 얻는 것은 툴 자신의 정리입니다. 둘 다 akanjs/store에서 가져오세요 — 앱은 use-agentic에 직접 닿을 수 없습니다. 중지된 턴은 실행하지 못한 호출에 대신 답을 채웁니다. 모든 프로바이더 방언은 결과 없는 tool_calls를 가진 assistant 메시지를 거절하며, 그 턴뿐 아니라 이후 모든 턴에서 거절합니다. 그래서 호출과 결과 사이에 Stop이 떨어지면 아무것도 보낼 수 없는 트랜스크립트가 남게 됩니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "The chat answers six commands of its own, and they are the whole / menu: /new (/clear), /retry, /compact, /copy, /help and /tools. An app writes none of them and cannot add one — there is no app-defined slash command in the in-page chat. A screen a model should read is published from its page instead, with page().prompt(), and reaches MCP clients as a prompt rather than this menu. /new and /copy work mid-turn and ahead of the question card, so /new ends the turn it is clearing instead of being answered into it as text. A command's output is a local message — rendered in the transcript, withheld from the wire, because the transcript is the model's history and text appended plainly would come back next turn as something the assistant believes it said. /copy exists because nothing else keeps the transcript: the relay is stateless, so an export is the one path a wrong answer has to whoever could fix it. And ↑ walks back through what was sent, ↓ forward — seeded from the transcript, so a persisted chat does not lose only what was just typed — while the / menu takes those keys whenever it is open: Enter picks the highlighted row, Tab completes its name, and Escape closes the menu and then the panel.",
-              ko: "채팅은 자체 커맨드 여섯 개를 가지며, / 메뉴는 그것이 전부입니다 — /new(/clear), /retry, /compact, /copy, /help, /tools. 앱은 이 중 아무것도 작성하지 않고 추가할 수도 없습니다. 인페이지 채팅에는 앱이 정의하는 slash command가 없습니다. 모델이 읽어야 할 화면은 대신 그 페이지에서 page().prompt()로 공개되며, 이 메뉴가 아니라 MCP 클라이언트에 prompt로 전달됩니다. /new와 /copy는 턴 중에도, 그리고 질문 카드보다 앞서 동작합니다. 그래서 /new는 질문에 대한 답변 텍스트로 삼켜지는 대신 비우려는 턴을 끝냅니다. 커맨드의 출력은 local 메시지입니다 — 트랜스크립트에는 렌더되고 와이어에는 실리지 않습니다. 트랜스크립트가 곧 모델의 히스토리라서, 그냥 붙이면 다음 턴에 모델이 자기가 한 말로 받아들입니다. /copy가 있는 이유는 트랜스크립트를 보관하는 곳이 달리 없기 때문입니다 — 릴레이는 stateless이므로, 잘못된 답이 고칠 수 있는 사람에게 닿는 유일한 경로가 내보내기입니다. 그리고 ↑는 보낸 것들을 거슬러 가고 ↓는 되돌아옵니다 — 트랜스크립트에서 시작되므로 persist된 대화가 방금 입력한 것만 잃는 일은 없습니다. / 메뉴가 열려 있는 동안에는 그 키들을 메뉴가 가져갑니다. Enter는 선택된 줄을 실행하고, Tab은 이름을 완성하며, Escape는 메뉴를 닫고 한 번 더 누르면 패널을 닫습니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "A long conversation summarizes itself, because nothing else keeps it inside the model's window: the loop runs in the browser and the relay holds no session, so an uncompacted chat grows until the provider refuses the whole request. Past compact.at estimated tokens the history above the last keep messages becomes one message standing in for it — before the turn that would have overflowed, since a provider answers an over-long request with a refusal rather than a shorter answer. The cut only ever lands on a user message, so the kept half never opens with a tool result whose call was summarized away. The summarizing turn carries no tools and no screen context, and is fed a bounded digest rather than the transcript itself, which is the one thing already known not to fit. compact={{ at, keep }} on Agent.Chat tunes it per provider, { at: 0 } turns it off, and /compact does the same on demand keeping nothing.",
-              ko: "긴 대화는 스스로를 요약합니다. 루프는 브라우저에서 돌고 릴레이는 세션을 갖지 않으므로, 대화를 모델의 컨텍스트 창 안에 붙잡아 두는 것이 달리 없습니다 — 압축하지 않으면 프로바이더가 요청 전체를 거절할 때까지 자랍니다. 추정 토큰이 compact.at을 넘으면 마지막 keep개 위의 히스토리가 그것을 대신하는 메시지 하나가 됩니다. 넘칠 턴이 나가기 전에 그렇게 합니다. 프로바이더는 너무 긴 요청에 짧은 답이 아니라 거절로 답하기 때문입니다. 자르는 지점은 언제나 user 메시지입니다. 그래서 남는 쪽이 호출은 요약돼 사라지고 결과만 남은 tool 메시지로 시작하는 일이 없습니다. 요약 턴은 툴도 화면 컨텍스트도 싣지 않고, 트랜스크립트 자체가 아니라 길이가 제한된 요약본을 받습니다. 트랜스크립트는 이미 들어가지 않는다고 알려진 바로 그것이니까요. Agent.Chat의 compact={{ at, keep }}로 프로바이더에 맞게 조절하고, { at: 0 }으로 끄고, /compact로 언제든 남기는 것 없이 같은 일을 시킵니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "Reading is per key, not per store: a key the screen does not read stays unreadable even while a sibling key of the same store is live, and every read is masked by the model that key declares. hidden and secret fields never cross the boundary. Readability is opt-out, not opt-in: a subscribed key joins the surface unless the read says otherwise, and base-store plumbing says otherwise — routing, the caller's credential and the UI operation are all subscribed with `{ agent: false }`. A component that wants an agent to read a base key writes a plain read, as ThemeToggle does for theme.",
-              ko: "읽기는 스토어 단위가 아니라 키 단위입니다. 같은 스토어의 형제 키가 live여도 화면이 읽지 않는 키는 읽히지 않고, 모든 읽기는 그 키가 선언한 모델로 마스킹됩니다. hidden·secret 필드는 경계를 넘지 않습니다. 읽기는 옵트인이 아니라 옵트아웃입니다. 구독한 키는 따로 막지 않는 한 표면에 올라가며, base 스토어의 plumbing은 그것을 막습니다 — 라우팅, 호출자의 자격증명, UI operation은 모두 `{ agent: false }`로 구독합니다. 에이전트가 읽어야 하는 base 키는 ThemeToggle의 theme처럼 그냥 평범하게 읽으면 됩니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "Return what answers the question, not the record. One tool result is capped at 20,000 characters — past that the JSON is clipped mid-structure and a note tells the model what happened — and once it is in the transcript it rides every later turn, which compaction cannot save because it summarizes what is above the cut and a result arrives below it. A field that is bulky and useless to a model is fixed once at the model rather than in every tool that touches it: field.visual keeps it stored, searchable, formable and rendered on the page, and strips it from every agent read and every MCP result. It is cost, not secrecy — nothing is refused over one.",
-              ko: "레코드가 아니라 질문의 답을 돌려주세요. 툴 결과 하나는 20,000자에서 잘리고 — 그 너머는 JSON이 구조 중간에서 끊기며, 무슨 일이 있었는지 알려주는 note가 붙습니다 — 한 번 대화에 들어가면 이후 모든 턴에 함께 실립니다. 압축도 이것은 구하지 못합니다. 압축은 자른 지점 위를 요약하는데 결과는 그 아래에 도착하기 때문입니다. 덩치가 크고 모델에게는 쓸모없는 필드는 그것을 만지는 모든 툴이 아니라 모델에서 한 번에 처리합니다. field.visual은 저장·검색·폼·페이지 렌더를 그대로 두고, 모든 에이전트 읽기와 모든 MCP 결과에서만 값을 벗겨냅니다. 비밀이 아니라 비용의 문제이고, 그것 때문에 거절되는 것은 없습니다.",
-            })}
-          </div>
+          </ul>
         </Docs.Description>
         <Code.Snippet
           className="w-full"
@@ -329,57 +1421,110 @@ st.expose("selectedWaypointId", ID)
 <Button onClick={publish}>{l("plan.publishPlan")}</Button>
 <Agent.Guide instructions="This screen edits the weekly flight plan. Focus a waypoint before editing it." />`}
         />
-        <div className="space-y-1">
-          {[
-            {
-              title: "st.tool(name).desc(…).arg(…).opt(…).exec(fn)",
-              desc: l.trans({
-                en: 'The only way an action reaches an agent. desc is required and comes first; arg is what the caller must pass and opt what it may — an opt the caller omits arrives null. Both take a scalar, an enum, or one array level of either — [String], [TaskStatus] — so a list never has to be taught as a string format, and a third argument narrows the value set at render time: .arg("branch", String, { oneOf: branchCodes }) is the runtime half of enumOf, for values only known once the component has its data. Returns the callable to wire to onClick.',
-                ko: '액션이 에이전트에게 닿는 유일한 경로입니다. desc는 필수이고 맨 앞에 옵니다. arg는 호출자가 반드시 넘겨야 하는 인자, opt는 생략할 수 있는 인자이며 생략된 opt는 null로 들어옵니다. 둘 다 스칼라·enum, 그리고 그 배열 한 겹까지 받습니다 — [String], [TaskStatus] — 그래서 목록을 문자열 포맷으로 가르칠 일이 없습니다. 세 번째 인자는 렌더 시점에 값 집합을 좁힙니다. .arg("branch", String, { oneOf: branchCodes })는 enumOf의 런타임 쪽 짝으로, 컴포넌트가 데이터를 받은 뒤에야 알 수 있는 값에 씁니다. onClick에 연결할 callable을 돌려줍니다.',
-              }),
-            },
-            {
-              title: "st.tool(name, { confirm, settle })",
-              desc: l.trans({
-                en: "confirm parks the call on the approval card before it runs — true always, or a function of the arguments for the calls that deserve it. A remove* name confirms by default, destructiveness read off the key the way MCP hints are, so declaring { confirm: false } is how one opts out. settle: false says the call is a read that returns what is already there, so the turn does not wait for the DOM to hold still before reporting; the default waits, because a write may still be landing when exec resolves.",
-                ko: "confirm은 호출을 실행 전에 승인 카드에 세웁니다. true로 항상, 또는 인자를 받는 함수로 그럴 만한 호출에만. remove* 이름은 기본으로 승인을 받습니다 — MCP 힌트가 그러듯 파괴성을 이름에서 읽습니다 — 그래서 빠지려면 { confirm: false }를 적습니다. settle: false는 이 호출이 이미 있는 것을 돌려주는 읽기라는 선언이라, 턴은 DOM이 멎기를 기다리지 않고 보고합니다. 기본값이 기다리는 쪽인 이유는 exec이 resolve된 뒤에도 쓰기가 아직 착지 중일 수 있기 때문입니다.",
-              }),
-            },
-            {
-              title: 'st.tool(canRefund && "refundOrder")',
-              desc: l.trans({
-                en: "A falsy name declares the tool without publishing it: the callable still drives the click a person makes, and nothing reaches the agent. Every chain ends in a hook, so a conditional surface withholds the name rather than skipping the declaration — and the name follows the render, so a control that appears later publishes and one that goes away stops. An argument nothing can describe withdraws the whole tool the same way, reported on the console rather than thrown, because a page must not lose its render over an agent-tooling mistake.",
-                ko: "falsy한 이름은 툴을 선언하되 발행하지는 않습니다. callable은 사람이 누르는 클릭을 그대로 처리하고, 에이전트에게는 아무것도 가지 않습니다. 모든 체인은 훅으로 끝나므로, 조건부 표면은 선언을 건너뛰는 대신 이름을 비웁니다. 이름은 렌더를 따라가므로 나중에 나타난 컨트롤은 발행되고 사라진 컨트롤은 발행을 멈춥니다. 설명할 수 없는 타입의 인자도 같은 방식으로 툴 전체를 거둬들이며, 던지지 않고 콘솔에 보고합니다. 에이전트 도구화의 실수 때문에 페이지가 렌더를 잃어서는 안 되기 때문입니다.",
-              }),
-            },
-            {
-              title: "st.expose(name, Type).desc(…).value(v) · st.useState(name, Type).desc(…).init(v)",
-              desc: l.trans({
-                en: "Derived values and local state. Each ends in its own one hook: .value() takes the value the component already holds — a thunk when it is assembled out of a ref the children fill in — and .init() is useState, returning the same pair. The declared type typechecks what you hand over and masks how it reads: a model class strips its own hidden, secret and visual fields; Any passes untouched. Read-only unless set: true, which publishes a set<Name> tool writing that same type. { report: false } keeps a key out of post-call diff reports, for a value that changes on its own every second.",
-                ko: "파생 값과 로컬 상태입니다. 각각 자기 훅 하나로 끝납니다. .value()는 컴포넌트가 이미 쥐고 있는 값을 받고 — 자식이 채우는 ref에서 조립되는 값이라면 thunk를 받습니다 — .init()은 useState 그 자체라 같은 쌍을 돌려줍니다. 선언한 타입이 넘기는 값을 typecheck하고 읽히는 형태를 결정합니다. 모델 클래스는 그 모델의 hidden·secret·visual을 벗겨내고, Any는 그대로 통과시킵니다. set: true 전에는 읽기 전용이며, set: true는 같은 타입을 쓰는 set<Name> 툴을 발행합니다. { report: false }는 그 키를 호출 후 변경 보고에서 빼냅니다. 초마다 저절로 바뀌는 값을 위한 것입니다.",
-              }),
-            },
-            {
-              title: "agentAttrs(handler, key)",
-              desc: l.trans({
-                en: "The data-akan-* attributes for a handler passed by reference, and {} for an inline arrow — a closure the caller wrote says nothing about what it does, and a guessed annotation is worse than none. Every akanjs/ui control already spreads it, so an app writes it only on a control of its own. key names which of several namesake controls this one is, in the same vocabulary the call's argument uses: a tab's menus share one tool, and without the key the page can say what the agent did but never where, so the pointer draws nothing rather than ringing the wrong row.",
-                ko: "레퍼런스로 넘긴 핸들러의 data-akan-* 속성이고, 인라인 화살표에는 {}입니다. 호출자가 그 자리에서 쓴 클로저는 자기가 무엇을 하는지 말해주지 않고, 추측한 표식은 표식이 없는 것보다 나쁩니다. akanjs/ui의 모든 컨트롤이 이미 펼쳐 넣으므로, 앱은 자기가 만든 컨트롤에만 적습니다. key는 같은 이름의 컨트롤 여럿 중 어느 것인지를, 호출 인자와 같은 어휘로 말합니다. 탭의 메뉴들은 툴 하나를 공유하므로, key가 없으면 페이지는 에이전트가 무엇을 했는지는 말해도 어디서 했는지는 말하지 못합니다. 그래서 포인터는 엉뚱한 행에 링을 거는 대신 아무것도 그리지 않습니다.",
-              }),
-            },
-            {
-              title: "st.use.x({ agent: false })",
-              desc: l.trans({
-                en: "Subscribes without joining the surface. There is no store-level exposure switch — a store class says nothing about agents.",
-                ko: "구독하되 표면에는 넣지 않습니다. 스토어 단위 노출 스위치는 없습니다. 스토어 클래스는 에이전트에 대해 아무것도 말하지 않습니다.",
-              }),
-            },
-          ].map(({ title, desc }) => (
-            <div key={title} className={panelRecipe({ padding: "row" })}>
-              <span className="font-mono font-semibold text-primary">{title}: </span>
-              <span className="text-foreground/70 text-sm">{desc}</span>
-            </div>
-          ))}
-        </div>
+        <Docs.Description>
+          <Docs.SubSubTitle>
+            {l.trans({ en: "Declaring tools and state", ko: "툴과 상태를 선언하는 API" })}
+          </Docs.SubSubTitle>
+          <div className="my-4 space-y-3">
+            {declareCards.map(({ title, notes }) => (
+              <div key={title} className={panelRecipe({ radius: "lg", padding: "sm" })}>
+                <div className="wrap-anywhere mb-2 font-mono font-semibold text-foreground text-sm">{title}</div>
+                <ul className="list-disc space-y-1 pl-5 text-foreground/70 text-sm">
+                  {notes.map((note, idx) => (
+                    <li key={idx}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+          <Docs.SubSubTitle>{l.trans({ en: "Six built-in tools", ko: "기본 툴 여섯 가지" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: "These are on every screen, whatever it declares. builtins narrows the first five; askUser belongs to the session and always stays.",
+              ko: "화면이 무엇을 선언하든 항상 실리는 툴입니다. 앞의 다섯은 builtins로 줄일 수 있고, askUser는 세션의 것이라 항상 남습니다.",
+            })}
+          </div>
+          <Docs.IntroTable type={l.trans({ en: "Tool", ko: "툴" })} items={builtinRows} />
+          <ul className={bulletList}>
+            {builtinNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
+
+          <Docs.SubSubTitle>
+            {l.trans({ en: "What the agent can read", ko: "에이전트가 읽을 수 있는 것" })}
+          </Docs.SubSubTitle>
+          <ul className={bulletList}>
+            {readNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
+
+          <Docs.SubSubTitle>
+            {l.trans({ en: "Return the answer, not the record", ko: "레코드가 아니라 답을 돌려주기" })}
+          </Docs.SubSubTitle>
+          <ul className={bulletList}>
+            {resultNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
+
+          <Docs.SubSubTitle>{l.trans({ en: "How a turn runs", ko: "턴이 도는 방식" })}</Docs.SubSubTitle>
+          <div className={cardGridRecipe({ cols: "mdTwo" }, "my-4")}>
+            {turnCards.map(({ title, desc }) => (
+              <div key={title} className={panelRecipe({ radius: "lg", padding: "sm" })}>
+                <div className="mb-1 font-semibold text-primary">{title}</div>
+                <div className="text-foreground/70 text-sm">{desc}</div>
+              </div>
+            ))}
+          </div>
+
+          <Docs.SubSubTitle>{l.trans({ en: "Long work and Stop", ko: "긴 작업과 중지" })}</Docs.SubSubTitle>
+          <ul className={bulletList}>
+            {longWorkNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
+
+          <Docs.SubSubTitle>{l.trans({ en: "Slash commands", ko: "슬래시 커맨드" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: "The chat answers six commands of its own. An app writes none of them.",
+              ko: "채팅은 자체 커맨드 여섯 개에 답합니다. 앱이 작성하는 것은 없습니다.",
+            })}
+          </div>
+          <Docs.IntroTable type={l.trans({ en: "Command", ko: "커맨드" })} items={commandRows} />
+          <ul className={bulletList}>
+            {commandNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
+
+          <Docs.SubSubTitle>
+            {l.trans({ en: "Long conversations summarize themselves", ko: "긴 대화는 스스로 요약합니다" })}
+          </Docs.SubSubTitle>
+          <Docs.Figure
+            title={l.trans({ en: "Compaction keeps the tail", ko: "압축은 끝부분을 남깁니다" })}
+            image="transcript-compaction"
+            prompt={`
+              Two tall narrow columns side by side with a wide gap between them, and one thick arrow pointing from the
+              left column to the right column. The left column is a stack of eight small speech bubbles; a dashed
+              horizontal line crosses it between the fifth and the sixth bubble, labelled "Cut" beside the line. The
+              right column has, at its top, one wide speech bubble traced as the red accent and labelled "Summary",
+              and under it three small speech bubbles; a bracket beside those three is labelled "Kept". Nothing else.
+            `}
+            alt={l.trans({
+              en: "Past the threshold, every message above the cut becomes one summary message, and the last few messages are kept as they were. The cut always lands on a user message.",
+              ko: "기준을 넘으면 자른 지점 위의 메시지가 모두 요약 메시지 하나로 바뀌고, 마지막 몇 개는 그대로 남습니다. 자르는 지점은 언제나 user 메시지입니다.",
+            })}
+          />
+          <ul className={bulletList}>
+            {compactNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
+        </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
@@ -388,10 +1533,27 @@ st.expose("selectedWaypointId", ID)
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Wrap a section in Agent.Zone and everything mounted inside — subscriptions, hook tools, guides — belongs to that zone's own conversation as well as to the root agent. Zones are views of the screen, never walls between its parts. A zone's readScreen reads only its own container, and an Agent.Chat mounted inside binds to the zone session automatically.",
-              ko: "구획을 Agent.Zone으로 감싸면 그 안에 마운트된 모든 것(구독, 훅 툴, 가이드)이 그 zone의 대화에 속하면서 root 에이전트에도 그대로 보입니다. zone은 화면의 뷰이지 벽이 아닙니다. zone의 readScreen은 자기 컨테이너만 읽고, 안에 마운트된 Agent.Chat은 자동으로 그 zone의 세션에 바인딩됩니다.",
+              en: "Agent.Zone gives one section of a screen its own conversation, so each part of a busy page can have a focused agent.",
+              ko: "Agent.Zone은 화면의 한 구획에 자기만의 대화를 줍니다. 복잡한 페이지의 각 부분이 집중된 에이전트를 하나씩 가질 수 있습니다.",
             })}
           </div>
+          <Docs.Figure
+            title={l.trans({ en: "Two zones, one root agent", ko: "zone 둘, root 에이전트 하나" })}
+            image="agent-zones"
+            prompt={`
+              One browser window filling most of the frame, and nothing at all drawn outside it — no people, devices,
+              clouds, servers or arrows. Inside it, two tall rounded rectangles side by side with a gap between them.
+              The left one is labelled "Comments Zone" and holds three short list rows and, at its bottom, a small chat
+              panel with two speech bubbles. The right one is labelled "Posts Zone" and holds a text editor sketch of
+              several lines and, at its bottom, a small chat panel with two speech bubbles. A thin dashed outline is
+              drawn around both zones together. In the browser's bottom right corner, a round chat button traced as
+              the red accent, labelled "Root Agent".
+            `}
+            alt={l.trans({
+              en: "Two zones on one screen, each with its own inline chat that reads only its own section, while the root agent's chat keeps seeing both.",
+              ko: "한 화면의 zone 두 개가 각자 자기 구획만 읽는 인라인 채팅을 갖고, root 에이전트의 채팅은 둘 다 계속 봅니다.",
+            })}
+          />
         </Docs.Description>
         <Code.Snippet
           className="w-full"
@@ -407,12 +1569,11 @@ st.expose("selectedWaypointId", ID)
 </Agent.Zone>`}
         />
         <Docs.Description>
-          <div>
-            {l.trans({
-              en: "Guides follow the layout cascade: a zone reads its ancestors' guidance plus its own, and never a sibling's. The root chat outside the zones keeps seeing the whole screen, so wrapping a section costs the root agent nothing.",
-              ko: "가이드는 레이아웃 캐스케이드를 따릅니다. zone은 조상의 지침과 자신의 지침을 읽고, 형제 zone의 것은 절대 읽지 않습니다. zone 밖의 root 채팅은 화면 전체를 계속 보므로, 구획을 감싸도 root 에이전트가 잃는 것은 없습니다.",
-            })}
-          </div>
+          <ul className={bulletList}>
+            {zoneNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -422,8 +1583,8 @@ st.expose("selectedWaypointId", ID)
         <Docs.Description>
           <div>
             {l.trans({
-              en: "readScreen reads the whole rendered screen, and a footer, a cookie banner, or a nav that repeats on every route costs the same tokens as the content — on that read and on every later turn, since the read stays in the transcript. Agent.Skip leaves a region out of the default read.",
-              ko: "readScreen은 렌더된 화면 전체를 읽고, 푸터·쿠키 배너·모든 라우트에 반복되는 내비게이션도 본문과 같은 토큰을 씁니다. 그 읽기에서 한 번, 그리고 이후 모든 턴에서 다시 — 읽은 결과가 트랜스크립트에 남기 때문입니다. Agent.Skip은 그 영역을 기본 읽기에서 빼냅니다.",
+              en: "Agent.Skip keeps a region such as a footer, a cookie banner or a repeated nav out of the default readScreen. Those regions cost as many tokens as real content, on the read and on every later turn, because the read stays in the transcript.",
+              ko: "Agent.Skip은 푸터, 쿠키 배너, 반복되는 내비게이션 같은 영역을 기본 readScreen에서 뺍니다. 그런 영역도 본문과 똑같이 토큰을 쓰고, 읽은 결과가 대화에 남으므로 이후 모든 턴에서 다시 씁니다.",
             })}
           </div>
         </Docs.Description>
@@ -441,24 +1602,11 @@ st.expose("selectedWaypointId", ID)
 // [skipped: site footer (#footer)]`}
         />
         <Docs.Description>
-          <div>
-            {l.trans({
-              en: "What stands in its place is a named marker, never nothing. A deleted region reads as an absent one — an agent asked about the footer would answer that the page has none. The name in the marker is a section, so naming it reads the region after all: the marker is what the default read leaves out, not a wall.",
-              ko: "그 자리에는 이름 붙은 표시가 남습니다. 아무것도 남기지 않으면 지워진 영역이 없는 영역으로 읽힙니다 — 푸터에 대해 물으면 에이전트는 이 페이지에 푸터가 없다고 답하게 됩니다. 표시의 이름은 그대로 section이므로, 이름을 넘기면 결국 읽을 수 있습니다. 표시는 기본 읽기가 빼놓은 것이지 벽이 아닙니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "It hides text, not behaviour. Tools and state keys are declarations rather than markup, so an st.tool declared inside is published exactly as before and highlight still reaches a control in there. This is field.visual one layer up: cost, not secrecy.",
-              ko: "감추는 것은 텍스트이지 동작이 아닙니다. 툴과 상태 키는 마크업이 아니라 선언이므로, 안에서 선언한 st.tool은 그대로 발행되고 highlight도 그 안의 컨트롤에 여전히 닿습니다. field.visual과 같은 이야기를 한 층 위에서 하는 것입니다 — 비밀이 아니라 비용입니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "Reach for it second. A read is scoped from the other side too: Agent.Zone and readScreen({ section }) narrow to one container, which beats blocklisting five regions on a screen that is mostly chrome. And a footer is last in the document, so on a page long enough to truncate it was already past the cut — the regions worth marking are the ones above the content.",
-              ko: "먼저 꺼낼 도구는 아닙니다. 읽기는 반대쪽에서도 좁힐 수 있습니다. Agent.Zone과 readScreen({ section })은 컨테이너 하나로 범위를 줄이고, 화면 대부분이 크롬인 경우엔 영역 다섯 개를 하나씩 빼는 것보다 그 편이 낫습니다. 그리고 푸터는 문서의 마지막이므로, 잘릴 만큼 긴 페이지에서는 이미 컷 뒤에 있었습니다 — 표시할 값이 있는 영역은 본문 위쪽에 있는 것들입니다.",
-            })}
-          </div>
+          <ul className={bulletList}>
+            {skipNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -468,36 +1616,64 @@ st.expose("selectedWaypointId", ID)
         <Docs.Description>
           <div>
             {l.trans({
-              en: "The transcript says what the agent did, and it is behind a panel that is closed as often as it is open. So the page says it too: the control a call was published from is ringed where it stands, scrolled to first when it is off screen, and a pointer travels to it and presses it. It costs an app nothing for the same reason data-akan-action does. The onChange={st.do.setTitleOnTask} reference that publishes the tool is what annotates the control, and the annotation is what makes it findable, so an inline arrow silently costs three things at once.",
-              ko: "대화창은 에이전트가 무엇을 했는지 말해 주지만, 그 패널은 열려 있는 만큼이나 닫혀 있습니다. 그래서 페이지도 같이 말합니다. 호출이 발행된 컨트롤에 그 자리에서 링이 걸리고, 화면 밖이면 먼저 스크롤하며, 포인터가 그리로 이동해 누릅니다. data-akan-action이 그렇듯 앱이 쓸 코드는 없습니다. 툴을 발행하는 onChange={st.do.setTitleOnTask} 레퍼런스가 컨트롤에 표식을 남기고, 그 표식이 컨트롤을 찾을 수 있게 만듭니다. 인라인 화살표 함수 하나가 세 가지를 한꺼번에 조용히 잃게 하는 이유입니다.",
+              en: "The chat panel is closed as often as it is open, so the page itself shows what the agent does. The control a call came from is ringed, scrolled into view if needed, and a pointer travels to it and presses it.",
+              ko: "채팅 패널은 열려 있는 만큼 닫혀 있으므로, 에이전트가 하는 일을 페이지가 직접 보여 줍니다. 호출이 나온 컨트롤에 링이 걸리고, 필요하면 화면으로 스크롤되며, 포인터가 그리로 가서 누릅니다.",
             })}
           </div>
           <div>
             {l.trans({
-              en: "The pointer's unit is the turn, not the call. A model's calls arrive with its own writing between them — seconds each — so a pointer that lived for the length of a call spent every turn vanishing and coming back. It stays for as long as the turn runs: it appears at the first control it presses, drifts clear of it and waits there as a spinner, and fades when the turn ends. Clearing the control is the whole of that gesture — a person clicks and takes the hand away, and a spinner left sitting on the button covers the very change it caused. A turn that drove no control draws no pointer at all, which is the honest answer: an agent that only answered a question was never on the screen. While a reveal scrolls the page to the next control, the pointer holds still the way a person's does, and carries a chevron pointing the way the view is travelling — stillness over a sliding page otherwise reads as a pointer that has come loose rather than as the one doing the scrolling.",
-              ko: "포인터의 단위는 호출이 아니라 턴입니다. 모델의 호출들 사이에는 모델이 글을 쓰는 시간이 몇 초씩 끼어 있어서, 호출 길이만큼만 사는 포인터는 턴마다 사라졌다 다시 나타나기를 반복했습니다. 이제는 턴이 도는 동안 머뭅니다. 처음 누르는 컨트롤에서 등장하고, 그 컨트롤을 살짝 벗어난 자리로 물러나 스피너로 기다리다가, 턴이 끝나면 사라집니다. 벗어나는 것이 그 동작의 핵심입니다. 사람은 누르고 나면 손을 치우고, 누른 버튼 위에 그대로 남은 스피너는 자기가 일으킨 변화를 가려 버리니까요. 아무 컨트롤도 몰지 않은 턴은 포인터를 아예 그리지 않습니다. 질문에 답만 한 에이전트는 애초에 화면에 있지 않았으니까요. 다음 컨트롤로 화면을 스크롤하는 동안 포인터는 사람의 포인터가 그렇듯 제자리를 지키되, 화면이 가는 방향으로 셰브론을 답니다. 그렇지 않으면 미끄러지는 페이지 위에 가만히 있는 포인터가 스크롤하는 주체가 아니라 화면에서 떨어져 나온 것처럼 읽힙니다.",
+              en: "An app writes nothing for this. Passing the handler by reference, as in onChange={st.do.setTitleOnTask}, is what publishes the tool and marks the control, so an inline arrow silently loses all three: the tool, the mark and the pointer.",
+              ko: "앱이 쓸 코드는 없습니다. onChange={st.do.setTitleOnTask}처럼 핸들러를 레퍼런스로 넘기는 것이 툴을 공개하고 컨트롤에 표식을 남기므로, 인라인 화살표 하나가 툴, 표식, 포인터 셋을 한꺼번에 조용히 잃게 합니다.",
             })}
           </div>
           <div>
             {l.trans({
-              en: "What it refuses to draw is the point. A name several rows answer to rings nothing unless the call's own argument names which one — a tab's menus share one tool, so each menu carries its key and the pointer picks the one that was switched to. A call an approval or a guard turned back is never drawn at all, a control the screen is not actually showing is not pointed at — under a modal's backdrop, inside a drawer that has slid off, faded to nothing — and a backgrounded tab draws nothing. A ring on the wrong element is worse than no ring: it is the screen telling the user something untrue about what just happened. Almost nothing is waited on either — the call starts the moment the effect is handed its event, because an animation that held a call would make the agent slower for a decoration.",
-              ko: "그리지 않기로 한 것들이 핵심입니다. 여러 컨트롤이 같은 이름을 가지면, 호출의 인자가 그중 어느 것인지 짚어 주지 않는 한 추측하느니 아무것도 그리지 않습니다. 탭의 메뉴들은 툴 하나를 공유하므로 각 메뉴가 자기 키를 달고 있고, 포인터는 실제로 전환된 그 메뉴를 고릅니다. 승인이나 가드가 되돌린 호출은 애초에 그려지지 않고, 화면이 실제로 보여 주고 있지 않은 컨트롤에는 포인터가 가지 않으며(모달 뒤, 밀려난 서랍 안, 투명해진 것), 백그라운드 탭에서는 아무 일도 하지 않습니다. 엉뚱한 요소에 걸린 링은 링이 없는 것보다 나쁩니다. 방금 무슨 일이 있었는지에 대해 화면이 사용자에게 거짓을 말하는 것이기 때문입니다. 거의 아무것도 기다리지 않습니다. 이벤트를 넘겨받는 순간 호출은 이미 시작돼 있습니다. 연출 때문에 에이전트가 느려지면 안 되니까요.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "It draws where the change landed and nowhere else. A call that reaches no control on screen draws nothing at all — navigate mostly included, since the router is not an element and a bar across the top of the page read as chrome the page had grown rather than as the agent doing something. But a destination the screen already offers as a link is an element, and that one is pressed: when exactly one visible link goes where the navigation is going, the pointer travels to it and clicks it before the route moves. That is the only call the runtime waits for, capped at 600ms, because a click drawn on a tree the router has already replaced is no click at all. Link presence decides what is drawn, never what is allowed — the agent may go anywhere the user could type.",
-              ko: "변화가 떨어진 자리에만 그리고 그 밖에는 그리지 않습니다. 화면의 어떤 컨트롤에도 닿지 않는 호출은 아무것도 그리지 않습니다. navigate도 대체로 그렇습니다. 라우터는 요소가 아니고, 페이지 상단에 걸었던 바는 에이전트가 무언가 하고 있다는 신호가 아니라 페이지가 늘린 크롬처럼 읽혔습니다. 다만 목적지를 화면이 이미 링크로 내어주고 있다면 그건 요소입니다. 그리로 가는 보이는 링크가 정확히 하나일 때, 포인터가 거기로 이동해 라우팅보다 먼저 누릅니다. 런타임이 기다려 주는 유일한 호출이고 상한은 600ms입니다. 라우터가 이미 갈아치운 트리에 그린 클릭은 클릭이 아니니까요. 링크의 유무는 무엇을 그릴지를 정할 뿐 무엇을 허용할지를 정하지 않습니다. 에이전트는 사용자가 주소창에 칠 수 있는 곳이면 어디든 갑니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "Below is the thing itself. Both buttons hand their st.tool callable straight to Button's onClick, which is the whole of what makes them findable — ask the agent to count up three times and reset, and watch where it presses.",
-              ko: "아래가 그 자체입니다. 두 버튼 모두 st.tool이 돌려준 callable을 Button의 onClick에 그대로 넘기며, 그것만으로 찾을 수 있는 컨트롤이 됩니다. 에이전트에게 세 번 올린 뒤 초기화해 달라고 하고 어디를 누르는지 보세요.",
+              en: "Try it below. Both buttons hand their st.tool callable straight to onClick. Ask the agent to count up three times and reset, and watch where it presses.",
+              ko: "아래에서 직접 해 보세요. 두 버튼 모두 st.tool의 callable을 onClick에 그대로 넘깁니다. 에이전트에게 세 번 올린 뒤 초기화해 달라고 하고 어디를 누르는지 보세요.",
             })}
           </div>
         </Docs.Description>
         <AgentVisualDemo />
+        <Docs.Description>
+          <Docs.SubSubTitle>
+            {l.trans({ en: "The pointer lives for a turn", ko: "포인터는 한 턴 동안 머뭅니다" })}
+          </Docs.SubSubTitle>
+          <ul className={bulletList}>
+            {pointerNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
+          <Docs.SubSubTitle>{l.trans({ en: "What it refuses to draw", ko: "그리지 않는 경우" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: "A ring on the wrong element is worse than none, because it tells the user something untrue. So nothing is drawn when:",
+              ko: "엉뚱한 요소에 걸린 링은 없느니만 못합니다. 방금 일어난 일에 대해 사용자에게 거짓을 말하기 때문입니다. 그래서 다음 경우에는 그리지 않습니다:",
+            })}
+          </div>
+          <ul className={bulletList}>
+            {refuseNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
+          <div>
+            {l.trans({
+              en: "Almost nothing waits for the animation: the call starts the moment the effect receives its event, so decoration never slows the agent.",
+              ko: "연출 때문에 기다리는 것은 거의 없습니다. 이벤트를 넘겨받는 순간 호출이 시작되므로, 연출이 에이전트를 느리게 하지 않습니다.",
+            })}
+          </div>
+          <Docs.SubSubTitle>{l.trans({ en: "Navigation and links", ko: "이동과 링크" })}</Docs.SubSubTitle>
+          <ul className={bulletList}>
+            {linkNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
+          <div>
+            {l.trans({
+              en: "To turn it off, visual={false} draws nothing, and visual={{ cursor: false }} keeps the ring but drops the pointer.",
+              ko: "끄려면 visual={false}로 아무것도 그리지 않거나, visual={{ cursor: false }}로 링은 남기고 포인터만 뺍니다.",
+            })}
+          </div>
+        </Docs.Description>
         <Code.Snippet
           className="w-full"
           title="apps/<app>/page/_layout.tsx"
@@ -513,8 +1689,27 @@ st.expose("selectedWaypointId", ID)
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Everything the model needs is declared in option.ts, never in the environment. setLlm fills apiKey, model, host, accepts and maxTokens for whichever adaptor holds LlmAdaptorRole, so the settings survive a provider swap — and it keeps whatever else it is handed, so an adaptor you wrote reads its own fields from the same place with use<MyLlmOption>(). Two adaptors ship, one per wire. OpenaiLlm is the default and speaks the chat-completions dialect to whatever host names: OpenAI, DeepSeek, Groq, OpenRouter, Ollama. AnthropicLlm is the Messages API and reads a PDF as well as a picture. Both require a model, since a default would age into a 404 and would decide the vision claim for the app. accepts overrides what the configured model reads, because an adaptor answers for an API and one API serves models that differ. With no apiKey the app still boots and the chat says no model is configured; a refusal the provider explained is thrown instead of swallowed, so the chat prints that reason in the user's language.",
-              ko: "모델에 필요한 설정은 환경변수가 아니라 option.ts에 선언합니다. setLlm은 LlmAdaptorRole을 차지한 어댑터에 apiKey·model·host·accepts·maxTokens를 채우므로, 프로바이더를 바꿔도 설정은 그대로입니다. 그리고 건네받은 나머지 필드도 그대로 실어 나르므로, 직접 쓴 어댑터는 use<MyLlmOption>()으로 자기 설정을 같은 자리에서 읽습니다. 어댑터는 와이어당 하나씩 둘이 들어 있습니다. 기본값 OpenaiLlm은 host가 가리키는 곳에 chat-completions 방언으로 말합니다. OpenAI, DeepSeek, Groq, OpenRouter, Ollama가 모두 여기에 해당합니다. AnthropicLlm은 Messages API이고 사진뿐 아니라 PDF도 읽습니다. 둘 다 model이 필수인데, 기본값을 두면 언젠가 404가 되고 비전 여부를 앱 대신 정해버리기 때문입니다. accepts는 설정한 모델이 무엇을 읽는지 덮어씁니다 — 어댑터는 API 하나를 대변하고, 한 API가 서로 다른 모델을 섬기기 때문입니다. apiKey가 없어도 앱은 기동하고, 채팅은 모델이 설정되지 않았다고 답합니다. 프로바이더가 이유를 밝힌 거절은 삼키지 않고 던지므로, 채팅이 그 이유를 사용자의 언어로 보여줍니다.",
+              en: "The model is configured in option.ts, never in the environment. setLlm fills apiKey, model, host, accepts and maxTokens for whichever adaptor holds LlmAdaptorRole, so the settings survive a provider swap.",
+              ko: "모델은 환경변수가 아니라 option.ts에서 설정합니다. setLlm은 LlmAdaptorRole을 차지한 어댑터에 apiKey, model, host, accepts, maxTokens를 채우므로, 프로바이더를 바꿔도 설정은 그대로입니다.",
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "Two adaptors ship, one per wire:",
+              ko: "어댑터는 와이어마다 하나씩, 두 개가 들어 있습니다:",
+            })}
+          </div>
+          <Docs.IntroTable type={l.trans({ en: "Adaptor", ko: "어댑터" })} items={adaptorRows} />
+          <ul className={bulletList}>
+            {llmNotes.map((note, idx) => (
+              <li key={idx}>{note}</li>
+            ))}
+          </ul>
+          <Docs.SubSubTitle>{l.trans({ en: "Writing your own adaptor", ko: "어댑터 직접 쓰기" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: "An adaptor implements one method, chat(request, onDelta?): the whole transcript goes in and one assistant answer comes out. Install it with applyAdaptor; as with applyMiddleware, the last writer wins.",
+              ko: "어댑터가 구현할 것은 chat(request, onDelta?) 하나입니다. 전체 대화가 들어가고 어시스턴트 응답 하나가 나옵니다. applyAdaptor로 끼우며, applyMiddleware처럼 마지막에 쓴 쪽이 이깁니다.",
             })}
           </div>
         </Docs.Description>
@@ -535,14 +1730,6 @@ export const option = new AkanOption<ModulesOptions>()
   chat(request: LlmTurnRequest, onDelta?: (delta: string) => void): Promise<LlmTurnAnswer | null>;
 }`}
         />
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: "An adaptor implements one method — chat(request, onDelta?). The whole transcript goes in, one assistant answer comes out. Rebind the role the way applyMiddleware rebinds middleware: last writer wins.",
-              ko: "어댑터가 구현할 것은 chat(request, onDelta?) 하나입니다. 전체 대화가 들어가고 어시스턴트 응답 하나가 나옵니다. 롤 다시 묶기는 applyMiddleware와 같습니다. 마지막에 쓴 쪽이 이깁니다.",
-            })}
-          </div>
-        </Docs.Description>
       </Scroll.Slide>
       <Divider />
 

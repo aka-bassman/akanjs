@@ -1,10 +1,5 @@
 {
-  "extends": "../../tsconfig.json",
+  "extends": "<%= workspaceRootPath %>/tsconfig.json",
   "files": [],
-  "include": ["**/*.ts", "**/*.tsx"],
-  "references": [
-    {
-      "path": "./tsconfig.spec.json"
-    }
-  ]
+  "include": ["**/*.ts", "**/*.tsx"]
 }

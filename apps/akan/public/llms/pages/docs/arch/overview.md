@@ -12,7 +12,6 @@
 - One App, Many Surfaces (#many-surfaces)
 - The Main Runtime Conversation (#runtime-conversation)
 - Architecture Areas (#architecture-areas)
-- How To Read The Architecture Docs (#reading-guide)
 
 ## Content
 
@@ -40,6 +39,8 @@ Akan is designed for products that rarely have only one screen. A store customer
 
 Surface map
 
+A store page, an admin console, a partner client, a mobile app and an edge device all reach one shared business service — signal, service and document — through fetch, st, Model and usePage.
+
 The point is not to force every client to look the same. The point is to let different clients reuse the same business truth while presenting the right workflow for each audience.
 
 The Main Runtime Conversation
@@ -48,67 +49,79 @@ Almost every Akan feature is one conversation between the interface and the busi
 
 One request, end to end
 
+User
+
+Screen
+
+Page and client
+
+components
+
+reads the SSR first view,
+
+then types, clicks, filters
+
+intent
+
+valid work only
+
+endpoint · slice · internal — guards and boundaries run here
+
+load and write
+
+rules · external APIs · DI · background · realtime
+
+documents
+
+schema · query · sort · methods · statics
+
+result
+
+typed response
+
+st state
+
+re-render
+
 SSR is what makes the first view appear early; client components take over for typing, clicking, filtering, chat, maps, camera, and local state. st holds the client state a response lands in, Model namespaces keep model usage typed, and usePage resolves i18n on both sides. Where that conversation actually executes — one process, a cloud cluster, an edge node, or a mobile package — is a runtime and infra decision, not a change to any of the code above.
 
 Architecture Areas
 
 The detailed architecture pages explain each area more deeply. This overview keeps the map small: each area owns a different kind of decision, and the product becomes clear when those decisions stay in the right place.
 
-Area
-
 UI Architecture
 
-First view, SSR, the rendering boundary, what earns a client component, and the akan quality ssr server-share floor.
+Design the first screen and decide what runs on the client.
 
 UI Composition
 
-Composing a screen from akanjs/ui: Load, Model, Field, the generated store and fetch helpers, and i18n.
+Build a list, a detail view, or a create and edit form.
 
 Business Service
 
-signal, service, document, request/response work, cron and background work, report generation, and realtime scenarios.
+Write server rules, APIs, queues, cron, and realtime work.
 
 Runtime And Infra
 
-local, cloud cluster, edge, master, traffic paths, database mode, and growth stages.
+Choose local, cloud, edge, database, and deployment shape.
 
 Mobile App Architecture
 
-CSR web inside Capacitor, multi-client basePath targets, local CSR testing, the page .config() stage, and Android/iOS packaging.
+Package the CSR client as an Android or iOS app.
 
 CSS And Styling
 
-Tailwind CSS, semantic design tokens, design system thinking, theme declaration, and font declaration.
+Set theme tokens, fonts, and consistent component style.
 
 UI Recipe Layer
 
-The variant factory between tokens and components: framework recipes, app-level recipes, when to reach for one, and how a route overrides one.
+Stop re-implementing the same card or button look.
 
 In-Page Agent
 
-The agent that reads the rendered screen and drives it: mounting and securing the relay, the declared surface, zones, and swapping the model.
-
-How To Read The Architecture Docs
+Let an AI agent read and drive a screen.
 
 You do not need to read every architecture page before building. Start from the decision you are facing, then move to the page that owns that decision.
-
-I need to…
-
-Design the first screen or client behavior
-
-Build a list, a detail view, or a create and edit form
-
-Write server-side rules, APIs, queue, cron, or realtime work
-
-Choose local, cloud, edge, database, or deployment shape
-
-Package a CSR client as Android or iOS
-
-Set consistent component style, theme, or font rules
-
-Stop re-implementing the same card or button look
-
-Let an AI agent read and drive a screen
 
 ## Code Examples
 

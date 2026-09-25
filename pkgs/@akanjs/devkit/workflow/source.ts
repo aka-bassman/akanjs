@@ -160,21 +160,27 @@ export const normalizeFieldType = (typeName: string) => {
   return normalizedTypes[typeName.toLowerCase()] ?? typeName;
 };
 
-export const ensureBaseTypeImport = (content: string, typeName: string) => {
-  if (typeName !== "Int" && typeName !== "Float") return content;
-  const source = sourceFileFor("constant.ts", content);
-  const baseImport = findNamedImport(source, "akanjs/base");
-  if (baseImport) {
-    if (baseImport.names.includes(typeName)) return content;
-    const nextNames = [...baseImport.names, typeName].sort();
+export const ensureNamedImport = (content: string, moduleSpecifier: string, name: string) => {
+  const source = sourceFileFor("source.ts", content);
+  const namedImport = findNamedImport(source, moduleSpecifier);
+  if (namedImport) {
+    if (namedImport.names.includes(name)) return content;
+    const nextNames = [...namedImport.names, name].sort();
     return spliceText(
       content,
-      baseImport.namedBindingsStart,
-      baseImport.namedBindingsEnd,
+      namedImport.namedBindingsStart,
+      namedImport.namedBindingsEnd,
       `{ ${nextNames.join(", ")} }`,
     );
   }
-  return `import { ${typeName} } from "akanjs/base";\n${content}`;
+  return `import { ${name} } from "${moduleSpecifier}";\n${content}`;
+};
+
+export const ensureBaseImport = (content: string, name: string) => ensureNamedImport(content, "akanjs/base", name);
+
+export const ensureBaseTypeImport = (content: string, typeName: string) => {
+  if (typeName !== "Int" && typeName !== "Float") return content;
+  return ensureBaseImport(content, typeName);
 };
 
 export type FieldDefaultValue = string | number | boolean | null;
@@ -200,12 +206,12 @@ const booleanDefault = (rawDefault: FieldDefaultValue): string | null => {
 };
 
 const dateDefault = (rawDefault: FieldDefaultValue): string | null => {
-  if (typeof rawDefault === "number" && Number.isFinite(rawDefault)) return `new Date(${rawDefault})`;
+  if (typeof rawDefault === "number" && Number.isFinite(rawDefault)) return `() => dayjs(${rawDefault})`;
   if (typeof rawDefault !== "string") return null;
   const trimmed = rawDefault.trim();
   if (!trimmed) return null;
-  if (trimmed === "now") return "new Date()";
-  if (!Number.isNaN(Date.parse(trimmed))) return `new Date(${JSON.stringify(trimmed)})`;
+  if (trimmed === "now") return "() => dayjs()";
+  if (!Number.isNaN(Date.parse(trimmed))) return `() => dayjs(${JSON.stringify(trimmed)})`;
   return null;
 };
 

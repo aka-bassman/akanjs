@@ -13,101 +13,207 @@
 - Standard Form Template (#standard-form-template)
 - Field Patterns (#field-patterns)
 - Split Components (#split-components)
-- Template Usage Patterns (#template-usage)
-- Practical Rules (#practical-rules)
+- Opening A Template (#template-usage)
+- Rules At A Glance (#practical-rules)
 
 ## Content
 
 Model.Template.tsx
 
-Stores the hydrated full model when editing an existing record.
+The store's draft of the record being edited, such as `ticketForm`.
 
-Marks the model data as ready after the edit object is applied.
+The setter the store generates for each field, such as `setTitleOnTicket`.
 
-Stores the editable form copy made from the full model. Template fields read and update this state.
+Tells a Field or a shell which model and which list it works with.
 
-Marks the form as ready so the edit form can render and submit.
+edit shell
 
-Stores the current form mode. Load.Edit normally sets it to edit unless a custom modal key is provided.
+A wrapper such as `Load.Edit` or `Model.Edit` that loads, opens and submits the form.
 
-Stores the timestamp from the edit object for consistency with view/edit state.
+Elsewhere
+
+Drawing the form
+
+Labelled controls, each bound to one field of the form draft.
+
+submit button · step · preview
+
+Small interaction pieces that belong to one form.
+
+Labels and help text from the module dictionary.
+
+Deciding and saving
+
+business rule
+
+Validation and state transitions go in constant, document and service.
+
+access check
+
+Who may save is decided by the guards in the signal.
+
+A server call and its toasts go in a store action.
+
+open · load · submit
+
+An edit shell does this around the Template.
+
+Path
+
+Database and scalar modules may have one. Service modules may not.
+
+First Line
+
+Always, on line 1 above the imports.
+
+Exports
+
+Named arrow components. General is the model's main form.
+
+Used As
+
+Pages and shells reach it through the model namespace from @apps/<app>/client.
+
+Model field
+
+Note
+
+`TextArea`, `Email`, `Phone` and `Password` are variants for special text.
+
+`DoubleNumber` holds two numbers in one row, such as a range.
+
+A labelled on/off toggle.
+
+`showTime` adds the time of day, and `DateRange` takes a from/to pair.
+
+Each value gets a translated label, and `MultiToggleSelect` takes an array.
+
+`TextList` keeps the order and lets the user drag rows.
+
+relation to a model
+
+`Children` takes an array, and `ParentId` / `ChildrenId` take `ID` fields.
+
+`Imgs` takes `[File]` and `File` / `Files` take other files, all from `@libs/shared/ui`.
+
+rich text
+
+A rich-text editor with attachments, from `@libs/shared/ui`.
+
+embedded objects
+
+You render one row; the field draws the add and remove buttons.
+
+Shell
+
+Use it when
+
+What it draws
+
+A page already holds the record to edit, or a partial new form.
+
+The form in the page, in a modal, or as bare fields, chosen by `type`.
+
+A list row, a dropdown or a Unit needs an edit button.
+
+An Edit button, or your `trigger`, plus the edit modal.
+
+A screen needs a button that creates a record.
+
+A New button, or your `trigger`, plus the form modal.
+
+Any element, such as an empty-list call to action, should open a new form.
+
+Only the trigger, so pair it with a `Model.EditModal`.
+
+State key
+
+Given an edit object
+
+Given a partial form
+
+Left as it was.
+
+The full model, built from the edit object.
+
+An editable copy of the model.
+
+The default values merged with `edit`.
+
+The `modal` prop, or `"edit"`.
+
+When the server read the record, used to re-read a stale one.
+
+Form Controls
+
+Every Field member with its props and defaults.
+
+Where the form draft and the generated setters come from.
+
+The page section that hosts buttons which open a Template.
+
+In-Page Agent
+
+Why a setter passed by reference becomes a tool the agent can call.
 
 model.Template.tsx
 
-A Template file contains client UI pieces for a module. Most Templates render model forms, but they can also export smaller interaction fragments such as submit buttons, onboarding steps, or preview blocks.
+A Template only connects the screen to the store. Anything that needs a decision lives somewhere else:
 
-Templates should bind UI to store state and actions. Business rules should stay in constants, documents, services, signals, or store actions.
+The work
+
+Belongs here
+
+Not here
+
+Words used on this page
+
+Term
 
 File Convention
 
-Template files live beside the module they render. They usually need client hooks and event handlers, so they start with the use client directive.
-
 Standard Form Template
 
-A standard form Template reads form state from st.use, gets labels from usePage, and writes changes through generated st.do setters.
+A standard form reads the draft from the store, takes its labels from the dictionary, and writes each field through a generated setter:
 
 Field Patterns
 
-Field components are predefined elements for fast development and standardized form UI. Pick the smallest Field component that matches the input shape, then connect value and onChange to store state.
-
-You can also build custom UI with plain input, button, or any app-specific component when Field does not match the interaction you need.
-
 Split Components
 
-A Template file can export several small components. Split large forms by business step or UI responsibility instead of forcing everything into General.
+Opening A Template
 
-Template Usage Patterns
+A Template only draws fields. An edit shell around it fills the form state, opens the form and submits it. Pick the shell by where the form opens:
 
-Wrappers such as Load.Edit, Model.Edit, and Model.NewWrapper prepare store form state and submit behavior. Templates stay focused on rendering fields and small interactions.
+Load.Edit in a page
 
-Server Page With Load.Edit
+Before the Template renders, Load.Edit writes these keys into the store:
 
-Use Load.Edit in server-rendered pages when the page already knows the edit object. The server page can fetch data or build a partial form, then pass it to Load.Edit. The child Template is still a client component.
+Model.Edit for an edit modal
 
-Internally, Load.Edit delegates to Model.EditModal. It hydrates the model and form state before the Template fields read st.use.<model>Form().
+Model.NewWrapper to open a new form
 
-Modal Edit With Model.Edit
+Rules At A Glance
 
-Use Model.Edit when a list, dropdown, or unit component needs an edit trigger. It renders the clickable edit control and the matching edit modal around the Template.
+Everything above, as a checklist to run before you finish a Template:
 
-New Form Trigger With Model.NewWrapper
-
-Use Model.NewWrapper when a button or empty-list CTA should open a new form. partial supplies default form values, and the wrapper calls the generated new<Model> action for the slice.
-
-Practical Rules
-
-Use Layout.Template for form layouts that need consistent spacing.
-
-Use dictionary keys for label and desc instead of hard-coded field text.
-
-Bind Field onChange directly to generated st.do setters when possible.
-
-Use plain input, button, or custom components when predefined Field components do not fit the UI.
-
-Keep business decisions out of Templates. Move them to constants, stores, services, or signals.
-
-Split large forms into named components such as General, Phone, SubmitPhone, or Preview.
-
-Use Load.Edit for server pages with prepared edit data, Model.Edit for modal edit triggers, and Model.NewWrapper for new-form buttons.
+Read next
 
 ## Code Examples
 
-### Ticket.Template.tsx
+### apps/koyo/lib/ticket/Ticket.Template.tsx
 
 ```ts
 "use client";
-import { st, usePage } from "@apps/akan/client";
+import { st, usePage } from "@apps/koyo/client";
 import { Field } from "@libs/shared/ui";
-import { Layout, buttonRecipe } from "akanjs/ui";
+import { Layout } from "akanjs/ui";
 
-interface TicketEditProps {
+interface GeneralProps {
   className?: string;
 }
-
-export const General = ({ className }: TicketEditProps) => {
+export const General = ({ className }: GeneralProps) => {
   const { l } = usePage();
   const ticketForm = st.use.ticketForm();
-
   return (
     <Layout.Template className={className}>
       <Field.Text
@@ -121,63 +227,79 @@ export const General = ({ className }: TicketEditProps) => {
 };
 ```
 
-### Field.Parent
+### apps/koyo/lib/ticket/Ticket.Template.tsx
 
 ```ts
-<Field.Parent
-  slice={fetch.slice.projectInSelf}
-  label={l("ticket.project")}
-  value={ticketForm.project}
-  onChange={st.do.setProjectOnTicket}
-  renderOption={(project) => project.name}
-/>
+"use client";
+import { cnst, fetch, st, usePage } from "@apps/koyo/client";
+import { Field } from "@libs/shared/ui";
+import { Layout } from "akanjs/ui";
+
+interface GeneralProps {
+  className?: string;
+}
+export const General = ({ className }: GeneralProps) => {
+  const { l } = usePage();
+  const ticketForm = st.use.ticketForm();
+  return (
+    <Layout.Template className={className}>
+      <Field.Text
+        label={l("ticket.title")}
+        value={ticketForm.title}
+        onChange={st.do.setTitleOnTicket}
+      />
+      <Field.Parent // [!code ++:7]
+        label={l("ticket.project")}
+        slice={fetch.slice.projectInSelf}
+        value={ticketForm.project}
+        onChange={st.do.setProjectOnTicket}
+        renderOption={(project) => project.name}
+      />
+      <Field.ToggleSelect // [!code ++:6]
+        label={l("ticket.type")}
+        items={cnst.TicketType}
+        value={ticketForm.type}
+        onChange={st.do.setTypeOnTicket}
+      />
+      <Field.Img // [!code ++:7]
+        label={l("ticket.image")}
+        slice={fetch.slice.ticket}
+        value={ticketForm.image}
+        onChange={st.do.setImageOnTicket}
+        nullable
+      />
+      <Field.Rich // [!code ++:8]
+        label={l("ticket.content")}
+        slice={fetch.slice.ticket}
+        valuePath="content"
+        value={ticketForm.content}
+        onChange={st.do.setContentOnTicket}
+        addFile={st.do.addContentFilesOnTicket}
+      />
+    </Layout.Template>
+  );
+};
 ```
 
-### Field.ToggleSelect
+### libs/shared/lib/user/User.Template.tsx
 
 ```ts
-<Field.ToggleSelect
-  label={l("ticket.type")}
-  items={cnst.TicketType}
-  value={ticketForm.type}
-  onChange={st.do.setTypeOnTicket}
-/>
-```
+"use client";
+import { st, usePage } from "@libs/shared/client";
+import { isPhoneNumber } from "akanjs/common";
+import { buttonRecipe, Input } from "akanjs/ui";
 
-### Field.Img
-
-```ts
-<Field.Img
-  slice={fetch.slice.bizCard}
-  label={l("bizCard.frontImage")}
-  value={bizCardForm.frontImage}
-  onChange={st.do.setFrontImageOnBizCard}
-  nullable
-/>
-```
-
-### Field.Yoopta
-
-```ts
-<Field.Yoopta
-  label={l("ticket.content")}
-  slice={fetch.slice.ticket}
-  valuePath="content"
-  value={ticketForm.content}
-  onChange={st.do.setContentOnTicket}
-  addFile={st.do.addContentFilesOnTicket}
-/>
-```
-
-### User.Template.tsx
-
-```ts
+interface PhoneProps {
+  userId?: string;
+  redirect?: string;
+}
 export const Phone = ({ userId, redirect }: PhoneProps) => {
   const phone = st.use.phone();
   return (
     <Input
+      type="tel"
       value={phone}
-      onChange={(value) => st.do.setPhone(formatPhone(value))}
+      onChange={st.do.setPhone}
       onPressEnter={() => {
         if (!userId || !isPhoneNumber(phone)) return;
         void st.do.setPhoneInPrepareUser(userId, phone, { redirect });
@@ -185,65 +307,118 @@ export const Phone = ({ userId, redirect }: PhoneProps) => {
     />
   );
 };
-```
 
-### Submit component
-
-```ts
+interface SubmitPhoneProps {
+  userId: string;
+  redirect: string;
+}
 export const SubmitPhone = ({ userId, redirect }: SubmitPhoneProps) => {
   const { l } = usePage();
   const phone = st.use.phone();
   return (
-    <button disabled={!isPhoneNumber(phone)} onClick={() => st.do.setPhoneInPrepareUser(userId, phone, { redirect })}>
+    <button
+      className={buttonRecipe({ variant: "primary" })}
+      disabled={!isPhoneNumber(phone)}
+      onClick={() => {
+        void st.do.setPhoneInPrepareUser(userId, phone, { redirect });
+      }}
+    >
       {l("user.sendPhoneCode")}
     </button>
   );
 };
 ```
 
-### new.tsx
+### apps/koyo/page/ticket/new.tsx
 
 ```ts
-export default page().render(async () => {
-  const pickupInPhoneForm: Partial<cnst.Pickup> = {};
+import { cnst, fetch, Ticket } from "@apps/koyo/client";
+import { page } from "akanjs/client";
+import { Load } from "akanjs/ui";
+
+export default page().render(() => {
+  const ticketForm: Partial<cnst.Ticket> = {};
   return (
     <Load.Edit
-      slice={fetch.slice.pickupInPhone}
-      edit={pickupInPhoneForm}
+      slice={fetch.slice.ticket}
+      edit={ticketForm}
       type="form"
       onCancel="back"
-      onSubmit="/pickup/success?pickupId=[pickupId]"
+      onSubmit="/ticket/[ticketId]"
     >
-      <Pickup.Template.General />
+      <Ticket.Template.General />
     </Load.Edit>
   );
 });
 ```
 
-### edit.tsx
+### apps/koyo/page/ticket/[ticketId]/edit.tsx
 
 ```ts
-const { story, storyEdit } = await fetch.editStory(storyId);
+import { fetch, Ticket } from "@apps/koyo/client";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
+import { Load } from "akanjs/ui";
 
-<Load.Edit slice={fetch.slice.storyInRoot} edit={storyEdit} type="form" onSubmit="back">
-  <Story.Template.General storyId={story.id} />
-</Load.Edit>
+export default page()
+  .param("ticketId", ID)
+  .render(async ({ ticketId }) => {
+    const [{ ticketEdit }] = await Promise.all([fetch.editTicket(ticketId)]);
+    return (
+      <Load.Edit
+        slice={fetch.slice.ticket}
+        edit={ticketEdit}
+        type="form"
+        onSubmit="back"
+      >
+        <Ticket.Template.General />
+      </Load.Edit>
+    );
+  });
 ```
 
-### Ticket.Util.tsx
+### apps/koyo/lib/ticket/Ticket.Util.tsx
 
 ```ts
-<Model.Edit renderTitle="title" slice={fetch.slice.ticket} modelId={ticketId}>
-  <Ticket.Template.General />
-</Model.Edit>
+"use client";
+import { fetch, Ticket } from "@apps/koyo/client";
+import { Model } from "akanjs/ui";
+
+interface EditProps {
+  ticketId: string;
+}
+export const Edit = ({ ticketId }: EditProps) => {
+  return (
+    <Model.Edit
+      renderTitle="title"
+      slice={fetch.slice.ticket}
+      modelId={ticketId}
+    >
+      <Ticket.Template.General />
+    </Model.Edit>
+  );
+};
 ```
 
-### Release.Zone.tsx
+### apps/koyo/lib/ticket/Ticket.Zone.tsx
 
 ```ts
-<Model.NewWrapper partial={{ devApp }} slice={fetch.slice.releaseInDevApp}>
-  <button className={buttonRecipe({ variant: "secondary" })}>{l("release.newRelease")}</button>
-</Model.NewWrapper>
+<>
+  <Model.NewWrapper
+    partial={{ project }}
+    slice={fetch.slice.ticketInProject}
+  >
+    <button className={buttonRecipe({ variant: "secondary" })}>
+      {l("ticket.newTicket")}
+    </button>
+  </Model.NewWrapper>
+  <Model.EditModal
+    renderTitle="title"
+    slice={fetch.slice.ticketInProject}
+  >
+    <Ticket.Template.General />
+  </Model.EditModal>
+</>
 ```
 
 ## Agent Notes

@@ -26,7 +26,7 @@ afterEach(async () => {
 });
 
 describe("AkanQualityScanner abstract rule", () => {
-  test("warns on an abstract over the line limit and points at akan compact", async () => {
+  test("warns on an abstract over the line limit and says how to trim it", async () => {
     const root = await makeWorkspace({
       "apps/demo/lib/post/post.abstract.md": abstractOf(AbstractDoc.maxLines + 1),
       "apps/demo/lib/post/post.constant.ts": "export class Post {}\n",
@@ -41,7 +41,8 @@ describe("AkanQualityScanner abstract rule", () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.file).toBe("apps/demo/lib/post/post.abstract.md");
     expect(warnings[0]?.message).toContain(`${AbstractDoc.maxLines + 1} lines`);
-    expect(warnings[0]?.fix).toContain("akan compact");
+    expect(warnings[0]?.fix).toContain("## Rules");
+    expect(warnings[0]?.fix).not.toContain("akan compact");
   });
 });
 

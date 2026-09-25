@@ -57,18 +57,6 @@ export class AlarmApi {
   }
 }`}
           />
-          <div>
-            {l.trans({
-              en: `Then, export the module in the /srvkit/index.ts file.`,
-              ko: `그런 다음, /srvkit/index.ts 파일에서 모듈을 내보냅니다.`,
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="apps/koyo/srvkit/index.ts"
-            code={`
-export * from "./alarmApi";`}
-          />
           <Docs.Alert>
             <div>
               {l.trans({

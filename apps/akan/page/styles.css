@@ -68,3 +68,47 @@
   --input: #e5e5e5;
   --ring: #c33c32;
 }
+
+/* 헤더는 fixed 라 문서 흐름에 자기 높이를 남기지 않고, notice 바와 lg 미만 메뉴 줄 때문에 높이가 달라진다.
+   헤더 아래에 붙는 표면은 상수를 쓰지 말고 이 값을 쓴다. */
+:root {
+  --akanjs-header-bar: 4rem; /* h-16 */
+  --akanjs-header-stack: 3.1875rem; /* lg 미만 모바일 메뉴 줄 */
+  --akanjs-notice-bar: 0rem;
+  --akanjs-header-inset: calc(var(--akanjs-header-stack) + var(--akanjs-notice-bar));
+  --akanjs-header-offset: calc(var(--akanjs-header-bar) + var(--akanjs-header-inset));
+}
+
+html:has([data-akanjs-notice]) {
+  --akanjs-notice-bar: 2.0625rem; /* text-xs 한 줄 + py-2 */
+}
+
+@media (min-width: 768px) {
+  :root {
+    --akanjs-header-bar: 5rem; /* md:h-20 */
+  }
+
+  html:has([data-akanjs-notice]) {
+    --akanjs-notice-bar: 2.3125rem; /* md:text-sm 한 줄 + py-2 */
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --akanjs-header-stack: 0rem; /* lg 부터는 메뉴 줄이 헤더 밖으로 나간다 */
+  }
+}
+
+/* 문서의 백틱 참조는 문자열로 들어오므로 공용 prose 컨테이너가 CodeText 로 <code> 를 만든다.
+   shiki 코드 블록(pre > code)과 자체 클래스를 가진 code 는 각자의 레이아웃을 쓰므로
+   클래스 없는 인라인 code 만 칩처럼 그린다. */
+:not(pre) > code:not([class]) {
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius-field, 0.25rem) / 2);
+  background-color: var(--muted);
+  padding: 0.1em 0.35em;
+  color: var(--foreground);
+  font-size: 0.875em;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}

@@ -9,182 +9,368 @@
 ## Headings
 
 - model.signal.ts (#signal-overview)
-- Extending Generated Signals (#signal-extension)
+- Extending A Library Model (#signal-extension)
 - Defining Internal Tasks (#internal-signal)
-- Defining Public APIs (#endpoint-signal)
+- Defining APIs With endpoint() (#endpoint-signal)
 - The Options Object (#endpoint-options)
 - What An Argument May Be (#argument-types)
-- Standard Model APIs (#standard-signal)
-- Defining Slices And Stores (#slice-signal)
-- Practical Rules (#practical-rules)
+- Generated Model APIs (#standard-signal)
+- Slices: Lists For Pages (#slice-signal)
+- Rules To Remember (#practical-rules)
 
 ## Content
 
 model.signal.ts
 
-Runs in declaration order after every middleware; the first refusal wins. An empty list is a loop that never runs, not a default policy. It is also the MCP exposure decision.
+Work the server runs by itself: computed fields, schedules, lifecycle hooks, queue jobs.
 
-Bounds both ends: the Timeout middleware rejects the call with base.error.gatewayTimeout, and the same value is serialized to the client as that call's request budget. Losing the race does not cancel the work — the handler runs to completion with nobody holding its result.
+Lists a page loads, like `inRoot`. Each one becomes fetch methods and store state.
 
-Only a query taking no internal argument may carry one — an endpoint that learns who is asking would hand one caller's answer to the next. Guards run on every hit, and resolveReturn still masks per call. A cache backend that is down is warned about and the call runs uncached.
+Calls a client makes: queries, mutations, websocket messages and pubsub rooms.
 
-An opt-out from the agent catalogue that leaves the guards alone. Curation, not authorization: HTTP serves the endpoint exactly as before. Reach for it on a step of a UI-driven state machine that is perfectly guarded and still a mistake for a model to reach.
+A class that decides if a call may run: `Public`, `Every` (any signed-in account), `Admin`.
 
-A mutation only; declared on a query or a realtime endpoint it is ignored and named in the boot log. One path may carry several verbs, and two endpoints claiming the same path and verb fail the boot. Reach for it only when a foreign wire protocol forces the verb.
+A value the server fills in, not the caller, such as the signed-in user from `.with(Self)`.
 
-Marks the one mutation that is the framework's upload endpoint. The generated upload action refuses to run when no endpoint carries it, and warns when more than one does. The shared file library already marks one.
+The model's camelCase name, like `story`. Routes and fetch method names are built from it.
 
-A literal route, for a protocol that looks in a fixed place. A trailing * captures the rest of the path.
+The protocol AI agents use to call your endpoints. Akan serves it at `/mcp`.
 
-Drops or replaces the module segment Akan puts in front of the path.
+Computes a `resolve` field of the constant. `exec` gets the parent document first.
 
-Drops the api segment, which puts the route at the origin root. Needed together with prefix for a well-known document.
+Runs every `ms` milliseconds.
 
-The return may be null. Without it, a handler resolving to null raises rather than answering one.
+Runs on a cron schedule, such as every midnight.
 
-A pubsub(Binary) room under load: keep only the newest frame, which is what telemetry and video want, or queue every one when the frames are a sequence a subscriber must see in full.
+Runs once, `ms` milliseconds after the server starts.
 
-Appended after the registered chain, for this endpoint only.
+Runs when the server process starts or stops.
 
-Calculates a resolved field declared in the constant model. The parent document is passed to exec by default.
+A background queue job. `.msg()` declares its payload, and a service enqueues it.
 
-Runs a recurring server task every given number of milliseconds.
+Which server roles run it. `"batch"` runs on batch and `"all"` servers, never on federation.
 
-Runs scheduled work with a cron expression. Commonly used with serverMode options for batch jobs.
+every mode
 
-Runs setup or teardown logic when the server process starts or stops.
+Runs only where `AKAN_PUBLIC_OPERATION_MODE` is in the list, like `["cloud"]`.
 
-Defines a background queue job. Use msg(...) to describe the job payload.
+`interval` and `cron` skip a run while the previous one is still running in this process.
 
-Runs once, this many milliseconds after the process starts. Locked by default like the other timers, so two replicas do not both run it.
+`false` turns the job off without deleting its code.
 
-Read API. Use it for loading one model, computed data, or public files.
+Request and answer
 
-Write API. Use it for create, update, delete, or business actions.
+Reads data with a `GET`. The client awaits the answer.
 
-WebSocket message handler. Use msg(...) for incoming payload fields.
+Writes data or runs a business action with a `POST`.
 
-Realtime subscription channel. Use room(...) to describe the subscription room. A Binary return sends raw bytes in a websocket binary frame and coalesces under backpressure; name backpressure: "queue" when every frame has to arrive.
+Realtime
 
-Required path-style argument. Common in query, mutation, and slice list methods.
+One message a client sends over the socket. `.msg()` declares its fields.
 
-Optional search/query argument. It is nullable by default.
+A room clients subscribe to and the server publishes into. `.room()` names it.
 
-Request body value, commonly used by mutation APIs.
+A required URL path segment. One scalar or `enumOf`, never a model or an array.
 
-Message or process payload argument.
+A query-string value. Always optional, so `exec` may receive `undefined`.
 
-Realtime room key for pubsub subscription channels.
+A request-body value, mostly for mutations. `{ nullable: true }` makes it optional.
 
-Server-derived context such as Self, Req, Res, Ws, or custom internal args.
+A payload field of a `message` or of a `process` job.
 
-Fetch detail-view data generated from the model module. Returns a handle: destructure it for one promise per field, or await it for the resolved object.
+A key that names the pubsub room a client joins.
 
-Fetch edit-view data generated from the model module. Same handle shape as view[Model].
+A server-supplied value: `Self`, `Me`, `Req`, `Res`, `Ws`, `Ip`, or your own. Missing means 401.
 
-Create or update model data through the generated module API.
+Resolves to the `Story`.
 
-Loads a paginated list for a slice definition.
+Resolves to the published `Story`. `.with(Self)` is not a client argument.
 
-Loads aggregation data for the same slice query.
+Returns nothing; it only sends. `fetch.listenReadChat(fn)` receives the replies.
 
-Initializes the root slice list with list and insight data. queryKey names one of the model's own filters and args are that filter's arguments; no key at all is the any filter. Both queries leave at call time, and the handle hands out storyInit, storyList, and storyInsight as separate promises.
+Returns a function that unsubscribes. `fn` runs on every publish.
 
-Initializes a named slice list with args declared in signal.ts. Pass storyInitInRoot to a Zone; consume storyListInRoot on the server, since it holds hydrated model instances.
+none
 
-Signals define the external interface of a module. They connect service logic to generated client APIs, list stores, realtime channels, and server-side jobs.
+Run in order after every middleware; the first refusal answers 403. Without it, nothing is checked.
 
-Server-only work such as resolved fields, cron jobs, lifecycle hooks, and background processes.
+`false` keeps it away from AI agents. Guards and HTTP stay exactly the same.
 
-Public APIs and realtime handlers exposed through fetch, websocket message, or pubsub.
+client's 30 s
 
-Frontend-facing list surfaces used by generated stores, pagination, and insight loading.
+Past it the caller gets `base.error.gatewayTimeout`. The client waits the same budget.
 
-Extending Generated Signals
+not cached
 
-When an app domain extends generated or library behavior, spread inherited signals at the end. This keeps base internals, slices, and endpoints while adding app-specific methods.
+Reuses the answer this long. Only for a query with no `.with()`; looked up after the guards pass.
+
+Allows a `null` return. Without it, a handler that returns `null` fails.
+
+Extra middleware for this endpoint only, run after the registered chain.
+
+The HTTP verb of a mutation. Change it only when a foreign protocol requires another.
+
+the endpoint key
+
+A fixed route instead of the key. A trailing `*` matches the rest of the path.
+
+the model refName
+
+Replaces the model segment in front of the path, or drops it with `false`.
+
+the API prefix
+
+`false` drops the API prefix too. With `prefix: false`, the route sits at the site root.
+
+Marks the mutation the generated upload action calls. The shared `file` module already has one.
+
+When a subscriber falls behind: keep only the newest frame, or queue every frame.
+
+Kind
+
+Example
+
+Note
+
+Scalar
+
+From `akanjs/base`; `String`, `Boolean` and `Date` are the JS globals.
+
+Model
+
+A class from the module's constant, usually the `Input`.
+
+A value outside its list is refused.
+
+Array
+
+Any of the above in `[ ]`. Not allowed in `.param`.
+
+Read
+
+Loads the full model.
+
+Loads the Light model.
+
+Data for a detail page. Destructure it for one promise per field, or await it whole.
+
+Data for an edit form, shaped like `view<Model>`. Exists only with a create, update or remove guard.
+
+Write
+
+Creates one from an input.
+
+Updates one by id.
+
+Calls `update<Model>` with only the fields you pass. Takes the model or its id.
+
+Removes one. Removal is always soft.
+
+One page of the list.
+
+The aggregate numbers for the same query.
+
+List and insight together, as one promise per field. Hand `storyInitInRoot` to a Zone.
+
+The same init data as one awaited object.
+
+The root slice. `queryKey` names a model filter (none means `any`), `args` its arguments.
+
+Client
+
+AI agent
+
+Published to agents
+
+Any guard is a decision, `Public` included, so a read publishes.
+
+A write with a real guard publishes.
+
+Served, but hidden from agents
+
+no guards
+
+Anyone can call it, and no agent can see it.
+
+`Public` alone on a write counts as no guard.
+
+Taken off the agent shelf on purpose. Guards are unchanged.
+
+`Person` reserves the act for a human.
+
+They ride the websocket, which an MCP call does not have.
+
+A return typed `Any` or `Binary`, or a file upload, cannot be described to a model.
+
+You open it when a page needs a new call or list, or the server needs a scheduled job. The logic stays in the service; handlers here only call it.
+
+Class
+
+Words used on this page
+
+Term
+
+The skeleton
+
+Every signal file declares the three classes in this order, even when one is empty:
+
+Extending A Library Model
 
 Defining Internal Tasks
 
-Use internal() for work that belongs to the server runtime rather than a direct page call. This includes resolved fields, scheduled tasks, lifecycle hooks, and queue jobs.
+Builder
 
-Defining Public APIs
+A computed like count and a nightly cleanup look like this:
 
-Use endpoint() for API methods that the client can call. Endpoint builders cover read/write APIs and realtime surfaces.
+Schedule options
 
-Parameter builders describe where each value comes from. The order becomes the order of exec arguments. Put nullable arguments near the end because required arguments cannot follow nullable ones.
+Defining APIs With endpoint()
 
-A slice-level guards map only reaches the generated query and mutation endpoints. A message or pubsub endpoint is unguarded unless it declares its own guards, and its guards are re-run whenever the socket's credential changes.
+Four kinds
 
-Use endpoint options when a method should be exposed at a public path, such as sitemap.xml or other non-standard API routes.
+Travels over this
 
-Generated fetch methods call endpoint methods from page loaders, components, stores, or client actions.
+Not this
+
+Argument builders
+
+Query and mutation
+
+A read anyone may make, and a write only a signed-in account may make:
+
+Message and pubsub
+
+A websocket message, and the room that tells everyone in it about a new chat:
+
+Serving a fixed path
+
+Calling them from the client
+
+Declared
+
+What the client gets
 
 The Options Object
 
-The second argument to query, mutation, message and pubsub is the same object in all four, and it is where an endpoint declares everything about itself that is not an argument. Most of it decides what happens before your handler runs.
-
 What runs before exec
 
-Logging, Timeout and Cache are registered by default and stand aside for every endpoint that declares nothing, so the chain costs nothing until an option turns one of them on. Guards run last, inside the handler's own wrapper — which is why a cache hit has to re-run them explicitly rather than skipping them with the handler.
+errors, and every call at debug
+
+the endpoint's own timeout ms
+
+and any the app registered
+
+in declaration order
+
+Internal arguments
+
+cache lookup
+
+a query with no internal argument only
+
+hidden and secret fields masked
+
+the handler keeps running
+
+stored result
+
+only after the guards passed
+
+first false
+
+budget spent
+
+Access and caching
+
+Routing and transport
 
 What An Argument May Be
 
-Every parameter builder takes the same kinds of type: a registered scalar, a model reference, an enumOf class, or an array of one of those. Three of the mistakes are worth knowing in advance, because two of them are not type errors.
+Every argument builder takes the same four kinds of type:
+
+Three mistakes are worth knowing up front, because two of them are not type errors:
 
 Int or Float, never Number
 
-String, Boolean and Date are monkey-patched into scalars and pass; the Number constructor is deliberately left alone, so it is not in the accepted union and the call does not typecheck. Choose the one the field actually is — a count is Int, a price is Float.
-
 Upload is a body, never a field
-
-An Upload body argument on a mutation is what switches request parsing to multipart, and the mutation that owns the upload flow declares fileUpload: true. A model never declares one — an image or file field is a relation to the File model instead.
 
 Bytes are Binary, never Any
 
-Binary is Uint8Array on both sides and accepts base64 in either direction, so one declaration serves a JSON body and a websocket binary frame. Any passes a Buffer through untouched, and JSON.stringify then spells it as a type-and-data object that JSON.parse never restores — 3.6x the wire and a shape that only breaks at the first byte-offset read.
+Generated Model APIs
 
-Standard Model APIs
+Every database module gets these fetch methods without an endpoint. Write a custom endpoint only when a business action needs its own name.
 
-Akan generates standard model APIs for common view, edit, and merge flows. You usually add custom endpoints only when the business action needs its own name or behavior.
+Generated method
 
-Defining Slices And Stores
+Guarded by this key
 
-Use slice() to define list surfaces for pages. A slice starts from init(), receives params, search values, or internal args, and returns a service query.
+Not this key
 
-Root guards apply to the generated slice surface. Method guards passed to init({ guards }) narrow a specific list.
+A detail page hands the unawaited view to its Zone:
 
-A slice definition generates list, insight, and init fetch methods. These methods are usually consumed by store and zone UI code.
+Slices: Lists For Pages
 
-Practical Rules
+The stories under one root, readable by anyone:
 
-Use ...model.internals, ...model.slices, and ...model.endpoints when extending generated or library domains.
+Generated fetch methods
 
-Use srv.model.with(otherSrv) when the signal needs another service in this.*Service.
+Method
 
-An endpoint that names a real guard is reachable by an AI agent; one that names none is not. There is no per-endpoint opt-in — mcp: false only opts an already-guarded endpoint out, and on a slice mcp: { cru: false } mirrors the guards map for the root slice and generated CRUD.
+Using it in a page
 
-There is no prompt builder on endpoint(). A screen is published as an MCP prompt from its page file with page().prompt(name, description). See the MCP Server cheatsheet.
+The page starts both queries and hands each result to the part that needs it:
+
+Rules To Remember
+
+Four rules cover most mistakes in a signal file:
+
+What reaches an AI agent
+
+What you declare
+
+Can call it
+
+Cannot see it
+
+MCP Server
+
+Configure /mcp, trim the catalogue, and publish page prompts.
+
+Endpoint Actions
+
+Declare a custom endpoint and call it from a store action.
 
 ## Code Examples
 
-### story.signal.ts
+### apps/blog/lib/story/story.signal.ts
 
 ```ts
+import { Admin } from "@libs/shared/srvkit";
+import { endpoint, internal, Public, slice } from "akanjs/signal";
+
+import * as cnst from "../cnst";
+import * as srv from "../srv";
+
 export class StoryInternal extends internal(srv.story, () => ({})) {}
 
 export class StorySlice extends slice(srv.story, { guards: { root: Admin, get: Public, cru: Admin } }, () => ({})) {}
 
 export class StoryEndpoint extends endpoint(srv.story, ({ query }) => ({
-  story: query(cnst.Story, { guards: [Public] }).exec(async function () {
-    return await this.storyService.getStory();
+  featuredStory: query(cnst.Story, { guards: [Public] }).exec(async function () {
+    return await this.storyService.getFeaturedStory();
   }),
 })) {}
 ```
 
-### user.signal.ts
+### apps/blog/lib/user/user.signal.ts
 
 ```ts
+import { Admin, SelfOrAdmin } from "@libs/shared/srvkit";
+import { endpoint, internal, Public, slice } from "akanjs/signal";
+
+import { user } from "../__lib/lib.signal";
+import * as srv from "../srv";
+
 export class UserInternal extends internal(srv.user, () => ({}), ...user.internals) {}
 
 export class UserSlice extends slice(
@@ -205,7 +391,7 @@ export class UserEndpoint extends endpoint(
 ) {}
 ```
 
-### story.signal.ts
+### apps/blog/lib/story/story.signal.ts
 
 ```ts
 export class StoryInternal extends internal(srv.story.with(srv.actionLog), ({ resolveField, cron }) => ({
@@ -215,79 +401,113 @@ export class StoryInternal extends internal(srv.story.with(srv.actionLog), ({ re
       if (!self) return 0;
       return await this.actionLogService.getLike(story.id, self.id);
     }),
-  cleanup: cron("0 0 * * *").exec(async function () {
+  cleanup: cron("0 0 * * *", { serverMode: "batch" }).exec(async function () {
     await this.storyService.cleanup();
   }),
 })) {}
 ```
 
-### story.signal.ts
+### apps/blog/lib/story/story.signal.ts
 
 ```ts
 export class StoryEndpoint extends endpoint(srv.story, ({ query, mutation }) => ({
-  story: query(cnst.Story, { guards: [Public] })
-    .param("storyId", ID)
-    .exec(async function (storyId) {
-      return await this.storyService.getStory(storyId);
+  storyBySlug: query(cnst.Story, { guards: [Public] })
+    .param("slug", String)
+    .exec(async function (slug) {
+      return await this.storyService.getStoryBySlug(slug);
     }),
-  createStory: mutation(cnst.Story, { guards: [Every] })
-    .body("data", cnst.StoryInput)
-    .exec(async function (data) {
-      return await this.storyService.createStory(data);
+  publishStory: mutation(cnst.Story, { guards: [Every] })
+    .param("storyId", ID)
+    .body("note", String, { nullable: true })
+    .with(Self)
+    .exec(async function (storyId, note, self) {
+      return await this.storyService.publishStory(storyId, self.id, note);
     }),
 })) {}
 ```
 
-### chatRoom.signal.ts
+### apps/blog/lib/chatRoom/chatRoom.signal.ts
 
 ```ts
 export class ChatRoomEndpoint extends endpoint(srv.chatRoom, ({ message, pubsub }) => ({
-  readChat: message(Boolean, { guards: [Every] }).msg("root", ID).exec(async function (root) {
-    return await this.chatRoomService.read(root);
-  }),
-  chatAdded: pubsub(cnst.Chat, { guards: [Every] }).room("root", ID).exec(async function () {}),
+  readChat: message(Boolean, { guards: [Every] })
+    .msg("roomId", ID)
+    .with(Self)
+    .exec(async function (roomId, self) {
+      return await this.chatRoomService.read(roomId, self.id);
+    }),
+  chatAdded: pubsub(cnst.Chat, { guards: [Every] })
+    .room("roomId", ID)
+    .exec(async function () {}),
 })) {}
 ```
 
-### site.signal.ts
+### apps/blog/lib/story/story.signal.ts
 
 ```ts
-export class SiteEndpoint extends endpoint(srv.site, ({ query }) => ({
-  sitemapXml: query(Any, { guards: [Public], path: "sitemap.xml", prefix: false }).exec(async function () {
-    return new Response(null, { headers: { "Content-Type": "application/xml" } });
-  }),
-})) {}
-```
-
-### page.tsx
-
-```ts
-const story = await fetch.story(storyId);
-const created = await fetch.createStory(data);
-
-await fetch.readChat(rootId);
-const unsubscribe = fetch.subscribeChatAdded(rootId, (chat) => {
-  console.info(chat);
-});
-```
-
-### story.signal.ts
-
-```ts
-export class StorySlice extends slice(srv.story, { guards: { root: Admin, get: Public, cru: Admin } }, (init) => ({
-  inRoot: init({ guards: [Public] }).param("root", ID).exec(function (root) {
-    return this.storyService.queryInRoot(root);
+export class StoryEndpoint extends endpoint(srv.story, ({ query }) => ({
+  sitemapXml: query(Any, {
+    guards: [Public],
+    path: "sitemap.xml",
+    prefix: false,
+    globalPrefix: false,
+  }).exec(async function () {
+    const xml = await this.storyService.renderSitemap();
+    return new Response(xml, { headers: { "Content-Type": "application/xml" } });
   }),
 })) {}
 ```
 
-### page.tsx
+### apps/blog/page/story/[storyId]/_index.tsx
+
+```tsx
+import { fetch, Story } from "@apps/blog/client";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
+
+export default page()
+  .param("storyId", ID)
+  .render(({ storyId }) => {
+    const { storyView } = fetch.viewStory(storyId);
+    return <Story.Zone.General view={storyView} />;
+  });
+```
+
+### apps/blog/lib/story/story.signal.ts
 
 ```ts
-const { storyInitInRoot, storyListInRoot } = fetch.initStoryInRoot(rootId);
+export class StorySlice extends slice(
+  srv.story,
+  { guards: { root: Admin, get: Public, cru: Admin } },
+  (init) => ({
+    inRoot: init({ guards: [Public] })
+      .param("rootId", ID)
+      .exec(function (rootId) {
+        return this.storyService.queryInRoot(rootId);
+      }),
+  }),
+) {}
+```
 
-<Story.Zone.Card init={storyInitInRoot} />
-<Load.Stream of={storyListInRoot}>{(storyList) => <Story.Unit.Total count={storyList.length} />}</Load.Stream>
+### apps/blog/page/root/[rootId]/_index.tsx
+
+```tsx
+import { fetch, Story } from "@apps/blog/client";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
+import { Load } from "akanjs/ui";
+
+export default page()
+  .param("rootId", ID)
+  .render(({ rootId }) => {
+    const { storyInitInRoot, storyListInRoot } = fetch.initStoryInRoot(rootId);
+    return (
+      <div className="flex flex-col gap-4">
+        <Load.Stream of={storyListInRoot}>{(storyList) => <Story.Unit.Total count={storyList.length} />}</Load.Stream>
+        <Story.Zone.Card init={storyInitInRoot} />
+      </div>
+    );
+  });
 ```
 
 ## Agent Notes

@@ -18,43 +18,119 @@
 
 service.dictionary.ts
 
-One entry per endpoint the signal declares, typed against the class. A label, a .desc() an agent reads to choose the tool, and a .arg() naming every argument.
+The name a person reads, one entry per language: `fn(["Disconnect App", "앱 연결 끊기"])`.
 
-Every key thrown as new Err("<service>.error.<key>") from the service. Korean ends in 다.
+A longer sentence beside a label. An AI agent picks a tool by reading it.
 
-Phrases that are neither an endpoint nor an error: button text, a consent-page paragraph, a status word. Read with the bare key under the module name.
+The dotted path code reads a text by, such as `oauth.consentTitle`.
 
-A model dictionary starts by naming fields, because a model has fields. A service module has none — so the dictionary starts one stage later, at the endpoints, and the difference shows up in the first line of the file: serviceDictionary, not modelDictionary.
+language tuple
 
-Three stages, and every one of them is optional. Each returns the same builder, so the order is free — but the house order is endpoint, then error, then translate, which is the order a reader looks for them in.
+One string per language, in the order `serviceDictionary(["en", "ko"])` lists them.
+
+One entry per signal endpoint: a label, a `.desc()`, and an `.arg()` for every argument.
+
+Every key the service throws as `new Err("<service>.error.<key>")`. Korean ends in `다.`
+
+Every other phrase, neither an endpoint nor an error. It is read by the bare key under the module.
+
+API explorer
+
+Endpoint
+
+The API explorer heading, the OpenAPI `summary` and the MCP tool `title`.
+
+The description an agent picks a tool by. The API explorer shows it under the label.
+
+Argument, in .arg()
+
+Shown beside the identifier in the API explorer, and nowhere else.
+
+The argument's description in the MCP input schema and on OpenAPI path and query parameters.
+
+Korean ends in `다.`: a statement of what went wrong, not an apology.
+
+Plain `다.` only for a bare statement; a line addressed to the user ends in `습니다` (`consentScope`).
+
+English in Title Case, Korean as the plain domain term.
+
+The endpoint label from `.endpoint()`. Read it with `l()`.
+
+Its `.desc()`. Read it with `l()`, adding `.desc` to the label's key.
+
+An argument label from `.arg()`. Read it with `l()`.
+
+An error from `.error()`. `new Err()` throws it on the server; `msg.error()` shows it on the client.
+
+A phrase from `.translate()`. Read it with `l()`.
+
+Instead of
+
+Write
+
+`import type`. A value import pulls the signal's runtime graph into the dictionary.
+
+An endpoint label with no `.desc()`
+
+Write one. An agent picks a tool by its description.
+
+An argument description that repeats the name: "The session ID"
+
+Say where the caller gets the value: "from the connected-apps list".
+
+A `.translate()` key only one component reads
+
+`l.trans({ en, ko })` inside that component.
+
+The full stage chain a database module writes.
+
+The endpoints and arguments this file labels.
+
+Where the `Err` keys are thrown.
+
+Actions whose failures become error toasts.
+
+Words used on this page
+
+Term
+
+Three stages
 
 Stage
 
+What it holds
+
 Naming The Endpoints
 
-The keys are typed against the endpoint class, so a renamed endpoint breaks the dictionary at compile time rather than at the first render. Pass the class as the type argument and import it as a type: a dictionary is a shared contract file and must not pull the signal's runtime graph in behind it.
+Who reads which text
 
-That is the whole file for a module with one endpoint. Two things in it are not optional: the .desc() beside the label, and the error key that localFile.service.ts throws by name.
+People read the label; a model reads the description. Each piece shows up in these places:
+
+Text
+
+Shown there
+
+Not used
 
 Naming Every Argument
 
-Name every argument, including the ones the framework supplies. An unnamed argument reaches the API explorer, the generated admin form, the validation message and the MCP input schema as its identifier, and an agent filling that schema has nothing to go on but the spelling.
-
-Read the argument description again: it does not say what a session id is, it says where the caller gets one. That sentence is worth more to an agent than the type is, and it is the difference between a tool a model can use and one it guesses at.
-
 Errors And Phrases
 
-An error key is not documentation. It is the other half of a throw: the service writes new Err("oauth.error.notSignedIn"), and this file is the only place that key becomes a sentence somebody can read. A key thrown and never registered reaches the user as the key.
+Tone of voice
 
-Two register conventions are visible there and both are deliberate. Korean error text ends in 다 — it is a statement of what went wrong, not an apology to the user. Korean phrase text ends in 다. only when it is also a statement; consentScope addresses the person and ends in 습니다.
+The ending follows who the sentence speaks to. Both conventions in the file above are deliberate:
 
-A brace pair is a slot the caller fills, as in Connected {at}. Nothing validates that the caller passes it, so keep the name obvious.
+How it is written
 
 Reading A Key Back
 
-Every key lands under the module's own name, and the stage decides how deep. An endpoint label gets a signal segment because the endpoint namespace has to stay clear of the phrases; an error gets an error segment; a translate key gets neither.
+Where it comes from and how to read it
 
-usePage() resolves these on the server as well as the client, so a label in a server component costs no boundary. Reach for l.trans({ en, ko }) instead when the phrase is used once and belongs to the screen rather than to the module — a dictionary key that only one component reads is a key somebody has to keep in sync for nothing.
+The OAuth consent page reads its phrases this way, on the server. Markup is trimmed here:
+
+Common mistakes
+
+Read next
 
 ## Code Examples
 
@@ -109,7 +185,10 @@ revokeOAuthConnection: fn(["Disconnect App", "앱 연결 끊기"])
       "이 인가 요청은 다른 계정이 시작했다.",
     ],
     notSignedIn: ["Sign in to continue", "계속하려면 로그인해야 한다."],
-    disabled: ["OAuth is disabled on this server", "이 서버에서 OAuth 가 꺼져 있다."],
+    disabled: [
+      "OAuth is disabled on this server",
+      "이 서버에서 OAuth 가 꺼져 있다.",
+    ],
   })
   .translate({
     consentTitle: ["Authorize access", "접근 허용"],
@@ -124,12 +203,28 @@ revokeOAuthConnection: fn(["Disconnect App", "앱 연결 끊기"])
 
 ### libs/shared/page/oauth/consent/_index.tsx
 
-```ts
-const { l } = usePage();
+```tsx
+import { fetch, usePage } from "@libs/shared/client";
+import { page } from "akanjs/client";
 
-l("oauth.signal.approveOAuthConsent");  // endpoint label
-l("oauth.error.notSignedIn");           // error key
-l("oauth.consentTitle");                // translate key
+export default page()
+  .search("request", String, { desc: "The request of this screen." })
+  .render(async ({ request: requestId }) => {
+    const { l } = usePage();
+    const request = requestId
+      ? await fetch.viewOAuthAuthorizationRequest(requestId).catch(() => null)
+      : null;
+    return (
+      <main>
+        <h1>{l("oauth.consentTitle")}</h1>
+        {request ? (
+          <p>{l("oauth.consentScope")}</p>
+        ) : (
+          <p>{l("oauth.consentUnavailable")}</p>
+        )}
+      </main>
+    );
+  });
 ```
 
 ## Agent Notes

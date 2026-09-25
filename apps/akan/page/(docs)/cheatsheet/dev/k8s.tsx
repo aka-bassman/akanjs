@@ -1,10 +1,320 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Divider, Docs, DocsList, DocsToc } from "@apps/akan/ui";
+import { Code, Divider, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
 export default page().render(() => {
   const { l } = usePage();
+
+  const resourceRows = [
+    {
+      kind: "Deployment",
+      name: "app-deployment",
+      desc: l.trans({
+        en: "Runs the app image in exactly one pod.",
+        ko: "앱 이미지를 pod 하나로 실행합니다.",
+      }),
+    },
+    {
+      kind: "Service",
+      name: "app-svc",
+      desc: l.trans({
+        en: "Exposes the app on port 8282 inside the cluster.",
+        ko: "클러스터 안에서 8282 포트로 앱을 노출합니다.",
+      }),
+    },
+    {
+      kind: "Ingress",
+      name: "app-ingress",
+      desc: l.trans({
+        en: "Connects your domains to the Service and gets their TLS certificate.",
+        ko: "도메인을 Service에 연결하고 TLS 인증서를 발급받습니다.",
+      }),
+    },
+    {
+      kind: "PersistentVolumeClaim",
+      name: "sqlite-data",
+      desc: l.trans({
+        en: "Keeps the sqlite data in `/workspace/sqlite` across pod restarts.",
+        ko: "pod가 재시작돼도 `/workspace/sqlite`의 sqlite 데이터를 유지합니다.",
+      }),
+    },
+  ];
+
+  const valueFileRows = [
+    {
+      order: "1",
+      file: "_common-values.yaml",
+      desc: l.trans({
+        en: "Defaults for the `debug`, `develop` and `main` branches: replica, resources, storage.",
+        ko: "`debug`, `develop`, `main` 브랜치별 replica, 리소스, 스토리지 기본값입니다.",
+      }),
+    },
+    {
+      order: "2",
+      file: "_common-secret.yaml",
+      desc: l.trans({
+        en: "Values every app shares: `repoName`, `serveDomain`, `image.registry`.",
+        ko: "모든 앱이 함께 쓰는 `repoName`, `serveDomain`, `image.registry` 값입니다.",
+      }),
+    },
+    {
+      order: "3",
+      file: "<appName>-values.yaml",
+      desc: l.trans({
+        en: "The app's own values: `appName`, `subRoutes`, domains, and any override.",
+        ko: "앱 자신의 `appName`, `subRoutes`, 도메인, 덮어쓸 값입니다.",
+      }),
+    },
+    {
+      order: "4",
+      file: "<appName>-secret.yaml",
+      desc: l.trans({
+        en: "The app's own secret values, and it may be empty.",
+        ko: "앱 전용 비밀값이며 비어 있어도 됩니다.",
+      }),
+    },
+  ];
+
+  const topLevelKeys = [
+    {
+      key: "appName",
+      type: "string",
+      desc: l.trans({
+        en: "Names the namespace `<appName>-<branch>`, the image path and the default host.",
+        ko: "네임스페이스 `<appName>-<branch>`, 이미지 경로, 기본 호스트 이름에 쓰입니다.",
+      }),
+    },
+    {
+      key: "repoName",
+      type: "string",
+      tags: ["_common-secret.yaml"],
+      desc: l.trans({
+        en: "The workspace part of the image path `<registry>/<repoName>/<appName>`.",
+        ko: "이미지 경로 `<registry>/<repoName>/<appName>`의 workspace 부분입니다.",
+      }),
+    },
+    {
+      key: "serveDomain",
+      type: "string",
+      tags: ["_common-secret.yaml"],
+      desc: l.trans({
+        en: "The base domain, so the default host is `<appName>-<branch>.<serveDomain>`.",
+        ko: "기준 도메인이며, 기본 호스트는 `<appName>-<branch>.<serveDomain>`입니다.",
+      }),
+    },
+    {
+      key: "subRoutes",
+      type: "string[]",
+      default: "[]",
+      desc: l.trans({
+        en: "Adds one `<subRoute>-<branch>.<serveDomain>` host and TLS name per basePath.",
+        ko: "basePath마다 `<subRoute>-<branch>.<serveDomain>` 호스트와 TLS 이름을 하나씩 더합니다.",
+      }),
+    },
+    {
+      key: "image.registry",
+      type: "string",
+      tags: ["_common-secret.yaml"],
+      desc: l.trans({
+        en: "The registry host.",
+        ko: "이미지 레지스트리 호스트입니다.",
+      }),
+    },
+    {
+      key: "image.tag",
+      type: "string",
+      default: "<branch>-live",
+      desc: l.trans({
+        en: "Write it only to pin one specific build.",
+        ko: "특정 빌드에 고정할 때만 적습니다.",
+      }),
+    },
+  ];
+
+  const branchKeys = [
+    {
+      key: "<branch>.domains",
+      type: "string[]",
+      default: "[]",
+      desc: l.trans({
+        en: "Extra hosts and TLS names for that branch, such as a production domain.",
+        ko: "운영 도메인처럼 그 브랜치에 더할 호스트와 TLS 이름입니다.",
+      }),
+    },
+    {
+      key: "<branch>.app.replica",
+      type: "string",
+      default: '"0,0,1"',
+      desc: l.trans({
+        en: "Becomes `AKAN_REPLICA` in the pod: process counts for federation, batch and all.",
+        ko: "pod 안에서 `AKAN_REPLICA`, 즉 federation, batch, all 순서의 프로세스 수가 됩니다.",
+      }),
+    },
+    {
+      key: "<branch>.app.solo",
+      type: "string",
+      default: l.trans({ en: "unset", ko: "없음" }),
+      desc: l.trans({
+        en: "Becomes `AKAN_SOLO`; write `false` to keep a gateway in front of a single replica.",
+        ko: "`AKAN_SOLO`가 되며, replica가 하나여도 gateway를 두려면 `false`를 적습니다.",
+      }),
+    },
+    {
+      key: "<branch>.app.resources.requests",
+      type: "{ memory, cpu }",
+      default: "250M / 0.05 (main: 1G / 1)",
+      desc: l.trans({
+        en: "The memory and CPU the pod requests.",
+        ko: "pod가 요청하는 메모리와 CPU입니다.",
+      }),
+    },
+    {
+      key: "<branch>.app.resources.limits",
+      type: "{ memory, cpu }",
+      default: "1G / 0.5 (main: 4G / 4)",
+      desc: l.trans({
+        en: "The pod's limit; the CPU limit also sets how many images the optimizer encodes at once.",
+        ko: "pod의 limit이며, CPU limit은 이미지 최적화가 한 번에 인코딩하는 수도 정합니다.",
+      }),
+    },
+    {
+      key: "<branch>.app.resources.storage",
+      type: "string",
+      default: "2Gi (main: 5Gi)",
+      desc: l.trans({
+        en: "The size of the `ReadWriteOnce` PVC mounted at `/workspace/sqlite`.",
+        ko: "`/workspace/sqlite`에 마운트되는 `ReadWriteOnce` PVC의 크기입니다.",
+      }),
+    },
+  ];
+
+  const roleRows = [
+    {
+      name: "federation",
+      desc: l.trans({
+        en: 'Serves requests and skips services and internals pinned to `serverMode: "batch"`.',
+        ko: '요청을 처리하고, `serverMode: "batch"`로 고정한 서비스와 internal은 건너뜁니다.',
+      }),
+    },
+    {
+      name: "batch",
+      desc: l.trans({
+        en: "Never listens, and runs scheduled and queued internals, including those pinned to `batch`.",
+        ko: "요청은 받지 않고, `batch`로 고정한 것을 포함해 예약·큐 internal을 돌립니다.",
+      }),
+    },
+    {
+      name: "all",
+      desc: l.trans({
+        en: "Serves requests and runs every internal.",
+        ko: "요청을 처리하고 모든 internal도 돌립니다.",
+      }),
+    },
+  ];
+
+  const replicaColumns = [
+    { key: "request", label: l.trans({ en: "Requests", ko: "요청 처리" }) },
+    { key: "batch", label: l.trans({ en: "batch internals", ko: "batch internal" }), caption: 'serverMode: "batch"' },
+    { key: "gateway", label: "Gateway" },
+  ];
+
+  const replicaGroups = [
+    {
+      label: l.trans({ en: "One process, no gateway", ko: "프로세스 하나, gateway 없음" }),
+      rows: [
+        {
+          name: "0,0,1",
+          desc: l.trans({
+            en: "The chart default: one all-purpose process.",
+            ko: "chart 기본값으로, 무엇이든 하는 프로세스 하나입니다.",
+          }),
+          marks: { request: true, batch: true, gateway: false },
+        },
+        {
+          name: "1,0,0",
+          desc: l.trans({
+            en: "One request process, so nothing pinned to batch runs.",
+            ko: "요청 프로세스 하나라서 batch로 고정한 internal은 돌지 않습니다.",
+          }),
+          marks: { request: true, batch: false, gateway: false },
+        },
+      ],
+    },
+    {
+      label: l.trans({ en: "Several processes behind a gateway", ko: "gateway 뒤의 여러 프로세스" }),
+      rows: [
+        {
+          name: "2,1,0",
+          desc: l.trans({
+            en: "Two request processes and one batch worker.",
+            ko: "요청 프로세스 두 개와 batch worker 하나입니다.",
+          }),
+          marks: { request: true, batch: true, gateway: true },
+        },
+      ],
+    },
+  ];
+
+  const probeRows = [
+    {
+      probe: "startupProbe",
+      period: "5s",
+      timeout: "1s",
+      failures: "24",
+      desc: l.trans({
+        en: "Waits up to 2 minutes for boot, since SSR loads its route artifacts before it listens.",
+        ko: "SSR은 라우트 산출물을 불러온 뒤에야 요청을 받으므로 부팅을 최대 2분까지 기다립니다.",
+      }),
+    },
+    {
+      probe: "livenessProbe",
+      period: "15s",
+      timeout: "3s",
+      failures: "3",
+      desc: l.trans({
+        en: "Restarts a stuck server after three misses in a row.",
+        ko: "세 번 연속 실패하면 멈춘 서버를 재시작합니다.",
+      }),
+    },
+    {
+      probe: "readinessProbe",
+      period: "10s",
+      timeout: "3s",
+      failures: "2",
+      desc: l.trans({
+        en: "Takes the pod out of the Service after two misses in a row.",
+        ko: "두 번 연속 실패하면 pod를 Service에서 뺍니다.",
+      }),
+    },
+  ];
+
+  const relatedLinks = [
+    {
+      href: "/cheatsheet/dev/docker#replica",
+      title: l.trans({ en: "AKAN_REPLICA In Depth", ko: "AKAN_REPLICA 자세히" }),
+      desc: l.trans({
+        en: "Every slot and value, and when a gateway appears.",
+        ko: "자리별 의미와 값, gateway가 생기는 조건을 정리했습니다.",
+      }),
+    },
+    {
+      href: "/cheatsheet/dev/console#container",
+      title: l.trans({ en: "Container Console", ko: "컨테이너 console" }),
+      desc: l.trans({
+        en: "What the console offers, its lifecycle, and its safety rules.",
+        ko: "console에서 쓸 수 있는 것, 수명 주기, 안전 규칙을 다룹니다.",
+      }),
+    },
+    {
+      href: "/cheatsheet/observability/metrics#overview",
+      title: l.trans({ en: "Health And Metrics", ko: "상태와 메트릭" }),
+      desc: l.trans({
+        en: "Read the numbers before you raise requests and limits.",
+        ko: "request와 limit을 올리기 전에 수치를 확인합니다.",
+      }),
+    },
+  ];
 
   return (
     <Scroll>
@@ -13,37 +323,103 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Akan Kubernetes deployment is built around one app container, a Service, an Ingress, and persistent storage for sqlite data.",
-              ko: "Akan Kubernetes 배포는 하나의 app 컨테이너, Service, Ingress, sqlite 데이터를 위한 persistent storage를 중심으로 구성됩니다.",
+              en: (
+                <span>
+                  Every Akan app deploys with the same Helm chart, <code>infra/app</code>. It creates four resources in
+                  the namespace <code>{"<appName>-<branch>"}</code>:
+                </span>
+              ),
+              ko: (
+                <span>
+                  Akan 앱은 모두 같은 Helm chart인 <code>infra/app</code>으로 배포합니다. chart는{" "}
+                  <code>{"<appName>-<branch>"}</code> 네임스페이스에 리소스 네 개를 만듭니다.
+                </span>
+              ),
             })}
           </div>
-          <DocsList>
-            <li>{l.trans({ en: "Deployment runs the app image.", ko: "Deployment는 app image를 실행합니다." })}</li>
-            <li>
-              {l.trans({
-                en: "Service exposes the app inside the cluster.",
-                ko: "Service는 cluster 내부에서 app을 노출합니다.",
-              })}
-            </li>
-            <li>
-              {l.trans({
-                en: "Ingress connects domains to the Service.",
-                ko: "Ingress는 domain을 Service에 연결합니다.",
-              })}
-            </li>
-            <li>
-              {l.trans({
-                en: "PVC keeps sqlite data across pod restarts.",
-                ko: "PVC는 pod 재시작 후에도 sqlite 데이터를 유지합니다.",
-              })}
-            </li>
-          </DocsList>
+          <Docs.Table
+            columns={[
+              { key: "kind", label: l.trans({ en: "Resource", ko: "리소스" }), code: true },
+              { key: "name", label: l.trans({ en: "Name", ko: "이름" }), code: true },
+              { key: "desc", label: l.trans({ en: "What it does", ko: "하는 일" }) },
+            ]}
+            rows={resourceRows}
+          />
+
+          <Docs.SubSubTitle>
+            {l.trans({ en: "The namespace picks the branch", ko: "브랜치는 네임스페이스가 정합니다" })}
+          </Docs.SubSubTitle>
           <div>
             {l.trans({
-              en: "The branch is not a value you set — the chart reads it out of the release namespace, splitting <appName>-<branch> and selecting the values block of that name. Deploying to the wrong namespace silently picks the wrong block.",
-              ko: "branch는 직접 적는 값이 아닙니다. chart가 release 네임스페이스에서 읽어 옵니다. <appName>-<branch>를 쪼개 그 이름의 values 블록을 고릅니다. 네임스페이스를 잘못 지정하면 조용히 다른 블록이 선택됩니다.",
+              en: "You never write the branch as a value. The chart reads it from the release namespace:",
+              ko: "branch는 값으로 적지 않습니다. chart가 release 네임스페이스에서 읽어 옵니다.",
             })}
           </div>
+          <ol className="my-4 list-decimal space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    You deploy into <code>{"<appName>-<branch>"}</code>, for example <code>myapp-main</code>.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <code>{"<appName>-<branch>"}</code> 네임스페이스에 배포합니다. 예를 들면 <code>myapp-main</code>
+                    입니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    The chart splits the name on <code>-</code> and takes the second part, <code>main</code>, as the
+                    branch.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    chart가 이름을 <code>-</code>로 나눠 두 번째 조각인 <code>main</code>을 branch로 씁니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    It reads the <code>main:</code> block of the values and passes <code>AKAN_PUBLIC_ENV=main</code> to
+                    the pod.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    values의 <code>main:</code> 블록을 읽고, pod에 <code>AKAN_PUBLIC_ENV=main</code>을 넘깁니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ol>
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: (
+                <span>
+                  <strong>A wrong namespace silently picks the wrong values block.</strong> Deploy to{" "}
+                  <code>myapp-develop</code> and the pod runs with the <code>develop</code> settings. For the same
+                  reason, <code>appName</code> must not contain a <code>-</code>.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <strong>네임스페이스를 잘못 적으면 조용히 다른 values 블록이 선택됩니다.</strong>{" "}
+                  <code>myapp-develop</code>에 배포하면 pod는 <code>develop</code> 설정으로 뜹니다. 같은 이유로{" "}
+                  <code>appName</code>에는 <code>-</code>를 넣으면 안 됩니다.
+                </span>
+              ),
+            })}
+          </Docs.Alert>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -53,26 +429,88 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Think of the chart as four connected pieces. Users enter through Ingress, the Service routes traffic to the Pod, and the Pod stores local data through a PVC.",
-              ko: "Chart를 네 조각으로 이해하면 쉽습니다. 사용자는 Ingress로 들어오고, Service가 Pod로 트래픽을 보내며, Pod는 PVC를 통해 local data를 저장합니다.",
+              en: "A request enters through the Ingress, and the Service passes it to the pod, which keeps its data on the PVC. Alongside, the kubelet checks the pod's health.",
+              ko: "요청은 Ingress로 들어와 Service를 거쳐 pod에 닿고, pod는 데이터를 PVC에 저장합니다. 그 옆에서 kubelet이 pod의 상태를 확인합니다.",
             })}
           </div>
-          <Docs.Mermaid
-            title={l.trans({ en: "Mental model", ko: "이해 모델" })}
-            highlightNodes={["pod"]}
-            chart={`flowchart TB
-  domain["Domain<br/>appName-branch.serveDomain"] --> ing["Ingress<br/>TLS, one host per subRoute and domain"]
-  ing --> svc["Service :8282"]
-  svc --> pod["Deployment pod<br/>replicas: 1"]
-  pod --> pvc[("PVC<br/>/workspace/sqlite")]
-  kubelet["kubelet"] -.->|"/_akan/app/health"| pod`}
+          <Docs.Flow
+            title={l.trans({ en: "Request path", ko: "요청 경로" })}
+            direction="TB"
+            nodes={{
+              domain: {
+                label: l.trans({ en: "Domain", ko: "도메인" }),
+                lines: ["<appName>-<branch>.<serveDomain>"],
+              },
+              ingress: {
+                label: "Ingress",
+                lines: [
+                  l.trans({ en: "TLS, one host per subRoute and domain", ko: "TLS, subRoute·도메인마다 호스트 하나" }),
+                ],
+              },
+              service: { label: "Service :8282" },
+              pod: { label: "Pod", lines: ["replicas: 1"] },
+              pvc: { label: "PVC", lines: ["/workspace/sqlite"], tone: "muted" },
+              kubelet: { label: "kubelet", tone: "muted" },
+            }}
+            edges={[
+              ["domain", "ingress"],
+              ["ingress", "service"],
+              ["service", "pod"],
+              ["pod", "pvc"],
+              ["kubelet", "pod", { label: "/_akan/app/health", dashed: true }],
+            ]}
+            emphasis={["pod"]}
           />
-          <div>
-            {l.trans({
-              en: "The Deployment always carries replicas: 1. Scaling an Akan app is AKAN_REPLICA inside the pod, not more pods — the sqlite PVC is ReadWriteOnce, so a second pod could not mount it.",
-              ko: "Deployment는 언제나 replicas: 1입니다. Akan 앱의 확장은 pod 수가 아니라 pod 안의 AKAN_REPLICA입니다. sqlite PVC가 ReadWriteOnce라서, 두 번째 pod는 그것을 마운트할 수 없습니다.",
-            })}
-          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Always one pod.</strong> <code>replicas: 1</code> is fixed in the template. To scale, raise{" "}
+                    <code>AKAN_REPLICA</code> inside the pod instead of adding pods.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>pod는 언제나 하나입니다.</strong> <code>replicas: 1</code>은 template에 고정돼 있습니다.
+                    확장하려면 pod를 늘리지 말고 pod 안의 <code>AKAN_REPLICA</code>를 올립니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Why only one.</strong> The sqlite PVC is <code>ReadWriteOnce</code>, so it attaches to one
+                    node at a time and pods cannot spread across nodes.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>하나인 이유.</strong> sqlite PVC가 <code>ReadWriteOnce</code>라서 한 번에 노드 하나에만
+                    붙습니다. 그래서 pod를 여러 노드에 나눠 띄울 수 없습니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>One certificate for every host.</strong> The default host, each subRoute host and each
+                    production domain share the TLS secret <code>{"cert-<appName>-<branch>"}</code>.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>인증서는 하나입니다.</strong> 기본 호스트, subRoute 호스트, 운영 도메인이 모두 TLS secret{" "}
+                    <code>{"cert-<appName>-<branch>"}</code> 하나를 함께 씁니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -82,13 +520,147 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "There is no single values.yaml. The chart is fed four files in order — the shared defaults, the shared secrets, then the app's own two — so an app usually writes nothing but its name and its production domains, and everything else comes from the common file.",
-              ko: "values.yaml 하나가 있는 것이 아닙니다. chart는 파일 네 개를 순서대로 받습니다. 공용 기본값, 공용 비밀값, 그다음 앱 자신의 두 개입니다. 그래서 앱이 직접 적는 것은 보통 이름과 운영 도메인뿐이고, 나머지는 공용 파일에서 옵니다.",
+              en: (
+                <span>
+                  There is no single <code>values.yaml</code>: Helm reads four files in order, and a later file
+                  overrides an earlier one. An app's own file usually holds just its name and production domains.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>values.yaml</code> 하나로 끝나지 않습니다. Helm이 파일 네 개를 순서대로 읽고, 뒤의 파일이 앞의
+                  값을 덮어씁니다. 그래서 앱 자신의 파일에는 보통 이름과 운영 도메인만 적습니다.
+                </span>
+              ),
+            })}
+          </div>
+          <Docs.Table
+            columns={[
+              { key: "order", label: "#", code: true },
+              { key: "file", label: l.trans({ en: "File", ko: "파일" }), code: true },
+              { key: "desc", label: l.trans({ en: "What it holds", ko: "담는 값" }) },
+            ]}
+            rows={valueFileRows}
+          />
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Both <code>*-secret.yaml</code> files stay out of git. <code>bun run downloadSecret</code> fetches
+                  every file listed in <code>infra/master/jenkins/getSecrets.sh</code>, so add a new app's file there.
+                </span>
+              ),
+              ko: (
+                <span>
+                  두 <code>*-secret.yaml</code> 파일은 git에 올리지 않습니다. <code>bun run downloadSecret</code>은{" "}
+                  <code>infra/master/jenkins/getSecrets.sh</code>에 적힌 파일을 받아 오므로, 새 앱의 파일도 거기에
+                  추가합니다.
+                </span>
+              ),
+            })}
+          </div>
+
+          <Docs.SubSubTitle>{l.trans({ en: "Deploy command", ko: "배포 명령" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  The Jenkins deploy stage runs these two commands from <code>infra/</code> for each app:
+                </span>
+              ),
+              ko: (
+                <span>
+                  Jenkins 배포 단계는 앱마다 <code>infra/</code>에서 아래 두 명령을 실행합니다.
+                </span>
+              ),
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="Terminal"
+            language="bash"
+            showLineNumbers={false}
+            code={`helm upgrade app ./app/ -i --create-namespace -n myapp-main \\
+  -f app/values/_common-values.yaml \\
+  -f app/values/_common-secret.yaml \\
+  -f app/values/myapp-values.yaml \\
+  -f app/values/myapp-secret.yaml
+kubectl rollout restart deployments/app-deployment -n myapp-main`}
+          />
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      The <code>-f</code> order is the priority.
+                    </strong>{" "}
+                    A later file overrides every key it repeats.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>-f</code> 순서가 곧 우선순위입니다.
+                    </strong>{" "}
+                    뒤에 오는 파일이 같은 키를 덮어씁니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      <code>-n</code> picks the branch.
+                    </strong>{" "}
+                    <code>myapp-main</code> selects the <code>main:</code> block.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>-n</code>이 branch를 정합니다.
+                    </strong>{" "}
+                    <code>myapp-main</code>이면 <code>main:</code> 블록을 씁니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      <code>rollout restart</code> brings in the new build.
+                    </strong>{" "}
+                    The restarted pod pulls the image again, so it runs the build just pushed.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>rollout restart</code>가 새 빌드를 반영합니다.
+                    </strong>{" "}
+                    재시작한 pod가 이미지를 다시 받아 오므로, 방금 올린 빌드로 뜹니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
+
+          <Docs.SubSubTitle>{l.trans({ en: "An app's values file", ko: "앱 values 파일" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: "A production app that needs more capacity than the defaults writes something like this:",
+              ko: "기본값보다 용량이 더 필요한 운영 앱이라면 파일이 이 정도가 됩니다.",
             })}
           </div>
           <Code.Snippet
             className="w-full"
             title="infra/app/values/myapp-values.yaml"
+            language="yaml"
             code={`appName: myapp
 subRoutes: [admin]
 
@@ -106,118 +678,98 @@ main:
         cpu: "4"
       storage: 5Gi`}
           />
-          <Docs.OptionTable
-            items={[
-              {
-                key: "appName",
-                type: "string",
-                desc: l.trans({
-                  en: "The namespace is <appName>-<branch>, the image path segment, and the default ingress host. Everything else is derived from it.",
-                  ko: "네임스페이스는 <appName>-<branch>이고, 이미지 경로의 한 조각이자 기본 ingress 호스트이기도 합니다. 나머지가 여기서 유도됩니다.",
-                }),
-              },
-              {
-                key: "repoName",
-                type: "string",
-                default: "from _common-secret.yaml",
-                desc: l.trans({
-                  en: "The workspace segment of the image path: <registry>/<repoName>/<appName>.",
-                  ko: "이미지 경로의 workspace 조각입니다. <registry>/<repoName>/<appName>.",
-                }),
-              },
-              {
-                key: "serveDomain",
-                type: "string",
-                default: "from _common-secret.yaml",
-                desc: l.trans({
-                  en: "The base host. The chart serves <appName>-<branch>.<serveDomain> without anything else being declared.",
-                  ko: "기준 호스트입니다. 다른 것을 적지 않아도 chart는 <appName>-<branch>.<serveDomain>을 서비스합니다.",
-                }),
-              },
-              {
-                key: "subRoutes",
-                type: "string[]",
-                default: "[]",
-                desc: l.trans({
-                  en: "Extra <subRoute>-<branch>.<serveDomain> ingress hosts and TLS SANs, one per basePath the app ships.",
-                  ko: "추가 ingress 호스트와 TLS SAN입니다. 앱이 배포하는 basePath마다 하나씩 <subRoute>-<branch>.<serveDomain>이 생깁니다.",
-                }),
-              },
-              {
-                key: "image.registry",
-                type: "string",
-                default: "from _common-secret.yaml",
-                desc: l.trans({ en: "The registry host.", ko: "레지스트리 호스트입니다." }),
-              },
-              {
-                key: "image.tag",
-                type: "string",
-                default: "<branch>-live",
-                desc: l.trans({
-                  en: "Pin a specific build. The default is a moving tag, which is why a deploy also has to restart the rollout.",
-                  ko: "특정 빌드를 고정합니다. 기본값이 움직이는 태그라서, 배포할 때 rollout을 함께 재시작해야 합니다.",
-                }),
-              },
-              {
-                key: "<branch>.domains",
-                type: "string[]",
-                default: "[]",
-                desc: l.trans({
-                  en: "Custom ingress hosts and TLS SANs for that branch, on top of the derived ones. This is where a production domain goes.",
-                  ko: "해당 branch의 추가 ingress 호스트와 TLS SAN입니다. 유도된 것들 위에 얹힙니다. 운영 도메인이 들어가는 자리입니다.",
-                }),
-              },
-              {
-                key: "<branch>.app.replica",
-                type: "string",
-                default: '"0,0,1"',
-                desc: l.trans({
-                  en: "Becomes AKAN_REPLICA inside the pod — federation, batch, all.",
-                  ko: "pod 안에서 AKAN_REPLICA가 됩니다. federation, batch, all입니다.",
-                }),
-              },
-              {
-                key: "<branch>.app.solo",
-                type: "string",
-                default: "not written",
-                desc: l.trans({
-                  en: "Becomes AKAN_SOLO, and only when the key is present. Write false to keep the gateway in front of a single replica.",
-                  ko: "AKAN_SOLO가 됩니다. 키가 있을 때만 주입됩니다. replica 하나 앞에 gateway를 남기려면 false를 적습니다.",
-                }),
-              },
-              {
-                key: "<branch>.app.resources.requests",
-                type: "{ memory, cpu }",
-                default: "250M / 0.05, or 1G / 1 on main",
-                desc: l.trans({
-                  en: "The pod request. Start conservative and watch metrics before raising it.",
-                  ko: "pod의 request입니다. 보수적으로 시작하고 metrics를 본 뒤 올리세요.",
-                }),
-              },
-              {
-                key: "<branch>.app.resources.limits",
-                type: "{ memory, cpu }",
-                default: "1G / 0.5, or 4G / 4 on main",
-                desc: l.trans({
-                  en: "The pod limit. The CPU limit is also what the image optimizer sizes its encode pool from, so a tight limit narrows that too.",
-                  ko: "pod의 limit입니다. CPU limit은 이미지 optimizer가 인코딩 풀 크기를 정하는 근거이기도 하므로, 빡빡하게 잡으면 그쪽도 함께 좁아집니다.",
-                }),
-              },
-              {
-                key: "<branch>.app.resources.storage",
-                type: "string",
-                default: "2Gi, or 5Gi on main",
-                desc: l.trans({
-                  en: "The PVC size, ReadWriteOnce, mounted at /workspace/sqlite.",
-                  ko: "PVC 크기입니다. ReadWriteOnce이며 /workspace/sqlite에 마운트됩니다.",
-                }),
-              },
-            ]}
-          />
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Top-level keys apply to every branch.</strong> <code>appName</code> and{" "}
+                    <code>subRoutes</code> sit at the root.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>최상위 키는 모든 브랜치에 적용됩니다.</strong> <code>appName</code>과 <code>subRoutes</code>
+                    는 맨 위에 적습니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      A <code>main:</code> block only touches <code>main</code>.
+                    </strong>{" "}
+                    Keys you leave out keep the <code>_common-values.yaml</code> default, while a list such as{" "}
+                    <code>domains</code> is replaced whole.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>main:</code> 블록은 <code>main</code>에만 적용됩니다.
+                    </strong>{" "}
+                    적지 않은 키는 <code>_common-values.yaml</code>의 기본값을 따르고, <code>domains</code> 같은 목록은
+                    통째로 바뀝니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
+
+          <Docs.SubSubTitle>{l.trans({ en: "Top-level keys", ko: "최상위 키" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  A key tagged <code>_common-secret.yaml</code> is set there once for every app.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>_common-secret.yaml</code> 표시가 붙은 키는 그 파일에 한 번만 적고 모든 앱이 함께 씁니다.
+                </span>
+              ),
+            })}
+          </div>
+          <Docs.OptionTable items={topLevelKeys} />
+
+          <Docs.SubSubTitle>{l.trans({ en: "Per-branch keys", ko: "브랜치별 키" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Written under a branch block such as <code>main:</code>. The defaults come from{" "}
+                  <code>_common-values.yaml</code>.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>main:</code> 같은 브랜치 블록 아래에 적습니다. 기본값은 <code>_common-values.yaml</code>에서
+                  옵니다.
+                </span>
+              ),
+            })}
+          </div>
+          <Docs.OptionTable items={branchKeys} />
           <Docs.Alert type="info">
             {l.trans({
-              en: "The container port, the Service port, replicas: 1, the 40s termination grace period and the three probes are fixed in the template, not values. Changing any of them is a chart edit.",
-              ko: "컨테이너 포트, Service 포트, replicas: 1, 40초 종료 유예, 세 개의 probe는 values가 아니라 template에 고정되어 있습니다. 바꾸려면 chart를 고쳐야 합니다.",
+              en: (
+                <span>
+                  <strong>Some settings are not values.</strong> Port 8282, <code>replicas: 1</code>, the 40-second
+                  termination grace period and the three probes are fixed in <code>templates/app.yaml</code>. Changing
+                  them means editing the chart.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <strong>values로 바꿀 수 없는 설정도 있습니다.</strong> 8282 포트, <code>replicas: 1</code>, 40초 종료
+                  유예, probe 세 개는 <code>templates/app.yaml</code>에 고정돼 있습니다. 바꾸려면 chart를 직접 고쳐야
+                  합니다.
+                </span>
+              ),
             })}
           </Docs.Alert>
         </Docs.Description>
@@ -229,67 +781,198 @@ main:
         <Docs.Description>
           <div>
             {l.trans({
-              en: "`app.replica` becomes `AKAN_REPLICA` inside the pod. Use it with CPU and memory values to scale work safely.",
-              ko: "`app.replica`는 pod 안에서 `AKAN_REPLICA`가 됩니다. CPU, memory 값과 함께 사용해 작업을 안전하게 확장하세요.",
+              en: (
+                <span>
+                  <code>{"<branch>.app.replica"}</code> becomes <code>AKAN_REPLICA</code> in the pod: three process
+                  counts, one per role. Raise it together with the CPU and memory limits.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>{"<branch>.app.replica"}</code>는 pod 안에서 <code>AKAN_REPLICA</code>가 됩니다. 역할별 프로세스
+                  수 세 개이며, CPU·메모리 limit과 함께 올립니다.
+                </span>
+              ),
             })}
           </div>
-          <DocsList>
-            <li>
-              {l.trans({
-                en: "`0,0,1`: one all-purpose child, and the chart default. No gateway.",
-                ko: "`0,0,1`: 범용 child 하나이며 chart 기본값입니다. gateway가 없습니다.",
-              })}
-            </li>
-            <li>
-              {l.trans({
-                en: "`1,0,0`: one request child and nothing scheduled. Also no gateway.",
-                ko: "`1,0,0`: request child 하나이고 예약 작업은 없습니다. 이것도 gateway가 없습니다.",
-              })}
-            </li>
-            <li>
-              {l.trans({
-                en: "`2,1,0`: more request capacity plus one batch worker, behind a gateway.",
-                ko: "`2,1,0`: request 처리량을 늘리고 batch worker 하나를 추가하며, gateway 뒤에 놓입니다.",
-              })}
-            </li>
-          </DocsList>
+          <Docs.IntroTable type={l.trans({ en: "Role", ko: "역할" })} items={roleRows} />
+
+          <Docs.SubSubTitle>{l.trans({ en: "Common values", ko: "자주 쓰는 값" })}</Docs.SubSubTitle>
+          <Docs.Matrix
+            type="AKAN_REPLICA"
+            columns={replicaColumns}
+            groups={replicaGroups}
+            markLabel={l.trans({ en: "Yes", ko: "함" })}
+            emptyLabel={l.trans({ en: "No", ko: "안 함" })}
+          />
+
+          <Docs.SubSubTitle>{l.trans({ en: "Health probes", ko: "상태 확인 probe" })}</Docs.SubSubTitle>
           <div>
             {l.trans({
-              en: "A single request-serving replica (`1,0,0` or `0,0,1`) runs in the pod's only process, with no gateway in front of it. That leaves the kubelet as the only thing that can restart a wedged server, so the chart ships liveness, readiness, and startup probes on /_akan/app/health, which a solo process answers itself.",
-              ko: "요청을 처리하는 replica가 하나(`1,0,0` 또는 `0,0,1`)면 pod의 유일한 프로세스에서 gateway 없이 실행됩니다. 멈춘 서버를 재시작할 수 있는 것이 kubelet뿐이므로, chart는 /_akan/app/health에 liveness, readiness, startup probe를 함께 배포하며 solo 프로세스가 이 경로에 직접 응답합니다.",
+              en: (
+                <span>
+                  With a single process there is no gateway to restart it, so the kubelet does. The chart points three
+                  probes at <code>/_akan/app/health</code>, which a solo process answers itself.
+                </span>
+              ),
+              ko: (
+                <span>
+                  프로세스가 하나면 재시작해 줄 gateway가 없어서 kubelet이 그 일을 맡습니다. chart는 probe 세 개를{" "}
+                  <code>/_akan/app/health</code>로 보내고, solo 프로세스가 이 경로에 직접 응답합니다.
+                </span>
+              ),
             })}
           </div>
-          <div>
-            {l.trans({
-              en: "The startup probe carries the boot at 5-second intervals for up to two minutes, because an SSR replica loads its route artifacts before it listens. The 40-second termination grace period is deliberately longer than the server's own 30-second drain budget, so a SIGKILL never lands the instant that budget expires.",
-              ko: "startup probe가 5초 간격으로 최대 2분까지 부팅을 감당합니다. SSR replica는 수신을 시작하기 전에 라우트 산출물을 불러오기 때문입니다. 종료 유예 40초는 서버 자신의 드레인 예산 30초보다 일부러 길게 잡혀 있어, 그 예산이 끝나는 순간 SIGKILL이 떨어지지 않습니다.",
-            })}
-          </div>
+          <Docs.Table
+            columns={[
+              { key: "probe", label: "Probe", code: true },
+              { key: "period", label: l.trans({ en: "Period", ko: "주기" }), code: true },
+              { key: "timeout", label: l.trans({ en: "Timeout", ko: "타임아웃" }), code: true },
+              { key: "failures", label: l.trans({ en: "Failures", ko: "실패 한도" }), code: true },
+              { key: "desc", label: l.trans({ en: "What it does", ko: "하는 일" }) },
+            ]}
+            rows={probeRows}
+            stacked
+          />
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>A 40-second grace period.</strong> On shutdown the server drains for up to 30 seconds (
+                    <code>AKAN_SHUTDOWN_TIMEOUT_MS</code>). The extra 10 seconds keep SIGKILL from landing the moment
+                    that drain ends.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>종료 유예는 40초입니다.</strong> 서버는 종료할 때 최대 30초 동안 하던 일을 마무리합니다(
+                    <code>AKAN_SHUTDOWN_TIMEOUT_MS</code>). 10초의 여유 덕분에 마무리가 끝나는 순간 SIGKILL이 떨어지지
+                    않습니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>A gateway restarts its own children.</strong> With several processes, such as{" "}
+                    <code>2,1,0</code>, the gateway restarts a crashed one, and the probes still watch the pod.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>gateway가 있으면 자식 프로세스는 gateway가 재시작합니다.</strong> <code>2,1,0</code>처럼
+                    프로세스가 여럿이면 죽은 프로세스를 gateway가 다시 띄우고, probe는 그대로 pod를 지켜봅니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="console" title={l.trans({ en: "Open Console", ko: "Console 열기" })}>
-        <Docs.Title>{l.trans({ en: "Open Console", ko: "Console 열기" })}</Docs.Title>
+      <Scroll.Slide id="console" title={l.trans({ en: "Open Console", ko: "콘솔 열기" })}>
+        <Docs.Title>{l.trans({ en: "Open Console", ko: "콘솔 열기" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Use `kubectl exec` to run the generated `console.js` already embedded in the built app image.",
-              ko: "`kubectl exec`로 build된 app image 안에 이미 포함된 generated `console.js`를 실행합니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "The console starts a separate no-listen server process in the same pod; it does not attach to the running `main.js` memory. Its `.tail` and `.trace` do reach the running server, through the control socket in the runtime directory.",
-              ko: "Console은 같은 pod 안에서 별도의 no-listen server process를 시작합니다. 실행 중인 `main.js` memory에 attach하지는 않습니다. 다만 `.tail`과 `.trace`는 runtime 디렉터리의 제어 소켓을 통해 실행 중인 서버에 닿습니다.",
+              en: (
+                <span>
+                  The built image already contains <code>console.js</code>. Open it inside the running pod with{" "}
+                  <code>kubectl exec</code>:
+                </span>
+              ),
+              ko: (
+                <span>
+                  빌드한 이미지에는 <code>console.js</code>가 이미 들어 있습니다. 실행 중인 pod 안에서{" "}
+                  <code>kubectl exec</code>로 엽니다.
+                </span>
+              ),
             })}
           </div>
           <Code.Snippet
             className="w-full"
             title="Terminal"
             language="bash"
-            code="kubectl exec -it -n prod pod/myapp-xxxxx -c myapp -- sh -lc 'AKAN_CONSOLE=1 bun console.js'"
+            showLineNumbers={false}
+            code={`kubectl exec -it -n myapp-main deploy/app-deployment -c app -- \\
+  sh -lc 'AKAN_CONSOLE=1 bun console.js'`}
           />
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Namespace and container.</strong> <code>-n</code> is <code>{"<appName>-<branch>"}</code>,
+                    and the container is always named <code>app</code>.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>네임스페이스와 컨테이너.</strong> <code>-n</code>에는 <code>{"<appName>-<branch>"}</code>를
+                    적고, 컨테이너 이름은 언제나 <code>app</code>입니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      <code>AKAN_CONSOLE=1</code> goes on this command only.
+                    </strong>{" "}
+                    The image runs in production mode on every branch, so the console refuses to open without it.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>AKAN_CONSOLE=1</code>은 이 명령에만 붙입니다.
+                    </strong>{" "}
+                    이미지는 브랜치와 상관없이 운영 모드로 돌기 때문에, 이 값이 없으면 console이 열리지 않습니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>It is a separate process.</strong> The console starts its own server process in the pod that
+                    does not listen and runs no internal jobs or queue workers. It does not attach to the memory of the
+                    running <code>main.js</code>.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>별도 프로세스입니다.</strong> console은 pod 안에서 요청을 받지 않고 internal 작업과 큐
+                    worker도 돌리지 않는 서버 프로세스를 따로 띄웁니다. 실행 중인 <code>main.js</code>의 메모리에 붙는
+                    것이 아닙니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>The running server's logs still reach it.</strong> <code>.tail</code> and{" "}
+                    <code>.trace</code> read them through the control socket in the runtime directory.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>실행 중인 서버의 로그는 볼 수 있습니다.</strong> <code>.tail</code>과 <code>.trace</code>가
+                    runtime 디렉터리의 제어 소켓을 통해 가져옵니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -297,32 +980,80 @@ main:
       <Scroll.Slide id="tips" title={l.trans({ en: "Tips", ko: "꿀팁" })}>
         <Docs.Title>{l.trans({ en: "Tips", ko: "꿀팁" })}</Docs.Title>
         <Docs.Description>
-          <DocsList>
+          <ul className="my-4 list-disc space-y-2 pl-5">
             <li>
               {l.trans({
-                en: "Start with conservative requests and watch metrics before raising limits.",
-                ko: "처음에는 보수적인 requests로 시작하고 metrics를 본 뒤 limits를 올리세요.",
+                en: (
+                  <span>
+                    <strong>Start with small requests.</strong> Watch the metrics first, then raise the limits.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>request는 작게 시작합니다.</strong> 메트릭을 확인한 뒤에 limit을 올립니다.
+                  </span>
+                ),
               })}
             </li>
             <li>
               {l.trans({
-                en: "Resize sqlite storage before it becomes urgent.",
-                ko: "sqlite storage는 급해지기 전에 여유 있게 늘리세요.",
+                en: (
+                  <span>
+                    <strong>Grow storage early.</strong> Resize the sqlite PVC before it becomes urgent.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>스토리지는 미리 늘립니다.</strong> sqlite PVC는 급해지기 전에 여유 있게 키웁니다.
+                  </span>
+                ),
               })}
             </li>
             <li>
               {l.trans({
-                en: "Keep domain and subRoute values explicit so Ingress rules stay predictable.",
-                ko: "Ingress rule을 예측 가능하게 유지하려면 domain과 subRoute 값을 명확히 적으세요.",
+                en: (
+                  <span>
+                    <strong>Write every host out.</strong> Explicit <code>subRoutes</code> and <code>domains</code> keep
+                    the Ingress rules predictable; keep them in step with <code>routes</code> in{" "}
+                    <code>akan.config.ts</code>. The chart only opens a host, and the app decides which basePath answers
+                    it.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>호스트는 빠짐없이 적습니다.</strong> <code>subRoutes</code>와 <code>domains</code>를
+                    명시하고 <code>akan.config.ts</code>의 <code>routes</code>와 맞춰 두면 Ingress 규칙을 예측할 수
+                    있습니다. chart는 호스트를 열어 줄 뿐이고, 어느 basePath가 응답할지는 앱이 정합니다.
+                  </span>
+                ),
               })}
             </li>
             <li>
               {l.trans({
-                en: "The default image tag is <branch>-live and does not move on its own, so a deploy has to restart the rollout for the pod to pick up a new build.",
-                ko: "기본 이미지 태그는 <branch>-live이고 저절로 옮겨 가지 않으므로, pod가 새 빌드를 집으려면 배포가 rollout을 재시작해야 합니다.",
+                en: (
+                  <span>
+                    <strong>
+                      After a manual <code>helm upgrade</code>, restart the rollout.
+                    </strong>{" "}
+                    The default tag <code>{"<branch>-live"}</code> keeps its name for every build, so the Deployment
+                    does not change and the pod keeps the old build until <code>kubectl rollout restart</code>.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>helm upgrade</code>를 직접 돌렸다면 rollout을 재시작합니다.
+                    </strong>{" "}
+                    기본 태그 <code>{"<branch>-live"}</code>는 빌드가 바뀌어도 이름이 같아서 Deployment가 바뀌지
+                    않습니다. <code>kubectl rollout restart</code> 전까지 pod는 이전 빌드로 돕니다.
+                  </span>
+                ),
               })}
             </li>
-          </DocsList>
+          </ul>
+
+          <Docs.SubSubTitle>{l.trans({ en: "Related pages", ko: "함께 보기" })}</Docs.SubSubTitle>
+          <Docs.LinkGrid items={relatedLinks} />
         </Docs.Description>
       </Scroll.Slide>
       <DocsToc />

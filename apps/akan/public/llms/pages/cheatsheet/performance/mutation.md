@@ -8,121 +8,246 @@
 
 ## Headings
 
-- Mutating (#overview)
+- Mutating Data (#overview)
 - Two Write Styles (#styles)
 - Counters And Sets (#counters)
 - Upsert (#upsert)
 - How It Becomes SQL (#sql)
-- Tips (#tips)
+- Tips And Pitfalls (#tips)
 
 ## Content
 
 Mutating
 
-Akan has two ways to change stored data. Use document methods when you edit one loaded document, and use query updates when you change matching rows directly in the database.
+Document Path
 
-Document methods (`.set().save()`, `Model.update`, `Model.remove`) load a document, run save/update/remove hooks, then persist it.
+Loads the document, changes it and saves it, so hooks run and a removal takes its cascade.
 
-Query updates (`updateOne`, `updateMany`, `removeOne`, `removeMany`, `bulkWrite`) compile to a single atomic SQL statement and do not load documents.
+Query Write
 
-Use the `u` update helper for operators, the same way `q` is used for query conditions.
+Sends one atomic SQL statement and loads nothing. Fast and safe under races, but no hook runs.
 
-Two Write Styles
+Schema hooks, registered in `_onSchema`. They run whenever a document is saved or removed.
 
-Pass a plain object for simple value assignments, or a builder function to reach the operator helpers scoped to that call. A bare value is shorthand for `set`.
+Service hooks. Only the service's `create<Model>`, `update<Model>` and `remove<Model>` run them.
 
-Object form (bare value = set)
+A removal declared on a field: documents linked to the removed one go with it.
 
-Builder form (operators)
+Schema hooks
 
-The builder runs synchronously. Compute awaited values (like a password hash) before the call and reference them inside the builder.
+Service hooks
 
-Counters And Sets
+Document path: load, change, save
 
-Numeric operators (`inc`, `mul`, `min`, `max`) and array operators (`push`, `addToSet`, `pull`) run inside the database, so concurrent writers do not lose each other's changes.
+Generated on the service. The default choice for one record.
 
-Atomic counters
+Generated on the service. Soft-removes the document, then runs the cascade.
 
-`addToSet` and `pull` match array elements by value and are reliable for scalar sets (ids, strings, numbers).
+On the model: pick, set, save. `pickOneAndWrite(query, data)` picks by query.
 
-Upsert
+The same thing, spelled out, when you already hold the document.
 
-With `{ upsert: true }`, a missing match inserts a new row. Values from the filter seed the document, operators apply from empty defaults, and `setOnInsert` only applies on that insert.
+Query write: one SQL statement, nothing loaded
 
-Insert or increment
+Change the newest match, or every match.
 
-How It Becomes SQL
+Soft-remove the newest match, or every match.
 
-The adaptor folds every operator into one nested JSON expression on the `_doc` column and always stamps `updatedAt`. The whole update is a single statement the database applies atomically.
+The same query writes, narrowed to one id.
 
-Update helper
+Generated per filter, like `remove<Filter>`, `updateOne<Filter>` and `removeOne<Filter>`.
 
-Document update
+A list of `updateOne` operations, run one after another.
 
-SQL fragment
+Object
 
-These SQL snippets are simplified to show the idea, and reflect the SQLite/libsql dialect. Postgres uses the equivalent jsonb functions. Every operator reads the pre-update document, so all changes in one call see the same original values.
+You only assign values. A bare value means `set`.
+
+Builder
+
+You need `inc`, `addToSet` or another operator.
+
+Plain values in the filter are copied in. Conditions such as `q.oneOf()` are not.
+
+Operators apply to an empty value, so `total` starts at 1.
+
+Written on this insert only. An update that finds a match ignores it.
+
+result
+
+`upsertedId` holds the new id, and `matchedCount` is 0.
+
+plain value
+
+Sets the field. The short form of `set`.
+
+Sets the field.
+
+Removes the field.
+
+Adds `by`. A missing field counts as 0.
+
+Multiplies by `by`. A missing field counts as 0.
+
+Keeps the smaller of the stored value and `value`.
+
+Keeps the larger of the stored value and `value`.
+
+Appends to the array. A missing array starts empty.
+
+Appends only when no equal element is there yet.
+
+Removes every element equal to `value`.
+
+Sets the field only when an upsert inserts a new row.
+
+no SQL; applied only to the upsert insert
+
+nested path
+
+A dotted key writes inside an object field.
+
+combined
+
+Several operators nest into one expression.
+
+`true` once the statement ran.
+
+Rows the filter matched. 0 when an upsert inserted instead.
+
+Rows the write changed, counting an upsert's insert.
+
+The new row's id when an upsert inserted; otherwise `null` or absent.
+
+Mutating Data
+
+You need to bump a view counter, archive a batch of rows, or edit the one record a user opened. There are two ways to write, and the choice decides whether your hooks run.
+
+Which one runs what
+
+If a hook or a cascade must run for each document, take a document path. The table uses three words:
+
+Term
+
+Method
+
+Runs
+
+Does not run
 
 A query write fires no hooks, and therefore no cascade.
 
-`updateOne`, `updateMany`, `removeOne`, `removeMany`, and `bulkWrite` push one atomic statement to the database, so no save/update/remove hook runs — and neither does `_postRemove` nor any `cascade` edge declared on the model. A removed row's files, children, and counters stay behind, and removal is soft, so nothing reports the loss.
+Two Write Styles
 
-`updateById(id, patch)` and `removeById(id)` are the same query write narrowed to one id — not the document path. They look identical to the document call and fire nothing.
+Every query write takes a filter first, then the change. Write the change as a plain object or as a builder function:
 
-`removeOne` and `updateOne` hit the newest match, always, and report only counts. They are for “there is at most one of these”, never for claiming the next item off a queue.
+Form
 
-When a per-document rule must run, take a document path instead:
+When
 
-The service's generated `update<Model>(id, patch)` and `remove<Model>(id)` load the document, apply the change, and save it, so every hook and cascade runs.
+Example
 
-`pickAndWrite(id, data)` and `pickOneAndWrite(query, data)` are the write-through pair on the model facade: pick the document, write into it, save it. Reach for those when the write has to be seen by the save hooks.
+In a model class, the two look like this:
 
-`doc.set(...).save()` is the same thing spelled out when you already hold the document.
+Counters And Sets
 
-Tips
+Numeric and array operators run inside the database. Two requests that bump the same counter at once both count, and neither overwrites the other:
 
-Prefer query updates for counters and bulk state changes on a model that carries no removal side effect; take a document path whenever hooks, a cascade, or rich domain logic must run.
+Upsert
 
-Use the builder form instead of importing update helpers at module scope.
+When nothing matches, each part of the call ends up here:
 
-Check `modifiedCount` from the result when a mutation must have matched a row.
+Part of the call
+
+In the new row
+
+How It Becomes SQL
+
+Operator
+
+What it does · SQL
+
+Tips And Pitfalls
+
+What a write returns
+
+Read next
+
+Querying
+
+Schema Hooks
+
+Service Hooks
+
+Cascade Remove
 
 ## Code Examples
 
-### Code
+### apps/myapp/lib/post/post.document.ts
 
 ```ts
-await this.Post.updateOne({ id }, { status: "published", pinned: true });
+export class PostModel extends into(Post, PostFilter, cnst.post, () => ({})) {
+  async publish(postId: string) {
+    const { modifiedCount } = await this.Post.updateOne(
+      { id: postId },
+      { status: "published", pinned: true },
+    );
+    return !!modifiedCount;
+  }
+  async markHot(postId: string) {
+    const { modifiedCount } = await this.Post.updateOne(
+      { id: postId },
+      ({ inc, addToSet }) => ({ viewNum: inc(1), tags: addToSet("hot") }),
+    );
+    return !!modifiedCount;
+  }
+}
 ```
 
-### Code
+### apps/myapp/lib/post/post.document.ts
 
 ```ts
-await this.Post.updateOne({ id }, ({ inc, addToSet }) => ({
-  views: inc(1),
-  tags: addToSet("hot"),
-}));
+export class PostModel extends into(Post, PostFilter, cnst.post, () => ({})) {
+  async addViewToPublished() {
+    const { modifiedCount } = await this.Post.updateMany(
+      { status: "published" },
+      ({ inc }) => ({ viewNum: inc(1) }),
+    );
+    return modifiedCount;
+  }
+  async addTag(postId: string, tag: string) {
+    const { modifiedCount } = await this.Post.updateOne(
+      { id: postId },
+      ({ addToSet }) => ({ tags: addToSet(tag) }),
+    );
+    return !!modifiedCount;
+  }
+  async subTag(postId: string, tag: string) {
+    const { modifiedCount } = await this.Post.updateOne(
+      { id: postId },
+      ({ pull }) => ({ tags: pull(tag) }),
+    );
+    return !!modifiedCount;
+  }
+}
 ```
 
-### Code
+### apps/myapp/lib/stat/stat.document.ts
 
 ```ts
-// bump a view counter for every matching row in one statement
-await this.Post.updateMany({ status: "published" }, ({ inc }) => ({ viewCount: inc(1) }));
-
-// keep a set of tags unique, or remove one
-await this.Post.updateOne({ id }, ({ addToSet }) => ({ tags: addToSet("featured") }));
-await this.Post.updateOne({ id }, ({ pull }) => ({ tags: pull("featured") }));
-```
-
-### Code
-
-```ts
-await this.Counter.updateOne(
-  { key: "daily-visits" },
-  ({ inc, setOnInsert }) => ({ total: inc(1), status: setOnInsert("active") }),
-  { upsert: true },
-);
+export class StatModel extends into(Stat, StatFilter, cnst.stat, () => ({})) {
+  async addDailyVisit() {
+    const { modifiedCount } = await this.Stat.updateOne(
+      { key: "daily-visits" },
+      ({ inc, setOnInsert }) => ({
+        total: inc(1),
+        status: setOnInsert("active"),
+      }),
+      { upsert: true },
+    );
+    return !!modifiedCount;
+  }
+}
 ```
 
 ## Agent Notes

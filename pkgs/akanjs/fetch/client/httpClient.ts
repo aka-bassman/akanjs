@@ -215,7 +215,7 @@ export class HttpClient {
     const searchPath = searchParams.size > 0 ? `?${searchParams.toString()}` : "";
     const paramedPath = path.replace(/:(\w+)/g, (match, p1) => {
       const value = argMap.get(p1);
-      return value === null || value === undefined ? match : String(value);
+      return value === null || value === undefined ? match : encodeURIComponent(String(value));
     });
     return `${paramedPath}${searchPath}`;
   }

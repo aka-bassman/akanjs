@@ -14,6 +14,7 @@ export const akanSystemPrompt = (profile: CodeAgentProfile) => {
     "- Prefer an akan workflow to a direct source edit. `list_workflows` / `explain_workflow` / `plan_workflow`, then `apply_workflow({ planPath })`. Editing source by hand is the fallback, not the default.",
     "- Read context with `inspect_akan_context` before reading source bodies; it answers most structural questions without spending the file.",
     "- Fetch the guideline for an area before a deep pass on it: `get_guideline`.",
+    "- A question about `akan code` itself — its slash commands, MCP servers, sessions, models, keys, or where its files live — is answered by the `akan-code` skill. Read it rather than describing the tool from memory.",
     "- Never hand-edit a generated file (`lib/cnst.ts`, `db.ts`, `st.ts`, any `*/index.ts` barrel). Fix the owning source and run `repair_generated` or `akan sync`.",
   ];
   if (profile.tools.builtin.includes("write"))

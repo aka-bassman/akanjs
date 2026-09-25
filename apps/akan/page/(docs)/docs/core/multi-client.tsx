@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { Code, Divider, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
@@ -98,19 +98,34 @@ export default page().render(() => {
             })}
           </div>
         </Docs.Description>
-        <Docs.Mermaid
-          title="One app, many clients"
-          chart={`flowchart LR
-  app["Akan App<br/>single server and backend"] --> store["store web"]
-  app --> admin["admin web"]
-  app --> partner["partner web"]
-  app --> demo["demo web"]
-  store --> domain1["store.example.com"]
-  admin --> domain2["admin.example.com"]
-  partner --> local1["partner.example.com"]
-  demo --> local2["demo.example.com"]`}
+        <Docs.Flow
+          title={l.trans({ en: "One app, many clients", ko: "앱 하나, 여러 client" })}
+          nodes={{
+            app: {
+              label: l.trans({ en: "Akan App", ko: "Akan 앱" }),
+              lines: [l.trans({ en: "single server and backend", ko: "서버 하나, 백엔드 하나" })],
+            },
+            store: { label: l.trans({ en: "store web", ko: "store 웹" }) },
+            admin: { label: l.trans({ en: "admin web", ko: "admin 웹" }) },
+            partner: { label: l.trans({ en: "partner web", ko: "partner 웹" }) },
+            demo: { label: l.trans({ en: "demo web", ko: "demo 웹" }) },
+            storeDomain: { label: "store.example.com", tone: "muted" },
+            adminDomain: { label: "admin.example.com", tone: "muted" },
+            partnerDomain: { label: "partner.example.com", tone: "muted" },
+            demoDomain: { label: "demo.example.com", tone: "muted" },
+          }}
+          edges={[
+            ["app", "store"],
+            ["app", "admin"],
+            ["app", "partner"],
+            ["app", "demo"],
+            ["store", "storeDomain"],
+            ["admin", "adminDomain"],
+            ["partner", "partnerDomain"],
+            ["demo", "demoDomain"],
+          ]}
         />
-        <div className="space-y-1">
+        <div className="space-y-1 pl-2">
           {[
             [
               l.trans({ en: "Multi web", ko: "멀티 웹" }),
@@ -134,9 +149,8 @@ export default page().render(() => {
               }),
             ],
           ].map(([title, desc]) => (
-            <div key={title} className={panelRecipe({ padding: "row" })}>
+            <div key={title}>
               <span className="font-bold text-foreground">{title}: </span>
-
               <span className="text-foreground/70 text-sm">{desc}</span>
             </div>
           ))}
@@ -171,10 +185,9 @@ export default page().render(() => {
             {
               key: "basePath",
               type: "string",
-              default: "—",
               desc: l.trans({
-                en: "The client this route opens, and the first page folder its routes live under. For basePath store, pages live under page/store. Akan strips the slashes, so /store/ and store are the same value.",
-                ko: "이 route가 여는 클라이언트이자, 그 라우트들이 놓이는 첫 page 폴더입니다. basePath가 store이면 page/store 아래에 페이지를 둡니다. Akan이 슬래시를 떼어내므로 /store/와 store는 같은 값입니다.",
+                en: "The client this route opens and its first page folder: basePath store lives in page/store.",
+                ko: "이 route가 여는 클라이언트이자 첫 page 폴더입니다. basePath가 store이면 page/store 아래에 둡니다.",
               }),
             },
             {
@@ -182,8 +195,8 @@ export default page().render(() => {
               type: "Record<branch, string[]>",
               default: "{}",
               desc: l.trans({
-                en: "Hosts that open this basePath, keyed by deployment branch. main, develop, and debug always exist, and naming any other key adds that branch. When the host matches, users see the site without the basePath segment.",
-                ko: "이 basePath를 여는 호스트이며 배포 branch를 키로 씁니다. main·develop·debug는 항상 있고, 다른 키를 적으면 그 branch가 추가됩니다. 호스트가 매칭되면 사용자는 basePath 세그먼트 없이 사이트를 보게 됩니다.",
+                en: "Hosts per branch that open this basePath; a matching host hides the basePath segment.",
+                ko: "이 basePath를 여는 호스트이며 branch를 키로 씁니다. 매칭된 호스트에서는 basePath 세그먼트가 보이지 않습니다.",
               }),
             },
           ]}
@@ -227,8 +240,8 @@ export default page().render(() => {
         </Docs.Alert>
         <Docs.Alert type="warning">
           {l.trans({
-            en: "Rule: once basePath is declared, pages outside page/basePath/ are not allowed. Akan raises an error instead of routing them.",
-            ko: "규칙: basePath가 선언되면 page/basePath/ 밖에 페이지를 둘 수 없습니다. Akan은 이런 페이지를 라우팅하지 않고 에러를 발생시킵니다.",
+            en: "Rule: once basePath is declared, pages outside page/basePath/ are not allowed.",
+            ko: "규칙: basePath가 선언되면 page/basePath/ 밖에 페이지를 둘 수 없습니다.",
           })}
         </Docs.Alert>
       </Scroll.Slide>
@@ -287,15 +300,20 @@ https://partner-main.example.com -> partner`}
             })}
           </div>
         </Docs.Description>
-        <Docs.Mermaid
-          title="Build outputs"
-          chart={`flowchart LR
-  source["Akan App"] --> csr["CSR Web<br/>per basePath"]
-  source --> android["Android App<br/>per target"]
-  source --> ios["iOS App<br/>per target"]
-  csr --> backend["Single Server and Backend"]
-  android --> backend
-  ios --> backend`}
+        <Docs.Figure
+          title={l.trans({ en: "Build outputs", ko: "빌드 산출물" })}
+          image="build-outputs"
+          prompt={`
+            Application source at the far left labelled "Akan App". Three arrows fan out to a middle column: a browser
+            at the top labelled "CSR Web" with a smaller second line "per basePath"; a phone in the middle labelled
+            "Android App"; a second phone with a rounder body at the bottom labelled "iOS App". Three arrows converge
+            from the middle column into one server with a database cylinder beside it at the right, the server's outline
+            traced as the red accent, labelled "One Backend".
+          `}
+          alt={l.trans({
+            en: "One Akan app builds CSR web output per basePath and an Android and iOS app per target, and all three talk to one server and backend.",
+            ko: "Akan 앱 하나가 basePath마다 CSR 웹 결과물을, target마다 Android와 iOS 앱을 빌드하고, 셋 모두 하나의 서버와 백엔드를 사용합니다.",
+          })}
         />
         <Code.Snippet
           className="w-full"
@@ -327,8 +345,8 @@ https://partner-main.example.com -> partner`}
         />
         <Docs.Alert type="warning">
           {l.trans({
-            en: "A target's basePath must name one the routes declared. An unknown value fails the config load rather than building a package that opens nothing.",
-            ko: "target의 basePath는 routes에 선언된 값이어야 합니다. 모르는 값이면 아무것도 열지 못하는 패키지를 만드는 대신 config 로드가 실패합니다.",
+            en: "A target's basePath must name one the routes declared.",
+            ko: "target의 basePath는 routes에 선언된 값이어야 합니다.",
           })}
         </Docs.Alert>
         <Docs.Alert>

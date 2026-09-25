@@ -1,13 +1,22 @@
+import type { McpDeclaredServer, McpServerScope } from "@akanjs/devkit/codeAgent/tools/McpServerConfig";
 import type { CodeAgentMcpServerRef, CodeAgentMcpStatus } from "akanjs/common";
 
 export interface CodeTuiMcpView {
   /** What the session actually connected to, fixed when it was created. */
   status: CodeAgentMcpStatus[];
-  /** What the file says now, which is not the same list once something has been added or removed. */
-  declared: { ref: CodeAgentMcpServerRef; disabled: boolean }[];
-  file: string;
-  /** Why the file yielded nothing, when it exists and yielded nothing. */
+  /** What the files say now, which is not the same list once something has been added or removed. */
+  declared: McpDeclaredServer[];
+  /** Both declaration files, global first — which one a server came from is on its row. */
+  files: { scope: McpServerScope; file: string }[];
+  /** Why a file yielded nothing, when it exists and yielded nothing. */
   problem?: string;
+}
+
+interface McpRow {
+  ref?: CodeAgentMcpServerRef;
+  disabled?: boolean;
+  scope?: McpServerScope;
+  live?: CodeAgentMcpStatus;
 }
 
 /**
@@ -25,11 +34,17 @@ export class CodeTuiMcp {
   static readonly usage = [
     "/mcp add <name> <command> [args…]   declare a server this session starts",
     "/mcp add <name> <https://…>         declare one it reaches over http",
+    "/mcp add --local <name> …           declare it for this repo only, not every repo",
     "/mcp login <name>                   sign in through the browser (OAuth)",
     "/mcp logout <name>                  forget the token, leaving the server declared",
     "/mcp remove <name>                  undeclare it",
     "/mcp reload                         reopen this session so the file takes effect",
   ];
+
+  /** Where each file is, said once under the table rather than on every row that came from it. */
+  static #where(view: CodeTuiMcpView) {
+    return view.files.map(({ scope, file }) => `${scope.padEnd(11)}${file}`);
+  }
 
   static list(view: CodeTuiMcpView) {
     const lines = view.problem ? [view.problem, ""] : [];
@@ -39,20 +54,23 @@ export class CodeTuiMcp {
         ...lines,
         "No MCP server is declared.",
         "",
-        `Declare one here, or paste an editor's \`mcpServers\` block into ${view.file}.`,
+        "Declare one here, or paste an editor's `mcpServers` block into either file:",
+        ...CodeTuiMcp.#where(view),
         "",
         ...CodeTuiMcp.usage,
       ].join("\n");
     const width = (at: number) => Math.max(...rows.map((row) => (row[at] ?? "").length)) + 2;
-    const [name, transport, target] = [width(0), width(1), width(2)];
+    const [name, scope, transport, target] = [width(0), width(1), width(2), width(3)];
     return [
       ...lines,
-      `${rows.length} server${rows.length === 1 ? "" : "s"} · ${view.file}`,
+      `${rows.length} server${rows.length === 1 ? "" : "s"}`,
       "",
       ...rows.map(
-        ([a, b, c, d]) =>
-          `${(a ?? "").padEnd(name)}${(b ?? "").padEnd(transport)}${(c ?? "").padEnd(target)}${d ?? ""}`,
+        ([a, b, c, d, e]) =>
+          `${(a ?? "").padEnd(name)}${(b ?? "").padEnd(scope)}${(c ?? "").padEnd(transport)}${(d ?? "").padEnd(target)}${e ?? ""}`,
       ),
+      "",
+      ...CodeTuiMcp.#where(view),
       "",
       ...CodeTuiMcp.usage,
     ].join("\n");
@@ -65,19 +83,20 @@ export class CodeTuiMcp {
    * reload — and one appears in the file that the session never saw. Both are real, and neither is an error.
    */
   static #rows(view: CodeTuiMcpView) {
-    const byName = new Map<string, { ref?: CodeAgentMcpServerRef; disabled?: boolean; live?: CodeAgentMcpStatus }>();
-    for (const entry of view.declared) byName.set(entry.ref.name, { ref: entry.ref, disabled: entry.disabled });
+    const byName = new Map<string, McpRow>();
+    for (const entry of view.declared)
+      byName.set(entry.ref.name, { ref: entry.ref, disabled: entry.disabled, scope: entry.scope });
     for (const live of view.status) byName.set(live.name, { ...byName.get(live.name), live });
     return [...byName]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([name, entry]) => {
         const transport = entry.live?.transport ?? entry.ref?.transport ?? "";
         const target = entry.live?.target ?? CodeTuiMcp.targetOf(entry.ref);
-        return [name, transport, target, CodeTuiMcp.#stateOf(entry)];
+        return [name, entry.scope ?? "", transport, target, CodeTuiMcp.#stateOf(entry)];
       });
   }
 
-  static #stateOf(entry: { ref?: CodeAgentMcpServerRef; disabled?: boolean; live?: CodeAgentMcpStatus }) {
+  static #stateOf(entry: McpRow) {
     if (entry.disabled) return "disabled in the file";
     if (!entry.live) return "declared · /mcp reload to connect";
     // Before the error branch: a 401 is a server answering correctly, and calling it broken sends somebody to

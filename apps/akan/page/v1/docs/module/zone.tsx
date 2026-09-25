@@ -206,7 +206,7 @@ export const Detail = ({ className, view }: DetailProps) => {
       </Scroll.Slide>
       <div className="my-4 h-px w-full bg-border" />
 
-      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 lg:flex" />
+      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 xl:flex" />
     </Scroll>
   );
 });

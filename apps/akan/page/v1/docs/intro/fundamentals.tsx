@@ -519,7 +519,7 @@ export default page().render(() => {
           </div>
         </Docs.Description>
       </Scroll.Slide>
-      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 lg:flex" />
+      <Scroll.TitleNavigator className="fixed top-32 right-0 hidden w-[250px] flex-col gap-2 xl:flex" />
     </Scroll>
   );
 });

@@ -217,7 +217,8 @@ export const formatCommandHelp = (command: CommandCls, key: string) => {
       const opt = arg.argsOption;
       const flag = opt.flag ? `-${opt.flag}, ` : "";
       const kebabName = camelToKebabCase(arg.name);
-      const optName = `${flag}--${kebabName}`;
+      const negation = opt.type === "boolean" && opt.default === true ? `, --no-${kebabName}` : "";
+      const optName = `${flag}--${kebabName}${negation}`;
       const optDesc = opt.desc ?? "";
       const defaultVal = opt.default !== undefined ? chalk.gray(` [default: ${String(opt.default)}]`) : "";
       const choices = opt.enum

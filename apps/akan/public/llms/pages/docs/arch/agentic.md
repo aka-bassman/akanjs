@@ -20,127 +20,239 @@
 
 In-Page Agent
 
-Every Akan app can host a chat agent that reads the rendered screen and drives it — the assistant on this page is one. What it may do is what a component declared, and what it may read is what a component subscribed. A store class publishes nothing on its own: an agent presses the controls the screen already offers the user, and never a lever the screen does not have.
+One action a component publishes for the agent, usually the handler its button already calls.
 
-One mount
+Everything the agent can do and read on the current screen: the mounted tools and keys.
 
-<Agent.Chat /> in a layout is the whole integration — launcher, transcript, approval card, and a streaming loop.
+One model answer, together with every tool call it made on the way.
 
-Tools run in the browser
+The conversation so far. It is sent to the model again on every turn.
 
-The server is a stateless relay that never executes a tool. Every action runs in the caller's own session, gated by guards and the approval card.
+A card that holds a call until the user approves it.
 
-Framework built-in
+The server endpoint runAgentTurn. It passes the transcript to the LLM and never runs a tool.
 
-The relay endpoint, two LLM adaptors, and the chat UI all ship with akanjs — no extra library to mount.
-
-Runtime Map
+A section wrapped in Agent.Zone, with a conversation of its own.
 
 Mounted st.use / st.sel / st.ref keys, hook tools, and Agent.Guide text.
 
-The loop, the approval card, and its own /new · /retry · /compact · /copy · /help · /tools — the only slash commands it lists.
+The loop, the approval card, and the six slash commands its / menu lists.
 
 A stateless HTTP relay. It spends the LLM key and never runs a tool.
 
-The whole transcript in, one assistant answer out. OpenaiLlm is the default and speaks the chat-completions dialect to whatever host is named; AnthropicLlm ships beside it for the Messages API.
+The whole transcript in, one assistant answer out. OpenaiLlm is the default.
 
-External agents that call your domain over HTTP use the MCP server instead — a different catalogue, derived from signal guards.
+Off by default. Keeps the transcript in sessionStorage; { storage: "local" } outlives the tab.
+
+Text appears as it is generated. The same endpoint answers text/event-stream; no app code.
+
+App-wide framing. Route-scoped guidance layers on through a mounted Agent.Guide.
+
+Handles files that need a parser, like a PDF's text, or uploads the file and answers a url.
+
+A press-to-talk microphone, and spoken replies to questions asked by voice.
+
+The only way an action reaches an agent. It returns the callable to wire to onClick.
+
+desc is required and comes first. arg is what the caller must pass; opt is what it may, and an omitted opt arrives as null.
+
+Both take a scalar, an enum, or one array level of either ([String], [TaskStatus]), so a list never has to be taught as a string format.
+
+A third argument narrows the values at render time: .arg("branch", String, { oneOf: branchCodes }) is enumOf for values known only once the component has its data.
+
+confirm holds the call on the approval card: true for every call, or a function of the arguments for the ones that deserve it.
+
+A remove* name confirms by default, reading destructiveness off the name as MCP hints do. Write { confirm: false } to opt out.
+
+settle: false marks a read of what is already there, so the turn reports without waiting for the DOM. The default waits, since a write may still be landing.
+
+A falsy name declares the tool without publishing it. The callable still handles a person's click; nothing reaches the agent.
+
+Every chain ends in a hook, so a conditional surface withholds the name instead of skipping the declaration.
+
+The name follows the render: a control that appears later publishes, and one that goes away stops.
+
+Derived values and local state, each ending in one hook. .value() takes the value the component holds, or a thunk when a ref the children fill builds it; .init() is useState and returns the same pair.
+
+The declared type checks what you hand over and masks how it reads: a model class strips its hidden, secret and visual fields; Any passes untouched.
+
+Read-only unless set: true, which publishes a set<Name> tool of the same type. { report: false } keeps a key that changes every second out of change reports.
+
+The data-akan-* attributes for a handler passed by reference, and {} for an inline arrow: a closure says nothing about what it does, and a guessed mark is worse than none.
+
+Every akanjs/ui control already spreads it, so an app writes it only on a control of its own.
+
+key says which of several same-named controls this is, in the call argument's own words. Without it the pointer cannot tell a tab's menus apart, so it draws nothing.
+
+Subscribes without joining the surface. There is no store-level switch; a store class says nothing about agents.
+
+Opens an internal path through the same router Link uses.
+
+Returns to the previous page in this session's history.
+
+Reads the rendered screen as compact text.
+
+Reads one store key, masked by its model.
+
+Scrolls one thing into view and flashes it, to show the user where it is.
+
+Hands a decision back to the user on a question card.
+
+It waits for the screen
+
+router.push returns while the payload is still in flight, so navigate, and every tool not declared a read, waits for the DOM to hold still before reporting. Reading built-ins are declared, so looking around costs nothing.
+
+Calls travel in a batch
+
+Every call the model makes in a turn runs in order and comes back as one tool message: one round trip. Chained one per turn, each call would cost a round trip and a resend of the transcript.
+
+The turn cap asks
+
+At maxTurns the agent asks whether to keep going. Whatever the user types instead rides as their own turn.
+
+Start a new conversation.
+
+Send the last message again.
+
+Summarize the conversation so far.
+
+Copy this conversation.
+
+Show what you can do here.
+
+List this screen's tools.
+
+The default. Speaks chat-completions to any host: OpenAI, DeepSeek, Groq, OpenRouter, Ollama.
+
+Speaks the Messages API, and reads a PDF as well as a picture.
+
+Every Akan app can host a chat agent that reads the screen and works it for the user; the assistant on this page is one. It can only press what the screen already offers, so it never gets a lever the user does not have.
+
+What it may do is what a component declared, and what it may read is what a component subscribed. A store class alone publishes nothing.
+
+One mount
+
+<Agent.Chat /> in a layout is the whole integration: launcher, transcript, approval card and a streaming loop.
+
+Tools run in the browser
+
+The server is a stateless relay that never runs a tool. Every action runs in the user's own session, behind guards and the approval card.
+
+Built into the framework
+
+The relay endpoint, two LLM adaptors and the chat UI all ship with akanjs. There is no extra library to mount.
+
+The chat and every tool run inside the user's browser, on the controls the page already shows. The server is only a relay that spends the LLM key and never runs a tool.
+
+Words used on this page
+
+Term
+
+Runtime map
+
+Piece
+
+External agents that call your domain over HTTP use the MCP server instead. It is a different catalogue, derived from signal guards.
 
 MCP Server
 
 Mount and Secure
 
-Mount the chat once in a layout. The framework serves runAgentTurn on every app. option.setLlm gives it a key; AKAN_AGENT=false removes the whole surface.
+Turning the agent on takes three steps: mount the chat, give it an LLM key, and name who may use it.
 
-AgentRelayAccess refuses every call until a guard is registered — the same answer None gives. Without one the chat cannot spend the LLM key. A product with accounts names its own guard in the same option.ts, as it would on any other endpoint.
+Mount <Agent.Chat /> once, in a layout. The runAgentTurn relay is already served on every app.
 
-Keeps the transcript across reloads in sessionStorage. Pass { storage: "local" } to outlive the tab. Off by default.
+Give it a key with option.setLlm in lib/option.ts.
 
-The same endpoint answers text/event-stream. Assistant text arrives as it is generated, with zero app code.
+Name a guard with option.setAgentAccess. Until you do, every call is refused.
 
-App-global framing on Agent.Chat. Route-scoped guidance layers on through mounted Agent.Guide.
+AgentRelayAccess refuses every call until a guard is registered, the same answer None gives, so the chat cannot spend the LLM key. A product with accounts names its own guard in option.ts, as it would on any endpoint. AKAN_AGENT=false removes the whole surface.
 
-The composer attaches images and text files on its own; attach is where an app reads what needs a parser, like a PDF's text, or uploads the file and answers a url. Nothing is stored — the bytes ride one turn's request, and a reloaded transcript keeps the name without the content. The ceilings are the message's rather than the file's — 4 MB per file, 8 MB and five files per message, and the same file twice refused by name — because what a provider refuses is the sum, and a request that cannot be sent is one the user has to empty the composer to escape. They are measured on what attach produced, so a url costs nothing, and attachLimits raises them for a provider that carries more.
+Agent.Chat options
 
-A press-to-talk microphone whose transcript lands in the composer to be corrected, and a reply read aloud one sentence at a time — but only when the ask itself came in by voice, so a typed question never turns the speakers on. useSpeech from @libs/util/webkit is the engine: the browser's own recognition on the web, Capacitor plugins in a WebView, which has neither.
+Option
 
-attach and voice carry functions, and a function cannot cross the RSC boundary — so a server layout cannot pass either. Mount the chat from a small client component in ui/ that calls the hook, the way apps/akan/ui/DocsAgentChat.tsx does.
+Attachments
+
+Voice
+
+attach and voice carry functions, and a function cannot cross the RSC boundary, so a server layout cannot pass them. Mount the chat from a small client component in ui/ instead:
 
 The Declared Surface
 
-st.tool publishes one action and hands back the callable you wire to onClick, so the agent and the user press the same handler. st.use, st.sel, and st.ref make one store key readable while the component reading it is mounted. Unmount and both withdraw on the next turn.
+The agent's surface is exactly what the mounted components declare. Declare a tool beside the control that does the same thing, and the agent and the user press one handler.
 
-Six tools are on every screen whatever it declares. Five come from the store surface, so builtins narrows them; askUser is the session's own and stays whatever you pass:
+Declaring tools and state
 
-Internal paths only, the same router Link rides.
+Six built-in tools
 
-The previous page in this session's history. Global like navigate, because history is not a control a page owns — a page that draws no back link is not a page you may not leave.
+These are on every screen, whatever it declares. builtins narrows the first five; askUser belongs to the session and always stays.
 
-The rendered DOM as compact text. Headings carry their anchor and a truncated read names the sections below the cut, so a long screen stays reachable: pass one of those names — or a heading's own text — as section. Every image is named whether or not it has an alt; images: true appends each one's address, off by default because a gallery is one long URL per thumbnail.
+Tool
 
-One masked store key.
+What the agent can read
 
-Scrolls one thing into view and flashes it once the scroll lands, so the agent can show the user where a thing is instead of describing where it is. The target is a tool name, a state key, a scope path, an anchor, or a heading's text. Nothing hidden ever resolves.
+Return the answer, not the record
 
-Hands a decision back to the user. The turn parks on the question card until they pick an option or write their own answer; dismissing it is an error the agent reads, never a silent empty answer.
+How a turn runs
 
-A tool that changes the screen waits for the screen before it answers: router.push returns while the payload is still in flight, so navigate — and the session, after every tool that did not declare itself a read — waits for the DOM to hold still before reporting; the reading built-ins declare it, so a turn that only looks around pays nothing. One turn carries every call the model made in it: they run in order and come back as one tool message, so a batch costs one model round trip where the same calls chained one per turn cost a round trip and a resend of the whole transcript each. And the turn cap is a question rather than a dead end: at maxTurns the agent asks whether to keep going, and what the user types instead rides as their own turn.
+Long work and Stop
 
-Long work is awaited, not polled. The session awaits a tool's own promise, so a .exec that awaits the store action finishing the job simply makes the turn take that long — and the change report that follows carries whatever landed, so the model needs no second call to read it. A tool that returns early leaves the agent to ask again and again, one round trip per look, which burns the whole maxTurns budget in seconds on a job measured in minutes. Say so in the desc. For the job a tool cannot await — one started in an earlier turn, or by a person clicking the button — declare a waiting tool of your own beside the control that starts the work: a general built-in wait was tried and removed, because a tool reachable on every screen with no idea what any key means gets spent on whatever key looks promising, parking turns nobody asked to park. Stop reaches a tool that is still running: the session races every call against its abort signal, and the signal itself arrives through AgentAbort.current, the same module slot AgentProgress is. Honouring it is optional, since the race lands whatever the tool does; what it buys is the tool's own cleanup. Import both from akanjs/store — an app may not reach use-agentic directly. A stopped turn answers the calls it never ran: every provider dialect refuses an assistant message whose tool_calls have no results, on that turn and on every later one, so Stop landing between a call and its result would otherwise leave a transcript nothing can be sent from.
+Slash commands
 
-The chat answers six commands of its own, and they are the whole / menu: /new (/clear), /retry, /compact, /copy, /help and /tools. An app writes none of them and cannot add one — there is no app-defined slash command in the in-page chat. A screen a model should read is published from its page instead, with page().prompt(), and reaches MCP clients as a prompt rather than this menu. /new and /copy work mid-turn and ahead of the question card, so /new ends the turn it is clearing instead of being answered into it as text. A command's output is a local message — rendered in the transcript, withheld from the wire, because the transcript is the model's history and text appended plainly would come back next turn as something the assistant believes it said. /copy exists because nothing else keeps the transcript: the relay is stateless, so an export is the one path a wrong answer has to whoever could fix it. And ↑ walks back through what was sent, ↓ forward — seeded from the transcript, so a persisted chat does not lose only what was just typed — while the / menu takes those keys whenever it is open: Enter picks the highlighted row, Tab completes its name, and Escape closes the menu and then the panel.
+The chat answers six commands of its own. An app writes none of them.
 
-A long conversation summarizes itself, because nothing else keeps it inside the model's window: the loop runs in the browser and the relay holds no session, so an uncompacted chat grows until the provider refuses the whole request. Past compact.at estimated tokens the history above the last keep messages becomes one message standing in for it — before the turn that would have overflowed, since a provider answers an over-long request with a refusal rather than a shorter answer. The cut only ever lands on a user message, so the kept half never opens with a tool result whose call was summarized away. The summarizing turn carries no tools and no screen context, and is fed a bounded digest rather than the transcript itself, which is the one thing already known not to fit. compact={{ at, keep }} on Agent.Chat tunes it per provider, { at: 0 } turns it off, and /compact does the same on demand keeping nothing.
+Command
 
-Reading is per key, not per store: a key the screen does not read stays unreadable even while a sibling key of the same store is live, and every read is masked by the model that key declares. hidden and secret fields never cross the boundary. Readability is opt-out, not opt-in: a subscribed key joins the surface unless the read says otherwise, and base-store plumbing says otherwise — routing, the caller's credential and the UI operation are all subscribed with `{ agent: false }`. A component that wants an agent to read a base key writes a plain read, as ThemeToggle does for theme.
+Long conversations summarize themselves
 
-Return what answers the question, not the record. One tool result is capped at 20,000 characters — past that the JSON is clipped mid-structure and a note tells the model what happened — and once it is in the transcript it rides every later turn, which compaction cannot save because it summarizes what is above the cut and a result arrives below it. A field that is bulky and useless to a model is fixed once at the model rather than in every tool that touches it: field.visual keeps it stored, searchable, formable and rendered on the page, and strips it from every agent read and every MCP result. It is cost, not secrecy — nothing is refused over one.
+Compaction keeps the tail
 
-The only way an action reaches an agent. desc is required and comes first; arg is what the caller must pass and opt what it may — an opt the caller omits arrives null. Both take a scalar, an enum, or one array level of either — [String], [TaskStatus] — so a list never has to be taught as a string format, and a third argument narrows the value set at render time: .arg("branch", String, { oneOf: branchCodes }) is the runtime half of enumOf, for values only known once the component has its data. Returns the callable to wire to onClick.
-
-confirm parks the call on the approval card before it runs — true always, or a function of the arguments for the calls that deserve it. A remove* name confirms by default, destructiveness read off the key the way MCP hints are, so declaring { confirm: false } is how one opts out. settle: false says the call is a read that returns what is already there, so the turn does not wait for the DOM to hold still before reporting; the default waits, because a write may still be landing when exec resolves.
-
-A falsy name declares the tool without publishing it: the callable still drives the click a person makes, and nothing reaches the agent. Every chain ends in a hook, so a conditional surface withholds the name rather than skipping the declaration — and the name follows the render, so a control that appears later publishes and one that goes away stops. An argument nothing can describe withdraws the whole tool the same way, reported on the console rather than thrown, because a page must not lose its render over an agent-tooling mistake.
-
-Derived values and local state. Each ends in its own one hook: .value() takes the value the component already holds — a thunk when it is assembled out of a ref the children fill in — and .init() is useState, returning the same pair. The declared type typechecks what you hand over and masks how it reads: a model class strips its own hidden, secret and visual fields; Any passes untouched. Read-only unless set: true, which publishes a set<Name> tool writing that same type. { report: false } keeps a key out of post-call diff reports, for a value that changes on its own every second.
-
-The data-akan-* attributes for a handler passed by reference, and {} for an inline arrow — a closure the caller wrote says nothing about what it does, and a guessed annotation is worse than none. Every akanjs/ui control already spreads it, so an app writes it only on a control of its own. key names which of several namesake controls this one is, in the same vocabulary the call's argument uses: a tab's menus share one tool, and without the key the page can say what the agent did but never where, so the pointer draws nothing rather than ringing the wrong row.
-
-Subscribes without joining the surface. There is no store-level exposure switch — a store class says nothing about agents.
+Past the threshold, every message above the cut becomes one summary message, and the last few messages are kept as they were. The cut always lands on a user message.
 
 Zone Agents
 
-Wrap a section in Agent.Zone and everything mounted inside — subscriptions, hook tools, guides — belongs to that zone's own conversation as well as to the root agent. Zones are views of the screen, never walls between its parts. A zone's readScreen reads only its own container, and an Agent.Chat mounted inside binds to the zone session automatically.
+Agent.Zone gives one section of a screen its own conversation, so each part of a busy page can have a focused agent.
 
-Guides follow the layout cascade: a zone reads its ancestors' guidance plus its own, and never a sibling's. The root chat outside the zones keeps seeing the whole screen, so wrapping a section costs the root agent nothing.
+Two zones, one root agent
+
+Two zones on one screen, each with its own inline chat that reads only its own section, while the root agent's chat keeps seeing both.
 
 Skipping A Region
 
-readScreen reads the whole rendered screen, and a footer, a cookie banner, or a nav that repeats on every route costs the same tokens as the content — on that read and on every later turn, since the read stays in the transcript. Agent.Skip leaves a region out of the default read.
-
-What stands in its place is a named marker, never nothing. A deleted region reads as an absent one — an agent asked about the footer would answer that the page has none. The name in the marker is a section, so naming it reads the region after all: the marker is what the default read leaves out, not a wall.
-
-It hides text, not behaviour. Tools and state keys are declarations rather than markup, so an st.tool declared inside is published exactly as before and highlight still reaches a control in there. This is field.visual one layer up: cost, not secrecy.
-
-Reach for it second. A read is scoped from the other side too: Agent.Zone and readScreen({ section }) narrow to one container, which beats blocklisting five regions on a screen that is mostly chrome. And a footer is last in the document, so on a page long enough to truncate it was already past the cut — the regions worth marking are the ones above the content.
+Agent.Skip keeps a region such as a footer, a cookie banner or a repeated nav out of the default readScreen. Those regions cost as many tokens as real content, on the read and on every later turn, because the read stays in the transcript.
 
 Showing the Work
 
-The transcript says what the agent did, and it is behind a panel that is closed as often as it is open. So the page says it too: the control a call was published from is ringed where it stands, scrolled to first when it is off screen, and a pointer travels to it and presses it. It costs an app nothing for the same reason data-akan-action does. The onChange={st.do.setTitleOnTask} reference that publishes the tool is what annotates the control, and the annotation is what makes it findable, so an inline arrow silently costs three things at once.
+The chat panel is closed as often as it is open, so the page itself shows what the agent does. The control a call came from is ringed, scrolled into view if needed, and a pointer travels to it and presses it.
 
-The pointer's unit is the turn, not the call. A model's calls arrive with its own writing between them — seconds each — so a pointer that lived for the length of a call spent every turn vanishing and coming back. It stays for as long as the turn runs: it appears at the first control it presses, drifts clear of it and waits there as a spinner, and fades when the turn ends. Clearing the control is the whole of that gesture — a person clicks and takes the hand away, and a spinner left sitting on the button covers the very change it caused. A turn that drove no control draws no pointer at all, which is the honest answer: an agent that only answered a question was never on the screen. While a reveal scrolls the page to the next control, the pointer holds still the way a person's does, and carries a chevron pointing the way the view is travelling — stillness over a sliding page otherwise reads as a pointer that has come loose rather than as the one doing the scrolling.
+An app writes nothing for this. Passing the handler by reference, as in onChange={st.do.setTitleOnTask}, is what publishes the tool and marks the control, so an inline arrow silently loses all three: the tool, the mark and the pointer.
 
-What it refuses to draw is the point. A name several rows answer to rings nothing unless the call's own argument names which one — a tab's menus share one tool, so each menu carries its key and the pointer picks the one that was switched to. A call an approval or a guard turned back is never drawn at all, a control the screen is not actually showing is not pointed at — under a modal's backdrop, inside a drawer that has slid off, faded to nothing — and a backgrounded tab draws nothing. A ring on the wrong element is worse than no ring: it is the screen telling the user something untrue about what just happened. Almost nothing is waited on either — the call starts the moment the effect is handed its event, because an animation that held a call would make the agent slower for a decoration.
+Try it below. Both buttons hand their st.tool callable straight to onClick. Ask the agent to count up three times and reset, and watch where it presses.
 
-It draws where the change landed and nowhere else. A call that reaches no control on screen draws nothing at all — navigate mostly included, since the router is not an element and a bar across the top of the page read as chrome the page had grown rather than as the agent doing something. But a destination the screen already offers as a link is an element, and that one is pressed: when exactly one visible link goes where the navigation is going, the pointer travels to it and clicks it before the route moves. That is the only call the runtime waits for, capped at 600ms, because a click drawn on a tree the router has already replaced is no click at all. Link presence decides what is drawn, never what is allowed — the agent may go anywhere the user could type.
+The pointer lives for a turn
 
-Below is the thing itself. Both buttons hand their st.tool callable straight to Button's onClick, which is the whole of what makes them findable — ask the agent to count up three times and reset, and watch where it presses.
+What it refuses to draw
+
+A ring on the wrong element is worse than none, because it tells the user something untrue. So nothing is drawn when:
+
+Almost nothing waits for the animation: the call starts the moment the effect receives its event, so decoration never slows the agent.
+
+Navigation and links
+
+To turn it off, visual={false} draws nothing, and visual={{ cursor: false }} keeps the ring but drops the pointer.
 
 Swapping the Model
 
-Everything the model needs is declared in option.ts, never in the environment. setLlm fills apiKey, model, host, accepts and maxTokens for whichever adaptor holds LlmAdaptorRole, so the settings survive a provider swap — and it keeps whatever else it is handed, so an adaptor you wrote reads its own fields from the same place with use<MyLlmOption>(). Two adaptors ship, one per wire. OpenaiLlm is the default and speaks the chat-completions dialect to whatever host names: OpenAI, DeepSeek, Groq, OpenRouter, Ollama. AnthropicLlm is the Messages API and reads a PDF as well as a picture. Both require a model, since a default would age into a 404 and would decide the vision claim for the app. accepts overrides what the configured model reads, because an adaptor answers for an API and one API serves models that differ. With no apiKey the app still boots and the chat says no model is configured; a refusal the provider explained is thrown instead of swallowed, so the chat prints that reason in the user's language.
+The model is configured in option.ts, never in the environment. setLlm fills apiKey, model, host, accepts and maxTokens for whichever adaptor holds LlmAdaptorRole, so the settings survive a provider swap.
 
-An adaptor implements one method — chat(request, onDelta?). The whole transcript goes in, one assistant answer comes out. Rebind the role the way applyMiddleware rebinds middleware: last writer wins.
+Two adaptors ship, one per wire:
+
+Adaptor
+
+Writing your own adaptor
+
+An adaptor implements one method, chat(request, onDelta?): the whole transcript goes in and one assistant answer comes out. Install it with applyAdaptor; as with applyMiddleware, the last writer wins.
 
 ## Code Examples
 
@@ -156,6 +268,19 @@ import { SignedIn } from "../srvkit";
 export const option = new AkanOption<ModulesOptions>()
   .setLlm((options) => options.llm ?? {})
   .setAgentAccess(SignedIn);
+```
+
+### apps/akan/ui/DocsAgentChat.tsx
+
+```ts
+"use client";
+import { useSpeech } from "@libs/util/webkit";
+import { Agent } from "akanjs/ui";
+
+export const DocsAgentChat = () => {
+  const voice = useSpeech();
+  return <Agent.Chat persist voice={voice} />;
+};
 ```
 
 ### <Model>.Zone.tsx — the tool and the button are one declaration

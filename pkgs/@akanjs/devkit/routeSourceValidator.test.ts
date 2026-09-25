@@ -15,7 +15,6 @@ describe("RouteSourceValidator", () => {
       "export const reconnect = true;",
       "export const wsConnect = true;",
       "export const layoutStyle = {};",
-      'export const gaTrackingId = "G-1";',
     ].join("\n");
 
     expect(() => validate(source, "layout", true)).not.toThrow();

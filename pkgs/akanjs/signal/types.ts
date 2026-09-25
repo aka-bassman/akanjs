@@ -99,14 +99,13 @@ export interface SignalOption<Response = any, Nullable extends boolean = false, 
   timeout?: number;
   partial?: _Key[] | readonly _Key[];
   /**
-   * How long this endpoint's answer may be reused, in milliseconds. The `Cache` middleware — registered by
-   * default — keeps the handler's result under the endpoint's key and its arguments and serves it until it
-   * expires; declared nowhere, nothing is cached.
+   * How long this endpoint's answer may be reused, in milliseconds. The call keeps the handler's result under the
+   * endpoint's key and its arguments and serves it until it expires; declared nowhere, nothing is cached.
    *
    * **Only a `query` that takes no internal argument may carry one.** Internal arguments are how a call learns
    * who is asking (`.with(Self)`), so an endpoint that has them answers per caller, and one shared entry would be
-   * one caller's answer handed to the next; such an endpoint is named in the log and left uncached. Guards still
-   * run on every hit — a shared answer is not a public one.
+   * one caller's answer handed to the next; such an endpoint is named in the log and left uncached. The lookup
+   * runs after the guards, so a hit reaches only a caller they admitted — a shared answer is not a public one.
    */
   cache?: number;
   guards?: GuardCls[];

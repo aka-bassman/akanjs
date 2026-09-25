@@ -167,37 +167,40 @@ export class DatabaseResolver {
         });
         Object.entries(getLoaderInfos(database.model)).forEach(([key, loaderInfo]) => {
           Object.assign(this, {
-            [key]: new DataLoader<any, any>(async (keys) => {
-              traceDataLoaderBatch(keys.length);
-              if (loaderInfo.type === "query") {
-                const fields = loaderInfo.field as string[];
-                const query = { kind: "any", queries: keys } as QueryOf<unknown>;
+            [key]: new DataLoader<any, any>(
+              async (keys) => {
+                traceDataLoaderBatch(keys.length);
+                if (loaderInfo.type === "query") {
+                  const fields = loaderInfo.field as string[];
+                  const query = { kind: "any", queries: keys } as QueryOf<unknown>;
+                  const docs = await timedQuery(() =>
+                    this.__store.find(documentQueryHelper.all(loaderInfo.defaultQuery, query)),
+                  );
+                  const byKey = new Map(docs.map((doc) => [fields.map((field) => String(doc[field])).join(""), doc]));
+                  return keys.map(
+                    (queryKey) => byKey.get(fields.map((field) => String(queryKey[field])).join("")) ?? null,
+                  );
+                }
+                const field = loaderInfo.field as string;
+                const query = {
+                  [field]: documentQueryHelper.oneOf([...keys]),
+                };
                 const docs = await timedQuery(() =>
                   this.__store.find(documentQueryHelper.all(loaderInfo.defaultQuery, query)),
                 );
-                const byKey = new Map(docs.map((doc) => [fields.map((field) => String(doc[field])).join(""), doc]));
-                return keys.map(
-                  (queryKey) => byKey.get(fields.map((field) => String(queryKey[field])).join("")) ?? null,
-                );
-              }
-              const field = loaderInfo.field as string;
-              const query = {
-                [field]: documentQueryHelper.oneOf([...keys]),
-              };
-              const docs = await timedQuery(() =>
-                this.__store.find(documentQueryHelper.all(loaderInfo.defaultQuery, query)),
-              );
-              if (loaderInfo.type === "arrayField") {
-                const byKey = new Map<string, unknown>();
-                for (const doc of docs) {
-                  const values = Array.isArray(doc[field]) ? doc[field] : [];
-                  for (const value of values) if (!byKey.has(String(value))) byKey.set(String(value), doc);
+                if (loaderInfo.type === "arrayField") {
+                  const byKey = new Map<string, unknown>();
+                  for (const doc of docs) {
+                    const values = Array.isArray(doc[field]) ? doc[field] : [];
+                    for (const value of values) if (!byKey.has(String(value))) byKey.set(String(value), doc);
+                  }
+                  return keys.map((key) => byKey.get(String(key)) ?? null);
                 }
+                const byKey = new Map(docs.map((doc) => [String(doc[field]), doc]));
                 return keys.map((key) => byKey.get(String(key)) ?? null);
-              }
-              const byKey = new Map(docs.map((doc) => [String(doc[field]), doc]));
-              return keys.map((key) => byKey.get(String(key)) ?? null);
-            }),
+              },
+              { name: key, cache: loaderInfo.cache },
+            ),
           });
         });
       }

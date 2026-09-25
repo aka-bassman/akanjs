@@ -36,13 +36,13 @@ import {
   resolveRouteCacheStoreTtl,
   shouldStoreRouteCache,
 } from "./cachePolicy";
-import { LogForwarder } from "./logging/logForwarder";
 import {
   createAkanLocaleAlternateHeadSnapshot,
   mergeAkanHeadSnapshots,
   renderAkanHeadSnapshot,
   shouldRenderLocaleAlternates,
-} from "./metadata";
+} from "./head";
+import { LogForwarder } from "./logging/logForwarder";
 import { ProcessMetricsCollector } from "./processMetricsCollector";
 import { RouteElementComposer } from "./routeElementComposer";
 import {
@@ -1322,15 +1322,13 @@ export class RscRenderer {
     if (!body) return null;
     const routeHead =
       "resolveHead" in route
-        ? await RouteElementComposer.resolveHeadWithMetadata({
+        ? await RouteElementComposer.resolveHeadWithSnapshot({
             pathRoute: route,
             params,
             searchParams,
           })
-        : { node: undefined, hasExplicitLanguageAlternates: false };
-    const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead, {
-      hasExplicitLanguageAlternates: routeHead.hasExplicitLanguageAlternates,
-    });
+        : { node: undefined };
+    const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead, {});
     return (
       <html lang={params.lang ?? RscRenderer.#getLocale(pathname, this.#i18n)} suppressHydrationWarning>
         <head key="head">
@@ -1340,10 +1338,7 @@ export class RscRenderer {
           {routeHeadSnapshot
             ? renderAkanHeadSnapshot(routeHeadSnapshot)
             : (routeHead.node ?? this.#renderDefaultHead())}
-          {!routeHeadSnapshot &&
-          shouldRenderLocaleAlternates({ hasExplicitLanguageAlternates: routeHead.hasExplicitLanguageAlternates })
-            ? this.#renderLocaleAlternates(url)
-            : null}
+          {routeHeadSnapshot ? null : this.#renderLocaleAlternates(url)}
           {this.#renderStylesheet(pathname)}
         </head>
         <body key="body">{body}</body>
@@ -1364,14 +1359,13 @@ export class RscRenderer {
       basePath: this.#getBasePath(url),
     });
     setRequestFrameState(pathRoute.pageState);
-    const routeHead = await RouteElementComposer.resolveHeadWithMetadata({
+    const routeHead = await RouteElementComposer.resolveHeadWithSnapshot({
       pathRoute,
       params: match.params,
       searchParams,
     });
     const routeHeadSnapshot = this.#createRouteHeadSnapshot(url, routeHead, {
       isSpecialRoute: pathRoute.isSpecialRoute,
-      hasExplicitLanguageAlternates: routeHead.hasExplicitLanguageAlternates,
     });
     const body = RouteElementComposer.compose({
       pathRoute,
@@ -1388,11 +1382,7 @@ export class RscRenderer {
           {routeHeadSnapshot
             ? renderAkanHeadSnapshot(routeHeadSnapshot)
             : (routeHead.node ?? this.#renderDefaultHead())}
-          {!routeHeadSnapshot &&
-          shouldRenderLocaleAlternates({
-            isSpecialRoute: pathRoute.isSpecialRoute,
-            hasExplicitLanguageAlternates: routeHead.hasExplicitLanguageAlternates,
-          })
+          {!routeHeadSnapshot && shouldRenderLocaleAlternates({ isSpecialRoute: pathRoute.isSpecialRoute })
             ? this.#renderLocaleAlternates(url)
             : null}
           {this.#renderStylesheet(url.pathname)}
@@ -1482,21 +1472,20 @@ export class RscRenderer {
     match: { pathRoute: PathRoute; params: Record<string, string> },
     searchParams: Record<string, string | string[]>,
   ): Promise<ResolvedHead["headSnapshot"]> {
-    const routeHead = await RouteElementComposer.resolveHeadWithMetadata({
+    const routeHead = await RouteElementComposer.resolveHeadWithSnapshot({
       pathRoute: match.pathRoute,
       params: match.params,
       searchParams,
     });
     return this.#createRouteHeadSnapshot(url, routeHead, {
       isSpecialRoute: match.pathRoute.isSpecialRoute,
-      hasExplicitLanguageAlternates: routeHead.hasExplicitLanguageAlternates,
     });
   }
 
   #createRouteHeadSnapshot(
     url: URL,
     routeHead: ResolvedHead,
-    options: { isSpecialRoute?: boolean; hasExplicitLanguageAlternates?: boolean },
+    options: { isSpecialRoute?: boolean },
   ): ResolvedHead["headSnapshot"] {
     if (!routeHead.headSnapshot) return undefined;
     return mergeAkanHeadSnapshots(

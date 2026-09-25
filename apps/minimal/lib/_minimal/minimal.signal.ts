@@ -1,19 +1,19 @@
 import { Any, Int } from "akanjs/base";
-import { endpoint, internal } from "akanjs/signal";
+import { endpoint, internal, Public } from "akanjs/signal";
 
 import * as srv from "../srv";
 
 export class MinimalInternal extends internal(srv.minimal, ({ cron }) => ({})) {}
 
 export class MinimalEndpoint extends endpoint(srv.minimal, ({ query, message, pubsub }) => ({
-  benchPing: query(String).exec(() => "ok"),
-  benchEcho: query(String)
+  benchPing: query(String, { guards: [Public], mcp: false }).exec(() => "ok"),
+  benchEcho: query(String, { guards: [Public], mcp: false })
     .param("value", String)
     .exec((value) => value),
-  benchFanout: pubsub(Any)
+  benchFanout: pubsub(Any, { guards: [Public], mcp: false })
     .room("roomId", String)
     .exec(() => undefined),
-  benchPublish: message(Boolean)
+  benchPublish: message(Boolean, { guards: [Public], mcp: false })
     .msg("roomId", String)
     .msg("seq", Int)
     .msg("sentAt", Int)

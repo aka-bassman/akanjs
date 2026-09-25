@@ -1,170 +1,231 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { badgeRecipe, Code, Divider, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
 const routeFiles = [
   {
     name: "folder/_index.tsx",
-    en: "The page for the folder it sits in. page/(user)/project/[projectId]/_index.tsx serves /:lang/project/:projectId.",
-    ko: "자기가 놓인 폴더의 페이지입니다. page/(user)/project/[projectId]/_index.tsx는 /:lang/project/:projectId를 제공합니다.",
+    en: "The page for the folder it sits in: project/_index.tsx serves /:lang/project.",
+    ko: "자기가 놓인 폴더의 페이지입니다. project/_index.tsx는 /:lang/project를 제공합니다.",
   },
   {
     name: "folder/_layout.tsx",
-    en: "Wraps every page below its folder. An app's own root _layout.tsx — and a basePath's — is a rootLayout() chain instead.",
-    ko: "자기 폴더 아래의 모든 페이지를 감쌉니다. 앱의 root _layout.tsx와 basePath의 root _layout.tsx는 rootLayout() 체인입니다.",
+    en: "Wraps every page below its folder. The root one is a rootLayout() chain.",
+    ko: "자기 폴더 아래의 모든 페이지를 감쌉니다. root _layout.tsx는 rootLayout() 체인입니다.",
   },
   {
     name: "folder/_overrides.tsx",
-    en: "The third reserved filename: a logic-free manifest of UI overrides for this route subtree. Imports plus one export default override({ … }), no directive and no other export.",
-    ko: "세 번째 예약 파일명입니다. 이 라우트 하위 트리의 UI override를 적는 로직 없는 매니페스트로, import와 export default override({ … }) 하나만 둡니다. 디렉티브도 다른 export도 없습니다.",
+    en: "A logic-free manifest of UI overrides for the subtree: one export default override({ … }).",
+    ko: "하위 트리의 UI override를 적는 로직 없는 매니페스트입니다. export default override({ … }) 하나만 둡니다.",
   },
   {
     name: "path.tsx",
-    en: "A path segment declared as one file. project.tsx serves /:lang/project. The filename must not start with an uppercase letter.",
-    ko: "경로 세그먼트를 파일 하나로 선언합니다. project.tsx는 /:lang/project를 제공합니다. 파일명은 대문자로 시작할 수 없습니다.",
+    en: "A segment as one file: project.tsx serves /:lang/project. Never an uppercase first letter.",
+    ko: "세그먼트를 파일 하나로 선언합니다. project.tsx는 /:lang/project를 제공하며, 대문자로 시작할 수 없습니다.",
   },
   {
     name: "[param].tsx",
-    en: 'A dynamic segment as one file. [projectId].tsx serves /:lang/:projectId, and the page must declare .param("projectId", …).',
-    ko: '동적 세그먼트를 파일 하나로 선언합니다. [projectId].tsx는 /:lang/:projectId를 제공하고, 페이지는 .param("projectId", …)을 선언해야 합니다.',
+    en: "A dynamic segment as one file: [projectId].tsx serves /:lang/:projectId.",
+    ko: "동적 세그먼트를 파일 하나로 선언합니다. [projectId].tsx는 /:lang/:projectId를 제공합니다.",
   },
   {
     name: "(group)/",
-    en: "Organizes files without adding a URL segment. (user), (public), (tab), (detail) are the usual names.",
-    ko: "URL 세그먼트를 더하지 않고 파일을 정리합니다. (user), (public), (tab), (detail)을 주로 씁니다.",
+    en: "Organizes files without adding a URL segment, such as (user) or (public).",
+    ko: "URL 세그먼트를 더하지 않고 파일을 정리합니다. (user), (public) 같은 이름을 씁니다.",
   },
   {
     name: "[lang]/",
-    en: "Never written. Akan injects the locale segment itself, and a folder named [lang] fails the load with a message telling you to move the files up one level.",
-    ko: "직접 쓰지 않습니다. Akan이 locale 세그먼트를 스스로 주입하며, [lang] 폴더가 있으면 파일을 한 단계 위로 옮기라는 메시지와 함께 로드가 실패합니다.",
+    en: "Never written: Akan injects the locale.",
+    ko: "직접 쓰지 않습니다. Akan이 locale을 주입합니다.",
   },
   {
     name: "robots.txt.tsx",
-    en: "A special route leaf: it is the one shape that does not sit under the locale, so it serves /robots.txt rather than /:lang/robots.txt.",
-    ko: "특수 라우트입니다. locale 아래에 놓이지 않는 유일한 형태라서 /:lang/robots.txt가 아니라 /robots.txt를 제공합니다.",
+    en: "The one route outside the locale: it serves /robots.txt, not /:lang/robots.txt.",
+    ko: "locale 밖에 놓이는 유일한 라우트로, /:lang/robots.txt가 아니라 /robots.txt를 제공합니다.",
   },
 ];
 
 const chainStages = [
   {
-    key: ".param(name, Type)",
-    on: "page · layout · rootLayout",
-    required: false,
-    en: "One stage per [x] segment of the path, in order. A page must declare every segment it sits under; a layout may declare a subset, and most declare none. Values arrive typed — ID and String give a string, Int and Float a number, Date a Dayjs, an enumOf class its union. A path value the type refuses answers not-found.",
-    ko: "경로의 [x] 세그먼트마다 순서대로 하나씩 둡니다. 페이지는 자기가 놓인 세그먼트를 모두 선언해야 하고, 레이아웃은 일부만 선언해도 되며 대부분은 하나도 선언하지 않습니다. 값은 타입이 붙은 채로 도착합니다. ID·String은 string, Int·Float은 number, Date는 Dayjs, enumOf 클래스는 그 유니온입니다. 타입이 거부하는 경로 값은 not-found로 응답합니다.",
+    en: "Every chain",
+    ko: "모든 체인",
+    stages: [
+      {
+        name: ".param",
+        args: "(name, Type)",
+        page: true,
+        layout: true,
+        rootLayout: true,
+        required: false,
+        en: "Declares one [x] path segment, typed; a value the type refuses answers not-found.",
+        ko: "경로의 [x] 세그먼트 하나를 타입과 함께 선언합니다. 타입이 거부하는 값은 not-found로 응답합니다.",
+      },
+      {
+        name: ".search",
+        args: "(key, Type)",
+        page: true,
+        layout: true,
+        rootLayout: true,
+        required: false,
+        en: "An optional query key; [String] reads a list, and a value the type refuses is dropped.",
+        ko: "선택 사항인 쿼리 키입니다. [String]은 목록을 읽고, 타입이 거부하는 값은 버려집니다.",
+      },
+      {
+        name: ".config",
+        args: "({ … })",
+        page: true,
+        layout: true,
+        rootLayout: true,
+        required: false,
+        en: "Client frame behaviour such as transition and devOnly; child pages inherit a layout's.",
+        ko: "transition·devOnly 같은 클라이언트 frame 동작입니다. 하위 페이지는 레이아웃의 값을 상속합니다.",
+      },
+      {
+        name: ".head",
+        args: "(jsx | fn)",
+        page: true,
+        layout: true,
+        rootLayout: true,
+        required: false,
+        en: "The route's <head> as JSX (title, meta, link), or a function of the args that returns it.",
+        ko: "라우트의 <head>를 JSX(title, meta, link)로 넘기거나, 인자를 받아 그 JSX를 반환하는 함수로 넘깁니다.",
+      },
+      {
+        name: ".loading",
+        args: "(fn)",
+        page: true,
+        layout: true,
+        rootLayout: true,
+        required: false,
+        en: "Fallback UI while the route loads; every .search() value reads undefined inside it.",
+        ko: "라우트가 로딩되는 동안의 대체 UI입니다. 그 안에서 .search() 값은 모두 undefined입니다.",
+      },
+    ],
   },
   {
-    key: ".search(key, Type)",
-    on: "page · layout · rootLayout",
-    required: false,
-    en: "A query key the route reads, always optional. [String] reads a list, and a repeated key or one comma-separated value both arrive as an array. A value the type refuses is dropped the way an absent one is.",
-    ko: "라우트가 읽는 쿼리 키이며 항상 선택 사항입니다. [String]은 목록을 읽고, 키를 반복해도 쉼표로 구분해도 배열로 도착합니다. 타입이 거부하는 값은 없는 값처럼 버려집니다.",
+    en: "page() only",
+    ko: "page() 전용",
+    stages: [
+      {
+        name: ".prompt",
+        args: "(name, desc)",
+        page: true,
+        layout: false,
+        rootLayout: false,
+        required: false,
+        en: "Publishes the screen as an MCP prompt: .param() args are required, .search() optional.",
+        ko: "화면을 MCP prompt로 공개합니다. .param()은 필수 인자, .search()는 선택 인자가 됩니다.",
+      },
+    ],
   },
   {
-    key: ".config({ … })",
-    on: "page · layout · rootLayout",
-    required: false,
-    en: "Client frame behaviour: transition, safeArea, topInset, bottomInset, topSafeAreaColor, bottomSafeAreaColor, gesture, cache, ssr, rscPatchHeadSafe, devOnly. On a layout it is inherited by child pages, and a page's own value wins for the fields it names. Omit it and Akan applies platform defaults while frame components such as Navbar register their own insets.",
-    ko: "클라이언트 frame 동작입니다. transition, safeArea, topInset, bottomInset, topSafeAreaColor, bottomSafeAreaColor, gesture, cache, ssr, rscPatchHeadSafe, devOnly를 받습니다. 레이아웃에 두면 하위 페이지가 상속하고, 페이지가 적은 필드는 페이지 값이 이깁니다. 생략하면 Akan이 플랫폼 기본값을 적용하고 Navbar 같은 frame 컴포넌트가 필요한 inset을 직접 등록합니다.",
+    en: "layout() and rootLayout()",
+    ko: "layout()·rootLayout()",
+    stages: [
+      {
+        name: ".notFound",
+        args: "(fn)",
+        page: false,
+        layout: true,
+        rootLayout: true,
+        required: false,
+        en: "404 UI rendered inside the layout when a child route is missing; takes raw route props.",
+        ko: "하위 라우트가 없을 때 레이아웃 안에 그리는 404 UI입니다. 타입 인자가 아니라 원본 route props를 받습니다.",
+      },
+      {
+        name: ".error",
+        args: "(fn)",
+        page: false,
+        layout: true,
+        rootLayout: true,
+        required: false,
+        en: "SSR error UI under the nearest layout when a child throws; raw props, error and digest.",
+        ko: "하위 라우트가 SSR 중 에러를 던지면 가장 가까운 레이아웃 안에 그리는 UI입니다. 원본 props에 error와 digest가 더해집니다.",
+      },
+    ],
   },
   {
-    key: ".metadata(value | fn)",
-    on: "page · layout · rootLayout",
-    required: false,
-    en: "Declarative title, description, robots, openGraph, twitter, and alternates. Pass an object for static metadata, or a function of the declared arguments for dynamic metadata. The callback receives lang and the declared args — never children.",
-    ko: "title·description·robots·openGraph·twitter·alternates를 선언합니다. 정적 메타데이터는 객체로, 동적 메타데이터는 선언한 인자를 받는 함수로 넘깁니다. 콜백은 lang과 선언한 인자를 받고 children은 받지 않습니다.",
+    en: "rootLayout() only",
+    ko: "rootLayout() 전용",
+    stages: [
+      {
+        name: ".fonts",
+        args: "([…])",
+        page: false,
+        layout: false,
+        rootLayout: true,
+        required: false,
+        en: "Registers app-wide fonts; optimize subsets a font and serves it from /_akan/fonts.",
+        ko: "앱 전체 폰트를 등록합니다. optimize를 켜면 subset해서 /_akan/fonts에서 제공합니다.",
+      },
+      {
+        name: ".manifest",
+        args: "({ … })",
+        page: false,
+        layout: false,
+        rootLayout: true,
+        required: false,
+        en: "The web app manifest (name, startUrl, icons…) for installable, PWA-like behaviour.",
+        ko: "설치형 앱·PWA 동작에 쓰는 web app manifest입니다. name, startUrl, icons 등을 담습니다.",
+      },
+      {
+        name: ".theme",
+        args: "(name)",
+        page: false,
+        layout: false,
+        rootLayout: true,
+        required: false,
+        en: "The document's default theme (dark, light, system); an empty string is honoured.",
+        ko: "문서의 기본 테마(dark, light, system)입니다. 빈 문자열도 그대로 적용됩니다.",
+      },
+      {
+        name: ".reconnect",
+        args: "(on)",
+        page: false,
+        layout: false,
+        rootLayout: true,
+        required: false,
+        en: "The connection-lost overlay only, not reconnection; off unless you set it.",
+        ko: "연결 끊김 오버레이만 켜며 재연결과는 무관합니다. 선언하지 않으면 꺼져 있습니다.",
+      },
+      {
+        name: ".wsConnect",
+        args: "(on)",
+        page: false,
+        layout: false,
+        rootLayout: true,
+        required: false,
+        en: "Connects the WebSocket on load (default true); false waits for fetch.instance.connect().",
+        ko: "로드 후 WebSocket을 연결합니다(기본값 true). false이면 fetch.instance.connect()를 기다립니다.",
+      },
+      {
+        name: ".layoutStyle",
+        args: "(style)",
+        page: false,
+        layout: false,
+        rootLayout: true,
+        required: false,
+        en: "The outer page container style, web or mobile. Use mobile for app-like shells.",
+        ko: "바깥 페이지 컨테이너 스타일이며 web 또는 mobile입니다. 앱 같은 화면에는 mobile을 씁니다.",
+      },
+    ],
   },
   {
-    key: ".head(jsx | fn)",
-    on: "page · layout · rootLayout",
-    required: false,
-    en: "Escape hatch for custom JSX head elements when declarative metadata is not enough. Same argument shape as .metadata().",
-    ko: "선언형 metadata로 충분하지 않을 때 직접 JSX head element를 넣는 escape hatch입니다. 인자 형태는 .metadata()와 같습니다.",
-  },
-  {
-    key: ".loading(fn)",
-    on: "page · layout · rootLayout",
-    required: false,
-    en: "Fallback UI shown while the route loads. It runs with an empty search map, so every .search() value reads undefined inside it however the type reads.",
-    ko: "라우트가 로딩되는 동안 보여줄 대체 UI입니다. 검색 파라미터가 빈 맵인 상태로 실행되므로, 타입과 무관하게 .search() 값은 모두 undefined로 읽힙니다.",
-  },
-  {
-    key: ".prompt(name, desc)",
-    on: "page",
-    required: false,
-    en: "Publishes the screen as an MCP prompt. The description is the whole instruction a model receives; .param() stages become required arguments and .search() stages optional ones. The name must be a string literal of letters, digits, underscore or hyphen.",
-    ko: "화면을 MCP prompt로 공개합니다. description이 모델이 받는 지시문 전체이며, .param() 단계는 필수 인자, .search() 단계는 선택 인자가 됩니다. 이름은 문자·숫자·밑줄·하이픈으로 된 문자열 리터럴이어야 합니다.",
-  },
-  {
-    key: ".notFound(fn)",
-    on: "layout · rootLayout",
-    required: false,
-    en: "Layout-scoped 404 UI, rendered inside the layout when a child route is missing. It receives the raw route props — params, searchParams, pathname — not the typed arguments .render() gets.",
-    ko: "레이아웃 범위의 404 UI이며, 하위 라우트를 찾지 못하면 레이아웃 안에서 렌더링됩니다. .render()가 받는 타입 인자가 아니라 params·searchParams·pathname 원본을 받습니다.",
-  },
-  {
-    key: ".error(fn)",
-    on: "layout · rootLayout",
-    required: false,
-    en: "Layout-scoped server render error UI, rendered under the nearest layout when a child route throws during SSR. It receives the same raw props plus error and digest.",
-    ko: "레이아웃 범위의 서버 렌더링 에러 UI이며, 하위 라우트가 SSR 중 에러를 던지면 가장 가까운 레이아웃 안에서 렌더링됩니다. 같은 원본 props에 error와 digest가 더해집니다.",
-  },
-  {
-    key: ".fonts([…])",
-    on: "rootLayout",
-    required: false,
-    en: "Registers the app-wide fonts. Each entry names the family, its files and weights, and whether it is the default; turning optimize on makes the source a build input that is subsetted and served from /_akan/fonts.",
-    ko: "앱 전체에서 쓸 폰트를 등록합니다. 각 항목은 이름, 파일과 weight, 기본 폰트 여부를 담습니다. optimize를 켜면 원본이 빌드 입력이 되어 subset된 뒤 /_akan/fonts에서 제공됩니다.",
-  },
-  {
-    key: ".manifest({ … })",
-    on: "rootLayout",
-    required: false,
-    en: "The web app manifest used for installable and PWA-like behaviour: name, shortName, startUrl, display, themeColor, icons.",
-    ko: "설치형 앱이나 PWA 동작에 쓰는 web app manifest입니다. name, shortName, startUrl, display, themeColor, icons를 담습니다.",
-  },
-  {
-    key: ".theme(name)",
-    on: "rootLayout",
-    required: false,
-    en: "The default theme the document carries, such as dark, light, or system. An empty string is honoured rather than dropped.",
-    ko: "문서가 들고 갈 기본 테마입니다. dark, light, system 같은 값을 씁니다. 빈 문자열도 버려지지 않고 그대로 적용됩니다.",
-  },
-  {
-    key: ".reconnect(on)",
-    on: "rootLayout",
-    required: false,
-    en: "Mounts the connection-lost overlay that appears when the socket drops and reports when it is back. The socket reconnects on its own either way. Left off, it is on exactly when operationMode is local.",
-    ko: "소켓이 끊겼을 때 나타나고 복구되면 알려 주는 연결 끊김 오버레이를 띄웁니다. 오버레이와 무관하게 소켓은 스스로 재연결합니다. 선언하지 않으면 operationMode가 local일 때만 켜집니다.",
-  },
-  {
-    key: ".wsConnect(on)",
-    on: "rootLayout",
-    required: false,
-    en: "Whether the browser connects the client WebSocket runtime after load. Default true. With false, a message or pubsub call warns in the console until fetch.instance.connect() runs.",
-    ko: "브라우저가 로드 후 client WebSocket runtime을 연결할지 정합니다. 기본값은 true입니다. false이면 fetch.instance.connect()를 호출하기 전까지 message·pubsub 호출이 콘솔에 경고를 남깁니다.",
-  },
-  {
-    key: ".layoutStyle(style)",
-    on: "rootLayout",
-    required: false,
-    en: "The outer page container style, web or mobile. Use mobile for app-like shells.",
-    ko: "바깥 페이지 컨테이너 스타일이며 web 또는 mobile입니다. 앱 같은 화면에는 mobile을 씁니다.",
-  },
-  {
-    key: ".gaTrackingId(id)",
-    on: "rootLayout",
-    required: false,
-    en: "Adds Google Analytics for the app. An empty string is treated as no id.",
-    ko: "앱에 Google Analytics를 추가합니다. 빈 문자열은 id가 없는 것으로 봅니다.",
-  },
-  {
-    key: ".render(fn)",
-    on: "page · layout · rootLayout",
-    required: true,
-    en: "The component and the end of the chain. Required — a chain without it fails the load. It receives lang, the declared arguments, and on a layout children. Mark it async only when the body awaits.",
-    ko: "컴포넌트이자 체인의 끝입니다. 반드시 필요하며, 없으면 로드가 실패합니다. lang과 선언한 인자를 받고, 레이아웃이라면 children도 받습니다. 본문이 await할 때만 async로 씁니다.",
+    en: "Ends the chain",
+    ko: "체인의 끝",
+    stages: [
+      {
+        name: ".render",
+        args: "(fn)",
+        page: true,
+        layout: true,
+        rootLayout: true,
+        required: true,
+        en: "The component, ending the chain; gets lang, the declared args, and children on a layout.",
+        ko: "컴포넌트이자 체인의 끝입니다. lang과 선언한 인자, 레이아웃이면 children도 받습니다.",
+      },
+    ],
   },
 ];
 
@@ -181,15 +242,23 @@ export default page().render(() => {
               ko: "Akan은 파일 기반 라우팅을 사용합니다. page/ 아래에 파일을 만들면 폴더 구조가 페이지 URL이 됩니다. 모든 라우트는 Akan이 자동으로 주입하는 locale 세그먼트 아래에 놓이므로, 하나의 파일이 제공하는 모든 언어를 처리합니다.",
             })}
           </div>
-          <Docs.Mermaid
-            title="From folder to URL"
-            highlightNodes={["url"]}
-            chart={`flowchart LR
-  file["page/(user)/project/[projectId]/_index.tsx"] --> group["(user) adds no segment"]
-  group --> lang["Akan injects the locale"]
-  lang --> url["/:lang/project/:projectId"]`}
+          <Docs.Flow
+            title={l.trans({ en: "From folder to URL", ko: "폴더에서 URL까지" })}
+            direction="TB"
+            nodes={{
+              file: { label: "page/(user)/project/", lines: ["[projectId]/_index.tsx"] },
+              group: { label: l.trans({ en: "(user) adds no segment", ko: "(user)는 세그먼트를 더하지 않습니다" }) },
+              lang: { label: l.trans({ en: "Akan injects the locale", ko: "Akan이 locale을 주입합니다" }) },
+              url: { label: "/:lang/project/:projectId" },
+            }}
+            edges={[
+              ["file", "group"],
+              ["group", "lang"],
+              ["lang", "url"],
+            ]}
+            emphasis={["url"]}
           />
-          <div className="space-y-1">
+          <div className="space-y-1 pl-2">
             {[
               [
                 l.trans({ en: "File-based", ko: "파일 기반" }),
@@ -213,9 +282,8 @@ export default page().render(() => {
                 }),
               ],
             ].map(([title, desc]) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
+              <div key={title}>
                 <span className="font-bold text-foreground">{title}: </span>
-
                 <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
             ))}
@@ -229,7 +297,7 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A route file is a page, a layout, or an overrides manifest. Everything under page/ must be a .tsx route module — no helper file, no logic file, no lowercase-free filename.",
+              en: "A route file is a page, a layout, or an overrides manifest. Everything under page/ must be a .tsx route module — no helper file, no logic file, no filename starting with an uppercase letter.",
               ko: "라우트 파일은 page, layout, overrides 매니페스트 중 하나입니다. page/ 아래에는 .tsx 라우트 모듈만 둘 수 있습니다. helper 파일도, 로직 파일도, 대문자로 시작하는 파일명도 허용되지 않습니다.",
             })}
           </div>
@@ -256,10 +324,10 @@ export default page().render(() => {
           type={l.trans({ en: "File", ko: "파일" })}
           items={routeFiles.map(({ name, en, ko }) => ({ name, desc: l.trans({ en, ko }) }))}
         />
-        <Docs.Alert type="error">
+        <Docs.Alert type="warning">
           {l.trans({
-            en: "_index.tsx, _layout.tsx and _overrides.tsx are the only reserved names an underscore may introduce. Any other _something.tsx under page/ fails the load, and so does a .ts, .js or .jsx route file.",
-            ko: "밑줄로 시작할 수 있는 예약 파일명은 _index.tsx, _layout.tsx, _overrides.tsx 셋뿐입니다. page/ 아래의 다른 _something.tsx는 로드가 실패하며, .ts·.js·.jsx 라우트 파일도 마찬가지입니다.",
+            en: "_index.tsx, _layout.tsx and _overrides.tsx are the only reserved names an underscore may introduce.",
+            ko: "밑줄로 시작할 수 있는 예약 파일명은 _index.tsx, _layout.tsx, _overrides.tsx 셋뿐입니다.",
           })}
         </Docs.Alert>
       </Scroll.Slide>
@@ -270,8 +338,8 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A page file exports one page() chain and nothing else. Every route setting is a stage of that chain: .param() and .search() declare the arguments the page reads, .config(), .metadata() or .head(), and .loading() replace the old named exports, and .render() holds the component. The render receives the declared arguments flat and typed.",
-              ko: "페이지 파일은 page() 체인 하나만 export합니다. 모든 라우트 설정은 그 체인의 단계입니다. .param()과 .search()는 페이지가 읽는 인자를 선언하고, .config(), .metadata() 또는 .head(), .loading()이 예전의 named export를 대신하며, .render()가 컴포넌트를 담습니다. render는 선언한 인자를 평탄하고 타입이 붙은 형태로 받습니다.",
+              en: "A page file exports a single page() chain and nothing else. Each route setting is one stage of the chain: .param() and .search() declare the values the page reads, .config() tunes the route, .head() and .loading() set the head tags and the loading fallback, and .render() returns the component. The render callback receives the declared values flat, already typed.",
+              ko: "페이지 파일은 page() 체인 하나만 export합니다. 라우트 설정은 각각 체인의 한 단계입니다. .param()과 .search()는 페이지가 읽는 값을 선언하고, .config()는 라우트 동작을 정하며, .head()와 .loading()은 head 태그와 로딩 화면을 설정하고, .render()가 컴포넌트를 반환합니다. render 콜백은 선언한 값을 이미 타입이 붙은 평탄한 형태로 받습니다.",
             })}
           </div>
         </Docs.Description>
@@ -285,10 +353,12 @@ export default page()
   .param("projectId", ID, { desc: "The project to open." })
   .search("tab", String, { desc: "Which tab opens first." })
   .config({ transition: "stack" })
-  .metadata(({ projectId }) => ({
-    title: \`Project \${projectId}\`,
-    description: "Project workspace",
-  }))
+  .head(({ projectId }) => (
+    <>
+      <title>{\`Project \${projectId}\`}</title>
+      <meta name="description" content="Project workspace" />
+    </>
+  ))
   .loading(() => <div>Loading...</div>)
   .render(({ projectId, tab }) => {
     return (
@@ -300,29 +370,26 @@ export default page()
         />
         <Code.Snippet
           className="w-full"
-          title="Static metadata example"
+          title="Static head example"
           code={`import { page } from "akanjs/client";
 
 export default page()
-  .metadata({
-    title: "Projects",
-    description: "Browse your projects",
-    openGraph: { title: "Projects", images: ["/og/projects.png"] },
-    twitter: { card: "summary_large_image", images: ["/og/projects.png"] },
-    alternates: {
-      canonical: "https://example.com/projects",
-      languages: {
-        ko: "https://example.com/ko/projects",
-        en: "https://example.com/en/projects",
-      },
-    },
-  })
+  .head(
+    <>
+      <title>Projects</title>
+      <meta name="description" content="Browse your projects" />
+      <meta property="og:title" content="Projects" />
+      <meta property="og:image" content="/og/projects.png" />
+      <meta name="twitter:card" content="summary_large_image" />
+      <link rel="canonical" href="https://example.com/projects" />
+    </>,
+  )
   .render(() => <div>Projects</div>);`}
         />
         <Docs.Alert type="info">
           {l.trans({
-            en: "Use one metadata stage per route module: .metadata() or .head(), never both. Metadata is not merged across layouts and pages; the nearest route module wins. A page() chain is the module's only export — a named export beside it is refused, and the names in .param() and .prompt() must be string literals because akan sync reads them off the source. Coming from the legacy default-function shape? See Page Migration.",
-            ko: "라우트 모듈 하나에서는 metadata 단계를 하나만 사용합니다. .metadata() 또는 .head() 중 하나이며 둘을 섞지 않습니다. metadata는 layout과 page 사이에서 병합되지 않고 가장 가까운 라우트 모듈의 설정 하나만 적용됩니다. page() 체인은 모듈의 유일한 export입니다. 옆에 named export가 있으면 거절되고, .param()과 .prompt()의 이름은 akan sync가 소스에서 읽으므로 문자열 리터럴이어야 합니다. 예전 default function 형태에서 넘어오고 있다면 페이지 마이그레이션 문서를 참고하세요.",
+            en: "Heads are not merged — the nearest .head() wins, so restate what you still need (such as the favicon link). Give <title> one string child, a template literal when it includes a value, and skip the hreflang alternates since Akan adds one per locale. A page() chain must be the module's only export, and the names in .param() and .prompt() are string literals.",
+            ko: "head는 병합되지 않습니다. .head()를 선언한 가장 가까운 라우트 모듈 하나만 적용되므로, favicon link처럼 계속 필요한 요소는 다시 적어야 합니다. <title>의 자식은 문자열 하나로 쓰고, 값이 들어가면 template literal을 사용합니다. hreflang alternate는 Akan이 locale마다 직접 넣으므로 적지 않습니다. page() 체인은 모듈의 유일한 export여야 하며, .param()과 .prompt()의 이름은 문자열 리터럴로 씁니다.",
           })}
         </Docs.Alert>
       </Scroll.Slide>
@@ -333,17 +400,35 @@ export default page()
         <Docs.Description>
           <div>
             {l.trans({
-              en: "There are seventeen stages, and the three chains share most of them. page() adds .prompt(); layout() adds .notFound() and .error(); rootLayout() is a layout that also carries the app-wide stages. The Chain column names every builder a stage is legal on.",
-              ko: "단계는 모두 열일곱 개이고, 세 체인이 그 대부분을 공유합니다. page()는 .prompt()를, layout()은 .notFound()와 .error()를 더하며, rootLayout()은 앱 공통 단계까지 가진 layout입니다. Chain 열이 각 단계를 쓸 수 있는 체인을 알려 줍니다.",
+              en: "There are fifteen stages, and the three chains share most of them. page() adds .prompt(); layout() adds .notFound() and .error(); rootLayout() is a layout that also carries the app-wide stages. The three columns mark which builder each stage is legal on.",
+              ko: "단계는 모두 열다섯 개이고, 세 체인이 그 대부분을 공유합니다. page()는 .prompt()를, layout()은 .notFound()와 .error()를 더하며, rootLayout()은 앱 공통 단계까지 가진 layout입니다. 세 열은 각 단계를 어느 체인에서 쓸 수 있는지 표시합니다.",
             })}
           </div>
-          <Docs.OptionTable
-            items={chainStages.map(({ key, on, required, en, ko }) => ({
-              key,
-              type: on,
-              default: required ? l.trans({ en: "required", ko: "필수" }) : l.trans({ en: "optional", ko: "선택" }),
-              desc: l.trans({ en, ko }),
+          <Docs.Matrix
+            type={l.trans({ en: "Stage", ko: "단계" })}
+            columns={["page", "layout", "rootLayout"].map((key) => ({ key, label: `${key}()`, code: true }))}
+            groups={chainStages.map(({ en, ko, stages }) => ({
+              label: l.trans({ en, ko }),
+              rows: stages.map(({ name, args, required, en, ko, ...marks }) => ({
+                name: (
+                  <>
+                    {name}
+                    <wbr />
+                    <span className="whitespace-nowrap">{args}</span>
+                    {required ? (
+                      <span className={badgeRecipe({ variant: "primary", size: "xs" }, "ml-2 font-sans")}>
+                        {l.trans({ en: "required", ko: "필수" })}
+                      </span>
+                    ) : null}
+                  </>
+                ),
+                desc: l.trans({ en, ko }),
+                marks,
+              })),
             }))}
+            countTemplate={l.trans({ en: "{num} stages", ko: "단계 {num}개" })}
+            markLabel={l.trans({ en: "Available on this chain", ko: "이 체인에서 사용 가능" })}
+            emptyLabel={l.trans({ en: "Not on this chain", ko: "이 체인에는 없음" })}
           />
           <Docs.Alert type="warning">
             {l.trans({
@@ -353,8 +438,8 @@ export default page()
           </Docs.Alert>
           <Docs.Alert type="info">
             {l.trans({
-              en: "lang is never declared. Every route sits under the locale, the value reaches every stage as lang, and declaring it throws. A page must declare every [x] segment of its path; a layout may leave some undeclared.",
-              ko: "lang은 선언하지 않습니다. 모든 라우트가 locale 아래에 놓이고 값이 lang으로 모든 단계에 전달되며, 직접 선언하면 예외가 납니다. 페이지는 경로의 [x] 세그먼트를 모두 선언해야 하고, 레이아웃은 일부를 남겨 둘 수 있습니다.",
+              en: "lang is never declared. Every route sits under the locale, and the value reaches every stage as lang. A page must declare every [x] segment of its path; a layout may leave some undeclared.",
+              ko: "lang은 선언하지 않습니다. 모든 라우트가 locale 아래에 놓이고 값이 lang으로 모든 단계에 전달됩니다. 페이지는 경로의 [x] 세그먼트를 모두 선언해야 하고, 레이아웃은 일부를 남겨 둘 수 있습니다.",
             })}
           </Docs.Alert>
         </Docs.Description>
@@ -366,10 +451,26 @@ export default page()
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A layout file wraps child pages. Use it for shared headers, tabs, sidebars, guards, or page-level shells. Its own .metadata() covers child pages that declare none, and its .notFound() and .error() are the fallback for everything below it.",
-              ko: "레이아웃 파일은 하위 페이지를 감쌉니다. 공통 헤더, 탭, 사이드바, 접근 제어, 페이지 껍데기 같은 UI를 둘 때 사용합니다. 자체 .metadata()는 metadata를 선언하지 않은 하위 페이지에 쓰이고, .notFound()와 .error()는 그 아래 전체의 fallback이 됩니다.",
+              en: "A layout file wraps child pages. Use it for shared headers, tabs, sidebars, guards, or page-level shells. Its own .head() covers child pages that declare none, and its .notFound() and .error() are the fallback for everything below it.",
+              ko: "레이아웃 파일은 하위 페이지를 감쌉니다. 공통 헤더, 탭, 사이드바, 접근 제어, 페이지 껍데기 같은 UI를 둘 때 사용합니다. 자체 .head()는 head를 선언하지 않은 하위 페이지에 쓰이고, .notFound()와 .error()는 그 아래 전체의 fallback이 됩니다.",
             })}
           </div>
+          <Docs.Figure
+            title={l.trans({ en: "Layouts wrap the page", ko: "레이아웃이 페이지를 감쌉니다" })}
+            image="layout-nesting"
+            prompt={`
+              One browser window drawn large. Inside it, three rounded rectangles nested one inside the next, each
+              leaving a wide margin around the one it holds. The outermost is labelled "Root Layout" at its top left
+              with a smaller second line "fonts · theme · head". The middle one is labelled "Layout" at its top left
+              with a smaller second line "nav · guard · notFound", and a thin bar runs across its top like a menu.
+              The innermost, traced as the red accent, is labelled "Page" in its centre with a smaller second line
+              "the route itself".
+            `}
+            alt={l.trans({
+              en: "The root layout wraps every layout below it, each layout wraps the pages under its folder, and the page renders innermost.",
+              ko: "root layout이 그 아래의 모든 layout을 감싸고, 각 layout은 자기 폴더 아래의 페이지를 감싸며, 페이지는 가장 안쪽에서 렌더링됩니다.",
+            })}
+          />
         </Docs.Description>
         <Code.Snippet
           className="w-full"
@@ -393,8 +494,8 @@ export default layout()
         />
         <Docs.Alert type="info">
           {l.trans({
-            en: "The .notFound() and .error() stages exist on layout(), not on page(). If a layout declares neither, Akan walks up to the nearest parent layout fallback, then falls back to the framework system page. A page() chain in a _layout.tsx, or a layout() chain in a page file, is refused at load.",
-            ko: ".notFound()와 .error() 단계는 page()가 아니라 layout()에 있습니다. 해당 layout이 둘 다 선언하지 않으면 Akan은 가장 가까운 상위 layout fallback을 찾고, 없으면 framework system page를 사용합니다. _layout.tsx의 page() 체인이나 page 파일의 layout() 체인은 로드 시 거절됩니다.",
+            en: "The .notFound() and .error() stages exist on layout(), not on page(). If a layout declares neither, Akan walks up to the nearest parent layout fallback, then falls back to the framework system page.",
+            ko: ".notFound()와 .error() 단계는 page()가 아니라 layout()에 있습니다. 해당 layout이 둘 다 선언하지 않으면 Akan은 가장 가까운 상위 layout fallback을 찾고, 없으면 framework system page를 사용합니다.",
           })}
         </Docs.Alert>
       </Scroll.Slide>
@@ -405,8 +506,8 @@ export default layout()
         <Docs.Description>
           <div>
             {l.trans({
-              en: "The root _layout.tsx of an app, or of a basePath, is a rootLayout() chain. It is still a layout, but it also carries the app-wide stages for fonts, manifest, theme, realtime connection, analytics, and mobile-style rendering. The stylesheet import stays the first line of the file.",
-              ko: "앱 또는 basePath의 root _layout.tsx는 rootLayout() 체인입니다. 기본적으로는 layout이지만 font, manifest, theme, realtime connection, analytics, mobile-style rendering 같은 앱 공통 단계를 함께 가집니다. 스타일시트 import는 파일의 첫 줄에 그대로 둡니다.",
+              en: "The root _layout.tsx of an app, or of a basePath, is a rootLayout() chain. It is still a layout, but it also carries the app-wide stages for fonts, manifest, theme, realtime connection, and mobile-style rendering. The stylesheet import stays the first line of the file.",
+              ko: "앱 또는 basePath의 root _layout.tsx는 rootLayout() 체인입니다. 기본적으로는 layout이지만 font, manifest, theme, realtime connection, mobile-style rendering 같은 앱 공통 단계를 함께 가집니다. 스타일시트 import는 파일의 첫 줄에 그대로 둡니다.",
             })}
           </div>
         </Docs.Description>
@@ -435,7 +536,6 @@ export default rootLayout()
   .reconnect(true)
   .wsConnect(true)
   .layoutStyle("web")
-  .gaTrackingId("G-XXXXXXXXXX")
   .head(
     <>
       <title>Akan App</title>
@@ -446,10 +546,69 @@ export default rootLayout()
         />
         <div>
           {l.trans({
-            en: "Each of these is one row of the Chain Stages table above, and only .fonts(), .manifest(), .theme(), .reconnect(), .wsConnect(), .layoutStyle() and .gaTrackingId() are exclusive to this file. Everything else here — .config(), .head(), .loading(), .notFound(), .error(), .render() — is the ordinary layout surface.",
-            ko: "여기 쓰인 단계는 모두 위의 Chain Stages 표에 한 행씩 있으며, 이 파일에만 있는 것은 .fonts(), .manifest(), .theme(), .reconnect(), .wsConnect(), .layoutStyle(), .gaTrackingId() 일곱 개뿐입니다. 나머지 .config(), .head(), .loading(), .notFound(), .error(), .render()는 일반 layout에도 있는 단계입니다.",
+            en: "Each of these is one row of the Chain Stages table above, and only .fonts(), .manifest(), .theme(), .reconnect(), .wsConnect() and .layoutStyle() are exclusive to this file. Everything else here — .config(), .head(), .loading(), .notFound(), .error(), .render() — is the ordinary layout surface.",
+            ko: "여기 쓰인 단계는 모두 위의 Chain Stages 표에 한 행씩 있으며, 이 파일에만 있는 것은 .fonts(), .manifest(), .theme(), .reconnect(), .wsConnect(), .layoutStyle() 여섯 개뿐입니다. 나머지 .config(), .head(), .loading(), .notFound(), .error(), .render()는 일반 layout에도 있는 단계입니다.",
           })}
         </div>
+      </Scroll.Slide>
+      <Divider />
+
+      <Scroll.Slide id="google-analytics" title={l.trans({ en: "Google Analytics", ko: "Google Analytics" })}>
+        <Docs.Title>{l.trans({ en: "Google Analytics", ko: "Google Analytics" })}</Docs.Title>
+        <Docs.Description>
+          <div>
+            {l.trans({
+              en: "Akan has no analytics stage. Which tags load, in which environment and behind which consent banner are the app's decisions, so a tag is an ordinary client component that the root layout renders. The one below loads gtag.js once for the whole app.",
+              ko: "Akan에는 analytics 단계가 없습니다. 어떤 태그를 어느 환경에서, 어떤 동의 배너 뒤에서 불러올지는 앱이 정할 일이므로, 태그는 root layout이 렌더링하는 평범한 클라이언트 컴포넌트입니다. 아래 컴포넌트는 앱 전체에서 gtag.js를 한 번 불러옵니다.",
+            })}
+          </div>
+        </Docs.Description>
+        <Code.Snippet
+          className="w-full"
+          title="ui/Analytics.tsx"
+          code={`"use client";
+import { useEffect } from "react";
+
+declare global {
+  interface Window {
+    dataLayer: unknown[];
+    gtag: (...args: unknown[]) => void;
+  }
+}
+
+interface AnalyticsProps {
+  measurementId: string;
+}
+export const Analytics = ({ measurementId }: AnalyticsProps) => {
+  useEffect(() => {
+    window.dataLayer = window.dataLayer ?? [];
+    window.gtag = function gtag() {
+      // biome-ignore lint/complexity/noArguments: gtag.js reads only an Arguments object off dataLayer, never an array
+      window.dataLayer.push(arguments);
+    };
+    window.gtag("js", new Date());
+    window.gtag("config", measurementId);
+  }, [measurementId]);
+  return <script async src={\`https://www.googletagmanager.com/gtag/js?id=\${measurementId}\`} />;
+};`}
+        />
+        <Code.Snippet
+          className="w-full"
+          title="page/_layout.tsx"
+          code={`import "./styles.css";
+import { Analytics } from "@apps/myapp/ui";
+import { rootLayout } from "akanjs/client";
+
+export default rootLayout()
+  .theme("dark")
+  .head(<title>My App</title>)
+  .render(({ children }) => (
+    <>
+      <Analytics measurementId="G-XXXXXXXXXX" />
+      {children}
+    </>
+  ));`}
+        />
       </Scroll.Slide>
       <Divider />
 
@@ -497,8 +656,8 @@ export default rootLayout()
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A library can ship routes from its own page folder. An app opts in with syncPageLibs, and sync links those routes into page/(libs)/(<lib>). Both folder names are route groups, so a library route keeps its own path.",
-              ko: "라이브러리도 자체 page 폴더에 라우트를 담을 수 있습니다. 앱이 syncPageLibs로 사용을 선언하면 sync가 해당 라우트를 page/(libs)/(<lib>)로 링크합니다. 두 폴더 이름 모두 route group이라 라이브러리 라우트는 자기 경로를 그대로 사용합니다.",
+              en: "A library can ship routes from its own page folder. An app opts in with syncPageLibs, and a library route keeps its own path.",
+              ko: "라이브러리도 자체 page 폴더에 라우트를 담을 수 있습니다. 앱이 syncPageLibs로 사용을 선언하면, 라이브러리 라우트는 자기 경로를 그대로 사용합니다.",
             })}
           </div>
         </Docs.Description>
@@ -517,16 +676,13 @@ export default rootLayout()
           code={`# Source in a library
 libs/shared/page/login/_index.tsx
 
-# Linked into an app by \`akan sync\` (generated, gitignored)
-apps/myapp/page/(libs)/(shared)/login/_index.tsx
-
 # Browser request
 /login`}
         />
         <Docs.Alert type="info">
           {l.trans({
-            en: "Edit the library file, never the linked copy. Apps with base paths get the library routes under every base path, and two synced routes that resolve to the same path are reported as an error.",
-            ko: "링크된 쪽이 아니라 라이브러리 파일을 수정해야 합니다. base path가 있는 앱은 모든 base path 아래에 라이브러리 라우트를 받고, 같은 경로로 겹치는 라우트가 두 개면 에러로 알려줍니다.",
+            en: "Apps with base paths get the library routes under every base path.",
+            ko: "base path가 있는 앱은 모든 base path 아래에 라이브러리 라우트를 받습니다.",
           })}
         </Docs.Alert>
       </Scroll.Slide>
@@ -552,8 +708,8 @@ export default page()
         />
         <Docs.Alert type="info">
           {l.trans({
-            en: "On a _layout file, devOnly removes every route under that directory too, so a whole dev-only section can be marked once. Write it as a literal true or false — the build reads it from the source without running the module.",
-            ko: "_layout 파일에 지정하면 그 디렉토리 아래 라우트가 모두 함께 제외되므로 개발 전용 구역 전체를 한 번에 표시할 수 있습니다. 빌드는 모듈을 실행하지 않고 소스에서 값을 읽으므로 반드시 리터럴 true 또는 false로 작성해야 합니다.",
+            en: "On a _layout file, devOnly removes every route under that directory too, so a whole dev-only section can be marked once. Write it as a literal true or false.",
+            ko: "_layout 파일에 지정하면 그 디렉토리 아래 라우트가 모두 함께 제외되므로 개발 전용 구역 전체를 한 번에 표시할 수 있습니다. 값은 리터럴 true 또는 false로 작성합니다.",
           })}
         </Docs.Alert>
       </Scroll.Slide>

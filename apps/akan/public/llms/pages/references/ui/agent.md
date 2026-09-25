@@ -9,181 +9,271 @@
 ## Headings
 
 - Agent UI (#agent-ui)
+- Chat (#Chat)
 - Development Dock (#agent-dock)
 
 ## Content
 
 Agent
 
-The chat panel itself — launcher, transcript, composer, approval card. Mount it once.
+tool
 
-One subtree with its own conversation over a scoped view of the same surface.
+One action a component publishes with `st.tool`, usually the handler its button calls.
+
+surface
+
+Everything the agent can do and read on the current screen: the mounted tools and keys.
+
+session
+
+One conversation with its loop and options. `Agent.Chat` and `Agent.Zone` each build one.
+
+transcript
+
+The conversation so far. It is sent to the model again on every turn.
+
+built-ins
+
+Runtime tools every screen gets: `navigate`, `goBack`, `readScreen`, `readState`, `highlight`.
+
+resource
+
+A value a component publishes with `st.expose` or `st.useState` for the agent to read.
+
+Own UI
+
+Own chat
+
+Name prefix
+
+What the user talks to
+
+The chat panel: launcher, transcript, composer and approval card. Mount it once.
+
+A section with its own conversation over a narrowed view of the same screen.
+
+Guidance and scope
 
 Standing instructions for a route subtree. Renders nothing.
 
-Puts the enclosing session's transcript wherever the app keeps it. Renders nothing.
+Connects the enclosing zone's transcript to storage the app owns. Renders nothing.
 
 A region the default screen read leaves out, named so it can still be asked for.
 
-Namespaces every tool and state key below it, without opening a conversation.
+Prefixes the tools and resources below it, without opening a conversation.
 
-The development inspector: tools, readable state, withheld keys, transcript.
+Development
 
-The dock's own parts, exported so an app can assemble an inspector of its own.
+The development inspector: tools, readable state, withheld keys and the transcript.
 
-The whole panel. `bridge` names the store keys and their masking, `surface` where the declared tools live — pass a zone's own to inspect just that zone. `open` opens the Tools section on mount. Renders nothing when `AKAN_PUBLIC_ENV=main`.
+Dock parts
 
-An Assemble button that prints exactly what a turn would carry: the published tool names, the mounted guides, and the assembled context blocks. This is where a zone-prefixed tool name becomes visible.
+`Agent.Context`, `Agent.Section`, `Agent.StateKey`, `Agent.Tool`, `Agent.Transcript`: the dock's pieces, for an inspector of your own.
 
-One collapsible `<details>` group with a count beside its title. The dock draws five of them.
+In-Page Agent
 
-One readable state key, read on demand rather than rendered with the rest. Masking happens at read, so a key holding an object no model claims refuses here instead of in the catalogue.
+How the loop, the surface, the approval gate and compaction fit together.
 
-One declared tool with its arguments as JSON, and a Run button that calls it in the running app. Deliberately not a generated form — that is the API explorer's job.
+Agent Chat Cheatsheet
 
-What the agent did, newest last, so a user can check it against what they saw the page do. There is no undo here.
+The short version: mount, configure, declare a tool, ship.
 
-The user-facing half of the in-page agent: one floating chat wired to the surface this screen declared. Mount it once, in a layout. The conversation loop runs in this browser session — every tool call executes here, gated by the approval card — and the relay endpoint never executes a tool. The session lives in a ref, so it survives reopening the panel and dies with the page unless `persist` keeps it. An enclosing `Agent.Zone` or `AgentProvider` session wins, and then every session option below belongs to whoever built that one.
+App-wide framing. Route guidance from mounted `Agent.Guide`s layers on top of it.
 
-Reaches whichever surface is showing — the launcher while closed, the panel while open.
+Swaps the transport. The default posts to `runAgentTurn`; `httpRunner({ url })` posts elsewhere.
 
-Panel heading.
+Model round trips one ask may spend. At the limit, the chat asks the user whether to keep going.
 
-App-global framing. Route-scoped guidance layers on top of it through mounted `Agent.Guide`s.
+Summarizes past `at` estimated tokens, keeping the last `keep` messages. `{ at: 0 }` turns it off.
 
-Swaps the transport. The default drives the app's own `runAgentTurn` endpoint; `httpRunner` and `fetchRunner` are the two shipped alternatives.
+`true` gives all five built-ins, `false` none, an array only those named. `askUser` always stays.
 
-How many model round trips one ask may spend before the loop stops.
+Transcript survives reloads in sessionStorage; `{ storage: "local" }` or `SessionHistory` moves it.
 
-When the conversation summarizes itself to stay inside the model's window — `at` estimated tokens, `keep` messages left verbatim below the summary. `{ at: 0 }` turns it off.
+Runs after a compaction replaced messages with one summary; a host syncs its own watermark here.
 
-Which of the runtime's own tools this chat gets — all by default, `false` none, an array exactly the ones it names. A chat that must not leave its screen drops `navigate` and `goBack`.
+Rings the calling control (`reveal`) and a pointer presses it (`cursor`). `false` turns both off.
 
-Called after a compaction replaced messages with one summary — where a host syncs its own watermark.
+Starts the panel open. The chat keeps its own open state after that.
 
-Uncontrolled start state, or controlled open state driven from the app's own control. Given `open` without `onOpenChange` the panel cannot close itself, so it draws no close button at all — and that is also what keeps a controlled chat assemblable by a server component, since `onOpenChange` is the only function among these.
-
-What the page itself draws while the agent drives it: the control a call was published from is ringed where it stands, and a pointer presses it. On by default. `false` draws nothing; `{ cursor: false }` keeps the ring, `{ reveal: false }` keeps the pointer.
+Open state the app controls. `open` alone draws no close button.
 
 `false` draws no launcher, for an app that opens the panel from a control of its own.
 
-Keeps the transcript across reloads — sessionStorage by default, `{ storage: "local" }` to outlive the tab, or a `SessionHistory` of the app's own to keep it anywhere else, a server included.
+Renders in the page flow instead of floating, for a zone chat inside its own section.
 
-Renders in the page flow instead of floating above it — a zone chat that lives inside its own section.
+Cmd/Ctrl+L opens the panel. `false` gives the chord back, for a shell that already uses it.
 
-`false` gives the browser its own Cmd/Ctrl+L back, for an app whose shell already spends that chord.
+Reaches whichever surface is showing: the launcher while closed, the panel while open.
 
-One surface each, where `className` reaches both.
+Styles one surface each, where `className` reaches both.
 
-Shown in place of the intro line while the transcript is empty — where starter questions go.
+Panel heading. Left out, it reads "Agent" in the user's language.
 
-Extra header controls, left of the built-in clear and close buttons. `chrome={false}` draws no header bar at all — for an `inline` chat inside a panel the app already titles — and takes the extra controls with it; the clear action stays reachable as the `/new` command.
+Replaces the intro line while the transcript is empty. Starter questions go here.
 
-The composer's opening text, read once at mount — where a `?prompt=` lands without sending it.
+Controls left of clear and close. `chrome={false}` drops the whole bar, leaving `/new` to clear.
 
-Reads a user-attached file into an attachment, or answers `null` to leave it to the built-in reader. A `url` is handed to the provider as the address it will fetch, so answer `data` — or both — whenever the provider cannot reach it. `attachLimits` raises or lowers what the composer accepts per file, per message, and how many.
+Composer text read once at mount, e.g. a `?prompt=` value to prefill without sending it.
 
-What the composer's `@` menu can point at — one entry per kind of document a user may name, each carrying its own `search`. `mentions` draws each pointer as the name it points at rather than as the token that carries it; on wherever `reference` sources are declared.
+Turns a file into an attachment; `null` falls back to the built-in reader for images and text.
 
-Speech in and out. The engine listens and speaks; the chat decides when — a press-to-talk microphone whose transcript lands in the composer for the user to correct, and a reply read aloud only when the ask itself came in by voice.
+Size and count caps. Defaults: 4 MB per file, 8 MB and five files per message.
 
-`attach` and `voice` carry functions, and a function cannot cross the RSC boundary — so a server layout can pass neither. Mount the chat from a small client component in `ui/` that calls the hook, the way `apps/akan/ui/DocsAgentChat.tsx` does.
+`@` menu sources, each with a `search`. `mentions` draws pointers as names, on when sources exist.
 
-The panel is a `lazy(..., { ssr: false })` boundary, so the chunk loads after hydration and the launcher appearing post-mount is normal. The whole surface is configured server-side in `lib/option.ts` — `option.setLlm({ apiKey, model, host })` and `option.setAgentAccess(SignedIn)` — never through the environment.
+Press-to-talk into the composer. Replies are read aloud only when the question was spoken.
 
-One subtree with its own conversation over a scoped view of the same surface. Everything mounted inside — hook tools, `st.use` subscriptions, guides — belongs to this zone's session and to the root agent both: zones are views, never walls. An `Agent.Chat` mounted inside binds to this session automatically, so two zones on one screen run two conversations in parallel, each seeing only its own subtree.
+Did this screen publish what its author meant, under the names the instructions use?
 
-Names the zone. The scope id and the `data-agent-zone` container both derive from it.
+Which keys are readable right now, and what does one actually return when read?
 
-Human-readable name for the scope, shown wherever the surface is listed.
+What would the next turn carry? Assemble prints the tool names, guides and context blocks.
 
-Zone-scoped guidance, mounted as a `Guide` — so the root agent reads it too by the ancestor rule, and a sibling zone never does.
+Which keys were refused, and for what reason.
 
-Same contracts as the chat's own, applied to this zone's session and read once at mount. `builtins={["readScreen", "readState"]}` is how a zone that must not leave the screen stops being able to: the tools are withheld, not discouraged, so a prompt cannot talk the model past it.
+What has the agent already done to this page?
 
-Runs this zone on a session the app built instead of one of its own, and the app then owns it: unmounting the zone leaves it running.
+The whole panel: `bridge` supplies the state keys, `surface` the tools, `open` expands Tools.
 
-Hands the session out once it exists, for a page or store that wants to send into it or watch it.
+An Assemble button that prints what a turn would carry: tool names, guides, context blocks.
 
-Everything a zone publishes is named `<id>.<name>`. Instructions that name a tool must carry the prefix — a bare name is a tool that does not exist, and the model calling it spends a turn on `Unknown tool`. Build the name from the id rather than writing it twice, and read `Agent.Context`'s Assemble to see the published list.
+One collapsible `<details>` group with a count beside its title. The dock draws five.
 
-Standing agent guidance scoped to a route subtree: render it from a `_layout.tsx` or a page and the text joins the turn's instructions while that subtree is mounted. The render tree is the cascade — each mounted Guide contributes its block, and navigating away withdraws it. Renders nothing.
+One readable key, read and masked on click, so an object no model claims is refused here.
 
-The text. English, always — this is model-facing, so the `l()` rule for user-facing strings does not apply.
+One declared tool with its arguments as JSON, and a Run button that calls it in the running app.
 
-Route guidance is a component, not a route-chain stage: there is no `instructions` field on `page()` or `pageConfig`. `*.abstract.md` is never served to agents either.
+What the agent did, oldest first, to check against what the page did. There is no undo.
 
-Puts the enclosing zone's transcript wherever the app keeps it, as a mounted component rather than a prop. `persist` does the same thing and has to be passed to whoever builds the session, which makes every ancestor up to that point a client component — a function cannot cross the server/client boundary as a prop. Mounted here instead, the only client module an app needs is this leaf. Renders nothing.
+A section with its own conversation over a narrowed view of the same screen. An `Agent.Chat` inside binds to it automatically, so two zones on one screen run two conversations side by side, each seeing only its own subtree.
 
-The three sides of the store. Written inline is fine — they are read through a ref, so a fresh closure per render does not re-attach and re-fetch.
+Required. Sets the name prefix and `data-agent-zone`; characters outside `A-Za-z0-9_-` become `-`.
+
+The section itself. Everything mounted here is part of the zone.
+
+Goes on the wrapper `div` that carries `data-agent-zone`.
+
+Readable name for the scope, sent to the model with the screen context.
+
+Zone guidance, mounted as an `Agent.Guide`: the root agent reads it too, a sibling zone never.
+
+same as Chat
+
+Same contracts as the chat's, applied to this zone's session and read once at mount.
+
+Runs the zone on a session the app built and owns; unmounting the zone leaves it running.
+
+Hands the session out once it exists, for a page or store that sends into it or watches it.
+
+Standing guidance for a route subtree. Render it from a `_layout.tsx` or a page, and its text joins every turn's instructions while that subtree is mounted. It draws nothing.
+
+The text, always in English: the model reads it, so the `l()` rule does not apply.
+
+Connects the enclosing zone's transcript to storage the app owns. It does what `persist` does, as a mounted leaf instead of a prop, and draws nothing.
+
+The three sides of the store. Inline closures are fine, since they are read through a ref.
 
 Where a host with its own server-side summary moves its watermark.
 
-Restoring follows the session's one rule: it lands only while nothing has happened to the conversation yet, so mounting with the zone restores and mounting later saves from there on.
+A region the default screen read leaves out: chrome that costs tokens and answers nothing, such as a footer, a cookie banner or a repeated nav.
 
-The store is attached for exactly as long as this is mounted. A zone's own session dies with it, but a session the app handed in outlives this and its saving stops on unmount. A host that wants the store to outlive the view calls `session.setHistory` itself, which also takes the slot, so a later unmount here leaves it alone.
-
-A region the default screen read leaves out, for chrome that costs the agent tokens and answers nothing — a footer, a cookie banner, a repeated nav. What stands in its place is `[skipped: <label>]`, so an agent asked about the footer says it did not read one instead of reporting that the page has none, and `section: "<label>"` reads it on request.
-
-What the read prints in place of the region, and the name `section` takes to read it anyway. Required — an unnamed marker tells the agent a region exists and nothing about it.
+Printed in place of the region, and the name `section` takes to read it anyway. Required.
 
 The region itself.
 
-This hides text, not behaviour. Tools and state keys are declarations, not markup: an `st.tool` inside here is published exactly as before, and `highlight` still reaches a control in here.
+Goes on the wrapper `div`.
 
-It renders a wrapper element, so where a div between a flex container and its children would move the layout, put the attribute on the element the page already renders — `<footer data-agent-skip="site footer">`.
+Prefixes every tool and resource registered below it, so repeated list items can reuse local names. It opens no conversation and holds no session.
 
-Namespaces every tool and resource registered below it, so list items can reuse local names. It opens no conversation and holds no session — that is `Agent.Zone`, which wraps this. Reach for `Scope` when a repeated subtree needs distinct tool names but shares the screen's one agent.
-
-The prefix. Everything below is published as `<id>.<name>`, nested scopes joining with dots.
-
-Human-readable name for the scope.
-
-What sort of scope this is. `Agent.Zone` opens its own with `kind="zone"`.
+The prefix: everything below is published as `<id>.<name>`, nested scopes joined with dots.
 
 The subtree the prefix applies to.
 
+What sort of scope this is. `Agent.Zone` opens its own with `kind="zone"`.
+
 Agent UI
 
-You have a screen full of controls a person can operate, and you would like an assistant on it that can operate the same ones. Not a separate API for robots — the buttons that are already there, pressed under the same guards, with the person watching.
+An assistant that presses the buttons already on the screen, under the same guards, while the person watches. It is not a separate API for robots.
 
-The `Agent` namespace is that surface. One `Agent.Chat` in a layout is the whole integration; everything else on this page narrows it — a subtree with its own conversation, standing guidance for a route, a region the read skips, and a development dock that shows what this screen actually published.
+Words used on this page
 
-The relay endpoint never executes a tool. Every call runs in the caller's own browser session, gated by the app's guards and the approval card — so a tool exists only where a component declared one, and a lever the screen does not offer the user is not one an agent may pull in their place.
+Term
 
-This page is the API surface — every member and its props. The concepts behind it live elsewhere:
-
-how the loop, the surface, the approval gate, and compaction fit together.
-
-the short version — mount, configure, declare a tool, ship.
+Members
 
 Member
 
+Yes
+
+No
+
+Where the concepts live
+
+This page lists every member and its props. The ideas behind them are explained here:
+
+Chat
+
+The chat people see: a floating panel wired to the tools and state this screen declared. The loop and every tool call run in this browser. Mount it once, in a layout.
+
+Props / API
+
+Session Options
+
+How the conversation runs, read once at mount. Inside an `Agent.Zone` or `AgentProvider` the chat joins that session, so these belong to whoever built it.
+
+Opening And Placement
+
+Look
+
+Composer Input
+
+A layout mounts it once, with a translated title and a transcript that survives reloads:
+
 Development Dock
 
-A component declares its own agent surface, which means the source of one file never tells you what the whole screen published. `Agent.Dock` is the answer: mount it in development and it lists the tools this screen declared, the state keys an agent may read, the keys that were withheld and why, and what has been called so far.
+What each section answers
 
-The dock and its parts render nothing when `AKAN_PUBLIC_ENV=main`, so leaving one mounted costs a production visitor nothing. The parts are exported individually because an app that wants a dock of its own shape should compose these rather than re-read the surface.
+Section
 
-What each section answers:
+The parts
 
-Tools — did this screen publish what its author thought it did, under the names the instructions use?
+Each part is exported, so an app that wants a dock of its own shape composes them instead of re-reading the surface.
 
-State — which keys are readable right now, and what does one actually return when read?
+Restyling the chat
 
-Withheld — which keys were refused, and for what reason.
-
-Transcript — what the agent has already done to this page.
-
-Eleven of the chat's own parts are override slots — `AgentBubble`, `AgentComposer`, `AgentSteps`, `AgentToolCard`, and the rest — so an app re-skins the transcript or the composer without re-implementing the loop. The full slot list is on the Customization page.
+Overridable Slots
 
 ## Code Examples
 
-### apps/koyo/page/_layout.tsx
+### apps/koyo/page/(user)/_layout.tsx
 
 ```ts
-import { Agent } from "akanjs/ui";
+import { usePage } from "@apps/koyo/client";
 import { layout } from "akanjs/client";
+import { Agent } from "akanjs/ui";
+
+export default layout().render(({ children }) => {
+  const { l } = usePage();
+  return (
+    <>
+      {children}
+      <Agent.Chat
+        title={l.trans({ en: "Assistant", ko: "도우미" })}
+        instructions="Help the operator schedule flights. Confirm before submitting a plan."
+        persist
+        compact={{ at: 120_000, keep: 8 }}
+      />
+    </>
+  );
+});
+```
+
+### apps/koyo/page/(user)/_layout.tsx
+
+```ts
+import { layout } from "akanjs/client";
+import { Agent } from "akanjs/ui";
 
 export default layout().render(({ children }) => (
   <>

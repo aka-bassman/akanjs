@@ -1,8 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import type { McpDeclaredServer } from "@akanjs/devkit/codeAgent/tools/McpServerConfig";
 import type { CodeAgentMcpServerRef, CodeAgentMcpStatus } from "akanjs/common";
 import { CodeTuiMcp, type CodeTuiMcpView } from "./CodeTuiMcp";
 
 const file = "/repo/.akan/code/mcp.json";
+const globalFile = "/home/me/.akan/code/mcp.json";
+
+/** Declared in the workspace file unless a test says otherwise, which is the narrower of the two scopes. */
+const declared = (entry: CodeAgentMcpServerRef, patch: Partial<McpDeclaredServer> = {}): McpDeclaredServer => ({
+  ref: entry,
+  disabled: false,
+  scope: "workspace",
+  ...patch,
+});
 
 const ref = (name: string, patch: Partial<CodeAgentMcpServerRef> = {}): CodeAgentMcpServerRef => ({
   name,
@@ -23,11 +33,28 @@ const live = (name: string, patch: Partial<CodeAgentMcpStatus> = {}): CodeAgentM
 const view = (patch: Partial<CodeTuiMcpView> = {}): CodeTuiMcpView => ({
   status: [],
   declared: [],
-  file,
+  files: [
+    { scope: "global", file: globalFile },
+    { scope: "workspace", file },
+  ],
   ...patch,
 });
 
 describe("/mcp", () => {
+  /** "Declare once, reachable everywhere" only works if the listing says which of the two files a row is in. */
+  test("each server says which file declares it, and both files are named", () => {
+    const text = CodeTuiMcp.list(
+      view({
+        status: [live("office"), live("repobot")],
+        declared: [declared(ref("office"), { scope: "global" }), declared(ref("repobot"))],
+      }),
+    );
+    expect(text).toMatch(/office\s+global/);
+    expect(text).toMatch(/repobot\s+workspace/);
+    expect(text).toContain(globalFile);
+    expect(text).toContain(file);
+  });
+
   test("nothing declared says where to declare one", () => {
     const text = CodeTuiMcp.list(view());
     expect(text).toContain("No MCP server is declared.");
@@ -37,23 +64,19 @@ describe("/mcp", () => {
   });
 
   test("a connected server reads as its transport, its target and its tool count", () => {
-    const text = CodeTuiMcp.list(
-      view({ status: [live("github")], declared: [{ ref: ref("github"), disabled: false }] }),
-    );
-    expect(text).toContain("1 server · /repo/.akan/code/mcp.json");
-    expect(text).toMatch(/github\s+stdio\s+npx -y server-github\s+2 tools/);
+    const text = CodeTuiMcp.list(view({ status: [live("github")], declared: [declared(ref("github"))] }));
+    expect(text).toContain("1 server");
+    expect(text).toMatch(/github\s+workspace\s+stdio\s+npx -y server-github\s+2 tools/);
   });
 
   test("one tool is not 'tools'", () => {
     const status = live("solo", { tools: ["mcp__solo__go"] });
-    expect(CodeTuiMcp.list(view({ status: [status], declared: [{ ref: ref("solo"), disabled: false }] }))).toContain(
-      "1 tool",
-    );
+    expect(CodeTuiMcp.list(view({ status: [status], declared: [declared(ref("solo"))] }))).toContain("1 tool");
   });
 
   test("an unreachable server says why rather than going missing", () => {
     const status = live("linear", { transport: "http", target: "https://x", tools: [], error: "fetch failed" });
-    const text = CodeTuiMcp.list(view({ status: [status], declared: [{ ref: ref("linear"), disabled: false }] }));
+    const text = CodeTuiMcp.list(view({ status: [status], declared: [declared(ref("linear"))] }));
     expect(text).toContain("unreachable — fetch failed");
   });
 
@@ -62,9 +85,10 @@ describe("/mcp", () => {
    * connected at the same time, and calling that state "broken" would send someone debugging their server.
    */
   test("a server the file gained after this session started asks for a reload", () => {
-    const text = CodeTuiMcp.list(view({ status: [live("github")], declared: [{ ref: ref("new"), disabled: false }] }));
+    const text = CodeTuiMcp.list(view({ status: [live("github")], declared: [declared(ref("new"))] }));
     expect(text).toContain("declared · /mcp reload to connect");
-    expect(text).toMatch(/github\s+stdio\s+npx -y server-github\s+2 tools/);
+    // The live one is in no file any more, so its scope column is blank rather than a guess.
+    expect(text).toMatch(/github\s+stdio\s+npx -y server-github\s+2 tools · removed from the file/);
   });
 
   test("a server removed from the file is still the one this session is holding", () => {
@@ -72,7 +96,7 @@ describe("/mcp", () => {
   });
 
   test("a disabled entry is neither connected nor a failure", () => {
-    const text = CodeTuiMcp.list(view({ declared: [{ ref: ref("off"), disabled: true }] }));
+    const text = CodeTuiMcp.list(view({ declared: [declared(ref("off"), { disabled: true })] }));
     const row = text.split("\n").find((line) => line.startsWith("off"));
     expect(row).toContain("disabled in the file");
     // Not "declared · /mcp reload to connect": reloading would connect nothing, the file having turned it off.
@@ -82,20 +106,20 @@ describe("/mcp", () => {
   /** A 401 is the server working: it answered, and it said who may call it. */
   test("a server asking for sign-in is not reported as broken", () => {
     const status = live("linear", { transport: "http", target: "https://x", tools: [], auth: "required" });
-    const text = CodeTuiMcp.list(view({ status: [status], declared: [{ ref: ref("linear"), disabled: false }] }));
+    const text = CodeTuiMcp.list(view({ status: [status], declared: [declared(ref("linear"))] }));
     expect(text).toContain("sign-in needed · /mcp login linear");
     expect(text).not.toContain("unreachable");
   });
 
   test("a signed-in server says so beside its tool count", () => {
     const status = live("github", { auth: "authorized" });
-    const text = CodeTuiMcp.list(view({ status: [status], declared: [{ ref: ref("github"), disabled: false }] }));
+    const text = CodeTuiMcp.list(view({ status: [status], declared: [declared(ref("github"))] }));
     expect(text).toContain("2 tools · signed in");
   });
 
   test("a server needing no credential says nothing about one", () => {
     const status = live("local", { auth: "none" });
-    const text = CodeTuiMcp.list(view({ status: [status], declared: [{ ref: ref("local"), disabled: false }] }));
+    const text = CodeTuiMcp.list(view({ status: [status], declared: [declared(ref("local"))] }));
     expect(text).not.toContain("signed in");
     expect(text).not.toContain("sign-in");
   });
@@ -108,10 +132,7 @@ describe("/mcp", () => {
     const text = CodeTuiMcp.list(
       view({
         status: [live("zulip"), live("github")],
-        declared: [
-          { ref: ref("zulip"), disabled: false },
-          { ref: ref("github"), disabled: false },
-        ],
+        declared: [declared(ref("zulip")), declared(ref("github"))],
       }),
     );
     expect(text.indexOf("github")).toBeLessThan(text.indexOf("zulip"));

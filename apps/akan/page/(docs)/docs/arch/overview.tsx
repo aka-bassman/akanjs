@@ -2,7 +2,6 @@ import { usePage } from "@apps/akan/client";
 import { Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
-import { Link } from "akanjs/ui";
 
 export default page().render(() => {
   const { l } = usePage();
@@ -25,8 +24,7 @@ export default page().render(() => {
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🎯</span>
+              <div className="mb-2">
                 <strong className="text-primary">{l.trans({ en: "Behavior First", ko: "동작이 먼저" })}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -37,8 +35,7 @@ export default page().render(() => {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🔁</span>
+              <div className="mb-2">
                 <strong className="text-primary">
                   {l.trans({ en: "One Service, Many Clients", ko: "하나의 service, 여러 클라이언트" })}
                 </strong>
@@ -51,8 +48,7 @@ export default page().render(() => {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🚀</span>
+              <div className="mb-2">
                 <strong className="text-primary">{l.trans({ en: "Deploy Later", ko: "배포는 나중에" })}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -76,17 +72,22 @@ export default page().render(() => {
               ko: "Akan은 화면이 하나뿐인 제품보다 표면이 여럿인 제품을 위해 설계되었습니다. 스토어 고객 페이지, 관리자 콘솔, 파트너 클라이언트, 모바일 앱, 엣지 장비 워크플로우는 서로 다른 인터페이스를 보여주면서 같은 규칙과 같은 데이터를 공유합니다.",
             })}
           </div>
-          <Docs.Mermaid
+          <Docs.Figure
             title={l.trans({ en: "Surface map", ko: "표면 지도" })}
-            highlightNodes={["shared"]}
-            chart={`flowchart TB
-  ssr["SSR page"] --> helpers["Client helpers<br/>fetch · st · Model · usePage"]
-  csr["CSR page"] --> helpers
-  admin["Admin client"] --> helpers
-  partner["Partner client"] --> helpers
-  mobileApp["Mobile CSR client"] --> helpers
-  helpers --> shared["Shared business service<br/>signal · service · document"]
-  shared -->|"runs as"| runtime["local · cloud cluster<br/>edge · mobile package"]`}
+            image="surface-map"
+            prompt={`
+              A large rounded square in the centre holding a small gear and a small database cylinder, its outline
+              traced as the red accent, labelled "Shared Business Service" with a smaller second line "signal · service
+              · document". Five surfaces sit in a loose, evenly spaced ring around it, each joined to it by a thin
+              two-headed arrow: a browser whose page shows a small shopping bag, labelled "Store"; a browser whose page
+              shows a small table grid, labelled "Admin Console"; a browser whose page shows two overlapping circles,
+              labelled "Partner Client"; a phone labelled "Mobile App"; a small box with a short antenna and one dot on
+              its face, labelled "Edge Device".
+            `}
+            alt={l.trans({
+              en: "A store page, an admin console, a partner client, a mobile app and an edge device all reach one shared business service — signal, service and document — through fetch, st, Model and usePage.",
+              ko: "스토어 페이지, 관리자 콘솔, 파트너 클라이언트, 모바일 앱, 엣지 장비가 모두 fetch, st, Model, usePage를 거쳐 하나의 공유 business service(signal, service, document)에 닿습니다.",
+            })}
           />
           <Docs.Alert type="info">
             {l.trans({
@@ -110,28 +111,69 @@ export default page().render(() => {
               ko: "거의 모든 Akan 기능은 인터페이스와 비즈니스 service 사이의 대화 하나입니다. 인터페이스는 유용한 콘텐츠를 보여주고 의도를 수집하며, 비즈니스 service는 안전한 요청을 받아 규칙을 판단하고 데이터를 바꾸며, 필요하면 백그라운드나 실시간 후속 작업을 일으킵니다.",
             })}
           </div>
-          <Docs.Mermaid
+          <Docs.Sequence
             title={l.trans({ en: "One request, end to end", ko: "요청 하나의 전 구간" })}
-            chart={`sequenceDiagram
-  actor User
-  participant Screen as Page and client components
-  participant Helpers as fetch · st · Model · usePage
-  participant Signal as signal
-  participant Service as service
-  participant Document as document
-  User->>Screen: reads the SSR first view, then types, clicks, filters
-  Screen->>Helpers: intent
-  Helpers->>Signal: fetch.endpoint(args)
-  Note right of Signal: endpoint · slice · internal<br/>guards and boundaries run here
-  Signal->>Service: valid work only
-  Note right of Service: rules · external APIs<br/>DI · background · realtime
-  Service->>Document: load and write
-  Note right of Document: schema · query · sort<br/>methods · statics
-  Document-->>Service: documents
-  Service-->>Signal: result
-  Signal-->>Helpers: typed response
-  Helpers-->>Screen: st state
-  Screen-->>User: re-render`}
+            actors={{
+              user: { label: l.trans({ en: "User", ko: "사용자" }), tone: "muted" },
+              screen: {
+                label: l.trans({ en: "Screen", ko: "화면" }),
+                lines: [
+                  l.trans({ en: "Page and client", ko: "페이지와 client" }),
+                  l.trans({ en: "components", ko: "component" }),
+                ],
+              },
+              helpers: { label: "Helpers", lines: ["fetch · st · Model", "· usePage"] },
+              signal: { label: "signal" },
+              service: { label: "service" },
+              document: { label: "document" },
+            }}
+            messages={[
+              {
+                from: "user",
+                to: "screen",
+                label: l.trans({ en: "reads the SSR first view,", ko: "SSR 첫 화면을 읽고," }),
+                lines: [l.trans({ en: "then types, clicks, filters", ko: "입력·클릭·필터" })],
+              },
+              { from: "screen", to: "helpers", label: l.trans({ en: "intent", ko: "의도" }) },
+              { from: "helpers", to: "signal", label: "fetch.endpoint(args)" },
+              {
+                from: "signal",
+                to: "service",
+                label: l.trans({ en: "valid work only", ko: "검증을 통과한 작업만" }),
+                note: l.trans({
+                  en: "endpoint · slice · internal — guards and boundaries run here",
+                  ko: "endpoint · slice · internal — guard와 경계가 여기서 실행됩니다",
+                }),
+              },
+              {
+                from: "service",
+                to: "document",
+                label: l.trans({ en: "load and write", ko: "조회와 쓰기" }),
+                note: l.trans({
+                  en: "rules · external APIs · DI · background · realtime",
+                  ko: "규칙 · 외부 API · DI · 백그라운드 · realtime",
+                }),
+              },
+              {
+                from: "document",
+                to: "service",
+                dashed: true,
+                label: l.trans({ en: "documents", ko: "문서" }),
+                note: l.trans({
+                  en: "schema · query · sort · methods · statics",
+                  ko: "schema · query · sort · 메서드 · static",
+                }),
+              },
+              { from: "service", to: "signal", dashed: true, label: l.trans({ en: "result", ko: "결과" }) },
+              {
+                from: "signal",
+                to: "helpers",
+                dashed: true,
+                label: l.trans({ en: "typed response", ko: "타입이 붙은 응답" }),
+              },
+              { from: "helpers", to: "screen", dashed: true, label: l.trans({ en: "st state", ko: "st 상태" }) },
+              { from: "screen", to: "user", dashed: true, label: l.trans({ en: "re-render", ko: "재렌더" }) },
+            ]}
           />
           <div>
             {l.trans({
@@ -152,174 +194,80 @@ export default page().render(() => {
               ko: "세부 아키텍처 문서는 각 영역을 더 깊게 설명합니다. 이 overview는 지도를 작게 유지합니다. 각 영역은 서로 다른 종류의 결정을 담당하고, 그 결정들이 올바른 위치에 있을 때 제품 구조가 명확해집니다.",
             })}
           </div>
-          <Docs.IntroTable
-            type={l.trans({ en: "Area", ko: "영역" })}
+          <Docs.LinkGrid
             items={[
               {
-                area: l.trans({ en: "UI Architecture", ko: "UI 아키텍처" }),
                 href: "/docs/arch/frontend",
+                title: l.trans({ en: "UI Architecture", ko: "UI 아키텍처" }),
                 desc: l.trans({
-                  en: "First view, SSR, the rendering boundary, what earns a client component, and the akan quality ssr server-share floor.",
-                  ko: "첫 화면, SSR, 렌더링 경계, 무엇이 client component가 되는지, 그리고 akan quality ssr의 server share 하한선.",
+                  en: "Design the first screen and decide what runs on the client.",
+                  ko: "첫 화면을 설계하고 무엇을 클라이언트에서 돌릴지 정합니다.",
                 }),
               },
               {
-                area: l.trans({ en: "UI Composition", ko: "UI 구성" }),
                 href: "/docs/arch/ui-composition",
+                title: l.trans({ en: "UI Composition", ko: "UI 구성" }),
                 desc: l.trans({
-                  en: "Composing a screen from akanjs/ui: Load, Model, Field, the generated store and fetch helpers, and i18n.",
-                  ko: "akanjs/ui로 화면을 조립하기: Load, Model, Field, generated store·fetch helper, i18n.",
+                  en: "Build a list, a detail view, or a create and edit form.",
+                  ko: "목록, 상세 화면, 생성·수정 폼을 만듭니다.",
                 }),
               },
               {
-                area: l.trans({ en: "Business Service", ko: "비즈니스 서비스" }),
                 href: "/docs/arch/backend",
+                title: l.trans({ en: "Business Service", ko: "비즈니스 서비스" }),
                 desc: l.trans({
-                  en: "signal, service, document, request/response work, cron and background work, report generation, and realtime scenarios.",
-                  ko: "signal, service, document, request/response 작업, cron·background 작업, 리포트 생성, 실시간 시나리오.",
+                  en: "Write server rules, APIs, queues, cron, and realtime work.",
+                  ko: "서버 규칙, API, 큐, cron, 실시간 작업을 씁니다.",
                 }),
               },
               {
-                area: l.trans({ en: "Runtime And Infra", ko: "런타임과 인프라" }),
                 href: "/docs/arch/infra",
+                title: l.trans({ en: "Runtime And Infra", ko: "런타임과 인프라" }),
                 desc: l.trans({
-                  en: "local, cloud cluster, edge, master, traffic paths, database mode, and growth stages.",
-                  ko: "local, cloud cluster, edge, master, traffic path, database mode, growth stage.",
+                  en: "Choose local, cloud, edge, database, and deployment shape.",
+                  ko: "local, cloud, edge, 데이터베이스, 배포 형태를 고릅니다.",
                 }),
               },
               {
-                area: l.trans({ en: "Mobile App Architecture", ko: "모바일 앱 아키텍처" }),
                 href: "/docs/arch/mobile",
+                title: l.trans({ en: "Mobile App Architecture", ko: "모바일 앱 아키텍처" }),
                 desc: l.trans({
-                  en: "CSR web inside Capacitor, multi-client basePath targets, local CSR testing, the page .config() stage, and Android/iOS packaging.",
-                  ko: "Capacitor 안에서 도는 CSR web, multi-client basePath target, 로컬 CSR 테스트, page의 .config() 단계, Android/iOS 패키징.",
+                  en: "Package the CSR client as an Android or iOS app.",
+                  ko: "CSR 클라이언트를 Android·iOS 앱으로 패키징합니다.",
                 }),
               },
               {
-                area: l.trans({ en: "CSS And Styling", ko: "CSS와 스타일링" }),
                 href: "/docs/arch/css",
+                title: l.trans({ en: "CSS And Styling", ko: "CSS와 스타일링" }),
                 desc: l.trans({
-                  en: "Tailwind CSS, semantic design tokens, design system thinking, theme declaration, and font declaration.",
-                  ko: "Tailwind CSS, 시맨틱 디자인 토큰, 디자인 시스템 사고, 테마 선언, 폰트 선언.",
+                  en: "Set theme tokens, fonts, and consistent component style.",
+                  ko: "테마 토큰, 폰트, 일관된 컴포넌트 스타일을 정합니다.",
                 }),
               },
               {
-                area: l.trans({ en: "UI Recipe Layer", ko: "UI 레시피 레이어" }),
                 href: "/docs/arch/ui-recipe",
+                title: l.trans({ en: "UI Recipe Layer", ko: "UI 레시피 레이어" }),
                 desc: l.trans({
-                  en: "The variant factory between tokens and components: framework recipes, app-level recipes, when to reach for one, and how a route overrides one.",
-                  ko: "토큰과 컴포넌트 사이의 변형 팩토리입니다. 프레임워크 recipe, 앱 레벨 recipe, 언제 쓰는지, 라우트가 어떻게 덮어쓰는지.",
+                  en: "Stop re-implementing the same card or button look.",
+                  ko: "같은 카드·버튼 모양을 매번 다시 만들지 않습니다.",
                 }),
               },
               {
-                area: l.trans({ en: "In-Page Agent", ko: "인페이지 에이전트" }),
                 href: "/docs/arch/agentic",
+                title: l.trans({ en: "In-Page Agent", ko: "인페이지 에이전트" }),
                 desc: l.trans({
-                  en: "The agent that reads the rendered screen and drives it: mounting and securing the relay, the declared surface, zones, and swapping the model.",
-                  ko: "렌더된 화면을 읽고 조작하는 에이전트입니다. relay 마운트와 보안, 선언하는 표면, zone, 모델 교체.",
+                  en: "Let an AI agent read and drive a screen.",
+                  ko: "AI 에이전트가 화면을 읽고 조작하게 합니다.",
                 }),
               },
-            ].map(({ area, href, desc }) => ({
-              name: (
-                <Link href={href} className="text-primary">
-                  {area}
-                </Link>
-              ),
-              desc,
-            }))}
+            ]}
           />
-        </Docs.Description>
-      </Scroll.Slide>
-      <Divider />
-
-      <Scroll.Slide
-        id="reading-guide"
-        title={l.trans({ en: "How To Read The Architecture Docs", ko: "아키텍처 문서 읽는 순서" })}
-      >
-        <Docs.Title>{l.trans({ en: "How To Read The Architecture Docs", ko: "아키텍처 문서 읽는 순서" })}</Docs.Title>
-        <Docs.Description>
           <div>
             {l.trans({
               en: "You do not need to read every architecture page before building. Start from the decision you are facing, then move to the page that owns that decision.",
               ko: "무언가를 만들기 전에 모든 아키텍처 문서를 먼저 읽을 필요는 없습니다. 지금 마주한 결정에서 시작해, 그 결정을 담당하는 페이지로 가면 됩니다.",
             })}
           </div>
-          <Docs.IntroTable
-            type={l.trans({ en: "I need to…", ko: "이럴 때" })}
-            items={[
-              {
-                need: l.trans({
-                  en: "Design the first screen or client behavior",
-                  ko: "첫 화면이나 클라이언트 동작을 설계해야 한다",
-                }),
-                area: l.trans({ en: "UI Architecture", ko: "UI 아키텍처" }),
-                href: "/docs/arch/frontend",
-              },
-              {
-                need: l.trans({
-                  en: "Build a list, a detail view, or a create and edit form",
-                  ko: "목록, 상세 화면, 생성·수정 폼을 만들어야 한다",
-                }),
-                area: l.trans({ en: "UI Composition", ko: "UI 구성" }),
-                href: "/docs/arch/ui-composition",
-              },
-              {
-                need: l.trans({
-                  en: "Write server-side rules, APIs, queue, cron, or realtime work",
-                  ko: "서버 규칙, API, queue, cron, realtime 작업이 필요하다",
-                }),
-                area: l.trans({ en: "Business Service", ko: "비즈니스 서비스" }),
-                href: "/docs/arch/backend",
-              },
-              {
-                need: l.trans({
-                  en: "Choose local, cloud, edge, database, or deployment shape",
-                  ko: "local, cloud, edge, database, deployment 형태를 골라야 한다",
-                }),
-                area: l.trans({ en: "Runtime And Infra", ko: "런타임과 인프라" }),
-                href: "/docs/arch/infra",
-              },
-              {
-                need: l.trans({
-                  en: "Package a CSR client as Android or iOS",
-                  ko: "CSR 클라이언트를 Android 또는 iOS로 패키징해야 한다",
-                }),
-                area: l.trans({ en: "Mobile App Architecture", ko: "모바일 앱 아키텍처" }),
-                href: "/docs/arch/mobile",
-              },
-              {
-                need: l.trans({
-                  en: "Set consistent component style, theme, or font rules",
-                  ko: "일관된 컴포넌트 스타일, 테마, 폰트 규칙이 필요하다",
-                }),
-                area: l.trans({ en: "CSS And Styling", ko: "CSS와 스타일링" }),
-                href: "/docs/arch/css",
-              },
-              {
-                need: l.trans({
-                  en: "Stop re-implementing the same card or button look",
-                  ko: "같은 카드나 버튼 모양을 매번 다시 만들고 있다",
-                }),
-                area: l.trans({ en: "UI Recipe Layer", ko: "UI 레시피 레이어" }),
-                href: "/docs/arch/ui-recipe",
-              },
-              {
-                need: l.trans({
-                  en: "Let an AI agent read and drive a screen",
-                  ko: "AI 에이전트가 화면을 읽고 조작하게 해야 한다",
-                }),
-                area: l.trans({ en: "In-Page Agent", ko: "인페이지 에이전트" }),
-                href: "/docs/arch/agentic",
-              },
-            ].map(({ need, area, href }) => ({
-              name: <span className="font-sans">{need}</span>,
-              desc: (
-                <Link href={href} className="text-primary">
-                  {area}
-                </Link>
-              ),
-            }))}
-          />
         </Docs.Description>
       </Scroll.Slide>
       <DocsToc />

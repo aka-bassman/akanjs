@@ -269,7 +269,10 @@ export class AkanServer {
   }
   setMcp(mcp: boolean | McpServerOption = true) {
     if (this.status !== "stopped") throw new Error("MCP config must be set before app initialization.");
-    this.mcp = typeof mcp === "boolean" ? mcp : (mcp.enabled ?? true);
+    // An object without `enabled` only configures the surface, and the env switch only ever narrows: `libs/shared`
+    // hands over its auth settings this way, which used to turn `/mcp` back on under `AKAN_MCP=false`.
+    const requested = typeof mcp === "boolean" ? mcp : (mcp.enabled ?? this.mcp);
+    this.mcp = requested && !AkanServer.#isEnvOff("AKAN_MCP", "AKAN_PUBLIC_MCP");
     if (typeof mcp === "boolean") return this;
     const { enabled: _enabled, readOnly, auth, ...rest } = mcp;
     if (readOnly !== undefined) this.mcpReadOnly = readOnly;

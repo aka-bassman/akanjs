@@ -114,7 +114,7 @@ const RULE_FIXES: Record<string, string> = {
     "Split the file by responsibility — move Zones, Utils, or subcomponents into sibling files.",
   "akan.file.max-lines": "Break the file into smaller focused modules; keep one primary responsibility per file.",
   "akan.file.abstract-max-lines":
-    "Run `akan compact <app-or-lib>` to rewrite the abstract with the AI editor, keeping only the invariants and workflows the source files cannot show.",
+    "Trim the abstract by hand to a title, one sentence naming what the module owns, a `## Rules` list of the invariants the source cannot show, and an optional workflow chain.",
   "akan.file.placeholder-export":
     "Remove the placeholder export; generated indexes should only re-export real modules.",
   "akan.file.bang-comment-in-client":

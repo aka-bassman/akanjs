@@ -1,5 +1,5 @@
 "use client";
-import { cn } from "akanjs/client";
+import { cn, usePage } from "akanjs/client";
 import { useId, useMemo } from "react";
 import { docUi, Panel } from "../Reference";
 import {
@@ -28,14 +28,22 @@ export interface GraphProps {
 export const Graph = ({ className, title, nodes, edges, selectedId, onSelect }: GraphProps) => {
   const reactId = useId();
   const arrow = `arrow${reactId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const { l } = usePage();
   const layout = useMemo(() => new SchemaGraphLayout(nodes, edges), [nodes, edges]);
-  if (!layout.nodes.length) return <div className={docUi.emptyPanel}>No model is registered.</div>;
+  if (!layout.nodes.length)
+    return (
+      <div className={docUi.emptyPanel}>
+        {l.trans({ en: "No model is registered.", ko: "등록된 모델이 없습니다." })}
+      </div>
+    );
   return (
     <Panel
       bodyClassName="max-h-none overflow-x-auto p-4"
       className={className}
       label={title}
-      meta={<span className="text-foreground/40 text-xs">Click a node</span>}
+      meta={
+        <span className="text-foreground/40 text-xs">{l.trans({ en: "Click a node", ko: "노드를 눌러 보세요" })}</span>
+      }
     >
       <svg
         className="min-w-fit select-none"

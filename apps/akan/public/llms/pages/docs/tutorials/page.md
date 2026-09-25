@@ -12,7 +12,6 @@
 - Add Schema (#add-schema)
 - Kiosk Landing Page (#kiosk-landing-page)
 - Order Form Page (#order-form-page)
-- Page UX Best Practices (#page-best-practices)
 
 ## Content
 
@@ -38,13 +37,13 @@ Next, we need to add dictionary entries for the new fields and enum values:
 
 Next, let's add serveType and phone selection to the order form template.
 
-Finally, let's display serveType on the order card to clearly show whether the customer's order is for here or take out, etc.
+Finally, let's display serveType on the order's Unit card to clearly show whether the customer's order is for here or take out, etc.
 
 Kiosk Landing Page
 
 The first thing customers see when they approach the kiosk is the landing page. Think of it like the welcome screen at a fast-food restaurant kiosk - it should be inviting, easy to understand, and guide customers to their first choice: "For Here" or "Take Out".
 
-Let's create an attractive landing page that makes ordering feel like a delightful experience:
+Let's create the landing page for the kiosk ordering flow:
 
 Let's break down the key features of this landing page:
 
@@ -54,7 +53,7 @@ The "For Here" and "Take Out" buttons pass serveType as a query parameter to the
 
 Visual Design
 
-Large buttons with emojis make the interface touch-friendly and intuitive. Gradient backgrounds and hover effects create a modern, engaging experience.
+Large buttons with emojis make the interface touch-friendly. Gradient backgrounds and hover effects give the kiosk a distinct look.
 
 After customers complete their order, they need a confirmation page. Let's create a success page that reassures them:
 
@@ -80,7 +79,7 @@ The Load.Edit component handles form state management, validation, and submissio
 
 Setting onCancel to "back" enables the cancel button to navigate back to the previous page. This provides an easy way for customers to change their mind.
 
-Now let's style the Template component for a beautiful kiosk experience. Each section is wrapped in a card with icons:
+Now let's style the Template component for the kiosk experience. Each section is wrapped in a card with icons:
 
 The Template component uses these Field components for kiosk-friendly input:
 
@@ -89,38 +88,6 @@ Large, touch-friendly buttons for selecting a single option (size)
 Allows selecting multiple options (toppings) with visual feedback
 
 Phone number input with formatting and validation built-in
-
-Page UX Best Practices
-
-When building customer-facing pages like kiosks, following UX best practices ensures a smooth and enjoyable experience. Here are the key principles we applied:
-
-Clear Navigation Flow
-
-Guide customers through a linear flow: Landing → Order Form → Success. Each step has one clear purpose, reducing confusion.
-
-Touch-Friendly Design
-
-Large buttons (py-6), adequate spacing, and visual feedback on interaction make the interface easy to use on touchscreens.
-
-Visual Hierarchy with Icons
-
-Emojis and icons provide instant visual cues that help customers understand each section without reading text carefully.
-
-State Preservation
-
-Using query parameters and Load.Edit ensures customer choices are preserved between pages, creating a seamless experience.
-
-🎉 What You've Accomplished:
-
-Extended schema with new fields for kiosk ordering
-
-Built an attractive landing page with language switching
-
-Created a touch-friendly order form with Field components
-
-Implemented success page with clear customer feedback
-
-Learned page UX best practices for kiosk applications
 
 In the next tutorial, we'll explore how to use Scalar for computed values and aggregations. This will allow you to display dynamic information like order totals, wait times, and statistics in real-time.
 

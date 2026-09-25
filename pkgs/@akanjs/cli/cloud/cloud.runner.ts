@@ -315,11 +315,11 @@ export class CloudRunner extends runner("cloud") {
     const registry = registryUrl ? getNpmRegistryUrl(registryUrl) : undefined;
     const registryArgs = this.#getRegistryArgs(registry);
     const env = this.#getRegistryEnv(registry);
-    if (!(await workspace.exists("package.json")))
-      await workspace.spawn("bun", ["update", "-g", "akanjs", "--latest", `--tag=${tag}`, ...registryArgs], { env });
+    const globalCliArgs = ["add", "-g", `@akanjs/cli@${tag}`, ...registryArgs];
+    if (!(await workspace.exists("package.json"))) await workspace.spawn("bun", globalCliArgs, { env });
     else
       await Promise.all([
-        workspace.spawn("bun", ["update", "-g", "akanjs", "--latest", `--tag=${tag}`, ...registryArgs], { env }),
+        workspace.spawn("bun", globalCliArgs, { env }),
         this.#updateAkanPkgs(workspace, tag, registry),
       ]);
   }

@@ -14,6 +14,7 @@ export default function CsrLink({
   activeClassName,
   scrollToTop,
   activeExact,
+  noCache,
   ...props
 }: CsrLinkProps) {
   const pathCtx = usePathCtx();
@@ -28,7 +29,10 @@ export default function CsrLink({
         className,
         (activeExact ? currentPath === path : currentPath.startsWith(path)) && (activeClassName ?? ""),
       )}
-      onClick={() => {
+      {...props}
+      onClick={(event) => {
+        props.onClick?.(event);
+        if (event.defaultPrevented) return;
         const isExternal = href.startsWith("http") || href.startsWith("mailto:") || href.startsWith("tel:");
         const isHash = href.startsWith("#");
         const url = isHash ? `${window.location.pathname}#${hash}` : href;

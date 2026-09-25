@@ -17,7 +17,9 @@ export class CurrentUserId implements InternalArg<string | null> {
   getArg(context: SignalContext): string | null {
     // \`context.get\` reads what the account middleware resolved, on every transport. Branching on
     // \`getHttpContext()\` would return null for the same caller arriving over a websocket or MCP.
-    return context.get<{ id?: string }>("account")?.id ?? null;
+    // An app's own middleware may put the id on the account itself; libs/shared puts it on \`self\` or \`me\`.
+    const account = context.get<{ id?: string; self?: { id?: string }; me?: { id?: string } }>("account");
+    return account?.id ?? account?.self?.id ?? account?.me?.id ?? null;
   }
 }
 

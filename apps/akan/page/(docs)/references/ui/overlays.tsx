@@ -5,511 +5,1312 @@ import { page } from "akanjs/client";
 
 export default page().render(() => {
   const { l } = usePage();
+
+  const termRows = [
+    {
+      name: "portal",
+      desc: l.trans({
+        en: "Drawing an element elsewhere in the DOM, here at the end of `document.body`, so no parent clips it.",
+        ko: "요소를 DOM의 다른 자리, 여기서는 `document.body` 끝에 그리는 것입니다. 부모 상자가 잘라내지 못합니다.",
+      }),
+    },
+    {
+      name: "trigger",
+      desc: l.trans({
+        en: "The element the user clicks to open the overlay, passed as `trigger` or as `children`.",
+        ko: "사용자가 눌러 오버레이를 여는 요소입니다. `trigger`나 `children`으로 넘깁니다.",
+      }),
+    },
+    {
+      name: <span className="font-sans">{l.trans({ en: "controlled", ko: "controlled (제어형)" })}</span>,
+      desc: l.trans({
+        en: "You pass `open` and set it back in `onCancel`. Left out, the component keeps its own open state.",
+        ko: "`open`을 넘기고 `onCancel`에서 다시 바꿔 주는 방식입니다. 빼면 컴포넌트가 열림 상태를 직접 관리합니다.",
+      }),
+    },
+    {
+      name: <span className="font-sans">{l.trans({ en: "override slot", ko: "오버라이드 슬롯" })}</span>,
+      desc: l.trans({
+        en: "A name in `_overrides.tsx` that swaps a component for one route subtree.",
+        ko: "`_overrides.tsx`에서 컴포넌트를 라우트 하위 트리 단위로 바꿔 끼울 때 쓰는 이름입니다.",
+      }),
+    },
+    {
+      name: "scrim",
+      desc: l.trans({
+        en: "A see-through layer behind a popover that catches the click outside it.",
+        ko: "팝오버 뒤에 깔리는 투명한 층입니다. 팝오버 바깥을 누른 클릭을 받아 냅니다.",
+      }),
+    },
+  ];
+
+  const overlayColumns = [
+    { key: "portal", label: l.trans({ en: "Portalled", ko: "portal로 그림" }), caption: "document.body" },
+    { key: "anchor", label: l.trans({ en: "At trigger", ko: "트리거 기준" }) },
+    { key: "slot", label: l.trans({ en: "Override slot", ko: "오버라이드 슬롯" }), caption: "_overrides.tsx" },
+  ];
+
+  const overlayGroups = [
+    {
+      label: l.trans({ en: "Windows over the page", ko: "화면을 덮는 창" }),
+      rows: [
+        {
+          name: "Modal",
+          desc: l.trans({
+            en: "A centred window with title, body and footer slots. The default for a modal flow.",
+            ko: "제목·본문·하단 슬롯이 있는 가운데 창입니다. 모달이 필요하면 먼저 이것을 씁니다.",
+          }),
+          marks: { portal: true, anchor: false, slot: true },
+        },
+        {
+          name: "Dialog",
+          desc: l.trans({
+            en: "The headless parts `Modal` is built from, for a custom layout or an agent-named dialog.",
+            ko: "`Modal`을 이루는 headless 부품입니다. 배치를 직접 짜거나 에이전트에 이름을 알릴 때 씁니다.",
+          }),
+          marks: { portal: true, anchor: false, slot: false },
+        },
+        {
+          name: "BottomSheet",
+          desc: l.trans({
+            en: "A mobile panel that slides up from the bottom edge. Drawn in place, fixed to the screen.",
+            ko: "아래 가장자리에서 올라오는 모바일 패널입니다. 제자리에 그려지고 화면에 고정됩니다.",
+          }),
+          marks: { portal: false, anchor: false, slot: false },
+        },
+      ],
+    },
+    {
+      label: l.trans({ en: "Anchored to a trigger", ko: "트리거에 붙는 것" }),
+      rows: [
+        {
+          name: "Popconfirm",
+          desc: l.trans({
+            en: "A small OK/cancel popover before a destructive action.",
+            ko: "되돌릴 수 없는 동작 앞에 뜨는 작은 확인/취소 팝오버입니다.",
+          }),
+          marks: { portal: true, anchor: true, slot: true },
+        },
+        {
+          name: "Dropdown",
+          desc: l.trans({
+            en: "A short action menu, such as the actions on a list row.",
+            ko: "목록 행의 동작 같은 짧은 동작 메뉴입니다.",
+          }),
+          marks: { portal: true, anchor: true, slot: true },
+        },
+        {
+          name: "Tooltip",
+          desc: l.trans({
+            en: "A hover or focus hint in pure CSS. At the screen edge it is clipped, not moved.",
+            ko: "마우스를 올리거나 포커스하면 뜨는 순수 CSS 힌트입니다. 화면 가장자리에서는 옮겨지지 않고 잘립니다.",
+          }),
+          marks: { portal: false, anchor: false, slot: true },
+        },
+      ],
+    },
+    {
+      label: l.trans({ en: "Navigation and helpers", ko: "탐색과 도우미" }),
+      rows: [
+        {
+          name: "Menu",
+          desc: l.trans({
+            en: "A navigation menu built from an `items` tree, for a sidebar or a top bar.",
+            ko: "`items` 트리로 만드는 내비게이션 메뉴입니다. 사이드바나 상단 바에 씁니다.",
+          }),
+          marks: { portal: false, anchor: false, slot: true },
+        },
+        {
+          name: "Portal",
+          desc: l.trans({
+            en: "Renders its children into a host element named by `id`.",
+            ko: "자식을 `id`로 지정한 호스트 요소 안에 그립니다.",
+          }),
+          marks: { portal: false, anchor: false, slot: false },
+        },
+        {
+          name: "Copy",
+          desc: l.trans({
+            en: "Copies text to the clipboard and shows a success toast.",
+            ko: "텍스트를 클립보드에 복사하고 성공 토스트를 띄웁니다.",
+          }),
+          marks: { portal: false, anchor: false, slot: false },
+        },
+      ],
+    },
+  ];
+
+  const relatedLinks = [
+    {
+      href: "/references/ui/forms",
+      title: l.trans({ en: "Forms UI", ko: "폼 UI" }),
+      desc: l.trans({
+        en: (
+          <span>
+            <code>Select</code>, the fourth control that portals its list and anchors it to the field.
+          </span>
+        ),
+        ko: (
+          <span>
+            목록을 portal로 그려 필드에 붙이는 네 번째 컴포넌트 <code>Select</code>가 있습니다.
+          </span>
+        ),
+      }),
+    },
+    {
+      href: "/references/ui/customize",
+      title: l.trans({ en: "Override Slots", ko: "오버라이드 슬롯" }),
+      desc: l.trans({
+        en: (
+          <span>
+            Swap <code>Modal</code>, <code>Popconfirm</code>, <code>Dropdown</code>, <code>Tooltip</code> or{" "}
+            <code>Menu</code> for one route subtree.
+          </span>
+        ),
+        ko: (
+          <span>
+            <code>Modal</code>, <code>Popconfirm</code>, <code>Dropdown</code>, <code>Tooltip</code>, <code>Menu</code>
+            를 라우트 하위 트리 단위로 바꿔 끼웁니다.
+          </span>
+        ),
+      }),
+    },
+    {
+      href: "/references/ui/core",
+      title: l.trans({ en: "Core UI", ko: "코어 UI" }),
+      desc: l.trans({
+        en: (
+          <span>
+            <code>Layout.Navbar</code> and the other frame slots that <code>Portal</code> fills.
+          </span>
+        ),
+        ko: (
+          <span>
+            <code>Portal</code>이 채우는 <code>Layout.Navbar</code>와 나머지 프레임 슬롯이 있습니다.
+          </span>
+        ),
+      }),
+    },
+    {
+      href: "/docs/arch/agentic",
+      title: l.trans({ en: "In-Page Agent", ko: "인페이지 에이전트" }),
+      desc: l.trans({
+        en: "How the tools a component publishes let the agent drive the screen.",
+        ko: "컴포넌트가 공개한 툴로 에이전트가 화면을 다루는 방식을 설명합니다.",
+      }),
+    },
+  ];
+
   const components: UiComponentReference[] = [
     {
       name: "Modal",
       desc: l.trans({
-        en: "Controlled modal wrapper built on Akan's headless `Dialog` state. Use it for common app overlays where you want title/content/action slots without composing the full dialog namespace. The surface is deliberately plain — no transition, no gesture — so it never animates content the user is reading. `LegacyModal` keeps the previous animated skin.",
-        ko: "Akan의 headless `Dialog` state 위에 구성된 controlled modal wrapper입니다. full dialog namespace를 직접 조합하지 않고 title/content/action slot만 필요한 일반 app overlay에 사용합니다. transition과 gesture가 없는 단순한 surface라서 읽고 있는 내용이 움직이지 않습니다. 이전 애니메이션 skin은 `LegacyModal`에 남아 있습니다.",
+        en: "A centred window with title, body and footer slots, built on the headless `Dialog`. Reach for it first; compose `Dialog` only when you need a layout of your own.",
+        ko: "headless `Dialog` 위에 만든, 제목·본문·하단 슬롯이 있는 가운데 창입니다. 모달이 필요하면 먼저 이것을 쓰고, 배치를 직접 짜야 할 때만 `Dialog`를 조합하세요.",
       }),
       props: [
         {
           name: "open",
           type: "boolean",
-          desc: l.trans({ en: "Controlled open state.", ko: "controlled open state입니다." }),
+          desc: l.trans({
+            en: "Controlled open state. May be left out when `trigger` is given.",
+            ko: "controlled 열림 상태입니다. `trigger`를 넘기면 빼도 됩니다.",
+          }),
         },
         {
           name: "onCancel",
           type: "() => void",
           desc: l.trans({
-            en: "Called when the modal requests closing.",
-            ko: "modal이 닫힘을 요청할 때 호출됩니다.",
+            en: "Called when the modal closes itself: the close button, a backdrop click or Escape.",
+            ko: "모달이 스스로 닫힐 때 호출됩니다. 닫기 버튼, 배경 클릭, Escape가 여기에 해당합니다.",
           }),
         },
         {
           name: "trigger",
           type: "ReactNode",
           desc: l.trans({
-            en: "Element that opens the modal. Given one, `open` may be left out and the modal keeps its own state.",
-            ko: "modal을 여는 element입니다. 넘기면 `open` 없이도 modal이 자체 state로 동작합니다.",
+            en: "Element that opens the modal. With it, the modal keeps its own open state.",
+            ko: "모달을 여는 요소입니다. 넘기면 모달이 열림 상태를 직접 관리합니다.",
           }),
         },
         {
           name: "title",
           type: "string | ReactNode",
-          desc: l.trans({ en: "Optional title slot.", ko: "optional title slot입니다." }),
-        },
-        {
-          name: "closeButton",
-          type: "ReactNode | false",
           desc: l.trans({
-            en: "The dismiss control, drawn in the corner slot that already closes the dialog — a replacement needs no wiring. `false` draws none.",
-            ko: "닫기 control입니다. 코너 slot 자체가 dialog를 닫으므로 교체해도 별도 배선이 필요 없습니다. `false`면 그리지 않습니다.",
+            en: "The header row. Left out, no header is drawn.",
+            ko: "맨 위 제목 행입니다. 빼면 제목 행을 그리지 않습니다.",
           }),
         },
         {
           name: "action",
           type: "ReactNode",
-          desc: l.trans({ en: "Optional footer/action slot.", ko: "optional footer/action slot입니다." }),
+          desc: l.trans({
+            en: "The footer row, right-aligned. Usually buttons.",
+            ko: "오른쪽으로 정렬되는 하단 행입니다. 보통 버튼을 넣습니다.",
+          }),
+        },
+        {
+          name: "closeButton",
+          type: "ReactNode | false",
+          desc: l.trans({
+            en: "The corner close control, wired by its slot, so a replacement needs no handler. `false` draws none.",
+            ko: "모서리의 닫기 컨트롤입니다. 슬롯이 직접 닫으므로 바꿔 넣은 요소에 핸들러가 필요 없고, `false`면 그리지 않습니다.",
+          }),
         },
         {
           name: "confirmClose",
-          type: "boolean",
-          desc: l.trans({ en: "Ask for confirmation before closing.", ko: "닫기 전에 confirmation을 요청합니다." }),
+          type: "boolean = false",
+          desc: l.trans({
+            en: "Asks with the browser's confirm dialog before closing.",
+            ko: "닫기 전에 브라우저 확인 창으로 한 번 더 묻습니다.",
+          }),
+        },
+        {
+          name: "className / bodyClassName",
+          type: "string",
+          desc: l.trans({
+            en: "Classes for the window and for its scrolling body.",
+            ko: "창 자체와 스크롤되는 본문에 적용할 class입니다.",
+          }),
         },
       ],
-      code: `import { Modal, buttonRecipe } from "akanjs/ui";
+      notes: [
+        l.trans({
+          en: (
+            <span>
+              <strong>Nothing moves.</strong> The window has no transition and no gesture, so content the user is
+              reading never animates. <code>LegacyModal</code> keeps the previous spring skin, with <code>open</code>{" "}
+              and <code>onCancel</code> required and no <code>trigger</code> or <code>closeButton</code>.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>움직이지 않습니다.</strong> 전환 효과도 제스처도 없어서 사용자가 읽는 내용이 흔들리지 않습니다.
+              이전의 스프링 애니메이션은 <code>LegacyModal</code>에 남아 있으며, <code>open</code>과{" "}
+              <code>onCancel</code>이 필수이고 <code>trigger</code>와 <code>closeButton</code>은 없습니다.
+            </span>
+          ),
+        }),
+        l.trans({
+          en: (
+            <span>
+              <strong>Focus and scroll are handled.</strong> Opening moves focus into the window and locks the page
+              scroll; closing returns focus to where it was.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>포커스와 스크롤은 알아서 처리합니다.</strong> 열리면 포커스가 창 안으로 옮겨지고 페이지 스크롤이
+              잠기며, 닫히면 포커스가 원래 자리로 돌아갑니다.
+            </span>
+          ),
+        }),
+        l.trans({
+          en: (
+            <span>
+              <strong>It is the Modal override slot.</strong> A replacement bound in <code>_overrides.tsx</code> reaches
+              every <code>{"<Modal>"}</code>, including the ones <code>Model.*</code> draws. <code>LegacyModal</code> is
+              not overridable.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>Modal 오버라이드 슬롯입니다.</strong> <code>_overrides.tsx</code>에서 바꿔 넣으면{" "}
+              <code>Model.*</code>이 그리는 것까지 모든 <code>{"<Modal>"}</code>이 따라갑니다. <code>LegacyModal</code>
+              은 바꿔 넣을 수 없습니다.
+            </span>
+          ),
+        }),
+      ],
+      code: `"use client";
+import { usePage } from "@apps/koyo/client";
+import { Modal } from "akanjs/ui";
+import type { ReactNode } from "react";
 
-export const ProductModal = ({ open, close, product }) => (
-  <Modal open={open} onCancel={close} title="Product">
-    <ProductView product={product} />
-  </Modal>
-);`,
+interface ReceiptProps {
+  open: boolean;
+  onClose: () => void;
+  children: ReactNode;
+}
+export const Receipt = ({ open, onClose, children }: ReceiptProps) => {
+  const { l } = usePage();
+  return (
+    <Modal
+      open={open}
+      onCancel={onClose}
+      title={l.trans({ en: "Receipt", ko: "영수증" })}
+    >
+      {children}
+    </Modal>
+  );
+};`,
     },
     {
       name: "Dialog",
       desc: l.trans({
-        en: "Headless compound dialog namespace for custom modal composition. Use it when `Modal` is too opinionated and you need a custom trigger, title, content, or action layout.",
-        ko: "custom modal composition을 위한 headless compound dialog namespace입니다. `Modal`보다 custom trigger, title, content, action layout이 필요할 때 사용합니다.",
+        en: "The headless compound parts that `Modal` is built from. Compose them when `Modal`'s fixed layout does not fit, or when the in-page agent should be able to open and close the dialog.",
+        ko: "`Modal`을 이루는 headless compound 부품입니다. `Modal`의 정해진 배치가 맞지 않거나, 인페이지 에이전트가 이 창을 열고 닫게 하고 싶을 때 조합합니다.",
       }),
       props: [
         {
           name: "Dialog",
-          type: "{ open?, defaultOpen?, className? }",
-          desc: l.trans({ en: "Provider/root for dialog state.", ko: "dialog state를 위한 provider/root입니다." }),
+          type: "{ open?, defaultOpen? = false, namespace?, className? }",
+          desc: l.trans({
+            en: "The root that holds the open state. `open` is followed whenever it changes.",
+            ko: "열림 상태를 쥐는 루트입니다. `open`이 바뀌면 그 값을 따라갑니다.",
+          }),
+        },
+        {
+          name: "namespace",
+          type: "string",
+          desc: l.trans({
+            en: "Names the dialog for the in-page agent. Without it, the dialog publishes no tool.",
+            ko: "인페이지 에이전트에게 이 창의 이름을 알립니다. 없으면 툴을 하나도 공개하지 않습니다.",
+          }),
         },
         {
           name: "Dialog.Trigger",
-          type: "component",
+          type: "{ className?, children }",
           desc: l.trans({
-            en: "Opens the dialog from custom trigger content.",
-            ko: "custom trigger content로 dialog를 엽니다.",
+            en: "Opens the dialog when anything inside it is clicked.",
+            ko: "안에 있는 무엇을 눌러도 창이 열립니다.",
           }),
         },
         {
           name: "Dialog.Modal",
-          type: "component",
+          type: "{ onCancel?, confirmClose?, closeButton?, className?, bodyClassName? }",
           desc: l.trans({
-            en: "Modal surface and close behavior.",
-            ko: "modal surface와 close behavior를 제공합니다.",
+            en: "The plain window `Modal` draws. Escape, a backdrop click and the corner button close it.",
+            ko: "`Modal`이 그리는 기본 창입니다. Escape, 배경 클릭, 모서리 버튼으로 닫힙니다.",
           }),
         },
         {
           name: "Dialog.LegacyModal",
-          type: "component",
+          type: "{ onCancel?, confirmClose?, className?, bodyClassName? }",
           desc: l.trans({
-            en: "Previous surface: spring open/close and drag-to-dismiss on touch.",
-            ko: "이전 surface입니다. spring 전환과 touch drag-to-dismiss가 있습니다.",
+            en: "The previous window: spring open/close and drag-to-dismiss on touch.",
+            ko: "이전 창입니다. 스프링 애니메이션으로 열리고 닫히며, 터치로 끌어내려 닫을 수 있습니다.",
           }),
         },
         {
-          name: "Dialog.Title / Content / Action",
-          type: "components",
-          desc: l.trans({ en: "Named modal slots.", ko: "이름이 있는 modal slot입니다." }),
+          name: "Dialog.Title / Dialog.Action",
+          type: "{ children }",
+          desc: l.trans({
+            en: "Draw nothing where written; they hand their children to the header and footer rows.",
+            ko: "쓴 자리에는 아무것도 그리지 않고, 자식을 제목 행과 하단 행으로 넘깁니다.",
+          }),
+        },
+        {
+          name: "Dialog.Content",
+          type: "{ className?, children }",
+          desc: l.trans({ en: "The body, a full-width block.", ko: "전체 너비를 차지하는 본문입니다." }),
         },
       ],
-      code: `import { Dialog } from "akanjs/ui";
+      notes: [
+        l.trans({
+          en: (
+            <span>
+              <strong>A namespace publishes three names.</strong> <code>namespace="share"</code> gives the agent{" "}
+              <code>openDialogInShare</code>, <code>closeDialogInShare</code> and the <code>dialogInShare</code> state.
+              Two dialogs on one screen need different names.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>namespace 하나가 이름 셋을 공개합니다.</strong> <code>namespace="share"</code>를 주면 에이전트가{" "}
+              <code>openDialogInShare</code>, <code>closeDialogInShare</code> 툴과 <code>dialogInShare</code> 상태를
+              봅니다. 한 화면에 창이 둘이면 이름을 다르게 주세요.
+            </span>
+          ),
+        }),
+        l.trans({
+          en: (
+            <span>
+              <strong>The agent closes it the way a person does.</strong> Its close goes through the window's own
+              dismissal, so <code>confirmClose</code> and <code>onCancel</code> still run. <code>Modal</code> takes no{" "}
+              <code>namespace</code>, so it publishes nothing.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>에이전트도 사람과 같은 길로 닫습니다.</strong> 창 자체의 닫기 동작을 거치므로{" "}
+              <code>confirmClose</code>와 <code>onCancel</code>도 그대로 실행됩니다. <code>Modal</code>은{" "}
+              <code>namespace</code>를 받지 않아 아무것도 공개하지 않습니다.
+            </span>
+          ),
+        }),
+      ],
+      code: `"use client";
+import { usePage } from "@apps/koyo/client";
+import { buttonRecipe, Dialog } from "akanjs/ui";
 
-<Dialog defaultOpen={false}>
-  <Dialog.Trigger>
-    <button className={buttonRecipe()}>Open</button>
-  </Dialog.Trigger>
-  <Dialog.Modal>
-    <Dialog.Title>Custom dialog</Dialog.Title>
-    <Dialog.Content>Body content</Dialog.Content>
-    <Dialog.Action><button className={buttonRecipe()}>Save</button></Dialog.Action>
-  </Dialog.Modal>
-</Dialog>;`,
+interface ShareDialogProps {
+  link: string;
+  onSend: () => void;
+}
+export const ShareDialog = ({ link, onSend }: ShareDialogProps) => {
+  const { l } = usePage();
+  return (
+    <Dialog namespace="share">
+      <Dialog.Trigger>
+        <button type="button" className={buttonRecipe({ variant: "outline" })}>
+          {l.trans({ en: "Share", ko: "공유" })}
+        </button>
+      </Dialog.Trigger>
+      <Dialog.Modal>
+        <Dialog.Title>
+          {l.trans({ en: "Share this order", ko: "이 주문 공유" })}
+        </Dialog.Title>
+        <Dialog.Content className="break-all font-mono text-sm">
+          {link}
+        </Dialog.Content>
+        <Dialog.Action>
+          <button type="button" className={buttonRecipe()} onClick={onSend}>
+            {l.trans({ en: "Send", ko: "보내기" })}
+          </button>
+        </Dialog.Action>
+      </Dialog.Modal>
+    </Dialog>
+  );
+};`,
     },
     {
       name: "Popconfirm",
       desc: l.trans({
-        en: "Inline confirmation popover for destructive or irreversible actions. It wraps a trigger element and shows localized OK/cancel buttons. The popover portals to document.body and is placed against its trigger — above it when there is no room below, with the pointer following — so it is not clipped by a modal, a scrolling container, or the dropdown menu that Model.Remove draws it from. Its scrim swallows the next click, and the overlay that opened it stays open.",
-        ko: "파괴적이거나 되돌릴 수 없는 action을 위한 inline confirmation popover입니다. trigger element를 감싸고 localized OK/cancel button을 표시합니다. popover는 document.body로 portal되어 trigger 기준으로 배치되며, 아래 공간이 없으면 위로 뒤집히고 화살표도 따라갑니다. 따라서 modal, 스크롤 컨테이너, Model.Remove가 이것을 그리는 dropdown menu에 잘리지 않습니다. scrim이 다음 클릭을 흡수하고, 이것을 연 overlay는 열린 채로 남습니다.",
+        en: "A small OK/cancel popover that stands in front of a destructive or irreversible action. Wrap the trigger in it and pass the action as `onConfirm`.",
+        ko: "되돌릴 수 없는 동작 앞에 세우는 작은 확인/취소 팝오버입니다. 트리거를 감싸고, 실행할 동작은 `onConfirm`으로 넘깁니다.",
       }),
       props: [
         {
           name: "title",
-          type: "string",
-          desc: l.trans({ en: "Confirmation title.", ko: "confirmation title입니다." }),
+          type: "ReactNode",
+          desc: l.trans({ en: "The question, in bold.", ko: "굵게 표시되는 질문입니다." }),
         },
         {
           name: "description",
           type: "ReactNode",
-          desc: l.trans({ en: "Optional detailed message.", ko: "optional detailed message입니다." }),
+          desc: l.trans({ en: "Optional detail under the title.", ko: "제목 아래에 붙는 선택적 설명입니다." }),
         },
         {
           name: "onConfirm",
           type: "() => void",
-          desc: l.trans({ en: "Called when the user confirms.", ko: "사용자가 confirm할 때 호출됩니다." }),
+          desc: l.trans({
+            en: "Called when the user presses OK. The popover closes first.",
+            ko: "사용자가 확인을 누르면 호출됩니다. 팝오버가 먼저 닫힙니다.",
+          }),
         },
         {
           name: "okText / cancelText",
           type: "ReactNode",
-          desc: l.trans({ en: "Custom button labels.", ko: "custom button label입니다." }),
+          desc: l.trans({
+            en: "Button labels. The defaults are the `base.ok` and `base.cancel` dictionary entries.",
+            ko: "버튼 라벨입니다. 기본값은 사전의 `base.ok`와 `base.cancel`입니다.",
+          }),
+        },
+        {
+          name: "okButtonProps / cancelButtonProps",
+          type: "ButtonHTMLAttributes & { loading? }",
+          desc: l.trans({
+            en: "Attributes spread onto the two default buttons.",
+            ko: "기본 버튼 두 개에 그대로 펼쳐 넣는 속성입니다.",
+          }),
         },
         {
           name: "icon",
           type: "ReactNode | false",
           desc: l.trans({
-            en: "The mark beside the message. `false` draws none.",
-            ko: "message 옆 mark입니다. `false`면 그리지 않습니다.",
+            en: "The mark beside the message, a warning icon by default. `false` draws none.",
+            ko: "메시지 옆 아이콘이며 기본값은 경고 아이콘입니다. `false`면 그리지 않습니다.",
           }),
         },
         {
           name: "actions",
           type: "ReactNode",
           desc: l.trans({
-            en: "The whole footer, replacing both buttons. A replacement owns the confirm and the dismiss.",
-            ko: "두 버튼을 모두 대체하는 footer입니다. 교체하면 confirm과 dismiss를 직접 처리해야 합니다.",
+            en: "Replaces the whole footer. The replacement owns both the confirm and the dismiss.",
+            ko: "하단 전체를 바꿉니다. 바꿔 넣으면 확인과 닫기를 모두 직접 처리해야 합니다.",
+          }),
+        },
+        {
+          name: "triggerClassName / decoClassName",
+          type: "string",
+          desc: l.trans({
+            en: "Classes for the trigger wrapper and for the pointer. `decoClassName` also takes over its position.",
+            ko: "트리거 래퍼와 말풍선 꼭지에 적용할 class입니다. `decoClassName`을 주면 꼭지 위치도 직접 정해야 합니다.",
           }),
         },
       ],
-      code: `import { Popconfirm } from "akanjs/ui";
+      notes: [
+        l.trans({
+          en: (
+            <span>
+              <strong>Never clipped.</strong> The popover portals to <code>document.body</code> and sits under the
+              trigger's end edge. With no room below it flips above, and the pointer follows.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>잘리지 않습니다.</strong> 팝오버는 <code>document.body</code>에 portal로 그려지고 트리거의 끝 쪽
+              아래에 자리 잡습니다. 아래 공간이 모자라면 위로 뒤집히고, 꼭지도 따라갑니다.
+            </span>
+          ),
+        }),
+        l.trans({
+          en: (
+            <span>
+              <strong>The scrim takes the outside click.</strong> Clicking outside, or Escape, only cancels the popover.
+              A <code>Dropdown</code> or modal that opened it stays open.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>바깥 클릭은 scrim이 받습니다.</strong> 바깥을 누르거나 Escape를 누르면 팝오버만 취소됩니다. 이것을
+              연 <code>Dropdown</code>이나 모달은 열린 채로 남습니다.
+            </span>
+          ),
+        }),
+        l.trans({
+          en: (
+            <span>
+              <strong>Removing a model record?</strong> <code>Model.RemoveWrapper</code> already draws this popover and
+              publishes the removal as an agent tool.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>모델 레코드를 지우는 거라면</strong> <code>Model.RemoveWrapper</code>를 쓰세요. 이 팝오버를 그리고
+              삭제 동작을 에이전트 툴로 공개하는 일까지 해 줍니다.
+            </span>
+          ),
+        }),
+      ],
+      code: `"use client";
+import { usePage } from "@apps/koyo/client";
+import { buttonRecipe, Popconfirm } from "akanjs/ui";
 
-<Popconfirm title="Remove product?" onConfirm={() => remove(product.id)}>
-  <button className={buttonRecipe({ variant: "destructive", size: "sm" })}>Remove</button>
-</Popconfirm>;`,
+interface CancelOrderProps {
+  onCancelOrder: () => void;
+}
+export const CancelOrder = ({ onCancelOrder }: CancelOrderProps) => {
+  const { l } = usePage();
+  return (
+    <Popconfirm
+      title={l.trans({ en: "Cancel this order?", ko: "주문을 취소할까요?" })}
+      onConfirm={onCancelOrder}
+    >
+      <button
+        type="button"
+        className={buttonRecipe({ variant: "destructive", size: "sm" })}
+      >
+        {l.trans({ en: "Cancel order", ko: "주문 취소" })}
+      </button>
+    </Popconfirm>
+  );
+};`,
     },
     {
       name: "Dropdown",
       desc: l.trans({
-        en: "Compact dropdown menu wrapper. It is commonly used for row actions, comment/story menus, and context actions in list UIs. The menu portals to document.body and is placed against its trigger, so it is not clipped by a modal surface, a scrolling modal body, or a table's scroll container. A menu item may open a Modal: the menu stays mounted while it is closed, so the overlay survives, and clicks inside an overlay this menu opened do not count as outside clicks. An overlay it did not open still dismisses it.",
-        ko: "compact dropdown menu wrapper입니다. list UI의 row action, comment/story menu, context action에 자주 사용됩니다. menu는 document.body로 portal되어 trigger 기준으로 배치되므로 modal surface, 스크롤되는 modal body, table scroll container에 잘리지 않습니다. menu item이 Modal을 열어도 됩니다. 메뉴는 닫힐 때 unmount되지 않고 숨겨지므로 overlay가 그대로 유지되며, 이 메뉴가 연 overlay 내부 클릭은 외부 클릭으로 처리되지 않습니다. 이 메뉴가 열지 않은 overlay는 평소대로 메뉴를 닫습니다.",
+        en: "A compact action menu under a trigger button. It is the usual home for row actions, comment menus and other context actions in a list.",
+        ko: "트리거 버튼 아래로 펼쳐지는 작은 동작 메뉴입니다. 목록의 행 동작, 댓글 메뉴 같은 문맥 동작을 주로 담습니다.",
       }),
       props: [
         {
           name: "value",
           type: "ReactNode",
-          desc: l.trans({ en: "Trigger button content.", ko: "trigger button content입니다." }),
+          desc: l.trans({
+            en: "Content of the default trigger, a ghost button.",
+            ko: "기본 트리거인 ghost 버튼 안에 들어갈 내용입니다.",
+          }),
         },
         {
           name: "trigger",
           type: "ReactNode",
           desc: l.trans({
-            en: "The whole trigger element, drawn instead of the framework's ghost button. It is cloned, not wrapped, so the menu's aria-expanded lands on the control a screen reader activates — the element must forward className, onClick and aria-*.",
-            ko: "프레임워크 ghost button 대신 그릴 trigger element 전체입니다. 감싸지 않고 clone하므로 aria-expanded가 스크린리더가 활성화하는 control에 붙습니다 — element가 className, onClick, aria-*를 forward해야 합니다.",
+            en: "Your own trigger instead of the button. It is cloned, so it must forward className, onClick, aria-*.",
+            ko: "버튼 대신 쓸 트리거입니다. 복제(clone)되므로 className, onClick, aria-*를 그대로 전달해야 합니다.",
           }),
         },
         {
           name: "content",
           type: "ReactNode",
-          desc: l.trans({ en: "Dropdown menu content.", ko: "dropdown menu content입니다." }),
-        },
-        {
-          name: "buttonClassName",
-          type: "string",
-          desc: l.trans({ en: "Classes for the trigger button.", ko: "trigger button에 적용할 class입니다." }),
-        },
-        {
-          name: "dropdownClassName",
-          type: "string",
-          desc: l.trans({ en: "Classes for the menu panel.", ko: "menu panel에 적용할 class입니다." }),
+          desc: l.trans({
+            en: "The menu rows. They render inside a `<ul>`, so write `<li>` items.",
+            ko: "메뉴 행입니다. `<ul>` 안에 그려지므로 `<li>`로 씁니다.",
+          }),
         },
         {
           name: "align",
-          type: `"start" | "end"`,
+          type: `"start" | "end" = "end"`,
           desc: l.trans({
-            en: "Trigger edge the menu lines up with, end (right) by default. Position is computed, so a left-0 class cannot do this.",
-            ko: "menu를 trigger의 어느 쪽 끝에 맞출지 정합니다. 기본값은 end(오른쪽)입니다. 위치를 계산해서 넣기 때문에 left-0 class로는 바꿀 수 없습니다.",
+            en: "The trigger edge the menu lines up with. A `left-0` class cannot change it.",
+            ko: "메뉴를 맞출 트리거의 가장자리입니다. `left-0` 같은 class로는 바꿀 수 없습니다.",
+          }),
+        },
+        {
+          name: "namespace",
+          type: "string",
+          desc: l.trans({
+            en: "Names the menu for the in-page agent. Without it, the menu publishes no tool.",
+            ko: "인페이지 에이전트에게 이 메뉴의 이름을 알립니다. 없으면 툴을 하나도 공개하지 않습니다.",
+          }),
+        },
+        {
+          name: "className / buttonClassName / dropdownClassName",
+          type: "string",
+          desc: l.trans({
+            en: "Classes for the wrapper, the trigger button and the menu panel.",
+            ko: "래퍼, 트리거 버튼, 메뉴 패널에 각각 적용할 class입니다.",
           }),
         },
         {
           name: "data-dropdown-keep-open",
           type: "attribute",
           desc: l.trans({
-            en: "Put it on a menu item that runs its own interaction (a switch, a copy button) so clicking it does not close the menu.",
-            ko: "자체 상호작용을 가진 menu item(switch, copy button 등)에 붙이면 클릭해도 메뉴가 닫히지 않습니다.",
+            en: "Put on a row with its own interaction, such as a switch, so clicking it keeps the menu open.",
+            ko: "스위치처럼 자체 동작이 있는 행에 붙이면, 그 행을 눌러도 메뉴가 닫히지 않습니다.",
           }),
         },
       ],
-      code: `import { Dropdown } from "akanjs/ui";
+      notes: [
+        l.trans({
+          en: (
+            <span>
+              <strong>Never clipped.</strong> The menu portals to <code>document.body</code> and is placed against its
+              trigger, so a modal, a scrolling modal body or a table's scroll container cannot cut it off.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>잘리지 않습니다.</strong> 메뉴는 <code>document.body</code>에 portal로 그려져 트리거 기준으로
+              배치되므로, 모달, 스크롤되는 모달 본문, 테이블 스크롤 컨테이너가 잘라내지 못합니다.
+            </span>
+          ),
+        }),
+        l.trans({
+          en: (
+            <span>
+              <strong>A row may open a Modal.</strong> A closed menu is hidden, not unmounted, so the modal survives.
+              Clicks inside an overlay this menu opened are not outside clicks; any other overlay still closes it.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>행에서 Modal을 열어도 됩니다.</strong> 닫힌 메뉴는 unmount되지 않고 숨겨지므로 모달이 그대로
+              남습니다. 이 메뉴가 연 오버레이 안의 클릭은 바깥 클릭으로 치지 않고, 다른 오버레이는 평소처럼 메뉴를
+              닫습니다.
+            </span>
+          ),
+        }),
+        l.trans({
+          en: (
+            <span>
+              <strong>Clicking a row closes the menu,</strong> unless the row carries{" "}
+              <code>data-dropdown-keep-open</code> (also exported as <code>DROPDOWN_KEEP_OPEN_ATTR</code>). A custom{" "}
+              <code>trigger</code>'s own <code>onClick</code> runs first; calling <code>preventDefault()</code> there
+              keeps the menu from toggling.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>행을 누르면 메뉴가 닫힙니다.</strong> 행에 <code>data-dropdown-keep-open</code>(상수{" "}
+              <code>DROPDOWN_KEEP_OPEN_ATTR</code>)이 있으면 예외입니다. 직접 넣은 <code>trigger</code>의{" "}
+              <code>onClick</code>이 먼저 실행되며, 여기서 <code>preventDefault()</code>를 호출하면 메뉴가 열리거나
+              닫히지 않습니다.
+            </span>
+          ),
+        }),
+      ],
+      code: `"use client";
+import { st, usePage } from "@apps/koyo/client";
+import { Dropdown, Switch } from "akanjs/ui";
 
-<Dropdown
-  value="Actions"
-  content={
-    <>
-      <li><button>Edit</button></li>
-      <li data-dropdown-keep-open="">
-        <Switch checked={notify} onChange={setNotify} />
-      </li>
-      <li><button>Remove</button></li>
-    </>
-  }
-/>;`,
+interface OrderActionsProps {
+  onEdit: () => void;
+}
+export const OrderActions = ({ onEdit }: OrderActionsProps) => {
+  const { l } = usePage();
+  const notify = st.use.notify();
+  return (
+    <Dropdown
+      namespace="orderActions"
+      value={l.trans({ en: "Actions", ko: "동작" })}
+      content={
+        <>
+          <li>
+            <button type="button" onClick={onEdit}>
+              {l.trans({ en: "Edit", ko: "수정" })}
+            </button>
+          </li>
+          <li data-dropdown-keep-open="">
+            <Switch checked={notify} onChange={st.do.setNotify} />
+          </li>
+        </>
+      }
+    />
+  );
+};`,
     },
     {
       name: "BottomSheet",
       desc: l.trans({
-        en: "The mobile overlay: a panel that comes up from the bottom edge and is dismissed by dragging it back down. `type` is the whole decision — a `half` sheet covers part of the screen and draws a grab handle, a `full` sheet takes it all and draws a close row instead. Like `Modal` it works controlled or self-contained: give it `open` and `onCancel`, or give it a `trigger` and let it keep its own state.",
-        ko: "mobile용 overlay입니다. 아래 모서리에서 올라오고 아래로 끌어내려 닫는 패널입니다. `type`이 사실상 모든 결정입니다. `half` sheet은 화면 일부를 덮고 잡는 손잡이를 그리며, `full` sheet은 전체를 덮고 대신 닫기 행을 그립니다. `Modal`처럼 controlled로도 자체 완결형으로도 동작합니다. `open`과 `onCancel`을 주거나, `trigger`를 주고 상태를 맡기면 됩니다.",
+        en: "The mobile overlay: a panel that slides up from the bottom edge. `type` decides almost everything; like `Modal`, it runs controlled or from its own `trigger`.",
+        ko: "모바일용 오버레이로, 아래 가장자리에서 올라오는 패널입니다. 거의 모든 것은 `type`이 정하며, `Modal`처럼 controlled로도, 자기 `trigger`로도 동작합니다.",
       }),
       props: [
         {
           name: "type",
           type: `"full" | "half"`,
           desc: l.trans({
-            en: "Required. `half` covers part of the screen with a grab handle; `full` takes the whole screen with a close row.",
-            ko: "필수입니다. `half`는 화면 일부를 덮고 손잡이를 그리며, `full`은 전체를 덮고 닫기 행을 그립니다.",
+            en: "Required. `half` is 90% tall with a grab handle; `full` covers the screen with a close row.",
+            ko: "필수입니다. `half`는 화면 높이의 90%에 손잡이를 그리고, `full`은 화면 전체를 덮고 닫기 행을 그립니다.",
           }),
         },
         {
           name: "open / onCancel",
           type: "boolean / () => void",
           desc: l.trans({
-            en: "Controlled state. Left out, the sheet opens from its own trigger and handle.",
-            ko: "controlled 상태입니다. 빼면 sheet이 자기 trigger와 손잡이로 열립니다.",
+            en: "Controlled state. Left out, the sheet keeps its own and opens from `trigger` or the ref.",
+            ko: "controlled 상태입니다. 빼면 시트가 상태를 직접 관리하며, `trigger`나 ref로 엽니다.",
           }),
         },
         {
           name: "trigger",
           type: "ReactNode",
-          desc: l.trans({ en: "Element that opens the sheet.", ko: "sheet을 여는 element입니다." }),
+          desc: l.trans({ en: "Element that opens the sheet.", ko: "시트를 여는 요소입니다." }),
         },
         {
           name: "header / handle / close",
           type: "ReactNode",
           desc: l.trans({
-            en: "`header` replaces the whole top row — the handle or the close row, whichever `type` draws. `handle` and `close` replace just the mark inside it.",
-            ko: "`header`는 위쪽 행 전체를 대체합니다. `type`에 따라 손잡이 행이거나 닫기 행입니다. `handle`과 `close`는 그 안의 mark만 대체합니다.",
+            en: "`header` replaces the whole top row; `handle` and `close` replace only the mark inside it.",
+            ko: "`header`는 맨 위 행 전체를, `handle`과 `close`는 그 안의 표시만 바꿉니다.",
           }),
         },
         {
-          name: "bodyClassName",
+          name: "className / bodyClassName",
           type: "string",
           desc: l.trans({
-            en: "Classes for the scrolling body, where `className` reaches the sheet surface.",
-            ko: "스크롤되는 본문에 적용할 class입니다. `className`은 sheet 표면에 적용됩니다.",
+            en: "Classes for the sheet surface and for its scrolling body.",
+            ko: "시트 표면과 스크롤되는 본문에 적용할 class입니다.",
           }),
         },
         {
           name: "ref",
           type: "BottomSheetRef",
           desc: l.trans({
-            en: "`{ open, close }` — the imperative handle, for a sheet a page opens from somewhere that is not a trigger.",
-            ko: "`{ open, close }` 명령형 handle입니다. trigger가 아닌 곳에서 page가 sheet을 열 때 씁니다.",
+            en: "`{ open, close }`, an imperative handle for opening the sheet without a trigger.",
+            ko: "`{ open, close }` 명령형 핸들입니다. 트리거 없이 시트를 열 때 씁니다.",
           }),
         },
       ],
-      code: `import { BottomSheet } from "akanjs/ui";
+      notes: [
+        l.trans({
+          en: (
+            <span>
+              <strong>Four ways to close it:</strong> drag a <code>half</code> sheet's handle down past a third of its
+              height, tap the backdrop, press Escape, or use a <code>full</code> sheet's close row. Each one calls{" "}
+              <code>onCancel</code>.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>닫는 길은 넷입니다.</strong> <code>half</code> 시트의 손잡이를 높이의 1/3 넘게 끌어내리기, 배경
+              누르기, Escape, <code>full</code> 시트의 닫기 행입니다. 어느 쪽이든 <code>onCancel</code>이 호출됩니다.
+            </span>
+          ),
+        }),
+      ],
+      code: `"use client";
+import { usePage } from "@apps/koyo/client";
+import { BottomSheet, buttonRecipe } from "akanjs/ui";
+import type { ReactNode } from "react";
 
-export const FilterSheet = ({ children }) => (
-  <BottomSheet type="half" trigger={<button className={buttonRecipe({ size: "sm" })}>Filter</button>}>
-    {children}
-  </BottomSheet>
-);`,
+interface FilterSheetProps {
+  children: ReactNode;
+}
+export const FilterSheet = ({ children }: FilterSheetProps) => {
+  const { l } = usePage();
+  return (
+    <BottomSheet
+      type="half"
+      trigger={
+        <button type="button" className={buttonRecipe({ size: "sm" })}>
+          {l.trans({ en: "Filter", ko: "필터" })}
+        </button>
+      }
+    >
+      {children}
+    </BottomSheet>
+  );
+};`,
     },
     {
       name: "Tooltip",
       desc: l.trans({
-        en: "A hint on hover or keyboard focus, in pure CSS — no state, no portal, no positioning pass. That buys a tooltip that costs nothing and renders on the server, and it costs viewport-edge flipping: a bubble near the edge is clipped rather than moved. It is a hint surface, so that is the right trade; when the content has to be read, it is not a tooltip. An empty `content` renders the trigger alone, so a conditional hint needs no wrapper of its own.",
-        ko: "hover나 키보드 포커스에서 뜨는 힌트이며 순수 CSS입니다. 상태도, portal도, 위치 계산도 없습니다. 그 덕에 비용이 없고 서버에서 렌더되지만, 뷰포트 가장자리에서 뒤집히지 않습니다 — 가장자리의 말풍선은 옮겨지는 대신 잘립니다. 힌트 표면이므로 그 교환이 맞습니다. 반드시 읽혀야 하는 내용이라면 그것은 tooltip이 아닙니다. `content`가 비어 있으면 trigger만 렌더하므로, 조건부 힌트에 별도 wrapper가 필요 없습니다.",
+        en: "A hint that appears on hover or keyboard focus, drawn in pure CSS. It is for hints only: content that must be read does not belong in a tooltip.",
+        ko: "마우스를 올리거나 키보드로 포커스하면 뜨는 힌트이며, 순수 CSS로 그립니다. 힌트 전용이라, 반드시 읽혀야 하는 내용은 툴팁에 넣지 마세요.",
       }),
       props: [
         {
           name: "content",
           type: "ReactNode",
           desc: l.trans({
-            en: "The hint. Empty, null, or undefined renders `children` alone.",
-            ko: "힌트 내용입니다. 비어 있거나 null·undefined면 `children`만 렌더합니다.",
+            en: "The hint. Empty, `null` or `undefined` renders `children` alone.",
+            ko: "힌트 내용입니다. 비어 있거나 `null`·`undefined`면 `children`만 그립니다.",
           }),
         },
         {
           name: "children",
           type: "ReactNode",
-          desc: l.trans({ en: "The trigger the bubble is anchored to.", ko: "말풍선이 붙는 trigger입니다." }),
+          desc: l.trans({ en: "The trigger the bubble is anchored to.", ko: "말풍선이 붙는 트리거입니다." }),
         },
         {
           name: "side",
-          type: `"top" | "right" | "bottom" | "left"`,
-          desc: l.trans({
-            en: "Which side the bubble sits on. `top` by default.",
-            ko: "말풍선이 놓이는 방향입니다. 기본값은 `top`입니다.",
-          }),
+          type: `"top" | "right" | "bottom" | "left" = "top"`,
+          desc: l.trans({ en: "Which side of the trigger the bubble sits on.", ko: "말풍선이 놓일 방향입니다." }),
         },
         {
           name: "variant",
-          type: `"default" | "primary" | "info"`,
+          type: `"default" | "primary" | "info" = "default"`,
           desc: l.trans({
             en: "The bubble's colour. `Field.Label` uses `info` for the help icon beside a field description.",
-            ko: "말풍선 색입니다. `Field.Label`은 field 설명 옆 도움말 아이콘에 `info`를 씁니다.",
+            ko: "말풍선 색입니다. `Field.Label`은 필드 설명 옆 도움말 아이콘에 `info`를 씁니다.",
           }),
+        },
+        {
+          name: "className",
+          type: "string",
+          desc: l.trans({ en: "Classes for the bubble.", ko: "말풍선에 적용할 class입니다." }),
         },
       ],
       notes: [
         l.trans({
-          en: "It is an override slot, so an app that needs a positioned tooltip — one that flips, or follows the pointer — binds its own in `_overrides.tsx` and every existing call site follows.",
-          ko: "override slot이므로, 위치를 계산하는 tooltip — 뒤집히거나 포인터를 따라가는 — 이 필요한 앱은 `_overrides.tsx`에서 자기 것을 bind하면 기존 호출부가 전부 따라옵니다.",
+          en: (
+            <span>
+              <strong>Light, but it never moves.</strong> No state, no portal and no position pass, so it works in the
+              server-rendered HTML. The cost: near the viewport edge the bubble is clipped rather than flipped.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>가볍지만 움직이지 않습니다.</strong> 상태도 portal도 위치 계산도 없어서 서버가 그린 HTML만으로
+              동작합니다. 대신 뷰포트 가장자리에서는 말풍선이 뒤집히지 않고 잘립니다.
+            </span>
+          ),
+        }),
+        l.trans({
+          en: (
+            <span>
+              <strong>A conditional hint needs no wrapper.</strong> Pass an empty <code>content</code> and only the
+              trigger renders. The bubble shows after 300 ms of hover, or at once on keyboard focus.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>조건부 힌트에 래퍼가 필요 없습니다.</strong> <code>content</code>를 비워 두면 트리거만 그립니다.
+              말풍선은 마우스를 올리고 300ms 뒤에, 키보드 포커스에는 바로 뜹니다.
+            </span>
+          ),
+        }),
+        l.trans({
+          en: (
+            <span>
+              <strong>Need one that flips or follows the pointer?</strong> <code>Tooltip</code> is an override slot:
+              bind your own in <code>_overrides.tsx</code> and every existing call site follows.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>뒤집히거나 포인터를 따라가는 툴팁이 필요하다면</strong> <code>_overrides.tsx</code>에서 직접 만든
+              것을 연결하세요. <code>Tooltip</code>은 오버라이드 슬롯이라 기존 호출부가 모두 따라옵니다.
+            </span>
+          ),
         }),
       ],
       code: `import { Tooltip } from "akanjs/ui";
 
-export const SyncedAt = ({ at, detail }) => (
-  <Tooltip content={detail} side="right" variant="info">
-    <span className="text-foreground/60 text-sm">{at}</span>
-  </Tooltip>
-);`,
+interface SyncedAtProps {
+  at: string;
+  detail: string;
+}
+export const SyncedAt = ({ at, detail }: SyncedAtProps) => {
+  return (
+    <Tooltip content={detail} side="right" variant="info">
+      <span className="text-foreground/60 text-sm">{at}</span>
+    </Tooltip>
+  );
+};`,
     },
     {
       name: "Menu",
       desc: l.trans({
-        en: "A navigation menu from a data structure rather than from markup: `items` is a tree of `{ key, label, icon?, children? }`, and the component draws the rows, the submenus, and the active state. `mode` is the axis — `inline` for a sidebar, `horizontal` for a top bar, where anything that does not fit folds into an overflow menu.",
-        ko: "markup이 아니라 데이터 구조로 만드는 navigation menu입니다. `items`는 `{ key, label, icon?, children? }`의 트리이고, 행과 submenu, 활성 상태는 component가 그립니다. `mode`가 축을 정합니다 — sidebar에는 `inline`, 상단 bar에는 `horizontal`이며, 후자는 넘치는 항목을 overflow menu로 접습니다.",
+        en: "A navigation menu built from data rather than markup: you pass an `items` tree and it draws the rows, the submenus and the active state. `mode` picks a sidebar or a top bar.",
+        ko: "마크업이 아니라 데이터로 만드는 내비게이션 메뉴입니다. `items` 트리를 넘기면 행, 하위 메뉴, 활성 상태를 컴포넌트가 그립니다. 사이드바인지 상단 바인지는 `mode`로 고릅니다.",
       }),
       props: [
         {
           name: "items",
-          type: "MenuItem[]",
+          type: "{ key, label, icon?, children?, type? }[]",
           desc: l.trans({
-            en: "`{ key, label, icon?, children?, type? }`. A `children` array makes the row a submenu.",
-            ko: "`{ key, label, icon?, children?, type? }`입니다. `children` 배열이 있으면 그 행이 submenu가 됩니다.",
+            en: "The tree of `MenuItem`s. A `children` array turns the row into a submenu.",
+            ko: "`MenuItem` 트리입니다. `children` 배열이 있으면 그 행이 하위 메뉴가 됩니다.",
           }),
         },
         {
           name: "mode",
-          type: `"horizontal" | "inline"`,
+          type: `"horizontal" | "inline" = "inline"`,
           desc: l.trans({
-            en: "The axis. `inline` by default; `horizontal` folds the overflow into a trailing menu.",
-            ko: "축입니다. 기본값은 `inline`이고, `horizontal`은 넘치는 항목을 뒤쪽 menu로 접습니다.",
+            en: "`inline` for a sidebar. `horizontal` for a top bar, folding what does not fit into a `…` menu.",
+            ko: "사이드바는 `inline`입니다. 상단 바는 `horizontal`이며, 넘치는 항목을 `…` 메뉴로 접습니다.",
           }),
         },
         {
           name: "selectedKeys / defaultSelectedKeys",
           type: "string[]",
           desc: l.trans({
-            en: "Controlled and uncontrolled selection, by item key.",
-            ko: "item key로 지정하는 controlled·uncontrolled 선택입니다.",
+            en: "Selected keys. `selectedKeys` is controlled; `defaultSelectedKeys` sets the start, first key only.",
+            ko: "선택된 항목의 key입니다. `selectedKeys`는 controlled 값이고, `defaultSelectedKeys`는 시작값이며 첫 key만 씁니다.",
           }),
         },
         {
           name: "onClick",
           type: "(item: MenuItem) => void",
-          desc: l.trans({ en: "Receives the clicked item.", ko: "클릭된 item을 받습니다." }),
+          desc: l.trans({
+            en: "Receives the clicked item. In `inline` mode a row with children only expands.",
+            ko: "클릭된 항목을 받습니다. `inline`에서 하위 메뉴가 있는 행은 펼쳐지기만 합니다.",
+          }),
         },
         {
           name: "inlineCollapsed",
           type: "boolean",
+          desc: l.trans({ en: "Hides the labels, leaving only the icons.", ko: "라벨을 숨기고 아이콘만 남깁니다." }),
+        },
+        {
+          name: "activeStyle",
+          type: `"bordered" | "active" = "bordered"`,
           desc: l.trans({
-            en: "Narrows an `inline` menu to its icons.",
-            ko: "`inline` menu를 아이콘만 남게 좁힙니다.",
+            en: "How the active row is marked: a bottom border, or a `bg-border` fill.",
+            ko: "활성 행을 표시하는 방식입니다. 아래 테두리 또는 `bg-border` 배경입니다.",
           }),
         },
         {
           name: "renderItem",
           type: "(item, active) => ReactNode",
           desc: l.trans({
-            en: "Draws one item's body. The row, its click, and any submenu stay the framework's.",
-            ko: "item 하나의 본문을 그립니다. 행과 클릭, submenu는 framework가 유지합니다.",
+            en: "Draws one item's body. The row, its click and any submenu stay the framework's.",
+            ko: "항목 하나의 본문을 직접 그립니다. 행, 클릭, 하위 메뉴는 프레임워크가 계속 맡습니다.",
           }),
         },
         {
           name: "ulClassName / liClassName / labelClassName",
           type: "string / string / (isActive) => string",
           desc: l.trans({
-            en: "The three levels below `className`, which reaches the wrapper.",
-            ko: "wrapper에 닿는 `className` 아래의 세 층위입니다.",
+            en: "The list, each row and each label. `className` reaches the outer wrapper.",
+            ko: "목록, 각 행, 각 라벨에 적용할 class입니다. `className`은 바깥 래퍼에 적용됩니다.",
           }),
         },
       ],
       notes: [
         l.trans({
-          en: "`Menu` is a navigation structure and `Dropdown` is a transient action list — they look alike and are not interchangeable. Row actions on a list belong in a `Dropdown`.",
-          ko: "`Menu`는 navigation 구조이고 `Dropdown`은 일시적인 action 목록입니다. 겉모습이 비슷하지만 서로 대체할 수 없습니다. 목록의 행 action은 `Dropdown`의 몫입니다.",
+          en: (
+            <span>
+              <strong>
+                <code>Menu</code> is not a <code>Dropdown</code>.
+              </strong>{" "}
+              <code>Menu</code> is a navigation structure and <code>Dropdown</code> a short-lived action list. They look
+              alike but are not interchangeable: row actions on a list go in a <code>Dropdown</code>.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>
+                <code>Menu</code>와 <code>Dropdown</code>은 다릅니다.
+              </strong>{" "}
+              <code>Menu</code>는 내비게이션 구조이고 <code>Dropdown</code>은 잠깐 열리는 동작 목록입니다. 겉모습은
+              비슷해도 서로 대신할 수 없으며, 목록의 행 동작은 <code>Dropdown</code>에 넣습니다.
+            </span>
+          ),
         }),
       ],
-      code: `import { Menu } from "akanjs/ui";
+      code: `"use client";
+import { usePage } from "@apps/koyo/client";
+import { Menu } from "akanjs/ui";
 
-export const AdminSider = ({ selected, select }) => (
-  <Menu
-    mode="inline"
-    selectedKeys={[selected]}
-    onClick={(item) => select(item.key)}
-    items={[
-      { key: "product", label: "Products" },
-      { key: "order", label: "Orders", children: [{ key: "order.open", label: "Open" }] },
-    ]}
-  />
-);`,
+interface AdminSiderProps {
+  selected: string;
+  onSelect: (key: string) => void;
+}
+export const AdminSider = ({ selected, onSelect }: AdminSiderProps) => {
+  const { l } = usePage();
+  return (
+    <Menu
+      mode="inline"
+      selectedKeys={[selected]}
+      onClick={(item) => onSelect(item.key)}
+      items={[
+        { key: "product", label: l.trans({ en: "Products", ko: "상품" }) },
+        {
+          key: "order",
+          label: l.trans({ en: "Orders", ko: "주문" }),
+          children: [
+            {
+              key: "order.open",
+              label: l.trans({ en: "Open", ko: "진행 중" }),
+            },
+          ],
+        },
+      ]}
+    />
+  );
+};`,
     },
     {
       name: "Portal",
       desc: l.trans({
-        en: "Renders `children` into an element the page already has, named by `id`. This is the wiring behind `Layout.Navbar` — a component deep in a route puts content into the route's top inset without either one knowing about the other. It is server-aware: during SSR the content is captured for the shell rather than dropped, so a portalled navbar is in the first byte instead of appearing after hydration.",
-        ko: "`children`을 page에 이미 있는 element 안으로 `id`로 지정해 렌더합니다. `Layout.Navbar` 뒤의 배선이 이것입니다. route 깊숙한 곳의 component가 서로를 모른 채 route의 top inset에 내용을 넣습니다. 서버를 인식합니다. SSR 중에는 내용이 버려지지 않고 shell용으로 수집되므로, portal된 navbar가 hydration 이후가 아니라 첫 바이트에 들어 있습니다.",
+        en: "Renders `children` into an element the page already has, named by `id`. It is the wiring behind `Layout.Navbar`: a component deep in a route fills the top bar without either one knowing about the other.",
+        ko: "`children`을 페이지에 이미 있는 요소 안에 그리며, 그 요소는 `id`로 지정합니다. `Layout.Navbar`가 이것으로 동작합니다. 라우트 깊숙한 컴포넌트가 서로를 모른 채 상단 바를 채웁니다.",
       }),
       props: [
         {
           name: "id",
           type: "string",
           desc: l.trans({
-            en: "The `id` of the host element. Nothing renders until an element with it exists, so the host has to be mounted first.",
-            ko: "host element의 `id`입니다. 그 id를 가진 element가 생기기 전에는 아무것도 렌더되지 않으므로 host가 먼저 마운트되어야 합니다.",
+            en: "The host element's `id`. Nothing renders until that element is mounted.",
+            ko: "호스트 요소의 `id`입니다. 그 요소가 마운트되기 전에는 아무것도 그리지 않습니다.",
           }),
         },
         {
           name: "children",
           type: "ReactNode",
-          desc: l.trans({ en: "What is rendered into the host.", ko: "host 안에 렌더할 내용입니다." }),
+          desc: l.trans({ en: "What is rendered into the host.", ko: "호스트 안에 그릴 내용입니다." }),
         },
       ],
       notes: [
         l.trans({
-          en: "It is not the way to escape a clipping ancestor — `Modal`, `Dropdown`, `Select`, and `Popconfirm` already portal to `document.body` and place themselves against their trigger. Reach for `Portal` only for a named slot the app frame owns.",
-          ko: "잘리는 조상에서 빠져나오는 수단이 아닙니다. `Modal`, `Dropdown`, `Select`, `Popconfirm`은 이미 `document.body`로 portal되어 trigger 기준으로 자리를 잡습니다. `Portal`은 앱 frame이 소유한 이름 붙은 slot에만 쓰세요.",
+          en: (
+            <span>
+              <strong>Fill the frame's slots through their Layout component.</strong> <code>Layout.Navbar</code>,{" "}
+              <code>Layout.TopInset</code>, <code>Layout.TopLeftAction</code> and <code>Layout.BottomInset</code> pick
+              the right host in a CSR build, and all but <code>TopLeftAction</code> reserve the slot's height.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>프레임 슬롯은 Layout 컴포넌트로 채우세요.</strong> <code>Layout.Navbar</code>,{" "}
+              <code>Layout.TopInset</code>, <code>Layout.TopLeftAction</code>, <code>Layout.BottomInset</code>이 CSR
+              빌드에서도 맞는 호스트를 고르고, <code>TopLeftAction</code>을 뺀 나머지는 슬롯 높이까지 잡아 줍니다.
+            </span>
+          ),
+        }),
+        l.trans({
+          en: (
+            <span>
+              <strong>Frame slots are in the first HTML.</strong> During SSR their content is written into the shell
+              instead of appearing after hydration. A host of your own is filled in the browser.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>프레임 슬롯은 첫 HTML에 들어 있습니다.</strong> SSR 중에 내용을 바로 써 넣으므로 hydration이 끝난
+              뒤에야 나타나는 일이 없습니다. 직접 만든 호스트는 브라우저에서 채워집니다.
+            </span>
+          ),
+        }),
+        l.trans({
+          en: (
+            <span>
+              <strong>It is not a way out of a clipping parent.</strong> <code>Modal</code> already portals to{" "}
+              <code>document.body</code>, and <code>Dropdown</code>, <code>Popconfirm</code> and <code>Select</code>{" "}
+              also place themselves against their trigger.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>잘리는 부모에서 빠져나오는 수단이 아닙니다.</strong> <code>Modal</code>은 이미{" "}
+              <code>document.body</code>에 portal로 그려지고, <code>Dropdown</code>, <code>Popconfirm</code>,{" "}
+              <code>Select</code>는 여기에 더해 트리거 기준으로 자리를 잡습니다.
+            </span>
+          ),
         }),
       ],
       code: `import { Portal } from "akanjs/ui";
+import type { ReactNode } from "react";
 
-export const PrintAction = ({ children }) => <Portal id="topInsetContent">{children}</Portal>;`,
+export const OrderToolbarHost = () => {
+  return <div id="orderToolbar" className="flex gap-2" />;
+};
+
+interface OrderToolbarProps {
+  children: ReactNode;
+}
+export const OrderToolbar = ({ children }: OrderToolbarProps) => {
+  return <Portal id="orderToolbar">{children}</Portal>;
+};`,
     },
     {
       name: "Copy",
       desc: l.trans({
-        en: "Copy-to-clipboard trigger that also shows a global success message through Akan store messages.",
-        ko: "clipboard에 복사하고 Akan store message로 global success message를 보여주는 trigger입니다.",
+        en: "Wraps a trigger so that clicking it copies `text` to the clipboard and shows a success toast.",
+        ko: "트리거를 감싸서, 누르면 `text`를 클립보드에 복사하고 성공 토스트를 띄웁니다.",
       }),
       props: [
         {
           name: "text",
-          type: "string",
-          desc: l.trans({ en: "Text copied to the clipboard.", ko: "clipboard에 복사할 text입니다." }),
+          type: `string = ""`,
+          desc: l.trans({ en: "Text written to the clipboard.", ko: "클립보드에 복사할 텍스트입니다." }),
         },
         {
           name: "copyMessage",
           type: "string",
-          desc: l.trans({ en: "Optional custom success message.", ko: "optional custom success message입니다." }),
+          desc: l.trans({
+            en: 'The success toast. Defaults to "Copied" in the reader\'s language.',
+            ko: '성공 토스트 문구입니다. 기본값은 언어에 맞춘 "복사되었습니다"입니다.',
+          }),
         },
         {
           name: "children",
           type: "ReactNode",
-          desc: l.trans({ en: "Trigger element.", ko: "trigger element입니다." }),
+          desc: l.trans({
+            en: "The trigger. An element keeps its own `onClick`, which runs before the copy.",
+            ko: "트리거입니다. 요소라면 원래 `onClick`이 유지되고, 복사보다 먼저 실행됩니다.",
+          }),
         },
       ],
-      code: `import { Copy } from "akanjs/ui";
+      notes: [
+        l.trans({
+          en: (
+            <span>
+              <strong>Works without the Clipboard API.</strong> Where <code>navigator.clipboard</code> is missing it
+              falls back to a hidden text area. The toast goes through the store's <code>showMessage</code>.
+            </span>
+          ),
+          ko: (
+            <span>
+              <strong>Clipboard API가 없어도 동작합니다.</strong> <code>navigator.clipboard</code>가 없으면 숨긴{" "}
+              <code>textarea</code>로 복사합니다. 토스트는 store의 <code>showMessage</code>로 띄웁니다.
+            </span>
+          ),
+        }),
+      ],
+      code: `import { usePage } from "@apps/koyo/client";
+import { buttonRecipe, Copy } from "akanjs/ui";
 
-<Copy text={shareUrl}>
-  <button className={buttonRecipe({ size: "sm" })}>Copy link</button>
-</Copy>;`,
+interface ShareLinkProps {
+  url: string;
+}
+export const ShareLink = ({ url }: ShareLinkProps) => {
+  const { l } = usePage();
+  return (
+    <Copy
+      text={url}
+      copyMessage={l.trans({ en: "Link copied", ko: "링크를 복사했습니다" })}
+    >
+      <button type="button" className={buttonRecipe({ size: "sm" })}>
+        {l.trans({ en: "Copy link", ko: "링크 복사" })}
+      </button>
+    </Copy>
+  );
+};`,
     },
   ];
 
   return (
     <Scroll>
-      <Scroll.Slide id="overlays-ui" title={l.trans({ en: "Overlays UI", ko: "Overlays UI" })}>
-        <Docs.Title>{l.trans({ en: "Overlays UI", ko: "Overlays UI" })}</Docs.Title>
+      <Scroll.Slide id="overlays-ui" title={l.trans({ en: "Overlays UI", ko: "오버레이 UI" })}>
+        <Docs.Title>{l.trans({ en: "Overlays UI", ko: "오버레이 UI" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Overlay components cover modal flows, custom dialogs, destructive confirmations, bottom sheets, menus, hints, and copy actions. Use `Modal` for common controlled overlays and the headless `Dialog` namespace for custom composition.",
-              ko: "Overlay component는 modal flow, custom dialog, destructive confirmation, bottom sheet, menu, 힌트, copy action을 다룹니다. 일반 controlled overlay에는 `Modal`, custom composition에는 headless `Dialog` namespace를 사용합니다.",
+              en: (
+                <span>
+                  The overlay components in <code>akanjs/ui</code>: modal windows, confirmations, bottom sheets, menus,
+                  hints and a copy action. Start with <code>Modal</code>, and compose the headless <code>Dialog</code>{" "}
+                  only when you need your own layout.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>akanjs/ui</code>의 오버레이 컴포넌트입니다. 모달 창, 확인 팝오버, 바텀 시트, 메뉴, 힌트, 복사
+                  동작을 다룹니다. 먼저 <code>Modal</code>을 쓰고, 배치를 직접 짜야 할 때만 headless <code>Dialog</code>
+                  를 조합하세요.
+                </span>
+              ),
             })}
           </div>
-          <div>
-            {l.trans({
-              en: "Four of them portal to `document.body` and place themselves against their trigger — `Modal`, `Dropdown`, `Popconfirm`, and `Select` — so none of them is clipped by a scrolling modal body or a table's overflow container. `Portal` is the named-slot version of the same mechanism, and `Tooltip` deliberately does none of it.",
-              ko: "이 중 넷 — `Modal`, `Dropdown`, `Popconfirm`, `Select` — 은 `document.body`로 portal되어 trigger 기준으로 자리를 잡으므로, 스크롤되는 modal 본문이나 table의 overflow container에 잘리지 않습니다. `Portal`은 같은 장치를 이름 붙은 slot에 쓰는 형태이고, `Tooltip`은 의도적으로 그 어느 것도 하지 않습니다.",
-            })}
-          </div>
+          <Docs.SubSubTitle>{l.trans({ en: "Words used on this page", ko: "이 페이지에서 쓰는 말" })}</Docs.SubSubTitle>
+          <Docs.IntroTable type={l.trans({ en: "Term", ko: "용어" })} items={termRows} />
+          <Docs.SubSubTitle>{l.trans({ en: "Pick a component", ko: "컴포넌트 고르기" })}</Docs.SubSubTitle>
+          <Docs.Matrix
+            type={l.trans({ en: "Component", ko: "컴포넌트" })}
+            columns={overlayColumns}
+            groups={overlayGroups}
+            markLabel={l.trans({ en: "Does it", ko: "해당" })}
+            emptyLabel={l.trans({ en: "Does not", ko: "해당 없음" })}
+          />
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>A portalled overlay is never clipped.</strong> <code>Modal</code>, <code>Dropdown</code>,{" "}
+                    <code>Popconfirm</code> and <code>Select</code> render at <code>document.body</code>, so a scrolling
+                    modal body or a table's overflow container cannot cut them off.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>portal로 그리는 오버레이는 잘리지 않습니다.</strong> <code>Modal</code>,{" "}
+                    <code>Dropdown</code>, <code>Popconfirm</code>, <code>Select</code>는 <code>document.body</code>에
+                    그려지므로 스크롤되는 모달 본문이나 테이블의 overflow 컨테이너가 잘라내지 못합니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      <code>Portal</code> is the same idea with a name.
+                    </strong>{" "}
+                    It renders into a host element you pick by <code>id</code> instead of at the end of the body.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>Portal</code>은 같은 장치에 이름을 붙인 것입니다.
+                    </strong>{" "}
+                    body 끝이 아니라 <code>id</code>로 고른 호스트 요소 안에 그립니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      <code>Tooltip</code> does none of this on purpose.
+                    </strong>{" "}
+                    It is pure CSS, so it costs almost nothing, and near the screen edge it is clipped rather than
+                    moved.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>Tooltip</code>은 일부러 이 중 어느 것도 하지 않습니다.
+                    </strong>{" "}
+                    순수 CSS라 비용이 거의 없는 대신, 화면 가장자리에서는 옮겨지지 않고 잘립니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
+          <Docs.SubSubTitle>{l.trans({ en: "Related pages", ko: "함께 볼 페이지" })}</Docs.SubSubTitle>
+          <Docs.LinkGrid items={relatedLinks} />
         </Docs.Description>
       </Scroll.Slide>
       <Divider />

@@ -116,6 +116,17 @@ describe("CloudRunner", () => {
     ]);
   });
 
+  test("update installs the package that ships the akan binary at the requested tag", async () => {
+    const recorder = createCallRecorder();
+    const workspace = createFakeExecutor("workspace", { exists: async () => false }, recorder);
+
+    await new CloudRunner().update(workspace as never, "dev");
+
+    expect(recorder.calls).toEqual([
+      { name: "workspace.spawn", args: ["bun", ["add", "-g", "@akanjs/cli@dev"], { env: process.env }] },
+    ]);
+  });
+
   test("publishes to a custom registry and normalizes internal Akan dependency versions", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = mock(async () => new Response(JSON.stringify({ "dist-tags": { rc: "2.1.0-rc.10" } }))) as never;

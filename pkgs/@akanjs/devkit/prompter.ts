@@ -2,7 +2,6 @@ import fsPromise from "node:fs/promises";
 import { input, select } from "@inquirer/prompts";
 
 import { getDirname } from "./getDirname";
-import type { GuideGenerateJson } from "./guideline";
 
 interface FileUpdateRequestProps {
   context: string;
@@ -33,12 +32,6 @@ export class Prompter {
   static async listGuidelines() {
     const guidelineRoot = await Prompter.#getGuidelineRoot();
     return (await fsPromise.readdir(guidelineRoot)).filter((name) => !name.startsWith("_")).sort();
-  }
-  static async getGuideJson(guideName: string): Promise<GuideGenerateJson> {
-    const guidelineRoot = await Prompter.#getGuidelineRoot();
-    const filePath = `${guidelineRoot}/${guideName}/${guideName}.generate.json`;
-    const guideJson = await fsPromise.readFile(filePath, "utf-8");
-    return JSON.parse(guideJson) as GuideGenerateJson;
   }
   /**
    * The name is checked against the directory listing rather than interpolated straight into a path:

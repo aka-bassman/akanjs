@@ -7,17 +7,14 @@ export const useFetch = <Return>(
   fnOrPromise: Promise<Return> | Return,
   { onError }: { onError?: (err: string) => void } = {},
 ): { fulfilled: boolean; value: Return | null } => {
-  const [asyncState, setAsyncState] = useState<{ fulfilled: boolean; value: Return | null }>({
-    fulfilled: false,
-    value: null,
-  });
+  const [settled, setSettled] = useState<{ source: unknown; value: Return } | null>(null);
   useEffect(() => {
     if (!isThenable(fnOrPromise)) return;
     let cancelled = false;
     void (async () => {
       try {
         const ret = await fnOrPromise;
-        if (!cancelled) setAsyncState({ fulfilled: true, value: ret });
+        if (!cancelled) setSettled({ source: fnOrPromise, value: ret });
       } catch (err) {
         if (cancelled) return;
         const content = `Error: ${typeof err === "string" ? err : (err as Error).message}`;
@@ -27,11 +24,13 @@ export const useFetch = <Return>(
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fnOrPromise]);
   if (!isThenable(fnOrPromise)) {
     return { fulfilled: true, value: fnOrPromise as Return };
   }
-  return asyncState;
+  return settled?.source === fnOrPromise
+    ? { fulfilled: true, value: settled.value }
+    : { fulfilled: false, value: null };
 };
 
 /**

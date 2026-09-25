@@ -1,8 +1,8 @@
 import { usePage } from "@apps/akan/client";
 import { Scroll } from "@libs/util/ui";
+import type { ReactNode } from "react";
 import { Code } from "./Code";
-import { Docs } from "./Docs";
-import { panelRecipe } from "./Recipe";
+import { Docs, type OptionItem } from "./Docs";
 
 export interface ReferenceRow {
   name: string;
@@ -10,94 +10,31 @@ export interface ReferenceRow {
   required?: string;
   defaultValue?: string;
   enumOrFlag?: string;
-  desc: string;
+  desc: ReactNode;
 }
 
 export interface CommandReferenceItem {
   name: string;
   signature: string;
-  desc: string;
+  desc: ReactNode;
   args?: ReferenceRow[];
   options?: ReferenceRow[];
   notes?: ReferenceRow[];
   examples: string;
 }
 
-interface ReferenceTableProps {
-  title: string;
-  headers: string[];
-  rows?: ReferenceRow[];
-  getCells: (row: ReferenceRow) => string[];
-}
+const presentOf = (value?: string) => (value && value !== "-" ? value : undefined);
 
-const ReferenceTable = ({ title, headers, rows, getCells }: ReferenceTableProps) => {
-  if (!rows?.length) return null;
-
-  return (
-    <section className="space-y-3">
-      <Docs.SubTitle>{title}</Docs.SubTitle>
-      <div className={panelRecipe({ radius: "2xl", padding: "none" }, "hidden overflow-x-auto lg:block")}>
-        <table className="table w-full table-fixed">
-          <colgroup>
-            {headers.map((header, index) => (
-              <col
-                key={header}
-                style={{
-                  width: index === headers.length - 1 ? "42%" : `${Math.floor(58 / (headers.length - 1))}%`,
-                }}
-              />
-            ))}
-          </colgroup>
-          <thead>
-            <tr className="border-border border-b bg-muted">
-              {headers.map((header) => (
-                <th key={header} className="px-4 py-3 font-semibold text-foreground/80 text-xs uppercase tracking-wide">
-                  {header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={`${title}-${row.name}`} className="border-border/80 border-b last:border-b-0">
-                {getCells(row).map((cell, index) => (
-                  <td
-                    key={`${row.name}-${index}`}
-                    className={
-                      index === 0
-                        ? "px-4 py-4 font-mono text-foreground text-sm"
-                        : "px-4 py-4 text-foreground/80 text-sm leading-6"
-                    }
-                  >
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="space-y-3 lg:hidden">
-        {rows.map((row) => {
-          const cells = getCells(row);
-          return (
-            <div key={`${title}-mobile-${row.name}`} className={panelRecipe({ radius: "2xl" })}>
-              <div className="font-mono font-semibold text-foreground text-sm">{cells[0]}</div>
-              <div className="mt-3 grid gap-2 text-sm">
-                {headers.slice(1).map((header, index) => (
-                  <div key={`${row.name}-${header}`} className="grid grid-cols-[96px_1fr] gap-3">
-                    <div className="font-semibold text-foreground/60">{header}</div>
-                    <div className="text-foreground/80 leading-6">{cells[index + 1]}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-};
+const optionsOf = (rows: ReferenceRow[], requiredLabel: string): OptionItem[] =>
+  rows.map((row) => ({
+    key: row.name,
+    type: presentOf(row.type) ?? "",
+    default: presentOf(row.defaultValue),
+    tags: [row.required === "yes" ? requiredLabel : undefined, presentOf(row.enumOrFlag)].filter(
+      (tag): tag is string => !!tag,
+    ),
+    desc: row.desc,
+  }));
 
 interface CommandReferenceSlideProps {
   command: CommandReferenceItem;
@@ -105,33 +42,52 @@ interface CommandReferenceSlideProps {
 
 export const CommandReferenceSlide = ({ command }: CommandReferenceSlideProps) => {
   const { l } = usePage();
+  const requiredLabel = l.trans({ en: "required", ko: "필수" });
 
   return (
     <Scroll.Slide id={command.name} title={command.name}>
       <Docs.Title>{command.name}</Docs.Title>
       <Docs.Description>
-        <div className="whitespace-pre-line">{command.desc}</div>
+        <div className="whitespace-pre-line">
+          <Docs.CodeText>{command.desc}</Docs.CodeText>
+        </div>
       </Docs.Description>
-      <Code.Snippet className="mx-0" title="Signature" language="bash" code={command.signature} />
-      <ReferenceTable
-        title={l.trans({ en: "Arguments", ko: "Arguments" })}
-        headers={["Argument", "Type", "Required", "Default", "Description"]}
-        rows={command.args}
-        getCells={(row) => [row.name, row.type ?? "-", row.required ?? "-", row.defaultValue ?? "-", row.desc]}
+      <Code.Snippet
+        className="w-full"
+        title={l.trans({ en: "Signature", ko: "형식" })}
+        language="bash"
+        code={command.signature}
       />
-      <ReferenceTable
-        title={l.trans({ en: "Options", ko: "Options" })}
-        headers={["Option", "Type", "Default", "Enum / Flag", "Description"]}
-        rows={command.options}
-        getCells={(row) => [row.name, row.type ?? "-", row.defaultValue ?? "-", row.enumOrFlag ?? "-", row.desc]}
+      {command.args?.length ? (
+        <>
+          <Docs.SubTitle>{l.trans({ en: "Arguments", ko: "인자" })}</Docs.SubTitle>
+          <Docs.OptionTable items={optionsOf(command.args, requiredLabel)} />
+        </>
+      ) : null}
+      {command.options?.length ? (
+        <>
+          <Docs.SubTitle>{l.trans({ en: "Options", ko: "옵션" })}</Docs.SubTitle>
+          <Docs.OptionTable items={optionsOf(command.options, requiredLabel)} />
+        </>
+      ) : null}
+      {command.notes?.length ? (
+        <>
+          <Docs.SubTitle>{l.trans({ en: "Notes", ko: "참고" })}</Docs.SubTitle>
+          <Docs.IntroTable
+            type={l.trans({ en: "Name", ko: "이름" })}
+            items={command.notes.map((note) => ({
+              name: <span className="font-sans">{note.name}</span>,
+              desc: note.desc,
+            }))}
+          />
+        </>
+      ) : null}
+      <Code.Snippet
+        className="w-full"
+        title={l.trans({ en: "Examples", ko: "예시" })}
+        language="bash"
+        code={command.examples}
       />
-      <ReferenceTable
-        title={l.trans({ en: "Notes", ko: "Notes" })}
-        headers={["Name", "Description"]}
-        rows={command.notes}
-        getCells={(row) => [row.name, row.desc]}
-      />
-      <Code.Snippet className="mx-0" title="Examples" language="bash" code={command.examples} />
     </Scroll.Slide>
   );
 };

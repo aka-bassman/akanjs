@@ -423,8 +423,11 @@ stores need none, because state and CRUD actions are generated. The body is thre
 `this.setX(...)` → toast. The optimistic shape is mutate the client model, `void fetch.*`, then commit. Use
 `this.pick(...)` when the value must exist, `this.get()` when it may not, and `this.set({...})` to write. Mutate lists
 through the collection API (`this.set({ xList: xList.set(x).save() })`), not array spread. **An action returns
-nothing** (`no-return-in-store-action.grit`). **Never `import type { RootStore } from "../st"`** — it crashes
-`akan build` with a Bun SSR segfault.
+nothing** (`no-return-in-store-action.grit`). **Reach another store through `this`:**
+`import type { RootStore } from "../st"`, then `(this as unknown as RootStore).logout()` to call its action or
+`(this as unknown as RootStore).set({ … })` / `.get()` to write or read its state. Every store is mixed into one root
+at runtime, so the cast only tells the type what `this` already is. Keep it `import type` — `st.ts` imports every
+store, so a value import is a cycle.
 
 **`<model>.dictionary.ts`** — fixed chain, with empty stages still written:
 `.of() → .model() → .insight() → .query() → .sort() → .enum() → .slice() → .endpoint() → .error() → .translate()`.
@@ -477,13 +480,14 @@ Full contract — credential handshake, room revalidation, socket cleanup scopin
   never bounded. **Losing the race does not cancel the work**: the handler runs to completion with nobody
   holding its result, so a deadline is an answer to the caller, not an undo.
 - **A cached answer is the endpoint's `{ cache: <ms> }`, and only a `query` taking no internal argument may have
-  one.** The `Cache` middleware is registered by default and stands aside for every endpoint that declares
-  nothing. Internal arguments are how a call learns who is asking (`.with(Self)`), so an endpoint that has them
-  answers per caller and one shared entry would be one caller's answer handed to the next — that endpoint and
-  every `mutation` are named in the log and left uncached. Guards run on every hit; what is cached is the
-  handler's result, so `resolveReturn` still masks fields and resolves relations per call; a cache backend that
-  is down is warned about and the call runs uncached. The default chain is `Logging → Timeout → Cache → handler`,
-  and there is no `Retry` middleware.
+  one.** It is a step of the call, not a middleware, and stands aside for every endpoint that declares nothing.
+  Internal arguments are how a call learns who is asking (`.with(Self)`), so an endpoint that has them answers
+  per caller and one shared entry would be one caller's answer handed to the next — that endpoint and every
+  `mutation` are named in the log and left uncached. The lookup runs after the guards, so a hit reaches only a
+  caller they admitted; what is cached is the handler's result, so `resolveReturn` still masks fields and resolves
+  relations per call; a cache backend that is down is warned about and the call runs uncached. The default
+  middleware chain is `Logging → Timeout → <lib middlewares>`, then guards → internal arguments → cache →
+  handler, and there is no `Retry` middleware.
 
 ### Authorization Defaults
 
@@ -592,7 +596,7 @@ Full contract — relevance ordering, `columns` / `weights`: `get_guideline` wit
 - Injected dependencies resolve by field-name convention: a field named `<refName>Service` resolves to the service registered under `<refName>`, and `<refName>Signal` likewise (`pkgs/akanjs/service/injectInfo.ts`).
 - The `Service`/`Signal` suffix is required — the injector strips it to derive the registry lookup key. Name the field after the target refName plus the suffix, not arbitrarily.
 - Preference order inside a service: `service<srv.XService>()` for another module's service · `plug(AdapterClass)` or `plug(StorageAdaptorRole)` for an adapter · `use<T>()` only to reach an `option.ts`-registered legacy singleton · `env(...)` for config.
-- **`memory(...)` takes a scalar or model class, not only a primitive** — `memory(Map, { of: CallStateInput })` serializes through the constant and travels as JSON text, so the Redis and sqlite-backed caches round-trip the same declaration. Never hand-encode JSON into a `String` memory.
+- **`memory(...)` takes a scalar or model class, not only a primitive** — `memory(Map, { of: CallStateInput })` serializes through the constant and travels as JSON text, so the Redis and sqlite-backed caches round-trip the same declaration. Never hand-encode JSON into a `String` memory. A memory is scoped to the service or adaptor that declares it; `ttl` (milliseconds) sets how long each write lives unless the `set` call names its own `expireAt`, and a `Map` entry expires on its own.
 
 ### Adapters — `adapt()` And `plug()`
 
@@ -838,10 +842,11 @@ shape, so `cascade` never means "related" — it means one of exactly these:
 - Dynamic segments use `[id]`; route groups use directories like `(user)`, `(public)`, `(tab)`, or `(detail)`.
 - **A route file exports one thing**: `export default page()…render(…)` for a page, `layout()…render(…)` for a
   `_layout.tsx`, `rootLayout()…render(…)` for the app's (or a basePath's) root `_layout.tsx`. Every route setting
-  is a stage of the chain — `.param()`, `.search()`, `.config()`, `.head()` / `.metadata()`, `.loading()`;
-  `.notFound()` / `.error()` on a layout; `.fonts()` / `.theme()` / `.manifest()` / `.reconnect()` / `.wsConnect()`
-  / `.layoutStyle()` / `.gaTrackingId()` on the root layout; `.prompt()` on a page. A named export beside the chain,
-  or `page()` in a `_layout.tsx`, fails the build.
+  is a stage of the chain — `.param()`, `.search()`, `.config()`, `.head()`, `.loading()`; `.notFound()` /
+  `.error()` on a layout; `.fonts()` / `.theme()` / `.manifest()` / `.reconnect()` / `.wsConnect()` /
+  `.layoutStyle()` on the root layout; `.prompt()` on a page. A named export beside the chain, or `page()` in a
+  `_layout.tsx`, fails the build. `.head()` takes JSX — `<title>`, `<meta>`, `<link>` — or a function of the
+  route's args returning it; there is no metadata object, and analytics is the app's own script, not a stage.
 - **A page names every `[x]` segment of its path with `.param("x", Type)`** and reads a query key only through
   `.search("k", Type)`. Values arrive typed — `ID`/`String` → string, `Int`/`Float` → number, `Boolean`, `Date` →
   Dayjs, an `enumOf` class → its union, `[T]` → array — a path value the type refuses answers not-found, and a
@@ -929,11 +934,14 @@ when two shapes disagree.
 - `children: any` — newer files use `children: ReactNode`.
 - Hard-coded API keys or secrets in source; they belong in `option.ts` or env.
 - Large blocks of commented-out code left in place.
-- Cross-store writes through a `RootStore` cast — it collides with the Bun SSR-bundler segfault.
 - Stale `// TODO: Implement …` comments above implemented methods.
 - `{cond && <X/>}` in JSX, hard-coded Korean bypassing `l()`, and `window.alert(...)` for user feedback.
 - Bare `/* eslint-disable */` blocks — use `// biome-ignore lint/<rule>: <why>`.
 - Raw palette grays such as `text-gray-400` instead of the semantic tokens (`text-foreground/70`).
+
+A store calling `(this as unknown as RootStore).<action>()` or `.set({ … })` over
+`import type { RootStore } from "../st"` is **not** one of these — it is the sanctioned way to reach another store's
+actions and state (see `<model>.store.ts` above).
 
 ## Secrets And Env Safety (`.env`, `infra/**`, `*secret*`, `*credential*`)
 

@@ -19,102 +19,212 @@
 
 Authorization
 
-You are shipping the order list for a shop that has more than one branch. The page renders, every row on screen belongs to the right branch, and it all looks correct — because the branch id came out of the URL. Then a customer edits the URL, and the same endpoint hands them somebody else's orders.
+What the middleware leaves on the call. A guest's account holds neither `self` nor `me`.
 
-Authorization answers two questions in front of every endpoint: who is calling, and may they do this? Middleware reads the caller off the request, guards decide, and internal arguments hand the handler values the client never typed. The same three steps run whether the call arrived over HTTP, a websocket frame, or the MCP endpoint.
+The two identities an account can carry: `self` is the user, `me` is the admin.
+
+What a guard needs to answer: the caller alone (`account`) or the call's arguments (`resource`).
+
+An AI model calling through the MCP endpoint or on an OAuth token, instead of a person.
+
+The root slice: an admin list API that takes a filter name and its args. Always `Admin`.
+
+The single-document reads `icecreamOrder(id)` and `lightIcecreamOrder(id)`.
+
+`createIcecreamOrder`, `updateIcecreamOrder` and `removeIcecreamOrder` together.
+
+Overrides `cru` for `createIcecreamOrder` alone.
+
+Overrides `cru` for `updateIcecreamOrder` alone.
+
+Overrides `cru` for `removeIcecreamOrder` alone.
+
+Guest
+
+Passes everyone, guests and agents included. For a slice `get:`, never a mutation.
+
+Refuses everyone: the explicit way to close a generated endpoint.
+
+Any signed-in caller: `user`, `admin` or `superAdmin`.
+
+The `user` role only. An admin who is not also a user is refused.
+
+`admin` or `superAdmin`. The admin-console guard, and every slice's `root:`.
+
+`superAdmin` only.
+
+The roles of `Every`, but `resource` scope: judged at call time, never in a listing.
+
+`resource` scope. The user the `userId` argument names, or an admin; no `userId` refuses all.
+
+Passes any person and refuses an agent. Pair it with a role guard: `guards: [Every, Person]`.
+
+Role guard: no identity at all
+
+An MCP client reads this status as “obtain a token”.
+
+Role guard: signed in, lacks the role
+
+Names the roles required and the roles the caller holds.
+
+Any guard: returns `false`
+
+Names the guard that refused, by its `static name`.
+
+Internal argument: a required `.with()` value is `null`
+
+Names the missing argument; mark it `{ nullable: true }` if the handler can do without it.
+
+The verdict reads the caller and nothing about the call, so it runs with no arguments. An agent listing uses it to hide what this caller certainly cannot use.
+
+The signed-in user, or `null`. The one to reach for in a user-facing endpoint.
+
+The signed-in admin, or `null`. `Self` and `Me` are two identities on one account, not two roles.
+
+The whole account, for a handler that branches on both identities at once.
+
+`true` when an agent drives the call. It narrows what the call does, not who may make it.
+
+The workspace scaffold writes it to `srvkit/SessionInternalArg.ts`, for handlers needing only an id.
+
+From `akanjs/signal`: the caller's IP, the websocket, and the raw HTTP request and response.
+
+Decided by the guards
+
+A real guard publishes the endpoint, and the same guard judges every call on both.
+
+no guards
+
+Anyone may call it over HTTP, and it is never published. Write `guards: [Public]` if that is the intent.
+
+Anonymous access, written down: a query publishes.
+
+Not published: `[Public]` on a mutation is having no guard, spelled out.
+
+`Person` sets `static agents = false`: the act is gone from the catalogue, not hidden per caller.
+
+Your own choice
+
+Off the shelf, guards untouched. Curation, not authorization: HTTP serves it as before.
+
+The same on `slice()`, as a map keyed like its `guards` map.
+
+You ship the order list for a shop with several branches, and every row looks right because the branch id comes from the URL. Then a customer edits the URL, and the same endpoint hands them somebody else's orders.
+
+Authorization answers two questions in front of every endpoint: who is calling, and may they do this? Three steps answer them, the same over HTTP, a websocket or the MCP endpoint:
+
+Words used on this page
+
+Term
 
 One call, from the door to the handler
 
+Request
+
+Arguments parsed
+
+Middleware
+
+guards array
+
+in declaration order
+
+Internal arguments
+
+exec() handler
+
+hidden and secret fields masked
+
+first refusal
+
 The Guards That Ship
 
-A guard is a class with one method. Two places ship them: akanjs/signal carries the two that decide nothing about identity, and @libs/shared/srvkit carries the role ladder every app mounting libs/shared inherits. Name them in the slice guards map and in every custom endpoint's own guards array.
+Keys of the slice guards map
 
-Every slice() takes an explicit guards map as its second argument and root: is always Admin — the root slice is an admin API that takes a query key and its arguments. A custom endpoint never inherits the slice default; it names its own array, and an empty one is the hole above. Here is what is on the shelf:
+Each key guards the endpoints the slice generates for the model:
+
+Guards on the shelf
 
 Guard
 
-The role guards share one helper, and it separates the two refusals a caller can hit: no identity at all answers 401, which is the status an MCP client reads as “obtain a token”, and a signed-in caller who merely lacks the role answers 403 naming the roles required and the roles held. Keep the array beside the endpoint so a reader can see who may call it without opening another file.
+Passes
+
+Refused
+
+401 or 403
+
+Which status a refused call gets depends on where it was refused:
+
+Refused because
+
+Status
+
+What the caller learns
 
 Declare The Scope
 
-Every guard class also declares static scope: GuardScope, and it is required with no default. The value says what the guard needs in order to answer, which is what lets an agent catalogue evaluate some guards before a call exists.
+Marking it wrong
 
-Two values, and the difference is what the method touches:
+Mistake
 
-The verdict reads the caller and nothing about the call, so it can be evaluated with no arguments. That is what lets an agent listing hide what this caller certainly cannot use.
+What happens
 
-It reads the call's arguments through context.getArg() and fails closed without them, so it is never evaluated for a listing. The entry stays visible and the call is stopped at call time.
+A resource guard marked `"account"`
 
-Getting it wrong is not a type error. Both strings satisfy GuardScope on any guard, and nothing in the type system knows whether canPass reaches for an argument — so the compiler accepts either marking on either kind of guard. The two mistakes fail differently, and neither one looks like a mistake from the call site.
+A listing runs it argument-free; it refuses or throws and hides the entry from legitimate callers.
 
-⚠️ The two failure modes:
+An account guard marked `"resource"`
 
-A resource guard marked "account" throws when a listing evaluates it with no arguments. The entry is hidden from every caller and the guard is named once per endpoint in the boot log as mismarked.
-
-An account guard marked "resource" filters nothing. The endpoint is listed to every caller, including one it will refuse, and is only stopped at call time.
-
-The rule of thumb is short: SignedIn, Admin and every role check are "account"; every Can<Verb><Model> is "resource".
+It filters nothing: the entry is listed to every caller, even one it will refuse at call time.
 
 Resource Guards Fail Closed
 
-A role guard answers who you are; it cannot answer whether this record is yours. That is a Can<Verb><Model> class in srvkit/guards.ts, and it loads the record the call names before it decides.
+1. Write the guard
 
 Four things in that body are the pattern, not this model's details:
 
-Admin bypass goes first
+Three more hold for every guard you write, not only resource guards:
 
-an admin never owns the record, so an ownership test placed above the bypass locks the admin console out of its own data
+2. Name it on the endpoint
 
-No resource named ⇒ false
-
-a missing argument is the one case where returning true would pass every call that forgot to send one
-
-A load that throws ⇒ warn, then false
-
-a database hiccup must not read as permission granted, and the warn is what tells you the guard is refusing for the wrong reason
-
-it looks like dead code next to the class name, but fetch serializes guard names onto every endpoint and the API explorer filters on them — deleting it breaks that UI
-
-Guards ship with the library that owns the model and are imported by that library's own signals, so an app that mounts the library inherits the authorization and cannot forget it. The service then re-checks ownership even though the guard already gated the call — two independent gates, because a service method is also reachable from another service, a cron trigger, and a queue job, none of which passed through a guard.
+Two independent gates
 
 The Acting User Comes From The Server
 
-A guard decides whether the call runs at all. An internal argument tells the handler who is running it, and it never comes off the wire: .with(...) resolves the value from the account the middleware already verified, after the guards have passed.
+Two endpoints that read the caller:
 
-Four internal arguments ship from @libs/shared/srvkit, and an app adds its own in srvkit/ when it needs a narrower shape:
+Internal arguments on the shelf
 
-the signed-in user, or null. This is the one to reach for in a user-facing endpoint.
-
-the signed-in admin, or null. Self and Me are separate identities on one account, not two roles on one identity.
-
-the whole account object, for a handler that has to branch on both identities at once.
-
-a boolean — is a model driving this call, rather than a person. Narrows what the call sets in motion without changing who may make it.
-
-the app scaffold writes this one into srvkit/ for handlers that only need the id. Write your own the same way — a class with one getArg(context).
+Internal argument
 
 Guards Are Also The Agent Decision
 
-Every signal is served to AI agents as an MCP server on POST /mcp, mounted by default. There is no per-endpoint opt-in and nothing extra to write: the guards are already the authorization decision, so a second switch would say nothing they do not — while guaranteeing that every endpoint added later is invisible to agents until somebody remembers it.
+Guards are already the authorization decision, so a second switch would add nothing. It would only keep every endpoint added later invisible to agents until somebody remembered to flip it.
 
-What the guards decide for agents:
+Endpoint
 
-An endpoint that declares a real guard is published. An endpoint that declares none is refused, and the boot log names it: write guards: [Public] if anonymous access is the intent.
+Served
 
-A mutation whose only guard is Public is refused too — [Public] on a mutation is having no guard, spelled out.
+Left out
 
-A guard that admits no model at all — Person — declares static agents = false, and the catalogue then refuses every endpoint it guards outright, so the act is absent from the document rather than hidden per caller.
+Related pages
 
-mcp: false takes an endpoint off the shelf without touching its guards. That is curation, not authorization — HTTP serves it exactly as before.
+MCP Server
+
+Resource URIs, OAuth metadata, rate limits and the rest of the wire.
+
+OAuth For Agents
+
+How an agent signs in and gets the token these guards judge.
 
 ## Code Examples
 
 ### apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts
 
 ```ts
-import { Admin, Every, Self, SelfOrAdmin } from "@libs/shared/srvkit";
+import { Admin, Every, Self } from "@libs/shared/srvkit";
 import { ID } from "akanjs/base";
-import { endpoint, internal, Public, slice } from "akanjs/signal";
+import { endpoint, internal, slice } from "akanjs/signal";
 
 import * as cnst from "../cnst";
 import * as srv from "../srv";
@@ -123,16 +233,16 @@ export class IcecreamOrderInternal extends internal(srv.icecreamOrder, () => ({}
 
 export class IcecreamOrderSlice extends slice(
   srv.icecreamOrder,
-  { guards: { root: Admin, get: Public, cru: SelfOrAdmin } },
+  { guards: { root: Admin, get: Admin, cru: Admin } }, // [!code highlight]
   () => ({}),
 ) {}
 
 export class IcecreamOrderEndpoint extends endpoint(srv.icecreamOrder, ({ mutation }) => ({
-  serveIcecreamOrder: mutation(cnst.IcecreamOrder, { guards: [Every] })
+  cancelIcecreamOrder: mutation(cnst.IcecreamOrder, { guards: [Every] }) // [!code highlight]
     .param("icecreamOrderId", ID)
     .with(Self)
     .exec(async function (icecreamOrderId, self) {
-      return await this.icecreamOrderService.serve(icecreamOrderId, self.id);
+      return await this.icecreamOrderService.cancel(icecreamOrderId, self.id);
     }),
 })) {}
 ```
@@ -170,10 +280,10 @@ export class SignedIn implements Guard { // [!code collapse:9]
   }
 }
 
-export class CanServeIcecreamOrder implements Guard { // [!code ++:21]
-  static name = "CanServeIcecreamOrder";
+export class CanCancelIcecreamOrder implements Guard { // [!code ++:21]
+  static name = "CanCancelIcecreamOrder";
   static scope: GuardScope = "resource";
-  static #logger = new Logger("CanServeIcecreamOrder");
+  static #logger = new Logger("CanCancelIcecreamOrder");
 
   async canPass(context: SignalContext): Promise<boolean> {
     const account = context.get<{ self?: { id: string }; me?: { id: string } }>("account");
@@ -186,11 +296,32 @@ export class CanServeIcecreamOrder implements Guard { // [!code ++:21]
       const icecreamOrder = await service.getIcecreamOrder(icecreamOrderId);
       return icecreamOrder.owner === selfId;
     } catch (error) {
-      CanServeIcecreamOrder.#logger.warn(`serve guard could not load ${icecreamOrderId}: ${String(error)}`);
+      CanCancelIcecreamOrder.#logger.warn(`cancel guard could not load ${icecreamOrderId}: ${String(error)}`);
       return false;
     }
   }
 }
+```
+
+### apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts
+
+```ts
+import { CanCancelIcecreamOrder } from "@apps/koyo/srvkit"; // [!code ++]
+import { Every, Self } from "@libs/shared/srvkit";
+import { ID } from "akanjs/base";
+import { endpoint } from "akanjs/signal";
+
+import * as cnst from "../cnst";
+import * as srv from "../srv";
+
+export class IcecreamOrderEndpoint extends endpoint(srv.icecreamOrder, ({ mutation }) => ({
+  cancelIcecreamOrder: mutation(cnst.IcecreamOrder, { guards: [Every, CanCancelIcecreamOrder] }) // [!code highlight]
+    .param("icecreamOrderId", ID)
+    .with(Self)
+    .exec(async function (icecreamOrderId, self) {
+      return await this.icecreamOrderService.cancel(icecreamOrderId, self.id);
+    }),
+})) {}
 ```
 
 ### apps/koyo/lib/icecreamOrder/icecreamOrder.signal.ts
@@ -201,7 +332,6 @@ import { ID } from "akanjs/base";
 import { endpoint } from "akanjs/signal";
 
 import * as cnst from "../cnst";
-import { Err } from "../dict";
 import * as srv from "../srv";
 
 export class IcecreamOrderEndpoint extends endpoint(srv.icecreamOrder, ({ query, mutation }) => ({
@@ -215,8 +345,10 @@ export class IcecreamOrderEndpoint extends endpoint(srv.icecreamOrder, ({ query,
     .with(Me, { nullable: true }) // [!code highlight]
     .with(AgentCall)
     .exec(async function (icecreamOrderId, me, isAgentCall) {
-      if (isAgentCall) throw new Err("koyo.error.refundNeedsPerson");
-      return await this.icecreamOrderService.refund(icecreamOrderId, !!me);
+      return await this.icecreamOrderService.refund(icecreamOrderId, {
+        byAdmin: !!me,
+        notifyCustomer: !isAgentCall,
+      });
     }),
 })) {}
 ```

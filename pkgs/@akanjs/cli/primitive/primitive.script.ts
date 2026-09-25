@@ -9,9 +9,11 @@ import {
   coerceFieldDefault,
   compactDiagnostics,
   createPrimitiveWriteReport,
+  ensureBaseImport,
   ensureBaseTypeImport,
   ensureConstantTypeImport,
   ensureEnumImport,
+  ensureNamedImport,
   type FactoryParamPlan,
   fieldExpression,
   generatedFilesForSync,
@@ -228,6 +230,8 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
       const defaultCoercion = coerceFieldDefault(input.type, input.defaultValue);
       if (defaultCoercion.diagnostic) diagnostics.push(defaultCoercion.diagnostic);
       constantContent = ensureBaseTypeImport(constantContent, input.type);
+      if (input.type === "Date" && defaultCoercion.expression)
+        constantContent = ensureBaseImport(constantContent, "dayjs");
     }
     if (enumValues) {
       const defaultCoercion = coerceFieldDefault("enum", input.defaultValue, { enumValues });
@@ -404,7 +408,7 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
         ? {
             className: `${moduleClassName}Endpoint`,
             entryLine: [
-              `${name}: mutation(Boolean)`,
+              `${name}: mutation(Boolean, { guards: [None] })`,
               `    .exec(async function () {`,
               `      return await this.${serviceRef}Service.${name}();`,
               `    }),`,
@@ -444,7 +448,7 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
           ? {
               className: `${moduleClassName}Slice`,
               entryLine: [
-                `${name}: init()`,
+                `${name}: init({ guards: [None] })`,
                 `    .exec(function () {`,
                 `      return this.${serviceRef}Service.${queryName}();`,
                 `    }),`,
@@ -550,13 +554,18 @@ export class PrimitiveScript extends script("primitive", [ModuleScript]) {
     const nextServiceContent = serviceMethodExists
       ? serviceContent
       : insertClassMethod(serviceContent, serviceClassName, spec.serviceMethod.block);
-    const nextSignalContent = insertSignalFactoryEntry(
+    // Closed until the author names the guard: `None` refuses every caller, and an entry without guards is the
+    // one AGENTS.md forbids — it serves unguarded over HTTP and never reaches MCP.
+    const insertedSignalContent = insertSignalFactoryEntry(
       signalContent,
       spec.signal.className,
       spec.entryName,
       spec.signal.entryLine,
       spec.signal.param,
     );
+    const nextSignalContent = insertedSignalContent
+      ? ensureNamedImport(insertedSignalContent, "akanjs/signal", "None")
+      : insertedSignalContent;
     if (!nextServiceContent) {
       diagnostics.push({
         severity: "error",

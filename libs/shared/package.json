@@ -17,7 +17,7 @@
     "dayjs": "^1.11.13",
     "file-saver": "^2.0.5",
     "jose": "^6.2.3",
-    "lexical": "0.48.0",
+    "lexical": "^0.51.0",
     "mermaid": "^11.15.0",
     "react": "19.2.7",
     "react-daum-postcode": "^4.0.0",

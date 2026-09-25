@@ -80,6 +80,7 @@ export const Image = ({
     return (
       <CsrImage
         src={src}
+        alt={alt}
         file={file}
         abstractData={abstractData}
         className={className}

@@ -35,6 +35,29 @@ describe("Akan console", () => {
     expect(() => assertAkanConsoleAllowed(makeEnv("main", "cloud"))).not.toThrow();
   });
 
+  test("reads the deployment from the process env when the caller passes none", () => {
+    const deployment = {
+      AKAN_PUBLIC_ENV: process.env.AKAN_PUBLIC_ENV,
+      AKAN_PUBLIC_OPERATION_MODE: process.env.AKAN_PUBLIC_OPERATION_MODE,
+    };
+    delete process.env.AKAN_CONSOLE;
+    delete process.env.AKAN_PUBLIC_OPERATION_MODE;
+    process.env.NODE_ENV = "development";
+    try {
+      process.env.AKAN_PUBLIC_ENV = "local";
+      expect(() => assertAkanConsoleAllowed()).not.toThrow();
+      process.env.AKAN_PUBLIC_ENV = "main";
+      expect(() => assertAkanConsoleAllowed()).toThrow("Akan console is disabled");
+      expect(() => assertAkanConsoleAllowed({})).toThrow("Akan console is disabled");
+      process.env.AKAN_PUBLIC_ENV = "debug";
+      expect(() => assertAkanConsoleAllowed()).toThrow("Akan console is disabled");
+    } finally {
+      for (const [key, value] of Object.entries(deployment))
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+    }
+  });
+
   test("lists public prototype methods", () => {
     class Parent {
       parentMethod() {

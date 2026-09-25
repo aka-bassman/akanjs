@@ -79,28 +79,22 @@ export class Stock extends via((field) => ({
               ko: `Stock 스칼라 구조를 이해해봅시다:`,
             })}
           </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-primary">📦</span>
-              <div>
-                <strong>StockType</strong>:{" "}
-                {l.trans({
-                  en: "An enum combining yogurt ice cream with all available toppings. This allows tracking inventory for all product types in one system.",
-                  ko: "요거트 아이스크림과 모든 토핑을 결합한 열거형입니다. 이를 통해 모든 제품 유형의 재고를 하나의 시스템에서 추적할 수 있습니다.",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">📊</span>
-              <div>
-                <strong>totalQty / currentQty</strong>:{" "}
-                {l.trans({
-                  en: "Track both the starting amount and current remaining quantity. This helps calculate usage and identify when restocking is needed.",
-                  ko: "시작 수량과 현재 남은 수량을 모두 추적합니다. 이를 통해 사용량을 계산하고 재입고가 필요한 시점을 파악할 수 있습니다.",
-                })}
-              </div>
-            </div>
-          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              <strong>StockType</strong>:{" "}
+              {l.trans({
+                en: "An enum combining yogurt ice cream with all available toppings. This allows tracking inventory for all product types in one system.",
+                ko: "요거트 아이스크림과 모든 토핑을 결합한 열거형입니다. 이를 통해 모든 제품 유형의 재고를 하나의 시스템에서 추적할 수 있습니다.",
+              })}
+            </li>
+            <li>
+              <strong>totalQty / currentQty</strong>:{" "}
+              {l.trans({
+                en: "Track both the starting amount and current remaining quantity. This helps calculate usage and identify when restocking is needed.",
+                ko: "시작 수량과 현재 남은 수량을 모두 추적합니다. 이를 통해 사용량을 계산하고 재입고가 필요한 시점을 파악할 수 있습니다.",
+              })}
+            </li>
+          </ul>
           <div>
             {l.trans({
               en: `Add dictionary entries for the scalar. Notice how we reuse the topping translations from the icecreamOrder dictionary:`,
@@ -203,8 +197,7 @@ export class InventoryInsight extends via(Inventory, (field) => ({})) {}
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">📋</span>
+              <div className="mb-2">
                 <strong className="text-primary">{"stocks: field([Stock])"}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -215,8 +208,7 @@ export class InventoryInsight extends via(Inventory, (field) => ({})) {}
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">📅</span>
+              <div className="mb-2">
                 <strong className="text-primary">at</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -354,8 +346,7 @@ export class InventoryModel extends into(Inventory, InventoryFilter, cnst.invent
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">📉</span>
+              <div className="mb-2">
                 <strong className="text-primary">useStock / useStocks</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -366,8 +357,7 @@ export class InventoryModel extends into(Inventory, InventoryFilter, cnst.invent
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🔄</span>
+              <div className="mb-2">
                 <strong className="text-primary">refill</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -378,8 +368,7 @@ export class InventoryModel extends into(Inventory, InventoryFilter, cnst.invent
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">📅</span>
+              <div className="mb-2">
                 <strong className="text-primary">generateTodaysInventory</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -428,8 +417,8 @@ export class InventoryService extends serve(db.inventory, ({ use, service }) => 
         <Docs.Description>
           <div>
             {l.trans({
-              en: `Now comes the magic - connecting the inventory system to our existing ice cream order flow. When a customer places an order, the system should automatically deduct the used ingredients from inventory. This is like how a real POS system updates stock counts in real-time as sales are made.`,
-              ko: `이제 마법이 시작됩니다 - 재고 시스템을 기존 아이스크림 주문 흐름에 연결합니다. 고객이 주문을 하면 시스템이 자동으로 사용된 재료를 재고에서 차감해야 합니다. 이는 실제 POS 시스템이 판매가 이루어질 때 실시간으로 재고 수량을 업데이트하는 것과 같습니다.`,
+              en: `Now let's connect the inventory system to our existing ice cream order flow. When a customer places an order, the system should automatically deduct the used ingredients from inventory. This is like how a real POS system updates stock counts in real-time as sales are made.`,
+              ko: `이제 재고 시스템을 기존 아이스크림 주문 흐름에 연결합니다. 고객이 주문을 하면 시스템이 자동으로 사용된 재료를 재고에서 차감해야 합니다. 이는 실제 POS 시스템이 판매가 이루어질 때 실시간으로 재고 수량을 업데이트하는 것과 같습니다.`,
             })}
           </div>
           <div>
@@ -491,38 +480,29 @@ export class IcecreamOrderService extends serve(db.icecreamOrder, ({ use, servic
               ko: `이 통합의 핵심 측면:`,
             })}
           </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-primary">🔌</span>
-              <div>
-                <strong>{"service<srv.InventoryService>()"}</strong>:{" "}
-                {l.trans({
-                  en: "Dependency injection allows IcecreamOrderService to access InventoryService methods",
-                  ko: "의존성 주입을 통해 IcecreamOrderService가 InventoryService 메서드에 접근할 수 있습니다",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">⚡</span>
-              <div>
-                <strong>_preCreate</strong>:{" "}
-                {l.trans({
-                  en: "A lifecycle hook that runs before creating a new order. Perfect for validation and side effects like inventory deduction.",
-                  ko: "새 주문을 생성하기 전에 실행되는 라이프사이클 훅입니다. 검증과 재고 차감 같은 부수 효과에 완벽합니다.",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">🍦</span>
-              <div>
-                <strong>{l.trans({ en: "Usage Calculation", ko: "사용량 계산" })}</strong>:{" "}
-                {l.trans({
-                  en: "The order size determines yogurt usage, and each topping uses 1 unit from inventory.",
-                  ko: "주문 사이즈가 요거트 사용량을 결정하고, 각 토핑은 재고에서 1단위를 사용합니다.",
-                })}
-              </div>
-            </div>
-          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              <strong>{"service<srv.InventoryService>()"}</strong>:{" "}
+              {l.trans({
+                en: "Dependency injection allows IcecreamOrderService to access InventoryService methods",
+                ko: "의존성 주입을 통해 IcecreamOrderService가 InventoryService 메서드에 접근할 수 있습니다",
+              })}
+            </li>
+            <li>
+              <strong>_preCreate</strong>:{" "}
+              {l.trans({
+                en: "A lifecycle hook that runs before creating a new order. Used for validation and side effects like inventory deduction.",
+                ko: "새 주문을 생성하기 전에 실행되는 라이프사이클 훅입니다. 검증과 재고 차감 같은 부수 효과에 사용됩니다.",
+              })}
+            </li>
+            <li>
+              <strong>{l.trans({ en: "Usage Calculation", ko: "사용량 계산" })}</strong>:{" "}
+              {l.trans({
+                en: "The order size determines yogurt usage, and each topping uses 1 unit from inventory.",
+                ko: "주문 사이즈가 요거트 사용량을 결정하고, 각 토핑은 재고에서 1단위를 사용합니다.",
+              })}
+            </li>
+          </ul>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -663,8 +643,8 @@ export class InventoryStore extends store(sig.inventory, () => ({
         <Docs.Description>
           <div>
             {l.trans({
-              en: `Now let's bring everything together in the UI. The customer-facing order form needs to check inventory and disable options that are out of stock. Staff also need a dashboard to monitor inventory levels and refill when needed. This creates a complete inventory management system!`,
-              ko: `이제 모든 것을 UI에서 하나로 모아봅시다. 고객용 주문 양식은 재고를 확인하고 품절된 옵션을 비활성화해야 합니다. 직원도 재고 수준을 모니터링하고 필요할 때 보충할 수 있는 대시보드가 필요합니다. 이것으로 완전한 재고 관리 시스템이 만들어집니다!`,
+              en: `Now let's bring everything together in the UI. The customer-facing order form needs to check inventory and disable options that are out of stock. Staff also need a dashboard to monitor inventory levels and refill when needed.`,
+              ko: `이제 모든 것을 UI에서 하나로 모아봅시다. 고객용 주문 양식은 재고를 확인하고 품절된 옵션을 비활성화해야 합니다. 직원도 재고 수준을 모니터링하고 필요할 때 보충할 수 있는 대시보드가 필요합니다.`,
             })}
           </div>
           <div>
@@ -771,8 +751,7 @@ export const General = ({ className, showServeType = true }: GeneralProps) => {
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🔄</span>
+              <div className="mb-2">
                 <strong className="text-primary">{"st.use.todaysInventory()"}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -783,8 +762,7 @@ export const General = ({ className, showServeType = true }: GeneralProps) => {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🚫</span>
+              <div className="mb-2">
                 <strong className="text-primary">{l.trans({ en: "Out of Stock Check", ko: "품절 확인" })}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -795,8 +773,7 @@ export const General = ({ className, showServeType = true }: GeneralProps) => {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">⚠️</span>
+              <div className="mb-2">
                 <strong className="text-primary">{"disabled: !isInStock"}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -1101,59 +1078,10 @@ export default page().render(() => {
   );
 });`}
           />
-          <div className="my-6 rounded-lg bg-linear-to-r from-background to-border p-6">
-            <div className="mb-3 font-bold text-lg text-primary">
-              {l.trans({ en: "🎉 What You've Accomplished:", ko: "🎉 달성한 것들:" })}
-            </div>
-            <ul className="space-y-2 text-foreground/70 text-sm">
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Created a reusable Stock scalar for inventory items",
-                  ko: "재고 아이템을 위한 재사용 가능한 Stock 스칼라 생성",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Built an Inventory module with daily records",
-                  ko: "일일 기록이 있는 Inventory 모듈 구축",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Implemented stock usage and refill business logic",
-                  ko: "재고 사용 및 보충 비즈니스 로직 구현",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Connected inventory to order creation flow",
-                  ko: "재고를 주문 생성 흐름에 연결",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Created visual dashboard with real-time updates",
-                  ko: "실시간 업데이트가 있는 시각적 대시보드 생성",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Disabled out-of-stock options in customer UI",
-                  ko: "고객 UI에서 품절 옵션 비활성화",
-                })}
-              </li>
-            </ul>
-          </div>
           <div>
             {l.trans({
-              en: `In the next tutorial, we'll explore Insight - a powerful feature for aggregating and analyzing data across your models. This will allow you to create analytics dashboards and gain business intelligence from your ice cream shop data.`,
-              ko: `다음 튜토리얼에서는 모델 전체에서 데이터를 집계하고 분석하는 강력한 기능인 Insight를 살펴볼 것입니다. 이를 통해 분석 대시보드를 만들고 아이스크림 가게 데이터에서 비즈니스 인사이트를 얻을 수 있게 됩니다.`,
+              en: `In the next tutorial, we'll explore Insight, which aggregates and analyzes data across your models. This will allow you to create analytics dashboards and gain business intelligence from your ice cream shop data.`,
+              ko: `다음 튜토리얼에서는 모델 전체에서 데이터를 집계하고 분석하는 Insight를 살펴볼 것입니다. 이를 통해 분석 대시보드를 만들고 아이스크림 가게 데이터에서 비즈니스 인사이트를 얻을 수 있게 됩니다.`,
             })}
           </div>
         </Docs.Description>

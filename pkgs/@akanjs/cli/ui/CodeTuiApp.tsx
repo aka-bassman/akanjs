@@ -103,6 +103,18 @@ export const promptMarkWidth = 2;
 const pasteOpen = "[200~";
 const pasteClose = "[201~";
 
+/**
+ * What a terminal sends for shift+enter when it cannot report the key itself, as one event.
+ *
+ * The usual binding sends the two characters a shell reads as a line continuation — `\` then the return. The
+ * backslash stops Ink parsing the pair as a return, so it arrives with every key flag false and its whole
+ * text in `input`; unmatched here it falls to the type-anything branch, which is how the backslash ends up in
+ * the prompt with a line break after it. The other spelling of the same binding puts an `ESC` between the
+ * two, and that one Ink does split — the backslash is typed and the return arrives as `meta+return`, which is
+ * why the backslash is removed at {@link CodeTuiEditor.newline} rather than here.
+ */
+const continuation = /^[^\r\n]*\\(?:\r\n|[\r\n])$/;
+
 const Styled = ({ span }: { span: CodeTuiSpan }) => (
   <Text
     bold={span.bold}
@@ -267,6 +279,12 @@ export const CodeTuiApp = ({ actions }: { actions: CodeTuiActions }) => {
     // a VS Code or iTerm2 key binding is written as, and a bare line feed, which is byte-identical to ^j.
     if (key.return && (key.shift || key.meta)) return actions.newline();
     if (key.ctrl && input === "j") return actions.newline();
+    // Everything but the return is typed, and the backslash with it, so that one rule removes it: the line
+    // continuation a binding sends and one the person actually typed then differ by the character before it.
+    if (continuation.test(input)) {
+      actions.type(input.replace(/[\r\n]+$/, ""));
+      return actions.newline();
+    }
     if (key.return) return actions.submit();
     if (key.backspace || key.delete) return actions.edit(key.meta ? "deleteWord" : "backspace");
     if (key.ctrl && input === "w") return actions.edit("deleteWord");

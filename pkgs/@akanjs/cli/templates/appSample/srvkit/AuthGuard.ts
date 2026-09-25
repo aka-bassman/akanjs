@@ -21,7 +21,10 @@ export class SignedIn implements Guard {
 
   canPass(context: SignalContext): boolean {
     // Reads the account the middleware resolved, so the same guard answers over HTTP, a websocket and MCP alike.
-    return !!context.get<{ id?: string }>("account");
+    // A guest still has an account — libs/shared resolves one to \`{ appName, environment }\` — so only an
+    // identity on it proves a sign-in: your own middleware's \`id\`, or libs/shared's \`self\` (user) / \`me\` (admin).
+    const account = context.get<{ id?: string; self?: { id?: string }; me?: { id?: string } }>("account");
+    return !!(account?.id ?? account?.self?.id ?? account?.me?.id);
   }
 }
 

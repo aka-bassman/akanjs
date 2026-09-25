@@ -20,131 +20,293 @@
 
 Agent Chat
 
+turn
+
+Everything the agent says and does between one user message and the next.
+
+transcript
+
+The conversation so far, kept in the browser tab and sent to the model every turn.
+
+relay
+
+The `runAgentTurn` endpoint, which passes the transcript to the LLM and never runs a tool.
+
+tool
+
+One action a component publishes with `st.tool`, usually the handler its button calls.
+
+approval card
+
+A card that holds a call until the user approves it.
+
+slot
+
+One part of the chat you can replace in `_overrides.tsx`.
+
+reference
+
+Data the user pointed at with `@`, carried inside their message.
+
+A section wrapped in `Agent.Zone`, with a conversation of its own.
+
+Which machine ran the refund?
+
+The customer's browser tab, through the handler the Refund button calls.
+
+Whose credential did it carry?
+
+The signed-in user's own, exactly like a click on that page.
+
+What kept it off someone else's order?
+
+The guards every call passes, plus the approval card when the tool asks for one.
+
+What did the server do?
+
+`runAgentTurn` forwarded the transcript and tool descriptions and returned one answer.
+
+What did the server keep?
+
+Nothing: it holds no session and stores no transcript.
+
+Opens an internal path through the same router `Link` uses.
+
+Returns to the previous page in this session's history.
+
+Reads the rendered screen as compact text.
+
+Reads one store key the screen subscribed, masked by its model.
+
+Scrolls one thing into view and flashes it, to show the user where it is.
+
+Arguments Are Checked First
+
+Before the card is parked, never while it renders. A bad argument reaches the model as a refusal it can fix; a throw in your component would take the chat panel down.
+
+It Waits Outside The Tool Queue
+
+A form in front of a person is not work. Holding the execution lock through it would freeze every other agent on the page behind one unanswered card.
+
+Your own model name, the vocabulary your published tools already speak.
+
+What this group of rows is called in the `@` menu, so pass it through `l()`.
+
+The model class that masks the value before it leaves the browser.
+
+Your query for the menu rows, whose `signal` aborts when the user keeps typing.
+
+Loads the document, once, when the user picks a row.
+
+Sends, parks the message during a turn, or picks the row when a menu is open.
+
+Adds a new line.
+
+Walks what was sent from the first or last line, or moves the selection in an open menu.
+
+Completes the selected / command, or picks the selected @ row.
+
+Hides an open menu; otherwise closes the panel.
+
+Opens the chat and focuses the composer, unless `shortcut={false}`.
+
+Writes a local note: shown in the transcript, never sent to the model.
+
+Records a host-side failure, such as a command that threw, as an error in the transcript.
+
+Resends only the last user message and keeps everything above it.
+
+`sessionStorage`, which survives a refresh but dies with the tab, so no shared PC keeps it.
+
+`localStorage`, for a conversation that should outlive the tab.
+
+Your own storage key; the default is `akan.agent.<appName>`, plus the zone path in a zone.
+
+Your own server, through three functions you write.
+
+Every store
+
+Restores into an untouched chat only
+
+Mounted with the zone, it restores; mounted later, it only saves from then on.
+
+Saves after every change
+
+Debounced and one save at a time; a failed save is silent.
+
+Web storage only
+
+Keeps the newest 50 messages
+
+Drops file bytes and reference values
+
+A file keeps its name, type, url and ref; a reference keeps its pointer and a note to read it again.
+
 Where A Turn Runs
 
-You put a chat on the order screen, and a customer types “refund the last one”. A moment later the order is refunded. Now answer the question your security reviewer is going to ask first: which machine ran that refund, and what stopped the model from running it on somebody else's order?
+Words used on this page
 
-The server ran nothing. runAgentTurn is a stateless relay: it forwards the transcript and the tool descriptions to the provider and hands back one answer. Every tool executes in the browser tab that asked, through the same handler the button beside it calls — so the call carries that user's own credential, passes the same guards any other call passes, and stops at the approval card in front of them.
+Term
+
+One refund, traced
+
+A customer on the order screen types “refund the last one”, and a moment later the order is refunded. These are the questions a security reviewer asks first:
+
+Question
+
+Answer
 
 One turn, end to end
 
+Screen
+
+st.tool declarations · subscribed keys
+
+the transcript lives in this tab
+
+guarded by AgentRelayAccess
+
+LLM provider
+
+named in option.setLlm
+
+The tool calls the model asked for
+
+Approval card
+
+confirm and guard
+
+The tool runs in this browser
+
+the handler the button calls
+
+Change report
+
+what moved on screen
+
+Nothing is stored server-side
+
+holds no session, runs no tool
+
 Mounting The Chat
 
-Mount it once, in the layout that wraps every screen the agent should reach. Conditional mounting is not a substitute for closing it — unmounting aborts the session and throws the conversation away — so an app that opens the chat from its own control passes the controlled pair instead.
+Props
 
-Controlled open state. Pass it with onOpenChange to drive the panel from a header button or a menu item. Left off, the panel owns the state.
+Header text and the panel's accessible name.
 
-Left off while open is controlled, the panel cannot close itself — so it draws no close button rather than an inert one.
+App-wide guidance for the model, in English, which `Agent.Guide` adds route guidance to.
 
-false draws no floating button, for an app whose shell already has an entry point.
+Opens the panel on first render while the panel owns its state.
 
-Stands in for the empty-state line while the transcript is empty. Where starter questions go.
+Controlled open state, paired with `onOpenChange`; left off, the panel owns it.
+
+Called on open and close; without it, a controlled panel draws no close button.
+
+`false` draws no floating button, for a shell that already has its own entry point.
+
+Replaces the empty-state line while the transcript is empty, where starter questions go.
 
 Extra controls in the header bar, left of the built-in clear and close buttons.
 
-false draws no header bar at all — for an inline chat inside a panel the app already titles. The header prop goes with it, and clearing stays reachable as /new.
+`false` drops the header bar and `header` for an inline chat; `/new` still clears.
 
-The composer's opening text, read once at mount — where a ?prompt= search value lands without being sent.
+The composer's opening text, read once at mount and never sent, where a `?prompt=` value goes.
 
-Renders in the page flow instead of floating above it — a zone chat that lives inside its own section.
+Renders in the page flow instead of floating, for a zone chat inside its own section.
 
-Cmd+L on Apple platforms, Ctrl+L elsewhere. false gives the browser its own location-bar chord back.
+⌘L on Apple platforms and Ctrl+L elsewhere; `false` gives the chord back to the browser.
 
-One surface each, where className reaches both: launcherClassName is the closed button, panelClassName the open panel.
+Classes for the closed button only, where `className` reaches both surfaces.
 
-Which of the runtime's own tools this chat's agent gets. Withheld, not discouraged — a withheld name answers the same unknown-tool error a name that was never registered gets.
+Classes for the open panel only.
 
-Keeps the transcript across reloads. See the last slide.
+Which built-in tools this chat's agent gets: all, none, or exactly the ones listed.
 
-The five built-ins, and only five:
+Keeps the transcript across reloads, as the last section shows.
 
-navigate and goBack drive the router. builtins={["readScreen", "readState", "highlight"]} is how a chat that must not leave the screen stops being able to.
+Five built-in tools
 
-readScreen, readState and highlight look and point. A tool the screen declared under one of these names is the screen's, not the runtime's, so withholding a built-in never withholds a tool a component published on purpose.
-
-There is no general wait. One was built and removed: a tool reachable on every screen with no idea what any key means gets spent on whatever key looks promising, parking turns nobody asked to park. Declare a waiting tool beside the control that starts the work instead.
+Tool
 
 Every Part Is A Slot
 
-A brand rarely wants the framework's bubble and always wants the framework's approval gate. So the chat is not one component to replace: twelve slots bind in a page/**/_overrides.tsx manifest and cascade down the route tree like layouts, and eleven of them export the default beside them so a replacement composes the one it is replacing.
-
 Slot
 
-AgentSteps is the one that is not a re-skin. A turn — everything the agent said and did between one user message and the next — is the grain a chat needs to fold its steps into a details and stand the final answer outside them, and it is the one boundary no per-message slot can see, because neither message on either side of it knows it is at an edge.
+Description and default export
 
-Two things the slot list is deliberate about:
+Folding a turn with AgentSteps
 
-only ever true of the last turn of a transcript the session is working on. Without it the same messages read the same whether the agent is mid-step or finished, and a scaffold cannot tell a live progress line from a completed turn's header.
-
-The default adds nothing
-
-DefaultSteps draws the same flat bubbles into a Fragment rather than a box, so it takes no className and no existing layout can tell the component is between the transcript and its bubbles.
+Then bind it, with any other slots, in the route's manifest:
 
 A Tool The User Answers
 
-Some arguments are not the model's to supply. A delivery address, a phone number, a date somebody has to look up — a model that fills those in has answered its own question, and no amount of prompting reliably stops it. So a tool chain has a second ending: .card() parks the call in the chat and renders the app's own form there.
+Some arguments are the user's to give: a delivery address, a phone number, a date someone has to look up. A model that fills them in has answered its own question, and prompting cannot reliably stop it.
 
-Four things separate a card from an exec, and each of them is a decision rather than a detail:
+Here the model asks the customer for an address, and the Deliver button stays off until one exists:
 
-What the form submits is the call's result — what the model reads back. cancel(reason) is the error it reads instead, so a dismissed card is something the agent can respond to rather than a silent empty answer.
-
-Arguments are checked first
-
-Before the card is parked, never while it renders. A bad argument has to reach the model as a refusal it can correct; a throw inside your component would take the chat panel down with it.
-
-It waits outside the tool queue
-
-A form parked in front of somebody is not work. Holding the execution lock across it would freeze every other agent on the page behind one unanswered card.
-
-Not read for a card at all — the card in front of the user is already the asking. The frame draws its own dismiss even when your component does not, so a turn can never park on something the user cannot get out of.
-
-The screen is still snapshotted around the wait, so a card that writes what it collected into the store reports what moved like any other call.
+How a card differs from an exec
 
 Pointing At Data
 
-“Why was this one refunded?” is only answerable if the chat knows which one. Typing an id is not it, and letting the agent search for the order the user is already looking at spends a turn on a lookup they could have pointed at. The composer's @ menu is that pointer, and which documents it may offer is the app's answer, not the framework's — so a ReferenceSource brings its own query.
+“Why was this one refunded?” can only be answered if the chat knows which one. The @ menu lets the user point at it, instead of typing an id or making the agent spend a turn searching.
 
-A field inside a document is the other entry point. The component drawing it already holds the value, so useAgentReference() hands that over with no round trip — and it is the only thing that knows a rich-text field stored as field(Any) reads as a paragraph rather than as the editor document it is stored as.
+A Whole Document
+
+One Field On Screen
+
+Called from the component that draws the field. It hands over the value it already holds, with no round trip.
+
+Whole documents in the @ menu
+
+Which documents a user may point at is the app's answer, not the framework's, so each source brings its own search:
+
+One field with useAgentReference
+
+In the composer
 
 The Queue And The Slash Menu
 
-A turn takes seconds, and a user who thinks of the next thing halfway through should not have to wait to type it. Enter during a turn parks the message and sends it the moment the turn ends. There is one slot: a second send joins the first on a new line, so the model is handed one user message rather than two.
+A turn takes seconds, and a user who thinks of the next thing should not have to wait to type it. Enter during a turn parks the message and sends it the moment the turn ends.
 
-It is shown rather than silently held, on the AgentQueued card above the composer. A send that vanished from the composer and has not appeared in the transcript reads as lost, and taking it back or dropping it needs somewhere to click. Stop hands a parked message back to the composer rather than opening the next turn with it — Stop means stop.
+Slash commands
+
+The / menu lists these six commands and nothing else:
 
 Command
 
-These six are the whole / menu, beside whatever page().prompt() declarations the app publishes. An app writes none of them and cannot add one: the extension point for a product's own command is a prompt, which is guarded and server-side. A built-in wins a name collision, deliberately — a component's st.tool may shadow a built-in it means to replace, but no library's prompt may take /new away from the user who typed it.
+Keys in the composer
 
-Three session calls behind the menu:
+Key
 
-session.note(text) writes a local message: rendered in the transcript, withheld from the wire. The transcript is the model's history, so /help text appended plainly would come back next turn as something the assistant believes it said.
+Session calls behind the menu
 
-session.report(error) is where a host-side failure lands — a command that threw, a reference whose resolve never answered. Same local shape, read as an error.
-
-session.retry() replays only the trailing user message and leaves everything above it in place. ↑ and ↓ in the composer walk what was sent, seeded from the transcript, and the half-written draft they were walked away from comes back at the bottom of the walk.
+Call
 
 Keeping The Transcript
 
-The relay holds no session, so the conversation exists in one browser tab and nowhere else. persist is the one-word answer: sessionStorage by default, because surviving a refresh is the whole ask and a transcript that dies with the tab never lingers on a shared machine. { storage: "local" } is the explicit opt-up.
+Write
 
-Keeping it on a server is a SessionHistory — three functions — and a function cannot cross the RSC boundary as a prop, which would make every ancestor up to whoever builds the session a client component. So it mounts instead, as a leaf, in the shape Agent.Guide already uses.
+How it is kept
 
-Four rules the store follows whichever backing you pick:
+On your server: Agent.History
 
-Restoring lands once
+What each store keeps
 
-only while nothing has happened to the conversation yet. Mounting with the zone restores; mounting later saves from there on, and the store is never asked for a transcript that would be discarded.
+Rule
 
-Content never reaches storage
+Applies
 
-an attachment keeps its name, type and url; a reference keeps its pointer and a note saying to read it again with a tool. Web storage is a few megabytes and one screenshot fills a chunk of it, so persisting the bytes would quietly stop persisting the transcript.
+Does not apply
 
-The cap is applied before repair
+Read next
 
-web storage keeps the newest 50 messages, and that window can start between a tool call and the result answering it — a transcript restored in that state is refused by the provider on its first turn, so the pairing is repaired after the cut rather than before it.
+In-Page Agent
 
-called after a compaction replaced messages with one summary — where a host with its own server-side summary moves its watermark.
+The agent's surface: st.tool actions, readable keys, zones and LLM adaptors.
+
+Agent UI Reference
+
+Every prop of Agent.Chat, Agent.Zone, Agent.History and the rest.
 
 ## Code Examples
 
@@ -175,16 +337,18 @@ export default layout().render(({ children }) => {
 
 ```ts
 "use client";
+import { usePage } from "@apps/koyo/client";
 import { DefaultSteps, type StepsProps } from "akanjs/ui";
 
 export const KoyoTurn = ({ messages, isRunning, progress, results }: StepsProps) => {
+  const { l } = usePage();
   const answer = messages.at(-1);
   const steps = isRunning ? messages : messages.slice(0, -1);
   return (
     <div className="flex flex-col gap-1">
       <details open={isRunning}>
         <summary className="cursor-pointer text-foreground/50 text-xs">
-          {isRunning ? "working…" : `${steps.length} steps`}
+          {isRunning ? l("koyo.turnWorking") : l("koyo.turnSteps", { count: steps.length })}
         </summary>
         <DefaultSteps isRunning={isRunning} messages={steps} progress={progress} results={results} />
       </details>
@@ -246,27 +410,30 @@ export const Delivery = ({ className, icecreamOrderId }: DeliveryProps) => {
 
 ```ts
 "use client";
-import { cnst, fetch } from "@apps/koyo/client";
+import { cnst, fetch, usePage } from "@apps/koyo/client";
 import { Agent } from "akanjs/ui";
 
-export const KoyoAgentChat = () => (
-  <Agent.Chat
-    persist
-    reference={[
-      {
-        refName: "icecreamOrder",
-        label: "Order",
-        type: cnst.IcecreamOrder,
-        search: async (query, signal) => {
-          const orders = await fetch.listIcecreamOrderBySearch(query);
-          if (signal.aborted) return [];
-          return orders.map((order) => ({ refId: order.id, label: order.code, description: order.status }));
+export const KoyoAgentChat = () => {
+  const { l } = usePage();
+  return (
+    <Agent.Chat
+      persist
+      reference={[
+        {
+          refName: "icecreamOrder",
+          label: l("icecreamOrder.modelName"),
+          type: cnst.IcecreamOrder,
+          search: async (query, signal) => {
+            const orders = await fetch.icecreamOrderListInMention(query, 0, 8, "relevance");
+            if (signal.aborted) return [];
+            return orders.map((order) => ({ refId: order.id, label: order.code, description: order.status }));
+          },
+          resolve: (refId) => fetch.icecreamOrder(refId),
         },
-        resolve: async (refId) => (await fetch.viewIcecreamOrder(refId)).icecreamOrder,
-      },
-    ]}
-  />
-);
+      ]}
+    />
+  );
+};
 ```
 
 ### apps/koyo/lib/icecreamOrder/IcecreamOrder.Util.tsx
@@ -321,17 +488,19 @@ interface DeskProps {
   children: ReactNode;
 }
 
-export const Desk = ({ className, children }: DeskProps) => (
-  <Agent.Zone className={className} id="orderDesk" instructions="Work the order desk." label="Order desk">
-    <Agent.History
-      clear={() => void fetch.clearIcecreamOrderChat()}
-      load={async () => (await fetch.loadIcecreamOrderChat()).messages}
-      save={(messages) => void fetch.saveIcecreamOrderChat(messages)}
-    />
-    {children}
-    <Agent.Chat chrome={false} inline />
-  </Agent.Zone>
-);
+export const Desk = ({ className, children }: DeskProps) => {
+  return (
+    <Agent.Zone className={className} id="orderDesk" instructions="Work the order desk." label="Order desk">
+      <Agent.History
+        clear={() => void fetch.clearIcecreamOrderChat()}
+        load={async () => (await fetch.loadIcecreamOrderChat()).messages}
+        save={(messages) => void fetch.saveIcecreamOrderChat(messages)}
+      />
+      {children}
+      <Agent.Chat chrome={false} inline />
+    </Agent.Zone>
+  );
+};
 ```
 
 ## Agent Notes

@@ -1,110 +1,361 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Divider, Docs, DocsToc, type IntroItem, panelRecipe } from "@apps/akan/ui";
+import { Code, cardGridRecipe, Divider, Docs, DocsToc, type IntroItem, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
 export default page().render(() => {
   const { l } = usePage();
 
+  const chip = "mt-2 block overflow-x-auto whitespace-nowrap rounded-md bg-muted/60 px-2.5 py-1.5 font-mono text-xs";
+  const bulletList = "my-4 list-disc space-y-2 pl-5";
+
+  const glanceCards = [
+    {
+      title: l.trans({ en: "Where It Lives", ko: "위치" }),
+      desc: l.trans({
+        en: (
+          <span>
+            In <code>lib/_&lt;service&gt;</code>, with a leading underscore. The files inside drop it.
+          </span>
+        ),
+        ko: (
+          <span>
+            앞에 밑줄(_)을 붙인 <code>lib/_&lt;service&gt;</code>에 둡니다. 안의 파일 이름에서는 밑줄을 뗍니다.
+          </span>
+        ),
+      }),
+      code: "libs/util/lib/_security/security.service.ts",
+    },
+    {
+      title: l.trans({ en: "What It Owns", ko: "맡는 일" }),
+      desc: l.trans({
+        en: "An action or a capability instead of a table. Nothing to list, edit, or keep until tomorrow.",
+        ko: "테이블이 아니라 동작이나 기능을 맡습니다. 나열하거나 고치거나 내일까지 남겨 둘 데이터가 없습니다.",
+      }),
+      code: "sign · encrypt · stream · authorize",
+    },
+    {
+      title: l.trans({ en: "What It Leaves Out", ko: "없는 것" }),
+      desc: l.trans({
+        en: "No document file, no filters, no slices, no generated CRUD: there is no table behind it.",
+        ko: "document 파일, filter, slice, 생성된 CRUD가 없습니다. 뒤에 테이블이 없기 때문입니다.",
+      }),
+      code: "no *.document.ts · no slice()",
+    },
+    {
+      title: l.trans({ en: "How It Is Called", ko: "호출 경로" }),
+      desc: l.trans({
+        en: "The same path a model module uses, minus the document layer.",
+        ko: "model module과 같은 경로에서 document 계층만 빠집니다.",
+      }),
+      code: "fetch → signal → service → srvkit/",
+    },
+  ];
+
   const realModules: IntroItem[] = [
     {
       name: "_security",
       desc: l.trans({
         en: "JWT signing and verification, AES encryption, refresh-token minting. Server-only: no store, no UI.",
-        ko: "JWT 서명과 검증, AES 암복호화, refresh token 발급을 담당합니다. server 전용이라 store도 UI도 없습니다.",
+        ko: "JWT 서명과 검증, AES 암복호화, refresh token 발급을 맡습니다. 서버 전용이라 store도 UI도 없습니다.",
       }),
       example: "libs/util/lib/_security",
     },
     {
       name: "_oauth",
       desc: l.trans({
-        en: "The OAuth 2.1 authorization server that issues the tokens /mcp accepts. The largest service module in the workspace.",
-        ko: "/mcp가 받아들이는 OAuth 2.1 token을 발급하는 인가 서버입니다. 이 워크스페이스에서 가장 큰 service module입니다.",
+        en: "The OAuth 2.1 authorization server that issues the tokens `/mcp` accepts.",
+        ko: "`/mcp`가 받아 주는 OAuth 2.1 토큰을 발급하는 인가 서버입니다.",
       }),
       example: "libs/shared/lib/_oauth",
     },
     {
       name: "_doc",
       desc: l.trans({
-        en: "Serves the Akan.js documentation corpus to agents over MCP. Reads a generated folder; writes nothing.",
-        ko: "Akan.js 문서 코퍼스를 MCP로 agent에게 제공합니다. 생성된 폴더를 읽기만 하고 쓰지 않습니다.",
+        en: "Serves the Akan.js docs to agents over MCP. It reads a generated folder and writes nothing.",
+        ko: "Akan.js 문서를 MCP로 에이전트에게 제공합니다. 생성된 폴더를 읽기만 하고 아무것도 쓰지 않습니다.",
       }),
       example: "apps/akan/lib/_doc",
     },
     {
       name: "_localFile",
       desc: l.trans({
-        en: "Streams a public blob back as an HTTP Response from a custom path. Four files, one endpoint.",
-        ko: "custom path에서 공개 blob을 HTTP Response로 흘려보냅니다. 파일 네 개, endpoint 하나입니다.",
+        en: "Streams a public blob back as an HTTP `Response` from a custom path. Four files, one endpoint.",
+        ko: "지정한 경로로 들어온 요청에 공개 blob을 HTTP `Response`로 스트리밍합니다. 파일 네 개, endpoint 하나입니다.",
       }),
       example: "libs/util/lib/_localFile",
     },
     {
-      name: "_util · _shared",
+      name: ["_util", "_shared"],
       desc: l.trans({
-        en: "The library's own root container. The service is an empty batch service; the store holds cross-module client state such as the map viewport or the sign-in flow.",
-        ko: "라이브러리 자신의 루트 컨테이너입니다. service는 비어 있는 batch service이고, store는 지도 viewport나 로그인 흐름처럼 module을 가로지르는 client state를 담습니다.",
+        en: "A library's root container: an empty batch service and a client store other modules share.",
+        ko: "라이브러리의 루트 컨테이너입니다. 빈 batch service와, 여러 module이 함께 쓰는 client store를 둡니다.",
       }),
       example: "libs/util/lib/_util\nlibs/shared/lib/_shared",
     },
     {
-      name: "_akan · _minimal",
+      name: ["_akan", "_minimal"],
       desc: l.trans({
-        en: "The app's own root container, still as akan sync scaffolded it. Every file is present and empty — that is the intended resting state, not an unfinished one.",
-        ko: "앱 자신의 루트 컨테이너이며 akan sync가 만든 그대로입니다. 모든 파일이 있고 비어 있습니다. 미완성이 아니라 의도된 정지 상태입니다.",
+        en: "An app's root container. `_akan` is still the empty scaffold; `_minimal` adds four bench endpoints.",
+        ko: "앱의 루트 컨테이너입니다. `_akan`은 아직 빈 스캐폴드이고, `_minimal`은 벤치마크 endpoint 네 개를 더했습니다.",
       }),
       example: "apps/akan/lib/_akan\napps/minimal/lib/_minimal",
     },
   ];
 
-  const fileMap: IntroItem[] = [
+  const optionalColumns = [
+    { key: "store", label: "store", code: true, caption: "*.store.ts" },
+    { key: "test", label: "test", code: true, caption: "*.test.ts" },
+    { key: "util", label: "Util", code: true, caption: "*.Util.tsx" },
+    { key: "zone", label: "Zone", code: true, caption: "*.Zone.tsx" },
+  ];
+  const withTest = { store: false, test: true, util: false, zone: false };
+  const withStore = { store: true, test: false, util: false, zone: false };
+  const emptyStoreNote = l.trans({ en: "The store is the empty scaffold.", ko: "store는 빈 스캐폴드입니다." });
+  const optionalGroups = [
+    {
+      label: l.trans({ en: "Feature modules", ko: "기능 module" }),
+      rows: [
+        { name: "_security", marks: withTest },
+        { name: "_oauth", marks: withTest },
+        {
+          name: "_doc",
+          desc: l.trans({
+            en: "Tests its service: `doc.service.test.ts`.",
+            ko: "service를 직접 테스트합니다: `doc.service.test.ts`.",
+          }),
+          marks: withTest,
+        },
+        { name: "_localFile", marks: { store: false, test: false, util: false, zone: false } },
+      ],
+    },
+    {
+      label: l.trans({ en: "Root containers", ko: "루트 컨테이너" }),
+      rows: [
+        { name: "_util", marks: withStore },
+        { name: "_shared", marks: withStore },
+        { name: "_akan", desc: emptyStoreNote, marks: withStore },
+        { name: "_minimal", desc: emptyStoreNote, marks: withStore },
+      ],
+    },
+  ];
+
+  const poles = [
+    {
+      name: "_security",
+      title: l.trans({ en: "The Floor", ko: "바닥" }),
+      desc: l.trans({
+        en: "Its service holds two secrets and hands back signed or encrypted strings. Nothing on screen renders it, so there is no store and no component.",
+        ko: "service는 secret 두 개를 들고 서명하거나 암호화한 문자열을 돌려줄 뿐입니다. 화면에 그려지는 것이 없으니 store도 component도 없습니다.",
+      }),
+      files: [
+        { file: "abstract.md", note: l.trans({ en: "What it owns, and four rules", ko: "맡는 일과 규칙 네 개" }) },
+        { file: "dictionary.ts", note: l.trans({ en: "Endpoint labels", ko: "endpoint label" }) },
+        {
+          file: "service.ts",
+          note: l.trans({ en: "About 75 lines holding two secrets", ko: "secret 두 개를 쥔 75줄 남짓" }),
+        },
+        {
+          file: "signal.ts",
+          note: l.trans({
+            en: (
+              <span>
+                One mutation, <code>encrypt</code>
+              </span>
+            ),
+            ko: (
+              <span>
+                mutation 하나, <code>encrypt</code>
+              </span>
+            ),
+          }),
+        },
+        { file: "signal.test.ts", note: l.trans({ en: "Boots the barrel and calls it", ko: "barrel을 부팅해 호출" }) },
+      ],
+    },
+    {
+      name: "_oauth",
+      title: l.trans({ en: "The Ceiling", ko: "천장" }),
+      desc: l.trans({
+        en: (
+          <span>
+            A whole authorization server, and still no store: every screen it needs is a route in{" "}
+            <code>libs/shared/page/oauth</code>, not a section of another screen.
+          </span>
+        ),
+        ko: (
+          <span>
+            인가 서버 하나 전체인데도 store가 없습니다. 필요한 화면은 다른 화면의 한 구획이 아니라{" "}
+            <code>libs/shared/page/oauth</code>의 route이기 때문입니다.
+          </span>
+        ),
+      }),
+      files: [
+        {
+          file: "abstract.md",
+          note: l.trans({ en: "Eight rules and a workflow chain", ko: "규칙 여덟 개와 workflow 체인" }),
+        },
+        {
+          file: "dictionary.ts",
+          note: l.trans({
+            en: (
+              <span>
+                Labels in <code>.endpoint()</code>, error keys in <code>.error()</code>, consent-page phrases in{" "}
+                <code>.translate()</code>
+              </span>
+            ),
+            ko: (
+              <span>
+                <code>.endpoint()</code>에 label, <code>.error()</code>에 error key, <code>.translate()</code>에 동의
+                화면 문구
+              </span>
+            ),
+          }),
+        },
+        {
+          file: "service.ts",
+          note: l.trans({
+            en: "About 500 lines: PKCE, rotation, revocation",
+            ko: "500줄 남짓: PKCE, 토큰 교체, 폐기",
+          }),
+        },
+        {
+          file: "signal.ts",
+          note: l.trans({
+            en: "10 endpoints, 5 of them at the origin root",
+            ko: "endpoint 10개, 그중 5개는 origin 루트 경로",
+          }),
+        },
+        {
+          file: "signal.test.ts",
+          note: l.trans({ en: "The protocol, end to end", ko: "프로토콜 전체를 처음부터 끝까지" }),
+        },
+      ],
+    },
+  ];
+
+  const alwaysFiles: IntroItem[] = [
     {
       name: "<service>.abstract.md",
       desc: l.trans({
-        en: "A title line, one sentence naming what the module owns, and a ## Rules list of the invariants the code cannot show. Every one of the eight has it.",
-        ko: "제목 한 줄, 이 module이 무엇을 소유하는지 말하는 문장 하나, 그리고 코드가 보여줄 수 없는 불변식을 담은 ## Rules 목록입니다. 여덟 개 모두 가지고 있습니다.",
+        en: "A title, one sentence on what it owns, and `## Rules`: invariants the code cannot show.",
+        ko: "제목, 무엇을 맡는지 한 문장, 그리고 코드로는 보이지 않는 불변식을 적은 `## Rules`입니다.",
       }),
       example: "libs/shared/lib/_oauth/oauth.abstract.md",
     },
     {
-      name: "<service>.service.ts",
-      desc: l.trans({
-        en: "The workflow itself, built with a serve() call naming the module. Every one of the eight has it, even when the body is empty.",
-        ko: "workflow 그 자체이며 module 이름을 넘긴 serve() 호출로 만듭니다. 본문이 비어 있더라도 여덟 개 모두 가지고 있습니다.",
-      }),
-      example: 'export class SecurityService extends serve("security" as const, ({ use }) => ({}))',
-    },
-    {
-      name: "<service>.signal.ts",
-      desc: l.trans({
-        en: "Two classes, <X>Internal and <X>Endpoint. There is no Slice — a slice is a window onto a table, and a service module has none.",
-        ko: "<X>Internal과 <X>Endpoint 두 개의 class입니다. Slice는 없습니다. slice는 테이블을 들여다보는 창인데, service module에는 테이블이 없습니다.",
-      }),
-      example: "libs/util/lib/_security/security.signal.ts",
-    },
-    {
       name: "<service>.dictionary.ts",
       desc: l.trans({
-        en: "Built with serviceDictionary rather than modelDictionary — endpoint labels, error keys, and UI phrases. Not tied to model fields, because there are none.",
-        ko: "modelDictionary가 아니라 serviceDictionary로 만듭니다. endpoint label, error key, UI 문구를 담습니다. model field에 묶이지 않습니다. field 자체가 없기 때문입니다.",
+        en: "Built with `serviceDictionary`: endpoint labels, error keys and UI phrases.",
+        ko: "`serviceDictionary`로 만듭니다. endpoint label, error key, UI 문구를 담습니다.",
       }),
       example: "libs/shared/lib/_oauth/oauth.dictionary.ts",
     },
     {
+      name: "<service>.service.ts",
+      desc: l.trans({
+        en: "The workflow itself, built with `serve()` naming the module, even when the body is empty.",
+        ko: "workflow 본체입니다. module 이름을 넘긴 `serve()`로 만들고, 본문이 비어 있어도 둡니다.",
+      }),
+      example: `export class SecurityService extends serve("security" as const, ({ use }) => ({
+  jwtSecret: use<string>(),
+  aeskey: use<string>(),
+})) {}`,
+    },
+    {
+      name: "<service>.signal.ts",
+      desc: l.trans({
+        en: "Two classes, `<X>Internal` and `<X>Endpoint`. No Slice, because there is no table to page through.",
+        ko: "`<X>Internal`과 `<X>Endpoint` 두 class입니다. 넘겨 볼 테이블이 없으니 Slice는 없습니다.",
+      }),
+      example: "libs/util/lib/_security/security.signal.ts",
+    },
+  ];
+
+  const optionalFiles: IntroItem[] = [
+    {
       name: "<service>.store.ts",
       desc: l.trans({
-        en: "Only when the feature has client state. Four of the eight have one, and two of those four are empty scaffolds.",
-        ko: "feature에 client state가 있을 때만 씁니다. 여덟 중 넷이 가지고 있고, 그 넷 중 둘은 빈 스캐폴드입니다.",
+        en: "Only when the feature has client state. Four of the eight have one; two are empty scaffolds.",
+        ko: "client state가 있을 때만 씁니다. 여덟 중 넷에 있고, 그중 둘은 빈 스캐폴드입니다.",
       }),
       example: "libs/util/lib/_util/util.store.ts",
     },
     {
       name: "<service>.signal.test.ts",
       desc: l.trans({
-        en: "Boots the whole barrel and calls the endpoints through the generated fetch. _security and _oauth carry one.",
-        ko: "barrel 전체를 부팅하고 생성된 fetch로 endpoint를 호출합니다. _security와 _oauth가 가지고 있습니다.",
+        en: "Boots the barrel and calls the endpoints through `fetch`. `_security` and `_oauth` have one.",
+        ko: "barrel 전체를 부팅하고 `fetch`로 endpoint를 호출합니다. `_security`와 `_oauth`에 있습니다.",
       }),
       example: "libs/shared/lib/_oauth/oauth.signal.test.ts",
+    },
+    {
+      name: ["<Service>.Util.tsx", "<Service>.Zone.tsx"],
+      desc: l.trans({
+        en: "Rare: none of the eight has one. The two UI pages of this section explain why.",
+        ko: "드뭅니다. 여덟 중 하나도 없습니다. 이유는 이 섹션의 UI 문서 두 개에 있습니다.",
+      }),
+    },
+  ];
+
+  const emptyForms: IntroItem[] = [
+    {
+      name: "signal.ts",
+      desc: l.trans({
+        en: "The builder callback returns an empty object, not nothing.",
+        ko: "builder callback은 아무것도 반환하지 않는 것이 아니라 빈 객체를 반환합니다.",
+      }),
+      example: "export class XInternal extends internal(srv.x, () => ({})) {}",
+    },
+    {
+      name: "service.ts",
+      desc: l.trans({
+        en: "A root container with no methods still declares its service.",
+        ko: "method가 없는 루트 컨테이너도 service는 선언합니다.",
+      }),
+      example: 'export class UtilService extends serve("util" as const, { serverMode: "batch" }, () => ({})) {}',
+    },
+    {
+      name: "store.ts",
+      desc: l.trans({
+        en: "Exactly two comments, `// state` and `// action`, mark where each half goes.",
+        ko: "`// state`와 `// action` 주석 두 줄만 있고, 각 절반이 들어갈 자리를 표시합니다.",
+      }),
+      example: `export class AkanStore extends store("akan" as const, () => ({
+  // state
+})) {
+  // action
+}`,
+    },
+  ];
+
+  const moduleKinds = [
+    {
+      title: l.trans({ en: "Model Module", ko: "Model module" }),
+      folder: "lib/<model>",
+      desc: l.trans({
+        en: "A stored table with a document file, filters, slices, generated CRUD and the five UI roles.",
+        ko: "document 파일, filter, slice, 생성된 CRUD, 다섯 가지 UI 역할을 갖춘 저장 테이블입니다.",
+      }),
+      examples: "user · file · banner · notification",
+    },
+    {
+      title: l.trans({ en: "Service Module", ko: "Service module" }),
+      folder: "lib/_<service>",
+      desc: l.trans({
+        en: "No table, no document file, no slice. An action, a protocol, an integration, or a library's own root.",
+        ko: "테이블도 document 파일도 slice도 없습니다. 동작, 프로토콜, 연동, 또는 라이브러리 자신의 루트입니다.",
+      }),
+      examples: "security · oauth · localFile · doc",
+    },
+    {
+      title: l.trans({ en: "Scalar Module", ko: "Scalar module" }),
+      folder: "lib/__scalar/<scalar>",
+      desc: l.trans({
+        en: "A value embedded in something else and never stored on its own. A service module's state takes this shape.",
+        ko: "다른 것 안에 들어가고 혼자서는 저장되지 않는 값입니다. service module의 상태는 이 모양으로 담깁니다.",
+      }),
+      examples: "oauthClient · oauthGrant · oauthRequest",
     },
   ];
 
@@ -115,106 +366,226 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "You need to sign a token, stream a stored blob back to a browser, or run an OAuth handshake to its end. None of those is a record. There is nothing to list, nothing to edit, and no row that would still be there tomorrow — so a folder built around a stored model gives you five files you will leave empty and one you will fill.",
-              ko: "token에 서명해야 하고, 저장된 blob을 브라우저로 흘려보내야 하고, OAuth 핸드셰이크를 끝까지 진행해야 합니다. 셋 다 레코드가 아닙니다. 나열할 것도, 수정할 것도, 내일까지 남아 있을 행도 없습니다. 저장된 model을 중심으로 만든 folder를 쓰면 비워 둘 파일 다섯 개와 채울 파일 하나를 얻게 됩니다.",
+              en: "Signing a token, streaming a stored file back to a browser, running an OAuth handshake to its end: none of these is a record. A folder built around a stored model would give you five files to leave empty and one to fill.",
+              ko: "토큰 서명, 저장된 파일을 브라우저로 돌려보내기, OAuth 핸드셰이크를 끝까지 진행하기는 모두 레코드가 아닙니다. 저장된 model 중심의 폴더를 쓰면 비워 둘 파일 다섯 개와 채울 파일 하나가 생길 뿐입니다.",
             })}
           </div>
           <div>
             {l.trans({
-              en: "A service module is that folder without the model. It lives at lib/_<service> with a leading underscore, its files drop that underscore, and it owns an action or a capability instead of a table. The call path is the same one a model module uses, minus the document layer.",
-              ko: "Service module은 model을 뺀 그 folder입니다. 앞에 underscore를 붙인 lib/_<service>에 놓이고, 내부 파일명에서는 그 underscore를 뗍니다. 테이블 대신 동작이나 능력을 소유합니다. 호출 경로는 model module과 같고, document 계층만 없습니다.",
+              en: "A service module is that folder without the model.",
+              ko: "service module은 그 폴더에서 model을 뺀 것입니다.",
             })}
           </div>
-          <Docs.Mermaid
+          <div className={cardGridRecipe({ cols: "mdTwo" }, "my-4")}>
+            {glanceCards.map((card) => (
+              <div key={card.code} className={panelRecipe({ radius: "lg", padding: "sm" }, "min-w-0")}>
+                <div className="font-semibold text-primary">{card.title}</div>
+                <div className="mt-1 text-foreground/70 text-sm">{card.desc}</div>
+                <code className={chip}>{card.code}</code>
+              </div>
+            ))}
+          </div>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Here is one call through a service module, using <code>_oauth</code> as the example:
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>_oauth</code>를 예로 들면, service module을 지나는 호출 하나는 이렇습니다:
+                </span>
+              ),
+            })}
+          </div>
+          <Docs.Flow
             title={l.trans({ en: "One call through a service module", ko: "Service module을 지나는 호출 하나" })}
-            highlightNodes={["service"]}
-            chart={`flowchart LR
-  screen["A page, a store, an MCP client"] -->|"fetch.exchangeOAuthToken(...)"| signal["oauth.signal.ts<br/>endpoint · internal"]
-  runtime["The runtime itself<br/>cron · queue · boot"] --> signal
-  signal --> service["oauth.service.ts<br/>the workflow"]
-  service --> other["Another module's service<br/>service(srv.UserService)"]
-  service --> srvkit["An adapter in srvkit/<br/>plug() · use()"]
-  srvkit --> external["The outside world"]`}
+            direction="TB"
+            nodes={{
+              screen: { label: l.trans({ en: "A page, a store, an MCP client", ko: "페이지, store, MCP client" }) },
+              runtime: {
+                label: l.trans({ en: "The runtime itself", ko: "런타임 자체" }),
+                lines: ["cron · process · initialize"],
+              },
+              signal: { label: "oauth.signal.ts", lines: ["endpoint · internal"] },
+              service: { label: "oauth.service.ts", lines: [l.trans({ en: "the workflow", ko: "workflow" })] },
+              other: {
+                label: l.trans({ en: "Another module's service", ko: "다른 module의 service" }),
+                lines: ["service<srv.UserService>()"],
+              },
+              srvkit: {
+                label: l.trans({ en: "An adapter in srvkit/", ko: "srvkit/의 adapter" }),
+                lines: ["plug() · use()"],
+              },
+              external: { label: l.trans({ en: "The outside world", ko: "외부 시스템" }), tone: "muted" },
+            }}
+            edges={[
+              ["screen", "signal", { label: "fetch.listOAuthConnections()" }],
+              ["runtime", "signal"],
+              ["signal", "service"],
+              ["service", "other"],
+              ["service", "srvkit"],
+              ["srvkit", "external"],
+            ]}
+            emphasis={["service"]}
           />
+          <ul className={bulletList}>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Two ways in.</strong> A caller reaches an <code>Endpoint</code> through <code>fetch</code>,
+                    and the runtime fires an <code>Internal</code> on a schedule, a queue job, or startup.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>들어오는 길은 둘입니다.</strong> 호출자는 <code>fetch</code>로 <code>Endpoint</code>를
+                    부르고, 런타임은 스케줄, 큐 작업, 시작 시점에 <code>Internal</code>을 실행합니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>The service does the work.</strong> It asks another module through{" "}
+                    <code>service&lt;srv.X&gt;()</code> and the outside world through a <code>srvkit/</code> adapter.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>일은 service가 합니다.</strong> 다른 module은 <code>service&lt;srv.X&gt;()</code>로, 외부
+                    시스템은 <code>srvkit/</code>의 adapter로 부릅니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="real-modules" title={l.trans({ en: "The Eight That Exist", ko: "실재하는 여덟 개" })}>
-        <Docs.Title>{l.trans({ en: "The Eight That Exist", ko: "실재하는 여덟 개" })}</Docs.Title>
+      <Scroll.Slide id="real-modules" title={l.trans({ en: "The Eight That Exist", ko: "지금 있는 여덟 개" })}>
+        <Docs.Title>{l.trans({ en: "The Eight That Exist", ko: "지금 있는 여덟 개" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "This workspace has eight service modules, and reading them is faster than reading a description of one. They land on a spectrum: a server-only primitive at one end, an entire authorization server at the other, and an empty root container at the near end.",
-              ko: "이 워크스페이스에는 service module이 여덟 개 있고, 설명을 읽는 것보다 그것들을 읽는 편이 빠릅니다. 스펙트럼 위에 놓입니다. 한쪽 끝은 server 전용 primitive, 반대쪽 끝은 인가 서버 하나 전체, 가까운 쪽 끝은 비어 있는 루트 컨테이너입니다.",
+              en: "This workspace has eight service modules, and reading them is faster than reading a description. They range from a server-only primitive to a whole authorization server, plus the empty root container each app and lib carries.",
+              ko: "이 워크스페이스에는 service module이 여덟 개 있고, 설명을 읽기보다 실물을 보는 편이 빠릅니다. 서버 전용 primitive부터 인가 서버 하나 전체까지 있고, 앱과 라이브러리마다 빈 루트 컨테이너가 하나씩 있습니다.",
             })}
           </div>
           <Docs.IntroTable type={l.trans({ en: "Module", ko: "모듈" })} items={realModules} />
           <div>
             {l.trans({
-              en: "Notice what none of them has: not one of the eight carries a Util.tsx or a Zone.tsx. That is not an accident of this workspace — see the two UI pages in this section for why the file is rare and what goes there instead.",
-              ko: "여덟 개 중 어느 것도 가지고 있지 않은 것을 보세요. Util.tsx도 Zone.tsx도 하나도 없습니다. 이 워크스페이스만의 우연이 아닙니다. 왜 그 파일이 드문지, 대신 무엇을 쓰는지는 이 섹션의 UI 문서 두 개에 있습니다.",
+              en: "Only four files are in every one of them. Here is which of the eight carry the optional ones:",
+              ko: "여덟 개 모두에 있는 파일은 네 개뿐입니다. 선택 파일을 가진 module은 다음과 같습니다:",
             })}
           </div>
+          <Docs.Matrix
+            type={l.trans({ en: "Module", ko: "모듈" })}
+            columns={optionalColumns}
+            groups={optionalGroups}
+            markLabel={l.trans({ en: "Has the file", ko: "파일 있음" })}
+            emptyLabel={l.trans({ en: "No file", ko: "파일 없음" })}
+          />
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  <strong>Not one of the eight has a Util or a Zone.</strong> That is not an accident of this workspace;
+                  the two UI pages explain why the files are rare and what goes there instead.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <strong>여덟 개 중 Util이나 Zone을 가진 것은 하나도 없습니다.</strong> 이 워크스페이스만의 우연이
+                  아닙니다. 왜 드문지, 대신 무엇을 쓰는지는 UI 문서 두 개에 있습니다.
+                </span>
+              ),
+            })}
+          </div>
+          <Docs.LinkGrid
+            items={[
+              {
+                href: "/conventions/service/util",
+                title: "Service.Util.tsx",
+                desc: l.trans({
+                  en: "Why the control usually belongs in ui/ or the page instead.",
+                  ko: "버튼 같은 컨트롤이 보통 ui/나 page에 놓이는 이유를 다룹니다.",
+                }),
+              },
+              {
+                href: "/conventions/service/zone",
+                title: "Service.Zone.tsx",
+                desc: l.trans({
+                  en: "When a capability earns a section of its own, and when it is just a page.",
+                  ko: "기능에 별도 구획이 필요한 때와, page 하나로 충분한 때를 다룹니다.",
+                }),
+              },
+            ]}
+          />
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="two-poles" title={l.trans({ en: "The Two Poles", ko: "양 극단" })}>
-        <Docs.Title>{l.trans({ en: "The Two Poles", ko: "양 극단" })}</Docs.Title>
+      <Scroll.Slide id="two-poles" title={l.trans({ en: "The Two Poles", ko: "양 끝" })}>
+        <Docs.Title>{l.trans({ en: "The Two Poles", ko: "양 끝" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "_security is the floor. Five files, one of them a test, and a service class whose whole job is to hold two secrets and hand back signed or encrypted strings. Nothing on screen ever renders it, so there is no store and no component.",
-              ko: "_security가 바닥입니다. 파일 다섯 개, 그중 하나는 테스트이고, service class가 하는 일은 secret 두 개를 들고 서명하거나 암호화한 문자열을 돌려주는 것뿐입니다. 화면에 그려지는 것이 없으니 store도 component도 없습니다.",
+              en: (
+                <span>
+                  Put a small feature module, <code>_security</code>, beside the largest, <code>_oauth</code>: both have
+                  the same five kinds of file. What changes is how much each file holds:
+                </span>
+              ),
+              ko: (
+                <span>
+                  작은 기능 module인 <code>_security</code>와 가장 큰 <code>_oauth</code>를 나란히 놓으면 파일 종류는
+                  똑같이 다섯입니다. 다른 것은 각 파일이 담는 양입니다:
+                </span>
+              ),
             })}
           </div>
-          <Code.Snippet
-            className="w-full"
-            title="libs/util/lib/_security"
-            language="bash"
-            showLineNumbers={false}
-            copy={false}
-            code={`security.abstract.md     # what it owns, and four rules
-security.service.ts      # the workflow
-security.signal.ts       # one mutation
-security.dictionary.ts   # endpoint labels
-security.signal.test.ts  # boots the barrel and calls them`}
-          />
-          <div>
-            {l.trans({
-              en: "_oauth is the ceiling, and it is still the same five kinds of file. A 500-line service, ten endpoints, a dictionary that carries error keys and consent-page phrases as well as labels — and no store, because every screen it needs is a route in libs/shared/page/oauth rather than a section of one.",
-              ko: "_oauth가 천장인데, 그래도 같은 다섯 종류의 파일입니다. 500줄짜리 service, endpoint 열 개, label뿐 아니라 error key와 동의 화면 문구까지 담은 dictionary가 있습니다. 그리고 store는 없습니다. 필요한 화면이 어떤 화면의 한 구획이 아니라 libs/shared/page/oauth의 route이기 때문입니다.",
-            })}
+          <div className={cardGridRecipe({ cols: "mdTwo" }, "my-4")}>
+            {poles.map((pole) => (
+              <div key={pole.name} className={panelRecipe({ radius: "lg", padding: "sm" }, "min-w-0")}>
+                <div className="font-semibold text-primary">
+                  <code>{pole.name}</code> · {pole.title}
+                </div>
+                <div className="mt-1 text-foreground/70 text-sm">{pole.desc}</div>
+                <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-border/60 border-t pt-3 text-sm">
+                  {pole.files.flatMap(({ file, note }) => [
+                    <dt key={`${file}-name`} className="font-mono text-foreground text-xs leading-5">
+                      {file}
+                    </dt>,
+                    <dd key={`${file}-note`} className="text-foreground/70">
+                      {note}
+                    </dd>,
+                  ])}
+                </dl>
+              </div>
+            ))}
           </div>
-          <Code.Snippet
-            className="w-full"
-            title="libs/shared/lib/_oauth"
-            language="bash"
-            showLineNumbers={false}
-            copy={false}
-            code={`oauth.abstract.md      # seven rules and a workflow chain
-oauth.service.ts       # ~500 lines: PKCE, rotation, revocation
-oauth.signal.ts        # 10 endpoints, 5 of them at the origin root
-oauth.dictionary.ts    # .endpoint() + .error() + .translate()
-oauth.signal.test.ts   # the protocol, end to end`}
-          />
           <Docs.Alert>
             {l.trans({
               en: (
                 <span>
-                  A service module with state does not grow a table for it. <code>_oauth</code> keeps every client,
-                  request and grant in <code>memory(Map, &#123; of: cnst.OauthGrant &#125;)</code> caches, and the
-                  shapes it stores are scalars under <code>libs/shared/lib/__scalar/</code>. A scalar travels as JSON
+                  <strong>A service module with state does not grow a table for it.</strong> <code>_oauth</code> keeps
+                  every client, request and grant in <code>memory(Map, &#123; of: cnst.OauthGrant &#125;)</code> caches,
+                  and each shape is a scalar under <code>libs/shared/lib/__scalar/</code>. A scalar travels as JSON
                   text, so the same declaration round-trips through the Redis and sqlite caches unchanged.
                 </span>
               ),
               ko: (
                 <span>
-                  상태가 있는 service module이라고 해서 테이블을 만들지는 않습니다. <code>_oauth</code>는 client,
-                  request, grant를 전부 <code>memory(Map, &#123; of: cnst.OauthGrant &#125;)</code> 캐시에 담고, 담는
-                  모양은 <code>libs/shared/lib/__scalar/</code> 아래의 scalar입니다. scalar는 JSON 텍스트로 이동하므로
-                  같은 선언이 Redis 캐시와 sqlite 캐시를 그대로 왕복합니다.
+                  <strong>상태가 있는 service module이라도 테이블을 만들지 않습니다.</strong> <code>_oauth</code>는
+                  client, request, grant를 모두 <code>memory(Map, &#123; of: cnst.OauthGrant &#125;)</code> 캐시에 담고,
+                  담는 모양은 <code>libs/shared/lib/__scalar/</code> 아래의 scalar입니다. scalar는 JSON 텍스트로
+                  오가므로 같은 선언이 Redis 캐시와 sqlite 캐시를 그대로 왕복합니다.
                 </span>
               ),
             })}
@@ -223,27 +594,40 @@ oauth.signal.test.ts   # the protocol, end to end`}
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="file-map" title={l.trans({ en: "Service File Map", ko: "Service file map" })}>
-        <Docs.Title>{l.trans({ en: "Service File Map", ko: "Service file map" })}</Docs.Title>
+      <Scroll.Slide id="file-map" title={l.trans({ en: "Service File Map", ko: "Service 파일 구성" })}>
+        <Docs.Title>{l.trans({ en: "Service File Map", ko: "Service 파일 구성" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Four files are always there. The rest arrive when the feature earns them, and the order is the order of this section's pages.",
-              ko: "네 개는 언제나 있습니다. 나머지는 feature가 그 파일을 필요로 하게 될 때 생기며, 순서는 이 섹션 문서들의 순서와 같습니다.",
+              en: "Four files are always there. The rest arrive when the feature earns them, and both lists follow the order of this section's pages.",
+              ko: "네 파일은 언제나 있습니다. 나머지는 기능에 필요해질 때 생기며, 두 목록 모두 이 섹션 문서의 순서를 따릅니다.",
             })}
           </div>
-          <Docs.IntroTable type={l.trans({ en: "File", ko: "파일" })} items={fileMap} />
+          <Docs.SubSubTitle>{l.trans({ en: "Always There", ko: "항상 있는 네 파일" })}</Docs.SubSubTitle>
+          <Docs.IntroTable type={l.trans({ en: "File", ko: "파일" })} items={alwaysFiles} />
+          <Docs.SubSubTitle>{l.trans({ en: "Only When Needed", ko: "필요할 때만 생기는 파일" })}</Docs.SubSubTitle>
+          <Docs.IntroTable type={l.trans({ en: "File", ko: "파일" })} items={optionalFiles} />
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="empty-scaffolds" title={l.trans({ en: "Ship The Empty Files", ko: "빈 파일도 함께 배포한다" })}>
-        <Docs.Title>{l.trans({ en: "Ship The Empty Files", ko: "빈 파일도 함께 배포한다" })}</Docs.Title>
+      <Scroll.Slide id="empty-scaffolds" title={l.trans({ en: "Ship The Empty Files", ko: "빈 파일도 남겨 둔다" })}>
+        <Docs.Title>{l.trans({ en: "Ship The Empty Files", ko: "빈 파일도 남겨 둔다" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "The rule that most often looks like a mistake: a scaffold file stays in the tree even when it holds nothing. Here is libs/util/lib/_util/util.signal.ts in full, unedited, on the main branch.",
-              ko: "가장 자주 실수처럼 보이는 규칙입니다. 스캐폴드 파일은 아무것도 담고 있지 않아도 트리에 남습니다. 아래는 main 브랜치의 libs/util/lib/_util/util.signal.ts 전문이며, 손대지 않은 그대로입니다.",
+              en: (
+                <span>
+                  The rule that most often looks like a mistake: a scaffold file stays in the tree even when it holds
+                  nothing. Here is <code>libs/util/lib/_util/util.signal.ts</code> in full, unedited:
+                </span>
+              ),
+              ko: (
+                <span>
+                  가장 자주 실수처럼 보이는 규칙입니다. 스캐폴드 파일은 아무것도 담지 않아도 트리에 남깁니다. 아래는{" "}
+                  <code>libs/util/lib/_util/util.signal.ts</code>의 전문이며, 손대지 않은 그대로입니다:
+                </span>
+              ),
             })}
           </div>
           <Code.Snippet
@@ -257,41 +641,73 @@ export class UtilInternal extends internal(srv.util, () => ({})) {}
 
 export class UtilEndpoint extends endpoint(srv.util, () => ({})) {}`}
           />
+          <ul className={bulletList}>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Two exported classes, zero methods.</strong> That is the whole file, and it stays.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>export한 class 둘, method 0개.</strong> 이것이 파일 전체이고, 그대로 둡니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Deleting it does not shrink the workspace, it changes it.</strong> The next developer first
+                    has to decide where an endpoint goes, instead of where it goes in the file already open.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>지우면 워크스페이스가 작아지는 것이 아니라 달라집니다.</strong> 다음 개발자는 이미 열린
+                    파일의 어디에 endpoint를 둘지가 아니라, 어느 파일에 둘지부터 정해야 합니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>The first endpoint stays a one-line diff.</strong> Without the file, it would be a new file.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>첫 endpoint가 한 줄짜리 diff로 끝납니다.</strong> 파일이 없으면 새 파일을 만드는 diff가
+                    됩니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
+          <Docs.SubSubTitle>
+            {l.trans({ en: "The Empty Forms You Will Meet", ko: "자주 만나는 빈 형태" })}
+          </Docs.SubSubTitle>
+          <Docs.IntroTable type={l.trans({ en: "File", ko: "파일" })} items={emptyForms} />
           <div>
             {l.trans({
-              en: "Two exported classes, zero methods. Deleting the file is not a smaller workspace, it is a different one: the generated sig barrel stops naming the module, the next developer has to decide where an endpoint goes instead of where it goes in the file that is already open, and the diff that adds the first endpoint is a new file rather than one line.",
-              ko: "export한 class 둘, method 영. 이 파일을 지우면 워크스페이스가 작아지는 것이 아니라 달라집니다. 생성된 sig barrel이 이 module의 이름을 부르지 않게 되고, 다음 개발자는 endpoint를 이미 열려 있는 파일의 어디에 둘지가 아니라 어디에 둘지부터 정해야 하며, 첫 endpoint를 추가하는 diff가 한 줄이 아니라 새 파일이 됩니다.",
-            })}
-          </div>
-          <div className={panelRecipe({ radius: "lg" }, "my-4")}>
-            <div className="mb-2 font-semibold text-primary">
-              {l.trans({ en: "The empty forms you will meet:", ko: "만나게 될 빈 형태들:" })}
-            </div>
-            <ul className="list-disc space-y-1 pl-5 text-foreground/70 text-sm">
-              <li>
-                {l.trans({
-                  en: "export class XInternal extends internal(srv.x, () => ({})) {} — the builder callback returns an empty object, not nothing.",
-                  ko: "export class XInternal extends internal(srv.x, () => ({})) {} — builder callback은 아무것도가 아니라 빈 객체를 반환합니다.",
-                })}
-              </li>
-              <li>
-                {l.trans({
-                  en: 'export class UtilService extends serve("util" as const, { serverMode: "batch" }, () => ({})) {} — a root container with no methods still registers the service name.',
-                  ko: 'export class UtilService extends serve("util" as const, { serverMode: "batch" }, () => ({})) {} — method가 없는 루트 컨테이너도 service 이름은 등록합니다.',
-                })}
-              </li>
-              <li>
-                {l.trans({
-                  en: "A store body of exactly two comments, // state and // action, marking where each half goes.",
-                  ko: "정확히 주석 두 줄, // state 와 // action 뿐인 store 본문. 각 절반이 들어갈 자리를 표시합니다.",
-                })}
-              </li>
-            </ul>
-          </div>
-          <div>
-            {l.trans({
-              en: "apps/akan/lib/_akan and apps/minimal/lib/_minimal are both in exactly this state, all five files present and all five empty, and they are not on anyone's list to clean up.",
-              ko: "apps/akan/lib/_akan과 apps/minimal/lib/_minimal이 정확히 이 상태입니다. 다섯 파일이 모두 있고 모두 비어 있으며, 누구의 정리 목록에도 올라 있지 않습니다.",
+              en: (
+                <span>
+                  <code>apps/akan/lib/_akan</code> is in exactly this state: its service, signal and store are all
+                  empty. <code>apps/minimal/lib/_minimal</code> keeps the same empty store beside its bench endpoints,
+                  and neither is waiting to be cleaned up.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>apps/akan/lib/_akan</code>이 정확히 이 상태입니다. service, signal, store가 모두 비어 있습니다.{" "}
+                  <code>apps/minimal/lib/_minimal</code>도 벤치마크 endpoint 옆에 같은 빈 store를 두고 있고, 둘 다 정리
+                  대상이 아닙니다.
+                </span>
+              ),
             })}
           </div>
         </Docs.Description>
@@ -300,62 +716,100 @@ export class UtilEndpoint extends endpoint(srv.util, () => ({})) {}`}
 
       <Scroll.Slide
         id="which-one"
-        title={l.trans({ en: "Model Module Or Service Module", ko: "Model module인가 Service module인가" })}
+        title={l.trans({ en: "Model Module Or Service Module", ko: "Model module인가, service module인가" })}
       >
         <Docs.Title>
-          {l.trans({ en: "Model Module Or Service Module", ko: "Model module인가 Service module인가" })}
+          {l.trans({ en: "Model Module Or Service Module", ko: "Model module인가, service module인가" })}
         </Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "One question decides it: is there a row you would want to list, filter, and still find next week? If yes, it is a model module at lib/<model>, and the service module you were about to write is one of its service methods. If no, it is a service module.",
-              ko: "질문 하나로 정해집니다. 나열하고 걸러 보고 싶고, 다음 주에도 찾게 될 행이 있습니까? 있다면 lib/<model>의 model module이고, 지금 쓰려던 service module은 그 module의 service method 하나입니다. 없다면 service module입니다.",
+              en: "One question decides it: is there a row you would want to list, filter, and still find next week?",
+              ko: "질문 하나로 정해집니다. 나열하고 걸러 보고, 다음 주에도 다시 찾을 행이 있습니까?",
             })}
           </div>
+          <ul className={bulletList}>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Yes: a model module</strong> at <code>lib/&lt;model&gt;</code>. The service module you were
+                    about to write is one of its service methods.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>있다면 model module</strong>입니다. <code>lib/&lt;model&gt;</code>에 두고, 쓰려던 service
+                    module은 그 module의 service method 하나가 됩니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>No: a service module</strong> at <code>lib/_&lt;service&gt;</code>.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>없다면 service module</strong>입니다. <code>lib/_&lt;service&gt;</code>에 둡니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
           <div className="my-4 space-y-3">
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🗃️</span>
-                <strong className="text-primary">{l.trans({ en: "Model module", ko: "Model module" })}</strong>
+            {moduleKinds.map((kind) => (
+              <div key={kind.folder} className={panelRecipe({ radius: "lg", padding: "sm" }, "min-w-0")}>
+                <div className="flex flex-wrap items-baseline gap-x-3">
+                  <span className="font-semibold text-primary">{kind.title}</span>
+                  <code className="font-mono text-foreground/60 text-xs">{kind.folder}</code>
+                </div>
+                <div className="mt-1 text-foreground/70 text-sm">{kind.desc}</div>
+                <code className={chip}>{kind.examples}</code>
               </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: "lib/<model>. A stored table, a document file, filters, slices, generated CRUD, and the five UI roles. user, file, banner, notification.",
-                  ko: "lib/<model>. 저장된 테이블, document 파일, filter, slice, 생성된 CRUD, 그리고 다섯 개의 UI 역할. user, file, banner, notification이 그렇습니다.",
-                })}
-              </div>
-            </div>
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">⚙️</span>
-                <strong className="text-primary">{l.trans({ en: "Service module", ko: "Service module" })}</strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: "lib/_<service>. No table, no document file, no slice. An action, a protocol, an integration, or a library's own root. security, oauth, localFile, doc.",
-                  ko: "lib/_<service>. 테이블도 document 파일도 slice도 없습니다. 동작, 프로토콜, 연동, 또는 라이브러리 자신의 루트입니다. security, oauth, localFile, doc이 그렇습니다.",
-                })}
-              </div>
-            </div>
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">📐</span>
-                <strong className="text-primary">{l.trans({ en: "Scalar module", ko: "Scalar module" })}</strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: "lib/__scalar/<scalar>. A value that is embedded in something else and never stored on its own. This is where a service module's own state lives when it has any.",
-                  ko: "lib/__scalar/<scalar>. 다른 것 안에 박히고 혼자서는 저장되지 않는 값입니다. service module에 상태가 있다면 그 상태가 사는 곳입니다.",
-                })}
-              </div>
-            </div>
+            ))}
           </div>
           <div>
             {l.trans({
-              en: "The next page is the abstract file, which is where the rules you just decided on get written down. After that the pages follow the call path: dictionary, service, signal, store.",
-              ko: "다음 문서는 abstract 파일입니다. 방금 정한 규칙을 적어 두는 곳입니다. 그다음부터는 호출 경로를 따라 dictionary, service, signal, store 순서입니다.",
+              en: "The next page is the abstract file, where the rules you just decided on are written down. After that the pages follow the call path:",
+              ko: "다음 문서는 방금 정한 규칙을 적어 두는 abstract 파일입니다. 그다음부터는 호출 경로를 따라갑니다:",
             })}
           </div>
+          <Docs.LinkGrid
+            items={[
+              {
+                href: "/conventions/service/abstract",
+                title: "service.abstract.md",
+                desc: l.trans({ en: "What the module owns, and its rules.", ko: "module이 맡는 일과 그 규칙." }),
+              },
+              {
+                href: "/conventions/service/dictionary",
+                title: "service.dictionary.ts",
+                desc: l.trans({ en: "Endpoint labels, errors and phrases.", ko: "endpoint label, error, 문구." }),
+              },
+              {
+                href: "/conventions/service/service",
+                title: "service.service.ts",
+                desc: l.trans({ en: "The workflow and what it injects.", ko: "workflow와 주입받는 것." }),
+              },
+              {
+                href: "/conventions/service/signal",
+                title: "service.signal.ts",
+                desc: l.trans({ en: "Internal and Endpoint, without a Slice.", ko: "Slice 없이 Internal과 Endpoint." }),
+              },
+              {
+                href: "/conventions/service/store",
+                title: "service.store.ts",
+                desc: l.trans({
+                  en: "Client state, only when the feature has any.",
+                  ko: "client state가 있을 때만 쓰는 store.",
+                }),
+              },
+            ]}
+          />
         </Docs.Description>
       </Scroll.Slide>
       <DocsToc />

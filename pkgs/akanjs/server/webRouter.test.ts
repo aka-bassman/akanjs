@@ -448,34 +448,60 @@ describe("WebRouter deep link associations", () => {
     );
   });
 
+  interface AssetLink {
+    relation: string[];
+    target: { namespace: string; package_name: string; sha256_cert_fingerprints: string[] };
+  }
+  const requestAssetLinks = async (env: string) => {
+    const previous = process.env.AKAN_PUBLIC_ENV;
+    process.env.AKAN_PUBLIC_ENV = env;
+    try {
+      return await withFullSsrCacheHarness(
+        async ({ renderEnvRoutes }) => {
+          const response = await renderEnvRoutes["/.well-known/assetlinks.json"](
+            new Request("https://minimal.app/.well-known/assetlinks.json"),
+          );
+          expect(response.headers.get("Content-Type")).toContain("application/json");
+          return (await response.json()) as AssetLink[];
+        },
+        { artifact: artifactWithDeepLinks() },
+      );
+    } finally {
+      if (previous === undefined) delete process.env.AKAN_PUBLIC_ENV;
+      else process.env.AKAN_PUBLIC_ENV = previous;
+    }
+  };
+
   test("serves android asset links from deep link metadata", async () => {
-    await withFullSsrCacheHarness(
-      async ({ renderEnvRoutes }) => {
-        const response = await renderEnvRoutes["/.well-known/assetlinks.json"](
-          new Request("https://minimal.app/.well-known/assetlinks.json"),
-        );
-        expect(response.headers.get("Content-Type")).toContain("application/json");
-        await expect(response.json()).resolves.toEqual([
-          {
-            relation: ["delegate_permission/common.handle_all_urls"],
-            target: {
-              namespace: "android_app",
-              package_name: "com.minimal.app",
-              sha256_cert_fingerprints: ["AA:BB"],
-            },
-          },
-          {
-            relation: ["delegate_permission/common.handle_all_urls"],
-            target: {
-              namespace: "android_app",
-              package_name: "com.minimal.admin",
-              sha256_cert_fingerprints: ["CC:DD"],
-            },
-          },
-        ]);
+    expect(await requestAssetLinks("main")).toEqual([
+      {
+        relation: ["delegate_permission/common.handle_all_urls"],
+        target: {
+          namespace: "android_app",
+          package_name: "com.minimal.app",
+          sha256_cert_fingerprints: ["AA:BB"],
+        },
       },
-      { artifact: artifactWithDeepLinks() },
-    );
+      {
+        relation: ["delegate_permission/common.handle_all_urls"],
+        target: {
+          namespace: "android_app",
+          package_name: "com.minimal.admin",
+          sha256_cert_fingerprints: ["CC:DD"],
+        },
+      },
+    ]);
+  });
+
+  test("vouches for the .debug package of a debug build only outside main", async () => {
+    const assetLinks = await requestAssetLinks("debug");
+    expect(assetLinks.map((assetLink) => assetLink.target.package_name)).toEqual([
+      "com.minimal.app",
+      "com.minimal.app.debug",
+      "com.minimal.admin",
+      "com.minimal.admin.debug",
+    ]);
+    expect(assetLinks[1]?.target.sha256_cert_fingerprints).toEqual(["AA:BB"]);
   });
 });
 

@@ -9,7 +9,7 @@ import {
 import { parseAkanI18nEnv } from "akanjs/common";
 import { deserialize } from "akanjs/constant";
 import type { ReactNode } from "react";
-import type { AkanMetadata, Head, LayoutModule, PageConfig, PageModule } from "../csrTypes";
+import type { Head, LayoutModule, PageConfig, PageModule } from "../csrTypes";
 import { AkanNotFoundError } from "../router";
 import { RouteArgError, type RouteArgInfo, type RouteArgInput, type RouteBaseArgs } from "./routeArgs";
 
@@ -19,7 +19,6 @@ export type RouteKind = "page" | "layout" | "rootLayout";
 export const routeDefinitionMarker = Symbol.for("akan.routeDefinition");
 
 type HeadStage<Args> = Head | ((args: Args) => PromiseOrObject<Head | null | undefined>);
-type MetadataStage<Args> = AkanMetadata | ((args: Args) => PromiseOrObject<AkanMetadata | null | undefined>);
 
 interface RouteRenderProps {
   params: Record<string, string>;
@@ -47,7 +46,6 @@ export abstract class RouteDefinition<
   // Held as `never`-argument functions: a `PageDefinition<{ projectId }>` must still be a `RouteDefinition` to
   // the loaders, and a stage typed over `Args` would make the wider declaration unassignable to the plain one.
   #head?: HeadStage<never>;
-  #metadata?: MetadataStage<never>;
   #loading?: (args: never) => PromiseOrObject<ReactNode>;
   #render?: (args: never) => PromiseOrObject<ReactNode>;
 
@@ -57,10 +55,6 @@ export abstract class RouteDefinition<
   }
   head(head: HeadStage<RouteBaseArgs & Args>) {
     this.#head = head as HeadStage<never>;
-    return this;
-  }
-  metadata(metadata: MetadataStage<RouteBaseArgs & Args>) {
-    this.#metadata = metadata as MetadataStage<never>;
     return this;
   }
   loading(render: (args: RouteBaseArgs & Args & Extra) => PromiseOrObject<ReactNode>) {
@@ -137,7 +131,6 @@ export abstract class RouteDefinition<
     if (!render)
       throw new Error(`[route-convention] a ${this.kind}() chain ends with .render(), and this one has none`);
     const head = this.#head;
-    const metadata = this.#metadata;
     const loading = this.#loading;
     const module: PageModule & LayoutModule = {
       default: (async (props: RouteRenderProps) => await render(this.#argsOf(props) as never)) as never,
@@ -147,11 +140,6 @@ export abstract class RouteDefinition<
         : typeof head === "function"
           ? { generateHead: async (props: RouteRenderProps) => await head(this.#argsOf(props) as never) }
           : { head }),
-      ...(metadata === undefined
-        ? {}
-        : typeof metadata === "function"
-          ? { generateMetadata: async (props: RouteRenderProps) => await metadata(this.#argsOf(props) as never) }
-          : { metadata }),
       ...(loading
         ? {
             Loading: ((props: RouteRenderProps) =>

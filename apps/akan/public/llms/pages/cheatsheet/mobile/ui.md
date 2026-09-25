@@ -18,82 +18,192 @@
 
 UI & Keyboard
 
+Route depth
+
+Path segments after the language and basePath: `/chat` is 1, `/chat/[chatId]` is 2.
+
+Safe area
+
+Space the device itself covers, such as the notch, the status bar and the home indicator.
+
+Inset
+
+Space the app reserves for its own bars, such as a navbar on top or a composer below.
+
+A layer that rides on top of the software keyboard and moves with it.
+
+/csr/stack_en.mp4
+
+Pushes a page over the current one. Use it for drill-down screens such as detail, edit or settings.
+
+/csr/bottomup_en.mp4
+
+Opens a focused screen from the bottom that drags down to close. Use it for modal-like flows such as compose, picker or camera.
+
+/csr/fade_en.mp4
+
+Switches context without suggesting a deeper level.
+
+/csr/scale_en.mp4
+
+A small scale motion. It is the Android default for deeper routes.
+
+Web · Root
+
+Drag to go back
+
+Slides in from the right.
+
+Rises from the bottom.
+
+No drag
+
+Scales up slightly into place.
+
+Cross-fades between pages.
+
+Swaps instantly with no animation.
+
+Drag to the right, starting anywhere on the page.
+
+Goes back past a third of the screen width, or on a quick flick even if it travelled less.
+
+Hides the keyboard only once the touch is read as a drag.
+
+Drag down, starting near the top of the screen.
+
+Closes past half the screen width; a shorter drag snaps back.
+
+Hides the keyboard as soon as the drag starts.
+
+Top safe area the page reserved, in px.
+
+Bottom safe area the page reserved, in px.
+
+The resolved `topInset`, in px.
+
+The resolved `bottomInset`, in px.
+
+Top safe area plus top inset: the top padding a page body needs.
+
+Bottom safe area plus bottom inset: the bottom padding a page body needs.
+
+The Capacitor Keyboard plugin reported the exact height as the keyboard began to open.
+
+How much the visible viewport shrank; Android prefers it, elsewhere it fills in for the plugin.
+
+Neither reported a height, so it is 0: the keyboard is closed or could not be measured.
+
+The route has at least one `keyboardSticky` slot; when `false`, the keyboard layer is hidden.
+
+A page transition is running, so the offset is held at 0 to keep out of its way.
+
+A height is present and `frozen` is not set; branch on this, not on the height alone.
+
+The WebView frame stays still while Akan applies the keyboard offset, so the composer rides the keyboard instead of jumping above it.
+
 Page Transitions
 
-Your app runs inside a native shell and every screen change still lands like a web page swap. The reader cannot tell whether they went deeper or sideways, and the back button is the only way out.
+Your app runs inside a native shell, yet every screen change lands like a web page swap. The user cannot tell whether they went deeper or sideways, and the back button is the only way out.
+
+Words used on this page
+
+Term
+
+Set the transition
+
+A detail page that slides in over its list:
+
+What each one looks like
+
+Platform defaults
+
+Transition
+
+Default here
+
+Only when written
+
+The iOS and Android columns are routes at depth 2 or more. The last column covers the web at any depth and every platform at depth 1 or less.
 
 The Back Gesture
 
-Leave gesture to the platform default unless the page has a reason not to. iOS turns it on for a stack page below the root; Android and the web leave it off, matching what each platform's users already expect.
+How the value is decided
 
-Written wins
-
-Intent before movement
-
-A touch is pending until it travels 8px, then locks to gesture or scroll by which axis moved more. Nothing is dismissed and the keyboard is not hidden while the intent is still pending, so ordinary content scrolling costs nothing.
-
-Distance or velocity
-
-A stack page goes back once the drag passes a third of the screen width, or when it is released fast enough — a flick counts even though it travelled less.
+The two drags
 
 The Frame Config
 
-One .config() object covers the whole page frame, and a layout's config merges down into every route under it. An unknown key is not ignored — it throws at boot.
+iOS stack · Android scaleOut · none on web and at depth ≤ 1
 
-The CSR animation played when this route is entered.
+The animation played when this route is entered.
 
-Edge-swipe back. Only stack and bottomUp bind a drag; on the other three it is stored and never read.
+true on iOS at depth ≥ 2, else false
 
-Top chrome reservation in px. true is the 48px default, false and absent are both 0.
+Drag to go back, attached only by the `stack` and `bottomUp` transitions.
 
-Bottom chrome reservation in px, with the same 48px meaning for true.
+Space reserved for a top bar in px; `true` means 48px, `false` or unset means 0.
 
-Which device insets the page reserves. The android key picks how they are measured: auto takes the CSS insets only when non-zero, edge-to-edge takes the larger of device and CSS, none takes zero.
+Space reserved for a bottom bar, in px, with the same 48px meaning for `true`.
 
-Keeps the page mounted in the cached layer after navigating away, so returning to it costs no re-render.
+iOS true · Android { android: "auto" } · web false
 
-The resolved numbers are published as CSS custom properties on the frame, so a component can reserve the same space the page did without reading any of it in JavaScript:
+Device insets to reserve; `"top"` or `"bottom"` keeps one side only.
 
-The last two are the sums a page body actually wants: safe area plus inset, top and bottom.
+How Android measures the safe area; `none` reserves nothing.
+
+true at depth ≤ 1, else false
+
+Keeps the page mounted in a hidden cache layer after you navigate away.
+
+the background color
+
+CSS color painted behind the top safe-area strip.
+
+CSS color painted behind the bottom safe-area strip.
+
+The frame as CSS variables
+
+The resolved numbers are published as CSS custom properties, so a component can reserve the same space as the page without any JavaScript:
+
+Variable
 
 The Keyboard Inset
 
-Where the height comes from is not one thing, and which of the three answered decides how accurate the offset is:
+A chat input, a comment box, a support composer: anything pinned to the bottom must move with the software keyboard. Every platform reports the keyboard differently.
+
+A chat page with all three steps:
+
+Where the keyboard height comes from
+
+Akan reads the height from one of three sources, and the source decides how accurate the offset is:
 
 Source
 
-The Capacitor Keyboard plugin reported a height. The exact number, with the platform's own show and hide timing.
+Keyboard state
 
-Android shrank the visual viewport instead of reporting a keyboard. The height is derived from how much the viewport lost.
-
-Neither answered — mobile web without the plugin, most often. The layer still exists so the composer does not jump, but nothing measured it.
-
-The rest of the keyboard frame:
-
-sticky — this path registered at least one keyboardSticky slot. When it is false the whole keyboard layer is not rendered.
-
-frozen — a page transition is running. The offset is held at 0 so the accessory layer does not fight the transition.
-
-visible — there is a height and nothing is frozen. This, not height alone, is what a component should branch on.
+Field
 
 Anchoring The Content
 
-Moves the BottomInset into the keyboard accessory layer so it follows the software keyboard.
-
-Preserves the scroll container's bottom distance while the content viewport resizes. bottom is the only value it takes.
-
-Keep the page as a server component. If the app needs an initial scroll-to-bottom behavior, add a tiny client helper inside the page or Zone and target the Akan page content container.
+A helper that scrolls the page it sits in to the bottom once:
 
 ## Code Examples
 
 ### apps/myapp/page/article/[articleId].tsx
 
 ```ts
+import { Article, fetch } from "@apps/myapp/client";
+import { ID } from "akanjs/base";
 import { page } from "akanjs/client";
 
 export default page()
-  .config({ transition: "stack", gesture: true })
-  .render(() => <ArticleDetail />);
+  .param("articleId", ID)
+  .config({ transition: "stack" })
+  .render(({ articleId }) => {
+    const { articleView } = fetch.viewArticle(articleId);
+    return <Article.Zone.View view={articleView} />;
+  });
 ```
 
 ### apps/myapp/page/chat/_index.tsx
@@ -104,11 +214,20 @@ import { page } from "akanjs/client";
 import { Layout } from "akanjs/ui";
 
 export default page()
-  .config({ topInset: true, bottomInset: 72, safeArea: true, transition: "stack" })
+  .config({
+    topInset: true,
+    bottomInset: 72,
+    safeArea: true,
+    transition: "stack",
+  })
   .render(() => (
     <div>
       <div>{/* scrollable content */}</div>
-      <Layout.BottomInset keyboardSticky contentAnchor="bottom">
+      <Layout.BottomInset
+        className="h-(--akan-bottom-inset)"
+        keyboardSticky
+        contentAnchor="bottom"
+      >
         <ChatMessage.Zone.Composer />
       </Layout.BottomInset>
     </div>
@@ -143,17 +262,15 @@ export const Composer = ({ className }: ComposerProps) => {
 
 ```ts
 "use client";
-
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 export const ScrollToBottomOnMount = () => {
+  const markerRef = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
-    // Every mounted path route renders id="pageContent", so query the class of the one in this tree.
-    const pageContent = document.querySelector(".akan-page-content");
+    const pageContent = markerRef.current?.closest(".akan-page-content");
     pageContent?.scrollTo({ top: pageContent.scrollHeight });
   }, []);
-
-  return null;
+  return <span ref={markerRef} hidden />;
 };
 ```
 

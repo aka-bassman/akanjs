@@ -9,8 +9,8 @@
 ## Headings
 
 - Testing (#overview)
-- Spec Helper (#helper)
-- Test File (#test-file)
+- Spec File: Building Fixtures (#helper)
+- Test File: Writing Assertions (#test-file)
 - What To Test (#targets)
 - Command (#command)
 - Tips (#tips)
@@ -19,71 +19,151 @@
 
 Testing
 
-In Akan apps, start testing from signals. A signal test checks the real business flow through the generated fetch API before you spend time on UI details.
+A test that calls your endpoints through the generated `fetch`, against a real test server.
 
-A signal suite is always two files, and the split is not stylistic:
+A reusable function that prepares what a test needs, such as a record or a signed-in user.
 
-`<model>.signal.spec.ts` holds reusable fixtures built on `sampleOf(cnst.XInput)`, each with an explicit return type and no assertions. Other modules import from it.
+A test user bundled with a `fetch` that is already signed in as that user.
 
-`<model>.signal.test.ts` holds the assertions: `describe("<Model> Signal")`, `let` fixtures at describe scope, one `beforeAll`, and story-ordered `it` blocks.
+Returns the test server's signed-out `fetch`, starting the server on the first call.
 
-Both files sit beside the module they cover, and the suite boots the whole lib barrel, so signup, permission, validation, and state transitions are all reachable from one fetch.
+Fills every field of a constant class with a sample value, using the field's default when set.
 
-Spec Helper
+Makes one random value at a time, such as an email or a string of a given length.
 
-A spec file builds agents and sample data. The fetch it hands back is flat — every endpoint sits directly on it, so it reads `agent.fetch.createArticle(...)`, never a namespace per model.
+Changes the test server's settings, covered in the Test File section below.
 
-Agent types are re-exported from `lib/user/user.signal.spec.ts` and imported from there, not from the owning lib.
+`tempFile` keeps SQLite in a temporary file instead of memory, deleted after the run.
 
-Test File
+The port the test server listens on.
 
-The test file carries every assertion. Fixtures are `let` bindings at describe scope so each `it` continues the story the previous one left, and a refusal is asserted with `rejects.toThrow()`.
+Happy path
+
+Create, update, publish, archive.
+
+Permission
+
+A guest cannot publish, the owner can edit, an admin can remove.
+
+Validation
+
+Missing title, invalid date, duplicated `accountId`.
+
+State transition
+
+`draft` to `published`, `pending` to `approved`.
+
+External dependency
+
+File upload, payment callback, message publish.
+
+The app, library or package to test, such as `myapp` or `shared`.
+
+`false` skips writing generated code before an app's tests run.
+
+Signal tests
+
+Package tests
+
+Use
+
+Run from the workspace root. It passes `--isolate` for you.
+
+Fine inside a package directory, but a signal test cannot find its app this way.
+
+Never
+
+Without `--isolate`, test files share one global object and break each other.
+
+Words used on this page
+
+Term
+
+Always two files
+
+A signal suite is always two files, and the split is not a matter of taste:
+
+Fixtures
+
+Assertions
+
+Steps
+
+Build fixtures in the spec file.
+
+Write the assertions in the test file.
+
+Spec File: Building Fixtures
+
+akanjs/test helper
+
+1. Agent types live in one place
+
+2. The model's fixtures
+
+A model's spec builds on those agents. Every fixture declares its return type:
+
+Test File: Writing Assertions
+
+Changing the test server
 
 What To Test
 
-Happy path: create, update, publish, archive.
+A signal test file usually covers these five kinds of behaviour:
 
-Permission: guest cannot publish, owner can edit, admin can remove.
+Kind
 
-Validation: missing title, invalid date, duplicated accountId.
-
-State transition: draft to published, pending to approved.
-
-External dependency: file upload, payment callback, message publish.
+Examples
 
 Command
 
-Run app tests from the workspace root. `akan test` prepares the target first, then runs `bun test --isolate` inside it. Add `--write false` when you want to skip code generation during a check.
+Which command to use
 
-Never run plain `bun test`. Without `--isolate` every test file shares one global object, and dozens of tests fail from cross-file state pollution — `bunfig.toml`'s `[test] isolate` is not honored. Running it from the workspace root breaks subprocess stdio pipes on top of that. `akan test` passes `--isolate` for you.
+Works
+
+Does not work
 
 Tips
 
-Create data through signals when possible so the test uses the same rules as the app.
-
-Keep the spec free of assertions. A fixture that asserts fails somebody else's suite for a reason their file does not show.
-
-Test one important behavior per `it` block.
-
 ## Code Examples
+
+### apps/myapp/lib/user/user.signal.spec.ts
+
+```ts
+import * as sharedUserSpec from "@libs/shared/lib/user/user.signal.spec";
+
+import type { fetch as appFetch } from "../useServer";
+
+type AppFetch = typeof appFetch;
+
+export type UserAgent = sharedUserSpec.UserAgent<AppFetch>;
+export type AdminAgent = sharedUserSpec.AdminAgent<AppFetch>;
+
+export const getUserAgentWithPhone = async (): Promise<UserAgent> =>
+  await sharedUserSpec.getUserAgentWithPhone<AppFetch>();
+
+export const getUserAgentWithPassword = async (): Promise<UserAgent> =>
+  await sharedUserSpec.getUserAgentWithPassword<AppFetch>();
+```
 
 ### apps/myapp/lib/article/article.signal.spec.ts
 
 ```ts
-import { getUserAgentWithPhone, type UserAgent } from "@libs/shared/lib/user/user.signal.spec";
 import { getOrSetupSignalTestFetch, sampleOf } from "akanjs/test";
 
 import * as cnst from "../cnst";
 import type { fetch as appFetch } from "../useServer";
+import { getUserAgentWithPhone, type UserAgent } from "../user/user.signal.spec";
 
 type AppFetch = typeof appFetch;
-export type WriterAgent = UserAgent<AppFetch>;
 
-export const getWriterAgent = async (): Promise<WriterAgent> => await getUserAgentWithPhone<AppFetch>();
+export const getWriterAgent = async (): Promise<UserAgent> =>
+  await getUserAgentWithPhone();
 
-export const getGuestFetch = async (): Promise<AppFetch> => await getOrSetupSignalTestFetch<AppFetch>();
+export const getGuestFetch = async (): Promise<AppFetch> =>
+  await getOrSetupSignalTestFetch<AppFetch>();
 
-export const createDraftArticle = async (agent: WriterAgent): Promise<cnst.Article> => {
+export const createDraftArticle = async (agent: UserAgent): Promise<cnst.Article> => {
   const articleInput = sampleOf(cnst.ArticleInput);
   return await agent.fetch.createArticle({ ...articleInput, status: "draft" });
 };
@@ -95,10 +175,11 @@ export const createDraftArticle = async (agent: WriterAgent): Promise<cnst.Artic
 import { beforeAll, describe, expect, it } from "bun:test";
 
 import type * as cnst from "../cnst";
+import type { UserAgent } from "../user/user.signal.spec";
 import * as articleSpec from "./article.signal.spec";
 
 describe("Article Signal", () => {
-  let writerAgent: articleSpec.WriterAgent;
+  let writerAgent: UserAgent;
   let article: cnst.Article;
 
   beforeAll(async () => {
@@ -122,12 +203,20 @@ describe("Article Signal", () => {
 });
 ```
 
+### apps/myapp/lib/article/article.signal.test.ts
+
+```ts
+import { configureSignalTest } from "akanjs/test";
+
+configureSignalTest({ databaseMode: "tempFile" });
+```
+
 ### Terminal
 
 ```bash
 akan test myapp
 akan test myapp --write false
-cd apps/myapp && bun test --isolate
+akan test shared
 ```
 
 ## Agent Notes

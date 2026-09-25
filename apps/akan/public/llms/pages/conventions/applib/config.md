@@ -8,7 +8,7 @@
 
 ## Headings
 
-- Akan Config Overview (#akan-config-overview)
+- akan.config.ts Overview (#akan-config-overview)
 - Config File Shape (#config-shape)
 - routes (#routes)
 - mobile (#mobile)
@@ -29,141 +29,237 @@
 
 akan.config.ts
 
-Akan Config Overview
+Serving the web
 
-akan.config.ts is the app or library configuration entry point. Akan uses it to prepare server, web, mobile app, database, build, image, and environment behavior.
+Which domains open the app, and which basePath each one maps to.
 
-You can start with an empty config. Akan treats the file as partial settings and fills missing fields with framework defaults.
+Which web surfaces the build produces: SSR pages, the CSR shell, or API only.
+
+Where endpoints and the websocket are mounted. Defaults to `/api` and `/ws`.
+
+The locales the app serves and the default one.
+
+Sizes, formats and allowed sources for the image optimizer.
+
+Which libraries' page folders this app serves as its own routes.
+
+Mobile, data and env
+
+The native app's identity and one target per Capacitor package.
+
+`single`, `multiple` or `cluster`, used when `AKAN_DATABASE_MODE` is unset.
+
+An allowlist of extra env names for browser code. The build does not read it yet.
+
+Private files that ship with `akan upload-env` and stay out of git.
+
+Build and image
+
+Packages kept out of the bundle and installed in the production image.
+
+Extra barrels whose imports the build rewrites to the exact file.
+
+Extra packages the browser build parses only as far as they are used.
+
+The production image. A library adds `preRuns` and `postRuns` only.
+
+Which fonts the build prunes from its `public/` copy. A library sets `keepFonts` only.
+
+Akan plugins the CLI reads for runtime packages, native setup and assets.
+
+Signal endpoints and the websocket. Always served; `web` does not switch it.
+
+Server-rendered pages: the route renderer, its pages and client bundles, and the RSC worker.
+
+The single-file SPA shell that the Capacitor mobile build ships.
+
+What each value builds
+
+The default. Pages and the mobile shell, for an app that also ships a native app.
+
+Pages without the mobile shell, for a web-only app.
+
+API only. Nothing under `page/` or `public/` is served, synced library routes included.
+
+Remote sources the optimizer may fetch. A host not listed is refused.
+
+Local `public/` paths it may serve.
+
+Widths for full-width images. A width in neither size list is refused.
+
+Widths for smaller, fixed-size images such as avatars and icons.
+
+Output formats in order of preference. The first one the browser accepts wins.
+
+Allowed quality values. A request for any other quality is refused.
+
+Minimum cache lifetime in seconds, even when the source asks for less.
+
+Serve SVG sources. Off by default because an SVG can carry script.
+
+Redirects followed while fetching a remote source.
+
+Timeout for fetching a remote source, in milliseconds.
+
+The largest remote source it downloads.
+
+Images encoded at once. `0` uses half the CPUs of the serving machine, at least one.
+
+akan.config.ts Overview
+
+Start from an empty object. Every key you leave out takes a framework default, so add a key only when the default stops fitting:
+
+Every key at a glance
+
+Key
+
+App
+
+Library
+
+Can be declared
+
+Not accepted
+
+Config reference
+
+Types and defaults for every key, including every mobile field.
+
+Multi Client
+
+How routes and basePath split one app into several clients.
 
 Config File Shape
 
-AppConfig and LibConfig can be plain objects or functions. Use a plain object for most cases. Use a function when the config needs the app or library metadata while it is being loaded.
-
 routes
 
-routes connects domains and basePath values to one app. Use it when one Akan app needs to serve several brands, services, or entry paths.
+The client this route opens, with pages under `page/<basePath>`. Omit it for a single client.
 
-Akan normalizes basePath values, collects domains, adds branch names, and creates default development domains when no explicit domain is provided.
-
-If mobile targets use basePath, define that basePath in routes first. Akan validates mobile target basePath values against the route list.
+Hosts that open this route, keyed by branch: `debug`, `develop`, `main` or your own key.
 
 mobile
 
-mobile defines the native app identity and target-specific packaging settings used when a web surface is shipped through Capacitor.
+Values at the mobile root are defaults for every target, and a target overrides only what it sets:
 
-Missing values fall back to app name, com.<app>.app, version 0.0.1, build number 1, and a default target. Target basePath must exist in routes.
+the app name
 
-Keep local keystore paths and private signing values out of shared examples. Put machine-specific values in local-only files or deployment secrets.
+Display name of the native app.
+
+Android applicationId and iOS bundle id.
+
+User-facing version: Android versionName and the iOS marketing version.
+
+Store build number: Android versionCode and the iOS build number.
+
+one target
+
+One entry per native package. The key is the target's name.
+
+The client this package opens. It must be a basePath declared in `routes`.
+
+Native permissions. Each one turns on the matching plugin's native setup.
 
 defaultDatabaseMode
 
-defaultDatabaseMode chooses the app's default database operating model. Most apps can leave it empty and use the single database default.
+Mode
 
-Akan stores the resolved mode in the app scan result so database-related commands and runtime setup can share the same default.
+Database, queue and cache
 
-Only customize this when your deployment model really needs separated or clustered database behavior. For details, see
+SQLite for all three, so no extra server runs.
 
-Database Mode
+libSQL for data, Redis for the queue and cache.
 
-.
+Postgres for data, Redis for the queue and cache.
+
+Set it only when the deployment needs a different mode by default:
 
 web
 
-web declares which browser surfaces this app builds and serves, as true | false | { csr: boolean }. false is an api-only app; true, the default, is both surfaces; the object form keeps SSR and toggles only the CSR bundle. SSR is the RSC route renderer with its pages bundle, client bundles and RSC worker process; CSR is the single-file SPA bundle the Capacitor mobile build ships. The API is always served and is not part of this switch.
+Surface
 
-Turning a surface off removes its build phase, so the deployment image never carries the artifact — and the runtime never mounts the routes that read it. There is no CSR-without-SSR option, by type: the CSR bundle inlines the stylesheet the SSR build compiles, so it would ship an unstyled app.
+Value
 
-An api-only build writes no route artifact, skips the RSC worker entrypoint, and leaves public/ out of the image, because the web router's catch-all is its only reader. Nothing under page/ is served, including routes a library contributed through syncPageLibs.
+Built and served
 
-AKAN_SSR and AKAN_CSR narrow the same two surfaces per deployment. They only narrow: a surface the build left out cannot be switched back on, and the boot log names what the process ended up serving. The generated Dockerfile writes the build's own answer as the image default.
+Left out
 
-Turning CSR off is refused when the app declares mobile targets, because akan build-ios copies dist/apps/<app>/csr/<target>.html into the native project.
-
-akan start ignores web and keeps the whole dev surface: the incremental builder is also the file watcher, so switching it off would take server-code HMR with it. It warns once when the config and the dev server disagree.
+A web-only app with no native build drops the mobile shell like this:
 
 images
 
-images configures Akan's optimized image pipeline. It controls allowed image sizes, output formats, remote sources, local paths, redirects, timeout, byte limits, and how many images encode at once.
-
-Akan merges your image config with defaults. List fields such as deviceSizes, imageSizes, formats, remotePatterns, and localPatterns keep defaults unless you replace them.
-
 i18n
 
-i18n defines the locales your app supports and the default locale used when no user preference is resolved.
+Locale segments the app serves. Each one prefixes every route.
 
-Akan writes the resolved default locale and locale list to AKAN_PUBLIC_DEFAULT_LOCALE and AKAN_PUBLIC_LOCALES for build/runtime use.
-
-Keep i18n here for app-level language availability. Put actual translated copy in the page, dictionary, or localization layer that owns the text.
+The fallback when none of the browser's languages match. Must be one of `locales`.
 
 publicEnv
 
-publicEnv lists environment keys that are allowed to be exposed to browser code. Treat it as an allowlist for public-safe values.
-
-Akan keeps the list in resolved app config so build and runtime code know which env values may cross the server-to-browser boundary.
-
-Never include secrets, database URLs, private tokens, or server credentials in publicEnv.
-
 secrets
-
-secrets lists glob patterns for private files that must ship to the cloud alongside the default env/ files. On `akan upload-env` Akan bundles every matched file into the env archive, and `akan download-env` restores them to the same paths.
-
-Patterns are resolved relative to the app directory. Akan also syncs them into a managed block in the workspace root .gitignore on upload-env, so declaring a pattern here is enough to both ship and git-ignore the files. You do not maintain .gitignore separately.
-
-Use secrets for private key files, service-account JSON, or certificates that env.server.* cannot inline. The default env/env.(client|server).*.ts files are always included, so you only list extra paths here.
-
-Only the glob patterns live in akan.config.ts. The matched files stay local and git-ignored — never commit their contents. Removing a pattern also removes it from the managed .gitignore block on the next upload-env.
 
 syncPageLibs
 
-syncPageLibs declares which library page folders this app serves. On akan sync, each selected library is linked into apps/<app>/page/(libs)/(<lib>), so the library keeps ownership of its routes and the app only opts in.
+Routes the app serves
 
-true takes every library dependency that ships a page folder, an array takes exactly the libraries listed, and false (the default) syncs nothing and removes what an earlier sync created.
+The default. No library routes; links from an earlier sync are removed.
 
-The linked folder is generated and gitignored, so edit the library source instead. An explicit list fails the sync when a named library is not a dependency or has no page folder, while true simply skips libraries without one.
+Every library dependency that ships a `page/` folder.
+
+Only the libraries listed.
 
 externalLibs
 
-externalLibs marks dependencies that should not be bundled into app code. When declared here, Akan installs them as separate packages during the production build.
-
-An app's resolved externalLibs is its own list plus the list every library in the workspace declares, deduped with the app's entries first. Every workspace library is read, not only the app's dependencies, so a library can declare its own runtime package once and no app has to repeat it.
-
-Akan includes the merged list in the production package dependencies together with the required SSR runtime packages.
-
-Use this for native or runtime-sensitive packages. Normal TypeScript helpers usually do not need externalLibs.
+A library declares the packages its own runtime needs the same way:
 
 barrelImports
 
-barrelImports adds import roots that should be treated as barrel folders. Akan already includes framework barrels and the standard barrel folders from each app and library.
+Already included
 
-Akan starts with framework defaults such as akanjs/webkit, akanjs/common, akanjs/ui, akanjs/client, and akanjs/server. It also adds @apps/<app>/{ui,webkit,common,client,server} and the same folders from every used @libs/<lib>. Your custom entries are appended after those defaults.
+The framework facets.
 
-Most ui, webkit, common, client, and server folders are already covered. Add this only for a custom barrel outside the standard facets.
+This app's own facets.
+
+The same facets of every library in the workspace.
+
+Add only a barrel outside those facets, such as a design-system package:
 
 optimizeImports
 
-optimizeImports tells Akan which packages or barrels should participate in optimized import handling so pages load only what they use. Akan already includes common UI, icon, chart, hook, and utility packages by default.
-
-Akan merges your entries with default optimized packages such as lucide-react, date-fns, lodash-es, ramda, antd, ahooks, Heroicons, MUI, Recharts, react-use, Tabler icons, and react-icons/*, then removes duplicates.
-
-Pair this with a clean barrel shape. One file per export makes optimized imports easier to reason about.
-
 docker
 
-docker customizes the production container Akan generates for an app. Use it only when deployment needs extra system packages or a different startup command.
+The base image. The object form picks one per architecture.
 
-Akan builds Dockerfile content from the base image, your run scripts, app env values, base paths, locale values, and command. The generated image installs ca-certificates and tzdata and nothing else, so an app that needs a headless browser, ffmpeg, or a native toolchain declares it in preRuns.
+Steps run before `bun install --production`, so native builds find their tools.
 
-docker is either those parts or a whole Dockerfile written as a string. preRuns run before bun install --production, so build tools a native dependency needs are present for it; postRuns run after it, before app files are copied. image and each run entry also take a per-architecture object, which compiles to a TARGETARCH guard.
+Steps run after the install, before the app files are copied.
 
-The string form is useful when the deployment image must be fully controlled. It is used exactly as written, so nothing is merged into it — including the preRuns a library contributes. Keep the default Dockerfile flow when possible: install runtime packages, install production dependencies, copy app files, set Akan public env values, then define CMD.
+The container's `CMD`.
+
+Order of the generated Dockerfile
+
+A whole Dockerfile
+
+When the image must be fully under your control, write the whole Dockerfile as a string and keep the order above:
 
 Library Config Fields
 
-LibConfig uses the same partial object or function shape, and its practical surface is externalLibs and docker. Use externalLibs when a shared library wraps a dependency that must be available in production runtime packaging.
+Dependents
 
-docker declares the image steps the library's own runtime needs, as preRuns and postRuns only — the base image and the command stay the app's decision. Library steps are emitted before the app's own, and a step declared on both sides becomes one layer.
+Other apps
 
-Akan resolves missing values to an empty list and merges every workspace library's externalLibs and docker steps into each app, so an app that uses the library does not repeat the declaration. An app whose docker is a whole Dockerfile string takes neither.
+What a library adds
+
+Appended after the app's own list, without duplicates.
+
+Runs before the app's own steps, unless the app writes `docker` as a string.
+
+Globs against the library's own `public/` whose fonts survive pruning.
+
+Read by the CLI for runtime packages, native setup and assets.
+
+Applied
+
+Not applied
 
 ## Code Examples
 
@@ -177,7 +273,7 @@ const config: AppConfig = {};
 export default config;
 ```
 
-### object config
+### apps/myapp/akan.config.ts
 
 ```ts
 import type { AppConfig } from "akanjs";
@@ -189,7 +285,7 @@ const config: AppConfig = {
 export default config;
 ```
 
-### function config
+### apps/myapp/akan.config.ts
 
 ```ts
 import type { AppConfig } from "akanjs";
@@ -197,7 +293,7 @@ import type { AppConfig } from "akanjs";
 const config: AppConfig = (app) => ({
   mobile: {
     appName: app.name,
-    appId: `com.${app.name}.app`,
+    appId: `com.koyo.${app.name}`,
   },
 });
 
@@ -228,17 +324,12 @@ const config: AppConfig = {
   routes: [{ domains: {}, basePath: "shop" }],
   mobile: {
     appName: "Shop",
-    appId: "com.example.shop",
+    appId: "com.koyo.shop",
     version: "1.0.0",
     buildNum: 12,
     targets: {
       shop: {
-        name: "shop",
         basePath: "shop",
-        appName: "Shop",
-        appId: "com.example.shop",
-        version: "1.0.0",
-        buildNum: 12,
         permissions: ["camera", "push"],
       },
     },
@@ -260,25 +351,13 @@ const config: AppConfig = {
 export default config;
 ```
 
-### web without the mobile bundle
+### apps/myapp/akan.config.ts
 
 ```ts
 import type { AppConfig } from "akanjs";
 
 const config: AppConfig = {
   web: { csr: false },
-};
-
-export default config;
-```
-
-### api-only deployment
-
-```ts
-import type { AppConfig } from "akanjs";
-
-const config: AppConfig = {
-  web: false,
 };
 
 export default config;
@@ -292,7 +371,11 @@ import type { AppConfig } from "akanjs";
 const config: AppConfig = {
   images: {
     remotePatterns: [
-      { protocol: "https", hostname: "cdn.example.com", pathname: "/products/**" },
+      {
+        protocol: "https",
+        hostname: "cdn.example.com",
+        pathname: "/products/**",
+      },
     ],
     formats: ["image/webp"],
     minimumCacheTTL: 86400,
@@ -343,15 +426,6 @@ const config: AppConfig = {
 export default config;
 ```
 
-### .gitignore (auto-synced)
-
-```ts
-# akan:secrets (managed by akan.config.ts — do not edit)
-apps/api/certs/*.pem
-apps/api/secrets/**/*
-# akan:secrets:end
-```
-
 ### apps/myapp/akan.config.ts
 
 ```ts
@@ -364,20 +438,28 @@ const config: AppConfig = {
 export default config;
 ```
 
-### apps/media/akan.config.ts | libs/report/akan.config.ts
+### apps/media/akan.config.ts
 
 ```ts
-// apps/media/akan.config.ts
+import type { AppConfig } from "akanjs";
+
 const config: AppConfig = {
   externalLibs: ["shiki"],
 };
 
-// libs/report/akan.config.ts
-const libConfig: LibConfig = {
+export default config;
+```
+
+### libs/report/akan.config.ts
+
+```ts
+import type { LibConfig } from "akanjs";
+
+const config: LibConfig = {
   externalLibs: ["puppeteer"],
 };
 
-// apps/media resolves to ["shiki", "puppeteer"]
+export default config;
 ```
 
 ### apps/admin/akan.config.ts
@@ -386,7 +468,7 @@ const libConfig: LibConfig = {
 import type { AppConfig } from "akanjs";
 
 const config: AppConfig = {
-  barrelImports: ["@pkgs/mypkg/ui/icons"],
+  barrelImports: ["@acme/ui"],
 };
 
 export default config;
@@ -398,7 +480,7 @@ export default config;
 import type { AppConfig } from "akanjs";
 
 const config: AppConfig = {
-  optimizeImports: ["barrel-library"],
+  optimizeImports: ["@phosphor-icons/react"],
 };
 
 export default config;
@@ -412,7 +494,9 @@ import type { AppConfig } from "akanjs";
 const config: AppConfig = {
   docker: {
     image: "oven/bun:1-slim",
-    preRuns: ["apt-get update && apt-get install -y --no-install-recommends ffmpeg imagemagick"],
+    preRuns: [
+      "apt-get update && apt-get install -y --no-install-recommends ffmpeg imagemagick",
+    ],
     command: ["bun", "main.js"],
   },
 };
@@ -444,8 +528,10 @@ const config: AppConfig = {
     "ENV AKAN_PUBLIC_ENV=main",
     "ENV AKAN_PUBLIC_DEFAULT_LOCALE=ko",
     "ENV AKAN_PUBLIC_LOCALES=ko,en",
+    "ENV AKAN_PUBLIC_API_PREFIX=/api",
+    "ENV AKAN_PUBLIC_WS_PREFIX=/ws",
     "ENV AKAN_PUBLIC_OPERATION_MODE=cloud",
-    "",
+    "ENV AKAN_LOG_TO_FILE=0",
     'CMD ["bun","main.js"]',
   ].join("\n"),
 };
@@ -453,7 +539,7 @@ const config: AppConfig = {
 export default config;
 ```
 
-### libs/shared/akan.config.ts
+### libs/report/akan.config.ts
 
 ```ts
 import type { LibConfig } from "akanjs";
@@ -461,7 +547,9 @@ import type { LibConfig } from "akanjs";
 const config: LibConfig = {
   externalLibs: ["puppeteer"],
   docker: {
-    preRuns: ["apt-get update && apt-get install -y --no-install-recommends chromium"],
+    preRuns: [
+      "apt-get update && apt-get install -y --no-install-recommends chromium",
+    ],
   },
 };
 

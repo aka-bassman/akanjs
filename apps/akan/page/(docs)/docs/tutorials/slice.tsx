@@ -323,8 +323,7 @@ export const dictionary = modelDictionary(["en", "ko"])
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">📦</span>
+              <div className="mb-2">
                 <strong className="text-primary">{"fetch.initIcecreamOrderIn*()"}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -335,8 +334,7 @@ export const dictionary = modelDictionary(["en", "ko"])
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🎯</span>
+              <div className="mb-2">
                 <strong className="text-primary">IcecreamOrder.Zone.Card</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -347,8 +345,7 @@ export const dictionary = modelDictionary(["en", "ko"])
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🚫</span>
+              <div className="mb-2">
                 <strong className="text-primary">{"showControls={false}"}</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -440,8 +437,8 @@ export const Card = ({ icecreamOrder, showControls = true }: CardProps) => {
           />
           <div>
             {l.trans({
-              en: `The Unit component now accepts a showControls prop that determines whether to display action buttons. This simple flag allows the same card component to be used in both staff management views (with controls) and customer dashboard views (without controls).`,
-              ko: `Unit 컴포넌트는 이제 액션 버튼 표시 여부를 결정하는 showControls prop을 받습니다. 이 간단한 플래그를 통해 같은 카드 컴포넌트를 직원 관리 뷰(컨트롤 포함)와 고객 대시보드 뷰(컨트롤 없음) 모두에서 사용할 수 있습니다.`,
+              en: `The Unit component now accepts a showControls prop that determines whether to display action buttons. This simple flag allows the same Unit card component to be used in both staff management views (with controls) and customer dashboard views (without controls).`,
+              ko: `Unit 컴포넌트는 이제 액션 버튼 표시 여부를 결정하는 showControls prop을 받습니다. 이 간단한 플래그를 통해 같은 Unit 카드 컴포넌트를 직원 관리 뷰(컨트롤 포함)와 고객 대시보드 뷰(컨트롤 없음) 모두에서 사용할 수 있습니다.`,
             })}
           </div>
           <div>
@@ -522,8 +519,7 @@ export const View = ({ view }: ViewProps) => {
           </div>
           <div className="my-4 space-y-3">
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">⏱️</span>
+              <div className="mb-2">
                 <strong className="text-primary">useInterval</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -534,8 +530,7 @@ export const View = ({ view }: ViewProps) => {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🔄</span>
+              <div className="mb-2">
                 <strong className="text-primary">refreshIcecreamOrder</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -546,8 +541,7 @@ export const View = ({ view }: ViewProps) => {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">📋</span>
+              <div className="mb-2">
                 <strong className="text-primary">Load.Units</strong>
               </div>
               <div className="text-foreground/70 text-sm">
@@ -576,8 +570,7 @@ export const View = ({ view }: ViewProps) => {
           </div>
           <div className="my-4 space-y-4">
             <div className={panelRecipe({ radius: "lg" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">1️⃣</span>
+              <div className="mb-2">
                 <strong className="text-primary">
                   {l.trans({ en: "One Slice, One Purpose", ko: "하나의 슬라이스, 하나의 목적" })}
                 </strong>
@@ -590,8 +583,7 @@ export const View = ({ view }: ViewProps) => {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">2️⃣</span>
+              <div className="mb-2">
                 <strong className="text-primary">
                   {l.trans({ en: "Zone Matches Slice", ko: "존은 슬라이스와 매칭" })}
                 </strong>
@@ -604,8 +596,7 @@ export const View = ({ view }: ViewProps) => {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">3️⃣</span>
+              <div className="mb-2">
                 <strong className="text-primary">
                   {l.trans({ en: "Props Control Behavior", ko: "Props로 동작 제어" })}
                 </strong>
@@ -618,8 +609,7 @@ export const View = ({ view }: ViewProps) => {
               </div>
             </div>
             <div className={panelRecipe({ radius: "lg" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">4️⃣</span>
+              <div className="mb-2">
                 <strong className="text-primary">
                   {l.trans({ en: "Dictionary for All Labels", ko: "모든 레이블에 Dictionary 사용" })}
                 </strong>
@@ -631,48 +621,6 @@ export const View = ({ view }: ViewProps) => {
                 })}
               </div>
             </div>
-          </div>
-          <div className="my-6 rounded-lg bg-linear-to-r from-background to-border p-6">
-            <div className="mb-3 font-bold text-lg text-primary">
-              {l.trans({ en: "🎉 What You've Accomplished:", ko: "🎉 달성한 것들:" })}
-            </div>
-            <ul className="space-y-2 text-foreground/70 text-sm">
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Created multiple slices for different data views",
-                  ko: "다양한 데이터 뷰를 위한 여러 슬라이스 생성",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Built a real-time customer dashboard",
-                  ko: "실시간 고객 대시보드 구축",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Connected slices to Zone components",
-                  ko: "슬라이스를 Zone 컴포넌트에 연결",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Implemented automatic data refresh",
-                  ko: "자동 데이터 새로고침 구현",
-                })}
-              </li>
-              <li>
-                ✓{" "}
-                {l.trans({
-                  en: "Learned slice component best practices",
-                  ko: "슬라이스 컴포넌트 모범 사례 학습",
-                })}
-              </li>
-            </ul>
           </div>
           <div>
             {l.trans({

@@ -15,6 +15,7 @@ import {
   type CodeAgentImage,
   type CodeAgentMcpStatus,
   type CodeAgentProfile,
+  type CodeAgentProviderInfo,
   type CodeAgentQuestion,
   type CodeAgentSessionInfo,
   type CodeAgentState,
@@ -282,6 +283,7 @@ export class CodeAgent {
       const text = CodeAgent.#textOf(message.content);
       if (text) this.#emit({ type: "message", turnId, role: message.role, text });
     }
+    this.#emitContextNow();
   }
 
   static #textOf(content: unknown) {
@@ -401,6 +403,33 @@ export class CodeAgent {
     this.#emit({ type: "session", info: this.info });
   }
 
+  /**
+   * The model catalogue, as the two questions a person actually asks of it.
+   *
+   * Built from the registry rather than `getAvailable()` so it needs no await and can answer about a provider
+   * nobody has a key for: "what else could I run" is most of why the list is opened, and a list of only what
+   * is already reachable cannot answer it.
+   */
+  catalogue(): CodeAgentProviderInfo[] {
+    const runtime = this.#session?.modelRuntime;
+    if (!runtime) return [];
+    const current = this.#session?.model;
+    return runtime
+      .getProviders()
+      .map((provider) => ({
+        id: provider.id,
+        name: provider.name ?? provider.id,
+        authorized: runtime.hasConfiguredAuth(provider.id),
+        models: (runtime.getModels(provider.id) ?? []).map((model) => ({
+          id: model.id,
+          name: model.name,
+          ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
+          current: model.provider === current?.provider && model.id === current?.id,
+        })),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }
+
   async setModel(ref: CodeAgentModelRef) {
     const session = this.#require();
     const model = await akanCodeModel(session.modelRuntime, ref);
@@ -462,6 +491,17 @@ export class CodeAgent {
    */
   #emitContextUsage(eventType: string) {
     if (eventType !== "agent_end" && eventType !== "compaction_end") return;
+    this.#emitContextNow();
+  }
+
+  /**
+   * The same frame, on demand, for the one moment the window is already full and no turn has run.
+   *
+   * A resumed session restores a conversation the model is carrying and the host has never seen, so without
+   * this the status line offers the declared window and no share of it until the next turn ends — a session
+   * reopened at 80% looks identical to one reopened empty.
+   */
+  #emitContextNow() {
     const usage = this.#session?.getContextUsage();
     // `== null`, not `=== null`: the field is typed `number | null`, and a strict null check sails straight
     // past an `undefined` the way the mirror of this bug does — which would emit `used: undefined`.

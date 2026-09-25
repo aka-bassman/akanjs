@@ -1,31 +1,199 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Divider, Docs, DocsToc, ExternalLink, panelRecipe } from "@apps/akan/ui";
+import { Code, cardGridRecipe, Divider, Docs, DocsToc, ExternalLink, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
 export default page().render(() => {
   const { l } = usePage();
+
+  const chip = "mt-2 block overflow-x-auto whitespace-nowrap rounded-md bg-muted/60 px-2.5 py-1.5 font-mono text-xs";
+
+  const linkKinds = [
+    {
+      key: "schemes",
+      title: l.trans({ en: "Scheme link", ko: "scheme 링크" }),
+      example: "shop://orders/1",
+      desc: l.trans({
+        en: "An app-only link. It needs no verification, so it is the easy one to test during development.",
+        ko: "앱 전용 링크입니다. 검증이 필요 없어 개발 중에 테스트하기 쉽습니다.",
+      }),
+    },
+    {
+      key: "domains",
+      title: l.trans({ en: "Domain link", ko: "domain 링크" }),
+      example: "https://shop.example.com/orders/1",
+      desc: l.trans({
+        en: "Works like a normal web link but needs iOS and Android verification. Best for sharing, email and push URLs.",
+        ko: "일반 웹 링크처럼 동작하지만 iOS·Android 검증이 필요합니다. 공유, 이메일, 푸시 알림 URL에 더 적합합니다.",
+      }),
+    },
+  ];
+
+  const landingItems = [
+    {
+      name: "shop://orders/1",
+      desc: l.trans({
+        en: "Scheme link. `orders` becomes the first path segment, so it opens `/orders/1`.",
+        ko: "scheme 링크입니다. `orders`가 경로의 첫 부분이 되어 `/orders/1`을 엽니다.",
+      }),
+    },
+    {
+      name: "https://shop.example.com/orders/1",
+      desc: l.trans({
+        en: "Domain link. The path is used as is and opens `/orders/1`.",
+        ko: "domain 링크입니다. 경로를 그대로 써서 `/orders/1`을 엽니다.",
+      }),
+    },
+    {
+      name: 'data.url = "/orders/1"',
+      desc: l.trans({
+        en: "A tapped push notification. It opens `/orders/1` the same way.",
+        ko: "푸시 알림을 누른 경우입니다. 같은 방식으로 `/orders/1`을 엽니다.",
+      }),
+    },
+  ];
+
+  const fieldItems = [
+    {
+      key: "schemes",
+      type: "string[]",
+      desc: l.trans({
+        en: "App-only URL schemes, such as `shop` in `shop://orders/1`.",
+        ko: "`shop://orders/1`의 `shop`처럼 앱 전용 URL scheme입니다.",
+      }),
+      example: 'schemes: ["shop"]',
+    },
+    {
+      key: "domains",
+      type: "string[]",
+      desc: l.trans({
+        en: "Hosts whose HTTPS links open the app once iOS and Android verify them.",
+        ko: "HTTPS 링크를 앱으로 여는 호스트입니다. iOS와 Android가 검증한 뒤에 동작합니다.",
+      }),
+      example: 'domains: ["shop.example.com"]',
+    },
+    {
+      key: "ios.teamId",
+      type: "string",
+      desc: l.trans({
+        en: "Your Apple Developer Team ID. iOS uses it to verify `domains`.",
+        ko: "Apple Developer Team ID입니다. iOS가 `domains`를 검증할 때 씁니다.",
+      }),
+      example: 'ios: { teamId: "TEAMID" }',
+    },
+    {
+      key: "android.sha256CertFingerprints",
+      type: "string[]",
+      desc: l.trans({
+        en: "SHA-256 fingerprints of the certificates that sign the app. Android uses them to verify `domains`.",
+        ko: "앱을 서명한 인증서의 SHA-256 fingerprint입니다. Android가 `domains`를 검증할 때 씁니다.",
+      }),
+      example: 'android: { sha256CertFingerprints: ["AA:BB:CC:DD:..."] }',
+    },
+  ];
+
+  const platformColumns = [
+    { key: "ios", label: "iOS" },
+    { key: "android", label: "Android" },
+  ];
+  const fieldGroups = [
+    {
+      label: l.trans({ en: "Scheme links", ko: "scheme 링크" }),
+      rows: [{ name: "schemes", marks: { ios: true, android: true } }],
+    },
+    {
+      label: l.trans({ en: "Domain links", ko: "domain 링크" }),
+      rows: [
+        { name: "domains", marks: { ios: true, android: true } },
+        { name: "ios.teamId", marks: { ios: true } },
+        {
+          name: (
+            <>
+              android.
+              <wbr />
+              sha256CertFingerprints
+            </>
+          ),
+          marks: { android: true },
+        },
+      ],
+    },
+  ];
+
   return (
     <Scroll>
-      <Scroll.Slide id="deep-link-setup" title={l.trans({ en: "Deep Link Setup", ko: "Deep Link Setup" })}>
-        <Docs.Title>{l.trans({ en: "Deep Link Setup", ko: "Deep Link Setup" })}</Docs.Title>
+      <Scroll.Slide id="deep-link-setup" title={l.trans({ en: "Deep Link Setup", ko: "딥 링크 설정" })}>
+        <Docs.Title>{l.trans({ en: "Deep Link Setup", ko: "딥 링크 설정" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Deep links open a CSR route from outside the app. Use schemes for app-only URLs and domains for verified HTTPS links. Push notification clicks use the same routing path through data.url.",
-              ko: "Deep link는 앱 바깥에서 CSR route를 여는 기능입니다. 앱 전용 URL은 schemes를 쓰고, 검증된 HTTPS 링크는 domains를 씁니다. Push notification 클릭도 data.url을 통해 같은 라우팅 경로를 사용합니다.",
+              en: (
+                <span>
+                  A deep link opens a specific screen of the app from a URL outside it, such as a link in a message or a
+                  tapped push notification. You set it up once, in the <code>deepLinks</code> block of a mobile target
+                  in <code>akan.config.ts</code>.
+                </span>
+              ),
+              ko: (
+                <span>
+                  딥 링크는 앱 바깥의 URL로 앱 안의 특정 화면을 바로 여는 기능입니다. 메시지 속 링크나 푸시 알림을
+                  누르면 해당 화면이 열립니다. 설정은 <code>akan.config.ts</code>의 mobile target에 있는{" "}
+                  <code>deepLinks</code> 블록 하나로 끝납니다.
+                </span>
+              ),
             })}
           </div>
-          <Docs.Alert type="info">
+
+          <Docs.SubSubTitle>{l.trans({ en: "Two Kinds Of Link", ko: "링크 방식 두 가지" })}</Docs.SubSubTitle>
+          <div>
             {l.trans({
-              en: "Think of deep link as the feature, and schemes/domains as the two common ways to implement it. Scheme links such as shop://orders/1 are easy to test and app-only. Domain links such as https://shop.example.com/orders/1 require iOS/Android verification, but they behave like normal web links and are better for sharing, emails, and push notification URLs.",
-              ko: "Deep link는 기능 이름이고, scheme과 domain은 그 기능을 구현하는 대표적인 두 방식입니다. shop://orders/1 같은 scheme link는 테스트가 쉽고 앱 전용입니다. https://shop.example.com/orders/1 같은 domain link는 iOS/Android 검증 설정이 필요하지만 일반 웹 링크처럼 동작하므로 공유, 이메일, push notification URL에 더 적합합니다.",
+              en: (
+                <span>
+                  Deep link is the feature; <code>schemes</code> and <code>domains</code> are the two usual ways to
+                  build it. You can declare both:
+                </span>
+              ),
+              ko: (
+                <span>
+                  딥 링크는 기능 이름이고, <code>schemes</code>와 <code>domains</code>는 그것을 구현하는 대표적인 두
+                  방식입니다. 둘을 함께 선언해도 됩니다:
+                </span>
+              ),
             })}
-          </Docs.Alert>
+          </div>
+          <div className={cardGridRecipe({ cols: "mdTwo" }, "my-4")}>
+            {linkKinds.map((kind) => (
+              <div key={kind.key} className={panelRecipe({ radius: "lg", padding: "sm" }, "min-w-0")}>
+                <div className="font-semibold text-primary">
+                  {kind.title} · <code>{kind.key}</code>
+                </div>
+                <code className={chip}>{kind.example}</code>
+                <div className="mt-2 text-foreground/70 text-sm">{kind.desc}</div>
+              </div>
+            ))}
+          </div>
+
+          <Docs.SubSubTitle>{l.trans({ en: "Declare It", ko: "설정하기" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Write <code>deepLinks</code> inside a target under <code>mobile.targets</code>:
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>mobile.targets</code> 아래 target 안에 <code>deepLinks</code>를 적습니다:
+                </span>
+              ),
+            })}
+          </div>
           <Code.Snippet
             className="w-full"
             title="apps/myapp/akan.config.ts"
-            code={`const config: AppConfig = {
+            code={`import type { AppConfig } from "akanjs";
+
+const config: AppConfig = {
   mobile: {
     targets: {
       default: {
@@ -36,15 +204,147 @@ export default page().render(() => {
             teamId: "TEAMID",
           },
           android: {
-            sha256CertFingerprints: [
-              "AA:BB:CC:DD:...",
-            ],
+            sha256CertFingerprints: ["AA:BB:CC:DD:..."],
           },
         },
       },
     },
   },
-};`}
+};
+
+export default config;`}
+          />
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>One block per target.</strong> <code>default</code> is the target name; each target declares
+                    its own <code>deepLinks</code>.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>target마다 따로 적습니다.</strong> <code>default</code>는 target 이름이고, target이 여럿이면
+                    각자 <code>deepLinks</code>를 가집니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      Hosts only in <code>domains</code>.
+                    </strong>{" "}
+                    Write <code>shop.example.com</code>; an <code>https://</code> or a path you add is dropped.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>domains</code>에는 호스트만.
+                    </strong>{" "}
+                    <code>shop.example.com</code>처럼 적습니다. <code>https://</code>나 경로는 붙여도 무시됩니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      <code>ios</code> and <code>android</code> serve <code>domains</code>.
+                    </strong>{" "}
+                    If you only use scheme links, leave both out.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>ios</code>·<code>android</code>는 <code>domains</code>용입니다.
+                    </strong>{" "}
+                    scheme 링크만 쓴다면 둘 다 생략합니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Rerun the app to apply.</strong> After a change, run <code>akan start-ios</code> or{" "}
+                    <code>akan start-android</code> again.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>앱을 다시 실행해야 적용됩니다.</strong> 설정을 바꾼 뒤에는 <code>akan start-ios</code>나{" "}
+                    <code>akan start-android</code>를 다시 실행합니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
+
+          <Docs.SubSubTitle>{l.trans({ en: "Where A Link Lands", ko: "링크가 여는 화면" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  A scheme link, a domain link and a push notification's <code>data.url</code> all open the same CSR
+                  route:
+                </span>
+              ),
+              ko: (
+                <span>
+                  scheme 링크, domain 링크, 푸시 알림의 <code>data.url</code>은 모두 같은 CSR route를 엽니다:
+                </span>
+              ),
+            })}
+          </div>
+          <Docs.IntroTable
+            type={l.trans({ en: "Incoming link", ko: "들어온 링크" })}
+            descLabel={l.trans({ en: "What it opens", ko: "여는 화면" })}
+            items={landingItems}
+          />
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  <strong>Back works after a cold start.</strong> When a link launches the app, the parent screen or the
+                  start screen is stacked first, so back stays inside the app.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <strong>꺼진 앱에서 열려도 뒤로 가기가 됩니다.</strong> 링크로 앱이 켜지면 상위 화면이나 시작 화면을
+                  먼저 쌓아, 뒤로 가기가 앱 안에서 동작합니다.
+                </span>
+              ),
+            })}
+          </div>
+          <Docs.LinkGrid
+            items={[
+              {
+                href: "/cheatsheet/mobile/setup#mobile-config",
+                title: l.trans({ en: "Mobile Config", ko: "mobile 설정" }),
+                desc: l.trans({
+                  en: "Mobile targets and the rest of the `mobile` block.",
+                  ko: "mobile target과 `mobile` 블록의 나머지 설정.",
+                }),
+              },
+              {
+                href: "/cheatsheet/mobile/push#client-registration",
+                title: l.trans({ en: "Push Notifications", ko: "푸시 알림" }),
+                desc: l.trans({
+                  en: "Sending a `url` so a tap lands on a screen.",
+                  ko: "알림을 누르면 화면이 열리도록 `url`을 보내는 법.",
+                }),
+              },
+            ]}
           />
         </Docs.Description>
       </Scroll.Slide>
@@ -55,76 +355,155 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Every field is optional, and each platform reads only the half it needs. Declare the ones the link style you chose actually requires:",
-              ko: "모든 필드는 optional이고, 플랫폼은 자기에게 필요한 절반만 읽습니다. 고른 link 방식이 실제로 요구하는 것만 적으면 됩니다:",
+              en: "Every field is optional. Each platform reads only what it needs, so declare only what your link style requires:",
+              ko: "모든 필드는 선택입니다. 플랫폼마다 필요한 값만 읽으므로, 고른 링크 방식에 필요한 것만 적으면 됩니다:",
             })}
           </div>
-          <Docs.OptionTable
-            items={[
-              {
-                key: "schemes",
-                type: "string[]",
-                desc: l.trans({
-                  en: "Custom app-only URLs such as shop://orders/1. Easy to test, but not domain-verified.",
-                  ko: "shop://orders/1 같은 앱 전용 URL입니다. 테스트하기 쉽지만 도메인 검증 링크는 아닙니다.",
-                }),
-              },
-              {
-                key: "domains",
-                type: "string[]",
-                desc: l.trans({
-                  en: "Verified HTTPS links such as https://shop.example.com/orders/1. iOS uses apple-app-site-association; Android uses assetlinks.json.",
-                  ko: "https://shop.example.com/orders/1 같은 검증된 HTTPS 링크입니다. iOS는 apple-app-site-association, Android는 assetlinks.json을 사용합니다.",
-                }),
-              },
-              {
-                key: "ios.teamId",
-                type: "string",
-                desc: l.trans({
-                  en: "Apple Developer Team ID used for universal link association files.",
-                  ko: "universal link association file에 사용하는 Apple Developer Team ID입니다.",
-                }),
-              },
-              {
-                key: "android.sha256CertFingerprints",
-                type: "string[]",
-                desc: l.trans({
-                  en: "Signing certificate fingerprints used by Android app links. Debug builds and release builds usually have different fingerprints, so list both.",
-                  ko: "Android app link 검증에 사용하는 서명 인증서 fingerprint입니다. Debug build와 release build는 보통 fingerprint가 다르므로 둘 다 적습니다.",
-                }),
-              },
-            ]}
+          <Docs.OptionTable items={fieldItems} />
+
+          <Docs.SubSubTitle>
+            {l.trans({ en: "What Each Link Style Needs", ko: "링크 방식별로 필요한 필드" })}
+          </Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: "Scheme links need one field. Domain links need three, and each platform reads its own part:",
+              ko: "scheme 링크는 필드 하나면 되고, domain 링크는 세 개가 필요합니다. 플랫폼은 그중 자기 몫만 읽습니다:",
+            })}
+          </div>
+          <Docs.Matrix
+            type={l.trans({ en: "Field", ko: "필드" })}
+            columns={platformColumns}
+            groups={fieldGroups}
+            markLabel={l.trans({ en: "Read by this platform", ko: "이 플랫폼이 읽음" })}
+            emptyLabel={l.trans({ en: "Not read", ko: "읽지 않음" })}
           />
-          <div className={panelRecipe({ radius: "lg" }, "my-4")}>
+
+          <Docs.SubSubTitle>{l.trans({ en: "Domain Verification", ko: "도메인 검증" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: "A domain link opens the app only after the platform confirms that the app belongs to the domain. It checks a file served from that domain:",
+              ko: "domain 링크는 그 도메인이 이 앱의 것임을 플랫폼이 확인한 뒤에야 앱으로 열립니다. 확인은 도메인이 내려주는 파일로 합니다:",
+            })}
+          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>The Akan server serves both files.</strong> It answers{" "}
+                    <code>/.well-known/apple-app-site-association</code> and <code>/.well-known/assetlinks.json</code>{" "}
+                    from this block, so point the domain at your app's server and redeploy it after a change.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>두 파일은 Akan 서버가 응답합니다.</strong> 이 블록으로{" "}
+                    <code>/.well-known/apple-app-site-association</code>과 <code>/.well-known/assetlinks.json</code>을
+                    만들어 주므로, 도메인이 앱 서버를 가리키게 하고 블록을 바꾸면 서버도 다시 배포합니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>iOS checks the Team ID and appId.</strong> The file lists <code>{"<teamId>.<appId>"}</code>{" "}
+                    from <code>ios.teamId</code> and the target's <code>appId</code>, so both must be your real values.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>iOS는 Team ID와 appId를 봅니다.</strong> 파일에 <code>ios.teamId</code>와 target의{" "}
+                    <code>appId</code>로 만든 <code>{"<teamId>.<appId>"}</code>가 들어가므로 둘 다 실제 값이어야 합니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Android checks the signing certificate.</strong> Debug and release builds are signed by
+                    different keys, so list both fingerprints.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>Android는 서명 인증서를 봅니다.</strong> debug 빌드와 release 빌드는 서로 다른 키로
+                    서명되므로 fingerprint를 둘 다 적습니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>A debug build verifies only against a non-main server.</strong> Its package ends in{" "}
+                    <code>.debug</code>, which <code>assetlinks.json</code> lists only when <code>AKAN_PUBLIC_ENV</code>{" "}
+                    is not <code>main</code>. The debug key's SHA-256 must also be in{" "}
+                    <code>sha256CertFingerprints</code>.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>debug 빌드는 main이 아닌 서버에서만 검증됩니다.</strong> debug 빌드의 패키지 이름은{" "}
+                    <code>.debug</code>로 끝나는데, <code>assetlinks.json</code>은 <code>AKAN_PUBLIC_ENV</code>가{" "}
+                    <code>main</code>이 아닐 때만 이 이름을 넣습니다. debug 키의 SHA-256도{" "}
+                    <code>sha256CertFingerprints</code>에 있어야 합니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
+          <div className={panelRecipe({ radius: "lg", padding: "sm" }, "my-4")}>
             <div className="mb-2 font-semibold text-primary">
-              {l.trans({ en: "Platform verification docs:", ko: "플랫폼 검증 문서:" })}
+              {l.trans({ en: "Platform Docs", ko: "플랫폼 공식 문서" })}
             </div>
             <ul className="list-disc space-y-1 pl-5 text-foreground/70 text-sm">
               <li>
-                {l.trans({ en: "iOS — Universal Links", ko: "iOS — Universal Links" })}
+                iOS — Universal Links
                 <ExternalLink
                   href="https://developer.apple.com/documentation/xcode/supporting-universal-links-in-your-app"
-                  label="Open Apple Universal Links docs"
+                  label={l.trans({ en: "Open Apple Universal Links docs", ko: "Apple Universal Links 문서 열기" })}
                 />
               </li>
               <li>
-                {l.trans({ en: "Android — App Links", ko: "Android — App Links" })}
+                Android — App Links
                 <ExternalLink
                   href="https://developer.android.com/training/app-links"
-                  label="Open Android App Links docs"
+                  label={l.trans({ en: "Open Android App Links docs", ko: "Android App Links 문서 열기" })}
                 />
               </li>
             </ul>
           </div>
+
+          <Docs.SubSubTitle>
+            {l.trans({ en: "Getting The Android Fingerprint", ko: "Android fingerprint 구하기" })}
+          </Docs.SubSubTitle>
           <div>
             {l.trans({
-              en: "Read the Android debug fingerprint out of the debug keystore every machine already has, then add the release one from whatever keystore Play signing uses:",
-              ko: "Android debug fingerprint는 어느 기기에나 있는 debug keystore에서 읽고, release fingerprint는 Play signing이 쓰는 keystore에서 따로 가져와 함께 적습니다:",
+              en: "The surest way is to ask Gradle. It prints the SHA-256 of the key each build variant actually signs with:",
+              ko: "가장 확실한 방법은 Gradle에 묻는 것입니다. 빌드 variant마다 실제로 서명하는 키의 SHA-256을 보여 줍니다:",
             })}
           </div>
           <Code.Snippet
             className="w-full"
-            title="Android debug SHA-256"
+            title="Terminal"
+            language="bash"
+            code={`cd apps/myapp/android
+./gradlew signingReport`}
+          />
+          <div>
+            {l.trans({
+              en: "You can also read it straight from a keystore. The default Android debug keystore already exists on any machine set up for Android development:",
+              ko: "keystore에서 직접 읽어도 됩니다. 기본 Android debug keystore는 Android 개발 환경이 있는 기기라면 이미 있습니다:",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="Terminal"
             language="bash"
             code={`keytool -list -v \\
   -keystore ~/.android/debug.keystore \\
@@ -132,6 +511,63 @@ export default page().render(() => {
   -storepass android \\
   -keypass android`}
           />
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      After <code>akan build-android</code>, the app has its own debug keystore.
+                    </strong>{" "}
+                    A project that ran it or <code>akan release-android</code> signs debug builds with{" "}
+                    <code>apps/myapp/android/app/debug.keystore</code>, so point <code>-keystore</code> there.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      <code>akan build-android</code> 뒤에는 앱 전용 debug keystore를 씁니다.
+                    </strong>{" "}
+                    이 명령이나 <code>akan release-android</code>를 실행한 프로젝트는{" "}
+                    <code>apps/myapp/android/app/debug.keystore</code>로 debug 빌드를 서명하므로, <code>-keystore</code>
+                    를 이 경로로 바꿉니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Add the release fingerprint too.</strong> Take it from whatever keystore Play signing uses
+                    and list it next to the debug one.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>release fingerprint도 함께 적습니다.</strong> Play signing이 쓰는 keystore에서 따로 가져와
+                    debug fingerprint 옆에 적습니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: (
+                <span>
+                  <strong>A domain link that fails verification opens in the browser, not the app.</strong> The
+                  fingerprint of the key that signed the installed build must be in the list.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <strong>검증에 실패한 domain 링크는 앱이 아니라 브라우저에서 열립니다.</strong> 지금 설치된 빌드를
+                  서명한 키의 fingerprint가 목록에 있어야 합니다.
+                </span>
+              ),
+            })}
+          </Docs.Alert>
         </Docs.Description>
       </Scroll.Slide>
       <DocsToc />

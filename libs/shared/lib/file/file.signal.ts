@@ -17,7 +17,7 @@ export class FileSlice extends slice(srv.file, { guards: { root: None, get: Publ
 })) {}
 
 export class FileEndpoint extends endpoint(srv.file, ({ mutation }) => ({
-  addFiles: mutation([cnst.File], { fileUpload: true })
+  addFiles: mutation([cnst.File], { guards: [Every], fileUpload: true, mcp: false })
     .body("files", [Upload])
     .body("metas", String, { example: `[{"lastModifiedAt":"2024-01-14T15:32:47.766Z","size":0}]` })
     .body("type", String, { example: "user" })

@@ -8,7 +8,7 @@ export interface McpToolInfo {
 
 interface JsonRpcResponse {
   id?: number;
-  result?: { tools?: McpToolInfo[]; content?: unknown; isError?: boolean };
+  result?: { tools?: McpToolInfo[]; nextCursor?: string; content?: unknown; isError?: boolean };
   error?: { code: number; message: string };
 }
 
@@ -39,6 +39,9 @@ export class McpUnauthorized extends Error {
  * worse than one with fewer tools.
  */
 export class McpClient {
+  /** A ceiling on a server that never stops paging; 50 pages is 5,000 tools at the usual page size. */
+  static readonly maxToolPages = 50;
+
   readonly ref: CodeAgentMcpServerRef;
   #proc: Bun.Subprocess<"pipe", "pipe", "ignore"> | undefined;
   #nextId = 0;
@@ -64,10 +67,27 @@ export class McpClient {
     return this;
   }
 
+  /**
+   * Every page of the server's tool list, not the first one.
+   *
+   * `tools/list` is paginated: a server holding more tools than its page size answers a `nextCursor` and
+   * expects to be asked again. Reading one page looks like it worked — the tools are sorted, so what goes
+   * missing is the tail of the alphabet rather than anything a caller would notice as absent. An akan server
+   * pages at 100 by default (`option.setMcp({ pageSize })`), so any app past 100 endpoints hit this.
+   */
   async listTools(): Promise<McpToolInfo[]> {
-    const response = await this.#call("tools/list", {});
-    if (response.error) throw new Error(response.error.message);
-    return response.result?.tools ?? [];
+    const tools: McpToolInfo[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < McpClient.maxToolPages; page += 1) {
+      const response = await this.#call("tools/list", cursor ? { cursor } : {});
+      if (response.error) throw new Error(response.error.message);
+      tools.push(...(response.result?.tools ?? []));
+      const next = response.result?.nextCursor;
+      // Handing back the cursor it was given is a server that would page forever; so is one that cycles.
+      if (!next || next === cursor) return tools;
+      cursor = next;
+    }
+    return tools;
   }
 
   async callTool(name: string, args: Record<string, unknown>) {

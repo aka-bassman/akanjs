@@ -35,7 +35,7 @@ export type ButtonProps<Result> = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
      * button that is as wide as its longest state.
      */
     loadingMode?: "hold" | "replace";
-    /** Whether a failed action renders its message under the button. Off leaves it to the framework toast. */
+    /** Whether a message passed to `onError` renders under the button. A thrown error is left to its thrower. */
     showError?: boolean;
   };
 

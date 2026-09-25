@@ -9,45 +9,191 @@
 ## Headings
 
 - scalar.abstract.md (#scalar-abstract)
-- Replace The Scaffold (#scaffold)
+- Writing The Rules (#rules)
+- Fill In The Scaffold (#scaffold)
 
 ## Content
 
 scalar.abstract.md
 
-A scalar is a value somebody else stores, so the question it has to answer is not what it is but what may be assumed about it. Coordinate holds two numbers in an array — and the order is longitude first, which is the opposite of how almost everybody says it out loud.
+One title line with the scalar name spelled the way its folder spells it.
 
-Three parts, and there is no fourth. Seventeen scalar abstracts in this workspace are written this way and not one of them has a workflow section — a value object embedded in something else has no lifecycle of its own to describe.
+One sentence
 
-one title line carrying the scalar name as the folder spells it
+What the value represents and, when it matters, who holds it, with no heading above.
 
-One declarative sentence
+Two to five bullets: a fixed value, a field order, a unit, a lifetime, what a static computes.
 
-what this value represents and, when it matters, who holds it
+The rule says
 
-two to five bullets — a fixed value, a field order, a unit, a lifetime, the arithmetic a static implements
+Without it, a caller assumes
 
-Four bullets, and every one of them is a thing a caller would otherwise get wrong. The type field is pinned rather than open. The array order is the GeoJSON order and not the spoken one. The distance is spherical rather than planar, and the three-dimensional form adds altitude. The map helpers need a list and answer nothing for an empty one.
+`type` is always `Point`.
 
-Replace The Scaffold
+That `type` is open and could hold another GeoJSON shape.
 
-A new scalar arrives with six headings and no content. It is a prompt rather than a template, and for a scalar the first real edit deletes all six — the title line and one sentence replace them.
+`coordinates` is longitude, then latitude.
 
-Purpose becomes the sentence under the title. Domain Rules becomes ## Rules. Data Meaning belongs next to the field it describes, as a trailing comment in the constant file. Workflows, Agent Notes and Related Modules go, and nothing replaces them.
+The spoken order, with latitude first.
 
-What earns a bullet here:
+Distance is spherical, and the 3D form folds in the altitude difference.
 
-A unit or an order the type cannot carry — kilometres rather than metres, longitude before latitude, an array whose positions correspond to another array's.
+A flat-plane distance, or one that ignores altitude.
 
-A lifetime or a consumption rule, when the value is held rather than merely stored — a code that lives sixty seconds and is consumed on first exchange whether or not that exchange succeeds.
+Bounds, center and zoom need a list of coordinates.
 
-What a static on the class actually computes, when a caller could reasonably expect something else.
+That an empty list works, but `computeCenterAndZoomFromLocations` returns `null`.
 
-Never the field list, never the types, and never a note that the scalar is reusable — every scalar is.
+Write
 
-Read it before changing validation meaning or public behavior, and update it when one of those changes. Do not touch it for a formatting, import or style change — akan quality scan warns once an abstract passes 300 lines, and the longest scalar abstract in this workspace is twelve.
+Leave out
+
+What the type cannot carry
+
+A unit
+
+Kilometres rather than metres: `getDistanceKm` and `getDistanceM` differ only by unit.
+
+An order
+
+Longitude before latitude in `coordinate`.
+
+A match by position
+
+Each `fileMeta` lines up with the uploaded file at the same index.
+
+A lifetime or a consumption rule
+
+For a held value: an `oauthGrant` lives 60 seconds and is spent on first exchange, pass or fail.
+
+What a static computes
+
+Only when a caller could reasonably expect something else, such as a flat distance.
+
+What the code already says
+
+The field list
+
+The constant file already lists every field.
+
+The types
+
+Each `field(...)` declaration already states its type.
+
+That it is reusable
+
+Every scalar is reusable, so saying so tells the reader nothing.
+
+Scaffold
+
+Becomes
+
+Written for you from the folder name. Keep it.
+
+Replaced by the value this scalar holds and what embeds it, stated as fact.
+
+Stays. Both placeholder bullets become what a caller may assume about the value, two to five in all.
+
+A field's meaning
+
+Not here: a trailing comment beside the field in `price.constant.ts`.
+
+Workflow
+
+None: a value embedded in something else has no lifecycle of its own.
+
+Update
+
+Leave
+
+When what callers rely on changes
+
+Validation meaning
+
+What counts as a valid value, such as the 1 to 5 satisfaction range in `leaveInfo`.
+
+Public behavior
+
+What callers can observe, such as what a static returns.
+
+Reuse rules
+
+How it combines with other scalars, as `accessLog` stores its location as a `coordinate`.
+
+When only how the code looks changes
+
+Formatting
+
+Whitespace and line breaks the formatter decides.
+
+Imports
+
+Adding, removing or reordering imports.
+
+Style
+
+A code style change that alters no behavior.
+
+What May Be Assumed
+
+What The Constant File Shows
+
+What Only The Abstract Says
+
+Longitude comes first, the opposite of how almost everyone says a position out loud.
+
+The Three Parts
+
+A scalar abstract has three parts, and there is no fourth:
+
+<one sentence: what this value represents, and who holds it>
+
+<something a caller would otherwise get wrong>
+
+<two to five bullets in all>
+
+Part
+
+Writing The Rules
+
+A bullet belongs in Rules only if a caller would get something wrong without it. One real abstract shows what that looks like.
+
+A Real Example
+
+Four bullets, and each one is something a caller would otherwise get wrong:
+
+What Earns A Bullet
+
+Examples from the scalars in this repository, sorted by whether they belong in Rules:
+
+Content
+
+Do this
+
+Not this
+
+Fill In The Scaffold
+
+What each line becomes:
+
+Keeping It Current
+
+Read it before changing the scalar, and update it only when something callers rely on changes:
+
+Change
 
 ## Code Examples
+
+### apps/koyo/lib/__scalar/price/price.abstract.md
+
+```markdown
+# price Abstract
+${l.trans({ en: "<one sentence: what this value represents, and who holds it>", ko: "<이 값이 무엇을 나타내고 누가 들고 있는지 한 문장으로>" })}
+
+## Rules
+- ${l.trans({ en: "<something a caller would otherwise get wrong>", ko: "<적혀 있지 않으면 호출자가 틀릴 것>" })}
+- ${l.trans({ en: "<two to five bullets in all>", ko: "<항목은 모두 두 개에서 다섯 개>" })}
+```
 
 ### libs/util/lib/__scalar/coordinate/coordinate.abstract.md
 
@@ -62,37 +208,17 @@ GeoJSON Point 좌표와 고도를 표현하고 거리/방위 계산을 제공한
 - 지도 표시용 bounds, center, zoom 계산은 좌표 목록이 있을 때만 가능하다.
 ```
 
-### pkgs/@akanjs/cli/templates/__scalar/__model__/__model__.abstract.md
+### apps/koyo/lib/__scalar/price/price.abstract.md
 
 ```markdown
-# Scalar Abstract
+# price Abstract
 
-## Purpose // [!code --]
+<One sentence: the value this scalar holds, and what embeds it.>
 
-Describe the embedded value object or reusable data concept this scalar owns. // [!code --]
+## Rules
 
-## Domain Rules // [!code --]
-
-- Keep durable validation and meaning rules here.
-- Avoid repeating field types that are already clear in the constant file. // [!code --]
-
-## Data Meaning // [!code --]
-
-Explain the meaning of the scalar fields and when this scalar should be used. // [!code --]
-
-## Workflows // [!code --]
-
-Describe lifecycle or normalization behavior when relevant. // [!code --]
-
-## Agent Notes // [!code --]
-
-- Read this abstract before changing the scalar. // [!code --]
-- Update this file when validation meaning, public behavior, or reuse rules change. // [!code --]
-- Do not update this file for formatting-only, import-only, or style-only changes. // [!code --]
-
-## Related Modules // [!code --]
-
-- None yet. // [!code --]
+- <What a caller may assume about the value that the constant file cannot say: an order, a unit, a fixed value.>
+- <Two to five of them. A single field's meaning goes in a trailing comment beside it in the constant file.>
 ```
 
 ## Agent Notes

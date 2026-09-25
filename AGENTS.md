@@ -7,14 +7,14 @@ there is nothing to mirror a rule change into. The section between the `akan:age
 by `akan agent install`; edit anything outside the markers freely.
 
 <!-- akan:agent:start -->
-<!-- akan:agent:version 3.0.0-beta.14 -->
+<!-- akan:agent:version 3.0.0-beta.17 -->
 
 ## Workspace
 
 - Repo: akanjs
 - Apps: minimal, akan
 - Libraries: util, shared
-- Packages: akanjs, use-agentic, create-akan-workspace, @akanjs/cli, @akanjs/devkit
+- Packages: akanjs, create-akan-workspace, use-agentic, @akanjs/cli, @akanjs/devkit
 
 ## Repo Overview
 
@@ -291,8 +291,10 @@ are, because those are the ones the server could have done.
    SEO snapshots, prerendering and pre-hydration E2E read, so await what the page needs immediately and stream
    the rest. `xListInY` / `xInsightInY` hold hydrated model instances that React Flight refuses as client props:
    consume them in a server component, never as a `Zone` prop.
-6. **Use named `ReactNode` slots, not just `children`** — `Layout.Navbar` takes `title`, `back`, `left`, `right`,
-   and `children`, so a client shell composes server content in five places instead of absorbing it.
+6. **Use named `ReactNode` slots, not just `children`** — a client shell that takes one slot per region lets a
+   server component supply each of them, instead of absorbing the whole subtree into the bundle. `Layout.Navbar`
+   declares `title` / `left` / `right` alongside `back` and `children`, but renders only the last two today, so
+   copy the shape rather than the component.
 7. **Let the server do the derived work.** Display and predicate logic belongs on `Light<Model>`; enum→class
    lookups belong in a module-scope `as const` map.
 8. **Gate auth on the server** — `getSelf({ unauthorize: "/signin" })` in `_layout.tsx`, before any HTML is sent.
@@ -439,8 +441,11 @@ stores need none, because state and CRUD actions are generated. The body is thre
 `this.setX(...)` → toast. The optimistic shape is mutate the client model, `void fetch.*`, then commit. Use
 `this.pick(...)` when the value must exist, `this.get()` when it may not, and `this.set({...})` to write. Mutate lists
 through the collection API (`this.set({ xList: xList.set(x).save() })`), not array spread. **An action returns
-nothing** (`no-return-in-store-action.grit`). **Never `import type { RootStore } from "../st"`** — it crashes
-`akan build` with a Bun SSR segfault.
+nothing** (`no-return-in-store-action.grit`). **Reach another store through `this`:**
+`import type { RootStore } from "../st"`, then `(this as unknown as RootStore).logout()` to call its action or
+`(this as unknown as RootStore).set({ … })` / `.get()` to write or read its state. Every store is mixed into one root
+at runtime, so the cast only tells the type what `this` already is. Keep it `import type` — `st.ts` imports every
+store, so a value import is a cycle.
 
 **`<model>.dictionary.ts`** — fixed chain, with empty stages still written:
 `.of() → .model() → .insight() → .query() → .sort() → .enum() → .slice() → .endpoint() → .error() → .translate()`.
@@ -493,13 +498,14 @@ Full contract — credential handshake, room revalidation, socket cleanup scopin
   never bounded. **Losing the race does not cancel the work**: the handler runs to completion with nobody
   holding its result, so a deadline is an answer to the caller, not an undo.
 - **A cached answer is the endpoint's `{ cache: <ms> }`, and only a `query` taking no internal argument may have
-  one.** The `Cache` middleware is registered by default and stands aside for every endpoint that declares
-  nothing. Internal arguments are how a call learns who is asking (`.with(Self)`), so an endpoint that has them
-  answers per caller and one shared entry would be one caller's answer handed to the next — that endpoint and
-  every `mutation` are named in the log and left uncached. Guards run on every hit; what is cached is the
-  handler's result, so `resolveReturn` still masks fields and resolves relations per call; a cache backend that
-  is down is warned about and the call runs uncached. The default chain is `Logging → Timeout → Cache → handler`,
-  and there is no `Retry` middleware.
+  one.** It is a step of the call, not a middleware, and stands aside for every endpoint that declares nothing.
+  Internal arguments are how a call learns who is asking (`.with(Self)`), so an endpoint that has them answers
+  per caller and one shared entry would be one caller's answer handed to the next — that endpoint and every
+  `mutation` are named in the log and left uncached. The lookup runs after the guards, so a hit reaches only a
+  caller they admitted; what is cached is the handler's result, so `resolveReturn` still masks fields and resolves
+  relations per call; a cache backend that is down is warned about and the call runs uncached. The default
+  middleware chain is `Logging → Timeout → <lib middlewares>`, then guards → internal arguments → cache →
+  handler, and there is no `Retry` middleware.
 
 ### Authorization Defaults
 
@@ -566,8 +572,11 @@ Full contract — filter-arg `ref` pickers, `getQueryMeta` summary counters, `la
   first "more". `isCumulativeOf<Model>` is the mode.
 - **"Is there more" is `hasMoreOf<Model>`, never `count > page * limit`.** It comes from the length of the batch
   the server returned, so it survives `{ insight: false }` and cannot drift from a count a live event moved.
-- **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`);
-  client fetch results are raw `GetStateObject` plain data, functions stripped.
+- **Hydrated vs raw:** server queries return hydrated `cnst.<Model>` instances (with `set`/`save`/`refresh`),
+  and so do client fetch results — `FetchClient` parses every return with `crystalize` defaulting to **true**
+  (`pkgs/akanjs/fetch/client/fetchClient.ts`). The raw `GetStateObject` shape is what the `<ref>Obj` /
+  `<ref>ObjList` / `<ref>ObjInsight` handles carry, because those pass `crystalize: false` on purpose so the
+  value can cross the RSC boundary as a client prop.
 - Every filter generates fourteen methods: `list` · `listIds` · `find` · `findId` · `pick` · `pickId` · `exists` ·
   `count` · `insight` · `query` · **`remove`** · **`removeOne`** · **`update`** · **`updateOne`**. The last four
   are query-level writes — one atomic UPDATE, **no hooks**, and therefore no `_postRemove` and no cascade. Use
@@ -605,7 +614,7 @@ Full contract — relevance ordering, `columns` / `weights`: `get_guideline` wit
 - Injected dependencies resolve by field-name convention: a field named `<refName>Service` resolves to the service registered under `<refName>`, and `<refName>Signal` likewise (`pkgs/akanjs/service/injectInfo.ts`).
 - The `Service`/`Signal` suffix is required — the injector strips it to derive the registry lookup key. Name the field after the target refName plus the suffix, not arbitrarily.
 - Preference order inside a service: `service<srv.XService>()` for another module's service · `plug(AdapterClass)` or `plug(StorageAdaptorRole)` for an adapter · `use<T>()` only to reach an `option.ts`-registered legacy singleton · `env(...)` for config.
-- **`memory(...)` takes a scalar or model class, not only a primitive** — `memory(Map, { of: CallStateInput })` serializes through the constant and travels as JSON text, so the Redis and sqlite-backed caches round-trip the same declaration. Never hand-encode JSON into a `String` memory.
+- **`memory(...)` takes a scalar or model class, not only a primitive** — `memory(Map, { of: CallStateInput })` serializes through the constant and travels as JSON text, so the Redis and sqlite-backed caches round-trip the same declaration. Never hand-encode JSON into a `String` memory. A memory is scoped to the service or adaptor that declares it; `ttl` (milliseconds) sets how long each write lives unless the `set` call names its own `expireAt`, and a `Map` entry expires on its own.
 
 ### Adapters — `adapt()` And `plug()`
 
@@ -681,9 +690,11 @@ it.
   names itself as the issuer, so `/mcp` demands a bearer token, verifies its signature, and refuses one carrying no
   `aud`. A token is the app's own access JWT plus `aud`/`iss`/`client_id`, so `AccountMiddleware` and the guards
   judge it unchanged; there is no scope. Per-app knobs live in `env.server.*` under `oauth` (`consentPath` and
-  `signinPath` with the basePath, `clients`, `dynamicRegistration`, `allowedRedirectSchemes`, `clientIdMetadata`,
-  `enabled`). `/mcp` reads the `Authorization` header only — a cookie is dropped at the door — and `JWT_SECRET` is
-  mandatory outside `local`, because the derived fallback is forgeable from three public names. A grant is revoked
+  `signinPath` with the basePath, `clients`, `dynamicRegistration`, `allowedRedirectSchemes`, `accessTokenSeconds`,
+  `clientIdMetadata`, `enabled`, plus `issuer` / `resource` — set those when a tunnel or an edge makes the derived
+  origin wrong, because an MCP client compares the issuer byte for byte). `/mcp` reads the `Authorization` header only — a cookie is dropped at the door — and `JWT_SECRET` (or
+  `security.jwtSecret`) is mandatory whenever `operationMode` is not `local`, because the derived fallback is
+  forgeable from three public names; `AKAN_ALLOW_DERIVED_JWT_SECRET=1` accepts that risk explicitly. A grant is revoked
   whole — `POST /oauth/revoke` (RFC 7009) by the client, `fetch.revokeOAuthConnection(sessionId)` by the account's
   owner, `fetch.listOAuthConnections()` to see them — and a revoked access token is refused at its next call.
 - **A person may, a model may not.** An agent's token names its `client_id` and `aud`; a browser session has
@@ -849,10 +860,11 @@ shape, so `cascade` never means "related" — it means one of exactly these:
 - Dynamic segments use `[id]`; route groups use directories like `(user)`, `(public)`, `(tab)`, or `(detail)`.
 - **A route file exports one thing**: `export default page()…render(…)` for a page, `layout()…render(…)` for a
   `_layout.tsx`, `rootLayout()…render(…)` for the app's (or a basePath's) root `_layout.tsx`. Every route setting
-  is a stage of the chain — `.param()`, `.search()`, `.config()`, `.head()` / `.metadata()`, `.loading()`;
-  `.notFound()` / `.error()` on a layout; `.fonts()` / `.theme()` / `.manifest()` / `.reconnect()` / `.wsConnect()`
-  / `.layoutStyle()` / `.gaTrackingId()` on the root layout; `.prompt()` on a page. A named export beside the chain,
-  or `page()` in a `_layout.tsx`, fails the build.
+  is a stage of the chain — `.param()`, `.search()`, `.config()`, `.head()`, `.loading()`; `.notFound()` /
+  `.error()` on a layout; `.fonts()` / `.theme()` / `.manifest()` / `.reconnect()` / `.wsConnect()` /
+  `.layoutStyle()` on the root layout; `.prompt()` on a page. A named export beside the chain, or `page()` in a
+  `_layout.tsx`, fails the build. `.head()` takes JSX — `<title>`, `<meta>`, `<link>` — or a function of the
+  route's args returning it; there is no metadata object, and analytics is the app's own script, not a stage.
 - **A page names every `[x]` segment of its path with `.param("x", Type)`** and reads a query key only through
   `.search("k", Type)`. Values arrive typed — `ID`/`String` → string, `Int`/`Float` → number, `Boolean`, `Date` →
   Dayjs, an `enumOf` class → its union, `[T]` → array — a path value the type refuses answers not-found, and a
@@ -940,11 +952,14 @@ when two shapes disagree.
 - `children: any` — newer files use `children: ReactNode`.
 - Hard-coded API keys or secrets in source; they belong in `option.ts` or env.
 - Large blocks of commented-out code left in place.
-- Cross-store writes through a `RootStore` cast — it collides with the Bun SSR-bundler segfault.
 - Stale `// TODO: Implement …` comments above implemented methods.
 - `{cond && <X/>}` in JSX, hard-coded Korean bypassing `l()`, and `window.alert(...)` for user feedback.
 - Bare `/* eslint-disable */` blocks — use `// biome-ignore lint/<rule>: <why>`.
 - Raw palette grays such as `text-gray-400` instead of the semantic tokens (`text-foreground/70`).
+
+A store calling `(this as unknown as RootStore).<action>()` or `.set({ … })` over
+`import type { RootStore } from "../st"` is **not** one of these — it is the sanctioned way to reach another store's
+actions and state (see `<model>.store.ts` above).
 
 ## Secrets And Env Safety (`.env`, `infra/**`, `*secret*`, `*credential*`)
 
@@ -1026,7 +1041,7 @@ re-implement the same look inline in several places, and never author a near-dup
 Import from `akanjs/ui`:
 - `badgeRecipe`(variant: default*|primary|secondary|accent|neutral|success|warning|info|error|outline · size: xs|sm|md*|lg · outline?) — 뱃지 look — 시맨틱 variant × size, outline 플래그는 색을 유지한 외곽선 스타일. `<Badge>` 가 소비하며, recipes.badge 슬롯으로 교체 가능.
 - `buttonRecipe`(variant: default|primary*|secondary|accent|neutral|outline|ghost|destructive|success|warning|info|link · size: xs|sm|md*|lg|icon · shape: default*|square|circle · outline?) — 버튼 look — 시맨틱 variant × size × shape, outline 플래그는 색을 유지한 외곽선 스타일. `<Button>` 이 소비하며, `_overrides.tsx` 의 recipes.button 슬롯으로 교체 가능.
-- `inputRecipe`(kind: field*|area · size: xs|sm|md*|lg|xl · tone: default*|primary|error) — 입력 표면 look — Input/TextArea/Select 가 공유하는 필드 셸. kind 로 한 줄 필드(field)/멀티라인(area), tone 으로 강조/오류 상태를 고른다.
+- `inputRecipe`(kind: field*|area · size: xs|sm|md*|lg|xl · tone: default*|primary|error) — 입력 표면 look — Input/TextArea/DatePicker 가 공유하는 필드 셸. kind 로 한 줄 필드(field)/멀티라인(area), tone 으로 강조/오류 상태를 고른다.
 
 App and lib recipes are **not** listed here. Each app/lib carries its own generated index —
 `apps/<app>/AGENTS.md` / `libs/<lib>/AGENTS.md` (`## Recipes In Scope`) — regenerated by `akan sync` and
@@ -1035,7 +1050,7 @@ verified by `akan lint`. When working inside an app or lib, consult that file be
 ## MCP Workflow Policy
 
 - **Prefer an Akan workflow to a direct source edit.** A direct edit is denied when an allowlisted workflow or repair tool can make the change.
-- Inspect with `akan mcp --mode plan` (`list_workflows`, `explain_workflow`, `plan_workflow`); apply with `akan mcp --mode apply`, which allowlists `apply_workflow`, `run_validation`, and the repair tools.
+- Inspect with `akan mcp --mode plan` (`list_workflows`, `explain_workflow`, `plan_workflow`); apply with `akan mcp --mode apply`, which allowlists `apply_workflow`, `run_validation`, and three of the five repair tools — `repair_generated`, `repair_imports` and `repair_module_shape`. `akan repair format` and `akan repair dictionary` are CLI-only.
 - If `plan_workflow` returns `planPath` or `next.tool=apply_workflow`, call `apply_workflow({ planPath })` before editing source. Then run `run_validation` with `validationTarget` when present, otherwise `applyReportPath`.
 - Split a compound request into workflows and apply each `planPath` in order, such as `create-module` followed by `add-field`.
 - When no workflow exists, or apply reports unsupported/no-op/failed diagnostics needing manual action, keep edits scoped to owning source files and never patch generated files directly.

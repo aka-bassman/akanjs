@@ -638,7 +638,7 @@ const useStackTrans = (routeState: RouteState): UseCsrTransition => {
 };
 
 const useBottomUpTrans = (routeState: RouteState): UseCsrTransition => {
-  const { clientWidth, clientHeight, history, location, prevLocation, onBack } = routeState;
+  const { clientHeight, history, location, prevLocation, onBack } = routeState;
   const pageContentHeight = getKeyboardAwarePageHeight(routeState);
   const transDirection = "vertical";
   const transUnit = useSpringValue(0, { config: { clamp: true } });
@@ -647,8 +647,8 @@ const useBottomUpTrans = (routeState: RouteState): UseCsrTransition => {
   const transUnitRangeReversed = useMemo(() => [0, clientHeight], [clientHeight]);
   const transProgress = transUnitReversed.to(transUnitRangeReversed, [0, 1], "clamp");
   const transPercent = transUnitReversed.to(transUnitRangeReversed, [0, 100], "clamp");
-  const initThreshold = useMemo(() => Math.floor(clientWidth / 3), [clientWidth]);
-  const threshold = useMemo(() => Math.floor(clientWidth / 2), [clientWidth]);
+  const initThreshold = useMemo(() => Math.floor(clientHeight / 3), [clientHeight]);
+  const threshold = useMemo(() => Math.floor(clientHeight / 2), [clientHeight]);
   const pageState = location.pathRoute.pageState;
   const prevPageState = prevLocation?.pathRoute.pageState ?? defaultPageState;
   useEffect(() => {

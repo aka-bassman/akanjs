@@ -12,26 +12,20 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "This guide gets you from an empty directory to a running Akan application.",
-              ko: "이 가이드는 빈 디렉터리에서 실행 중인 Akan 애플리케이션까지 안내합니다.",
+              en: "Akan.js is a full-stack TypeScript framework that prioritizes designing and implementing actual business code.",
+              ko: "Akan.js는 실제 비즈니스를 코드로 설계하고 구현하는 것을 최우선으로 하는 풀스택 TypeScript 프레임워크입니다.",
             })}
           </div>
           <div>
             {l.trans({
-              en: "Along the way, you will see the Akan way: describe business intent once, then let conventions connect pages, APIs, services, stores, data, and deployment surfaces.",
-              ko: "그 과정에서 Akan 방식도 함께 보게 됩니다. 비즈니스 의도를 한 번 설명하면 컨벤션이 page, API, service, store, data, deployment surface를 연결합니다.",
+              en: "You can build a type-safe service with minimal code and deploy it to web, mobile, server, and DB infrastructure at the same time.",
+              ko: "최소한의 코드로 타입 안전한 서비스를 만들어 웹, 모바일, 서버, DB 인프라에 동시에 배포할 수 있습니다.",
             })}
           </div>
           <div>
             {l.trans({
-              en: "Akan.js is monorepo-native. App execution, production builds, library development, and package management all happen from the workspace root.",
-              ko: "Akan.js는 monorepo 구조를 기본으로 합니다. 앱 실행부터 production build, library 개발, package 관리까지 모두 workspace root에서 실행하고 운영합니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "After reading this guide, you will know how to create a workspace, start the local runtime, find the first files to edit, and build the app for production.",
-              ko: "이 가이드를 읽고 나면 workspace 생성, local runtime 실행, 엔트리 파일을 확인, production build까지 알 수 있습니다.",
+              en: "This guide takes you from an empty directory to a running app.",
+              ko: "이 가이드는 빈 디렉터리에서 실행 중인 앱까지 안내합니다.",
             })}
           </div>
         </Docs.Description>
@@ -43,8 +37,8 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "For the first run, Bun is the only required dependency. Docker and native IDEs become useful when you add local services or mobile builds.",
-              ko: "첫 실행에는 Bun만 있으면 됩니다. Docker와 네이티브 IDE는 로컬 서비스나 모바일 빌드를 추가할 때 필요해집니다.",
+              en: "Bun is the only required dependency for the first run.",
+              ko: "첫 실행에는 Bun만 있으면 됩니다.",
             })}
           </div>
           <div className="flex flex-col gap-1 p-4 font-medium">
@@ -59,7 +53,7 @@ export default page().render(() => {
                 checked={false}
                 readOnly
               />{" "}
-              {l.trans({ en: "Docker for local database services", ko: "로컬 데이터 서비스 실행을 위한 Docker" })}
+              {l.trans({ en: "Git for source code management", ko: "소스코드 관리를 위한 Git" })}
             </div>
             <div>
               <input
@@ -83,14 +77,8 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Start with the workspace creator. It asks a few questions, then lays out the monorepo conventions Akan uses for apps, libraries, pages, and domain modules.",
-              ko: "workspace creator로 시작하세요. 몇 가지 질문에 답하면 Akan이 app, library, page, domain module에 사용하는 모노레포 컨벤션을 구성합니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "Run terminal commands without copying the leading prompt symbol.",
-              ko: "터미널 명령어를 복사할 때는 앞의 프롬프트 기호를 제외하고 실행하세요.",
+              en: "First, create a workspace with the workspace creator:",
+              ko: "먼저 workspace creator로 workspace를 생성합니다:",
             })}
           </div>
         </Docs.Description>
@@ -98,8 +86,8 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "If you prefer a globally installed CLI, the same lifecycle is available through the akan command.",
-              ko: "전역 설치된 CLI를 선호한다면 같은 작업 흐름을 akan 명령으로 사용할 수 있습니다.",
+              en: "Or use the globally installed akan command:",
+              ko: "또는 전역 설치된 akan 명령을 사용합니다:",
             })}
           </div>
         </Docs.Description>
@@ -119,8 +107,8 @@ cd myorg`}
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Start the local Akan runtime with one command. It scans the workspace, reads the conventions, prepares generated artifacts, and opens the app.",
-              ko: "하나의 명령으로 local Akan runtime을 시작합니다. 워크스페이스를 스캔하고, 컨벤션을 읽고, 생성 산출물을 준비한 뒤 앱을 엽니다.",
+              en: "Start the app with one command:",
+              ko: "명령 하나로 앱을 시작합니다:",
             })}
           </div>
         </Docs.Description>
@@ -128,16 +116,10 @@ cd myorg`}
         <Docs.Description>
           <div>
             {l.trans({
-              en: "By default, the local gateway listens on http://localhost:8282. Pages, API calls, WebSocket traffic, and generated assets all flow through this runtime.",
-              ko: "local gateway는 기본적으로 http://localhost:8282 에서 실행됩니다. page, API call, WebSocket traffic, generated asset이 모두 이 runtime을 통해 흐릅니다.",
+              en: "The app opens on http://localhost:8282.",
+              ko: "앱은 http://localhost:8282 에서 열립니다.",
             })}
           </div>
-        </Docs.Description>
-        <Docs.Description>
-          {l.trans({
-            en: "Now the app is running through the Akan gateway. Edit a page and the same workspace can serve web, app-oriented client surfaces, API traffic, realtime traffic, and generated assets.",
-            ko: "이제 앱은 Akan gateway를 통해 실행됩니다. 페이지를 수정하면 같은 워크스페이스에서 web, app-oriented client surface, API traffic, realtime traffic, generated asset을 함께 제공합니다.",
-          })}
         </Docs.Description>
 
         <Docs.SubTitle>
@@ -149,14 +131,8 @@ cd myorg`}
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Akan pages live under apps/<app>/page. Index pages use the _index.tsx convention, so the first screen of myapp is apps/myapp/page/_index.tsx.",
-              ko: "Akan page는 apps/<app>/page 아래에 위치합니다. index page는 _index.tsx 컨벤션을 사용하므로 myapp의 첫 화면은 apps/myapp/page/_index.tsx입니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "A page file exports one page() chain, and the component lives in its .render() stage. Change the markup and refresh the local gateway to confirm your first UI change.",
-              ko: "page 파일은 page() 체인 하나를 export하고, 컴포넌트는 그 .render() 단계에 들어갑니다. 마크업을 수정한 뒤 local gateway를 새로고침해 첫 UI 변경을 확인하세요.",
+              en: "Akan pages live under apps/<app>/page. Edit the first screen and refresh:",
+              ko: "Akan page는 apps/<app>/page 아래에 있습니다. 첫 화면을 수정하고 새로고침합니다:",
             })}
           </div>
         </Docs.Description>
@@ -175,20 +151,6 @@ export default page().render(() => {
 });
       `}
         />
-        <Docs.Description>
-          <div>
-            {l.trans({
-              en: "Open http://localhost:8282 to see the page through the Akan gateway.",
-              ko: "http://localhost:8282 를 열어 Akan gateway를 통해 페이지를 확인합니다.",
-            })}
-          </div>
-          <div>
-            {l.trans({
-              en: "The runtime uses the same page convention for the surfaces Akan builds, so you work in one page tree instead of maintaining separate client projects.",
-              ko: "Akan runtime은 생성하는 surface에 같은 page 컨벤션을 사용합니다. 따라서 분리된 client project를 따로 유지하지 않고 하나의 page tree에서 작업합니다.",
-            })}
-          </div>
-        </Docs.Description>
         <div className="w-full justify-center gap-4 sm:flex">
           <BrowserMockup>Hello Akan.js! 🎉</BrowserMockup>
 
@@ -208,8 +170,8 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "The generated main.ts starts the Akan runtime. Most application work happens in pages and domain modules, so you rarely need to edit this file.",
-              ko: "생성된 main.ts는 Akan runtime을 시작합니다. 대부분의 애플리케이션 작업은 page와 domain module에서 이루어지므로 이 파일을 자주 수정할 필요는 없습니다.",
+              en: "The generated main.ts starts the Akan runtime.",
+              ko: "생성된 main.ts가 Akan runtime을 시작합니다.",
             })}
           </div>
         </Docs.Description>
@@ -230,8 +192,8 @@ void run();
           <Docs.Description>
             <div>
               {l.trans({
-                en: "When akan start is running, the terminal shows the local runtime status. Use the gateway URL for pages and generated runtime surfaces.",
-                ko: "akan start가 실행 중이면 터미널에서 local runtime 상태를 확인할 수 있습니다. page와 generated runtime surface는 gateway URL에서 확인합니다.",
+                en: "The terminal shows the local runtime status.",
+                ko: "터미널에서 local runtime 상태를 확인할 수 있습니다.",
               })}
             </div>
           </Docs.Description>
@@ -256,16 +218,16 @@ void run();
         <Docs.Description>
           <div>
             {l.trans({
-              en: "When the app is ready to ship, build it with the same conventions. Akan generates the server artifact, route manifests, client entries, static assets, and package metadata needed for production.",
-              ko: "앱을 배포할 준비가 되면 같은 컨벤션으로 빌드합니다. Akan은 production에 필요한 server artifact, route manifest, client entry, static asset, package metadata를 생성합니다.",
+              en: "Build the app for production:",
+              ko: "production build를 실행합니다:",
             })}
           </div>
         </Docs.Description>
         <Code.Snippet className="w-full" title="Terminal" language="bash" code="akan build myapp" />
         <div>
           {l.trans({
-            en: "The production build result is generated in the dist/apps/myapp directory.",
-            ko: "dist/apps/myapp 디렉터리에 production build 결과가 생성됩니다.",
+            en: "The result is generated in the dist/apps/myapp directory.",
+            ko: "결과물은 dist/apps/myapp 디렉터리에 생성됩니다.",
           })}
         </div>
       </Scroll.Slide>

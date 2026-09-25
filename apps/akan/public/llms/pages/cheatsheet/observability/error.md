@@ -21,61 +21,117 @@
 
 Error Handling
 
-Akan errors are built around one simple rule: server code throws a typed dictionary key, and the client shows the translated message for that key.
+1. Declare: register each error sentence as an `[en, ko]` pair in `.error({})`.
 
-Declare user-facing errors in the module dictionary.
+2. Throw: when a business rule fails, throw `new Err("order.error.notDraft")`.
 
-Throw `Err` from document or service code when a business rule fails.
+3. Send: the server answers with the untranslated key, a status code and `data`.
 
-Let fetch restore the response as an `Err`, then show it with `msg.error()`.
+4. Show: fetch restores it as `Err`, and the store action shows it as a translated toast.
+
+A precondition on the document's own state, such as only a draft order being editable.
+
+A rule that loads or compares other documents, such as the product having to exist.
+
+Who may call the endpoint at all, such as only the order's owner, written as a guard.
+
+Server files import it from the module's `dict` barrel.
+
+UI files import it from the app's client entry; a lib uses `@libs/<lib>/client`.
+
+No import path for `Err` exists here, so keep throwing code out of these folders.
+
+The default: a business rule rejected the request.
+
+The same 400, named explicitly.
+
+The caller has not signed in or proven who they are.
+
+The user is known but may not do this action.
+
+The requested record does not exist.
+
+The current state cannot accept this action.
+
+The dictionary key you threw, never a translated sentence.
+
+400 by default or the helper's status, and the HTTP response carries the same one.
+
+The placeholder values, present only when you passed them.
+
+Extra debugging detail, present only when set.
+
+The endpoint path, sent over HTTP only and never in a websocket error frame.
+
+When the server answered, as an ISO string.
+
+Answered with its own `statusCode`, and `error` holds the dictionary key.
+
+Answered as 500, and a deployed build sets `error` to `Internal Server Error`.
+
+An order that is already paid cannot be edited, and the user should hear why in their own language. In Akan the server throws a dictionary key, and the client translates that key and shows it.
+
+One error travels through four steps:
+
+Where
+
+What happens
 
 Declare Errors
 
-Start in the dictionary. The keys you declare here become the only valid keys for `Err`, so typo mistakes are caught by TypeScript.
+The snippet leaves out the other stages of the chain:
 
 Throw Err
 
-Use `Err` for business rules that users can understand and fix. A document method is a good place for state rules because every service shares the same rule.
+Only a draft order can change its title:
+
+Where each rule lives
+
+Rule
+
+Where to import Err
+
+File
+
+How
 
 Choose Status
 
-`new Err()` uses 400 by default. When the HTTP meaning matters, pick a named helper. This keeps API responses clear without making every rule verbose.
-
-`Err.NotFound`: a requested record does not exist.
-
-`Err.Conflict`: the current state cannot accept this action.
-
-`Err.Forbidden`: the user is known but may not do this action.
+In a service, the order's state and the product's existence pick different statuses:
 
 Use Data
 
-Pass `data` when the translated message needs values. The server keeps the dictionary key as `error`, and sends `data` beside it for interpolation.
-
 Client Handling
 
-Akan fetch restores an error response as `Err`, and the store already catches it: every action runs inside a wrapper that translates the key with the caller's language and toasts it. A store action is the happy path only — never a try/catch.
+The store action calls the endpoint and handles success only:
 
-The button reads nothing about failure. It calls the action and lets the wrapper answer:
+The button knows nothing about failure. It calls the action and lets the wrapper answer:
 
 Response Shape
 
-HTTP and websocket errors use the same simple shape. Most app code does not need to build this by hand, but knowing it makes debugging easier.
+HTTP and websocket errors carry almost the same fields. You rarely build this by hand, but knowing it makes debugging easier.
+
+Field
+
+When a plain Error escapes
+
+Thrown
+
+What the caller gets
 
 Tips
 
-Throw `Err`, always. A raw `throw new Error` is a build failure under `apps/**` and `libs/**`; only tests, `*.constant.ts`, `common/**`, and `env/**` are exempt, and those have no `Err` import path, so keep throwing code out of them.
+When a store needs a custom action, and how to write one.
 
-Put repeated state rules in document methods. Put cross-model checks and loading logic in services.
-
-Name keys by domain and reason: `order.error.notDraft`, `order.error.stockNotEnough`, `user.error.wrongPassword`.
-
-Do not translate on the server. Send the key and data, then let the client choose the user's language.
+Logging
 
 ## Code Examples
 
-### order.dictionary.ts
+### apps/myapp/lib/order/order.dictionary.ts
 
 ```ts
+import { modelDictionary } from "akanjs/dictionary";
+
 export const dictionary = modelDictionary(["en", "ko"])
   .of((t) => t(["Order", "주문"]).desc(["Order description", "주문 설명"]))
   .error({
@@ -85,12 +141,18 @@ export const dictionary = modelDictionary(["en", "ko"])
       "{productName} needs {quantity} items",
       "{productName} 재고가 {quantity}개 필요합니다.",
     ],
+  })
+  .translate({
+    addItemSuccess: ["Item added", "상품을 담았습니다."],
   });
 ```
 
-### order.document.ts
+### apps/myapp/lib/order/order.document.ts
 
 ```ts
+import { by } from "akanjs/document";
+
+import * as cnst from "../cnst";
 import { Err } from "../dict";
 
 export class Order extends by(cnst.Order) {
@@ -102,7 +164,7 @@ export class Order extends by(cnst.Order) {
 }
 ```
 
-### order.service.ts
+### apps/myapp/lib/order/order.service.ts
 
 ```ts
 async addItem(orderId: string, productId: string, quantity: number) {
@@ -116,10 +178,10 @@ async addItem(orderId: string, productId: string, quantity: number) {
 }
 ```
 
-### order.document.ts
+### apps/myapp/lib/order/order.document.ts
 
 ```ts
-addItem(product: Product, quantity: number) {
+addItem(product: cnst.Product, quantity: number) {
   if (product.stock < quantity) {
     throw new Err("order.error.stockNotEnough", {
       productName: product.name,
@@ -135,9 +197,15 @@ addItem(product: Product, quantity: number) {
 ### apps/myapp/lib/order/order.store.ts
 
 ```ts
-export class OrderStore extends store(sig.order, () => ({})) {
-  async addItem(orderId: string, productId: string, quantity: number) {
-    const order = await fetch.addItem(orderId, productId, quantity);
+import { store } from "akanjs/store";
+import { fetch, msg, sig } from "../useClient";
+
+export class OrderStore extends store(sig.order, () => ({
+  // state
+})) {
+  // action
+  async addItemToOrder(orderId: string, productId: string, quantity: number) {
+    const order = await fetch.addItemToOrder(orderId, productId, quantity);
     this.setOrder(order);
     msg.success("order.addItemSuccess");
   }
@@ -161,18 +229,18 @@ export const AddItem = ({ className, orderId, productId }: AddItemProps) => {
   return (
     <button
       className={buttonRecipe({ variant: "primary" }, className)}
-      onClick={() => st.do.addItem(orderId, productId, 3)}
+      onClick={() => st.do.addItemToOrder(orderId, productId, 3)}
       type="button"
     >
-      {l("order.signal.addItem")}
+      {l("order.signal.addItemToOrder")}
     </button>
   );
 };
 ```
 
-### Error response
+### Code
 
-```ts
+```json
 {
   "error": "order.error.stockNotEnough",
   "statusCode": 400,
@@ -180,7 +248,7 @@ export const AddItem = ({ className, orderId, productId }: AddItemProps) => {
     "productName": "Yogurt Icecream",
     "quantity": 3
   },
-  "path": "/order/addItem",
+  "path": "/addItemToOrder",
   "timestamp": "2026-05-25T00:00:00.000Z"
 }
 ```

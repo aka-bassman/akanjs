@@ -26,7 +26,6 @@ import {
   type RouteModuleSource,
   resolveRouteModule,
 } from "../client/route/resolveRouteModule";
-import { resolveHeadExport, resolveMetadataHead } from "./metadata";
 
 type RouteModuleKindWithOverrides = "page" | "layout" | "overrides";
 
@@ -298,18 +297,6 @@ export class RouteTreeBuilder {
     if ("head" in mod && "generateHead" in mod) {
       throw new Error(`[route-convention] head and generateHead cannot both be exported in ${key}`);
     }
-    if (
-      !parsed.isInternalRootLayout &&
-      ("head" in mod || "generateHead" in mod) &&
-      ("metadata" in mod || "generateMetadata" in mod)
-    ) {
-      throw new Error(
-        `[route-convention] head/generateHead and metadata/generateMetadata cannot both be exported in ${key}`,
-      );
-    }
-    if ("metadata" in mod && "generateMetadata" in mod) {
-      throw new Error(`[route-convention] metadata and generateMetadata cannot both be exported in ${key}`);
-    }
   }
 
   static #makeRouteRender(key: string, kind: "page" | "layout", loader: () => Promise<RouteModuleSource>): RouteRender {
@@ -339,17 +326,7 @@ export class RouteTreeBuilder {
           routeRender.NotFound = layoutMod.NotFound;
           routeRender.Error = layoutMod.Error;
         }
-        if (mod.generateHead) {
-          const head = await mod.generateHead(props);
-          if (head !== null && head !== undefined) return resolveHeadExport(head, { includeHeadSnapshot: false });
-        }
-        if (mod.generateMetadata) {
-          const metadata = await mod.generateMetadata(props);
-          return metadata === null || metadata === undefined ? metadata : resolveMetadataHead(metadata);
-        }
-        if (mod.head !== undefined)
-          return mod.head === null ? null : resolveHeadExport(mod.head, { includeHeadSnapshot: false });
-        return mod.metadata === undefined ? undefined : resolveMetadataHead(mod.metadata);
+        return mod.generateHead ? await mod.generateHead(props) : mod.head;
       },
     };
     if (kind === "page") {

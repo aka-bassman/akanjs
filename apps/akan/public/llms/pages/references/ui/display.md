@@ -9,118 +9,526 @@
 ## Headings
 
 - Display UI (#display-ui)
+- Data (#Data)
+- RecentTime (#RecentTime)
+- Loading (#Loading)
+- Badge (#Badge)
+- Empty (#Empty)
+- Table (#Table)
+- Pagination (#Pagination)
 
 ## Content
 
 Display
 
-The admin listing, in parts. `Data.ListContainer` is the whole screen — toolbar, dashboard tiles, the list in either rendering, and the CRUD modals — and every other member is one piece of it, exported so a screen that wants a different arrangement composes rather than forks. All of them take the same `slice`, the generated metadata that says which model and which store keys the listing is reading.
+The admin listing screen and its parts, bound to one model's slice.
 
-The whole listing. `type` picks the starting rendering and the toolbar toggles it; `query` fixes the filter, and given one the panel is scoped and offers no query maker. A column is a field name or `{ key, title?, render?, responsive?, only? }`, and an action is `"view"` / `"edit"` / `"remove"` or an element of your own — both also take a factory that receives the loaded list.
+A time shown as "3 minutes ago", with the exact date in a tooltip.
 
-The listing as rows. It owns its own CRUD modals, so it works standalone.
+Six waiting indicators: spinner, skeleton, progress bar and three placeholders.
 
-The same listing as cards. `renderItem` receives the model plus the slice, so a card can open the same modals the table does.
+A status pill: a `<span>` styled by `badgeRecipe`.
 
-One card. `cover` and `title` are slots; `actions` draws the row's action controls with the store wiring already done.
+The "no data" placeholder, with room for a follow-up action below it.
 
-The pager, reading page state from the slice's store rather than from props.
+Rows you already hold, drawn as a table with an optional pager.
 
-Summary tiles above the list. A tile narrows the listing when its own field declares a query with `.meta(...)`, or when `queryMap` names one; with neither it renders as a plain tile. `queryKey` is the filter the listing is showing, so a tile stops looking active once the toolbar moves off it.
+A page-number control driven entirely by props.
 
-The model's own insight values — the aggregates a slice returns beside its rows. The header already carries the total count, so name the others.
+Metadata naming one model list and the store keys it fills. Get it from `fetch.slice.<model>`.
 
-The filter builder: pick one of the model's declared filters, fill its args, apply. `onApply` defaults to the slice's own store, which is where a listing reads it.
+The client state generated per model. `st.use` reads it and `st.do` changes it.
 
-The id picker a filter arg gets when its `ref` names a model — how a filter taking an owner id is filled by hand.
+Aggregates a slice returns beside its rows, such as `count`.
 
-`Data.*` is the admin surface. A product screen composes `Load.Units` with the module's own `Unit` and `Zone` components instead — these carry a toolbar, a query maker, and a data export, which is a lot of client JS for a list a visitor only reads.
+A component name a route's `_overrides.tsx` can swap for the app's own version.
 
-Localized relative-time label with a tooltip containing the absolute date. It switches from relative labels to formatted dates after the configured break unit.
+Store
 
-Date value to render. Null renders nothing.
+Props
 
-Unit where relative display stops and date formatting begins.
+Pager
 
-Automatic compact format or full date-time format.
+Reads a slice's page, limit and count from the store.
 
-Relative phrasing. `"fromNow"` (default) is dayjs locale strings. `"always"` / `"auto"` use Intl (`1 day ago` vs `yesterday`). A function replaces the relative label.
+Takes `currentPage`, `total` and `itemsPerPage` as props.
 
-Six indicators, one per shape of thing that is waiting. Pick by what the reader is looking at: a skeleton where content will appear, a spinner where a control is working, a progress bar where the work has a known end. Each member is an independent override slot, so an app can re-skin the skeleton without touching the spinner.
+Table
 
-The spinner. `size` is a named step or a pixel number; `tone="current"` inherits the surface's foreground, which is what a filled surface needs — `text-primary/70` is legible on the app background and vanishes on a `bg-info` badge. A replacement `indicator` carries its own colour; the rotation is the wrapper's, so it needs no `animate-spin`.
+A listing wired to a model: rows, pager and modals all come from the slice.
 
-The shape content will take, pulsing while `active`. This is the `fallback` a `Load.Stream` or a Suspense boundary wants.
+Rows you already hold, passed in as `dataSource`.
 
-A determinate bar. Reach for it only when `value` and `max` are both real — an upload, a multi-step job — and a spinner otherwise.
+How a product screen lists and shows data.
 
-A button-shaped placeholder, for a control that is not there yet. Not the in-button spinner — `Button` grows that itself when its handler returns a promise.
+Override slots
 
-The same, shaped like a field.
+Recipe slots
 
-An `absolute inset-0` scrim with a centred mark and a message, for a region whose content is on screen but busy. It needs a positioned ancestor. `children` replaces the localized processing message, `indicator` the spinner above it.
+The whole admin listing: toolbar, dashboard, rows or cards, and the CRUD modals.
 
-The status pill. It is a `<span>` plus the `badgeRecipe` variants and nothing else — every other attribute passes through, so `title`, `aria-*`, and a click handler all work. Because the recipe resolves through the route's recipe slot, an app can restyle every badge at once by binding `recipes: { badge }` in an `_overrides.tsx`, without touching a call site.
+The listing as rows, with its own edit and view modals. `queryArgs` makes it load on mount.
 
-The colour. Map a model enum to one through a module-scope `as const` table rather than a conditional at the call site.
+The listing as cards. Each `renderItem` result sits in a `Data.Item` with the row actions.
 
-Height and text size. `md` by default.
+One card: `children` (or `title`) on top, then the listed columns and the action buttons.
 
-Keeps the variant's colour and draws it as an outline instead of a fill.
+The pager. It reads page state from the slice's store, not from props.
 
-Everything a `<span>` takes, `className` included — merged by the recipe, so a utility here wins over the variant.
+Summary tiles above the list. A tile that knows its filter narrows the list on click.
 
-For the classes without the element — a badge look on an `<a>` or a `<button>` — call `badgeRecipe(variants, className)` directly. It is server-safe and takes an array as its second argument, so it never needs `cn()` around it.
+Tiles for the slice's insight values. The total count is already in the header.
 
-Standard no-data state with a localized default description and optional content below the empty body.
+Picks a declared filter and fills its args. `onApply` defaults to the slice's store.
 
-Custom empty-state text. Defaults to localized `base.noData`.
+Picks a row of another model for a filter arg whose `ref` names it, such as an owner id.
 
-The mark above the description. Defaults to the framework inbox glyph.
+The model's root slice, `fetch.slice.<model>`.
 
-Minimum empty body height in pixels.
+The first rendering. The toolbar toggle switches between cards and rows.
 
-Optional follow-up action or explanation rendered below the empty state.
+Fixes the filter. The query maker and the dashboard are then not drawn.
 
-Responsive table wrapper used by data-heavy screens. It supports column renderers, row click handlers, loading state, empty state, and optional `Pagination`.
+The filter per summary column. `?filter=<column>` opens the list on that filter.
 
-Header/cell definitions with optional responsive visibility.
+The first fetch: page, limit, sort, and the defaults a new model starts from.
 
-Rows rendered by the table.
+Fields shown in each row and card, and written by the CSV export.
 
-Pagination config or false to disable.
+Row buttons. A function decides them per row.
 
-Factory for row events such as click navigation.
+Extra entries in the toolbar's more menu, beside CSV and JSON export.
 
-Content drawn above the table and below the pager.
+Shows the New button, as long as `renderTemplate` is given.
 
-Placeholder for a table with no rows. Defaults to `Empty`.
+The heading. Defaults to the model's name from its dictionary.
 
-The mark shown over the rows while `loading`.
+The initial sort. The toolbar offers the model's other sort keys.
 
-Standalone page-number control. Use it when pagination state is local; use `Data.Pagination` when the state is generated from a model slice.
+Classes for the whole container.
 
-Current 1-based page number.
+Classes for the card grid.
 
-Total item count.
+The card body in card mode. It gets `{ [model]: item, slice, actions, columns, idx }`.
 
-Number of items per page.
+The form inside the edit and new modals. Without it there is no New button.
 
-Called with the selected 1-based page number.
+The body of the view modal. Without it the view button opens nothing.
 
-The marks inside the step controls and in place of skipped pages. The buttons, their disabled state and their labels stay the framework's.
+The modal title. Defaults to the model name and the id.
 
-Placeholder for a pager with no pages. Replaces the deprecated `renderEmpty`, which is a node and not a render function.
+The area above the list, usually a `Data.Dashboard`. It needs the app's `summary` state.
+
+The insight area above the list, usually a `Data.Insight`.
+
+Replaces the filter-argument form under the toolbar.
+
+One placeholder card, repeated while the cards load.
+
+A field name. The header label comes from the model's dictionary.
+
+Date fields with these and a few similar names are drawn as `RecentTime`.
+
+A name containing `status` or `role` is drawn as a coloured badge.
+
+Your own label and cell. `value` is what the CSV export writes instead of `render`.
+
+Shows the column from `md` up and hides it on smaller screens.
+
+Icon buttons wired to the store. `remove` asks for confirmation first.
+
+Your own element. Rows put it in an Actions column, cards in the more menu.
+
+Decides the buttons per row, for example by status.
+
+A `tools` entry. A `tools` function receives the loaded list.
+
+The time to show. `null` renders nothing.
+
+Where relative labels stop. Unset, they never switch to a date. See the table below.
+
+How a date past the break is printed. See the table below.
+
+The wording of the relative label. See the table below.
+
+Classes for the label itself.
+
+Past the break, same day
+
+Past the break, same year
+
+Past the break, another year
+
+Past the break, with `format="full"`
+
+Tooltip
+
+Tooltip, with `breakUnit="second"`
+
+Epoch placeholder (`0` or `-1`)
+
+Not set
+
+Always relative, never a date
+
+Never relative, always a date
+
+Under 60 seconds
+
+Under 60 minutes
+
+Under 24 hours
+
+Under 7 days
+
+Under 4 weeks
+
+Under 12 months
+
+a day ago
+
+dayjs locale strings. The default.
+
+1 day ago
+
+`Intl.RelativeTimeFormat`, always as a number.
+
+yesterday
+
+`Intl.RelativeTimeFormat`, with words like yesterday where the language has them.
+
+Your own wording from `{ unit, count, date, now, defaultLabel }`.
+
+Content will appear in this spot
+
+A control or a small area is working
+
+The work has a known end, such as an upload
+
+A whole panel is busy
+
+A button or field is not rendered yet
+
+The spinner. `size` is a step or pixels; `tone` is `"primary"`, `"current"` or `"muted"`.
+
+Four grey text lines, pulsing while `active`. A good `fallback` for `Load.Stream`.
+
+A determinate bar that animates to `value / max`. Use it when both numbers are real.
+
+A button-shaped placeholder for a control not there yet. Not a spinner inside a button.
+
+The same placeholder, shaped like an input field.
+
+A blurred `absolute inset-0` cover with a spinner and a message (default: processing).
+
+The colour. Map a model enum to it through a module-scope `as const` table.
+
+Height and text size.
+
+Draws the variant's colour as an outline. `variant="outline"` is the plain, uncoloured one.
+
+Everything a `<span>` takes. `className` is merged last and wins over the variant.
+
+The empty-state text. The default is the translated no-data label.
+
+The mark above the text. Defaults to an inbox icon.
+
+Minimum height of the empty body, in pixels.
+
+Classes for the empty body. `children` sit outside it.
+
+Content under the empty body, such as a create button.
+
+One header and cell per column. `responsive` lists the breakpoints where it shows.
+
+The rows to draw, all of them. Slice it to the current page yourself.
+
+The React key per row. Defaults to the row index.
+
+Dims the rows and draws `loadingIndicator` over them.
+
+The mark shown over the rows while `loading`. Defaults to a spinner.
+
+Draws a `Pagination` under the table. Unset or `false` draws none.
+
+Row events such as click-to-open. Rows then show a pointer cursor.
+
+Classes for every row, or per row.
+
+`"small"` tightens the cell padding.
+
+Draws a rounded border around the table.
+
+Hides the header, or shows it only at the listed breakpoints.
+
+Content drawn above the table.
+
+Content drawn below the table, under the pager.
+
+The placeholder for a table with no rows.
+
+The current page, counted from 1.
+
+The total item count. At 0 the pager renders `empty`, or nothing.
+
+Items per page. The page count is `total / itemsPerPage`, rounded up.
+
+Called with the chosen page, counted from 1.
+
+The mark inside the previous-page button. The button itself stays the framework's.
+
+The mark inside the next-page button.
+
+The mark standing in for the pages a long pager skips.
+
+The placeholder for a pager with no pages. Replaces the deprecated `renderEmpty`.
+
+Classes for the wrapper, the current page button and the other page buttons.
 
 Display UI
 
-Display components render model lists, timestamps, loading feedback, empty states, status pills, and table/pagination surfaces. Prefer `Data` for generated model lists and standalone helpers for local UI state.
+Component
 
-Two of them come in a store-bound and a prop-bound pair, and picking the wrong one is the usual mistake: `Data.Pagination` reads a slice's page state from the store, `Pagination` takes the numbers as props; `Data.TableList` is a listing wired to a model, `Table` is rows you already have.
+Words used on this page
+
+Term
+
+Store-bound or prop-bound
+
+Where its values come from
+
+Not used
+
+Related pages
+
+Data
+
+Members
+
+Data.ListContainer props
+
+Render slots
+
+Columns
+
+You pass
+
+Actions and tools
+
+Filters and dashboard tiles
+
+Example
+
+An admin product list that opens as rows and wires every row action to a modal:
+
+RecentTime
+
+Where relative labels stop
+
+Relative label while
+
+What it prints
+
+Case
+
+Shows
+
+Relative wording
+
+Output for one day ago
+
+Wording from
 
 ## Code Examples
 
-No code snippets were extracted from this page.
+### apps/koyo/lib/product/Product.Zone.tsx
+
+```ts
+"use client";
+import { fetch, Product } from "@apps/koyo/client";
+import { Data } from "akanjs/ui";
+
+export const Admin = () => {
+  return (
+    <Data.ListContainer
+      slice={fetch.slice.product}
+      type="list"
+      columns={["name", "status", "createdAt"]}
+      actions={["view", "edit", "remove"]}
+      renderItem={Product.Unit.Card}
+      renderTemplate={Product.Template.General}
+      renderView={(product) => <Product.View.General product={product} />}
+    />
+  );
+};
+```
+
+### apps/koyo/lib/story/Story.View.tsx
+
+```ts
+import type { cnst } from "@apps/koyo/client";
+import type { ModelProps } from "akanjs/client";
+import { RecentTime } from "akanjs/ui";
+
+export const Meta = ({ story }: ModelProps<"story", cnst.LightStory>) => {
+  return (
+    <div className="text-foreground/60 text-sm">
+      <RecentTime date={story.createdAt} relative="auto" breakUnit="week" />
+    </div>
+  );
+};
+```
+
+### apps/koyo/ui/UploadProgress.tsx
+
+```ts
+import { cn } from "akanjs/client";
+import { Loading } from "akanjs/ui";
+
+interface UploadProgressProps {
+  className?: string;
+  sent: number;
+  total: number;
+}
+export const UploadProgress = ({ className, sent, total }: UploadProgressProps) => {
+  return (
+    <div className={cn("flex items-center gap-3", className)}>
+      <Loading.Spin size="sm" tone="current" />
+      <Loading.ProgressBar value={sent} max={total} className="flex-1" />
+    </div>
+  );
+};
+```
+
+### apps/koyo/lib/job/Job.Unit.tsx
+
+```ts
+import { type cnst, usePage } from "@apps/koyo/client";
+import type { ModelProps } from "akanjs/client";
+import { Badge, type BadgeVariants } from "akanjs/ui";
+
+const variantOf = {
+  ready: "info",
+  running: "warning",
+  done: "success",
+} as const satisfies { [key in cnst.JobStatus["value"]]: BadgeVariants["variant"] };
+
+export const Status = ({ job }: ModelProps<"job", cnst.LightJob>) => {
+  const { l } = usePage();
+  return <Badge variant={variantOf[job.status]}>{l(`jobStatus.${job.status}`)}</Badge>;
+};
+```
+
+### apps/koyo/lib/product/Product.Zone.tsx
+
+```ts
+"use client";
+import { type cnst, Product, usePage } from "@apps/koyo/client";
+import type { ClientInit } from "akanjs/fetch";
+import { buttonRecipe, Empty, Link, Load } from "akanjs/ui";
+
+interface CardProps {
+  className?: string;
+  init: ClientInit<"product", cnst.LightProduct>;
+}
+export const Card = ({ className, init }: CardProps) => {
+  const { l } = usePage();
+  const empty = (
+    <Empty description={l.trans({ en: "No products yet", ko: "상품이 없습니다" })}>
+      <Link href="/product/new" className={buttonRecipe({ variant: "primary" })}>
+        {l.trans({ en: "Create product", ko: "상품 만들기" })}
+      </Link>
+    </Empty>
+  );
+  return (
+    <Load.Units
+      className={className}
+      init={init}
+      empty={empty}
+      renderItem={(product) => (
+        <Product.Unit.Card key={product.id} product={product} />
+      )}
+    />
+  );
+};
+```
+
+### apps/koyo/ui/InvoiceTable.tsx
+
+```ts
+"use client";
+import { usePage } from "@apps/koyo/client";
+import { Table } from "akanjs/ui";
+import { useState } from "react";
+
+interface InvoiceRow {
+  id: string;
+  name: string;
+  amount: number;
+}
+interface InvoiceTableProps {
+  className?: string;
+  rows: InvoiceRow[];
+}
+export const InvoiceTable = ({ className, rows }: InvoiceTableProps) => {
+  const { l } = usePage();
+  const [page, setPage] = useState(1);
+  return (
+    <div className={className}>
+      <Table
+        columns={[
+          {
+            key: "name",
+            title: l.trans({ en: "Name", ko: "이름" }),
+            dataIndex: "name",
+          },
+          {
+            key: "amount",
+            title: l.trans({ en: "Amount", ko: "금액" }),
+            dataIndex: "amount",
+            responsive: ["md", "lg", "xl"],
+          },
+        ]}
+        dataSource={rows.slice((page - 1) * 20, page * 20)}
+        rowKey={(row: InvoiceRow) => row.id}
+        pagination={{
+          currentPage: page,
+          total: rows.length,
+          itemsPerPage: 20,
+          onPageSelect: setPage,
+        }}
+      />
+    </div>
+  );
+};
+```
+
+### apps/koyo/ui/PagedGrid.tsx
+
+```ts
+"use client";
+import { Pagination } from "akanjs/ui";
+import { type ReactNode, useState } from "react";
+
+interface PagedGridProps {
+  className?: string;
+  items: ReactNode[];
+}
+export const PagedGrid = ({ className, items }: PagedGridProps) => {
+  const [page, setPage] = useState(1);
+  return (
+    <div className={className}>
+      <div className="grid grid-cols-3 gap-2">{items.slice((page - 1) * 12, page * 12)}</div>
+      <Pagination
+        currentPage={page}
+        total={items.length}
+        itemsPerPage={12}
+        onPageSelect={setPage}
+      />
+    </div>
+  );
+};
+```
 
 ## Agent Notes
 

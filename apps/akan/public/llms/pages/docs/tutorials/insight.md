@@ -46,7 +46,7 @@ Finally, add the Query Maker to your page so users can filter orders dynamically
 
 Accelerate with Insight
 
-Now that we can filter our queries, let's extract meaningful insights from the data. Insight counts documents across the current query and optional per-field query filters. Think of it like a kitchen display system that shows the chef exactly how many active orders or topping requests are waiting.
+Now that we can filter our queries, let's aggregate the data. Insight counts documents across the current query and optional per-field query filters. Think of it like a kitchen display system that shows the chef exactly how many active orders or topping requests are waiting.
 
 First, define the Insight class in your constant file. Each field uses the accumulate option as an Akan document query filter for counting:
 
@@ -58,7 +58,7 @@ Adds a field filter before counting. Because toppings is an array field, this co
 
 Add dictionary entries for the insight fields to enable proper labeling in the UI:
 
-Now let's create a View component to display the aggregated insights in a beautiful dashboard layout:
+Now let's create a View component to display the aggregated insights in a dashboard layout:
 
 The View component displays each insight metric in a responsive grid. The chef can quickly see how much yogurt to prepare and which toppings are most popular.
 
@@ -72,21 +72,9 @@ Carried over from the slice tutorial, and still a plain 3-second poll - the insi
 
 Finally, add the Insight Zone to your page to display real-time aggregated statistics:
 
-Now when users filter orders by status, the insight dashboard automatically updates to show aggregated statistics for only those filtered orders. This is incredibly powerful for real-time operational decisions!
+When users filter orders by status, the insight dashboard automatically updates to show aggregated statistics for only those filtered orders.
 
-🎉 What You've Accomplished:
-
-Created dynamic Query Makers with searchable parameters
-
-Learned how to define Insight classes with Akan document query filters
-
-Built View components to display aggregated statistics
-
-Connected Zone components to auto-generated store hooks
-
-Integrated insights with filtered queries for real-time analytics
-
-In the next tutorial, we'll explore how to relate data between different models. This will allow you to create rich relationships like associating orders with customers, linking products to categories, and building complex data graphs.
+In the next tutorial, we'll explore how to relate data between different models. This will allow you to create relationships like associating orders with customers, linking products to categories, and building complex data graphs.
 
 ## Code Examples
 

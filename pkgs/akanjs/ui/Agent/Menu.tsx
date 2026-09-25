@@ -5,7 +5,7 @@ import { createOverridable } from "../UiOverride";
 export interface MenuRow {
   name: string;
   description?: string;
-  /** The argument names a prompt takes, shown so a user knows what to type after the name. */
+  /** The argument names a row takes, shown so a user knows what to type after the name. */
   hint?: string;
   pick: () => void;
 }
@@ -20,7 +20,7 @@ export interface MenuProps {
   onPick: (row: MenuRow) => void;
 }
 
-/** The composer's completion list: `/` commands and `prompt()` endpoints, or the `@` menu's reference rows. */
+/** The composer's completion list: the chat's own `/` commands, or the `@` menu's reference rows. */
 export const DefaultAgentMenu = ({ className, rows, selected, prefix = "/", onPick }: MenuProps) => {
   if (!rows.length) return null;
   return (

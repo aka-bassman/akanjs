@@ -34,7 +34,7 @@ export const Switch = ({
   useFieldTool(onChange, { disabled });
   return (
     <div {...agentAttrs(onChange)} className={cn("flex flex-col", className)}>
-      {label ? <Label className={labelClassName} nullable label={label} desc={desc} /> : null}
+      {label ? <Label className={labelClassName} label={label} desc={desc} /> : null}
       <div className="flex items-center gap-2">
         <UiSwitch
           variant="accent"

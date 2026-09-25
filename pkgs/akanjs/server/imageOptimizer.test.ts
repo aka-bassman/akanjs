@@ -12,6 +12,7 @@ const onePixelPng = Buffer.from(
 const hex = (text: string) => Buffer.from(text.replace(/\s+/g, ""), "hex");
 const gifFrame = "21f904010000 0000 2c00000000010001000000 020244010000";
 const animatedGif = hex(`47494638396101000100 8000 00 000000 ffffff${gifFrame}${gifFrame}3b`);
+const staticGif = hex(`47494638396101000100 8000 00 000000 ffffff${gifFrame}3b`);
 
 const root = path.join(tmpdir(), `akan-image-optimizer-${process.pid}`);
 let optimizer: ImageOptimizer;
@@ -49,6 +50,7 @@ describe("ImageOptimizer", () => {
   beforeAll(async () => {
     await Bun.write(path.join(root, "public/photo.png"), await new Bun.Image(onePixelPng).resize(64).png().bytes());
     await Bun.write(path.join(root, "public/loop.gif"), animatedGif);
+    await Bun.write(path.join(root, "public/still.gif"), staticGif);
     await Bun.write(path.join(root, "public/logo.svg"), '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
     optimizer = new ImageOptimizer({
       publicDir: path.join(root, "public"),
@@ -91,6 +93,20 @@ describe("ImageOptimizer", () => {
 
     expect(res.headers.get("Content-Type")).toBe("image/gif");
     expect(Buffer.from(await res.arrayBuffer())).toEqual(animatedGif);
+  });
+
+  test("serves a static gif as gif when the client accepts nothing better", async () => {
+    const res = await optimizer.handle(request("/still.gif", 32, "text/html"));
+
+    expect(res.headers.get("Content-Type")).toBe("image/gif");
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(staticGif);
+  });
+
+  test("re-encodes a static gif to webp when the client accepts it", async () => {
+    const res = await optimizer.handle(request("/still.gif", 32, "image/webp"));
+
+    expect(res.headers.get("Content-Type")).toBe("image/webp");
+    expect(await new Bun.Image(Buffer.from(await res.arrayBuffer())).metadata()).toMatchObject({ format: "webp" });
   });
 
   test("refuses svg unless the app opted in", async () => {

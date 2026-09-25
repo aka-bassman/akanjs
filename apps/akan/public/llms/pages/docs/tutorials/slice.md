@@ -48,7 +48,7 @@ For a real-time dashboard, the data needs to stay fresh. When a staff member cha
 
 Let's look at how to control the display with props and automatic refresh:
 
-The Unit component now accepts a showControls prop that determines whether to display action buttons. This simple flag allows the same card component to be used in both staff management views (with controls) and customer dashboard views (without controls).
+The Unit component now accepts a showControls prop that determines whether to display action buttons. This simple flag allows the same Unit card component to be used in both staff management views (with controls) and customer dashboard views (without controls).
 
 Now let's see how the Zone component manages automatic data refresh:
 
@@ -79,18 +79,6 @@ Use props like showControls to adapt component behavior for different contexts. 
 Dictionary for All Labels
 
 Always define slice names and related translations in the dictionary. This ensures consistent labeling across the application and enables proper internationalization.
-
-🎉 What You've Accomplished:
-
-Created multiple slices for different data views
-
-Built a real-time customer dashboard
-
-Connected slices to Zone components
-
-Implemented automatic data refresh
-
-Learned slice component best practices
 
 In the next tutorial, we'll explore how to create dynamic page navigation and user experiences using Pages in Akan.js. This will allow customers to navigate through multi-step ordering flows and interactive interfaces.
 

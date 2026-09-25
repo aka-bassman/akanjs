@@ -1,5 +1,5 @@
 import { renameSync } from "node:fs";
-import { type BaseEnv, getApiPrefix } from "akanjs/base";
+import { getApiPrefix, getEnv } from "akanjs/base";
 import { adapt } from "../adapt";
 
 export interface DownloadRequest {
@@ -52,19 +52,19 @@ export interface StorageAdaptor {
   deleteDataByPath(path: string): Promise<boolean>;
 }
 
-export interface BlobStorageOptions extends BaseEnv {
+export interface BlobStorageOptions {
   blobStorage?: { baseDir?: string; privateBaseDir?: string; urlPrefix?: string };
 }
 
 export class BlobStorage
   extends adapt("blobStorage", ({ env }) => ({
     root: env(
-      ({ appName, blobStorage = { baseDir: "local" } }: BlobStorageOptions) =>
-        `${process.env.AKAN_WORKSPACE_ROOT ?? "."}/${blobStorage.baseDir ?? "local"}/${appName}/backend`,
+      ({ blobStorage = { baseDir: "local" } }: BlobStorageOptions) =>
+        `${process.env.AKAN_WORKSPACE_ROOT ?? "."}/${blobStorage.baseDir ?? "local"}/${getEnv().appName}/backend`,
     ),
     privateRoot: env(
-      ({ appName, blobStorage = { privateBaseDir: "local" } }: BlobStorageOptions) =>
-        `${process.env.AKAN_WORKSPACE_ROOT ?? "."}/${blobStorage.privateBaseDir ?? "local"}/${appName}/server-private`,
+      ({ blobStorage = { privateBaseDir: "local" } }: BlobStorageOptions) =>
+        `${process.env.AKAN_WORKSPACE_ROOT ?? "."}/${blobStorage.privateBaseDir ?? "local"}/${getEnv().appName}/server-private`,
     ),
     // Only what is written from here on follows a moved prefix: a blob URL is stored on the row that
     // references it, so rows written under the old one keep pointing at it.

@@ -86,18 +86,6 @@ export class RouteSourceValidator {
     if (exported.has("head") && exported.has("generateHead")) {
       throw new Error(`[route-convention] head and generateHead cannot both be exported in ${filePath}`);
     }
-    if (
-      !options.rootLayout &&
-      (exported.has("head") || exported.has("generateHead")) &&
-      (exported.has("metadata") || exported.has("generateMetadata"))
-    ) {
-      throw new Error(
-        `[route-convention] head/generateHead and metadata/generateMetadata cannot both be exported in ${filePath}`,
-      );
-    }
-    if (exported.has("metadata") && exported.has("generateMetadata")) {
-      throw new Error(`[route-convention] metadata and generateMetadata cannot both be exported in ${filePath}`);
-    }
     const chain = RouteSourceValidator.#readChain(sourceFile, filePath);
     if (!chain) return { devOnly: RouteSourceValidator.#readDevOnly(sourceFile, filePath) };
     const named = [...exported].filter((name) => name !== "default");

@@ -9,138 +9,452 @@
 ## Headings
 
 - Core UI (#core-ui)
+- Link (#Link)
+- Image (#Image)
+- Layout (#Layout)
+- Load (#Load)
+- Model (#Model)
 
 ## Content
 
 Core
 
-Route-aware navigation component. It renders CSR or SSR navigation depending on the Akan render mode, and falls back to a non-clickable div when disabled or href is empty. Every other anchor attribute passes straight through, so `target`, `rel`, and `aria-*` work as they would on `<a>`.
+Moves between internal routes. Every internal link is a `Link`.
 
-Destination route. Empty values render children without navigation.
+Draws an uploaded file or a URL, resized by Akan's image optimizer.
 
-Prevents navigation while keeping the same visual layout.
+The page frame: content containers, top and bottom chrome, a header and drawers.
 
-Class applied when the current route matches the link. `activeExact` narrows the match to the exact path instead of a prefix.
+Turns a fetch result into a list, a detail, a form, or any awaited value.
+
+Create, edit, view and remove shells wired to a model's generated store.
+
+A named list query of a model, such as `productInShop`. Components take it as `fetch.slice.<name>`.
+
+What `fetch.init*`, `fetch.view*` and `fetch.edit*` return: the data plus what the store needs.
+
+Write server data into the client store, so generated actions such as paging work on it.
+
+A fallback that covers one section while its data loads, without holding the rest of the page.
+
+Bars fixed above or below the scrolling body, such as a navbar or a bottom tab bar.
+
+The element a user clicks to open a modal or a confirmation.
+
+A form's unsaved input, kept on the device and offered back when the form reopens.
+
+Destination route. When empty, Link renders its children inside a plain `div`.
+
+Blocks navigation and renders the same `div`, so the layout does not move.
+
+Class added while the current path starts with `href`.
+
+Adds `activeClassName` only on the exact path, not on its sub-paths.
 
 Scrolls to the top after client-side navigation.
 
-Replaces the current history entry instead of pushing a new one.
+Replaces the current history entry instead of adding one.
 
-Bypasses the route cache for client-side navigation when the renderer supports it.
+Meant to bypass the route cache, but neither renderer reads it yet.
 
-Calls `router.back()` on click. It is a plain `<div>` with a pointer cursor, not a button — hand it whatever mark the design wants, like the chevron `Layout.Navbar` puts in it by default.
+Pass through to `<a>` on server-rendered pages. The CSR bundle drops them.
 
-Calls `window.close()` on click — for a route opened in its own tab or window, such as a print view or an OAuth popup.
+Calls `router.back()` on click. It is a plain `div`, so it wraps any mark you give it.
 
-Calls `router.setLang(lang)` on click, which swaps the locale segment of the current route rather than navigating to a new one.
+Calls `window.close()` on click, for a route opened in its own tab such as an OAuth popup.
 
-Use `Link` for every internal route and a bare `<a>` only for `mailto:` and external destinations.
+Calls `router.setLang(lang)` on click, swapping only the locale segment of the current route.
 
-Akan image component for `ProtoFile` objects and direct URLs. It can derive width, height, and blur data from file metadata and uses the Akan image optimizer in SSR mode.
+Direct image URL. It wins over `file.url`.
 
-Direct image URL. Takes precedence over file metadata.
+A `File` model value, or any object with `url` and `imageSize`.
 
-File object with `url`, `imageSize`, and optional `abstractData`.
+Rendered size. A missing value comes from `file.imageSize`.
 
-Blur/placeholder preview data.
+Alternative text. Pass a real description; the default is just the word image.
 
-Marks the image as high-priority and eager-loaded.
+Low-quality preview data. It overrides `file.abstractData`.
 
-Skips Akan image optimization.
+Quality the optimizer encodes at.
 
-The page shell. Four of these are content containers you reach for inside a module (`Template`, `Unit`, `View`, `Zone`); the rest register a frame slot — a top inset, a bottom inset, a drawer — so the route knows how much chrome sits above and below the scrolling body. A slot-registering member reserves its space before it measures, which is what keeps a mobile route from reflowing once the navbar mounts.
+Loads eagerly at high priority, and preloads the image on server-rendered pages.
+
+Skips the optimizer and serves the original URL.
 
 Vertical form container with the spacing a module `Template` expects.
 
-List/card item container. Given `href` the whole unit becomes one `Link`.
+List or card item. With `href`, the whole unit becomes one `Link`.
 
-Width-constrained detail page container.
+Detail page container, capped at `max-w-5xl`.
 
-Section container for feature zones and page blocks.
+Section container for zones and page blocks, with the same width cap.
 
-Portals its `children` into the route's top inset. `back` draws a back control in the top-left slot: `true` for the framework chevron — a close glyph instead when the route's transition is bottomUp, scaleOut, or fade — or a node of your own.
+Portals `children` into the top inset. `back` is `true` for the default chevron, or your node.
 
-Web-style sticky header. `type="hide"` (the default) slides it away as the user scrolls down and back on the way up; `"static"` keeps it put.
+Top chrome that is not a navbar. `estimatedHeight` is the space reserved for it.
 
-The top chrome slot itself, for content that is not a navbar. `estimatedHeight` is the space reserved before the real height is measured.
+The inset's top-left corner, where the navbar's `back` lands. Other corner controls go here.
 
-The top-left corner of the inset — where `Layout.Navbar`'s `back` lands. Use it directly for a corner control a navbar does not own.
+Bottom chrome. `keyboardSticky` rides above the keyboard; `role` is chrome or keyboard accessory.
 
-The bottom chrome slot. `keyboardSticky` rides above the on-screen keyboard, and `role` separates permanent bottom chrome from a keyboard accessory bar so the two can coexist.
+The app's bottom tab bar. Each tab is `{ name, icon, activeIcon?, notiCount?, href }`.
 
-The app's bottom tab bar. Each tab is `{ name, icon, activeIcon?, notiCount?, href }`; `renderTab` draws one tab's body while the link, the route match, and the badge placement stay the framework's.
+Fixed web header. `hide` slides it away on scroll down from `md` width up; `static` keeps it.
 
-Self-contained drawer: it owns its open state and ships a hamburger `trigger` and a close row you can replace.
+Drawer that owns its open state and closes on route change; `trigger`, `header`, `close` swap parts.
 
 Controlled left drawer. `close={false}` draws no close control.
 
-Controlled right drawer, with a title slot the left one does not have.
+Controlled right drawer, with a `title` slot the left one lacks.
 
-`Layout.Navbar` also accepts `title`, `left`, and `right` in its prop type, but the component renders none of the three — only `children` and `back` reach the DOM. Compose the title and the trailing controls inside `children` until that changes.
+Renders a slice's list and hydrates the store, so generated paging and refresh keep working.
 
-The bridge between an Akan fetch result and React rendering. Every member takes a resolved value or a promise, and gives a pending promise a Suspense boundary of its own — so one slow section never holds the rest of the page, and the same call site works whether the route awaited the data or handed the promise across.
+Hydrates one full model and draws it with `renderView`; `noDiv` drops the wrapper element.
 
-Renders a slice's list and seeds the client store from it, so the generated pagination, query, sort, and refresh actions keep working after hydration. `from` / `to` window the rendered rows without refetching; `staleTime` is how old the seeded data may be before the client refetches on mount, and `0` always refetches.
+`edit` takes an edit payload, its promise, or a new-record seed. `type`: `modal`, `form`, `empty`.
 
-Hydrates one full model and renders it through `renderView`. `noDiv` drops the default wrapper element.
+A standalone pager on a list's `init`. It draws nothing while every row fits on one page.
 
-The edit shell. `edit` takes the resolved payload, the `x<Model>Edit` promise, or a partial form seed for a new record; `type` picks `modal`, a plain `form`, or `empty` for a shell that renders only its children.
+Awaits one promise behind its own Suspense boundary and hands the value to `children`.
 
-The pager for a slice, taking the same `init` the list did. Use it when the list and its pager are not siblings — `Load.Units` draws its own when `pagination` is on. `scrollToTop` returns to the top of the list after a page change.
+Route-level loader for SSR and CSR: `of` is the component CSR mounts, `loader` the shared fetch.
 
-The SSR/CSR page loader wrapper. `of` is the route component the CSR wrapper mounts, `loader` the async fetch both modes share.
+One of the two is required: draw each row, or the whole list at once.
 
-Awaits one promise behind its own Suspense boundary and calls `children` with the value — for data no other `Load.*` covers, such as a slice's `x<Model>List<Suffix>`. A resolved value renders in the shell with no boundary at all.
+Shown when the list has no rows. `empty` wins when both are given.
 
-Form recovery, on by default, on `Load.Edit` and every `Model` shell that opens a form. The shell saves the whole form as the user types and offers it back on the next open, scoped to the record id for an edit and to the seed plus the route for a new form, under the signed-in user. `false` turns it off; a string names the scope when the context is in neither the id nor the seed. `field.secret` and `field.hidden` values are never saved.
+Fallback while `init` is pending and while a refetch runs.
 
-Hand each promise across rather than the awaited value: `const { xInitInY, xListInY } = fetch.initXInY(id)` puts both queries in flight and gives each section its own boundary. `xListInY` and `xInsightInY` hold hydrated model instances that React Flight refuses as client props, so consume those in a server component, never as a `Zone` prop.
+A pager on desktop, infinite scroll on mobile. Turn it off to place `Load.Pagination` yourself.
 
-Never persist form values yourself. The old per-field `cache` / `cacheKey` props are deprecated and store nothing — they covered five control types, keyed on the translated label, and restored over server data. Draft recovery replaced them.
+How old seeded data may be before a mount refetches; `0` always refetches.
 
-The CRUD shells for a generated model store. They come in three shapes: a one-line pairing of a trigger and its modal (`New`, `Edit`), a wrapper that turns whatever you put inside it into that trigger (`NewWrapper`, `EditWrapper`, `ViewWrapper`, `RemoveWrapper`), and a body that renders in place (`View`, `EditModal`, `AdminPanel`). Every export carries its own Suspense boundary, because these mount on interaction long after the page is painted.
+Slice the rows `renderItem` draws, without refetching.
 
-A create trigger and its modal in one line. `children` is the form body the modal renders — the module's own `Template` — and `trigger` is the control that opens it, defaulting to the framework's `+ New` button. `partial` seeds the form; `namespace` suffixes the published tool, and only a second create trigger for the same slice needs one.
+Filter, sort and reverse the rows already loaded, on the client.
 
-The same pairing for one record. `children` is the form body, `trigger` the control, defaulting to the framework's edit button.
+Page
 
-The modal editing shell itself, without a trigger — for a route that opens the editor from its own state. `renderSubmit={false}` hides the default submit; `onSubmit` / `onCancel` take a store action name or a callback.
+server
 
-Turns its children into a create trigger — a card, a row, an empty-state panel. `resets` names the store keys cleared when the form opens.
+Takes a render function
 
-The same, for editing one record.
+`renderItem` and `renderList` are functions, so a server page cannot pass them.
 
-The same, opening the view modal.
+`renderView` is a function too.
 
-The same, opening the removal flow.
+Takes only data
 
-Renders a loaded model, a loading state, or an empty state from one nullable model plus a loading flag. It is the store-side sibling of `Load.View`, which takes a fetch promise instead.
+`edit`, `slice`, strings and `children` all cross the boundary.
 
-The detail view in a modal, with a title and an action slot.
+Takes `init` and one flag.
 
-One modal that flips between the detail view and the form. `menu={false}` draws no kebab, which also takes the remove entry off the modal.
+Carries no "use client", so its `children` function runs wherever it is rendered.
 
-Removal behind a confirmation modal. `children` is the trigger; `title` / `description` / `action` are the modal's slots. Replacing `action` takes over the removal — call nothing else and the record stays.
+Route-level
 
-The heavier removal: a confirmation whose `typeNameToRemove` makes the user type `name` back before the delete button enables. It takes no `children` at all — `trigger` is the whole control.
+`of`, `loader` and `render` are the function props a page may pass.
 
-A whole admin screen from the generated `Unit` / `Template` / `View` namespaces — listing, toolbar, dashboard tiles, and the CRUD modals. A role without a `General` export is skipped.
+`false` turns recovery off; a string names the scope yourself.
 
-Seed the client store from a fetch result and render nothing. Reach for them where the markup is already server-rendered and only the store still needs the data.
+`children` is the form body, `partial` seeds it, `trigger` replaces the default New button.
 
-Use `Model` components inside a module's `Util`, `View`, or `Zone` files, where the generated store actions are already in scope.
+The same pair for one record; `trigger` defaults to the framework's Edit button.
 
-`trigger` replaces the control that opens the modal, and nothing else does: `Model.New` and `Model.Edit` spend their `children` on the form body and carry no `className`, and `Model.SureToRemove` takes no children at all.
+Opens the create form on click. `resets` lists models whose `reset<Model>()` runs on open.
+
+Opens one record in the edit form.
+
+Opens one record in the detail view.
+
+Asks in a small confirm popover, then removes the record.
+
+The edit shell with no trigger. `onSubmit` / `onCancel`: `"back"`, `"reset"`, a path, or a callback.
+
+The detail view in a modal, with title and action slots.
+
+One modal that flips between view and form; `menu={false}` drops the kebab and its remove entry.
+
+The store-side `Load.View`: loaded, loading or empty from one model. Pass the store's loading flag.
+
+A whole admin screen built from the generated `Unit`, `Template` and `View` namespaces.
+
+Seed the client store from a fetch result and render nothing.
+
+`children` opens a confirmation modal. A custom `action` must do the removal itself.
+
+Heavier removal: `typeNameToRemove` keeps the button locked until the user retypes `name`.
 
 Core UI
 
-Core UI components are the most common `akanjs/ui` imports in apps and libs. They compose routing, images, layout containers, fetch loading, and model store workflows.
+Component
 
-Three of the five are namespaces, and the split inside each is worth knowing before you pick a member: `Layout` separates content containers from frame slots, `Load` separates a list from a view from a stream, and `Model` separates a button from a wrapper from a body.
+Words used on this page
+
+Term
+
+Link
+
+Example
+
+A product card that links to its page and stays highlighted while that page is open:
+
+Image
+
+A 48px avatar from the image the user uploaded:
+
+Layout
+
+The page frame. Pick a member by where it goes: inside a module file, above or below the scrolling body, or over the page.
+
+Content containers
+
+Top and bottom chrome
+
+Navbar, TopInset, BottomInset and BottomTab register their height with the route, so the scrolling body is never hidden behind them.
+
+Header and drawers
+
+These four draw over the page and register no height.
+
+A detail page with a back button and an edit link in the navbar:
+
+A list row that opens the order when tapped:
+
+Load
+
+Members
+
+Load.Units options
+
+Where each member goes
+
+Member
+
+Works here
+
+Not here
+
+Example: a page and its Zone
+
+The page starts every query and hands out the promises:
+
+The Zone holds the two members that take a render function:
+
+Form drafts
+
+Model
+
+A trigger and its modal in one line
+
+Wrappers: your element becomes the trigger
+
+Modals and bodies with no trigger
+
+Removal
+
+Edit and remove buttons for one product, and a create button with its own label:
 
 ## Code Examples
 
-No code snippets were extracted from this page.
+### apps/shop/lib/product/Product.Unit.tsx
+
+```ts
+import type { cnst } from "@apps/shop/client";
+import type { ModelProps } from "akanjs/client";
+import { Link } from "akanjs/ui";
+
+export const Card = ({ product }: ModelProps<"product", cnst.LightProduct>) => {
+  return (
+    <Link
+      href={`/product/${product.id}`}
+      className="block rounded-xl border p-4"
+      activeClassName="border-primary"
+    >
+      {product.name}
+    </Link>
+  );
+};
+```
+
+### apps/shop/lib/user/User.Unit.tsx
+
+```ts
+import type { cnst } from "@apps/shop/client";
+import type { ModelProps } from "akanjs/client";
+import { Image } from "akanjs/ui";
+
+export const Avatar = ({ user }: ModelProps<"user", cnst.LightUser>) => {
+  return (
+    <Image file={user.image} alt={user.nickname} width={48} height={48} className="rounded-full" />
+  );
+};
+```
+
+### apps/shop/page/order/[orderId]/_index.tsx
+
+```ts
+import { fetch, Order, usePage } from "@apps/shop/client";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
+import { Layout, Link } from "akanjs/ui";
+
+export default page()
+  .param("orderId", ID)
+  .render(async ({ orderId }) => {
+    const { l } = usePage();
+    const [{ order, orderView }] = await Promise.all([
+      fetch.viewOrder(orderId),
+    ]);
+    return (
+      <>
+        <Layout.Navbar back>
+          <div className="flex w-full items-center justify-between">
+            <div className="font-bold">{order.name}</div>
+            <Link href={`/order/${orderId}/edit`}>{l("base.edit")}</Link>
+          </div>
+        </Layout.Navbar>
+        <Order.Zone.View view={orderView} />
+      </>
+    );
+  });
+```
+
+### apps/shop/lib/order/Order.Unit.tsx
+
+```ts
+import type { cnst } from "@apps/shop/client";
+import type { ModelProps } from "akanjs/client";
+import { Layout } from "akanjs/ui";
+
+export const Card = ({ order }: ModelProps<"order", cnst.LightOrder>) => {
+  return (
+    <Layout.Unit href={`/order/${order.id}`}>
+      <div className="font-bold">{order.name}</div>
+    </Layout.Unit>
+  );
+};
+```
+
+### apps/shop/page/shop/[shopId]/product/[productId]/_index.tsx
+
+```ts
+import { fetch, Product } from "@apps/shop/client";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
+import { Load, Loading } from "akanjs/ui";
+
+export default page()
+  .param("shopId", ID)
+  .param("productId", ID)
+  .render(({ shopId, productId }) => {
+    const { productView } = fetch.viewProduct(productId);
+    const { productInitInShop, productListInShop } =
+      fetch.initProductInShop(shopId);
+    return (
+      <>
+        <Product.Zone.View view={productView} />
+        <Product.Zone.Card init={productInitInShop} />
+        <Load.Stream
+          of={productListInShop}
+          fallback={<Loading.Skeleton active />}
+        >
+          {(productList) => <Product.Unit.Total count={productList.length} />}
+        </Load.Stream>
+      </>
+    );
+  });
+```
+
+### apps/shop/lib/product/Product.Zone.tsx
+
+```ts
+"use client";
+import { type cnst, Product } from "@apps/shop/client";
+import type { ClientInit, ClientView } from "akanjs/fetch";
+import { Load } from "akanjs/ui";
+
+interface CardProps {
+  className?: string;
+  init: ClientInit<"product", cnst.LightProduct>;
+}
+export const Card = ({ className, init }: CardProps) => {
+  return (
+    <>
+      <Load.Units
+        className={className}
+        init={init}
+        pagination={false}
+        renderItem={(product) => (
+          <Product.Unit.Card key={product.id} product={product} />
+        )}
+      />
+      <Load.Pagination init={init} scrollToTop />
+    </>
+  );
+};
+
+interface ViewProps {
+  className?: string;
+  view: ClientView<"product", cnst.Product>;
+}
+export const View = ({ className, view }: ViewProps) => {
+  return (
+    <Load.View
+      className={className}
+      view={view}
+      renderView={(product) => <Product.View.General product={product} />}
+    />
+  );
+};
+```
+
+### apps/shop/lib/product/Product.Util.tsx
+
+```ts
+"use client";
+import { fetch, Product, usePage } from "@apps/shop/client";
+import { cn } from "akanjs/client";
+import { buttonRecipe, Model } from "akanjs/ui";
+
+interface ManageProps {
+  className?: string;
+  productId: string;
+  name: string;
+}
+export const Manage = ({ className, productId, name }: ManageProps) => {
+  return (
+    <div className={cn("flex gap-2", className)}>
+      <Model.Edit slice={fetch.slice.product} modelId={productId}>
+        <Product.Template.General />
+      </Model.Edit>
+      <Model.SureToRemove
+        slice={fetch.slice.product}
+        modelId={productId}
+        name={name}
+        typeNameToRemove
+      />
+    </div>
+  );
+};
+
+export const Create = () => {
+  const { l } = usePage();
+  return (
+    <Model.New
+      slice={fetch.slice.product}
+      partial={{ status: "draft" }}
+      trigger={
+        <button className={buttonRecipe({ variant: "outline" })}>
+          {l.trans({ en: "Add product", ko: "상품 추가" })}
+        </button>
+      }
+    >
+      <Product.Template.General />
+    </Model.New>
+  );
+};
+```
 
 ## Agent Notes
 

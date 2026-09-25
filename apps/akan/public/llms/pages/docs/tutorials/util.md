@@ -16,7 +16,6 @@
 - Create Utility Components (#util-components)
 - Apply To Unit & View Components (#apply-to-components)
 - Test Status Management (#test-implementation)
-- Status Management Best Practices (#best-practices)
 - What's Next? (#next-steps)
 
 ## Content
@@ -105,7 +104,7 @@ This ensures that when status changes happen, the UI automatically reflects the 
 
 Create Utility Components
 
-Just like a real ice cream shop might have labeled buttons or stamps for different order stages, we'll create reusable button components for each action. These "digital buttons" can be placed anywhere in our interface - on order cards, in detailed views, or on staff dashboards. By creating them once as utility components, we ensure consistent behavior and styling throughout the entire application.
+Just like a real ice cream shop might have labeled buttons or stamps for different order stages, we'll create reusable button components for each action. These "digital buttons" can be placed anywhere in our interface - on order Unit cards, in detailed views, or on staff dashboards. By creating them once as utility components, we ensure consistent behavior and styling throughout the entire application.
 
 Each button component includes:
 
@@ -123,7 +122,7 @@ Button labels come from dictionary entries for proper multilingual support
 
 Apply To Unit & View Components
 
-Now comes the exciting part - putting all the pieces together! Just like adding action buttons to the order tickets in a real shop, we'll integrate our status management buttons directly into the order cards and detailed views. This means staff won't need to navigate to separate pages or menus - they can process orders right from wherever they're viewing them, making the workflow fast and intuitive.
+Now we'll put all the pieces together. Just like adding action buttons to the order tickets in a real shop, we'll integrate our status management buttons directly into the order Unit cards and detailed views. Staff won't need to navigate to separate pages or menus - they can process orders right from wherever they're viewing them.
 
 Let's update the Unit component to include status management buttons:
 
@@ -173,43 +172,7 @@ Invalid actions should be prevented
 
 Error messages should appear if business rules are violated
 
-Status Management Best Practices
-
-Here are important best practices for implementing status management in Akan.js:
-
-Enforce Business Rules
-
-Always validate state transitions at the document level using business methods. This ensures data integrity regardless of how the API is called.
-
-Smart UI Controls
-
-Disable buttons and hide actions that aren't valid for the current state. This provides immediate feedback to users about what actions are possible.
-
-Consistent Patterns
-
-Follow the same pattern across all status operations: Document → Service → Signal → Store → Component. This makes your code predictable and maintainable.
-
-Proper Error Handling
-
-Use dictionary-based error messages with Err exceptions. This ensures error messages are properly translated and user-friendly.
-
 What's Next?
-
-Excellent work! You've successfully implemented a complete status management system for your ice cream orders. Shop staff can now efficiently manage the order lifecycle with proper business rule enforcement.
-
-🎉 What You've Accomplished:
-
-Implemented business logic with validation
-
-Created service layer for status operations
-
-Built signal endpoints for status changes
-
-Added frontend store actions
-
-Created reusable utility components
-
-Integrated smart UI controls
 
 In the next tutorial, we'll learn how to edit existing data by implementing order modification functionality. This will allow customers to update their ice cream orders before they're processed, completing the full CRUD operations for our ice cream shop.
 

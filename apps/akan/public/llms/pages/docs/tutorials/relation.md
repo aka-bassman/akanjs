@@ -39,7 +39,7 @@ Now let's define the Delivery model with a relationship to IcecreamOrder. The ke
 
 Let's understand the key relationship pattern:
 
-This defines a one-to-many relationship by embedding an array of LightIcecreamOrder. The "Light" version contains only essential fields (serveType, size, toppings, status) - perfect for embedding without duplicating entire documents.
+This defines a one-to-many relationship by embedding an array of LightIcecreamOrder. The "Light" version contains only essential fields (serveType, size, toppings, status), which keeps embedded documents small without duplicating entire documents.
 
 Embedded vs Referenced
 
@@ -53,7 +53,7 @@ Key service patterns for related data:
 
 Injects the IcecreamOrderService so DeliveryService can interact with orders. This enables cross-model operations.
 
-A lifecycle hook that runs after a delivery is created. It iterates through all linked orders and marks them as finished - perfect for cascading updates.
+A lifecycle hook that runs after a delivery is created. It iterates through all linked orders and marks them as finished, which keeps cascading updates consistent.
 
 Prevents updates to deliveries by throwing an Err. Once a delivery is created, it becomes immutable - ensuring data integrity.
 
@@ -91,22 +91,6 @@ Both slice queries leave at call time and each Tab.Panel gets its own promise, s
 
 Summary
 
-🎉 What You've Accomplished:
-
-Created a Delivery module with one-to-many relationship to IcecreamOrder
-
-Used LightModel pattern for efficient embedded references
-
-Implemented _postCreate hook for cascading updates across related data
-
-Built Field.Children component for selecting related records
-
-Displayed embedded related data without additional queries
-
-Organized multiple models with Tab navigation
-
-Best Practices
-
 Use LightModel for embedded data to avoid document bloat
 
 Embed data that's frequently read together
@@ -115,7 +99,7 @@ Use lifecycle hooks for maintaining data consistency
 
 Create dedicated slices for relationship selection UIs
 
-Congratulations! You've completed all the core tutorials. You now have a solid foundation for building complex applications with akanjs. Explore the System Architecture section to dive deeper into how everything works together.
+All core tutorials are complete. Explore the System Architecture section to see how everything works together.
 
 ## Code Examples
 

@@ -15,37 +15,89 @@
 
 Deep Links
 
+Scheme link
+
+An app-only link. It needs no verification, so it is the easy one to test during development.
+
+Domain link
+
+Works like a normal web link but needs iOS and Android verification. Best for sharing, email and push URLs.
+
+Scheme link. `orders` becomes the first path segment, so it opens `/orders/1`.
+
+Domain link. The path is used as is and opens `/orders/1`.
+
+A tapped push notification. It opens `/orders/1` the same way.
+
+App-only URL schemes, such as `shop` in `shop://orders/1`.
+
+Hosts whose HTTPS links open the app once iOS and Android verify them.
+
+Your Apple Developer Team ID. iOS uses it to verify `domains`.
+
+SHA-256 fingerprints of the certificates that sign the app. Android uses them to verify `domains`.
+
+Scheme links
+
+Domain links
+
 Deep Link Setup
 
-Deep links open a CSR route from outside the app. Use schemes for app-only URLs and domains for verified HTTPS links. Push notification clicks use the same routing path through data.url.
+Two Kinds Of Link
 
-Think of deep link as the feature, and schemes/domains as the two common ways to implement it. Scheme links such as shop://orders/1 are easy to test and app-only. Domain links such as https://shop.example.com/orders/1 require iOS/Android verification, but they behave like normal web links and are better for sharing, emails, and push notification URLs.
+Declare It
+
+Where A Link Lands
+
+Incoming link
+
+What it opens
+
+Mobile Config
+
+Mobile targets and the rest of the `mobile` block.
+
+Push Notifications
+
+Sending a `url` so a tap lands on a screen.
 
 The deepLinks Block
 
-Every field is optional, and each platform reads only the half it needs. Declare the ones the link style you chose actually requires:
+Every field is optional. Each platform reads only what it needs, so declare only what your link style requires:
 
-Custom app-only URLs such as shop://orders/1. Easy to test, but not domain-verified.
+What Each Link Style Needs
 
-Verified HTTPS links such as https://shop.example.com/orders/1. iOS uses apple-app-site-association; Android uses assetlinks.json.
+Scheme links need one field. Domain links need three, and each platform reads its own part:
 
-Apple Developer Team ID used for universal link association files.
+Field
 
-Signing certificate fingerprints used by Android app links. Debug builds and release builds usually have different fingerprints, so list both.
+Read by this platform
 
-Platform verification docs:
+Not read
 
-iOS — Universal Links
+Domain Verification
 
-Android — App Links
+A domain link opens the app only after the platform confirms that the app belongs to the domain. It checks a file served from that domain:
 
-Read the Android debug fingerprint out of the debug keystore every machine already has, then add the release one from whatever keystore Play signing uses:
+Platform Docs
+
+Open Apple Universal Links docs
+
+Open Android App Links docs
+
+Getting The Android Fingerprint
+
+The surest way is to ask Gradle. It prints the SHA-256 of the key each build variant actually signs with:
+
+You can also read it straight from a keystore. The default Android debug keystore already exists on any machine set up for Android development:
 
 ## Code Examples
 
 ### apps/myapp/akan.config.ts
 
 ```ts
+import type { AppConfig } from "akanjs";
+
 const config: AppConfig = {
   mobile: {
     targets: {
@@ -57,18 +109,25 @@ const config: AppConfig = {
             teamId: "TEAMID",
           },
           android: {
-            sha256CertFingerprints: [
-              "AA:BB:CC:DD:...",
-            ],
+            sha256CertFingerprints: ["AA:BB:CC:DD:..."],
           },
         },
       },
     },
   },
 };
+
+export default config;
 ```
 
-### Android debug SHA-256
+### Terminal
+
+```bash
+cd apps/myapp/android
+./gradlew signingReport
+```
+
+### Terminal
 
 ```bash
 keytool -list -v \

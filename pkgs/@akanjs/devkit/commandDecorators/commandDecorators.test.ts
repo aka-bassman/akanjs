@@ -125,7 +125,7 @@ describe("command helper metadata", () => {
 
     const commandHelp = stripAnsi(formatCommandHelp(HelpCommand, "buildApp"));
     expect(commandHelp).toContain("akan build-app [app]");
-    expect(commandHelp).toContain("--write");
+    expect(commandHelp).toContain("--write, --no-write");
     expect(commandHelp).toContain("[default: true]");
     expect(commandHelp).toContain("Fast, Full");
   });

@@ -34,6 +34,15 @@ export const akanCodePaths = {
   mailDir: (workspaceRoot: string) => path.join(workspaceRoot, ".akan", "code", "mail"),
   builtinSkillsDir,
   mcpFile: (workspaceRoot: string) => path.join(workspaceRoot, ".akan", "code", "mcp.json"),
+  /**
+   * The MCP servers that belong to the person rather than to one checkout.
+   *
+   * A server is an integration with an account — the credential for it is already global, in `mcpAuth.json` —
+   * so declaring it per repo means declaring it again in every repo and signing in again in each. The
+   * workspace file stays, for a server that is genuinely this repo's, and wins on a name they share.
+   */
+  globalMcpFile: () => path.join(globalDir(), "mcp.json"),
+  globalSkillsDir: () => path.join(globalDir(), "skills"),
   globalDir,
   authFile: () => path.join(globalDir(), "auth.json"),
   /** MCP bearer tokens, beside the provider keys and for the same reason: never in a directory that is shared. */

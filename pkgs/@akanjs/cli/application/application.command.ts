@@ -55,9 +55,16 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     })
     .option("trace", String, { desc: "one request's traceId", nullable: true })
     .option("child", String, { desc: "replica index(es), comma-separated", nullable: true })
-    .option("role", String, { flag: "R", desc: "process role(s): gateway, all, batch, rsc-worker", nullable: true })
+    .option("role", String, {
+      flag: "R",
+      desc: "process role(s): gateway, federation, batch, all, rsc-worker",
+      nullable: true,
+    })
     .option("origin", String, { desc: "call origin(s): http, websocket, mcp, internal, page", nullable: true })
-    .option("since", String, { desc: "only records newer than this: 5m, 30s, or epoch ms", nullable: true })
+    .option("since", String, {
+      desc: "only records newer than this: a duration ago in ms, s, m, h or d (30s, 5m, 2h), or an epoch-ms timestamp",
+      nullable: true,
+    })
     .option("replay", Number, { flag: "n", desc: "records to replay from the buffer before following", default: 0 })
     .option("json", Boolean, { desc: "print NDJSON records instead of rendered lines", default: false })
     .option("follow", Boolean, { desc: "keep streaming; pass --follow false for history only", default: true })
@@ -159,15 +166,15 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
     .option("release", Boolean, { desc: "release mode", default: false })
     .option("write", Boolean, { desc: "write code generation", default: true })
     .option("regenerate", Boolean, { flag: "g", desc: "delete and regenerate native project", default: false })
-    .option("noAllowProvisioningUpdates", Boolean, {
-      desc: "disable automatic iOS provisioning updates for physical devices",
-      default: false,
+    .option("allowProvisioningUpdates", Boolean, {
+      desc: "let Xcode create or update provisioning profiles for a physical device",
+      default: true,
     })
     .option("device", String, {
       desc: "run target to select non-interactively: udid, device name, or runtime (e.g. 'iPhone 16' or 'iOS 18')",
       default: "",
     })
-    .exec(async function (app, target, env, open, release, write, regenerate, noAllowProvisioningUpdates, device) {
+    .exec(async function (app, target, env, open, release, write, regenerate, allowProvisioningUpdates, device) {
       await this.applicationScript.startIos(app, {
         target,
         env: env,
@@ -175,7 +182,7 @@ export class ApplicationCommand extends command("application", [ApplicationScrip
         operation: release ? "release" : "local",
         write,
         regenerate,
-        noAllowProvisioningUpdates,
+        noAllowProvisioningUpdates: !allowProvisioningUpdates,
         device: device || undefined,
       });
     }),

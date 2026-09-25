@@ -44,7 +44,12 @@ export class PackageRunner extends runner("package") {
     throw new Error(`[package] failed to locate akanjs package.json from ${path.dirname(Bun.main)}`);
   }
   async createPackage(workspace: Workspace, pkgName: string) {
-    await workspace.applyTemplate({ basePath: `pkgs/${pkgName}`, template: "pkgRoot", dict: { pkgName } });
+    const workspaceRootPath = ["pkgs", ...pkgName.split("/")].map(() => "..").join("/");
+    await workspace.applyTemplate({
+      basePath: `pkgs/${pkgName}`,
+      template: "pkgRoot",
+      dict: { pkgName, workspaceRootPath },
+    });
     await workspace.setPkgTsPaths(pkgName);
   }
   async removePackage(pkg: Pkg) {

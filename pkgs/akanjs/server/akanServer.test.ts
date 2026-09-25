@@ -378,6 +378,37 @@ describe("AkanServer MCP config", () => {
     }
   });
 
+  test("keeps the surface off under AKAN_MCP=false whatever an option.ts configures", async () => {
+    setAkanEnv();
+    const { AkanOption, AkanServer, createLib } = await loadRuntime();
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-mcp-off-"));
+    try {
+      process.env.AKAN_MCP = "false";
+      const configured = new AkanServer(
+        "serverGet",
+        createEnv(tmp),
+        "all",
+        createLib(new AkanOption().setMcp({ instructions: "Domain tools for the test app." })),
+      );
+      expect(configured.mcp).toBe(false);
+      expect(configured.mcpOption.instructions).toBe("Domain tools for the test app.");
+
+      const fromFunction = new AkanServer(
+        "serverGet",
+        createEnv(tmp),
+        "all",
+        createLib(new AkanOption().setMcp(() => ({}))),
+      );
+      expect(fromFunction.mcp).toBe(false);
+
+      const explicit = new AkanServer("serverGet", createEnv(tmp), "all", createLib(), { mcp: { enabled: true } });
+      expect(explicit.mcp).toBe(false);
+    } finally {
+      delete process.env.AKAN_MCP;
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("gives the mount path its leading slash and takes the public spelling of both switches", async () => {
     setAkanEnv();
     const { AkanServer, createLib } = await loadRuntime();
@@ -540,6 +571,35 @@ describe("AkanServer module exclusion", () => {
     } finally {
       delete process.env.AKAN_DISABLE_LIBS;
       await server.stop();
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("AkanServer console process", () => {
+  test("brings services up but runs no internal init, schedule or queue worker", async () => {
+    setAkanEnv();
+    const { AkanServer, createLib } = await loadRuntime();
+    const fixture = await import("./resolver/resolver.contract.fixture");
+    const tmp = await mkdtemp(join(tmpdir(), "akan-server-console-"));
+    const replica = new AkanServer("serverGet", createEnv(tmp), "all", createLib());
+    const consoleProcess = new AkanServer("serverGet", createEnv(join(tmp, "console")), "all", createLib());
+
+    try {
+      fixture.resetResolverOrder();
+      await replica.start({ listen: false });
+      expect(fixture.resolverOrder).toContain("init");
+      await replica.stop();
+
+      fixture.resetResolverOrder();
+      process.env.AKAN_COMMAND_TYPE = "console";
+      await consoleProcess.start({ listen: false, web: false });
+      expect(consoleProcess.getService("serverResolverTestItem")).toBeDefined();
+      expect(fixture.resolverOrder).not.toContain("init");
+    } finally {
+      delete process.env.AKAN_COMMAND_TYPE;
+      if (replica.status === "running") await replica.stop();
+      await consoleProcess.stop();
       await rm(tmp, { recursive: true, force: true });
     }
   });

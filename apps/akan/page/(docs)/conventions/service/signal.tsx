@@ -1,11 +1,302 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { Code, cardGridRecipe, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 import { Link } from "akanjs/ui";
 
 export default page().render(() => {
   const { l } = usePage();
+
+  const chip = "mt-2 block overflow-x-auto whitespace-nowrap rounded-md bg-muted/60 px-2.5 py-1.5 font-mono text-xs";
+  const inlineLink = "text-primary underline underline-offset-4 hover:no-underline";
+
+  const termRows = [
+    {
+      name: "service module",
+      desc: l.trans({
+        en: "A module in `lib/_<name>` with no table of its own, such as `_security` or `_oauth`.",
+        ko: "`_security`, `_oauth`처럼 `lib/_<name>`에 있고 자기 테이블이 없는 모듈입니다.",
+      }),
+    },
+    {
+      name: "guard",
+      desc: l.trans({
+        en: "A class that decides whether a call may run, such as `Public`, `Every` or `Admin`.",
+        ko: "호출을 실행해도 되는지 정하는 클래스입니다. `Public`, `Every`, `Admin` 등이 있습니다.",
+      }),
+    },
+    {
+      name: "internal argument",
+      desc: l.trans({
+        en: "A value the server fills in rather than the caller, taken with `.with(...)`.",
+        ko: "호출자가 아니라 서버가 채워 주는 값입니다. `.with(...)`로 받습니다.",
+      }),
+    },
+    {
+      name: "MCP",
+      desc: l.trans({
+        en: "The protocol AI agents use to call your endpoints. Akan serves it at `/mcp`.",
+        ko: "AI 에이전트가 엔드포인트를 호출할 때 쓰는 프로토콜입니다. Akan은 `/mcp`에서 제공합니다.",
+      }),
+    },
+    {
+      name: "serverMode",
+      desc: l.trans({
+        en: "A server's role: `federation` answers requests, `batch` runs background work, `all` does both.",
+        ko: "서버의 역할입니다. `federation`은 요청에 답하고, `batch`는 백그라운드 작업을 돌리고, `all`은 둘 다 합니다.",
+      }),
+    },
+  ];
+
+  const moduleColumns = [
+    { key: "model", label: l.trans({ en: "Model module", ko: "모델 모듈" }), caption: "lib/<model>" },
+    { key: "service", label: l.trans({ en: "Service module", ko: "서비스 모듈" }), caption: "lib/_<service>" },
+  ];
+  const classGroups = [
+    {
+      label: l.trans({ en: "Declared in this order", ko: "파일에 적는 순서대로" }),
+      rows: [
+        {
+          name: "XInternal",
+          desc: l.trans({
+            en: "Work the runtime starts: schedules, queue jobs, boot and shutdown. Written even when empty.",
+            ko: "런타임이 시작하는 일입니다. 예약 작업, queue job, 부팅과 종료 때의 작업을 둡니다. 비어 있어도 적습니다.",
+          }),
+          marks: { model: true, service: true },
+        },
+        {
+          name: "XSlice",
+          desc: l.trans({
+            en: "A paged window onto a table, with an insight query behind it. No table, no slice.",
+            ko: "테이블을 페이지 단위로 보여 주는 창이고, 뒤에 insight 쿼리가 있습니다. 테이블이 없으면 슬라이스도 없습니다.",
+          }),
+          marks: { model: true, service: false },
+        },
+        {
+          name: "XEndpoint",
+          desc: l.trans({
+            en: "What callers reach: `query`, `mutation`, `pubsub` and `message`.",
+            ko: "호출자가 닿는 곳입니다. `query`, `mutation`, `pubsub`, `message`를 둡니다.",
+          }),
+          marks: { model: true, service: true },
+        },
+      ],
+    },
+  ];
+
+  const exposureColumns = [
+    { key: "checks", label: l.trans({ en: "Checks the caller", ko: "호출자 검사" }) },
+    { key: "mcp", label: l.trans({ en: "Agents see it", ko: "에이전트에 공개" }), caption: "MCP" },
+  ];
+  const exposureGroups = [
+    {
+      label: l.trans({ en: "Names a real guard", ko: "실질 가드를 적은 경우" }),
+      rows: [
+        {
+          name: "{ guards: [Every] }",
+          desc: l.trans({
+            en: "Published. An agent's call is checked like anyone else's.",
+            ko: "공개됩니다. 에이전트의 호출도 다른 호출과 똑같이 검사합니다.",
+          }),
+          marks: { checks: true, mcp: true },
+        },
+        {
+          name: "{ guards: [Every], mcp: false }",
+          desc: l.trans({
+            en: "HTTP serves it as before. Only the agent listing drops it.",
+            ko: "HTTP는 그대로 제공하고, 에이전트 목록에서만 빠집니다.",
+          }),
+          marks: { checks: true, mcp: false },
+        },
+        {
+          name: "{ guards: [Every, Person] }",
+          desc: l.trans({
+            en: "A person-only act. A model is refused and never sees the entry.",
+            ko: "사람만 할 수 있는 동작입니다. 모델은 거절되고 목록에서도 보지 못합니다.",
+          }),
+          marks: { checks: true, mcp: false },
+        },
+      ],
+    },
+    {
+      label: l.trans({ en: "Names Public, or nothing", ko: "Public만 적었거나 아무것도 없는 경우" }),
+      rows: [
+        {
+          name: "query(T, { guards: [Public] })",
+          desc: l.trans({
+            en: "An open read, decided on purpose. Published, like the doc tools below.",
+            ko: "일부러 열어 둔 읽기입니다. 아래 문서 도구처럼 공개됩니다.",
+          }),
+          marks: { checks: false, mcp: true },
+        },
+        {
+          name: "mutation(T, { guards: [Public] })",
+          desc: l.trans({
+            en: "Runs for anyone over HTTP. MCP treats it as having no guard.",
+            ko: "HTTP로는 누구나 실행합니다. MCP는 가드가 없는 것으로 봅니다.",
+          }),
+          marks: { checks: false, mcp: false },
+        },
+        {
+          name: <span className="font-sans">{l.trans({ en: "no guards", ko: "가드 없음" })}</span>,
+          desc: l.trans({
+            en: "Zero checks over HTTP, and refused by MCP.",
+            ko: "HTTP에서는 검사를 하나도 하지 않고, MCP는 거절합니다.",
+          }),
+          marks: { checks: false, mcp: false },
+        },
+      ],
+    },
+  ];
+
+  const routeOptions = [
+    {
+      key: "path",
+      type: "string",
+      default: l.trans({ en: "endpoint name", ko: "엔드포인트 이름" }),
+      desc: l.trans({
+        en: "A literal route, in place of the one built from the endpoint name and its `.param()`s.",
+        ko: "엔드포인트 이름과 `.param()`으로 만드는 경로 대신 쓸 고정 경로입니다.",
+      }),
+    },
+    {
+      key: "prefix",
+      type: "false | string",
+      default: l.trans({ en: "model refName", ko: "모델 refName" }),
+      desc: l.trans({
+        en: "The segment before the path. A model module puts its refName there; a service module, nothing.",
+        ko: "경로 앞에 붙는 구간입니다. 모델 모듈은 refName을 붙이고, 서비스 모듈은 아무것도 붙이지 않습니다.",
+      }),
+    },
+    {
+      key: "globalPrefix",
+      type: "false",
+      default: l.trans({ en: "API prefix (/api)", ko: "API 접두사(/api)" }),
+      desc: l.trans({
+        en: "`false` drops the app's API prefix, so the route sits at the origin root.",
+        ko: "`false`면 앱의 API 접두사를 떼어 내, 경로가 origin 루트에 놓입니다.",
+      }),
+    },
+    {
+      key: "mcp",
+      type: "boolean",
+      default: "true",
+      desc: l.trans({
+        en: "`false` keeps it off the agent listing without changing who may call it.",
+        ko: "`false`면 누가 호출할 수 있는지는 그대로 두고, 에이전트 목록에서만 뺍니다.",
+      }),
+    },
+  ];
+
+  const internalArgRows = [
+    {
+      name: ".with(Req)",
+      desc: l.trans({
+        en: "The raw `Request`, for a form body or a header Akan does not parse for you.",
+        ko: "원본 `Request`입니다. Akan이 대신 파싱하지 않는 form body나 헤더를 읽을 때 씁니다.",
+      }),
+    },
+    {
+      name: ".with(Ip)",
+      desc: l.trans({
+        en: "The caller's IP as the nearest proxy recorded it, or `null` when no address is known at all.",
+        ko: "가장 가까운 프록시가 기록한 호출자 IP이고, 주소를 전혀 알 수 없을 때만 `null`입니다.",
+      }),
+    },
+    {
+      name: ".with(Account)",
+      desc: l.trans({
+        en: "The verified account of the caller, imported from `@libs/shared/srvkit`.",
+        ko: "검증된 호출자 계정입니다. `@libs/shared/srvkit`에서 가져옵니다.",
+      }),
+    },
+  ];
+
+  const internalBuilders = [
+    {
+      name: "cron(expression)",
+      desc: l.trans({
+        en: "Runs on a cron schedule, such as every midnight.",
+        ko: "매일 자정처럼 cron 표현식이 정한 일정에 실행합니다.",
+      }),
+      example: 'purgeReceipts: cron("0 0 * * *").exec(...)',
+    },
+    {
+      name: "interval(ms)",
+      desc: l.trans({
+        en: "Runs every `ms` milliseconds.",
+        ko: "`ms` 밀리초마다 실행합니다.",
+      }),
+    },
+    {
+      name: "timeout(ms)",
+      desc: l.trans({
+        en: "Runs once, `ms` milliseconds after the server starts.",
+        ko: "서버가 시작되고 `ms` 밀리초 뒤에 한 번 실행합니다.",
+      }),
+    },
+    {
+      name: ["initialize()", "destroy()"],
+      desc: l.trans({
+        en: "Runs once when the process starts, and once when it stops.",
+        ko: "프로세스가 시작할 때 한 번, 멈출 때 한 번 실행합니다.",
+      }),
+    },
+    {
+      name: "process(Type)",
+      desc: l.trans({
+        en: "A background queue job. `.msg()` names each field of its payload.",
+        ko: "백그라운드 queue job입니다. `.msg()`로 payload의 각 필드에 이름을 붙입니다.",
+      }),
+      example: 'reprint: process(Boolean).msg("icecreamOrderId", ID).exec(...)',
+    },
+    {
+      name: "resolveField(Type)",
+      desc: l.trans({
+        en: "Computes a model's `resolve` field. A service module has no model, so it never uses this.",
+        ko: "모델의 `resolve` 필드 값을 계산합니다. 서비스 모듈에는 모델이 없으니 쓸 일이 없습니다.",
+      }),
+    },
+  ];
+
+  const scheduleOptions = [
+    {
+      key: "serverMode",
+      type: '"federation" | "batch" | "all"',
+      default: '"all"',
+      desc: l.trans({
+        en: 'Which server roles run it. `"batch"` runs on batch and `"all"` servers, never on federation.',
+        ko: '어느 역할의 서버가 실행할지 정합니다. `"batch"`는 batch와 `"all"` 서버에서만 돌고 federation에서는 돌지 않습니다.',
+      }),
+    },
+    {
+      key: "operationMode",
+      type: '("cloud" | "edge" | "local")[]',
+      default: l.trans({ en: "every mode", ko: "모든 모드" }),
+      desc: l.trans({
+        en: 'Runs only where `AKAN_PUBLIC_OPERATION_MODE` is in the list, like `["cloud"]`.',
+        ko: '`AKAN_PUBLIC_OPERATION_MODE`가 목록에 있을 때만 실행합니다. 예: `["cloud"]`.',
+      }),
+    },
+    {
+      key: "lock",
+      type: "boolean",
+      default: "true",
+      desc: l.trans({
+        en: "For `cron` and `interval`, skips a run while the previous one still runs in the same process.",
+        ko: "`cron`과 `interval`에서, 같은 프로세스의 이전 실행이 아직 도는 중이면 이번 실행을 건너뜁니다.",
+      }),
+    },
+    {
+      key: "enabled",
+      type: "boolean",
+      default: "true",
+      desc: l.trans({
+        en: "`false` turns the job off without deleting its code.",
+        ko: "`false`면 코드를 지우지 않고 작업을 끕니다.",
+      }),
+    },
+  ];
 
   return (
     <Scroll>
@@ -14,51 +305,162 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A model signal declares three classes. A service signal declares two, and the missing one is Slice — a slice is a window onto a table with pagination and an insight query behind it, and a module with no table has nothing to put in the window.",
-              ko: "model signal은 class 세 개를 선언합니다. service signal은 둘이고, 빠진 하나가 Slice입니다. slice는 pagination과 insight query를 뒤에 둔, 테이블을 들여다보는 창인데, 테이블이 없는 module은 그 창에 넣을 것이 없습니다.",
+              en: "service.signal.ts is the door in front of a service module. The signal decides who may call and with which arguments, and the service decides what happens. You open it to add an endpoint, a scheduled job or a realtime room.",
+              ko: "service.signal.ts는 서비스 모듈 앞에 달린 문입니다. 누가 어떤 인자로 호출할 수 있는지는 시그널이 정하고, 무슨 일이 일어나는지는 서비스가 정합니다. 엔드포인트나 예약 작업, 실시간 room을 추가할 때 이 파일을 엽니다.",
+            })}
+          </div>
+          <Docs.SubSubTitle>{l.trans({ en: "Words used on this page", ko: "이 페이지에서 쓰는 말" })}</Docs.SubSubTitle>
+          <Docs.IntroTable type={l.trans({ en: "Term", ko: "용어" })} items={termRows} />
+
+          <Docs.SubSubTitle>
+            {l.trans({ en: "Two classes, not three", ko: "클래스는 셋이 아니라 둘" })}
+          </Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: "A model module's signal declares three classes. A service module's declares two, because it has no table to put a slice in front of:",
+              ko: "모델 모듈의 시그널은 클래스를 세 개 선언합니다. 서비스 모듈은 슬라이스를 앞에 둘 테이블이 없어서 두 개만 선언합니다:",
+            })}
+          </div>
+          <Docs.Matrix
+            type={l.trans({ en: "Class", ko: "클래스" })}
+            columns={moduleColumns}
+            groups={classGroups}
+            markLabel={l.trans({ en: "Declared", ko: "선언함" })}
+            emptyLabel={l.trans({ en: "Not declared", ko: "선언하지 않음" })}
+          />
+          <div>
+            {l.trans({
+              en: "Here is the whole file for a receipt module with one endpoint:",
+              ko: "엔드포인트 하나를 가진 영수증 모듈의 파일 전체입니다:",
+            })}
+          </div>
+          <Code.Snippet
+            className="w-full"
+            title="apps/koyo/lib/_receipt/receipt.signal.ts"
+            code={`import { Every } from "@libs/shared/srvkit";
+import { ID } from "akanjs/base";
+import { endpoint, internal } from "akanjs/signal";
+
+import * as srv from "../srv";
+
+export class ReceiptInternal extends internal(srv.receipt, () => ({})) {}
+
+export class ReceiptEndpoint extends endpoint(srv.receipt, ({ mutation }) => ({
+  printReceipt: mutation(Boolean, { guards: [Every] })
+    .param("icecreamOrderId", ID)
+    .exec(async function (icecreamOrderId) {
+      return await this.receiptService.print(icecreamOrderId);
+    }),
+})) {}`}
+          />
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>The Internal class stays, even empty.</strong> It marks where scheduled work goes.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>Internal 클래스는 비어 있어도 남깁니다.</strong> 예약 작업이 들어갈 자리를 표시합니다.
+                  </>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>
+                      <code>exec</code> is one line.
+                    </strong>{" "}
+                    It hands the arguments to the service and returns what the service returns.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>
+                      <code>exec</code>은 한 줄입니다.
+                    </strong>{" "}
+                    인자를 서비스에 넘기고, 서비스가 돌려준 값을 그대로 돌려줍니다.
+                  </>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>The signal adds the noun back.</strong> The service method is <code>print</code> and the
+                    endpoint is <code>printReceipt</code>, so <code>st.do.printReceipt</code> reads like{" "}
+                    <code>fetch.printReceipt</code>.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>시그널은 명사를 다시 붙입니다.</strong> 서비스 메서드는 <code>print</code>, 엔드포인트는{" "}
+                    <code>printReceipt</code>입니다. 그래서 <code>st.do.printReceipt</code>와{" "}
+                    <code>fetch.printReceipt</code>가 같은 이름으로 읽힙니다.
+                  </>
+                ),
+              })}
+            </li>
+          </ul>
+
+          <Docs.SubSubTitle>
+            {l.trans({ en: "Common mistake: an endpoint with no guards", ko: "흔한 실수: 가드 없는 엔드포인트" })}
+          </Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  This <code>libs/util</code> file used to have the shape to avoid. The red line is how it read; the
+                  green line is the fix it carries now:
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>libs/util</code>의 이 파일은 원래 피해야 할 모양이었습니다. 빨간 줄이 예전 모습이고, 초록 줄이
+                  지금 들어가 있는 수정입니다:
+                </span>
+              ),
             })}
           </div>
           <Code.Snippet
             className="w-full"
             title="libs/util/lib/_security/security.signal.ts"
-            code={`import { endpoint, internal } from "akanjs/signal";
+            code={`import { endpoint, internal, None } from "akanjs/signal";
 
 import * as srv from "../srv";
 
 export class SecurityInternal extends internal(srv.security, () => ({})) {}
 
 export class SecurityEndpoint extends endpoint(srv.security, ({ mutation }) => ({
-  encrypt: mutation(String)
+  encrypt: mutation(String) // [!code --]
+  encrypt: mutation(String, { guards: [None], mcp: false }) // [!code ++]
     .body("data", String)
     .exec(async function (data) {
       return await this.securityService.encrypt(data);
     }),
 })) {}`}
           />
-          <div>
-            {l.trans({
-              en: "The Internal class is empty and stays in the file. The Endpoint class holds one mutation, and the body of that mutation is one line — the signal decides who may call and what the arguments are, and the service decides what happens.",
-              ko: "Internal class는 비어 있고 파일에 그대로 남습니다. Endpoint class는 mutation 하나를 담고, 그 mutation의 본문은 한 줄입니다. 누가 호출할 수 있고 인자가 무엇인지는 signal이 정하고, 무슨 일이 일어나는지는 service가 정합니다.",
-            })}
-          </div>
           <Docs.Alert type="error">
             {l.trans({
               en: (
                 <span>
-                  That file is missing its <code>guards</code> array, and it is not the only one in this workspace —{" "}
-                  <code>localFile</code> and <code>minimal</code> are the same. An endpoint that names none runs{" "}
-                  <strong>zero</strong> checks: the guard loop iterates an empty list. Encrypting arbitrary input with
-                  the app's own key is an oracle, so this one wants <code>{"{ guards: [Admin] }"}</code>. Read the older
-                  library signals as history, not as a pattern.
+                  <strong>An endpoint that names no guards runs zero checks.</strong> Without one, anyone could encrypt
+                  any input with the app's own key, which turns <code>encrypt</code> into an oracle. A library that
+                  cannot reach <code>libs/shared</code>'s <code>Admin</code> closes the endpoint with{" "}
+                  <code>[None]</code> and keeps it off MCP with <code>mcp: false</code>.
                 </span>
               ),
               ko: (
                 <span>
-                  그 파일에는 <code>guards</code> 배열이 없고, 이 워크스페이스에서 그런 파일은 이것만이 아닙니다.{" "}
-                  <code>localFile</code>과 <code>minimal</code>도 같습니다. 아무 guard도 적지 않은 endpoint는 검사를{" "}
-                  <strong>하나도</strong> 하지 않습니다. guard 루프가 빈 배열을 도는 것뿐입니다. 임의의 입력을 앱의
-                  key로 암호화하는 것은 oracle이므로 이 endpoint에는 <code>{"{ guards: [Admin] }"}</code>이 필요합니다.
-                  오래된 라이브러리 signal은 패턴이 아니라 이력으로 읽으세요.
+                  <strong>가드를 하나도 적지 않은 엔드포인트는 아무 검사도 하지 않습니다.</strong> 가드가 없으면 누구나
+                  앱의 키로 아무 입력이나 암호화할 수 있어서 <code>encrypt</code>가 암호화 오라클이 됩니다.{" "}
+                  <code>libs/shared</code>의 <code>Admin</code>에 닿지 못하는 라이브러리는 <code>[None]</code>으로
+                  엔드포인트를 닫고, <code>mcp: false</code>로 MCP에서도 뺍니다.
                 </span>
               ),
             })}
@@ -69,16 +471,47 @@ export class SecurityEndpoint extends endpoint(srv.security, ({ mutation }) => (
 
       <Scroll.Slide
         id="guards"
-        title={l.trans({ en: "Every Endpoint Names Its Guards", ko: "모든 endpoint가 guard를 적는다" })}
+        title={l.trans({ en: "Every Endpoint Names Its Guards", ko: "엔드포인트마다 가드를 적는다" })}
       >
         <Docs.Title>
-          {l.trans({ en: "Every Endpoint Names Its Guards", ko: "모든 endpoint가 guard를 적는다" })}
+          {l.trans({ en: "Every Endpoint Names Its Guards", ko: "엔드포인트마다 가드를 적는다" })}
         </Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A model module has a slice, and a slice carries a guards map that the generated CRUD endpoints inherit. A service module has neither, so there is no default to fall back on and no file to look in: every endpoint names its own array, beside itself.",
-              ko: "model module에는 slice가 있고, slice는 생성된 CRUD endpoint가 물려받는 guards map을 들고 있습니다. service module에는 둘 다 없습니다. 기댈 기본값도, 찾아볼 파일도 없습니다. 모든 endpoint가 자기 배열을 자기 옆에 적습니다.",
+              en: (
+                <span>
+                  In a model module, the slice's guards map covers the generated CRUD endpoints. A service module has no
+                  slice, so there is no default to inherit: each endpoint writes its own <code>guards</code> array right
+                  beside it.
+                </span>
+              ),
+              ko: (
+                <span>
+                  모델 모듈에서는 슬라이스의 guards 맵이 생성된 CRUD 엔드포인트를 덮어 줍니다. 서비스 모듈에는
+                  슬라이스가 없어서 물려받을 기본값이 없습니다. 엔드포인트마다 자기 <code>guards</code> 배열을 바로 옆에
+                  적습니다.
+                </span>
+              ),
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: "The same array also decides whether AI agents see the endpoint over MCP:",
+              ko: "이 배열은 AI 에이전트가 MCP로 그 엔드포인트를 볼 수 있는지도 함께 정합니다:",
+            })}
+          </div>
+          <Docs.Matrix
+            type={l.trans({ en: "What the endpoint declares", ko: "엔드포인트에 적은 것" })}
+            columns={exposureColumns}
+            groups={exposureGroups}
+            markLabel={l.trans({ en: "Yes", ko: "예" })}
+            emptyLabel={l.trans({ en: "No", ko: "아니요" })}
+          />
+          <div>
+            {l.trans({
+              en: "An open endpoint is fine when it is a decision, written down as one. The docs app's own signal does exactly that:",
+              ko: "열어 둔 엔드포인트도 그것이 결정이고, 결정으로 적혀 있다면 괜찮습니다. 이 문서 앱의 시그널이 바로 그렇게 합니다:",
             })}
           </div>
           <Code.Snippet
@@ -116,23 +549,87 @@ export class DocEndpoint extends endpoint(srv.doc, ({ query }) => ({
       if (!body) throw new Err("doc.error.docPageNotFound");
       return body;
     }),
+
+  searchDocPages: query([cnst.DocPage], { guards: [Public] })
+    .param("text", String, { example: "cascade remove" })
+    .search("limit", Int)
+    .exec(async function (text, limit) {
+      return await this.docService.searchPages(text, limit);
+    }),
 })) {}`}
           />
-          <div>
-            {l.trans({
-              en: "[Public] is a decision here, written down as one. The class comment says what would be true if the guard were tighter, which is the one kind of comment this codebase asks for: an obvious alternative was rejected, and here is why.",
-              ko: "여기서 [Public]은 결정이고, 결정으로서 적혀 있습니다. class 주석은 guard가 더 좁았다면 무엇이 참이 되었을지를 말합니다. 이 코드베이스가 요구하는 유일한 종류의 주석입니다. 그럴듯한 대안을 버렸고, 그 이유가 여기 있다는 것입니다.",
-            })}
-          </div>
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>
+                      <code>[Public]</code> is the decision here.
+                    </strong>{" "}
+                    The same markdown is already served anonymously under <code>/llms/pages</code>, so a guard would
+                    protect nothing and lock out the agents these tools exist for.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>
+                      여기서 <code>[Public]</code>은 결정입니다.
+                    </strong>{" "}
+                    같은 마크다운을 <code>/llms/pages</code>에서 이미 누구에게나 제공하고 있습니다. 가드를 달아도 지키는
+                    것은 없고, 이 도구가 존재하는 이유인 에이전트만 막게 됩니다.
+                  </>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>The class comment says why.</strong> Why an obvious alternative was rejected is one of the
+                    few kinds of comment this codebase keeps.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>클래스 주석이 이유를 말합니다.</strong> 그럴듯한 대안을 왜 버렸는지는 이 코드베이스가 남기는
+                    몇 안 되는 주석 종류 중 하나입니다.
+                  </>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>
+                      A miss is an <code>Err</code>, not an empty page.
+                    </strong>{" "}
+                    <code>readDocPage</code> throws <code>doc.error.docPageNotFound</code> so an agent is told it asked
+                    for nothing.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>
+                      없는 페이지는 빈 값이 아니라 <code>Err</code>입니다.
+                    </strong>{" "}
+                    <code>readDocPage</code>는 <code>doc.error.docPageNotFound</code>를 던져, 에이전트가 없는 것을
+                    물었다는 사실을 알게 합니다.
+                  </>
+                ),
+              })}
+            </li>
+          </ul>
           <Docs.Alert type="warning">
             {l.trans({
               en: (
                 <span>
-                  The guards are also the MCP exposure decision. An endpoint that declares a real guard is published to
-                  agents; one that declares none is refused, and so is a <code>mutation</code> whose only guard is{" "}
-                  <code>Public</code> — <code>[Public]</code> on a mutation is having no guard, spelled out. The boot
-                  log names every refusal. Full ladder on the{" "}
-                  <Link href="/cheatsheet/general/auth" className="text-primary">
+                  <strong>
+                    <code>[Public]</code> on a mutation is having no guard, spelled out.
+                  </strong>{" "}
+                  MCP refuses a <code>mutation</code> whose only guard is <code>Public</code>, just as it refuses one
+                  with no guards at all. Which guard to use when is on the{" "}
+                  <Link href="/cheatsheet/general/auth" className={inlineLink}>
                     Authorization
                   </Link>{" "}
                   cheatsheet.
@@ -140,14 +637,15 @@ export class DocEndpoint extends endpoint(srv.doc, ({ query }) => ({
               ),
               ko: (
                 <span>
-                  guard는 MCP 노출 결정이기도 합니다. 실질 guard를 선언한 endpoint는 agent에게 게시되고, 아무것도
-                  선언하지 않은 endpoint는 거부됩니다. guard가 <code>Public</code> 하나뿐인 <code>mutation</code>도
-                  마찬가지입니다. mutation에 붙은 <code>[Public]</code>은 guard가 없다는 말을 적어 놓은 것과 같습니다.
-                  모든 거부는 부팅 로그에 이름이 남습니다. 전체 사다리는{" "}
-                  <Link href="/cheatsheet/general/auth" className="text-primary">
-                    권한 부여
+                  <strong>
+                    mutation에 붙은 <code>[Public]</code>은 가드가 없다는 말을 적어 놓은 것과 같습니다.
+                  </strong>{" "}
+                  MCP는 가드가 <code>Public</code> 하나뿐인 <code>mutation</code>을 가드가 아예 없는 것과 똑같이
+                  거절합니다. 어떤 가드를 언제 쓰는지는{" "}
+                  <Link href="/cheatsheet/general/auth" className={inlineLink}>
+                    인증과 권한
                   </Link>{" "}
-                  cheatsheet에 있습니다.
+                  치트시트에 정리되어 있습니다.
                 </span>
               ),
             })}
@@ -156,19 +654,53 @@ export class DocEndpoint extends endpoint(srv.doc, ({ query }) => ({
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="custom-routes" title={l.trans({ en: "Routes That Are Not Ours", ko: "우리 것이 아닌 경로" })}>
-        <Docs.Title>{l.trans({ en: "Routes That Are Not Ours", ko: "우리 것이 아닌 경로" })}</Docs.Title>
+      <Scroll.Slide id="custom-routes" title={l.trans({ en: "Routes A Protocol Fixes", ko: "프로토콜이 정한 경로" })}>
+        <Docs.Title>{l.trans({ en: "Routes A Protocol Fixes", ko: "프로토콜이 정한 경로" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Most endpoints are reached by their generated path and never by a literal. A protocol endpoint is the exception: RFC 8414 says the metadata document lives at /.well-known/oauth-authorization-server, and a client that cannot find it there has no way to ask.",
-              ko: "대부분의 endpoint는 생성된 경로로 닿고 리터럴로는 닿지 않습니다. 프로토콜 endpoint가 예외입니다. RFC 8414은 메타데이터 문서가 /.well-known/oauth-authorization-server에 있다고 말하고, 거기서 찾지 못한 클라이언트에게는 물어볼 방법이 없습니다.",
+              en: (
+                <span>
+                  Most endpoints are reached through the path Akan builds, and nobody types it. A protocol endpoint is
+                  different: RFC 8414 fixes the metadata document at{" "}
+                  <code>/.well-known/oauth-authorization-server</code>, and a client that does not find it there has
+                  nowhere else to look.
+                </span>
+              ),
+              ko: (
+                <span>
+                  대부분의 엔드포인트는 Akan이 만든 경로로 호출되고, 그 URL을 직접 칠 일은 없습니다. 프로토콜
+                  엔드포인트는 다릅니다. RFC 8414는 메타데이터 문서 위치를{" "}
+                  <code>/.well-known/oauth-authorization-server</code>로 정해 두었고, 클라이언트는 거기서 못 찾으면 달리
+                  찾아볼 곳이 없습니다.
+                </span>
+              ),
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  <code>libs/shared</code> puts its OAuth endpoints exactly where the RFCs say:
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>libs/shared</code>는 OAuth 엔드포인트를 RFC가 정한 자리에 그대로 둡니다:
+                </span>
+              ),
             })}
           </div>
           <Code.Snippet
             className="w-full"
             title="libs/shared/lib/_oauth/oauth.signal.ts"
-            code={`// The protocol endpoints live at the origin's root, where RFC 8414 and the clients look for them, and are \`mcp: false\`
+            code={`import { Account } from "@libs/shared/srvkit";
+import { Any } from "akanjs/base";
+import { endpoint, Ip, Public, Req } from "akanjs/signal";
+
+import * as srv from "../srv";
+
+// The protocol endpoints live at the origin's root, where RFC 8414 and the clients look for them, and are \`mcp: false\`
 // because they are the way onto the shelf rather than anything on it. \`[Public]\` is the decision: a client holds no
 // credential yet, which is what it is here to obtain.
 const protocolRoute = { guards: [Public], prefix: false as const, globalPrefix: false as const, mcp: false as const };
@@ -180,6 +712,13 @@ export class OauthEndpoint extends endpoint(srv.oauth, ({ query, mutation }) => 
   }).exec(function () {
     return this.oauthService.metadata();
   }),
+
+  authorizeOAuth: query(Any, { ...protocolRoute, path: "oauth/authorize" })
+    .with(Req)
+    .with(Account, { nullable: true })
+    .exec(async function (req, account) {
+      return await this.oauthService.authorize(req, account);
+    }),
 
   // Nullable: a child reached over a unix socket learns the caller only from the gateway's headers, and a
   // deployment that lost them should register under a shared, wider bucket rather than refuse every client.
@@ -193,53 +732,165 @@ export class OauthEndpoint extends endpoint(srv.oauth, ({ query, mutation }) => 
           />
           <div>
             {l.trans({
-              en: "Four options do that, and a shared const is how ten endpoints avoid disagreeing about them. path names the literal route; prefix: false drops the module name Akan would otherwise put in front of it; globalPrefix: false drops the api segment; mcp: false keeps the protocol off an agent's shelf without touching who may call it.",
-              ko: "옵션 네 개가 그 일을 하고, 공유 const는 endpoint 열 개가 그 옵션들에 대해 서로 다른 말을 하지 않게 하는 방법입니다. path는 리터럴 경로를 지정합니다. prefix: false는 Akan이 앞에 붙였을 module 이름을 뗍니다. globalPrefix: false는 api 구간을 뗍니다. mcp: false는 누가 호출할 수 있는지는 그대로 두고 프로토콜을 agent의 선반에서만 내립니다.",
+              en: (
+                <span>
+                  Four options place a route. One shared <code>protocolRoute</code> const keeps the five protocol
+                  endpoints from disagreeing about them:
+                </span>
+              ),
+              ko: (
+                <span>
+                  경로의 위치는 옵션 네 개가 정합니다. 공유 const <code>protocolRoute</code> 하나가 프로토콜 엔드포인트
+                  다섯 개의 옵션을 한 가지로 맞춰 줍니다:
+                </span>
+              ),
             })}
           </div>
-          <div className="my-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="text-primary">🌐</span>
-              <div>
-                <strong>.with(Req)</strong>:{" "}
-                {l.trans({
-                  en: "the raw Request, for a handler that has to read a form body or a header Akan does not parse for it",
-                  ko: "raw Request입니다. Akan이 대신 파싱해 주지 않는 form body나 header를 읽어야 하는 handler에서 씁니다",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">📍</span>
-              <div>
-                <strong>.with(Ip)</strong>:{" "}
-                {l.trans({
-                  en: "the caller's address as a proxy recorded it. Never read it off the socket — behind a gateway every peer is 127.0.0.1",
-                  ko: "proxy가 기록한 호출자의 주소입니다. socket에서 직접 읽지 마세요. gateway 뒤에서는 모든 peer가 127.0.0.1입니다",
-                })}
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-primary">🪪</span>
-              <div>
-                <strong>.with(Account)</strong>:{" "}
-                {l.trans({
-                  en: "the verified account, or null when the option says nullable. Never take the acting identity as a body value",
-                  ko: "검증된 account이고, nullable을 적으면 없을 때 null입니다. 행위자를 body 값으로 받지 마세요",
-                })}
-              </div>
-            </div>
-          </div>
+          <Docs.OptionTable items={routeOptions} />
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>
+                      <code>[Public]</code> is the decision again.
+                    </strong>{" "}
+                    A client holds no credential yet, and getting one is why it came.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>
+                      여기서도 <code>[Public]</code>은 결정입니다.
+                    </strong>{" "}
+                    클라이언트는 아직 자격 증명이 없고, 그것을 받으러 온 것입니다.
+                  </>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>
+                      <code>prefix: false</code> states the root position outright.
+                    </strong>{" "}
+                    A service module adds no prefix anyway, so the line documents intent rather than changing the route.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>
+                      <code>prefix: false</code>는 루트 자리임을 분명히 적은 것입니다.
+                    </strong>{" "}
+                    서비스 모듈은 원래 접두사를 붙이지 않으니, 이 줄은 경로를 바꾸기보다 의도를 밝혀 둡니다.
+                  </>
+                ),
+              })}
+            </li>
+          </ul>
+
+          <Docs.SubSubTitle>
+            {l.trans({ en: "Values the server fills in", ko: "서버가 채워 주는 값" })}
+          </Docs.SubSubTitle>
           <div>
             {l.trans({
-              en: "A Response returned from exec is sent as it stands. That is how localFile streams a blob back with no copy and how every OAuth endpoint answers with a redirect the client is waiting for.",
-              ko: "exec이 돌려준 Response는 그대로 전송됩니다. localFile이 복사 없이 blob을 흘려보내는 방법이고, 모든 OAuth endpoint가 클라이언트가 기다리는 redirect로 답하는 방법입니다.",
+              en: (
+                <span>
+                  <code>.with(X)</code> hands <code>exec</code> a value the caller never sends, after the declared
+                  arguments:
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>.with(X)</code>는 호출자가 보내지 않는 값을 선언한 인자들 뒤에 붙여 <code>exec</code>에
+                  넘깁니다:
+                </span>
+              ),
+            })}
+          </div>
+          <Docs.IntroTable type={l.trans({ en: "Internal argument", ko: "내부 인자" })} items={internalArgRows} />
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>Missing means refused, unless nullable.</strong> A <code>null</code> value without{" "}
+                    <code>{"{ nullable: true }"}</code> rejects the call as <code>Unauthorized</code>.{" "}
+                    <code>authorizeOAuth</code> and <code>registerOAuthClient</code> opt in because they answer
+                    strangers.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>nullable이 아니면, 값이 없을 때 거절됩니다.</strong> <code>{"{ nullable: true }"}</code>{" "}
+                    없이 값이 <code>null</code>이면 호출은 <code>Unauthorized</code>로 거절됩니다.{" "}
+                    <code>authorizeOAuth</code>와 <code>registerOAuthClient</code>는 처음 보는 상대에게도 답해야 해서
+                    nullable을 적습니다.
+                  </>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>Never read the IP off the socket.</strong> Behind the gateway every peer is{" "}
+                    <code>127.0.0.1</code>, which is why <code>Ip</code> reads what a proxy recorded.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>IP를 소켓에서 직접 읽지 마세요.</strong> 게이트웨이 뒤에서는 모든 peer가{" "}
+                    <code>127.0.0.1</code>입니다. 그래서 <code>Ip</code>는 프록시가 기록한 값을 읽습니다.
+                  </>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>Never take the acting user from the body.</strong> Read it with <code>.with(Account)</code>,{" "}
+                    <code>Self</code> or <code>Me</code>, which the caller cannot forge.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>행위자를 body 값으로 받지 마세요.</strong> 호출자가 위조할 수 없는{" "}
+                    <code>.with(Account)</code>, <code>Self</code>, <code>Me</code>로 읽습니다.
+                  </>
+                ),
+              })}
+            </li>
+          </ul>
+
+          <Docs.SubSubTitle>
+            {l.trans({ en: "Return a Response as it is", ko: "Response를 그대로 돌려주기" })}
+          </Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  A <code>Response</code> returned from <code>exec</code> is sent as it stands, with no serialization.
+                  The OAuth endpoints use it to answer with the exact status, headers or 302 redirect a client expects.{" "}
+                  <code>localFile</code> uses it to stream a file back with no copy:
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>exec</code>이 돌려준 <code>Response</code>는 직렬화 없이 그대로 전송됩니다. OAuth 엔드포인트는
+                  이것으로 클라이언트가 기다리는 상태 코드와 헤더, 302 redirect를 정확히 돌려줍니다.{" "}
+                  <code>localFile</code>은 이것으로 파일을 복사 없이 흘려보냅니다:
+                </span>
+              ),
             })}
           </div>
           <Code.Snippet
             className="w-full"
             title="libs/util/lib/_localFile/localFile.signal.ts"
             code={`export class LocalFileEndpoint extends endpoint(srv.localFile, ({ query }) => ({
-  getBlob: query(Any, { guards: [Public], path: "localFile/getBlob/*" }) // [!code ++]
+  getBlob: query(Any, { guards: [Public], path: "localFile/getBlob/*", mcp: false }) // [!code highlight]
     .with(Req)
     .exec(async function (req) {
       const path = req.url.split("/localFile/getBlob/").slice(1).join("/localFile/getBlob/");
@@ -248,86 +899,248 @@ export class OauthEndpoint extends endpoint(srv.oauth, ({ query, mutation }) => 
     }),
 })) {}`}
           />
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>
+                      <code>[Public]</code> makes anonymous reads a stated decision.
+                    </strong>{" "}
+                    <code>mcp: false</code> keeps the file stream off the MCP shelf.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>
+                      <code>[Public]</code>을 적어 익명 읽기를 명시된 결정으로 만듭니다.
+                    </strong>{" "}
+                    <code>mcp: false</code>로 파일 스트림을 MCP 목록에서 뺍니다.
+                  </>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>
+                      <code>*</code> matches the rest of the URL.
+                    </strong>{" "}
+                    <code>exec</code> reads the file path back out of <code>req.url</code>.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>
+                      <code>*</code>는 URL의 나머지 전부와 맞습니다.
+                    </strong>{" "}
+                    <code>exec</code>은 <code>req.url</code>에서 파일 경로를 다시 꺼내 읽습니다.
+                  </>
+                ),
+              })}
+            </li>
+          </ul>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="internal" title={l.trans({ en: "Work Nobody Calls", ko: "아무도 호출하지 않는 일" })}>
-        <Docs.Title>{l.trans({ en: "Work Nobody Calls", ko: "아무도 호출하지 않는 일" })}</Docs.Title>
+      <Scroll.Slide id="internal" title={l.trans({ en: "Work The Runtime Starts", ko: "런타임이 시작하는 일" })}>
+        <Docs.Title>{l.trans({ en: "Work The Runtime Starts", ko: "런타임이 시작하는 일" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "internal() is for work the runtime starts: a cron expression, an interval, a queue job, something that has to happen once at boot or once at shutdown. It takes no guards option at all, and that is not an omission — the runtime is the only caller, so there is no request to authorize.",
-              ko: "internal()은 runtime이 시작하는 일을 위한 것입니다. cron 표현식, interval, queue job, 부팅 때 한 번 또는 종료 때 한 번 일어나야 하는 일 같은 것입니다. guards 옵션이 아예 없고, 빠뜨린 것이 아닙니다. 호출자가 runtime뿐이라 인가할 request가 없습니다.",
+              en: (
+                <span>
+                  <code>internal()</code> holds work the runtime starts on its own: a schedule, a queue job, a step at
+                  boot or shutdown. The runtime is the only caller, so there is no request to authorize and no guards to
+                  write.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>internal()</code>에는 런타임이 스스로 시작하는 일을 둡니다. 예약 작업, queue job, 부팅이나 종료
+                  때의 한 단계 같은 것입니다. 호출자가 런타임뿐이라 인가할 요청이 없고, 가드도 적지 않습니다.
+                </span>
+              ),
+            })}
+          </div>
+          <Docs.IntroTable type={l.trans({ en: "Builder", ko: "빌더" })} items={internalBuilders} />
+          <div>
+            {l.trans({
+              en: "A job that should run once a night, not once per server, names the batch worker:",
+              ko: "서버마다 한 번씩이 아니라 밤마다 딱 한 번 돌아야 하는 작업은 batch 워커를 지정합니다:",
             })}
           </div>
           <Code.Snippet
             className="w-full"
-            title="A cron scoped to the batch worker"
-            code={`export class SecurityInternal extends internal(srv.security, ({ cron }) => ({
-  cleanup: cron("0 0 * * *", { serverMode: "batch" }).exec(async function () {
-    await this.securityService.pruneExpiredSessions();
-  }),
+            title="apps/koyo/lib/_receipt/receipt.signal.ts"
+            code={`import { Every } from "@libs/shared/srvkit";
+import { ID } from "akanjs/base";
+import { endpoint, internal } from "akanjs/signal";
+
+import * as srv from "../srv";
+
+export class ReceiptInternal extends internal(srv.receipt, ({ cron }) => ({ // [!code ++]
+  purgeReceipts: cron("0 0 * * *", { serverMode: "batch" }).exec(async function () { // [!code ++]
+    await this.receiptService.purgeExpired(); // [!code ++]
+  }), // [!code ++]
+})) {} // [!code ++]
+
+export class ReceiptEndpoint extends endpoint(srv.receipt, ({ mutation }) => ({
+  printReceipt: mutation(Boolean, { guards: [Every] })
+    .param("icecreamOrderId", ID)
+    .exec(async function (icecreamOrderId) {
+      return await this.receiptService.print(icecreamOrderId);
+    }),
 })) {}`}
           />
           <div>
             {l.trans({
-              en: "The serverMode there has to match the one the service declares, or the job is scheduled in a process where the service it calls was never loaded. All eight service modules in this workspace still have an empty internal class, which is what an internal class looks like until the first scheduled job arrives.",
-              ko: "여기의 serverMode는 service가 선언한 것과 같아야 합니다. 그렇지 않으면 호출할 service가 적재되지 않은 프로세스에 job이 예약됩니다. 이 워크스페이스의 service module 여덟 개 모두 아직 internal class가 비어 있습니다. 첫 예약 job이 생기기 전까지 internal class의 모습입니다.",
+              en: (
+                <span>
+                  Every builder except <code>resolveField</code> takes these options as its last argument:
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>resolveField</code>를 뺀 모든 빌더는 마지막 인자로 이 옵션을 받습니다:
+                </span>
+              ),
             })}
           </div>
-          <div className={panelRecipe({ radius: "lg" }, "my-4")}>
-            <div className="mb-2 font-semibold text-primary">
-              {l.trans({ en: "Builders internal() offers:", ko: "internal()이 제공하는 builder:" })}
-            </div>
-            <ul className="list-disc space-y-1 pl-5 text-foreground/70 text-sm">
-              <li>
-                {l.trans({
-                  en: "cron(expression) and interval(ms) — recurring work, locked by default so two replicas do not both run it.",
-                  ko: "cron(expression)과 interval(ms) — 반복 작업이며 기본으로 잠깁니다. replica 둘이 함께 돌지 않습니다.",
-                })}
-              </li>
-              <li>
-                {l.trans({
-                  en: "initialize() and destroy() — once when the process starts, once when it stops.",
-                  ko: "initialize()와 destroy() — 프로세스가 시작할 때 한 번, 멈출 때 한 번입니다.",
-                })}
-              </li>
-              <li>
-                {l.trans({
-                  en: "process(Return).msg(...) — a background queue job, with msg naming the payload.",
-                  ko: "process(Return).msg(...) — background queue job이며 msg가 payload에 이름을 붙입니다.",
-                })}
-              </li>
-              <li>
-                {l.trans({
-                  en: "resolveField(Return) — a model module's viewer-specific field. A service module has no model, so it has no use for this one.",
-                  ko: "resolveField(Return) — model module에서 조회자마다 달라지는 field입니다. service module에는 model이 없으니 쓸 일이 없습니다.",
-                })}
-              </li>
-            </ul>
-          </div>
+          <Docs.OptionTable items={scheduleOptions} />
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>
+                      Match the service's <code>serverMode</code>.
+                    </strong>{" "}
+                    When the service declares one, the internal must declare the same, or the job is scheduled where
+                    that service is switched off.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>
+                      서비스의 <code>serverMode</code>와 맞춥니다.
+                    </strong>{" "}
+                    서비스가 serverMode를 선언했다면 internal도 같은 값을 적어야 합니다. 그렇지 않으면 그 서비스가 꺼진
+                    프로세스에 작업이 예약됩니다.
+                  </>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>Empty is normal.</strong> All eight service modules in this workspace still have an empty
+                    Internal class; that is its shape until the first scheduled job arrives.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>비어 있는 것이 보통입니다.</strong> 이 워크스페이스의 서비스 모듈 여덟 개는 모두 아직
+                    Internal 클래스가 비어 있습니다. 첫 예약 작업이 생기기 전까지는 그 모습입니다.
+                  </>
+                ),
+              })}
+            </li>
+          </ul>
+          <Docs.Alert type="warning">
+            {l.trans({
+              en: (
+                <span>
+                  <strong>
+                    <code>lock</code> does not coordinate servers.
+                  </strong>{" "}
+                  It only skips an overlapping run inside one process. Every server whose role matches runs its own
+                  copy, so give run-once work <code>serverMode: "batch"</code> and run a single batch worker.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <strong>
+                    <code>lock</code>은 서버 사이를 조율하지 않습니다.
+                  </strong>{" "}
+                  한 프로세스 안에서 겹치는 실행만 건너뜁니다. 역할이 맞는 서버는 각자 자기 사본을 실행하므로, 한 번만
+                  돌아야 하는 작업은 <code>serverMode: "batch"</code>로 두고 batch 워커를 하나만 띄웁니다.
+                </span>
+              ),
+            })}
+          </Docs.Alert>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="realtime" title={l.trans({ en: "Realtime Without A Model", ko: "Model 없는 실시간" })}>
-        <Docs.Title>{l.trans({ en: "Realtime Without A Model", ko: "Model 없는 실시간" })}</Docs.Title>
+      <Scroll.Slide id="realtime" title={l.trans({ en: "Realtime Without A Model", ko: "모델 없이 실시간" })}>
+        <Docs.Title>{l.trans({ en: "Realtime Without A Model", ko: "모델 없이 실시간" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "pubsub and message need no table either. A pubsub declares a room and a payload, a message handles one frame a client sends, and a service publishes into the room through its own injected signal.",
-              ko: "pubsub과 message에도 테이블은 필요 없습니다. pubsub은 room과 payload를 선언하고, message는 클라이언트가 보낸 frame 하나를 처리하며, service는 주입받은 자기 signal을 통해 그 room으로 발행합니다.",
+              en: (
+                <span>
+                  <code>pubsub</code> and <code>message</code> need no table either, so a service module can carry a
+                  realtime feature on its own. Both ride the websocket:
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>pubsub</code>과 <code>message</code>에도 테이블은 필요 없습니다. 그래서 서비스 모듈만으로도
+                  실시간 기능을 만들 수 있습니다. 둘 다 웹소켓으로 오갑니다:
+                </span>
+              ),
+            })}
+          </div>
+          <div className={cardGridRecipe({ cols: "mdTwo" }, "my-4")}>
+            <div className={panelRecipe({ radius: "lg", padding: "sm" }, "min-w-0")}>
+              <div className="font-semibold text-primary">pubsub</div>
+              <div className="mt-1 text-foreground/70 text-sm">
+                {l.trans({
+                  en: "A room clients subscribe to. It declares the room's arguments and the payload type.",
+                  ko: "클라이언트가 구독하는 room입니다. room 인자와 payload 타입을 선언합니다.",
+                })}
+              </div>
+              <code className={chip}>pubsub(Any).room("roomId", String)</code>
+            </div>
+            <div className={panelRecipe({ radius: "lg", padding: "sm" }, "min-w-0")}>
+              <div className="font-semibold text-primary">message</div>
+              <div className="mt-1 text-foreground/70 text-sm">
+                {l.trans({
+                  en: (
+                    <span>
+                      One frame a client sends. Each field is declared with <code>.msg()</code>, and <code>exec</code>{" "}
+                      answers it.
+                    </span>
+                  ),
+                  ko: (
+                    <span>
+                      클라이언트가 보내는 frame 하나입니다. 필드마다 <code>.msg()</code>로 선언하고, <code>exec</code>이
+                      답합니다.
+                    </span>
+                  ),
+                })}
+              </div>
+              <code className={chip}>message(Boolean).msg("seq", Int)</code>
+            </div>
+          </div>
+          <div>
+            {l.trans({
+              en: "The minimal app pairs one of each for a fan-out benchmark:",
+              ko: "minimal 앱은 fan-out 벤치마크를 위해 둘을 하나씩 짝지어 둡니다:",
             })}
           </div>
           <Code.Snippet
             className="w-full"
             title="apps/minimal/lib/_minimal/minimal.signal.ts"
             code={`export class MinimalEndpoint extends endpoint(srv.minimal, ({ query, message, pubsub }) => ({
-  benchFanout: pubsub(Any)
+  benchFanout: pubsub(Any, { guards: [Public], mcp: false })
     .room("roomId", String)
     .exec(() => undefined),
-  benchPublish: message(Boolean)
+  benchPublish: message(Boolean, { guards: [Public], mcp: false })
     .msg("roomId", String)
     .msg("seq", Int)
     .msg("sentAt", Int)
@@ -336,6 +1149,21 @@ export class OauthEndpoint extends endpoint(srv.oauth, ({ query, mutation }) => 
     }),
 })) {}`}
           />
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  The service publishes into the room through its own signal, injected with{" "}
+                  <code>{"signal<sig.Minimal>()"}</code>:
+                </span>
+              ),
+              ko: (
+                <span>
+                  서비스는 <code>{"signal<sig.Minimal>()"}</code>로 주입받은 자기 시그널을 통해 room에 발행합니다:
+                </span>
+              ),
+            })}
+          </div>
           <Code.Snippet
             className="w-full"
             title="apps/minimal/lib/_minimal/minimal.service.ts"
@@ -348,26 +1176,67 @@ export class OauthEndpoint extends endpoint(srv.oauth, ({ query, mutation }) => 
   }
 }`}
           />
+          <ul className="my-4 list-disc space-y-2 pl-5">
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>
+                      Declare <code>Binary</code> for bytes.
+                    </strong>{" "}
+                    <code>pubsub(Binary)</code> skips the JSON envelope and, under backpressure, keeps only the newest
+                    frame. Add <code>{'{ backpressure: "queue" }'}</code> when every frame matters.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>
+                      바이트라면 <code>Binary</code>로 선언합니다.
+                    </strong>{" "}
+                    <code>pubsub(Binary)</code>는 JSON 봉투를 건너뛰고, backpressure가 걸리면 가장 최신 frame만
+                    남깁니다. frame을 하나도 빠짐없이 받아야 한다면 <code>{'{ backpressure: "queue" }'}</code>를
+                    더합니다.
+                  </>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <>
+                    <strong>Neither reaches MCP.</strong> Agents never see a <code>pubsub</code> or a{" "}
+                    <code>message</code>, whatever its guards say.
+                  </>
+                ),
+                ko: (
+                  <>
+                    <strong>둘 다 MCP에는 나가지 않습니다.</strong> 가드를 어떻게 적든 에이전트는 <code>pubsub</code>과{" "}
+                    <code>message</code>를 보지 못합니다.
+                  </>
+                ),
+              })}
+            </li>
+          </ul>
           <Docs.Alert type="warning">
             {l.trans({
               en: (
                 <span>
-                  Both of those are unguarded, and that is a benchmark app rather than an example. A <code>pubsub</code>{" "}
-                  or <code>message</code> endpoint is never covered by anything above it — there is no slice default
-                  even in a model module — so it is open until it declares <code>guards</code> of its own, and a room's
-                  guards are re-run whenever the socket's credential changes. Declare <code>pubsub(Binary)</code> rather
-                  than <code>Any</code> when the payload is bytes: the frame skips the JSON envelope, and a declared{" "}
-                  <code>Binary</code> room coalesces under backpressure.
+                  <strong>
+                    A <code>pubsub</code> or <code>message</code> is open until it names its own <code>guards</code>.
+                  </strong>{" "}
+                  Nothing above covers it, not even a slice default in a model module. Both endpoints above say{" "}
+                  <code>[Public]</code> only because <code>minimal</code> is a benchmark app, not an example. A room's
+                  guards re-run whenever the socket's credential changes.
                 </span>
               ),
               ko: (
                 <span>
-                  둘 다 guard가 없고, 그것은 벤치마크 앱이지 예시가 아닙니다. <code>pubsub</code>과 <code>message</code>{" "}
-                  endpoint는 위쪽의 무엇으로도 덮이지 않습니다. model module에서도 slice 기본값이 닿지 않습니다. 자기{" "}
-                  <code>guards</code>를 선언하기 전까지 열려 있고, room의 guard는 socket의 credential이 바뀔 때마다 다시
-                  실행됩니다. payload가 바이트라면 <code>Any</code>가 아니라 <code>pubsub(Binary)</code>로 선언하세요.
-                  frame이 JSON 봉투를 건너뛰고, 선언된 <code>Binary</code> room은 backpressure에서 최신 frame만
-                  남깁니다.
+                  <strong>
+                    <code>pubsub</code>과 <code>message</code>는 자기 <code>guards</code>를 적기 전까지 열려 있습니다.
+                  </strong>{" "}
+                  위쪽의 무엇도 덮어 주지 않고, 모델 모듈의 슬라이스 기본값도 닿지 않습니다. 위 두 엔드포인트가{" "}
+                  <code>[Public]</code>인 것은 <code>minimal</code>이 예시가 아니라 벤치마크 앱이기 때문입니다. room의
+                  가드는 소켓의 자격 증명이 바뀔 때마다 다시 실행됩니다.
                 </span>
               ),
             })}

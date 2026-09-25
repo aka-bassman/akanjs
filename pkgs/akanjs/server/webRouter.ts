@@ -1220,18 +1220,22 @@ export class WebRouter {
       if (details.length === 0) return null;
       return WebRouter.#jsonResponse({ applinks: { apps: [], details } }, cacheControl);
     }
+    //? The Android debug buildType appends applicationIdSuffix ".debug"; only a non-main server vouches for it.
+    const packageSuffixes = process.env.AKAN_PUBLIC_ENV === "main" ? [""] : ["", ".debug"];
     const assetLinks = associations
       .filter(
         (association) => association.domains.length > 0 && (association.androidSha256CertFingerprints?.length ?? 0) > 0,
       )
-      .map((association) => ({
-        relation: ["delegate_permission/common.handle_all_urls"],
-        target: {
-          namespace: "android_app",
-          package_name: association.appId,
-          sha256_cert_fingerprints: association.androidSha256CertFingerprints,
-        },
-      }));
+      .flatMap((association) =>
+        packageSuffixes.map((suffix) => ({
+          relation: ["delegate_permission/common.handle_all_urls"],
+          target: {
+            namespace: "android_app",
+            package_name: `${association.appId}${suffix}`,
+            sha256_cert_fingerprints: association.androidSha256CertFingerprints,
+          },
+        })),
+      );
     if (assetLinks.length === 0) return null;
     return WebRouter.#jsonResponse(assetLinks, cacheControl);
   }

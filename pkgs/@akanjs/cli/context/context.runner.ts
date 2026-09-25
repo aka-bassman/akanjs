@@ -546,7 +546,7 @@ export class ContextRunner extends runner("context") {
       build: "`akan build <app-name>` creates a production build after preparing generated files.",
       doctor:
         "`akan doctor --strict --format json` reports agent-readable workspace convention diagnostics and validation hints.",
-      "guideline show": "`akan guideline show <name>` prints an Akan codegen guideline instruction.",
+      "guideline show": "`akan guideline show <name>` prints an Akan guideline instruction.",
       workflow:
         "`akan workflow list|explain|plan|apply|validate|report` lists, plans, applies, validates, and reports agent-readable Akan workflows.",
       "workflow list": "`akan workflow list` lists parseable read-only workflow specs.",

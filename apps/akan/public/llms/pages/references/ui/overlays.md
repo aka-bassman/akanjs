@@ -14,129 +14,201 @@
 
 Overlays
 
-Controlled modal wrapper built on Akan's headless `Dialog` state. Use it for common app overlays where you want title/content/action slots without composing the full dialog namespace. The surface is deliberately plain — no transition, no gesture — so it never animates content the user is reading. `LegacyModal` keeps the previous animated skin.
+Drawing an element elsewhere in the DOM, here at the end of `document.body`, so no parent clips it.
 
-Controlled open state.
+The element the user clicks to open the overlay, passed as `trigger` or as `children`.
 
-Called when the modal requests closing.
+controlled
 
-Element that opens the modal. Given one, `open` may be left out and the modal keeps its own state.
+You pass `open` and set it back in `onCancel`. Left out, the component keeps its own open state.
 
-Optional title slot.
+override slot
 
-The dismiss control, drawn in the corner slot that already closes the dialog — a replacement needs no wiring. `false` draws none.
+A name in `_overrides.tsx` that swaps a component for one route subtree.
 
-Optional footer/action slot.
+A see-through layer behind a popover that catches the click outside it.
 
-Ask for confirmation before closing.
+Portalled
 
-Headless compound dialog namespace for custom modal composition. Use it when `Modal` is too opinionated and you need a custom trigger, title, content, or action layout.
+At trigger
 
-Provider/root for dialog state.
+Override slot
 
-Opens the dialog from custom trigger content.
+Windows over the page
 
-Modal surface and close behavior.
+A centred window with title, body and footer slots. The default for a modal flow.
 
-Previous surface: spring open/close and drag-to-dismiss on touch.
+The headless parts `Modal` is built from, for a custom layout or an agent-named dialog.
 
-Named modal slots.
+A mobile panel that slides up from the bottom edge. Drawn in place, fixed to the screen.
 
-Inline confirmation popover for destructive or irreversible actions. It wraps a trigger element and shows localized OK/cancel buttons. The popover portals to document.body and is placed against its trigger — above it when there is no room below, with the pointer following — so it is not clipped by a modal, a scrolling container, or the dropdown menu that Model.Remove draws it from. Its scrim swallows the next click, and the overlay that opened it stays open.
+Anchored to a trigger
 
-Confirmation title.
+A small OK/cancel popover before a destructive action.
 
-Optional detailed message.
+A short action menu, such as the actions on a list row.
 
-Called when the user confirms.
+A hover or focus hint in pure CSS. At the screen edge it is clipped, not moved.
 
-Custom button labels.
+Navigation and helpers
 
-The mark beside the message. `false` draws none.
+A navigation menu built from an `items` tree, for a sidebar or a top bar.
 
-The whole footer, replacing both buttons. A replacement owns the confirm and the dismiss.
+Renders its children into a host element named by `id`.
 
-Compact dropdown menu wrapper. It is commonly used for row actions, comment/story menus, and context actions in list UIs. The menu portals to document.body and is placed against its trigger, so it is not clipped by a modal surface, a scrolling modal body, or a table's scroll container. A menu item may open a Modal: the menu stays mounted while it is closed, so the overlay survives, and clicks inside an overlay this menu opened do not count as outside clicks. An overlay it did not open still dismisses it.
+Copies text to the clipboard and shows a success toast.
 
-Trigger button content.
+Forms UI
 
-The whole trigger element, drawn instead of the framework's ghost button. It is cloned, not wrapped, so the menu's aria-expanded lands on the control a screen reader activates — the element must forward className, onClick and aria-*.
+Override Slots
 
-Dropdown menu content.
+Core UI
 
-Classes for the trigger button.
+In-Page Agent
 
-Classes for the menu panel.
+How the tools a component publishes let the agent drive the screen.
 
-Trigger edge the menu lines up with, end (right) by default. Position is computed, so a left-0 class cannot do this.
+A centred window with title, body and footer slots, built on the headless `Dialog`. Reach for it first; compose `Dialog` only when you need a layout of your own.
 
-Put it on a menu item that runs its own interaction (a switch, a copy button) so clicking it does not close the menu.
+Controlled open state. May be left out when `trigger` is given.
 
-The mobile overlay: a panel that comes up from the bottom edge and is dismissed by dragging it back down. `type` is the whole decision — a `half` sheet covers part of the screen and draws a grab handle, a `full` sheet takes it all and draws a close row instead. Like `Modal` it works controlled or self-contained: give it `open` and `onCancel`, or give it a `trigger` and let it keep its own state.
+Called when the modal closes itself: the close button, a backdrop click or Escape.
 
-Required. `half` covers part of the screen with a grab handle; `full` takes the whole screen with a close row.
+Element that opens the modal. With it, the modal keeps its own open state.
 
-Controlled state. Left out, the sheet opens from its own trigger and handle.
+The header row. Left out, no header is drawn.
+
+The footer row, right-aligned. Usually buttons.
+
+The corner close control, wired by its slot, so a replacement needs no handler. `false` draws none.
+
+Asks with the browser's confirm dialog before closing.
+
+Classes for the window and for its scrolling body.
+
+The headless compound parts that `Modal` is built from. Compose them when `Modal`'s fixed layout does not fit, or when the in-page agent should be able to open and close the dialog.
+
+The root that holds the open state. `open` is followed whenever it changes.
+
+Names the dialog for the in-page agent. Without it, the dialog publishes no tool.
+
+Opens the dialog when anything inside it is clicked.
+
+The plain window `Modal` draws. Escape, a backdrop click and the corner button close it.
+
+The previous window: spring open/close and drag-to-dismiss on touch.
+
+Draw nothing where written; they hand their children to the header and footer rows.
+
+The body, a full-width block.
+
+A small OK/cancel popover that stands in front of a destructive or irreversible action. Wrap the trigger in it and pass the action as `onConfirm`.
+
+The question, in bold.
+
+Optional detail under the title.
+
+Called when the user presses OK. The popover closes first.
+
+Button labels. The defaults are the `base.ok` and `base.cancel` dictionary entries.
+
+Attributes spread onto the two default buttons.
+
+The mark beside the message, a warning icon by default. `false` draws none.
+
+Replaces the whole footer. The replacement owns both the confirm and the dismiss.
+
+Classes for the trigger wrapper and for the pointer. `decoClassName` also takes over its position.
+
+A compact action menu under a trigger button. It is the usual home for row actions, comment menus and other context actions in a list.
+
+Content of the default trigger, a ghost button.
+
+Your own trigger instead of the button. It is cloned, so it must forward className, onClick, aria-*.
+
+The menu rows. They render inside a `<ul>`, so write `<li>` items.
+
+The trigger edge the menu lines up with. A `left-0` class cannot change it.
+
+Names the menu for the in-page agent. Without it, the menu publishes no tool.
+
+Classes for the wrapper, the trigger button and the menu panel.
+
+Put on a row with its own interaction, such as a switch, so clicking it keeps the menu open.
+
+The mobile overlay: a panel that slides up from the bottom edge. `type` decides almost everything; like `Modal`, it runs controlled or from its own `trigger`.
+
+Required. `half` is 90% tall with a grab handle; `full` covers the screen with a close row.
+
+Controlled state. Left out, the sheet keeps its own and opens from `trigger` or the ref.
 
 Element that opens the sheet.
 
-`header` replaces the whole top row — the handle or the close row, whichever `type` draws. `handle` and `close` replace just the mark inside it.
+`header` replaces the whole top row; `handle` and `close` replace only the mark inside it.
 
-Classes for the scrolling body, where `className` reaches the sheet surface.
+Classes for the sheet surface and for its scrolling body.
 
-`{ open, close }` — the imperative handle, for a sheet a page opens from somewhere that is not a trigger.
+`{ open, close }`, an imperative handle for opening the sheet without a trigger.
 
-A hint on hover or keyboard focus, in pure CSS — no state, no portal, no positioning pass. That buys a tooltip that costs nothing and renders on the server, and it costs viewport-edge flipping: a bubble near the edge is clipped rather than moved. It is a hint surface, so that is the right trade; when the content has to be read, it is not a tooltip. An empty `content` renders the trigger alone, so a conditional hint needs no wrapper of its own.
+A hint that appears on hover or keyboard focus, drawn in pure CSS. It is for hints only: content that must be read does not belong in a tooltip.
 
-The hint. Empty, null, or undefined renders `children` alone.
+The hint. Empty, `null` or `undefined` renders `children` alone.
 
 The trigger the bubble is anchored to.
 
-Which side the bubble sits on. `top` by default.
+Which side of the trigger the bubble sits on.
 
 The bubble's colour. `Field.Label` uses `info` for the help icon beside a field description.
 
-It is an override slot, so an app that needs a positioned tooltip — one that flips, or follows the pointer — binds its own in `_overrides.tsx` and every existing call site follows.
+Classes for the bubble.
 
-A navigation menu from a data structure rather than from markup: `items` is a tree of `{ key, label, icon?, children? }`, and the component draws the rows, the submenus, and the active state. `mode` is the axis — `inline` for a sidebar, `horizontal` for a top bar, where anything that does not fit folds into an overflow menu.
+A navigation menu built from data rather than markup: you pass an `items` tree and it draws the rows, the submenus and the active state. `mode` picks a sidebar or a top bar.
 
-`{ key, label, icon?, children?, type? }`. A `children` array makes the row a submenu.
+The tree of `MenuItem`s. A `children` array turns the row into a submenu.
 
-The axis. `inline` by default; `horizontal` folds the overflow into a trailing menu.
+`inline` for a sidebar. `horizontal` for a top bar, folding what does not fit into a `…` menu.
 
-Controlled and uncontrolled selection, by item key.
+Selected keys. `selectedKeys` is controlled; `defaultSelectedKeys` sets the start, first key only.
 
-Receives the clicked item.
+Receives the clicked item. In `inline` mode a row with children only expands.
 
-Narrows an `inline` menu to its icons.
+Hides the labels, leaving only the icons.
 
-Draws one item's body. The row, its click, and any submenu stay the framework's.
+How the active row is marked: a bottom border, or a `bg-border` fill.
 
-The three levels below `className`, which reaches the wrapper.
+Draws one item's body. The row, its click and any submenu stay the framework's.
 
-`Menu` is a navigation structure and `Dropdown` is a transient action list — they look alike and are not interchangeable. Row actions on a list belong in a `Dropdown`.
+The list, each row and each label. `className` reaches the outer wrapper.
 
-Renders `children` into an element the page already has, named by `id`. This is the wiring behind `Layout.Navbar` — a component deep in a route puts content into the route's top inset without either one knowing about the other. It is server-aware: during SSR the content is captured for the shell rather than dropped, so a portalled navbar is in the first byte instead of appearing after hydration.
+Renders `children` into an element the page already has, named by `id`. It is the wiring behind `Layout.Navbar`: a component deep in a route fills the top bar without either one knowing about the other.
 
-The `id` of the host element. Nothing renders until an element with it exists, so the host has to be mounted first.
+The host element's `id`. Nothing renders until that element is mounted.
 
 What is rendered into the host.
 
-It is not the way to escape a clipping ancestor — `Modal`, `Dropdown`, `Select`, and `Popconfirm` already portal to `document.body` and place themselves against their trigger. Reach for `Portal` only for a named slot the app frame owns.
+Wraps a trigger so that clicking it copies `text` to the clipboard and shows a success toast.
 
-Copy-to-clipboard trigger that also shows a global success message through Akan store messages.
+Text written to the clipboard.
 
-Text copied to the clipboard.
+The success toast. Defaults to "Copied" in the reader's language.
 
-Optional custom success message.
-
-Trigger element.
+The trigger. An element keeps its own `onClick`, which runs before the copy.
 
 Overlays UI
 
-Overlay components cover modal flows, custom dialogs, destructive confirmations, bottom sheets, menus, hints, and copy actions. Use `Modal` for common controlled overlays and the headless `Dialog` namespace for custom composition.
+Words used on this page
 
-Four of them portal to `document.body` and place themselves against their trigger — `Modal`, `Dropdown`, `Popconfirm`, and `Select` — so none of them is clipped by a scrolling modal body or a table's overflow container. `Portal` is the named-slot version of the same mechanism, and `Tooltip` deliberately does none of it.
+Term
+
+Pick a component
+
+Component
+
+Does it
+
+Does not
+
+Related pages
 
 ## Code Examples
 

@@ -121,6 +121,23 @@ describe("DataList", () => {
     expect(list.values.map((value) => value.id)).toEqual(["a", "b", "c"]);
   });
 
+  test("sorts into a new list and leaves the source lookups intact", () => {
+    const list = new DataList<TestItem>([
+      { id: "a", name: "Alpha", score: 10 },
+      { id: "b", name: "Beta", score: 20 },
+      { id: "c", name: "Gamma", score: 30 },
+    ]);
+
+    const sorted = list.sort((a, b) => b.score - a.score);
+
+    expect(sorted.values.map((value) => value.id)).toEqual(["c", "b", "a"]);
+    expect(sorted.pick("a").name).toBe("Alpha");
+    expect(sorted.indexOf("c")).toBe(0);
+    expect(list.values.map((value) => value.id)).toEqual(["a", "b", "c"]);
+    expect(list.pick("a").name).toBe("Alpha");
+    expect(list.get("c")?.name).toBe("Gamma");
+  });
+
   test("copies from another DataList through save", () => {
     const list = new DataList<TestItem>(items);
     const saved = list.save();

@@ -8,90 +8,260 @@
 
 ## Headings
 
-- model.Util.tsx (#util-overview)
+- Model.Util.tsx (#util-overview)
 - File Convention (#file-convention)
 - Model Wrapper Actions (#model-wrapper-actions)
 - Dialog And Modal Actions (#dialog-modal-actions)
-- Query And Context Utilities (#query-context-utils)
-- Practical Rules (#practical-rules)
+- Query And Route Helpers (#query-context-utils)
+- Rules And Common Mistakes (#practical-rules)
 
 ## Content
 
 Model.Util.tsx
 
-model.Util.tsx
+Always a client file
 
-A Util file contains small client-side helper components for a module. It is a good home for action buttons, toolboxes, dialog triggers, query controls, and context-aware navigation pieces.
+"use client" goes on line 1 by file role. A Util exists to handle a click, a hook or the store.
 
-Use Util to keep Page, Zone, Unit, Template, and View files focused. Util components should package interaction UI, not own core business rules.
+Named after its action
+
+Name it after the verb without the model, such as Remove, Resolve or SetOrg. The namespace adds the model.
+
+Takes ids, not models
+
+A model prop would cross the server-client boundary as a class instance. Read the rest from the store.
+
+Calls, never decides
+
+It calls a store action or a Model wrapper. Who may act and what changes is decided by the service and document.
+
+Components from `akanjs/ui` that run a module's generated edit or remove flow for you.
+
+The client store: `st.do.x()` runs an action, and `st.use.x()` reads a key and re-renders on change.
+
+Slice metadata that tells a wrapper which model and list to act on. It sends no request.
+
+The arguments a slice list was loaded with, such as the project ids that filter a ticket list.
+
+Sits beside the module's other files. A service module may have one; a scalar module may not.
+
+Always line 1, above the imports. Template and Zone carry it too; Unit and View never do.
+
+Named exports only. Callers write `Project.Util.Remove`, so no name repeats the model.
+
+Declared right above its component and named after it. It takes ids and plain values.
+
+One flat import for `fetch`, `st` and `usePage`. UI pieces come from `akanjs/ui`.
+
+Draws an Edit button that opens its Template child in an edit modal.
+
+Its children become the trigger. It asks for confirmation, then removes the record.
+
+A stricter remove that shows the record's `name`. `typeNameToRemove` makes the user retype it.
+
+The args the slice list was last loaded with, as an array in the slice's arg order.
+
+Takes one value per slice arg, then reloads the list and insight from page 1.
+
+The current path without the locale prefix, such as `/board/abc/post/1`.
+
+A wrapper from `akanjs/ui` whose click calls `router.back()`.
+
+View
+
+Form
+
+Logic
+
+The Util's job
+
+A button that runs one store action.
+
+Wrappers that open the generated edit and remove flows.
+
+A dialog trigger, and the draft value only that dialog uses.
+
+Filter controls that change a slice list's query args.
+
+Helpers that read the route to decide what to show.
+
+Another file's job
+
+fields and markup
+
+A Unit draws one row, and a View draws one record in full.
+
+A form whose fields are bound to the store.
+
+who may act, what changes
+
+Business rules run on the server, in the service and document.
+
+multi-step async flow
+
+A store action that the Util calls in one line.
+
+Mistake
+
+Instead
+
+Write `isOwner ? <Remove /> : null`, the house form for conditional render.
+
+Pass the setter by reference; the arrow hides the field from the agent and fails lint.
+
+Load data in the page and pass it down; `akan quality ssr` flags a mount-time load.
+
+Lint rejects `fetch.init*` in a client file. Reload with `st.do.initTicketInSelf()`.
+
+A Util with no click, hook or store is server work. Move it to a Unit or View.
+
+How a Unit places a Util button beside its link.
+
+Every generated slice action, including setQueryArgsOf.
+
+Every prop of Model.Edit, Model.Remove and the other wrappers.
+
+In-Page Agent
+
+How st.tool publishes a button to the agent.
+
+A Util file holds a module's small client components, each doing one action: a remove button, a toolbox, a dialog trigger, a filter control or a back link.
+
+Clicks and store actions gather here, so Unit and View stay server-rendered and Page, Zone and Template keep to their own jobs.
+
+Words used on this page
+
+Term
 
 File Convention
 
-Util files usually use client hooks and event handlers, so they start with the use client directive. Export named components that describe the action or helper clearly.
+The rules in the file
+
+Part
 
 Model Wrapper Actions
 
-Many Util components are small controls around generated model wrappers. A toolbox can collect edit, remove, and other model actions without making the Unit or Zone file noisy.
+Most Utils are thin controls around the Model wrappers. A toolbox gathers several of them, so the Unit or Zone that shows it stays small.
+
+Wrapper
+
+A project toolbox in a dropdown menu. Only the owner sees the remove item:
 
 Dialog And Modal Actions
 
-Use Util when an action needs its own dialog, confirmation UI, or small local state. Local component state is fine when it only belongs to that interaction.
+When an action needs a confirmation or a small input first, its dialog lives in the same Util. First decide where the open state lives:
 
-Query And Context Utilities
+Inside the dialog
 
-Util files are also useful for query panels and route-aware helper UI. They can read store state and route context, then call generated store actions or router helpers.
+In the store
 
-Practical Rules
+Local state: SetOrg
 
-Use usePage for labels instead of hard-coded action text.
+SetOrg picks an organization in a dialog, then saves it to the business license:
 
-Call st.do actions or Model wrappers from Util components; keep core business rules elsewhere.
+Store state: Resolve
 
-Use local state only for UI-only interaction values such as an opened dialog or selected option.
+Resolve keeps the modal key in the store, so a store action opens the modal:
 
-Keep props explicit so the caller can see which model id, slice, role, or name the action depends on.
+Query And Route Helpers
 
-Split big toolboxes or workflow modals into named exports instead of hiding too much in one component.
+Filter controls and route-aware helpers are Utils too. They read store or route state, then call a generated action or a router helper.
+
+What they use
+
+Changing a filter
+
+QueryMakerInSelf keeps the project filter of the ticketInSelf list and clears its assignee filter:
+
+Reading the route
+
+BackButton shows a back link only on pages under one board:
+
+Rules And Common Mistakes
+
+What belongs in a Util, and which file takes everything else:
+
+The work
+
+Belongs here
+
+Not here
+
+Writing a Util
+
+Common mistakes
+
+Related pages
 
 ## Code Examples
 
-### Project.Util.tsx
+### apps/koyo/lib/product/Product.Util.tsx
 
 ```ts
-export const Toolbox = ({ projectId, name, role }: ToolboxProps) => {
-  return (
-    <ul className="flex flex-col gap-1 rounded-box border border-border bg-popover p-2 shadow-lg">
-      <li>
-        <Model.Edit renderTitle="name" slice={fetch.slice.projectInOrg} modelId={projectId}>
-          <Project.Template.General />
-        </Model.Edit>
-      </li>
-      {role === "owner" ? (
-        <li>
-          <Model.SureToRemove slice={fetch.slice.project} modelId={projectId} name={name} />
-        </li>
-      ) : null}
-    </ul>
-  );
-};
-```
+"use client";
+import { fetch, usePage } from "@apps/koyo/client";
+import { Model } from "akanjs/ui";
+import { BiTrash } from "react-icons/bi";
 
-### __Model__.Util.tsx
-
-```ts
+interface RemoveProps {
+  productId: string;
+}
 export const Remove = ({ productId }: RemoveProps) => {
   const { l } = usePage();
   return (
     <Model.Remove modelId={productId} slice={fetch.slice.product}>
-      {l("base.remove")}
+      <BiTrash /> {l("base.remove")}
     </Model.Remove>
   );
 };
 ```
 
-### BizLicense.Util.tsx
+### apps/koyo/lib/project/Project.Util.tsx
 
 ```ts
+interface ToolboxProps {
+  projectId: string;
+  name: string;
+  isOwner: boolean;
+}
+export const Toolbox = ({ projectId, name, isOwner }: ToolboxProps) => {
+  const { l } = usePage();
+  const archive = st
+    .tool("archiveProject")
+    .desc("Archive one project.")
+    .arg("projectId", ID)
+    .exec((id) => st.do.archiveProject(id));
+  return (
+    <Dropdown
+      value={<AiOutlineMore />}
+      content={
+        <>
+          <li>
+            <Model.Edit renderTitle="name" slice={fetch.slice.projectInOrg} modelId={projectId}>
+              <Project.Template.General />
+            </Model.Edit>
+          </li>
+          <li>
+            <button onClick={() => void archive(projectId)}>{l("project.archiveProject")}</button>
+          </li>
+          {isOwner ? (
+            <li>
+              <Model.SureToRemove slice={fetch.slice.project} modelId={projectId} name={name} />
+            </li>
+          ) : null}
+        </>
+      }
+    />
+  );
+};
+```
+
+### apps/koyo/lib/bizLicense/BizLicense.Util.tsx
+
+```ts
+interface SetOrgProps {
+  bizLicenseId: string;
+}
 export const SetOrg = ({ bizLicenseId }: SetOrgProps) => {
   const { l } = usePage();
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -103,7 +273,13 @@ export const SetOrg = ({ bizLicenseId }: SetOrgProps) => {
       <Dialog.Modal>
         <Field.ParentId value={orgId} onChange={setOrgId} slice={fetch.slice.orgInSelf} />
         <Dialog.Action>
-          <button onClick={() => orgId && st.do.setOrgInBizLicense(bizLicenseId, orgId)}>
+          <button
+            className={buttonRecipe({ variant: "primary" })}
+            disabled={!orgId}
+            onClick={() => {
+              if (orgId) void st.do.setOrgInBizLicense(bizLicenseId, orgId);
+            }}
+          >
             {l.trans({ en: "Save", ko: "저장" })}
           </button>
         </Dialog.Action>
@@ -113,40 +289,43 @@ export const SetOrg = ({ bizLicenseId }: SetOrgProps) => {
 };
 ```
 
-### Report.Util.tsx
+### apps/koyo/lib/report/Report.Util.tsx
 
 ```ts
-export const Resolve = ({ report }: ResolveProps) => {
+interface ResolveProps {
+  reportId: string;
+}
+export const Resolve = ({ reportId }: ResolveProps) => {
   const { l } = usePage();
   const reportModal = st.use.reportModal();
   return (
     <>
-      <button onClick={() => st.do.editReport(report.id, { modal: `resolve-${report.id}` })}>
+      <button onClick={() => void st.do.editReport(reportId, { modal: `resolve-${reportId}` })}>
         {l("report.resolveReport")}
       </button>
-      <Modal open={reportModal === `resolve-${report.id}`} onCancel={st.do.resetReport}>
-        <button onClick={() => st.do.resolveReport(report.id)}>{l.trans({ en: "Confirm", ko: "확인" })}</button>
+      <Modal open={reportModal === `resolve-${reportId}`} onCancel={st.do.resetReport}>
+        <button onClick={() => void st.do.resolveReport(reportId)}>{l.trans({ en: "Confirm", ko: "확인" })}</button>
       </Modal>
     </>
   );
 };
 ```
 
-### Ticket.Util.tsx
+### apps/koyo/lib/ticket/Ticket.Util.tsx
 
 ```ts
 export const QueryMakerInSelf = () => {
   const { l } = usePage();
-  const [projectIds, userIds] = st.use.queryArgsOfTicketInSelf();
+  const [projectIds] = st.use.queryArgsOfTicketInSelf();
   return (
-    <button onClick={() => st.do.setQueryArgsOfTicketInSelf([projectIds ?? [], userIds])}>
-      {l.trans({ en: "Apply Filter", ko: "필터 적용" })}
+    <button onClick={() => void st.do.setQueryArgsOfTicketInSelf(projectIds, [])}>
+      {l.trans({ en: "All Assignees", ko: "모든 담당자" })}
     </button>
   );
 };
 ```
 
-### Board.Util.tsx
+### apps/koyo/lib/board/Board.Util.tsx
 
 ```ts
 interface BackButtonProps {

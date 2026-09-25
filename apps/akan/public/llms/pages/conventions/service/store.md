@@ -17,37 +17,155 @@
 
 service.store.ts
 
-Four of the eight service modules in this workspace have a store, and two of those four are empty. That ratio is the first thing to know about this file: it is the only one in the folder you are expected not to need.
+A value the store holds. A component that reads a key re-renders when that key changes.
 
-A model store is generated: declare a slice and you get list state, form state, pagination and the CRUD actions without writing any of them. A service store is bound to a name rather than a model, so none of that arrives. What you declare is what exists.
+A method of the store class. Components call it as `st.do.<action>()`.
 
-Two comments, and they stay. They are the empty scaffold marking where each half goes — state inside the factory, actions in the class body — and deleting them costs the next reader the one thing the file was telling them.
+How a client component reads a key (`st.use.<key>()`) and runs an action (`st.do.<action>()`).
+
+A store bound to a model's signal, `store(sig.<model>, …)`. Lists, forms and CRUD are generated.
+
+A store bound to a plain name, `store("<name>" as const, …)`. Nothing is generated from a model.
+
+The map viewport and the notification permission, plus two map actions.
+
+No state. Only the `login` and `logout` actions.
+
+The empty scaffold.
+
+Generated from the model's slices
+
+A list and its insight for every slice.
+
+Pagination state for every slice.
+
+The edit form, with one setter per field.
+
+CRUD actions that call the generated endpoints.
+
+Comes with every key you declare
+
+Subscribes a component to that one key.
+
+A setter for the key, unless the key is `search`/`computed` or an action has that name.
+
+Written by you
+
+Methods in the class body. Besides the key setters, a service store has no other actions.
+
+The only way a value leaves an action. An object merges shallowly; a function edits an immer draft.
+
+Returns the current state. Use it when a value may be missing.
+
+Returns keys that must exist, and throws if one is `null`, `undefined` or `""`.
+
+Allowed
+
+Lint error
+
+Inside a store class
+
+A value returned from an action. No caller can ever read it.
+
+A bare guard clause that ends the action early.
+
+A return that belongs to a nested callback.
+
+A getter is not an action.
+
+A static method is not an action either.
+
+Client-safe
+
+The generated client from `"../useClient"`, and the store's only way to the server.
+
+Model classes, `router`, `setAuth` and other browser-side helpers.
+
+Erased before bundling, so a type from a server file is fine.
+
+Server-side or route-only
+
+Server modules. One value import drags their whole graph into the browser bundle.
+
+Server-only folders and barrels, plus `option`, `useServer` and any `server` entrypoint.
+
+Loaded by the route before the first byte. The client reloads via `st.do.init<Model><Suffix>()`.
+
+The `persist`, `session`, `search` and `computed` builders, and the state a model store generates.
+
+Declares the endpoints that `fetch.*` calls.
+
+The client component that reads this store's keys.
+
+The control that runs one of this store's actions.
+
+Fill it only when several components share a value, or a screen needs an action that calls the module's endpoint.
+
+Words used on this page
+
+Term
+
+How many service modules have one
+
+Four of the eight service modules in this workspace have a store, and two of those four are still the empty scaffold:
+
+Service module
+
+What its store holds
+
+What a service store does not get
+
+A model store is built from its signal's slices, so list, form and CRUD state arrive without code. A service store is bound to a name instead of a model, so it has only what you declare, plus a reader and a setter for each key.
+
+What exists
+
+Exists
+
+Not there
+
+The skeleton
 
 State The Screen Shares
 
-The state that earns a place here is the state more than one component reads. A map's viewport is the clearest case: the map draws it, a control panel edits it, a list filters by it, and none of them owns it.
+A key earns a place here when more than one component reads it. A map's viewport is the clearest case: the map draws it, a control panel edits it, a list filters by it, and none of them owns it.
 
-Every key in the factory becomes a subscription: st.use.mapZoom() in a client component re-renders it when the value changes, and nothing else does. The derived work is a static on the scalar — Coordinate.getBounds lives on the constant, where the server can call it too, and the store only decides when to run it.
+The util library keeps its viewport in its service store:
 
 An Action Returns Nothing
 
-Every method on a store class is dispatched through st.do.<action>(), and that dispatch is typed void. A value you return is not narrowed, not wrapped, and not delivered — it is unreachable. Write it into state with this.set({ ... }) instead; a lint rule refuses the return, and a bare return; guard clause stays fine.
+The first action below shows the mistake and its fix. The second is a real action from the same store:
 
-the only way a value leaves an action. Partial — name the keys that changed
+Reading and writing inside an action
 
-reads current state when the value may be missing. this.pick(key) when it must exist
+Method
 
-a bare guard clause, a return inside a nested callback, a getter and a static helper are all still legal
+Which returns are allowed
 
-An action does not try/catch either. A fetch that throws an Err is already a toast the framework raises with the dictionary's own wording, and a catch that swallows it replaces a translated message with silence. Client-side validation failure is msg.error("<key>") plus an early return, never a throw.
+Return
+
+Applies
+
+Does not apply
+
+Errors: let the framework show them
+
+The server refused
+
+A client check failed
 
 Calling The Endpoint
 
-A store is the one client file that calls fetch.*. A component never does: it reads with st.use.* and writes with st.do.*, and the round trip in between belongs here so that two components clicking the same button cannot disagree about what happens.
+The shared library's logout action is the whole shape:
 
-Three lines and a navigation: call the endpoint, write the result into state, tell the router. That is the whole shape of a store action, and a body much longer than this one is usually a decision the service should have made.
+Almost every store action follows the same three steps:
 
-One more boundary: a store is a client file, so it may not import a service, a signal, a document, a dictionary, or anything under srvkit/. It reaches the server only through the generated fetch, and it may not call fetch.init* at all — that one is a hydration snapshot the route resolves before the first byte.
+A body much longer than this is usually a decision the service should have made.
+
+What a store may reach
+
+Import or call
+
+Related pages
 
 ## Code Examples
 
@@ -83,11 +201,11 @@ export class UtilStore extends store("util" as const, () => ({
 }
 ```
 
-### A service store action
+### libs/util/lib/_util/util.store.ts
 
 ```ts
 async refreshNotiPermission() {
-  const notiPermission = await requestNotiPermission();
+  const notiPermission = await Notification.requestPermission();
   this.set({ notiPermission }); // [!code ++]
   return notiPermission; // [!code --]
 }
@@ -106,6 +224,7 @@ import { router, setAuth } from "akanjs/client";
 import { store } from "akanjs/store";
 
 import * as cnst from "../cnst";
+import type { RootStore } from "../st";
 import { fetch } from "../useClient";
 
 export class SharedStore extends store("shared" as const, () => ({
@@ -114,7 +233,8 @@ export class SharedStore extends store("shared" as const, () => ({
   async logout() {
     const { jwt } = await fetch.signoutUser();
     setAuth({ jwt });
-    this.set({ me: new cnst.Admin(), self: new cnst.User() });
+    (this as unknown as RootStore).set({ me: new cnst.Admin(), self: new cnst.User() });
+    void (this as unknown as RootStore).getSelf({ jwt });
     router.refresh();
   }
 }

@@ -160,7 +160,7 @@ This code creates two input fields: one for selecting ice cream size (small/medi
 
 The "st.use.icecreamOrderForm()" gets the current form data, while "st.do.setSizeOnIcecreamOrder" and "st.do.setToppingsOnIcecreamOrder" update the form when customers make selections.
 
-🎉 Now customers can create orders using your form. But how do we show those orders in a nice, visual way? Let's create a card design to display each order beautifully.
+Now customers can create orders using your form. But how do we show those orders in a nice, visual way? Let's create a card design to display each order beautifully.
 
 Update unit file
 
@@ -170,7 +170,7 @@ This creates a card design for each ice cream order. The card shows the order ID
 
 The cn function changes the card's appearance based on the order status, and l() displays the status text in the user's language.
 
-🚀 We have the form (Template) and the display card (Unit). Now let's put it all together on a webpage so customers can actually visit and use your ice cream ordering system!
+We have the form (Template) and the display card (Unit). Now let's put it all together on a webpage so customers can actually visit and use your ice cream ordering system!
 
 Expose to page
 

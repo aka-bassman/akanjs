@@ -199,6 +199,13 @@ export const dictionary = modelDictionary(["en", "ko"])
       type: "Date",
       defaultValue: "2026-01-01",
     });
+    const nowReport = await script.addField(workspace, {
+      app: "demo",
+      module: "post",
+      field: "startAt",
+      type: "Date",
+      defaultValue: "now",
+    });
     const invalidReport = await script.addField(workspace, {
       app: "demo",
       module: "post",
@@ -210,6 +217,7 @@ export const dictionary = modelDictionary(["en", "ko"])
     expect(booleanReport.status).toBe("passed");
     expect(stringReport.status).toBe("passed");
     expect(dateReport.status).toBe("passed");
+    expect(nowReport.status).toBe("passed");
     expect(invalidReport.status).toBe("failed");
     expect(invalidReport.diagnostics).toContainEqual(
       expect.objectContaining({ code: "primitive-default-value-invalid", input: "default" }),
@@ -217,7 +225,9 @@ export const dictionary = modelDictionary(["en", "ko"])
     const constant = await module.readFile("post.constant.ts");
     expect(constant).toContain("published: field(Boolean, { default: false }),");
     expect(constant).toContain('title: field(String, { default: "Untitled" }),');
-    expect(constant).toContain('dueAt: field(Date, { default: new Date("2026-01-01") }),');
+    expect(constant).toContain('dueAt: field(Date, { default: () => dayjs("2026-01-01") }),');
+    expect(constant).toContain("startAt: field(Date, { default: () => dayjs() }),");
+    expect(constant).toMatch(/import \{[^}]*\bdayjs\b[^}]*\} from "akanjs\/base";/);
     expect(constant).not.toContain("budget:");
   });
 

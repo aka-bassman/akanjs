@@ -58,23 +58,25 @@ mutation is mounted under. `conventions` carries the invariants — this is the 
 
 ## Cached Answers
 
-- **`{ cache: <ms> }` in an endpoint's signal option is the whole cache surface.** The `Cache` middleware is
-  registered by default and stands aside unless an endpoint declares one — it used to be opt-in and to ignore the
-  declared value for a hard-coded 60 seconds, which is the same shape the `timeout` bug had.
+- **`{ cache: <ms> }` in an endpoint's signal option is the whole cache surface.** The lookup is a step of every
+  call and stands aside unless an endpoint declares one.
 - **Only a `query` that takes no internal argument may carry one.** The handler's inputs are its declared
   arguments plus its internal ones, so an endpoint with none of the latter answers the same thing to everyone who
   may read it — which is the only answer a shared entry can hold. An endpoint that takes `.with(Self)` answers
   per caller, and one entry would be one caller's answer handed to the next; that endpoint and every `mutation`
   are named once in the log and left uncached rather than silently ignored.
-- **The guards run on every hit.** A cache hit skips `next()`, and `next()` is what runs them, so the middleware
-  calls `context.checkGuards()` itself before handing the entry over. Shared is not public.
-- **The entry is the handler's result, not the response.** The middleware wraps execution, so `resolveReturn`
+- **The guards run before every hit.** The lookup sits after the guards and the internal arguments, inside the
+  call, so every middleware — the account resolution a lib registers among them — has already run and a hit
+  reaches only a caller the guards admitted. It used to be a middleware ahead of the lib's, and a guard reading
+  the account refused a signed-in caller on every hit. Shared is not public.
+- **The entry is the handler's result, not the response.** The lookup wraps the handler only, so `resolveReturn`
   still runs per call on the cached value — field masking, `hidden`/`secret` stripping and relation resolution are
   never cached, and a relation still costs its own load. The cache saves the handler, not the serialization.
 - **A cache backend that is down does not take the endpoint down.** A failed read is warned and the call runs
   uncached; a failed write is warned and dropped.
-- The default middleware chain is `Logging → Timeout → Cache → handler`: a hung cache backend is bounded by the
-  same deadline as the handler it stands in for. **`Retry` was removed** — an automatic re-run of an endpoint
+- The default middleware chain is `Logging → Timeout → <lib middlewares>`, and the call inside it runs guards →
+  internal arguments → cache → handler: a hung cache backend is bounded by the same deadline as the handler it
+  stands in for. **`Retry` was removed** — an automatic re-run of an endpoint
   whose failure it cannot classify replays whatever the first attempt already did.
 
 ## Binary Pubsub

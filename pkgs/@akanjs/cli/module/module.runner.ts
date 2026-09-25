@@ -9,38 +9,19 @@ const purposeByModule: Record<string, string> = {
   task: "Task represents work items that move through the app workflow.",
 };
 
-const moduleAbstractContent = (moduleName: string) => {
+const moduleAbstractContent = (moduleName: string, sharedGuards: boolean) => {
   const title = capitalize(moduleName);
-  const label = bilingualLabelForField(moduleName);
-  const purpose =
-    purposeByModule[moduleName] ?? `${title} represents ${label.en.toLowerCase()} records managed by the app.`;
-  return `# ${title} Module Abstract
-
-## Purpose
-
+  const noun = bilingualLabelForField(moduleName).en.toLowerCase();
+  const purpose = purposeByModule[moduleName] ?? `${title} represents ${noun} records managed by the app.`;
+  const writeRule = sharedGuards
+    ? `Anyone may read a ${noun}; only an admin creates, updates or removes one.`
+    : `Anyone may read a ${noun}; nobody creates, updates or removes one until the slice names a guard.`;
+  return `# ${moduleName} Abstract
 ${purpose}
 
-## Domain Rules
-
-- Keep ${label.en.toLowerCase()} data consistent with user-facing dictionary labels.
-
-## Data Meaning
-
-${label.en} (${label.ko}) is the primary business concept for this module.
-
-## Workflows
-
-No lifecycle workflow yet.
-
-## Agent Notes
-
-- Read this abstract before changing the module.
-- Update this file when business invariants, workflows, or public behavior change.
-- Do not update this file for formatting-only, import-only, or style-only changes.
-
-## Related Modules
-
-- None yet.
+## Rules
+- ${writeRule}
+- Removal is soft: a removed ${noun} keeps its row with \`removedAt\` set.
 `;
 };
 
@@ -73,6 +54,12 @@ export class ModuleRunner extends runner("module") {
   }
   async removeModule(module: Module) {
     await module.sys.removeDir(`lib/${module.name}`);
+  }
+  async #hasSharedGuards(module: Module) {
+    const { sys } = module;
+    if (sys.type === "lib" && sys.name === "shared") return true;
+    if (!(await sys.exists("lib/srv.ts"))) return false;
+    return (await sys.readFile("lib/srv.ts")).includes('"@libs/shared/lib/srv"');
   }
 
   async createComponentTemplate(module: Module, type: "unit" | "view" | "template" | "zone" | "util") {
@@ -114,9 +101,11 @@ export class ModuleRunner extends runner("module") {
       zone: localModuleFilename(module.name, "zone"),
       util: localModuleFilename(module.name, "util"),
     };
+    const sharedGuards = await this.#hasSharedGuards(module);
     await module.applyTemplate({
       basePath: `.`,
       template: "module",
+      options: { sharedGuards },
       dict: {
         model: module.name,
         models: names,
@@ -128,7 +117,7 @@ export class ModuleRunner extends runner("module") {
         modelDescKo: modelDescription.ko,
       },
     });
-    await module.writeFile(filenames.abstract, moduleAbstractContent(module.name));
+    await module.writeFile(filenames.abstract, moduleAbstractContent(module.name, sharedGuards));
 
     const [
       abstractContent,

@@ -1,0 +1,8 @@
+# <%= model %> Abstract
+
+<One sentence: the value this scalar holds, and what embeds it.>
+
+## Rules
+
+- <What a caller may assume about the value that the constant file cannot say: an order, a unit, a fixed value.>
+- <Two to five of them. A single field's meaning goes in a trailing comment beside it in the constant file.>

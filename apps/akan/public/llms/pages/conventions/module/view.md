@@ -20,64 +20,140 @@
 
 Model.View.tsx
 
-Renders the full model. Use it for detail pages and sections that need body content, histories, logs, or full nested data.
+The complete model class, such as `cnst.Ticket`, with every field the constant declares.
 
-Renders the light model. Use it for list rows, cards, table items, and compact summaries.
+A slimmer class, such as `cnst.LightTicket`, holding only the fields a list needs.
 
-Stores the hydrated full model instance from the server view object.
+What `fetch.viewTicket(id)` returns as `ticketView`: one record as plain data.
 
-Marks the full model as ready so the View can render without showing loading UI.
+Filling the client store with data the server already fetched, so no second request is sent.
 
-Marks the current model state as view mode. Other model wrappers can distinguish view/edit/new flows.
+Takes the full model
 
-Stores the server view timestamp so Load.View can avoid replacing newer client state with older view data.
+Every field is there, including long text and nested data that a list leaves out.
 
-A View file renders full-model detail UI. It is usually used by detail pages or Zone wrappers that already have full view data from the server.
+Only draws
 
-View components are presentation components. They may compose Unit, Util, Zone, and local subcomponents, but mutation and business decisions should stay outside the View.
+It may render Units, Utils, Zones and its own subcomponents. Saving and deciding happen elsewhere.
+
+Exports General
+
+Drawn through a Zone
+
+Model
+
+Export
+
+Props
+
+Drawn by
+
+one record in full
+
+For one detail page or detail section.
+
+one item of many
+
+For list rows, cards and compact summaries.
+
+The full model instance, built from the payload's `<model>Obj`.
+
+Set to `false`, so the View draws right away with no loading state.
+
+Set to `"view"`, so a modal wrapper opens the record to read, not its edit form.
+
+The `Date` the server stamped on the payload, used to compare it with the store.
+
+Drawing — the View's job
+
+fields and markup
+
+Titles, body text, nested data and formatted numbers from the full model.
+
+Field names, enum values and headings come from the dictionary.
+
+A View may render Units, Utils and Zones; each keeps its own job.
+
+Behaviour — another file
+
+Hooks need the browser, so they live in a Util or a Zone.
+
+Store reads and writes. The store, signal and service do the actual mutation.
+
+Hydrates the store from the view payload and hands the model to the View.
+
+Called in the route, so the query starts before the first byte is sent.
+
+The light-model counterpart, for list rows and cards.
+
+Where the buttons and actions inside a View live.
+
+The detail Zone, with every prop of Load.View.
+
+UI Architecture
+
+Why each UI file role runs on the server or the client.
+
+A View file draws one record in full: the body of a detail page or a detail section. It takes the full model as a prop and only draws it.
+
+Words used on this page
+
+Term
 
 View vs Unit
 
-The main distinction is data size and page role. View is for full detail, while Unit is for repeated summary UI.
+Both files only draw a model. They differ in how much of the model they get and in the role they play on the page.
 
 Standard View Shape
 
-A standard View exports General, accepts className and a full model prop, then uses dictionary labels for field names and statuses.
+Every View file starts from the same skeleton. Here is the whole file for a ticket:
 
 Full Model Detail Patterns
 
-A View can render every field defined on the constant full model because it receives the full model shape, not the light summary shape.
+A View receives the full model, not the light summary, so it can draw any field the constant declares on it. Plain text fields go straight into the markup:
+
+An enum goes through its dictionary label, and a number is formatted where it is drawn:
 
 Using View In Pages
 
-A server page starts the view request, then passes the view payload to a Zone wrapper or directly into Load.View. Leaving the call un-awaited hands the promise across instead of the resolved object, so the surrounding page markup is sent while the query is still running and Load.View fills the section in behind its own boundary.
+Destructure — streamed
 
-Await the call instead when the page itself reads the model — a title, an id used to build a link, or a redirect decision. `await fetch.viewRelease(id)` returns the same object it always did, and the sibling `release` field is the hydrated model, which stays on the server because React Flight refuses a class instance as a client prop.
+The page markup is sent while the query runs. The section fills in behind its own boundary.
+
+await — part of the shell
+
+For when the page itself reads the model: a title, an id for a link, or a redirect decision.
+
+Streamed
+
+The usual detail page does not await, and hands the promise across as it is:
+
+Awaited
 
 Load.View And Store Hydration
 
-Load.View safely hydrates server-provided full model data into the client store. It sets the model, loading state, modal state, and view timestamp before rendering your View.
+What it writes to the store
 
-Use this wrapper when rendering server-fetched view data inside client Zones, tab layouts, or reusable sections.
+Store key
 
 Practical Rules
 
-Accept full model props in View components. Use Unit for light list or card summaries.
+What belongs in a View, and which file takes everything else:
 
-Use dictionary labels for field names, statuses, and headings.
+The work
 
-Split large Views into named section components instead of one giant General component.
+Belongs here
 
-Keep mutations in Util, Store, Signal, or Service. View should mostly render the current full model.
+Not here
 
-Use Load.View when server-fetched view data must hydrate into client store state.
+Related pages
 
 ## Code Examples
 
-### Ticket.View.tsx
+### apps/koyo/lib/ticket/Ticket.View.tsx
 
 ```ts
-import { type cnst, usePage } from "@apps/myapp/client";
+import { type cnst, usePage } from "@apps/koyo/client";
 import { cn } from "akanjs/client";
 
 interface GeneralProps {
@@ -90,38 +166,50 @@ export const General = ({ className, ticket }: GeneralProps) => {
   return (
     <div className={cn("flex w-full flex-col gap-4", className)}>
       <h1>{ticket.title}</h1>
-      <div>{l("ticket.status")}: {l(`ticketStatus.${ticket.status}`)}</div>
+      <div>
+        {l("ticket.status")}: {l(`ticketStatus.${ticket.status}`)}
+      </div>
+      <p>{ticket.content}</p>
     </div>
   );
 };
 ```
 
-### Article.View.tsx
+### apps/blog/lib/article/Article.View.tsx
 
 ```ts
-interface ArticleViewProps {
+import type { cnst } from "@apps/blog/client";
+import { cn } from "akanjs/client";
+
+interface GeneralProps {
+  className?: string;
   article: cnst.Article;
 }
 
-export const General = ({ article }: ArticleViewProps) => (
-  <article>
-    <h1>{article.title}</h1>
-    <p>{article.description}</p>
-  </article>
-);
+export const General = ({ className, article }: GeneralProps) => {
+  return (
+    <article className={cn("flex flex-col gap-2", className)}>
+      <h1>{article.title}</h1>
+      <p>{article.description}</p>
+    </article>
+  );
+};
 ```
 
-### Order.View.tsx
+### apps/koyo/lib/order/Order.View.tsx
 
 ```ts
-interface OrderViewProps {
+import { type cnst, usePage } from "@apps/koyo/client";
+
+interface GeneralProps {
+  className?: string;
   order: cnst.Order;
 }
 
-export const General = ({ order }: OrderViewProps) => {
+export const General = ({ className, order }: GeneralProps) => {
   const { l } = usePage();
   return (
-    <div>
+    <div className={className}>
       <span>{l(`orderStatus.${order.status}`)}</span>
       <div>{order.totalPrice.toLocaleString()}</div>
     </div>
@@ -129,26 +217,67 @@ export const General = ({ order }: OrderViewProps) => {
 };
 ```
 
-### detail page
+### apps/koyo/page/ticket/[ticketId]/_index.tsx
 
 ```ts
+import { fetch, Ticket } from "@apps/koyo/client";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
+
 export default page()
-  .param("releaseId", ID)
-  .render(async ({ releaseId }) => {
-    const { releaseView } = fetch.viewRelease(releaseId);
-    return <Release.Zone.View view={releaseView} />;
+  .param("ticketId", ID)
+  .render(({ ticketId }) => {
+    const { ticketView } = fetch.viewTicket(ticketId);
+    return <Ticket.Zone.View view={ticketView} />;
   });
 ```
 
-### Release.Zone.tsx
+### apps/koyo/page/ticket/[ticketId]/_index.tsx
 
 ```ts
-interface ViewProps {
-  view: ClientView<"release", cnst.Release>;
-}
+import { fetch, Ticket, usePage } from "@apps/koyo/client"; // [!code collapse:4]
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
+import { buttonRecipe, Link } from "akanjs/ui";
 
-export const View = ({ view }: ViewProps) => {
-  return <Load.View view={view} renderView={(release) => <Release.View.General release={release} />} />;
+export default page()
+  .param("ticketId", ID)
+  .render(async ({ ticketId }) => {
+    const { l } = usePage();
+    const [{ ticket, ticketView }] = await Promise.all([
+      fetch.viewTicket(ticketId),
+    ]);
+    return (
+      <div className="flex flex-col gap-4">
+        <Ticket.Zone.View view={ticketView} />
+        <Link className={buttonRecipe()} href={`/ticket/${ticket.id}/edit`}>
+          {l("base.updateModel", { model: l("ticket.modelName") })}
+        </Link>
+      </div>
+    );
+  });
+```
+
+### apps/koyo/lib/ticket/Ticket.Zone.tsx
+
+```ts
+"use client"; // [!code collapse:4]
+import { type cnst, Ticket } from "@apps/koyo/client";
+import type { ClientView } from "akanjs/fetch";
+import { Load } from "akanjs/ui";
+
+interface ViewProps {
+  className?: string;
+  view: ClientView<"ticket", cnst.Ticket>;
+}
+export const View = ({ className, view }: ViewProps) => {
+  return (
+    <Load.View
+      className={className}
+      view={view}
+      renderView={(ticket) => <Ticket.View.General ticket={ticket} />}
+    />
+  );
 };
 ```
 

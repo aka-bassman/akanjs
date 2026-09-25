@@ -10,39 +10,111 @@
 
 - Service.Util.tsx (#service-util)
 - The Shape, If You Write One (#shape)
-- What Sync Will Accept (#allowlist)
+- Two Component Roles (#allowlist)
 
 ## Content
 
 Service.Util.tsx
 
-Not one of the eight service modules in this workspace has this file. That is the most useful thing this page can tell you, and it is not an oversight waiting to be corrected — the rest of the page is about why the file is rare, and what it takes for yours to be the exception.
+A `lib/_<name>` folder with no model: a service, a signal, a dictionary and often a store.
 
-A model module's Util is the verb minus the noun: Serve, Refund, Complete. It belongs to the module because the button it wraps is the module's own endpoint and the record it acts on is the module's own model. A service module has the verb and no noun — so the control usually belongs to the screen that offers it, not to the capability behind it.
+A `lib/<model>` folder built around one stored model. Its Util acts on that model's records.
 
-Put it in ui/
+The file role for a small control, such as a button, that runs an endpoint.
 
-The component renders JSX and is not bound to one model — which is the admission test for ui/ verbatim. A disconnect button, a permission prompt, a map control: all of them are ui/ components the service store happens to drive.
+A file that starts with "use client". It arrives as HTML, then again as JS the browser re-runs.
 
-Put it in page/
+The app or lib folder for components that render JSX and are not bound to one model.
 
-The capability has a screen of its own rather than a section inside somebody else's. The OAuth consent page is a route in libs/shared/page/oauth, which is why _oauth ships ten endpoints and no component.
+Model Module: Verb And Noun
 
-Put it here
+A Util is named for the endpoint verb minus the noun: Serve, Refund, Complete. The button runs the module's own endpoint on the module's own record, so it belongs there.
 
-Only when the control is meaningless outside this module — it reads this store, calls this endpoint, and moving it to ui/ would mean importing the module back in. Then it is a Util, and only then.
+Service Module: Verb Only
+
+It has endpoints but no model, so there is no record for the control to belong to. The control usually belongs to the screen that offers it, not to the capability behind it.
+
+Usually
+
+Not bound to one model
+
+A disconnect button, a permission prompt, a map control. The service store only drives it.
+
+A screen of its own
+
+The OAuth consent screen is a route in `libs/shared/page/oauth`, not a component.
+
+Rarely
+
+Meaningless outside this module
+
+It reads this store and calls this endpoint. In `ui/` it would import the module back in.
+
+Line 1, above the imports, in every `.Util.tsx`. A Util is always a client component.
+
+The endpoint `printReceipt` minus its noun. Callers write `<Receipt.Util.Print>`.
+
+Sits right above the component with `className` first, and is not exported.
+
+An id, not the order. A `cnst` model prop arrives on the client as a plain object, methods stripped.
+
+Publishes the button to the in-page agent, so a click and the agent run one handler.
+
+The label comes from the module's dictionary, never from a string literal.
+
+Roles that need a model
+
+Binds to a model's form state.
+
+Renders one light model, such as a list card.
+
+Renders one full model, such as a detail screen.
+
+Roles that need no model
+
+One client control.
+
+One client section a page drops in whole.
+
+The other component role, for a whole section.
+
+The common case: a control bound to one model's records.
+
+Where most service-driven controls actually live.
+
+The store keys and actions a Util reads and calls.
+
+This page explains why the file is rare, where the control goes instead, and what it takes for yours to be the exception.
+
+Words used on this page
+
+Term
+
+Why it is rare
+
+Where the control goes
+
+The control is
+
+Goes here
+
+Not here
 
 The Shape, If You Write One
 
-A Util is always a client component, mechanically: "use client" on line 1, above the imports, in every .Util.tsx there is. Exports are role names, and for a service module the role is the endpoint verb.
+The rules in the file
 
-Three rules are load-bearing in those sixteen lines. The props interface sits immediately above the component with className first and is not exported. The prop is an id string rather than the order itself — a cnst model on a Util prop is a lint error, because the server would have to hand a class instance across the boundary and the methods do not survive the trip. And the label comes from the dictionary, never from a literal.
+Part
 
-What Sync Will Accept
+Two Component Roles
 
-A service module folder has exactly two component roles: Service.Util.tsx and Service.Zone.tsx. There is no Template, no Unit and no View. akan sync will happily collect a file that ignores that — the rule is carried by akan quality scan, which asks for predictable module UI filenames and names service modules as Util and Zone only.
+Role
 
-Those three missing roles are the three that would need a model. Template binds to a model's form state, Unit renders one light model, View renders one full model — none of which a service module has. What is left is one client control and one client section, and the framework agrees that is all there should be: the SSR scanner exempts every lib/_ folder from the rule that warns when a module renders only from client files, because a service module owns no model to render on the server.
+Allowed
+
+Not allowed
+
+Related pages
 
 ## Code Examples
 
@@ -52,6 +124,7 @@ Those three missing roles are the three that would need a model. Template binds 
 "use client";
 
 import { st, usePage } from "@apps/koyo/client";
+import { ID } from "akanjs/base";
 import { Button } from "akanjs/ui";
 
 interface PrintProps {
@@ -60,20 +133,22 @@ interface PrintProps {
 }
 export const Print = ({ className, icecreamOrderId }: PrintProps) => {
   const { l } = usePage();
-  const printing = st.use.printing();
+  const isPrinting = st.use.isPrinting();
+  const print = st
+    .tool("printReceipt")
+    .desc("Print the receipt of one ice cream order.")
+    .arg("icecreamOrderId", ID)
+    .exec((id) => st.do.printReceipt(id));
   return (
-    <Button className={className} disabled={printing} onClick={() => st.do.printReceipt(icecreamOrderId)}>
+    <Button
+      className={className}
+      disabled={isPrinting}
+      onClick={() => print(icecreamOrderId)}
+    >
       {l("receipt.print")}
     </Button>
   );
 };
-```
-
-### Terminal
-
-```bash
-akan quality scan   # names a Template, Unit or View under lib/_<service>
-akan quality ssr    # lib/_<service> is exempt from akan.ssr.module-missing-server-view
 ```
 
 ## Agent Notes

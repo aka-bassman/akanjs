@@ -435,6 +435,16 @@ describe("HttpClient", () => {
       HttpClient.makeUrl("/items/:id/:missing", [arg("search", "tags", { arrDepth: 1 }), arg("search", "q")], argMap),
     ).toBe("/items/id-1/:missing?tags=a&tags=b&q=hello");
     expect(HttpClient.makeUrl("/items", [arg("search", "empty", { nullable: true })], new Map())).toBe("/items");
+    expect(
+      HttpClient.makeUrl(
+        "/search/:text",
+        [arg("search", "q")],
+        new Map([
+          ["text", "a/b?c#d %"],
+          ["q", "x"],
+        ]),
+      ),
+    ).toBe("/search/a%2Fb%3Fc%23d%20%25?q=x");
     // `Any` has a structure the query string cannot spell, and `String(value)` would send "[object Object]".
     expect(
       HttpClient.makeUrl(
@@ -1265,6 +1275,31 @@ describe("FetchClient HTTP generation", () => {
     expect(() =>
       FetchClient.build<{ fetch: unknown }>({}, { missingConstant: missingConstantSignal }, { connect: false }),
     ).not.toThrow();
+  });
+
+  test("offers view and edit exactly when the get handler they read through exists", () => {
+    const readOnly: SerializedSignal = {
+      prefix: "readOnly",
+      getGuards: ["Public"],
+      slice: { "": { args: [] } },
+      endpoint: {},
+    };
+    const writeOnly: SerializedSignal = {
+      prefix: "writeOnly",
+      cruGuards: ["Admin"],
+      slice: { "": { args: [] } },
+      endpoint: {},
+    };
+    const handler = new FetchClient("https://api.example", {}, { readOnly, writeOnly }).handler as Record<
+      string,
+      unknown
+    >;
+
+    expect(typeof handler.viewReadOnly).toBe("function");
+    expect(handler.editReadOnly).toBeUndefined();
+    expect(handler.viewWriteOnly).toBeUndefined();
+    expect(handler.editWriteOnly).toBeUndefined();
+    expect(typeof handler.mergeWriteOnly).toBe("function");
   });
 
   test("shares one browser client across app and lib builds so a lib subscribe lands on the connected socket", () => {

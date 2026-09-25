@@ -56,13 +56,13 @@ akan.config.ts describes how the app is built and routed. The env/ folder descri
 
 File
 
-Values used by browser or client-side code. Keep only public-safe values here, such as map keys, site keys, or feature switches.
+Public-safe values for client code, such as map keys, site keys, or feature switches.
 
-Values used only by server-side modules. Put server options, connection settings, and private service configuration here.
+Server-only values: server options, connection settings, private service configuration.
 
-Each suffix is selected by AKAN_PUBLIC_ENV. Use local for your machine, testing for tests, debug and develop for shared stages, and main for production.
+Suffixes chosen by AKAN_PUBLIC_ENV: your machine, tests, two shared stages, production.
 
-Type files define the shape of env values, so missing or misspelled settings can be caught while coding.
+The shape of env values, so a missing or misspelled setting is caught while coding.
 
 Client env and publicEnv are different. env.client.* stores app values for each environment, while publicEnv only allows selected process.env names to be exposed to browser builds.
 
@@ -74,13 +74,15 @@ lib/option.ts is where the app configures its server. env/ holds the values, aka
 
 Stage
 
-apiKey, model, and host for whichever adaptor holds LlmAdaptorRole. Take the key from the env object rather than writing it here — env.server.* is gitignored, this file is not.
+apiKey, model, and host for whichever adaptor holds LlmAdaptorRole.
 
-Who may spend the LLM key through the runAgentTurn relay, named as the guards any other endpoint would name. Several are ANDed. With none the call is refused — the same answer None gives — because the framework has no account model to gate on.
+Guards (ANDed) for spending the LLM key via runAgentTurn; with none, every call is refused.
 
-MCP server settings — instructions, readOnly, path, pageSize, language, auth, and promptBudget, the characters of page data one prompts/get answer may carry (default 60,000; env AKAN_MCP_PROMPT_BUDGET). Not main.ts: the gateway there only spawns children, while this file is handed to the process that mounts /mcp.
+MCP server settings such as instructions, readOnly, and auth.
 
-The registration half: env-derived singletons a service reaches with use<T>(), signal middleware, a predefined adaptor role rebound to the app's own implementation, and web proxies.
+Register env-derived use<T>() singletons, signal middleware, adaptor overrides, web proxies.
+
+Read the LLM key from the env object, never write it in option.ts: env.server.* is gitignored, this file is not.
 
 Each of these has an env spelling too (AKAN_MCP_*, AKAN_AGENT), for a deployment that must configure what the source does not. A value written in option.ts wins over the env of the same name.
 
@@ -88,9 +90,9 @@ Routes and Domains
 
 routes is where you list the public domains for the app. If your app has several clients, each route can also name the client with basePath. The multi-client page explains that structure in detail; here we focus on the config fields.
 
-The client this route opens, and the first page folder its routes live under. Akan strips the slashes, so /store/ and store are the same value. A route without one is the app itself.
+The client this route opens and its first page folder; without one, the route is the app.
 
-Hosts that open this route, keyed by deployment branch. debug, develop, and main always exist, and naming any other key adds that branch. Each host is lower-cased and a port is dropped. Akan also derives one host per basePath per branch, so a route with an empty map still has an address.
+Hosts that open this route, keyed by branch: debug, develop, main, or any key you add.
 
 If you declare basePath, the page folder must follow the same name. See Multi Client for the full page layout rule.
 
@@ -98,19 +100,23 @@ Web Surfaces And Prefixes
 
 web decides which web surfaces the build produces, and api decides where the server mounts its endpoints. Both are declared here rather than only in main.ts, because both are baked into the client bundles: a prebuilt CSR shell or a mobile package never reaches a server that could tell it otherwise.
 
-true builds both surfaces. false is an API-only app: no web artifact is built and no web route is mounted. { csr: false } keeps SSR and drops the single-file shell that the mobile build ships and /__csr serves. There is no CSR-without-SSR option, by type — the CSR bundle inlines the stylesheet the SSR build compiles.
+true builds SSR and CSR, false is API-only, and { csr: false } drops only the CSR shell.
 
-Where signal endpoints are mounted. A blank value and a bare / are both refused — / would swallow every page route. Read it back with getApiPrefix() from akanjs/base; never write the literal.
+Where signal endpoints are mounted; read it back with getApiPrefix() from akanjs/base.
 
-Where the websocket upgrade sits. Read it back with getWsPrefix(). new AkanApp({ prefix, websocketPrefix }) still overrides both for the server and every page it renders.
+Where the websocket upgrade sits; read it back with getWsPrefix().
 
-AKAN_SSR and AKAN_CSR narrow the same choice at boot, and can only narrow it: a deployment cannot switch on a surface the build left out. akan build writes whichever of the two the config already turned off into the generated Dockerfile, and akan start ignores web entirely so the dev surface stays whole.
+Never write either prefix as a literal; new AkanApp({ prefix, websocketPrefix }) still overrides both for the server and every page it renders.
 
-web: { csr: false } together with a mobile section fails the config load. The Capacitor build copies that CSR shell into the native project, so the two declarations cancel each other out — drop the mobile section or leave CSR on.
+AKAN_SSR and AKAN_CSR narrow the same choice at boot, and can only narrow it: a deployment cannot switch on a surface the build left out. akan start ignores web entirely, so the dev surface stays whole.
+
+A mobile app ships the CSR shell, so web: { csr: false } and a mobile section do not go together — drop the mobile section or leave CSR on.
 
 Mobile Metadata
 
 mobile describes the native app identity used by Android and iOS commands. Think of it as the name, package id, and version information that will appear in native app projects. Values at the mobile root are defaults; a target overrides the ones it names.
+
+indexPath is read per target only, so one written at the mobile root is dropped. Firebase app registration must use the same appId.
 
 files maps native target paths to app-relative source files. It is useful for Firebase push config files such as google-services.json and GoogleService-Info.plist. Keep server service account JSON out of client/native file mappings. For platform setup steps, see
 
@@ -130,7 +136,7 @@ Secret Files
 
 Some private values cannot live inside env.server.*.ts, such as service-account JSON, TLS certificates, or private key files. The secrets field lists glob patterns for these files so Akan ships them together with the env/ folder.
 
-akan upload-env archives every matched file, and akan download-env restores them. Patterns are resolved relative to the app directory, and Akan syncs them into a managed block in the root .gitignore, so one declaration both deploys and git-ignores the files.
+akan upload-env archives every matched file, and akan download-env restores them. Patterns are resolved relative to the app directory, and one declaration both deploys and git-ignores the files.
 
 publicEnv exposes variable names to the browser; secrets does the opposite. Only glob patterns live in config — the matched files stay local and git-ignored, so never commit their contents.
 
@@ -138,7 +144,7 @@ Build And Runtime
 
 The rest of the config is for the build system and the production image. Most apps never touch it, but it is where a package stays external, a font survives pruning, a library's routes join the app, and the image gains a system dependency.
 
-A library contributes to three of these. Its own externalLibs, docker.preRuns and docker.postRuns, and assets.keepFonts are read off every libs/*/akan.config.ts and merged into the app's — first occurrence wins, so a step a library and its app both declare becomes one image layer. The generated image installs ca-certificates and tzdata and nothing else, which is why an app that needs ffmpeg or a headless browser declares it.
+A library contributes to three of these: its own externalLibs, docker.preRuns and docker.postRuns, and assets.keepFonts carry into every app that mounts it. The generated image installs ca-certificates and tzdata and nothing else, which is why an app that needs ffmpeg or a headless browser declares it.
 
 A docker written as a string is the whole Dockerfile, taken verbatim. Nothing is merged into it — including the preRuns and postRuns your libraries declared, which are silently dropped rather than silently unapplied.
 
@@ -156,7 +162,7 @@ Skip routes until you need custom domains or multiple clients.
 
 Mobile
 
-appName defaults to the app name, appId defaults to com.<repoName>.<appName>, version defaults to 0.0.1, and buildNum defaults to 1. Pin a real reverse-DNS appId before you ship: akan doctor rejects placeholder ids such as com.example.app, which Apple's portal has almost always already claimed.
+appName defaults to the app name, appId defaults to com.<repoName>.<appName>, version defaults to 0.0.1, and buildNum defaults to 1. Pin a real reverse-DNS appId before you ship: a placeholder such as com.example.app has almost always been claimed in Apple's portal already.
 
 Images
 
@@ -164,7 +170,7 @@ Remote images are blocked unless remotePatterns allow them. WebP and quality 75 
 
 i18n
 
-Locales default to en and ko with en first. Change it only to move the default locale or to serve a different set — defaultLocale must be one of locales, or the config load fails.
+Locales default to en and ko with en first. Change it only to move the default locale or to serve a different set — defaultLocale must be one of locales.
 
 Recommended order: start with an empty config, fill env/ values as the app needs them, add routes when domains are needed, add mobile when native apps are needed, and add advanced build options only after the default build is not enough.
 
@@ -307,7 +313,7 @@ const config: AppConfig = {
             "app/google-services.json": "public/google-services.json",
           },
           ios: {
-            "App/GoogleService-Info.plist": "public/GoogleService-Info.plist",
+            "App/App/GoogleService-Info.plist": "public/GoogleService-Info.plist",
           },
         },
         deepLinks: {
@@ -359,15 +365,6 @@ const config: AppConfig = {
 const config: AppConfig = {
   secrets: ["secrets/**/*", "certs/*.pem"],
 };
-```
-
-### .gitignore (auto-synced on upload-env)
-
-```ts
-# akan:secrets (managed by akan.config.ts — do not edit)
-apps/api/certs/*.pem
-apps/api/secrets/**/*
-# akan:secrets:end
 ```
 
 ### Build and runtime fields

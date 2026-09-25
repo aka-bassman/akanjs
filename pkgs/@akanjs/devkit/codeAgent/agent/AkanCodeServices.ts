@@ -66,22 +66,29 @@ export class AkanCodeServices {
   }
 
   /**
-   * The akan skill set, then the workspace's own.
+   * The akan skill set, then the person's own, then the workspace's.
    *
-   * A path that does not exist is a reported load error rather than a skip, so both are checked first.
+   * `~/.akan/code/skills` is read because a skill somebody wrote for themselves is theirs, not one checkout's,
+   * and having to copy it into every repo is the same friction that makes people stop writing them. It is
+   * text the model may read, never code that runs — which is why extensions stay workspace-only below.
+   *
+   * A path that does not exist is a reported load error rather than a skip, so each is checked first.
    */
   static #skillPaths(profile: CodeAgentProfile, workspaceRoot: string) {
     if (!profile.context.skills) return [];
-    const workspace = akanCodePaths.skillsDir(workspaceRoot);
-    return [akanCodePaths.builtinSkillsDir(), existsSync(workspace) ? workspace : undefined].filter(
-      (dir): dir is string => !!dir,
-    );
+    const dirs = [
+      akanCodePaths.builtinSkillsDir(),
+      akanCodePaths.globalSkillsDir(),
+      akanCodePaths.skillsDir(workspaceRoot),
+    ];
+    return dirs.filter((dir): dir is string => !!dir && existsSync(dir));
   }
 
   /**
-   * What the engine's resource loader may discover. Extensions and skills come from the workspace, never from
-   * the home directory: a coding agent that picks up a globally installed extension behaves differently in two
-   * checkouts of the same repo for reasons nothing in the repo explains.
+   * What the engine's resource loader may discover. Extensions come from the workspace and nowhere else: a
+   * globally installed extension is code that runs in every checkout, so an agent would behave differently in
+   * two clones of the same repo for reasons nothing in the repo explains. Skills are text and are read from
+   * the home directory too — see `#skillPaths`.
    */
   static resourceOptions(options: AkanCodeServicesOptions) {
     // A path that does not exist is reported as a load error rather than skipped, and these two are optional.

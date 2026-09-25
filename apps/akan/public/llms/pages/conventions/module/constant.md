@@ -15,138 +15,286 @@
 - Text Search Fields (#text-search-fields)
 - Cascade Remove Fields (#cascade-fields)
 - Resolved Fields (#resolve-fields)
-- Extending Generated Models (#generated-extension)
+- Extending Library Models (#generated-extension)
 - Practical Rules (#practical-rules)
 
 ## Content
 
 model.constant.ts
 
-Fields accepted when creating or editing the model.
+One stored record of a model, such as one ticket.
 
-Input plus stored fields controlled by the system or service.
+A field whose type is another model, like `File`. It stores the id and loads the model.
 
-The small view a list, a relation and a card query return. Both sides hold this one, so shared logic belongs here.
+A value object declared under `lib/__scalar/`, stored inside the document, not as its own row.
 
-Object and Light combined. Collection-level helpers go here as statics.
+Turning fetched plain data back into a model instance, with its methods and `Dayjs` dates.
 
-Aggregated counters for dashboards. Write the class even when it is empty.
+A read option naming extra fields to load, such as `{ secret: true }`.
 
-A literal for a scalar, a thunk for anything constructed — () => dayjs() is evaluated per document, while a dayjs() written directly is one moment shared by every row ever created. An array default is copied per call rather than handed out by reference.
+An AI caller: the in-page agent or an MCP client.
 
-Names the model an ID field points at, for a reference stored as an id rather than declared as a relation.
+Fields a user fills in when creating or editing the model.
 
-Names an enumOf field holding the owner's model name, for a polymorphic reference. Required when cascade is removeWithAny, and the two are paired in the type so the widening cannot be declared apart from the direction it widens.
+Input plus stored fields that the system or a service manages.
 
-Joins the field to the full-text index. There is no separate index file and no per-model switch. A compile error on field.hidden, field.secret and resolve.
+The few fields a list, a relation or a card returns. Server and client both hold it.
 
-Which end of the relation goes away with the other. The two directions read identically on the same field shape, so the value names the direction — and getting it wrong is a data loss.
+The full model: Object and Light combined. Collection helpers go here as statics.
 
-A stored property the page renders and an agent never sees. field.visual(T) is the short spelling of the same thing.
+Counters for dashboards. It always has `count`, and you write it even when it is empty.
 
-A sample value. It reaches the API explorer and the MCP input schema, which is where an agent reads it to guess the shape it should send.
+JavaScript globals, so no import. A `Date` field reads back as a `Dayjs`.
 
-A predicate run on write. A false verdict refuses the write; the value is skipped when it is null or undefined, so a validator never doubles as a required check.
+Whole and decimal numbers from `akanjs/base`. `Number` does not typecheck as a field type.
 
-Numeric bounds carried into the generated schema document.
+Another document's id. Name the model it points at with the `ref` option.
 
-String length bounds, the same way.
+A free-form payload. Use it only when the content really is open.
 
-Marks the field write-once in the generated schema document and the API explorer. The sqlite-backed store does not refuse a later write, so read it as documentation rather than as a constraint.
+An `enumOf` class. The stored value must be one of its values.
 
-On an Insight field only: which rows this counter counts. An empty object counts everything the query matched.
+An array of any type on this list. It defaults to `[]`.
 
-Required for a Map field — the class build throws without it, because a Map has no declared value type to infer.
+A string-keyed map. The `of` option names the value type and is required.
 
-A field preset, which is what the generated form control reads to pick its input type.
+A scalar class: a value object embedded in the document.
 
-One file describes the shape of a business object, and everything downstream is derived from it: the storage schema, the generated CRUD, the form state, the API contract, the admin explorer, and the schema an AI agent reads before calling anything. Nothing else in the module restates those fields.
+A model class, which makes the field a relation. It stores the id.
 
-Five classes, always in this order, always all five — write the Insight class even when it is empty. Each builds a different view of the same object with via(), and the later files reuse those generated types by name.
+Never a model field. Store bytes by referencing the `File` model instead.
 
-Two as const markers are load-bearing. The one on the enumOf array is what turns the values into a union type instead of string[]; the one on the Light tuple is what tells via() which keys the light view actually has. Never use the TypeScript enum keyword — enumOf is the vocabulary, and its value union is reached as TicketStatus["value"].
+[] for an array, else null
+
+A literal for a plain value, a thunk such as `() => dayjs()` for anything constructed.
+
+The model an `ID` field points at, when you store an id instead of a relation.
+
+The field holding a polymorphic owner's model name: an `enumOf`, or a `String` for `removeWithAny`.
+
+scalar or model class
+
+The value type of a `Map` field. Required for a Map.
+
+A label for the kind of relation, shown in the schema docs. It changes no behavior.
+
+Adds the field to the full-text index under this role. See Text Search Fields.
+
+Which side of the relation is removed along with the other. See Cascade Remove Fields.
+
+The page renders it and an agent never sees it. `field.visual(T)` is the short form.
+
+Runs when a document is created or saved, and `false` refuses it. `null` and `undefined` skip it.
+
+Changing it in a document save throws. Query-level writes skip the check.
+
+A lower bound for the schema docs and `sampleOf()`. Enforce it with `validate`.
+
+An upper bound, used the same way.
+
+A length lower bound shown in the schema docs. On an array, the store checks the item count.
+
+A length upper bound, handled the same way.
+
+A sample value for the schema docs and the API explorer's example request and response.
+
+Makes `sampleOf()` produce a realistic email, password or URL. It does not validate.
+
+query object
+
+Insight fields only: the condition this counter counts. `{}` counts every match.
+
+Plain
+
+An ordinary stored property. Every side gets it.
+
+Secrecy: the value stays on the server
+
+Stored and read by the server, never sent to a client. Always nullable.
+
+Like hidden, and even the server's default read skips it until a projection asks.
+
+Cost: only the agent skips it
+
+Sent to the page as usual; stripped from agent reads, MCP results and the MCP schema.
+
+Methods about one record: display text and predicates.
+
+Helpers about a list of records.
+
+Math that belongs to the value itself, not to whoever stored it.
+
+The one line a person scans for, like a name or a headline.
+
+A keyword list, such as a category or labels.
+
+Prose, like a body or a description.
+
+`String`, `ID`, relation
+
+A scoping value such as status, role or owner. It matches but never outranks a title.
+
+Kept so a hit can be drawn. It is not indexed and never matches.
+
+The owner's own relation
+
+When this document is removed, what the field points at is removed too.
+
+The child's reference to its owner
+
+When the owner is removed, this document is removed too.
+
+The child's reference, when the owner can be any model
+
+When the owner is removed, whatever its model, this document is removed too.
+
+Write `field(Int)` or `field(Float)`. `Number` does not typecheck.
+
+Write `enumOf("ticketStatus", [...] as const)`. A TypeScript `enum` is not a field type.
+
+Write `default: () => dayjs()`. A bare `dayjs()` runs once, so every row shares that moment.
+
+Write `ticket.isOverdue()` on `LightTicket`, which both server and client hold.
+
+Write `new cnst.User().set(user)`. A spread drops every `Date` field.
+
+Write `field(File)`. Bytes are not storable in a document; a `File` is.
+
+Write `user.phone ?? ""`. A hidden or secret value arrives as `null`, not `undefined`.
+
+This one file describes the shape of one business object. The storage schema, the generated CRUD, form state, the API contract, the admin explorer and the schema an AI agent reads all come from it, so no other file in the module restates the fields.
+
+Open it whenever a field is added, changed or removed, and whenever the model needs display or predicate logic.
+
+Words Used On This Page
+
+Term
+
+Five Classes, Always In This Order
+
+Class
+
+Here is the complete file for a support ticket:
 
 Field Options
 
-field(Type, options) takes one object, and what is not in it is as informative as what is. Optional is not an option — it is the chained .optional(), because it widens the declared type as well as the stored one. Nullable, select, enum and the field kind are all set for you by the call you made.
+Types
 
-Give any field whose business meaning is not obvious a short trailing comment, the way due carries one above. That comment is the field's meaning and belongs beside it — not in the abstract, which holds invariants rather than a field list.
+Type
+
+Values And References
+
+Search, Cascade And Agents
+
+Validation
+
+Samples And Counters
+
+Not In The Options Object
 
 Hidden, Secret, Visual
 
-Three entry points beside field(), and they answer two different questions. The first two are about secrecy: the value must not leave the server. The third is about cost: the value may leave, it just must not ride in an AI agent's context, where it would be hundreds of tokens per record that answer nothing.
+Declaration
 
-Stored and read by the server, never serialized to a client. Nullable is forced on. For internal state such as an admin memo that the document carries but no screen shows.
+Server default read
 
-The same, plus select: false — so the server's own read omits it too unless a projection names it. A password hash, a phone number, a token. pickById(id, { secret: true }) is the only way to read one back.
+Page
 
-An ordinary stored property everywhere except an AI caller: stripped from every in-page-agent read, from every MCP result, and from the MCP readable schema so the two agree. Persistence, search, forms and the page response are untouched. A blur placeholder, a rendered HTML body, a serialized geometry.
+AI agent
 
-A projection widens the server's read, never the response. If a screen needs the value, the field is neither hidden nor secret. If it only needs to be cheap for a model rather than unseen, that is field.visual — and nothing is ever refused over one.
+Gets the value
+
+Left out
 
 The Instance And Its Logic
 
-Display and predicate logic belongs on the Light class. It is the one both server and client hold, so a method written there is callable from a page, from a card, from a store action and from a service — and this is the rule most often missed in this codebase, which is how util modules full of ticketIsOverdue(ticket) get started.
+Put display and predicate logic on the Light class as methods. Server and client both hold a Light, so one method there works in a page, a card, a store action and a service.
 
-Instance helpers sit on Light; anything about a collection of them is a static on the full model. A scalar under lib/__scalar/ follows the same split — Coordinate carries its distance and bounds maths as statics, because that arithmetic belongs to the value rather than to whoever stored it.
+Put it on
+
+Logic about
+
+The board model shows the first two in one file:
+
+Copying An Instance
+
+Date Fields Go Missing
+
+These read own properties only, so the dates are missing.
+
+Date Fields Are There
+
+These walk the prototype too, so the dates are there.
 
 Text Search Fields
 
-A field joins the full-text index by declaring a text role, and that declaration is the whole configuration. Pick the role by what the value is, because the roles are weighted differently when results are ranked.
+Role
 
-The one line a human scans for. Weighted highest, by a wide margin.
+Weight
 
-A keyword list. Weighted above prose and below the title.
+Accepts
 
-Prose. Weighted lowest of the roles that match at all.
-
-A scoping value such as status, role or owner is filter: matchable but weighted zero, so it never outranks a real title hit. thumb is mirrored so a hit can be rendered and is never indexed — do not expect it to match.
-
-A role works on a File reference and on an array field. An array of objects is indexed by leaf key, including a leaf that is itself an array. A field inside a Map is not indexed, because there is no fixed path to read it from.
-
-A secret, hidden or resolved field carrying a text role is a compile error at the call site and throws while the class is being built as a backstop. The same refusal covers a role declared underneath one of them — field.secret(Noti) is rejected when Noti carries a role of its own, because the stored document holds that subtree in plaintext too. The search mirror stores plaintext, so indexing a secret would leak it through search. Treat the error as the rule working, not as something to route around.
+What it holds
 
 Cascade Remove Fields
 
-Both actions can sit on the same field shape, so the value never means related — it means one of exactly two directions, and swapping them is a data loss rather than a bug you notice.
+Value
 
-Which end goes away
+Declared on
 
-removeRef goes on the relation an owner holds, arrays included. Only a relation accepts it: a String, an ID or a scalar throws while the class is being built, because none of them names a document to remove.
+Meaning
 
-removeWith goes on the child's own reference to its owner, so the owner never learns its children exist and a lib model can be extended by an app's. It takes a relation, an ID with ref, or an ID with refPath for a polymorphic owner — and that refPath must name an enumOf field, because a free-form owner type is unknowable at build time.
+removeRef: On The Owner
 
-removeWithAny buys that sweep on purpose, for a child whose owner may be any model in the app. The lookup is one indexed probe, because the declaration creates the same reverse index — but one wildcard edge turns every cascade in the app back to one document at a time, and the boot log names the edges in one info line.
+Story owns its images
 
-The removal runs through the target's service, so the target's own _postRemove runs with it — that is how a File cascade also deletes the stored object. When the target provably has no removal side effect, the boot-time plan collapses it into one query instead.
+Story is removed
 
-Nothing checks for other references to the same target. Declaring removeRef asserts that this field owns its target exclusively — and File in particular is deduped by origin, so two parents can share one row. Query-level removal fires no hooks and therefore no cascade.
+the File it points at
 
-Removal is soft — the row is stamped rather than deleted — but the storage delete a _postRemove performs is not. A cascade is not restorable, and reviving the owner does not revive what went with it.
+is removed too
+
+points at
+
+Declare it on the relation the owner holds, arrays included:
+
+removeWith: On The Child
+
+A session takes its chats with it
+
+AgentSession is removed
+
+every SessionChat naming it
+
+by its id
+
+removeWithAny: An Owner Of Any Model
+
+What Every Cascade Shares
 
 Resolved Fields
 
-Some values are not properties of the record, they are properties of the record and whoever is looking at it. Whether this user liked this story, how many times they read it, whether they may edit it — storing any of those on the document would mean storing one row per viewer.
+Some values belong to the record and the person looking at it: whether this user liked a story, how many times they read it, whether they may edit it. Storing those on the document would mean one row per viewer.
 
-A resolved field is declared in the constant with the resolve helper and computed per request by an internal signal. The constant names it and types it; the signal says how to work it out and what caller context it needs.
+The Constant Names And Types It
 
-A resolved field takes no text role, for the same reason a secret one does not: there is no stored value for the search mirror to copy.
+An Internal Signal Computes It
 
-Extending Generated Models
+Runs on every request, with whatever caller context it asks for.
 
-An app that mounts a library model extends it rather than redeclaring it. Spread the library's inputs, objects, lights, models and insights into via() at the end of each call, and the app's own fields sit beside the inherited ones in the same class.
+The story's Light declares two resolved fields:
+
+Extending Library Models
 
 Practical Rules
 
-Write all five layers in order, including an empty Insight class, and put as const on every enumOf array and every Light tuple.
+Check these before you commit a constant file.
 
-Put display and predicate logic on Light<Model>, collection helpers as statics on the full model, and nothing in a util module.
+Common Mistakes
 
-Never use a non-null assertion. Narrow with ?., an early return, or a type predicate — and remember that a hidden or secret value is null rather than undefined.
+Instead of
 
-Give any field whose business meaning is not obvious a short trailing comment, and nothing else a comment at all.
-
-Import another module's constant from its direct file path rather than through a barrel, which is the sanctioned exception to the deep-import rule.
+Write
 
 ## Code Examples
 
@@ -171,12 +319,20 @@ export class TicketInput extends via((field) => ({
 
 export class TicketObject extends via(TicketInput, (field) => ({
   status: field(TicketStatus, { default: "active" }),
-  due: field(Date, { default: () => dayjs().set("hour", 19) }), // the shop closes at 7pm
+  due: field(Date, { default: () => dayjs().hour(19) }), // shop closes at 7pm
 })) {}
 
-export class LightTicket extends via(TicketObject, ["title", "status", "due"] as const, (resolve) => ({})) {}
+export class LightTicket extends via(
+  TicketObject,
+  ["title", "status", "due"] as const,
+  (resolve) => ({}),
+) {}
 
-export class Ticket extends via(TicketObject, LightTicket, (resolve) => ({})) {}
+export class Ticket extends via(
+  TicketObject,
+  LightTicket,
+  (resolve) => ({}),
+) {}
 
 export class TicketInsight extends via(Ticket, (field) => ({
   activeCount: field(Int, { default: 0, accumulate: { status: "active" } }),
@@ -201,17 +357,24 @@ export class FileInput extends via((field) => ({
 ### libs/shared/lib/user/user.constant.ts
 
 ```ts
-accountId: field.secret(String).optional(),
+export class UserObject extends via(UserInput, (field) => ({
+  accountId: field.secret(String).optional(),
   password: field.secret(String).optional(),
   phone: field.secret(String).optional(),
   notiInfo: field.secret(NotiInfo),
   restrictInfo: field.secret(RestrictInfo).optional(),
+  roles: field([UserRole], { default: ["user"], text: "filter" }),
+})) {}
 ```
 
 ### apps/koyo/lib/board/board.constant.ts
 
 ```ts
-export class LightBoard extends via(BoardObject, ["name", "policy", "roles"] as const, (resolve) => ({})) {
+export class LightBoard extends via(
+  BoardObject,
+  ["name", "policy", "roles"] as const,
+  (resolve) => ({}),
+) {
   isPrivate() {
     return this.policy.includes("private");
   }
@@ -220,11 +383,7 @@ export class LightBoard extends via(BoardObject, ["name", "policy", "roles"] as 
     return !!user && this.roles.some((role) => user.roles.includes(role));
   }
 }
-```
 
-### apps/koyo/lib/board/board.constant.ts
-
-```ts
 export class Board extends via(BoardObject, LightBoard, (resolve) => ({})) {
   static getBoard(boardList: LightBoard[], boardId: string) {
     return boardList.find((board) => board.id === boardId);
@@ -232,23 +391,28 @@ export class Board extends via(BoardObject, LightBoard, (resolve) => ({})) {
 }
 ```
 
-### libs/shared/lib/user/user.constant.ts
+### libs/shared/lib/banner/banner.constant.ts
 
 ```ts
-export class UserInput extends via((field) => ({
-  nickname: field(String, { default: "", text: "title" }),
-  bio: field(String, { default: "", text: "desc" }),
-  playing: field([String], { text: "tag" }),
+export class BannerInput extends via((field) => ({
+  category: field(String, { text: "tag" }).optional(),
+  title: field(String, { text: "title" }).optional(),
+  content: field(String, { text: "desc" }).optional(),
   image: field(File, { text: "thumb" }).optional(),
-  status: field(UserStatus, { default: "prepare", text: "filter" }),
+  href: field(String),
+})) {}
+
+export class BannerObject extends via(BannerInput, (field) => ({
+  status: field(BannerStatus, { default: "active", text: "filter" }),
 })) {}
 ```
 
-### libs/shared/lib/user/user.constant.ts
+### apps/koyo/lib/story/story.constant.ts
 
 ```ts
-export class UserInput extends via((field) => ({
-  image: field(File, { text: "thumb", cascade: "removeRef" }).optional(),
+export class StoryInput extends via((field) => ({
+  title: field(String, { text: "title" }),
+  thumbnail: field(File, { text: "thumb", cascade: "removeRef" }).optional(),
   images: field([File], { cascade: "removeRef" }),
 })) {}
 ```
@@ -265,10 +429,25 @@ export class SessionChatInput extends via((field) => ({
 ### apps/koyo/lib/reaction/reaction.constant.ts
 
 ```ts
+export class ReactionParent extends enumOf("reactionParent", [
+  "icecreamOrder",
+  "story",
+] as const) {}
+
 export class ReactionInput extends via((field) => ({
-  parent: field(ID, { refPath: "parentType", cascade: "removeWithAny" }),
-  parentType: field(ParentType, { default: "icecreamOrder" }),
+  parent: field(ID, { refPath: "parentType", cascade: "removeWith" }),
+  parentType: field(ReactionParent, { default: "icecreamOrder" }),
   emoji: field(String, { default: "" }),
+})) {}
+```
+
+### apps/koyo/lib/comment/comment.constant.ts
+
+```ts
+export class CommentInput extends via((field) => ({
+  parent: field(ID, { refPath: "parentType", cascade: "removeWithAny" }),
+  parentType: field(String),
+  content: field(String, { default: "", text: "desc" }),
 })) {}
 ```
 
@@ -295,14 +474,21 @@ export class LightStory extends via(
 ### apps/koyo/lib/story/story.signal.ts
 
 ```ts
-export class StoryInternal extends internal(srv.story.with(srv.actionLog), ({ resolveField }) => ({
-  like: resolveField(Int)
-    .with(Self, { nullable: true })
-    .exec(async function (story, self) {
-      if (!self) return 0;
-      return (await this.actionLogService.queryLoad({ action: "like", target: story.id, user: self.id }))?.value ?? 0;
-    }),
-})) {}
+export class StoryInternal extends internal(
+  srv.story.with(srv.actionLog),
+  ({ resolveField }) => ({
+    like: resolveField(Int)
+      .with(Self, { nullable: true })
+      .exec(async function (story, self) {
+        if (!self) return 0;
+        return await this.actionLogService.countByTarget(
+          "like",
+          story.id,
+          self.id,
+        );
+      }),
+  }),
+) {}
 ```
 
 ### apps/koyo/lib/user/user.constant.ts
@@ -321,11 +507,25 @@ export class UserObject extends via(
   ...user.objects,
 ) {}
 
-export class LightUser extends via(UserObject, ["roles"] as const, (resolve) => ({}), ...user.lights) {}
+export class LightUser extends via(
+  UserObject,
+  ["roles"] as const,
+  (resolve) => ({}),
+  ...user.lights,
+) {}
 
-export class User extends via(UserObject, LightUser, (resolve) => ({}), ...user.models) {}
+export class User extends via(
+  UserObject,
+  LightUser,
+  (resolve) => ({}),
+  ...user.models,
+) {}
 
-export class UserInsight extends via(User, (field) => ({}), ...user.insights) {}
+export class UserInsight extends via(
+  User,
+  (field) => ({}),
+  ...user.insights,
+) {}
 ```
 
 ## Agent Notes

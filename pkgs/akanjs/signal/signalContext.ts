@@ -19,11 +19,10 @@ import {
 import type { Adaptor, AdaptorCls, DatabaseService, InjectRegistry, LiveRegistry } from "akanjs/service";
 import type { Internal, InternalCls, InternalInfo, MiddlewareCls } from ".";
 import { CrossSiteGuard } from "./CrossSiteGuard";
+import { EndpointCache } from "./endpointCache";
 import type { EndpointInfo, EndpointType } from "./endpointInfo";
 import { Exception, isExceptionLike } from "./exception";
 import { type GuardCls, guardOf } from "./guard";
-// Deliberately past the barrel: `./mcp` re-exports `McpDocument`, which would drag `akanjs/fetch` into the
-// signal graph. `Msg` itself imports nothing.
 import { SignalFailure } from "./SignalFailure";
 import { getCurrentTrace, runTraced, SignalTrace, type TraceOrigin, traceSpan } from "./trace";
 
@@ -159,16 +158,9 @@ export class SignalContext<
     }
   }
   /**
-   * The endpoint's guards, for a middleware that answers a call without executing it — a cache hit skips
-   * `next()`, and `next()` is what would otherwise run them. Side-effect free, like the guards themselves.
-   */
-  async checkGuards() {
-    await this.#checkGuards();
-  }
-  /**
    * Re-checks this context's guards outside of a request, for a websocket room that is already
    * subscribed. Only global middlewares run: they carry the account resolution this depends on,
-   * while endpoint middlewares (cache/retry) would observe a call that never executes.
+   * while endpoint middlewares would observe a call that never executes.
    */
   async authorize(): Promise<boolean> {
     try {
@@ -304,11 +296,8 @@ export class SignalContext<
           }),
         );
       }
-      if (!this.trace) return await this.endpointInfo.execFn.call(this.adaptor, ...this.args, ...this.internalArgs);
-      return await traceSpan(
-        "handler",
-        async () => await this.endpointInfo.execFn?.call(this.adaptor, ...this.args, ...this.internalArgs),
-      );
+      const handle = async () => await this.endpointInfo.execFn?.call(this.adaptor, ...this.args, ...this.internalArgs);
+      return await EndpointCache.through(this, this.trace ? () => traceSpan("handler", handle) : handle);
     };
     const next = this.#withMiddleware(coreExec);
     const result = this.trace ? await traceSpan("execChain", () => next()) : await next();

@@ -71,6 +71,8 @@ const handleOption = (programCommand: Command, argMeta: ArgMeta) => {
     `-${flag}, --${kebabName}${type === "boolean" ? " [boolean]" : ` <${kebabName}>`}`,
     `${desc}${ask ? ` (${ask})` : ""}${example ? ` (example: ${example})` : ""}${choices ? ` (choices: ${choices.map((choice) => choice.name).join(", ")})` : ""}`,
   );
+  if (type === "boolean" && argMeta.argsOption.default === true)
+    programCommand.option(`--no-${kebabName}`, `turn off --${kebabName}`);
   return programCommand;
 };
 const handleArgument = (programCommand: Command, argMeta: ArgMeta) => {

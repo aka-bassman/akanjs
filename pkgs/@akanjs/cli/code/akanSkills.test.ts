@@ -66,6 +66,20 @@ describe("akan skills", () => {
     expect([...named.guidelines].filter((name) => !guidelines.has(name))).toEqual([]);
   });
 
+  /**
+   * The manual is the only place the model can read about the host, and the host is in another package.
+   *
+   * `CodeTuiCommands` is the live list — it builds the menu, the completion and `/help` — so a command added
+   * there and not here is a command the agent will answer "there is no such thing" about, confidently.
+   */
+  test("every slash command the host offers is in the manual", async () => {
+    const { CodeTuiCommands } = await import("./CodeTuiCommands");
+    const manual = bodyOf("akan-code");
+    expect(
+      [...CodeTuiCommands.all].filter((command) => !manual.includes(`/${command.name}`)).map((c) => c.name),
+    ).toEqual([]);
+  });
+
   test("nothing carries over the pod paths or tool names of the system these were ported from", () => {
     for (const name of names) {
       const body = bodyOf(name);

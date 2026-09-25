@@ -26,7 +26,6 @@ describe("page() chain", () => {
       .search("period", Period)
       .config({ transition: "stack" })
       .head(({ projectId }) => `head:${projectId}`)
-      .metadata({ title: "Board" })
       .loading(({ projectId }) => `loading:${projectId}`)
       .render(async (args) => {
         seen.push(args);
@@ -43,7 +42,6 @@ describe("page() chain", () => {
     expect(resolved).toBe(definition);
     const mod = module as PageModule;
     expect(mod.pageConfig).toEqual({ transition: "stack" });
-    expect(mod.metadata).toEqual({ title: "Board" });
     expect(mod.head).toBeUndefined();
     expect(await mod.generateHead?.(props({ projectId: pid, lang: "en" }))).toBe(`head:${pid}`);
     expect(mod.Loading?.({ params: { projectId: pid } })).toBe(`loading:${pid}`);

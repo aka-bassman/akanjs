@@ -11,139 +11,256 @@
 - Lint Is Not About Style (#silent-failures)
 - Six You Will Meet First (#fix-errors)
 - Every Rule That Breaks The Build (#every-rule)
-- Suppressing One (#suppression)
-- Commands (#commands)
+- Suppressing A Rule (#suppression)
+- Commands And Configuration (#commands)
 
 ## Content
 
 Format & Lint
 
-A colour outside the vocabulary
+A Class With No CSS
 
-Vocabulary closure strips the raw Tailwind palette from the compiled stylesheet, so bg-blue-500 is not a warning about taste — it is a class with no CSS behind it. The element renders unstyled and the DOM still shows the class you wrote.
+The raw palette is stripped from the stylesheet, so the badge renders with no colour.
 
-A raw Error
+A Field No Agent Can Reach
 
-A bare Error reaches the caller as Internal Server Error with no message, and it has no translation. Throw an Err naming a key, and register that key in the module's dictionary as an [en, ko] pair.
+An arrow around the setter hides it, so the field publishes no agent tool.
 
-A setter wrapped in an arrow
+A Return Value Nobody Gets
 
-The two lines run identically, and only one of them works. Passing the setter by reference is what makes the framework emit data-akan-action on the control and publish the field as an agent tool; an anonymous closure names no action, so both are silently dropped.
+Store actions are dispatched as `void`, so the caller never sees the value.
 
-A value returned from a store action
+A Note Every Visitor Downloads
 
-Every method of a store class is dispatched through st.do.<action>(), and that dispatch is typed void. The value is unreachable at every call site. Write it into state instead; a bare return; guard clause stays legal.
+A bang comment survives minification and ships in the browser bundle.
 
-A hydration call made from the client
+The formatter and linter this workspace uses. `akan lint` runs it for you.
 
-fetch.init<Model><Suffix> is not a request, it is the snapshot Load.Units seeds the store from. Run from a route it resolves before the first byte; run after hydration it is two extra round trips for a shell the browser already painted, landing in a local variable no store reads.
+grit plugin
 
-#private in one of the four suffixes
+A lint rule written in GritQL for Akan and run by Biome. There are 22.
 
-#private is banned in exactly four file suffixes — constant.ts, document.ts, service.ts and store.ts — because the framework mixes generated members into those classes and a # member is not reachable from a mixin. Everywhere else, srvkit included, #private stays the house style.
+diagnostic
 
-bg-blue-500, text-gray-400. Renders as no CSS. Use a semantic token — bg-primary, text-foreground/70.
+One finding Biome prints: the file, the line, the rule name and a message.
 
-bg-[#3b82f6], text-[rgb(0,0,0)]. Ignores data-theme entirely. A variable reference such as bg-[var(--kakao)] is deliberately not matched — that is how a lib pins a vendor colour.
+safe fix
 
-btn-primary, card-body, bg-base-100, text-base-content, bg-error. daisyUI was removed, so these render unstyled. base-100/200/300 to background/muted/border, base-content to foreground, <colour>-content to <colour>-foreground, error to destructive.
+A fix Biome applies by itself, such as sorting classes or dropping an unused import.
 
-A colour literal inside style={{ ... }} or a <style> body. Bypasses the token layer and theme switching. style={{ color: 'var(--primary)' }} when a runtime value is unavoidable.
+colour vocabulary
 
-An arbitrary value whose brackets are filled at runtime, such as a min-h bracket holding an interpolated number. Tailwind extracts arbitrary values from source text, so the class compiles to no CSS — silently, and worse when a literal of the same shape exists elsewhere. Use a style prop, or a fixed set of literal classes.
+The closed set of semantic colour tokens. The raw Tailwind palette is not in it.
 
-throw new Error(...). Throw new Err("<module>.error.<key>") and register the key. Exempt: tests, *.constant.ts, common/**, env/** — the last two have no legal Err import path, so keep throwing code out of them.
+scope
 
-st.do.<action>() is typed void, so a returned value is unreachable. Write it into state with this.set({ ... }).
+The paths a rule looks at. A file outside a rule's scope never trips it.
 
-onChange={(v) => st.do.setXOnY(v)}. Pass the setter by reference. A wrapper that transforms, adds a statement, or writes a nested path through writeOnX stays legal — publish that one with an explicit st.tool.
+Why:
 
-A cnst model on a prop of an always-client file. Take an id instead. Exempt: an indexed enum access, a ClientInit / ClientView / ClientEdit or ModelsProps type argument, a function-typed prop, and a cnst type that never leaves the file.
+Fix:
 
-An endpoint whose name collides with generated CRUD — <model>, light/create/update/remove/view/edit/merge<Model>. The signal layer can pass typecheck and fail only at runtime, so treat it as an error even on a green build.
+A Colour Outside The Vocabulary
 
-fetch.init<Model><Suffix> or fetch.get<Model>Init<Suffix> from a client file. Load it in the route; reload from the client through st.do.init<Model><Suffix>(). Matched by shape, so a hand-written initPayment is out of scope.
+The raw Tailwind palette is stripped from the compiled stylesheet, so `bg-blue-500` has no CSS behind it. The badge renders unstyled while the DOM still shows the class.
 
-React has no async client component, so a ui/ component that awaits breaks as soon as a client parent renders it. Await in the page and take the resolved data as a prop. Only a PascalCase binding whose own initializer is async is matched.
+Use a semantic token such as `bg-primary`. The hex colour in `style` goes too (`no-inline-color`).
 
-A bang comment marker — two slashes or a block opener followed by an exclamation point — in browser-reachable code. Bun keeps it through minification, so the note ships to every visitor. Use a FIXME comment there. The diagnostic is file-level and always lands on line 1, so search the file for the marker.
+A Raw Error
 
-logger.log() and Logger.log(). The ladder is trace verbose debug info warn error; log was a seventh tier below info that the production level silently dropped. The method is kept and emits at info, so the call reads like a level and is not one — write .info().
+A bare `Error` reaches the caller as `Internal Server Error`, with no message and no translation.
 
-Three arms: an @apps or @libs import past the first two segments, a module file importing through ../../, and a module .tsx under lib/ using an internal relative import such as ../cnst. Cross-module constant references are the sanctioned exception.
+Throw an `Err` that names a key, and register that key in the module dictionary as an `[en, ko]` pair.
 
-Anything that is not relative, akanjs, @akanjs, @apps, @libs, @pkgs, @playwright, react or bun:test. Re-export the symbol through a lib first — the one-line shims in a lib's common/, webkit/ or ui/ exist for exactly this and are load-bearing.
+Then register the key in the same module's dictionary:
 
-A client file may not import a *.document, *.dictionary, *.service or *.signal, srvkit/, a package server entrypoint, or the db / srv / sig / dict / option / useServer barrels. import type is erased before bundling and stays legal; a mixed value-and-type import is not exempt.
+A Setter Wrapped In An Arrow
 
-The mirror image: a server file may not import a *.store, a module component, ui/, webkit/, a package client entrypoint, or the st / store / useClient barrels. common/ and *.constant.ts are held to both rules, so they reach neither side.
+Both lines run the same code, but the arrow is an anonymous closure. The control then emits no `data-akan-action` and publishes no agent tool for the field.
 
-A React client hook or the store imported into a server component. Move the interaction into a client component and render it from the server one.
+Pass the setter by reference. Normalize a value with the control's `transform` prop; do several writes in a `_postSet<Field>` store method.
 
-The directive at the top of a file whose role is always a server component. Split the interactive part out rather than converting the whole file.
+A Value Returned From A Store Action
 
-A function expression handed as a prop from a server component. Allowed: loader, render, of. Pass data down and keep the callback inside the client component.
+Every store method is dispatched through `st.do.<action>()`, which is typed `void`. The returned value reaches no call site.
 
-#private in the four suffixes the framework mixes into. Use a TypeScript private method with an underscore name. The rule is scoped by file path, not by class shape, so #private stays the house style under srvkit/ including adapt() classes.
+Write the value into state with `this.set({ ... })`. A bare `return;` guard stays legal.
 
-Never hand-order Tailwind classes, and never re-order what the formatter produced. It also sorts the string arguments to cn(). Output such as font-bold text-2xl text-foreground is correct.
+A Hydration Call Made From The Client
 
-console.log and console.debug. Only assert, error, info and warn are allowed. Server code uses the injected this.logger or a new Logger("ClassName").
+`fetch.init<Model><Suffix>` builds the snapshot `Load.Units` seeds the store from. Called after hydration, it costs two extra round trips for a shell the browser already painted.
 
-Removed by the formatter rather than reported at you. This is one reason a repo-wide akan lint rewrites files it was not asked about.
+Start it in the route, where it resolves before the first byte, and hand the promise to the Zone as `init`. To reload from the client, call `st.do.init<Model><Suffix>()`.
 
-Off on purpose. key={idx} for an embedded scalar with no id of its own is intentional here, not an oversight.
+Before, the Zone loads the list on mount:
 
-Off on purpose. The short dependency arrays in this workspace are deliberate, and an effect that has to run once is written that way on purpose.
+After, the route starts the load and hands the promise down:
+
+The Zone only renders what it is handed:
+
+#private In One Of Four Suffixes
+
+The framework merges `constant`, `document`, `service` and `store` classes by copying methods onto another class. A copied method that calls a `#` member throws.
+
+Use a TypeScript `private` method with an underscore prefix. Everywhere else, `srvkit/` included, `#private` stays the house style.
+
+Raw palette classes such as `bg-blue-500` compile to no CSS. Use a token such as `bg-primary`.
+
+Colour values such as `bg-[#3b82f6]` ignore `data-theme`. A `var()` reference is fine.
+
+Removed daisyUI classes such as `btn-primary`, `card-body` and `bg-base-100` render unstyled.
+
+A colour literal in `style={{ ... }}` or a `<style>` body skips tokens and theme switching.
+
+A runtime-built arbitrary value like `min-h-[${n}px]` has no CSS. Use `style` or literal classes.
+
+Rule
+
+Scope:
+
+Level:
+
+module files, `page/**`, barrels
+
+`apps/**` `libs/**`, except tests, `*.constant.ts`, `common/**`, `env/**`
+
+A thrown `Error`. Throw `new Err("<module>.error.<key>")` and register the key.
+
+`logger.log()` reads like its own level but emits at `info`. Write `.info()`.
+
+`ui/` `webkit/` `common/` `page/`, `*.constant.ts` `*.store.ts`, module components
+
+A `//!` or `/*!` comment survives minification and ships. Use `// FIXME:` instead.
+
+`st.do.<action>()` is typed `void`. Write the value into state with `this.set({ ... })`.
+
+every `.tsx` in `apps/` `libs/`
+
+An arrow that only forwards to a form setter. Pass `st.do.setXOnY` by reference.
+
+`"use client"` files and `*.store.ts`
+
+`fetch.init<Model><Suffix>` or `fetch.get<Model>Init<Suffix>` on the client. Load it in the route.
+
+A `cnst` model as a prop type of an always-client file. Take an id instead.
+
+An endpoint that reuses a generated CRUD name, such as `create<Model>` or `view<Model>`.
+
+A `#private` method. Use a TypeScript `private _method()` instead.
+
+A React hook or `st` imported into a server component. Move the interaction out.
+
+`"use client"` on a file that is always a server component. Split the interaction out.
+
+A function passed as a prop from a server component. Only `loader`, `render` and `of` take one.
+
+An async `ui/` component breaks under a client parent. Await in the page instead.
+
+An `@apps`/`@libs` path past `<name>/<entry>`, `../../` in a module file, or `../` in its `.tsx`.
+
+A third-party package. Re-export it through a lib's `common/`, `webkit/` or `ui/` first.
+
+`ui/` `webkit/` `page/` `common/`, `*.store.ts` `*.constant.ts`, every `.tsx`
+
+Imports a `*.document`/`*.dictionary`/`*.service`/`*.signal` file, `srvkit/` or a server entry.
+
+Imports a `*.store`, a module component, `ui/`, `webkit/`, a client entry or a client barrel.
+
+`error`, safe fix
+
+Sorts Tailwind classes, `cn()` string arguments too. Never hand-order or undo its output.
+
+`console.log` and `console.debug`. Only `assert`, `error`, `info` and `warn` are allowed.
+
+`akan lint` deletes the unused import on its fix pass instead of reporting it.
+
+Off on purpose: `key={idx}` for an embedded scalar with no id of its own is intended.
+
+Off on purpose: the short dependency arrays in this workspace are deliberate.
+
+Turns plugin rules off for the next line or statement.
+
+The same inside JSX, placed above one element.
+
+At the top of a file, turns plugin rules off for the whole file.
+
+Biome's own rules are named by their group and rule name instead.
+
+Each theme's text and background token pair must meet WCAG contrast.
+
+A recipe with no variant to choose fails. Make it a component or a class constant.
+
+A stale `## Recipes In Scope` block fails. Run `akan sync <name>` to regenerate it.
+
+Sits at the workspace root and extends `@akanjs/devkit/biome.base.json`.
+
+Sets every rule's level and scopes each grit plugin to the paths it applies to.
+
+The plugin sources, one file per rule. Most open with a comment on what breaks without it.
 
 Lint Is Not About Style
 
-You write bg-blue-500 on a badge. The page renders, the class is right there in the DOM, and the badge is the wrong colour. Nothing threw, nothing warned in the browser, and the only thing that knows is the linter you have not run yet.
+Most rules here catch code that compiles, runs and looks right, yet quietly does nothing. Only the linter notices.
 
-Most of the rules below are that shape. They do not catch ugly code; they catch code that compiles, runs, looks correct, and quietly does nothing — a class with no CSS behind it, a form field that publishes no agent tool, a store action whose return value is unreachable, a comment that ships to every visitor.
+Words used on this page
+
+Term
 
 Six You Will Meet First
 
-Each of these names a rule, and the fix is mechanical once you know which one fired. The diagnostic prints the rule name; the pair below shows what it wants instead.
+Each diagnostic prints the name of the rule that fired. Find that name below; the fix is mechanical once you know it.
 
 Every Rule That Breaks The Build
 
-Twenty-two of these are grit plugins written for this workspace, scoped to the paths they apply to; the rest are Biome's own. The second column is where the rule looks, which is why a plain package under pkgs/ never trips the module-convention ones at all.
+Colour vocabulary
 
-Suppressing One
+daisyUI slot
 
-A fixed colour is sometimes right — an OS-chrome mockup, a data-visualization scale, a vendor's brand. Those take a suppression, and the suppression carries a reason. There is no bare disable block anywhere in this workspace.
+Token to use
 
-Commands
+Errors, logs and comments
 
-akan lint prints up to 200 diagnostics. Biome's own default is 20 with no count printed, which reads as progress when all that changed is the mix of findings.
+Stores, forms and module files
 
-Where the configuration lives:
+Server components
 
-biome.json at the repo root extends @akanjs/devkit/biome.base.json, which is where every grit plugin is scoped to the paths it applies to.
+Imports
 
-The plugin sources are @akanjs/devkit/lint/*.grit, one file per rule, each opening with a comment explaining what would break without it.
+Biome's own rules
 
-Generated files are excluded from linting and formatting entirely — cnst.ts, db.ts, dict.ts, sig.ts, srv.ts, st.ts, the facet barrels, and every env file.
+These apply to every file. The two that are off are off on purpose.
+
+Suppressing A Rule
+
+Sometimes a fixed colour is right: an OS-chrome mockup, a data-visualization scale, a vendor's brand. Suppress that one spot, and always write the reason.
+
+Form
+
+The JSX form looks like this in a real component:
+
+Commands And Configuration
+
+akan lint myapp # format and fix one target akan lint myapp --fix false # report, apply no fixes akan lint myapp --max-diagnostics 0 # print every diagnostic akan lint-all # every app, lib, and package bunx biome check apps/myapp/lib/order # Biome only, writes nothing
+
+What akan lint checks after Biome
+
+File
+
+Where the configuration lives
 
 ## Code Examples
 
 ### apps/myapp/ui/BrowserChrome.tsx
 
 ```ts
-// biome-ignore lint/plugin: macOS traffic lights are fixed colours, not theme tokens
-<span className="bg-[#ff5f57]" />
-
-// biome-ignore-all lint/plugin: every swatch in this file is a data-viz scale value
-```
-
-### Terminal
-
-```bash
-akan lint myapp                      # format and fix one app, lib, or package
-akan lint myapp --max-diagnostics 0  # print every diagnostic
-akan lintAll                         # every app and library
-bunx biome check "apps/myapp/lib/order"   # report only, no writes
+export const TrafficLights = () => {
+  return (
+    <div className="flex gap-2">
+      {/* biome-ignore lint/plugin: macOS traffic-light colour, not a theme token */}
+      <div className="size-3 rounded-full bg-[#ff5f57]" />
+    </div>
+  );
+};
 ```
 
 ## Agent Notes

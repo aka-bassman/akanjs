@@ -154,7 +154,12 @@
       ]
     },
     {
-      "includes": ["{apps,libs}/**/page/**/*.ts", "{apps,libs}/**/page/**/*.tsx"],
+      "includes": [
+        "{apps,libs}/**/page/**/*.ts",
+        "{apps,libs}/**/page/**/*.tsx",
+        "{apps,libs}/**/*.Unit.tsx",
+        "{apps,libs}/**/*.View.tsx"
+      ],
       "plugins": ["./node_modules/@akanjs/devkit/lint/non-scalar-props-restricted.grit"]
     },
     {

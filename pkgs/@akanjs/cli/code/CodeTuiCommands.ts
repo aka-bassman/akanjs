@@ -16,7 +16,7 @@ export class CodeTuiCommands {
   static readonly all: CodeTuiCommand[] = [
     { name: "help", desc: "list these commands and the keys" },
     { name: "tools", desc: "what this session can call" },
-    { name: "model", desc: "switch model", arg: "<provider>/<id>" },
+    { name: "model", desc: "switch model, or list what is available", arg: "[<provider>/<id>]" },
     { name: "effort", desc: "how hard the model thinks before it answers", arg: "<level>" },
     { name: "thinking", desc: "show the model's reasoning, or fold it away again" },
     { name: "compact", desc: "summarise the conversation to free the window", arg: "[notes]" },
@@ -25,7 +25,7 @@ export class CodeTuiCommands {
     { name: "name", desc: "name this session", arg: "<text>" },
     { name: "fork", desc: "continue this conversation twice; the copy takes over here", arg: "[name]" },
     { name: "agents", desc: "what a sub-agent may be, and what one may spend" },
-    { name: "mcp", desc: "the MCP servers this session reached", arg: "[add|remove|reload]" },
+    { name: "mcp", desc: "the MCP servers this session reached", arg: "[add|remove|login|reload]" },
     { name: "peers", desc: "the other akan code sessions running here" },
     { name: "msg", desc: "hand a message to another session", arg: "<peer> <text>" },
     { name: "quit", desc: "leave the session" },
@@ -71,7 +71,9 @@ export class CodeTuiCommands {
       "",
       // Most terminals send the same byte for enter and shift+enter, so the key only reaches us where the
       // terminal can say which was pressed. VS Code needs the binding written out; iTerm2 calls it "Send Text".
-      'shift+enter needs a terminal that reports it — in VS Code bind it to send "\\u001b\\r".',
+      // Both spellings of that sequence are read, and the backslash a shell takes as a line continuation is
+      // removed again rather than typed — see `CodeTuiApp`.
+      'shift+enter needs a terminal that reports it — in VS Code bind it to send "\\\\u001b\\r".',
     ].join("\n");
   }
 }

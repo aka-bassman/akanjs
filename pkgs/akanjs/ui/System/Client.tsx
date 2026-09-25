@@ -38,7 +38,6 @@ import {
   useState,
 } from "react";
 import { getFrameCssVars } from "./frameCssVars";
-import { Gtag } from "./Gtag";
 import { Messages } from "./Messages";
 import { Reconnect } from "./Reconnect";
 
@@ -211,11 +210,10 @@ interface ClientBridgeProps {
   lang?: string;
   theme?: AkanTheme;
   prefix?: string;
-  gaTrackingId?: string;
   wsConnect?: boolean;
 }
 
-export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId, wsConnect = true }: ClientBridgeProps) => {
+export const ClientBridge = ({ env, lang, theme, prefix, wsConnect = true }: ClientBridgeProps) => {
   // Base env is recomputed here rather than taken from the app's `env/env.client.ts`: that file is imported
   // by a server component, so its `getEnv()` would resolve to the server's own hosts and ship them to the browser.
   (globalThis as typeof globalThis & { __AKAN_CLIENT_ENV__?: ClientEnv }).__AKAN_CLIENT_ENV__ = {
@@ -292,7 +290,7 @@ export const ClientBridge = ({ env, lang, theme, prefix, gaTrackingId, wsConnect
     setCookie("path", path);
     Logger.info(`pathChange-finished:${path}`);
   }, [pathname]);
-  return gaTrackingId && <Gtag trackingId={gaTrackingId} />;
+  return null;
 };
 Client.Bridge = ClientBridge;
 

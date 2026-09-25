@@ -397,6 +397,28 @@ describe("ConstantRegistry", () => {
     expect(deserialized.createdAt.toISOString()).toBe(user.createdAt.toISOString());
     expect(deserialized.metadata).toEqual({ locale: "ko" } as never);
   });
+
+  test("serializes a map through the value type it declares", () => {
+    const start = dayjs("2026-01-02T03:04:05.000Z");
+    const serialized = ConstantRegistry.serialize(Map, new Map([["start", start]]), false, Date) as unknown as {
+      start: Date;
+    };
+
+    expect(serialized.start).toBeInstanceOf(Date);
+    expect(serialized.start.toISOString()).toBe(start.toISOString());
+
+    const restored = ConstantRegistry.deserialize(Map, serialized, false, Date) as unknown as Map<string, Dayjs>;
+
+    expect(restored).toBeInstanceOf(Map);
+    expect(restored.get("start")?.toISOString()).toBe(start.toISOString());
+    expect(ConstantRegistry.deserialize(Map, { a: "1", b: "2" }, false, Int)).toEqual(
+      new Map([
+        ["a", 1],
+        ["b", 2],
+      ]) as never,
+    );
+    expect(() => ConstantRegistry.serialize(Map, new Map([["start", start]]))).toThrow("value type");
+  });
 });
 
 describe("serialize, deserialize, purify, and immerify", () => {

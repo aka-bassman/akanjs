@@ -17,49 +17,113 @@
 
 Service.Zone.tsx
 
-Like the Util beside it, none of the eight service modules in this workspace has one. A Zone is the section a page drops in whole — and a capability with no records to list usually has no section, it has a screen, or it has one button inside somebody else's.
+A `lib/_<name>` folder with no model: a service, a signal, a dictionary and often a store.
 
-When one is right, it is because the section is real: several controls that share store state, arranged together, reused on more than one route. A search console, an upload panel, a device dashboard. If it appears on exactly one route, it is that route.
+The file role for a section a page drops in whole. It is always a client component.
+
+A file without "use client". It runs on the server and arrives as HTML.
+
+A file that starts with "use client". It arrives as HTML, then again as JS the browser re-runs.
+
+A `ReactNode` prop such as `header`. The page renders its content on the server and passes it in.
+
+Not a Zone
+
+A screen of its own
+
+A route, like the OAuth consent screen in `libs/shared/page/oauth`.
+
+One button in another screen
+
+A `ui/` component the service store drives, or rarely a `Service.Util.tsx`.
+
+A section on exactly one route
+
+It is that route. Write it in the page itself.
+
+A Zone
+
+A section reused on several routes
+
+Several controls that share store state, laid out together.
+
+Server data needed at once
+
+Await it in the page and pass it down as a prop.
+
+Server data the section can wait for
+
+Hand the unawaited promise to `<Load.Stream of={…}>`. It resolves behind its own boundary.
+
+Anything a click asks for
+
+A store action, called through `st.do.*`.
+
+Consent screen
+
+A route: `libs/shared/page/oauth/consent/_index.tsx`.
+
+Approve and deny buttons
+
+A plain `<form method="post">` that the cookie session authenticates.
+
+Connected-apps list
+
+An endpoint, `listOAuthConnections`, for the app's own page to call.
+
+What the module ships
+
+Ten endpoints and zero components.
+
+Every lib the app depends on that ships a `page` folder.
+
+Exactly the libs listed.
+
+The default. No lib routes.
+
+A Zone is a section a page drops in whole, such as a search console, an upload panel or a device dashboard. Most service modules never need one: of the eight in this workspace, none has a Zone, and none has a Util either.
+
+The reason is that a service module has no records to list. Its UI is usually a screen of its own or one button inside another screen, not a section.
+
+Words used on this page
+
+Term
+
+Where each kind of UI goes
+
+The UI is
+
+Goes here
+
+Not here
+
+A section earns a Zone only when all three of these hold:
 
 Hold No Markup
 
-A model module's Zone reads the store and delegates to a View, which is a server component in the same folder. A service module has no View — so the server component it delegates to lives in ui/, and the Zone hands it the state as props or takes it back as children.
-
-Two store reads, one wrapper element, and everything a person actually looks at is a server component. The header arrives as a ReactNode slot rather than as children, because a slot lets the page compose server content in a named position instead of one anonymous one — Layout.Navbar takes five of them for exactly this reason.
-
-Wrap the interaction, not the UI
-
-the smallest useful client component adds one behaviour and renders children untouched, so the markup inside never reaches the bundle
-
-Push the boundary to the leaf
-
-a Zone that reads three keys and renders forty elements is a Zone that reads three keys and a server component that renders forty
-
-Take an id, not a model
-
-a cnst model on a Zone prop is a lint error — the class instance loses its methods crossing the boundary and arrives as a plain object wearing the model's type
+Keep the boundary small
 
 Seed It From The Route
 
-The reflex to resist is loading on mount. A useEffect with an empty dependency array renders an empty shell, hydrates, then asks the server a question the server could have answered before the first byte — and akan quality ssr reports it as akan.ssr.client-mount-load.
+Instead, the page fetches and awaits, and the Zone takes the result as a prop:
 
-The page fetches, the page awaits, and the Zone takes the resolved value as a prop. A client component never calls fetch.* at all, and fetch.init* is refused there by a lint rule of its own — that one is a hydration snapshot whose only consumer is a Load.* init prop, so from the client it is two extra round trips landing in a value nothing reads.
+Where the data comes from
 
-Where the data comes from:
+Data
 
-Server data the section needs immediately — await it in the page and pass it down as a prop.
-
-Server data the section can render around — hand the unawaited promise to <Load.Stream of={…}> and let it resolve behind its own boundary.
-
-Anything a click asks for — a store action, called through st.do.*. An interaction-driven fetch is not a mount load and is not flagged.
+How it reaches the Zone
 
 Or Just Write The Page
 
-_oauth needed a consent screen, an approve button, a deny button and a connected-apps list. It has none of these two files. The screen is a route in libs/shared/page/oauth, the buttons are a plain form post that the cookie session authenticates, and the module ships ten endpoints and no component at all.
+What _oauth needed
 
-That is worth copying rather than working around. A form post needs no script, so the consent page ships as HTML and works before any bundle arrives — which for a screen that authorizes another application to act as you is the point, not an optimization.
+How it got it
 
-A lib may own routes as well as modules: libs/<lib>/page follows the same rules as an app's, and an app opts in with syncPageLibs in akan.config.ts. The routes are then linked into apps/<app>/page/(libs)/(<lib>), which is generated and gitignored — edit the lib source, never the link.
+Routes can live in a lib
+
+syncPageLibs value
+
+Brings in
 
 ## Code Examples
 
@@ -75,14 +139,19 @@ import type { ReactNode } from "react";
 interface ConsoleProps {
   className?: string;
   header: ReactNode;
+  templates: string[];
 }
-export const Console = ({ className, header }: ConsoleProps) => {
+export const Console = ({ className, header, templates }: ConsoleProps) => {
   const preview = st.use.receiptPreview();
   const printing = st.use.printing();
   return (
     <section className={className}>
       {header}
-      <ReceiptPreview preview={preview} disabled={printing} />
+      <ReceiptPreview
+        preview={preview}
+        templates={templates}
+        disabled={printing}
+      />
     </section>
   );
 };
@@ -91,15 +160,24 @@ export const Console = ({ className, header }: ConsoleProps) => {
 ### apps/koyo/page/receipt/_index.tsx
 
 ```ts
+import { fetch, Receipt, usePage } from "@apps/koyo/client";
+import { getSelf } from "@libs/shared/webkit";
+import { page } from "akanjs/client";
+
 export default page().render(async () => {
   const { l } = usePage();
   getSelf({ unauthorize: "/signin" });
   const [templates] = await Promise.all([fetch.listReceiptTemplates()]);
-  return <Receipt.Zone.Console header={<h1 className="font-bold text-2xl">{l("receipt.console")}</h1>} templates={templates} />;
+  return (
+    <Receipt.Zone.Console
+      header={<h1 className="font-bold text-2xl">{l("receipt.console")}</h1>}
+      templates={templates}
+    />
+  );
 });
 ```
 
-### apps/akan/akan.config.ts
+### apps/koyo/akan.config.ts
 
 ```typescript
 import type { AppConfig } from "akanjs";

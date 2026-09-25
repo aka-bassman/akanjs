@@ -1,3 +1,4 @@
+import { capitalize } from "akanjs/common";
 import ts from "typescript";
 import type { AkanModuleContext } from "../akanContext";
 import type { Sys, Workspace } from "../commandDecorators";
@@ -396,6 +397,54 @@ const addFieldUiSurfaceInspection = (plan: WorkflowPlan): WorkflowStepResult => 
   };
 };
 
+const addMutationActionSurfaceInspection = (plan: WorkflowPlan): WorkflowStepResult => {
+  const module = workflowStringInput(plan.inputs.module) ?? "<module>";
+  const mutation = workflowStringInput(plan.inputs.mutation) ?? "<mutation>";
+  const moduleClassName = moduleComponentName(module);
+  return {
+    recommendations: [
+      {
+        code: "add-mutation-action-surface-review",
+        kind: "manual-action",
+        target: `*/${moduleSourcePaths(module).store}`,
+        action: `Name the endpoint's guards and add its dictionary .endpoint() entry with a .desc(). After sync, fetch.${mutation} exists; write a store action only for a toast, an optimistic update, or a multi-field write, and put the control that calls it in ${moduleClassName}.Util.tsx.`,
+        confidence: "medium",
+        message: `Workflow apply does not write store or UI code for ${module}.${mutation}; review whether a screen should call it.`,
+      },
+    ],
+    nextActions: [
+      {
+        command: `akan workflow explain ${plan.workflow}`,
+        reason: "Review action surface guidance before manually editing store or UI files.",
+      },
+    ],
+  };
+};
+
+const addSliceViewSurfaceInspection = (plan: WorkflowPlan): WorkflowStepResult => {
+  const module = workflowStringInput(plan.inputs.module) ?? "<module>";
+  const slice = workflowStringInput(plan.inputs.slice) ?? "<slice>";
+  const moduleClassName = moduleComponentName(module);
+  return {
+    recommendations: [
+      {
+        code: "add-slice-view-surface-review",
+        kind: "manual-action",
+        target: `*/${moduleSourcePaths(module).zone}`,
+        action: `Fill in the service query stub and add the dictionary .slice() entry. After sync, load fetch.init${moduleClassName}${capitalize(slice)}() in the page and pass the result to a ${moduleClassName}.Zone as an init prop.`,
+        confidence: "medium",
+        message: `Workflow apply does not write page or Zone code for ${module}.${slice}; review where the list should render.`,
+      },
+    ],
+    nextActions: [
+      {
+        command: `akan workflow explain ${plan.workflow}`,
+        reason: "Review view surface guidance before manually editing Zone or page files.",
+      },
+    ],
+  };
+};
+
 export const createWorkflowStepRegistry = ({
   workspace,
   createModule,
@@ -494,6 +543,8 @@ export const createWorkflowStepRegistry = ({
         }),
       ),
     [workflowStepKey("add-mutation", "update-signal")]: inspect,
+    [workflowStepKey("add-mutation", "update-action-surfaces")]: async (_step, plan) =>
+      addMutationActionSurfaceInspection(plan),
     [workflowStepKey("add-slice", "update-service-query")]: async (_step, plan) =>
       primitiveReportToWorkflowStepResult(
         await addSlice({
@@ -503,6 +554,7 @@ export const createWorkflowStepRegistry = ({
         }),
       ),
     [workflowStepKey("add-slice", "update-signal-slice")]: inspect,
+    [workflowStepKey("add-slice", "connect-view-surfaces")]: async (_step, plan) => addSliceViewSurfaceInspection(plan),
   };
 };
 

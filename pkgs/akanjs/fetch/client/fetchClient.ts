@@ -549,11 +549,11 @@ export class FetchClient {
       this.#setHandlerFactory(key, () => this.#makeHttpFn(key, value, signal.prefix));
     });
 
-    // view/edit helpers are available whenever any create/update/remove endpoint is exposed;
-    // merge wraps updateModel, so it additionally requires update to be exposed.
+    // view/edit read through the model's get handler, so they exist exactly when it does; edit also needs a
+    // create/update/remove endpoint to hand the form to, and merge wraps updateModel.
     const anyCruGuards = signal.cruGuards ?? signal.createGuards ?? signal.updateGuards ?? signal.removeGuards;
     const updateGuards = signal.updateGuards ?? signal.cruGuards;
-    if (anyCruGuards) {
+    if (signal.getGuards) {
       this.#setHandlerFactory(names.viewModel, () =>
         this.#makeModelHandleFn(refName, names.model, names.viewModel, `${refName}View`),
       );
@@ -566,6 +566,8 @@ export class FetchClient {
             return { refName, [`${refName}Obj`]: modelObj, [`${refName}ViewAt`]: new Date() };
           }) as FetchHandler,
       );
+    }
+    if (signal.getGuards && anyCruGuards) {
       this.#setHandlerFactory(names.editModel, () =>
         this.#makeModelHandleFn(refName, names.model, names.editModel, `${refName}Edit`),
       );
@@ -578,17 +580,17 @@ export class FetchClient {
             return { refName, [`${refName}Obj`]: modelObj, [`${refName}ViewAt`]: new Date() };
           }) as FetchHandler,
       );
-      if (updateGuards) {
-        this.#setHandlerFactory(
-          names.mergeModel,
-          () =>
-            (async (modelOrId: string | { id: string }, data: UnknownRecord, option?: FetchPolicy) => {
-              const id = typeof modelOrId === "string" ? modelOrId : modelOrId.id;
-              const updateFn = this.#requireHandler(names.updateModel, names.mergeModel);
-              return await updateFn(id, data, option);
-            }) as FetchHandler,
-        );
-      }
+    }
+    if (updateGuards) {
+      this.#setHandlerFactory(
+        names.mergeModel,
+        () =>
+          (async (modelOrId: string | { id: string }, data: UnknownRecord, option?: FetchPolicy) => {
+            const id = typeof modelOrId === "string" ? modelOrId : modelOrId.id;
+            const updateFn = this.#requireHandler(names.updateModel, names.mergeModel);
+            return await updateFn(id, data, option);
+          }) as FetchHandler,
+      );
     }
 
     this.#setHandlerFactory(

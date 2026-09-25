@@ -921,12 +921,52 @@ describe("data loaders", () => {
     expect(batches).toEqual([["a", "b"]]);
   });
 
-  test("DataLoader cache can be cleared and primed", async () => {
+  test("DataLoader remembers nothing past its own batch unless a cache is declared", async () => {
     let calls = 0;
     const loader = new DataLoader<string, string>(async (keys) => {
       calls++;
       return keys.map((key) => `loaded:${key}`);
     });
+
+    await Promise.all([loader.load("a"), loader.load("a")]);
+    await loader.load("a");
+    loader.prime("a", "primed:a");
+    await expect(loader.load("a")).resolves.toBe("loaded:a");
+    expect(calls).toBe(3);
+  });
+
+  test("DataLoader keeps a key for the declared milliseconds and never keeps a failure", async () => {
+    let calls = 0;
+    let fail = true;
+    const loader = new DataLoader<string, string>(
+      async (keys) => {
+        calls++;
+        if (fail) throw new Error("store down");
+        return keys.map((key) => `loaded:${key}`);
+      },
+      { cache: 30 },
+    );
+
+    await expect(loader.load("a")).rejects.toThrow("store down");
+    fail = false;
+    await expect(loader.load("a")).resolves.toBe("loaded:a");
+    await expect(loader.load("a")).resolves.toBe("loaded:a");
+    expect(calls).toBe(2);
+
+    await Bun.sleep(40);
+    await expect(loader.load("a")).resolves.toBe("loaded:a");
+    expect(calls).toBe(3);
+  });
+
+  test("DataLoader cache can be cleared and primed", async () => {
+    let calls = 0;
+    const loader = new DataLoader<string, string>(
+      async (keys) => {
+        calls++;
+        return keys.map((key) => `loaded:${key}`);
+      },
+      { cache: true },
+    );
 
     await expect(loader.load("a")).resolves.toBe("loaded:a");
     await expect(loader.load("a")).resolves.toBe("loaded:a");

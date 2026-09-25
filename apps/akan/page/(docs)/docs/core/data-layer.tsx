@@ -1,5 +1,5 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import { Code, Divider, Docs, DocsToc } from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
@@ -7,14 +7,14 @@ const filterMethods = [
   {
     name: "list<Filter>",
     example: "await listByOwner(ownerId, { limit: 20 })",
-    en: "Read, no hooks. Hydrated documents, newest first. Takes a trailing option with skip, limit, sort, sample and select.",
-    ko: "읽기, hook 없음. hydrate된 도큐먼트를 최신순으로 돌려줍니다. skip·limit·sort·sample·select를 담은 옵션을 마지막 인자로 받습니다.",
+    en: "Read, no hooks. Hydrated documents, newest first; takes skip, limit, sort and select.",
+    ko: "읽기, hook 없음. hydrate된 도큐먼트를 최신순으로 돌려주며 skip·limit·sort·select 옵션을 받습니다.",
   },
   {
     name: "listIds<Filter>",
     example: "await listIdsByOwner(ownerId)",
-    en: "Read, no hooks. Just the ids. It takes the same option but ignores select, because the projection is already the id.",
-    ko: "읽기, hook 없음. id만 돌려줍니다. 같은 옵션을 받지만 select는 무시합니다. 이미 id만 고르기 때문입니다.",
+    en: "Read, no hooks. Just the ids; the same option, minus select.",
+    ko: "읽기, hook 없음. id만 돌려줍니다. 같은 옵션을 받되 select는 무시합니다.",
   },
   {
     name: "find<Filter>",
@@ -31,8 +31,8 @@ const filterMethods = [
   {
     name: "pick<Filter>",
     example: "await pickByOwner(ownerId)",
-    en: "Read, no hooks. Same as find, but nothing matching throws instead of answering null — use it when the caller has already established the row exists.",
-    ko: "읽기, hook 없음. find와 같지만 맞는 것이 없으면 null 대신 예외를 냅니다. 행이 있다는 것을 이미 확인한 호출에서 씁니다.",
+    en: "Read, no hooks. Like find, but no match throws — for rows the caller knows exist.",
+    ko: "읽기, hook 없음. find와 같지만 없으면 예외를 냅니다. 행이 있다고 아는 호출에서 씁니다.",
   },
   {
     name: "pickId<Filter>",
@@ -43,7 +43,7 @@ const filterMethods = [
   {
     name: "exists<Filter>",
     example: "if (await existsByOwner(ownerId)) …",
-    en: "Read, no hooks. The matching id or null — not a boolean, though it reads as one in a condition.",
+    en: "Read, no hooks. The matching id or null — not a boolean, though it works in a condition.",
     ko: "읽기, hook 없음. boolean이 아니라 맞는 id 또는 null입니다. 조건문에서는 boolean처럼 읽힙니다.",
   },
   {
@@ -55,32 +55,32 @@ const filterMethods = [
   {
     name: "insight<Filter>",
     example: "await insightByOwner(ownerId)",
-    en: "Read, no hooks. The model's Insight aggregate as a plain record — never a hydrated document.",
+    en: "Read, no hooks. The model's Insight aggregate as a plain record, not a hydrated document.",
     ko: "읽기, hook 없음. 모델의 Insight 집계를 plain record로 돌려줍니다. hydrate된 도큐먼트가 아닙니다.",
   },
   {
     name: "query<Filter>",
     example: "this.productService.queryByOwner(ownerId)",
-    en: "Neither. It returns the query descriptor synchronously and touches the database not at all — this is what a slice's exec hands back.",
-    ko: "읽기도 쓰기도 아닙니다. query descriptor를 동기로 돌려줄 뿐 데이터베이스에 닿지 않습니다. slice의 exec이 돌려주는 값이 이것입니다.",
+    en: "Neither. The descriptor a slice's exec returns; synchronous, never touches the database.",
+    ko: "읽기도 쓰기도 아닙니다. slice의 exec이 돌려주는 query descriptor이며, 동기이고 데이터베이스에 닿지 않습니다.",
   },
   {
     name: "remove<Filter>",
     example: "await removeByOwner(ownerId)",
-    en: "Write, NO hooks. One atomic soft delete over every match, reporting counts. No _preRemove, no _postRemove, no cascade, and no live-sync push.",
-    ko: "쓰기, hook 없음. 조건에 맞는 모든 행을 한 번의 원자적 soft delete로 지우고 개수를 돌려줍니다. _preRemove도 _postRemove도 cascade도 live-sync 전파도 없습니다.",
+    en: "Write, NO hooks. One atomic soft delete over every match, reporting counts.",
+    ko: "쓰기, hook 없음. 맞는 모든 행을 원자적 soft delete 한 번으로 지우고 개수를 돌려줍니다.",
   },
   {
     name: "removeOne<Filter>",
     example: "await removeOneByOwner(ownerId)",
-    en: "Write, NO hooks. The same, narrowed to the newest match. The caller cannot pick which one and gets counts rather than an id, so this is for at most one of these — not for claiming the next item off a queue.",
-    ko: "쓰기, hook 없음. 같은 동작을 가장 최근 하나로 좁힙니다. 어느 행인지 고를 수 없고 id 대신 개수를 받으므로, 큐에서 다음 항목을 집는 용도가 아니라 이런 건 많아야 하나라는 뜻으로 씁니다.",
+    en: "Write, NO hooks. The same on the newest match; for at-most-one rows, not queue claims.",
+    ko: "쓰기, hook 없음. 같은 동작을 가장 최근 하나에만 합니다. 큐 항목을 집는 용도가 아니라 많아야 하나인 행에 씁니다.",
   },
   {
     name: "update<Filter>",
     example: 'await updateByOwner(ownerId).set({ status: "archived" })',
-    en: "Write, NO hooks. A chain, not a call: the patch lands on a terminal .set(), and building the chain touches nothing.",
-    ko: "쓰기, hook 없음. 호출이 아니라 체인입니다. 수정할 값은 마지막 .set()에 넘기고, 체인을 만드는 것만으로는 아무 일도 일어나지 않습니다.",
+    en: "Write, NO hooks. A chain: the patch goes on a terminal .set(); building it does nothing.",
+    ko: "쓰기, hook 없음. 체인입니다. 수정할 값은 마지막 .set()에 넘기고, 체인을 만드는 것만으로는 아무 일도 없습니다.",
   },
   {
     name: "updateOne<Filter>",
@@ -128,54 +128,27 @@ export default page().render(() => {
             })}
           </div>
         </Docs.Description>
-        <Docs.Mermaid
-          title="Data layer flow"
-          chart={`flowchart LR
-  constant["constant<br/>data shape"] --> document["document<br/>storage rule"]
-  document --> service["service<br/>business logic"]
-  service --> signal["signal<br/>page callable API"]
-  signal --> store["store<br/>client state"]
-  store --> ui["UI<br/>screen display"]`}
-        />
-        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
-          {[
-            {
-              name: "constant",
-              desc: l.trans({ en: "What data exists", ko: "어떤 데이터인지" }),
-            },
-            {
-              name: "document",
-              desc: l.trans({ en: "How data is stored", ko: "어떻게 저장하는지" }),
-            },
-            {
-              name: "service",
-              desc: l.trans({ en: "What the business does", ko: "비즈니스가 무엇을 하는지" }),
-            },
-            {
-              name: "signal",
-              desc: l.trans({ en: "What pages can call", ko: "페이지가 무엇을 호출하는지" }),
-            },
-            {
-              name: "store",
-              desc: l.trans({ en: "How client state is kept", ko: "클라이언트 상태를 어떻게 유지하는지" }),
-            },
-            {
-              name: "UI",
-              desc: l.trans({ en: "How users see the data", ko: "사용자가 데이터를 어떻게 보는지" }),
-            },
-          ].map(({ name, desc }) => (
-            <div key={name} className={panelRecipe()}>
-              <div className="font-mono font-semibold text-primary">{name}</div>
-              <div className="mt-2 text-foreground/70 text-sm">{desc}</div>
-            </div>
-          ))}
-        </div>
-        <Docs.Alert type="info">
-          {l.trans({
-            en: "You do not need every layer on day one. A simple read-only feature may start with constant and document, then add service or signal when the business behavior grows.",
-            ko: "처음부터 모든 레이어가 필요한 것은 아닙니다. 단순히 읽기만 하는 기능은 constant와 document로 시작하고, 비즈니스 동작이 늘어날 때 service나 signal을 추가하면 됩니다.",
+        <Docs.Figure
+          title={l.trans({
+            en: "One module, from the database to the screen",
+            ko: "모듈 하나, 데이터베이스에서 화면까지",
           })}
-        </Docs.Alert>
+          image="data-layer-module"
+          prompt={`
+            A wide folder outline spanning the whole frame, labelled "lib/product/" on its tab. Inside it, one row
+            of shapes left to right joined by short arrows: a database cylinder labelled "Database"; a small
+            folded-corner page labelled "document" with a smaller second line "how it is stored"; a gear labelled
+            "service" with a smaller second line "business rules"; a small door labelled "signal" with a smaller
+            second line "what a page may call"; then a tall dashed vertical line labelled "API"; then a small box
+            labelled "store" with a smaller second line "client state"; and a browser labelled "UI". Under the whole
+            row, one long flat rectangle running from under the document to under the browser, traced as the red
+            accent, labelled "constant" with a smaller second line "the shape every file shares".
+          `}
+          alt={l.trans({
+            en: "One lib/product folder holds the whole path: document stores the data, service runs the business rules, signal opens them to pages, and past the API the store holds client state for the UI. The constant file runs underneath every step, because each of them reuses its shape.",
+            ko: "lib/product 폴더 하나가 전체 경로를 담습니다. document가 데이터를 저장하고, service가 비즈니스 규칙을 실행하고, signal이 그것을 페이지에 열고, API 너머에서는 store가 UI를 위한 클라이언트 상태를 들고 있습니다. constant 파일은 모든 단계 아래에 깔려 있습니다. 각 단계가 그 형태를 다시 쓰기 때문입니다.",
+          })}
+        />
       </Scroll.Slide>
       <Divider />
 
@@ -220,7 +193,7 @@ export class Product extends via(ProductObject, LightProduct, (resolve) => ({}))
 export class ProductInsight extends via(Product, (field) => ({})) {}`}
           />
         </Docs.Description>
-        <div className="space-y-1">
+        <div className="space-y-1 pl-2">
           {[
             {
               title: "Input",
@@ -258,13 +231,50 @@ export class ProductInsight extends via(Product, (field) => ({})) {}`}
               }),
             },
           ].map(({ title, desc }) => (
-            <div key={title} className={panelRecipe({ padding: "row" })}>
+            <div key={title}>
               <span className="font-bold text-foreground">{title}: </span>
-
               <span className="text-foreground/70 text-sm">{desc}</span>
             </div>
           ))}
         </div>
+        <Docs.Figure
+          title={l.trans({ en: "How the five classes build on each other", ko: "다섯 클래스가 서로를 쌓는 방식" })}
+          image="model-shape-layers"
+          prompt={`
+            Four columns left to right. First column: a small sheet of paper with two short lines, labelled "Input"
+            with a smaller second line "what a form sends". An arrow to the second column: a larger sheet with the
+            same small sheet drawn inside its top half and one more short line below it, labelled "Object" with a
+            smaller second line "Input + stored fields". From it, two arrows to the third column, which has two
+            shapes stacked top to bottom: at the top a small index card with two short lines, traced as the red
+            accent, labelled "Light" with a smaller second line "the small shared view"; at the bottom a large sheet
+            labelled "Model" with a smaller second line "Object + Light". A short arrow runs down from the index card
+            into the large sheet. From the large sheet, drawn as a stack of three sheets, an arrow to the fourth
+            column: a small card holding a sigma sign, labelled "Insight" with a smaller second line "counts over a
+            list".
+          `}
+          alt={l.trans({
+            en: "Input is what a form sends. Object adds the stored fields the system controls. Light picks the few fields a list or card needs and carries the shared logic. Model combines Object and Light into the full record, and Insight counts over a list of them.",
+            ko: "Input은 폼이 보내는 값입니다. Object는 시스템이 관리하는 저장 필드를 더합니다. Light는 목록이나 카드에 필요한 필드 몇 개만 고르고 공유 로직을 담습니다. Model은 Object와 Light를 합친 전체 레코드이고, Insight는 그 목록을 세는 집계입니다.",
+          })}
+        />
+        <Docs.Figure
+          title={l.trans({ en: "Where each class shows up", ko: "각 클래스가 나타나는 곳" })}
+          image="model-shape-screens"
+          prompt={`
+            One browser window filling most of the frame, and nothing at all drawn outside it — no people, devices,
+            clouds, servers or arrows. Its page is divided into four regions by thin lines. Top left: a simple form
+            with two empty input boxes and one small button, labelled "Input" with a smaller second line "create ·
+            edit". Top right: three small cards in a row, each with a tiny picture box and one short line, the three
+            cards traced as the red accent, labelled "Light" with a smaller second line "list · card". Bottom left: a
+            large picture box above four short lines, labelled "Model" with a smaller second line "detail view".
+            Bottom right: one large hand-drawn number block beside a tiny bar chart, labelled "Insight" with a smaller
+            second line "totals".
+          `}
+          alt={l.trans({
+            en: "A create or edit form sends Input, a list of cards shows Light, a detail view shows the full Model, and the totals above a list read Insight.",
+            ko: "생성·수정 폼은 Input을 보내고, 카드 목록은 Light를 보여주고, 상세 화면은 전체 Model을 보여주고, 목록 위의 합계는 Insight를 읽습니다.",
+          })}
+        />
       </Scroll.Slide>
       <Divider />
 
@@ -318,6 +328,25 @@ export class ProductService extends serve(db.product, ({ use, service }) => ({})
   }
 }`}
           />
+          <Docs.Figure
+            title={l.trans({
+              en: "Service decides, document changes itself",
+              ko: "service는 결정하고, document는 스스로 바뀝니다",
+            })}
+            image="document-and-service"
+            prompt={`
+              A large process in the upper middle of the frame, labelled "Service" on its top band with a smaller
+              second line "which record · when to save". Inside it, one folded-corner page, traced as the red accent,
+              labelled "Document" with a smaller second line "validate · change · return this", with a small circular
+              arrow curling around its top right corner. A database cylinder centred below the process, labelled
+              "Database". On the left, an arrow rises from the database into the page, labelled "load". On the right,
+              an arrow falls from the page back into the database, labelled "save".
+            `}
+            alt={l.trans({
+              en: "The service loads a document from the database, the document validates and changes itself and returns itself, and the service saves it back.",
+              ko: "service가 데이터베이스에서 document를 불러오고, document가 스스로 검증하고 바꾼 뒤 자기 자신을 돌려주면, service가 다시 저장합니다.",
+            })}
+          />
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -343,6 +372,22 @@ export class ProductService extends serve(db.product, ({ use, service }) => ({})
   sort: {},
 })) {}`}
           />
+          <Docs.Figure
+            title={l.trans({ en: "One filter, fourteen methods", ko: "필터 하나, 메서드 열넷" })}
+            image="filter-generates"
+            prompt={`
+              A small luggage tag at the left, labelled "byOwner" with a smaller second line "one filter". Three
+              arrows leave it to the right, reaching three rounded boxes stacked top to bottom. The top box holds a
+              small open book and is labelled "9 Reads" with a smaller second line "list · find · pick · count". The
+              middle box holds a small blank slip of paper and is labelled "1 Query" with a smaller second line "for
+              a slice". The bottom box holds a small pencil, its outline traced as the red accent, and is labelled "4
+              Writes" with a smaller second line "no hooks".
+            `}
+            alt={l.trans({
+              en: "One filter such as byOwner generates nine reads, one query descriptor for a slice, and four writes that run no hooks.",
+              ko: "byOwner 같은 필터 하나가 읽기 아홉 개, slice용 query descriptor 하나, hook을 실행하지 않는 쓰기 네 개를 만듭니다.",
+            })}
+          />
           <div>
             {l.trans({
               en: "Nine of the fourteen read, one only builds a query descriptor, and the remaining four write. Those four are the ones to be careful with: each is a single atomic statement against the database, so none of the model's document hooks run:",
@@ -365,8 +410,8 @@ export class ProductService extends serve(db.product, ({ use, service }) => ({})
           </Docs.Alert>
           <div>
             {l.trans({
-              en: "Every model already carries an any filter, so listAny and countAny exist before you declare anything. One name is refused: a filter may not be keyed after its own model, case aside. A filter named chat on model chat would generate a removeChat that quietly replaces the single-document one with a hookless version, so Akan fails the boot instead.",
-              ko: "모든 모델에는 any 필터가 이미 있어서, 아무것도 선언하지 않아도 listAny와 countAny가 존재합니다. 거부되는 이름이 하나 있습니다. 필터 키를 자기 모델 이름으로 지을 수는 없고, 대소문자는 무시하고 비교합니다. model chat에 filter chat을 두면 단일 도큐먼트용 removeChat이 hook 없는 것으로 조용히 바뀌므로 Akan이 부팅을 실패시킵니다.",
+              en: "Every model already carries an any filter, so listAny and countAny exist before you declare anything.",
+              ko: "모든 모델에는 any 필터가 이미 있어서, 아무것도 선언하지 않아도 listAny와 countAny가 존재합니다.",
             })}
           </div>
         </Docs.Description>
@@ -419,7 +464,7 @@ export class ProductEndpoint extends endpoint(srv.product, ({ query, mutation })
               ko: "custom endpoint는 각각 자기 guards 배열을 선언하고, slice는 verb별로 guard를 지정합니다. guards는 MCP 노출 여부까지 결정합니다. guards를 선언하지 않은 endpoint는 agent 카탈로그에서 거부되므로, guards 배열을 빠뜨리면 권한뿐 아니라 노출까지 잃습니다.",
             })}
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 pl-2">
             {[
               {
                 title: "slice",
@@ -443,13 +488,31 @@ export class ProductEndpoint extends endpoint(srv.product, ({ query, mutation })
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-mono font-semibold text-primary">{title}: </span>
-
+              <div key={title}>
+                <span className="font-bold text-foreground">{title}: </span>
                 <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
             ))}
           </div>
+          <Docs.Figure
+            title={l.trans({ en: "Two doors out, one job inside", ko: "밖으로 난 문 둘, 안에서 도는 일 하나" })}
+            image="signal-doors"
+            prompt={`
+              A large server outline on the left two thirds of the frame, labelled "Akan Server" at its top left.
+              Inside it, a gear near the centre labelled "service". The server's right wall has two doors, one above
+              the other, each with a small padlock on it; the two padlocks are traced as the red accent and labelled
+              once "guards". The upper door is labelled "slice" with a smaller second line "data views", and an arrow
+              leaves it to a browser outside at the right whose page shows three short list rows. The lower door is
+              labelled "endpoint" with a smaller second line "actions", and an arrow leaves it to a second browser
+              outside at the right whose page shows one button. Inside the server near its bottom, a small clock
+              labelled "internal" with a smaller second line "jobs no page calls", with an arrow from the clock to the
+              gear and no door.
+            `}
+            alt={l.trans({
+              en: "A slice and an endpoint are the two doors a page can reach, each behind its guards; an internal signal runs a job inside the server and has no door at all.",
+              ko: "slice와 endpoint는 페이지가 닿을 수 있는 두 개의 문이고 각각 guard 뒤에 있습니다. internal signal은 서버 안에서 작업을 돌리며 문이 아예 없습니다.",
+            })}
+          />
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
@@ -472,7 +535,7 @@ export class ProductEndpoint extends endpoint(srv.product, ({ query, mutation })
               ko: "서버 데이터를 호출하거나 Akan UI 컴포넌트에 slice 정보를 넘길 때는 fetch를 사용합니다. 클라이언트 컴포넌트가 현재 상태를 읽거나 store action을 실행해야 할 때는 st를 사용합니다.",
             })}
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 pl-2">
             {[
               {
                 title: "fetch",
@@ -489,13 +552,29 @@ export class ProductEndpoint extends endpoint(srv.product, ({ query, mutation })
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-mono font-semibold text-primary">{title}: </span>
-
+              <div key={title}>
+                <span className="font-bold text-foreground">{title}: </span>
                 <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
             ))}
           </div>
+          <Docs.Figure
+            title={l.trans({ en: "Who calls fetch, who holds st", ko: "fetch를 부르는 쪽, st를 쥐는 쪽" })}
+            image="fetch-and-st"
+            prompt={`
+              A server at the far left labelled "Akan Server". On the right, two large rounded boxes stacked top to
+              bottom. The top box is labelled "Server Component" with a smaller second line "page · Unit · View". The
+              bottom box is labelled "Client Component" with a smaller second line "Zone · Template · Util". Between
+              the bottom box and the server sits a small box traced as the red accent, labelled "Store". Two short
+              arrows join the bottom box and the store: one from the store into the box, labelled "st.use"; one from
+              the box into the store, labelled "st.do". One arrow leaves the top box and one leaves the store; they
+              merge into a single arrow that enters the server, labelled "fetch" once where they join.
+            `}
+            alt={l.trans({
+              en: "A server component calls fetch directly. A client component reads the store with st.use and changes it with st.do, and the store's action is what calls fetch.",
+              ko: "서버 컴포넌트는 fetch를 직접 부릅니다. 클라이언트 컴포넌트는 st.use로 store를 읽고 st.do로 바꾸며, fetch를 부르는 것은 store의 action입니다.",
+            })}
+          />
           <Code.Snippet
             className="w-full"
             title="Server action: call addStock with fetch"
@@ -612,19 +691,51 @@ export const General = () => {
               ko: "차이는 page가 어디서 기다리는지입니다. await한 호출은 query가 끝날 때까지 route 전체를 붙잡으므로 그 아래 아무것도 전송되지 않습니다. 반면 Zone이나 Load.Stream에 넘긴 promise는 그 component 안에서, 자체 Suspense boundary 뒤에서 await됩니다 — page의 나머지는 이미 전송된 상태이고 각 section은 자기 data가 도착하는 대로 채워집니다.",
             })}
           </div>
-          <Docs.Mermaid
-            title="Where the page waits"
-            chart={`sequenceDiagram
-  participant Browser
-  participant Route as Route render
-  participant Server as Server queries
-  Browser->>Route: GET /:lang/shop/:shopId
-  Route->>Server: fetch.initProductInShop(shopId)
-  Route->>Server: fetch.initOrderInShop(shopId)
-  Route-->>Browser: shell HTML, one boundary per section
-  Server-->>Browser: productInitInShop fills the product zone
-  Server-->>Browser: orderInitInShop fills the order zone
-  Server-->>Browser: productListInShop fills the Load.Stream`}
+          <Docs.Sequence
+            title={l.trans({ en: "Where the page waits", ko: "페이지가 기다리는 지점" })}
+            actors={{
+              browser: { label: l.trans({ en: "Browser", ko: "브라우저" }) },
+              route: { label: l.trans({ en: "Route render", ko: "Route 렌더" }) },
+              server: { label: l.trans({ en: "Server queries", ko: "서버 쿼리" }) },
+            }}
+            messages={[
+              { from: "browser", to: "route", label: "GET /:lang/shop/:shopId" },
+              { from: "route", to: "server", label: "fetch.initProductInShop(shopId)" },
+              { from: "route", to: "server", label: "fetch.initOrderInShop(shopId)" },
+              {
+                from: "route",
+                to: "browser",
+                dashed: true,
+                label: l.trans({ en: "shell HTML, one boundary per section", ko: "shell HTML, 섹션마다 경계 하나" }),
+              },
+              {
+                from: "server",
+                to: "browser",
+                dashed: true,
+                label: l.trans({
+                  en: "productInitInShop fills the product zone",
+                  ko: "productInitInShop이 product zone을 채웁니다",
+                }),
+              },
+              {
+                from: "server",
+                to: "browser",
+                dashed: true,
+                label: l.trans({
+                  en: "orderInitInShop fills the order zone",
+                  ko: "orderInitInShop이 order zone을 채웁니다",
+                }),
+              },
+              {
+                from: "server",
+                to: "browser",
+                dashed: true,
+                label: l.trans({
+                  en: "productListInShop fills the Load.Stream",
+                  ko: "productListInShop이 Load.Stream을 채웁니다",
+                }),
+              },
+            ]}
           />
           <Code.Snippet
             className="w-full"
@@ -653,7 +764,7 @@ export default page()
     );
   });`}
           />
-          <div className="space-y-1">
+          <div className="space-y-1 pl-2">
             {[
               {
                 title: "x<Model>Init<Suffix>",
@@ -677,9 +788,8 @@ export default page()
                 }),
               },
             ].map(({ title, desc }) => (
-              <div key={title} className={panelRecipe({ padding: "row" })}>
-                <span className="font-mono font-semibold text-primary">{title}: </span>
-
+              <div key={title}>
+                <span className="font-bold text-foreground">{title}: </span>
                 <span className="text-foreground/70 text-sm">{desc}</span>
               </div>
             ))}

@@ -1,6 +1,7 @@
 import { cn } from "akanjs/client";
 import type { ReactNode } from "react";
 import { BiCheckCircle, BiErrorCircle, BiInfoCircle, BiStopCircle } from "react-icons/bi";
+import { CodeText } from "./CodeText";
 
 interface AlertProps {
   children: ReactNode;
@@ -21,7 +22,9 @@ export const Alert = ({ children, type = "info", className, bodyClassName }: Ale
   return (
     <div role="alert" className={cn("my-4 flex items-start gap-3 rounded-lg border p-4", surface, className)}>
       <Icon className={cn("mt-0.5 shrink-0 text-xl", icon)} />
-      <div className={cn("min-w-0 flex-1 text-foreground leading-relaxed", bodyClassName)}>{children}</div>
+      <div className={cn("min-w-0 flex-1 text-foreground leading-relaxed", bodyClassName)}>
+        <CodeText>{children}</CodeText>
+      </div>
     </div>
   );
 };

@@ -22,155 +22,239 @@
 
 MCP Server
 
-Become tools. A generated read also gets a resource URI.
+Model Context Protocol: the standard AI clients like Claude Code and Cursor use to call a server.
 
-A screen published from its page file as a slash command the user invokes, not the model.
+A function the model may call; each published endpoint becomes one, named by its key.
 
-Never exposed — their arguments read a socket MCP does not have.
+A read addressed by an `akan://` URI, which a client can attach as context.
 
-Exposure follows the guards, and there is no per-endpoint opt-in. Every candidate walks one ordered ladder at boot, first match wins, and whichever rung it stopped on is the sentence the boot log prints:
+A screen published for the user to run as a slash command in the MCP client.
 
-Published, or refused and why
+The list of tools, resources and prompts a client downloads when it connects.
 
-1. Turn The Server On
+Signal (*.signal.ts)
 
-/mcp is mounted by default. Configure it in lib/option.ts — not main.ts — so the process that mounts the route actually receives the settings. Every lib's option is read in mount order with the app's last. A value written in code wins over the env of the same name, but writing undefined does not erase one.
+Custom endpoints and the generated create, update and remove become tools named by their key.
 
-Whether the route is mounted at all. AKAN_MCP / AKAN_PUBLIC_MCP is an opt-out: only the literal false or 0 turns it off.
+Generated reads are tools that also get an `akan://` resource URI.
 
-Drops every endpoint that is not a query, whatever its guards allow — a deployment valve, not the exposure switch. AKAN_MCP_READONLY is an opt-in: only true or 1 turns it on.
+An aggregate with nothing to point at, so it stays a tool with no URI.
 
-Mount path. The published OAuth resource identifier follows it, so changing it changes the aud a token has to carry. AKAN_MCP_PATH, normalized to a leading slash.
+Never exposed: their arguments read a socket an MCP request does not have.
 
-Reported as serverInfo.version — the same placeholder the OpenAPI document uses. AKAN_MCP_VERSION.
+Page (page/**)
 
-What this app is for and which tool to reach for first, handed to the model with the tool list. AKAN_MCP_INSTRUCTIONS.
+A screen the user runs as a slash command; the model does not pick it.
 
-Extra origins past the DNS-rebinding check, beyond the server's own host. Only a browser-hosted client sends Origin. AKAN_MCP_ALLOWED_ORIGINS, comma-separated.
+It declares `mcp: false`
 
-Entries per catalogue page. A client that wants the whole list follows nextCursor until it stops. AKAN_MCP_PAGE_SIZE.
+It was curated off the shelf on purpose; its guards and HTTP stay exactly as they were.
 
-The one language the catalogue and its error text are written in. Server-wide on purpose: the document is built once at boot and read by a model, not a person. AKAN_MCP_LANGUAGE.
+A guard declares `static agents = false`, like `Person`
 
-How much of a result's shape each tool advertises. shallow names a nested model instead of inlining it, full inlines the whole closure, none publishes no outputSchema and keeps the text block on. AKAN_MCP_OUTPUT_SCHEMA.
+It is an act reserved for a person, so no model is ever offered it.
 
-Whether a structured result also ships as serialized JSON in the text block — a flat doubling of every model-returning call. AKAN_MCP_LEGACY_TEXT can only turn it off; there is no env spelling that turns it back on.
+It declares no `guards`, or an empty list
 
-Per-caller budget for tools/call, resources/read and prompts/get, counted per process — so replicas do not share it. Listings are not counted. false takes it off and warns at boot. AKAN_MCP_RATE_LIMIT and AKAN_MCP_CONCURRENT.
+Nobody decided who may call it; write `guards: [Public]` if anonymous access is the intent.
 
-Characters of screen data one page prompt may attach before its lists are cut, largest first. A page's own limit is right for a screen and wrong for a model's window. AKAN_MCP_PROMPT_BUDGET.
+It is the generated `light<Model>` read
 
-OAuth resource-server identity. Naming an authorization server makes a credential mandatory rather than advertising one. AKAN_MCP_AUTH_SERVERS, AKAN_MCP_SCOPES, AKAN_MCP_RESOURCE; verify is a function and has no env spelling.
+It reads the same document as `<model>` in a smaller shape, so the agent calls `<model>` instead.
 
-2. Write An Endpoint
+It is a `pubsub` or a `message`
 
-Name the guards and you are done. The tool name is the endpoint key, the input schema comes from the declared arguments, and the output schema from the return model.
+It rides the websocket, and its arguments read a socket an MCP request does not have.
 
-Write the dictionary entry at the same time. An agent picks a tool by its description, so a missing one is a broken tool — the boot log warns for every published entry that has none.
+The deployment is read-only and it is not a `query`
 
-3. Slices And CRUD
+The `readOnly` valve drops every mutation, whatever its guards allow.
 
-Generated CRUD publishes from the slice() guards map — get, cru, and the per-verb entries. A named slice does not inherit that map: write its own guards, or it is refused and named in the boot log.
+It returns `Any`, `Upload` or `Binary`
 
-mcp: false keeps an entry off the shelf without touching its guards. On slice() it mirrors the guards map key for key — root, get, cru, create, update, remove — and reaches exactly as far: the root slice and generated CRUD, never a named slice or a custom endpoint. Those write their own. A bare mcp: false expands to root, get and cru only; create, update and remove then inherit cru.
+A model cannot be told what comes back, and raw bytes only fill its context window.
 
-Every published read also gets a resource URI. An insight does not — it is an aggregate with nothing to point at. A custom endpoint keeps its tool and gets no template, and the refused lightX read gets neither. The root list is the bare .../list, with no third segment, because that segment is the slice key.
+It takes a file upload
 
-generated resource uris
+A file upload has no MCP representation.
 
-The root list's raw query argument is typed Any, so it is left out of the schema. Declare a named filter slice when an agent should narrow a list.
+It is a `mutation` whose only guard is `Public`
 
-4. Publish A Screen As A Prompt
+`[Public]` on a write is having no guard, spelled out; add a real one.
 
-A prompt is a screen, not an endpoint. Declare it in the page file with .prompt(name, description): the user invokes it as a slash command, and the model receives what the page loads. There is no prompt() builder in a signal, and Msg is not a public API.
+A required argument is typed `Any`
 
-The description is the whole instruction the model receives — English, in API vocabulary. Agent.Guide text is never used for MCP.
+`Any` is left out of the schema, so expose a named filter slice instead.
 
-Arguments are the declaration: .param() is required, .search() optional, and desc is the argument's description. A list argument gets Comma-separated list. appended and is typed comma-separated in prompts/get. An ID, Int, or enum value is validated by the page's own declaration.
+Whether `/mcp` is mounted; `false` or `0` in the env turns it off whatever the code says.
 
-prompts/list lists every page with .prompt(). A name matches ^[A-Za-z0-9_-]{1,64}$ and is unique across pages.
+Publishes queries only, whatever the guards allow; the env turns it on only on `true` or `1`.
 
-prompts/get runs the page's body — root layouts, layouts, then the render function — in the RSC worker under the caller's bearer token. No JSX is rendered and no client component runs; every fetch.* query the page makes is recorded and becomes the answer.
+Mount path; the OAuth resource identifier, and so the `aud` a token needs, follows it.
 
-The description, as the first user message.
+Reported as `serverInfo.version`, the same placeholder the OpenAPI document uses.
 
-One per query, embedded and masked by that endpoint's return model — hidden, secret, and visual fields stripped — at the akan:// uri the tool answers to, or akan://<toolKey>?args for a custom read.
+Sent to the model with the tool list: what the app is for and which tool to reach first.
 
-A final line, Tools for this screen: a, b, c. — the published tools of the modules the page fetched from, filtered to what the caller may see.
+Extra origins past the DNS-rebinding check; only a browser-hosted client sends an Origin.
 
-When A Prompt Cannot Run
+Entries per catalogue page; a client follows `nextCursor` for the rest.
 
-A prompt cannot re-run itself and there is no fallback context, so every way a screen can decline has to arrive as a message the caller can act on. Each of these is answered instead of the page's data, not alongside it:
+The one language of the catalogue and its error text, server-wide.
 
-What happened
+Result shape a tool advertises: `shallow` names nested models, `full` inlines, `none` omits.
+
+Repeats a structured result as JSON in the text block; the env can only turn it off.
+
+Per-caller budget for `tools/call`, `resources/read` and `prompts/get`, counted per process.
+
+Characters of screen data one page prompt may attach before its lists are cut.
+
+The OAuth resource-server identity; naming an authorization server makes a token mandatory.
+
+The endpoint key as written, such as `startTask`.
+
+Every `.param()`, `.search()` and `.body()` argument in one object; `.search()` ones are optional.
+
+The return model; a scalar or a nullable single return ships as text only.
+
+The endpoint's dictionary label and its `.desc()`.
+
+`readOnlyHint` on a query, `destructiveHint` on a `remove…` or `delete…` mutation.
+
+The root slice: guarded by `guards.root`, opted out with `mcp: { root: false }`.
+
+The full read: `guards.get` and `mcp: { get: false }`; `lightTask` is never published.
+
+`guards.cru` and `mcp: { cru: false }`, or a per-verb key such as `create`.
+
+A named slice: only its own `init({ guards, mcp })` counts.
+
+The page's description, as the first user message.
+
+One per query, masked by its endpoint's return model: no hidden, secret or visual fields.
+
+The `akan://` URI the tool answers to; a custom read gets `akan://<toolKey>?args`.
+
+The fetched modules' published tools that the caller may see, minus the attached reads.
 
 A required argument was left out
 
-No <arg> was named for "<prompt>". Find it with <model>List…, then run this prompt again with <arg>=<id>. The page is not run at all, and the answer points at the tool that finds the id rather than guessing one.
+The page is not run; the answer names the tool that finds the id.
 
-The page redirects, with no token
+An argument fails the page's declaration
 
-A 401 credential challenge, so the client authenticates instead of concluding the screen does not exist.
+The page is not run; the declaration's own error message is returned.
 
-The page redirects, with a token
+A redirect or a guard refusal, with no token
 
-This screen is not available to the signed-in account. A guard refusing a query inside the body reads the same way a redirect does — as the screen declining this account.
+A `401` credential challenge, so the client signs in instead of giving up.
 
-router.notFound()
+A redirect or a guard refusal, with a token
 
-No screen exists for these arguments.
+One fixed answer, so it never confirms whether an id exists.
+
+Answered as not-found for these arguments.
 
 Any other throw
 
-The page failed to load. — and the real error is logged server-side, where it does not describe your internals to a caller.
+The real error is logged on the server and never described to the caller.
 
-Lists are cut, largest first, to promptBudget — 60,000 characters by default — with a note: Attached the first N of M rows of `key`; call it for the rest.
+Hides from listing
 
-Tool exposure is unchanged — guards decide, and mcp: false and Person still apply. The in-page chat keeps only its six built-in slash commands; app prompts are not listed there.
+Checked at call
 
-Prompts come from the RSC worker, so an API-only build serves none at all.
+Reads only the caller, so an anonymous agent is not offered admin tools it can only fail.
+
+Needs the call's arguments, so the entry stays listed and is stopped at call time.
+
+Your app mounts libs/shared
+
+Nothing to set. The app serves the OAuth 2.1 server itself (metadata, consent, registration, token, revocation) and names itself the issuer.
+
+Somebody else's issuer
+
+OAuth For Agents
+
+Where an agent's token comes from, and how to revoke it.
+
+In-Page Agent
+
+The chat inside your own pages, a different surface from MCP.
+
+Words used on this page
+
+Term
+
+What becomes what
+
+What you wrote
+
+Published as
+
+Not published as
+
+When an endpoint is refused
+
+Exposure follows the guards, and there is no per-endpoint opt-in. An endpoint is published unless one of these applies, checked top to bottom:
+
+Refused when
+
+Why, and what to do
+
+1. Turn The Server On
+
+Options
+
+2. Write An Endpoint
+
+Tool part
+
+Write the dictionary entry in the same change:
+
+3. Slices And CRUD
+
+Generated entry
+
+Resource URIs
+
+Every published generated read also gets a URI a client can read directly:
+
+Generated resource URIs
+
+4. Publish A Screen As A Prompt
+
+What prompts/get sends back
+
+Part
+
+When A Prompt Cannot Run
+
+A prompt cannot re-run itself and has no fallback context, so every way a screen can decline comes back as a message the caller can act on. Each of these answers instead of the page's data:
+
+What happened
 
 5. Report Progress
 
-Report from wherever the work happens. Outside a streamed call it is a no-op, so the same service runs unchanged over HTTP, a websocket, and in tests.
-
-The client must send both Accept: text/event-stream and a progressToken. The server switches only after the first report.
-
-Cancellation is the client closing the stream. Watch McpProgress.signal; the framework cannot stop an exec already in flight.
-
-McpProgress.streaming is true while anyone is reading, so an expensive message can be skipped.
-
 Authorization
 
-MCP arrives over HTTP and runs the ordinary pipeline, so guards, Self, and account middleware behave as they do for a browser call. One difference: the cookie header is stripped at the door, so the Authorization header is the only credential the route accepts.
+What a caller is shown
 
-The verdict reads the caller only. Evaluated when filtering a listing, so an anonymous agent is not offered admin tools it can only fail at.
+Guard
 
-Needs the call's arguments, so it is never evaluated for a listing. The entry stays visible and is stopped at call time.
+Yes
 
-Every guard must declare static scope with no default. SignedIn / Admin are account; every Can<Verb><Model> is resource. The listing is a UX filter — the call still runs every guard.
+No
+
+The listing is only a convenience filter; the call still runs every guard.
+
+Where tokens come from
+
+For somebody else's issuer, set these in the deployment env:
 
 OAuth resource server, by env
 
-Unauthenticated calls get a WWW-Authenticate challenge, so a client authenticates instead of concluding the tool does not exist.
-
-insufficient_scope is enforced only once AKAN_MCP_SCOPES is set. First-party Akan tokens carry no scope claim.
-
-A token with no aud is refused once AKAN_MCP_AUTH_SERVERS names an issuer, and accepted while none is named.
-
 Tips
-
-A missing tool is explained in the boot log: MCP catalogue: tools=… then one verbose line per refusal. Turn verbose on, because there is no opt-in to notice — that log is the only place the answer exists.
-
-Write the model's .desc(). Generated CRUD tools append it to Get X, and the root list borrows the .of() label — those entries have no other text.
-
-Narrow by cost, and read the boot log first. MCP forbids a $ref across entries, so every entry inlines the schema of every model it mentions and the listing is re-sent whole to every agent that connects. A per-signal MCP catalogue cost: line says where the bytes went.
-
-Two endpoints cannot share a tool name. The first in candidate order — refName then key — keeps it, and the other is refused with another endpoint is already published under this name.
-
-An unknown argument is reported as the caller's mistake. A missing document is too — No <Model> found for the arguments given. Only a genuine failure answers that the server failed.
-
-A field.visual field is stripped from every MCP result and from the readable schema, so the two agree. Reach for it whenever a field is bulky and useless to a model.
 
 ## Code Examples
 
@@ -178,13 +262,13 @@ A field.visual field is stripped from every MCP result and from the readable sch
 
 ```ts
 export const option = new AkanOption<ModulesOptions>().setMcp({
-  instructions: "Domain tools for the akan app. Start from taskListInTodo.",
+  instructions: "Task tracking for one team. Start from taskListInTodo.",
   language: "en",
   outputSchema: "shallow",
 });
 
-// setMcp also takes a function, for a value that has to come from the server env:
-//   .setMcp((env) => ({ readOnly: env.environment !== "main" }))
+// A value decided at boot takes a function of the env.server.* options:
+//   .setMcp(() => ({ readOnly: getEnv().environment === "debug" }))
 ```
 
 ### apps/myapp/lib/task/task.signal.ts
@@ -210,7 +294,9 @@ export class TaskEndpoint extends endpoint(srv.task, ({ query, mutation }) => ({
 .endpoint<TaskEndpoint>((fn) => ({
   startTask: fn(["Start Task", "작업 시작"])
     .desc(["Moves one task from todo to in progress", "할 일 하나를 진행중으로 옮깁니다"])
-    .arg((t) => ({ taskId: t(["Task ID", "할 일 ID"]).desc(["The task to start", "시작할 할 일"]) })),
+    .arg((t) => ({
+      taskId: t(["Task ID", "할 일 ID"]).desc(["The task to start", "시작할 할 일"]),
+    })),
 }))
 ```
 
@@ -230,15 +316,16 @@ export class TaskSlice extends slice(
   }),
 ) {}
 
-// A named slice and a custom endpoint carry a plain boolean, never the map.
-requestPhoneCode: mutation(Boolean, { guards: [SignedIn], mcp: false })
+// A named slice and a custom endpoint carry a plain boolean, never the map:
+//   inArchive: init({ guards: [SignedIn], mcp: false })
+//   requestPhoneCode: mutation(Boolean, { guards: [SignedIn], mcp: false })
 ```
 
 ### Code
 
-```ts
+```markdown
 akan://task/{taskId}
-akan://task/list{?skip,limit,sort}
+akan://task/list{?queryKey,skip,limit,sort}
 akan://task/list/inTodo{?skip,limit,sort}
 ```
 
@@ -254,19 +341,31 @@ export default page()
       fetch.viewProject(projectId),
       fetch.initTicketInProject(projectId, statuses),
     ]);
-    return <Ticket.Zone.Card init={ticketInitInProject} project={project} />;
+    return (
+      <>
+        <Project.View.General project={project} />
+        <Ticket.Zone.Card init={ticketInitInProject} projectId={projectId} />
+      </>
+    );
   });
 ```
 
 ### apps/myapp/lib/task/task.service.ts
 
 ```ts
-async importTasks(rows: cnst.TaskInput[]) {
-  for (const [idx, row] of rows.entries()) {
-    McpProgress.report(idx + 1, { total: rows.length, message: `importing ${row.title}` });
-    await this.createTask(row);
+import { McpProgress } from "akanjs/signal";
+
+export class TaskService extends serve(db.task, () => ({})) {
+  async importTasks(rows: cnst.TaskInput[]) {
+    for (const [idx, row] of rows.entries()) {
+      McpProgress.report(idx + 1, {
+        total: rows.length,
+        message: `importing ${row.title}`,
+      });
+      await this.createTask(row);
+    }
+    return rows.length;
   }
-  return rows.length;
 }
 ```
 

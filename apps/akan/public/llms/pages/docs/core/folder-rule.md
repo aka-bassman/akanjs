@@ -32,6 +32,30 @@ Model the business
 
 Business nouns such as user, order, product, and invoice usually become folders under lib/.
 
+Which folder does this file go in
+
+Who uses it?
+
+one product
+
+several products
+
+What does the file do?
+
+a URL a user visits
+
+data the business stores
+
+something the business does
+
+reusable markup
+
+browser API or React hook
+
+node, Bun, or a secret
+
+pure and isomorphic
+
 Workspace Rule
 
 At the workspace root, choose the folder by how widely the code is used. A single product goes to apps/. Shared product code goes to libs/. Framework code goes to pkgs/.
@@ -40,9 +64,9 @@ A business product that can run by itself. Examples: customer web, admin portal,
 
 Reusable product code shared by several apps. Examples: user account, billing, file upload, social features, security, admin features, etc.
 
-Code with special purpose, used or published as npm packages. Examples: payment gateway, robot control code, blockchain integration code, etc.
+Code with special purpose, used or published as npm packages. Examples: payment gateway, robot control code, etc.
 
-Generated folders such as .akan/ and dist/ are build outputs. They help Akan run fast, but you normally do not edit them by hand.
+Generated folders such as .akan/ and dist/ are build outputs, and you normally do not edit them by hand.
 
 Use pkgs/ only when the code should feel like a separate installable package. Ordinary one-app business logic belongs in apps/, and shared product logic usually belongs in libs/ first.
 
@@ -50,7 +74,7 @@ App/Library Folder Rule
 
 An app is where a product becomes visible to users. A library is where reusable business capabilities live. They look similar because both can have domain modules, UI, assets, and server helpers.
 
-Each folder has an admission test rather than a theme, and the first column says which side of the client boundary its code runs on. A client folder ships to the browser, so nothing secret may reach one; a shared folder is read from both sides, so it must stay pure and environment-safe. A file that fails every test does not belong in the app or library root at all — akan sync refuses an unknown root folder by name.
+Each folder has an admission test rather than a theme, and the first column says which side of the client boundary its code runs on. A client folder ships to the browser, so nothing secret may reach one; a shared folder is read from both sides, so it must stay pure and environment-safe. A file that fails every test does not belong in the app or library root at all.
 
 Folder
 
@@ -94,7 +118,7 @@ apps/commerce/
 │   ├── order/          # order data and behavior
 │   └── _payment/       # payment workflow
 ├── ui/
-│   └── ProductCard.tsx
+│   └── DisplayCard.tsx
 ├── srvkit/
 │   └── paymentGateway.ts
 └── public/

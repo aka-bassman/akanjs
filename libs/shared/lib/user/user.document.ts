@@ -184,7 +184,7 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     const isSignable = inactiveUser ? inactiveUser.createdAt.isBefore(dayjs().subtract(resignupDays, "day")) : true;
     if (!isSignable) throw new Err("user.error.resignupNotAvailable", { days: resignupDays });
     await this.User.updateMany({ accountId, status: "prepare" }, ({ unset }) => ({ accountId: unset() }));
-    const modifiedCount = await this.User.updateOne({ id: userId }, ({ pull }) => ({
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, ({ pull }) => ({
       accountId,
       verifies: pull("password"),
     }));
@@ -194,7 +194,7 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     const userExists = await this.existsByAccountId(accountId, ["active", "dormant", "restricted"]);
     if (userExists) throw new Err("user.error.accountIdAlreadyExists");
     await this.User.updateMany({ accountId, status: "prepare" }, ({ unset }) => ({ accountId: unset() }));
-    const modifiedCount = await this.User.updateOne({ id: userId }, { accountId });
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, { accountId });
     return !!modifiedCount;
   }
   async setPasswordInPrepareUser(userId: string, accountId: string, password: string) {
@@ -202,7 +202,7 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     if (!existingAccountId) throw new Err("user.error.noAccountIdInUser");
     if (existingAccountId !== accountId) throw new Err("user.error.invalidAccountId");
     const hashedPassword = await hashPassword(password);
-    const modifiedCount = await this.User.updateOne({ id: userId }, ({ addToSet }) => ({
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, ({ addToSet }) => ({
       password: hashedPassword,
       verifies: addToSet("password"),
     }));
@@ -222,7 +222,7 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
   }
   async setPasswordInActiveUser(userId: string, password: string) {
     const hashedPassword = await hashPassword(password);
-    const modifiedCount = await this.User.updateOne({ id: userId }, ({ addToSet }) => ({
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, ({ addToSet }) => ({
       password: hashedPassword,
       verifies: addToSet("password"),
     }));
@@ -232,8 +232,8 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
     await this.userCache.set("lastResetAt", userId, at.toDate().getTime(), { expireAt: at.add(3, "minute") });
   }
   async isResetable(userId: string) {
-    const lastResetTime = await this.userCache.get<number>("lastResetAt", userId);
-    const lastResetAt = lastResetTime ? dayjs(lastResetTime) : undefined;
+    const lastResetTime = await this.userCache.get<string | number>("lastResetAt", userId);
+    const lastResetAt = lastResetTime ? dayjs(Number(lastResetTime)) : undefined;
     const isResetable = !lastResetAt || lastResetAt.isBefore(dayjs().subtract(3, "minute"));
     return isResetable;
   }
@@ -347,7 +347,7 @@ export class UserModel extends into(User, UserFilter, cnst.user, () => ({})) {
       accountId: unset(),
       verifies: pull(ssoType),
     }));
-    const modifiedCount = await this.User.updateOne({ id: userId }, ({ addToSet }) => ({
+    const { modifiedCount } = await this.User.updateOne({ id: userId }, ({ addToSet }) => ({
       accountId,
       verifies: addToSet(ssoType),
     }));

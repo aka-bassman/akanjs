@@ -416,7 +416,33 @@ describe("promise and timer hooks", () => {
     const hook = renderHook(() => useFetch(promise));
     expect(hook.current).toEqual({ fulfilled: false, value: null });
     await tick();
+    hook.rerender();
     expect(hook.current).toEqual({ fulfilled: true, value: "done" });
+    hook.unmount();
+  });
+
+  test("useFetch follows a new promise and drops the one it replaced", async () => {
+    const { useFetch } = await import("./useFetch");
+    installWindow();
+    let resolveFirst: (value: string) => void = () => undefined;
+    const first = new Promise<string>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const second = Promise.resolve("second");
+    const hook = renderHook((promise) => useFetch(promise as Promise<string>), first);
+
+    hook.rerender(second);
+    resolveFirst("first");
+    await tick();
+    hook.rerender(second);
+    expect(hook.current).toEqual({ fulfilled: true, value: "second" });
+
+    const third = Promise.resolve("third");
+    hook.rerender(third);
+    expect(hook.current).toEqual({ fulfilled: false, value: null });
+    await tick();
+    hook.rerender(third);
+    expect(hook.current).toEqual({ fulfilled: true, value: "third" });
     hook.unmount();
   });
 

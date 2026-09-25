@@ -9,9 +9,9 @@
 ## Headings
 
 - Server Utility Overview (#srvkit-overview)
-- What Belongs In Srvkit (#what-belongs)
-- Server Level Appliance (#server-level-appliance)
-- Signal Level Appliance (#signal-level-appliance)
+- What Belongs In srvkit/ (#what-belongs)
+- Server Level: WebProxy And Middleware (#server-level-appliance)
+- Signal Level: Guard And InternalArg (#signal-level-appliance)
 - Service Logic And External Libraries (#service-logic)
 - Adaptor And plug (#adaptor-plug)
 - Practical Rules (#practical-rules)
@@ -20,215 +20,326 @@
 
 Server Utils (srvkit/)
 
-Pure, isomorphic, zero-dependency. It may import a sibling common/* file and akanjs/base, and nothing else — not Err, which is why throwing code stays out of it.
+Pure, isomorphic, zero-dependency; imports only sibling common/* and akanjs/base, not Err.
 
-Touches window, navigator or Capacitor, or is a React hook. The browser half of what common/ cannot hold.
+Touches window, navigator or Capacitor, or is a React hook.
 
-Touches node:*, Bun, process.env, a secret, or a server SDK. The server half, and the only place a vendor package is imported directly.
+Touches node:*, Bun, process.env, a secret, or a server SDK.
 
-Renders JSX and is not bound to one model. A component tied to a model belongs in that module as a Unit, View, Template, Util or Zone instead.
+Renders JSX and is not bound to one model; a model-bound component goes in its module.
 
-A build-time or CLI-time AkanPlugin, registered in akan.config.ts and re-exported from the generated barrel.
+A build-time or CLI-time AkanPlugin, registered in akan.config.ts.
 
-Server Utility Overview
+Decides whether a request may run an endpoint: sign-in, role or ownership checks.
 
-The srvkit folder contains server-only logic used by services, signals, and server jobs. Put reusable server abstractions here so convention files can stay focused on business behavior.
+Reads a trusted value, such as the caller's account, and hands it to exec as an argument.
 
-This is also the safe place to wrap external libraries. Major convention files such as *.service.ts are intentionally strict about arbitrary external imports, so vendor SDKs and low-level server APIs should usually pass through srvkit first.
+Wraps every signal call and attaches server context before the endpoint's guards run.
 
-The five folders answer one question each, and the test is what the code touches rather than what it is for. Reading them together is faster than reading any one of them, so the same table opens all three pages.
-
-Folder
-
-What Belongs In Srvkit
-
-What Belongs In srvkit/
-
-Request protection logic used by signals, such as checking account roles before a mutation runs.
-
-Context-derived values injected into signal execution, such as account, self, or admin identity.
-
-Middleware And WebProxy
-
-Request pipeline extensions for attaching server context, redirecting, rewriting, or adding headers before app logic runs.
+Runs before a page request is routed, to redirect, rewrite, or add headers.
 
 Server helper
 
-Reusable server logic such as hashing, encryption, file handling, image inspection, or token utilities.
+A reusable function for hashing, encryption, file handling, image inspection or tokens.
 
-A service dependency wrapper for external systems such as storage, queues, email, payment, or vendor APIs.
+A singleton adapt() class wrapping storage, queues, email, payment or a vendor API.
 
-Class utility
+Legacy: a server-only class, such as an SDK client, injected through option.ts.
 
-Server-only classes such as logic abstractions or SDK clients that are injected into services through options.
+Page request
 
-Server Level Appliance
+Signal call
 
-Server level appliances are registered once in the app or library option chain. WebProxy changes the web request before routing, and Middleware prepares request context before signal endpoint logic runs.
+Server level: registered once in option.ts
 
-WebProxy handles web routing before a page is selected.
+Redirects, rewrites or adds headers before the page is chosen.
 
-Middleware runs around signal requests and can attach server-derived values to the request context before business logic runs.
+Attaches server context, such as the account, before guards run.
 
-WebProxy runs before the web request reaches the page. Use it when you need redirects, rewrites, or request header changes for routing and rendering.
+Signal level: named on each endpoint or slice
 
-After declaring them in srvkit, register middleware and web proxies in the app or library option chain.
+Allows or refuses the call.
 
-Signal Level Appliance
+Hands a server-made value to exec as an argument.
 
-Signal level appliances are applied per signal endpoint or slice. Guard decides whether the endpoint can run, and InternalArg converts trusted server context into exec arguments.
+Sent as is; later proxies and the page do not run.
 
-After server-level Middleware prepares context, signal-level appliances control each endpoint.
+A redirect Response; the status defaults to 307.
 
-A Guard checks whether a request can run a signal. Use it for authentication, role checks, ownership checks, or any server-side request protection.
+Continues with the request headers you changed.
 
-An InternalArg reads request or websocket context and adds a server-derived value to the signal exec arguments. Use it when business logic needs context data without asking the client to send it.
+Serves another path while the address bar stays the same.
+
+Passes the request on unchanged.
+
+The caller only
+
+An MCP listing runs it with no arguments and hides what this caller certainly cannot use.
+
+The call's arguments too
+
+An MCP listing skips it, so the entry stays visible and is stopped at call time.
+
+From `akanjs/signal`: raw request, response, caller IP, and the socket with its `socketId`.
+
+From `@libs/shared/srvkit`: account, signed-in user, admin, and whether a model is calling.
+
+Function helper
+
+Imported straight from the srvkit barrel.
+
+Singleton adaptor
+
+`plug(Class)` in the service, with nothing in option.ts.
+
+Class instance (legacy)
+
+Built in option.ts `.use()`, then injected with `use<T>()`.
+
+A value option.ts provides under the same key: the legacy path.
+
+A value read from the server options once, when the server starts.
+
+Another adaptor, or a built-in role such as `StorageAdaptorRole`.
+
+A value this adaptor keeps in the cache adaptor; `local: true` keeps it in-process instead.
+
+Server Utility Overview
+
+It is also the one safe door for external libraries: vendor SDKs and low-level server APIs pass through srvkit first.
+
+Which folder?
+
+Folder
+
+What Belongs In srvkit/
+
+srvkit/ holds seven kinds of code. Four step into the request path, and three are tools a service calls:
+
+Kind
+
+Where the request-path four run
+
+A page request and a signal call take different paths, and each piece sits on only one of them:
+
+Piece
+
+Runs here
+
+Not here
+
+Server Level: WebProxy And Middleware
+
+Both are registered once in the option chain and apply to every request of their kind. A WebProxy acts on page requests before routing; a Middleware wraps every signal call.
+
+Page render
+
+Return value
+
+What happens
+
+attach context
+
+This Middleware resolves the caller and stores it where guards and InternalArgs read it:
+
+Register them in option.ts
+
+Once both are declared in srvkit, register them in the app's or library's option chain:
+
+Signal Level: Guard And InternalArg
+
+Guards and internal args are named per endpoint or slice. A Guard decides whether the call may run; an InternalArg turns trusted server context into an exec argument.
+
+After Middleware prepares the context
+
+allow or refuse
+
+build exec args
+
+Service logic
+
+Reads
+
+In an MCP listing
+
+An InternalArg reads the request context and hands a server-made value to exec, so business logic gets it without asking the client:
+
+Before writing your own, check the ones that already ship:
 
 Service Logic And External Libraries
 
-If service code needs crypto, AI SDKs, HTTP clients, or other server-only packages, wrap that logic in srvkit first. A service can import pure helpers directly, but class instances used with use<T>() must be provided from the option chain first.
+When a service needs crypto, an AI SDK, an HTTP client or another server-only package, wrap it in srvkit first. How the service then reaches it depends on what you wrapped:
+
+What you wrapped
+
+How the service gets it
+
+Class instance: the legacy shape
+
+It takes three files. First, a plain class in srvkit:
 
 Adaptor And plug
 
-Adaptors make external systems available through service dependencies. Define a small adaptor in srvkit, then plug it into the service that needs it. Adaptors can also plug other adaptors as long as they do not create a circular dependency.
+The service plugs it by class:
+
+Injector
 
 Practical Rules
 
-Put server-only helper code in srvkit when a service or signal would otherwise become noisy.
+Where the code goes
 
-Use srvkit for external libraries before importing them into convention files.
-
-Use Guards for request protection and InternalArgs for context-derived signal arguments.
-
-Use adapt and plug when a service needs a reusable external system dependency.
-
-Keep app-specific integrations in app srvkit and reusable integrations in library srvkit.
+Inside a srvkit file
 
 ## Code Examples
 
-### srvkit/middlewares.ts
+### apps/koyo/srvkit/legacyPageRedirect.ts
 
 ```ts
-import type { Middleware, SignalContext } from "akanjs/signal";
-
-export class RequestUserMiddleware implements Middleware {
-  static readonly refName = "RequestUserMiddleware";
-
-  async use() {
-    return async (context: SignalContext, next: () => Promise<unknown>) => {
-      // Middleware is the one place that branches on transport: it writes the value every guard
-      // and InternalArg later reads back through context.get(...).
-      const req =
-        context.transport === "http" ? context.getHttpContext().req : context.getWebSocketContext().ws.data;
-      Object.assign(req, { account: await resolveAccountFromRequest(req) });
-      return await next();
-    };
-  }
-}
-```
-
-### srvkit/webProxies.ts
-
-```ts
-import type { WebProxy } from "akanjs/server";
+import { AkanResponse, type WebProxy } from "akanjs/server";
 
 export class LegacyPageRedirect implements WebProxy {
   static readonly refName = "LegacyPageRedirect";
 
   use(request: Bun.BunRequest) {
     const url = new URL(request.url);
-    if (url.pathname === "/old-docs") return Response.redirect(new URL("/docs", url), 308);
+    const [, lang, ...rest] = url.pathname.split("/");
+    if (rest.join("/") !== "old-docs") return;
+    return AkanResponse.redirect(new URL(`/${lang}/docs`, url), 308);
   }
 }
 ```
 
-### lib/option.ts
+### apps/koyo/srvkit/requestUserMiddleware.ts
 
 ```ts
-export const option = new AkanOption()
+import type { Middleware, SignalContext } from "akanjs/signal";
+import { resolveAccount } from "./account";
+
+export class RequestUserMiddleware implements Middleware {
+  static readonly refName = "RequestUserMiddleware";
+
+  async use() {
+    return async (context: SignalContext, next: () => Promise<unknown>) => {
+      const req =
+        context.transport === "http"
+          ? context.getHttpContext().req
+          : context.getWebSocketContext().ws.data;
+      Object.assign(req, { account: await resolveAccount(req) });
+      return await next();
+    };
+  }
+}
+```
+
+### apps/koyo/lib/option.ts
+
+```ts
+import { AkanOption } from "akanjs/server";
+import { LegacyPageRedirect, RequestUserMiddleware } from "../srvkit";
+import type { LibOptions } from "./srv";
+
+export type ModulesOptions = LibOptions;
+
+export const option = new AkanOption<ModulesOptions>()
   .applyMiddleware(RequestUserMiddleware)
   .applyWebProxy(LegacyPageRedirect);
 ```
 
-### srvkit/guards.ts
+### apps/koyo/srvkit/guards.ts
 
 ```ts
+import { Logger } from "akanjs/common";
 import type { Guard, GuardScope, SignalContext } from "akanjs/signal";
+import type * as srv from "../lib/srv";
+
+interface KoyoAccount {
+  self?: { id: string };
+}
 
 export class SignedIn implements Guard {
-  // fetch serializes guard names and the API explorer filters on them; deleting this breaks that UI.
+  // fetch serializes this name and the API explorer filters on it.
   static name = "SignedIn";
-  static scope: GuardScope = "account";
+  static scope: GuardScope = "account"; // [!code highlight]
 
   canPass(context: SignalContext): boolean {
-    return !!context.get<{ self?: { id: string } }>("account")?.self;
+    return !!context.get<KoyoAccount>("account")?.self;
   }
 }
 
 export class CanCancelOrder implements Guard {
   static name = "CanCancelOrder";
-  static scope: GuardScope = "resource";
+  static scope: GuardScope = "resource"; // [!code highlight]
+  static #logger = new Logger("CanCancelOrder");
 
   async canPass(context: SignalContext): Promise<boolean> {
-    const self = context.get<{ self?: { id: string } }>("account")?.self;
+    const self = context.get<KoyoAccount>("account")?.self;
     const orderId = context.getArg<string>("orderId");
     if (!self || !orderId) return false;
-    const order = await orderModel.findById(orderId);
-    return order?.owner === self.id;
+    try {
+      const orderService = context.getService<srv.OrderService>("order");
+      const order = await orderService.loadOrder(orderId);
+      return order?.owner === self.id;
+    } catch (error) {
+      CanCancelOrder.#logger.warn(`order ${orderId}: ${String(error)}`);
+      return false;
+    }
   }
 }
 ```
 
-### order.signal.ts
-
-```ts
-import { CanCancelOrder, SignedIn } from "@apps/myapp/srvkit";
-export class OrderEndpoint extends endpoint(srv.order, ({ pubsub, query, mutation }) => ({
-  cancelOrder: mutation(cnst.Order, { guards: [SignedIn, CanCancelOrder] }) // [!code highlight:1]
-    .param("orderId", ID)
-    .exec(async function (orderId) {
-      return await this.orderService.cancelOrder(orderId);
-    })
-})) {}
-```
-
-### srvkit/internalArgs.ts
+### apps/koyo/srvkit/internalArgs.ts
 
 ```ts
 import type { InternalArg, SignalContext } from "akanjs/signal";
 
-export class CurrentUserId implements InternalArg {
+export class CurrentUserId implements InternalArg<string> {
   getArg(context: SignalContext) {
-    return context.get<{ self?: { id: string } }>("account")?.self?.id ?? null;
+    const account = context.get<{ self?: { id: string } }>("account");
+    return account?.self?.id ?? null;
   }
 }
 ```
 
-### signal exec shape
+### apps/koyo/lib/order/order.signal.ts
 
 ```ts
-import { CanCancelOrder, SignedIn } from "@apps/myapp/srvkit";
-export class OrderEndpoint extends endpoint(srv.order, ({ pubsub, query, mutation }) => ({
-  cancelOrder: mutation(cnst.Order, { guards: [SignedIn, CanCancelOrder] })
+import { CanCancelOrder, CurrentUserId, SignedIn } from "@apps/koyo/srvkit";
+import { Admin } from "@libs/shared/srvkit";
+import { ID } from "akanjs/base";
+import { endpoint, internal, slice } from "akanjs/signal";
+
+import * as cnst from "../cnst";
+import * as srv from "../srv";
+
+export class OrderInternal extends internal(srv.order, () => ({})) {}
+
+export class OrderSlice extends slice(
+  srv.order,
+  { guards: { root: Admin, get: SignedIn, cru: Admin } }, // [!code highlight]
+  () => ({}),
+) {}
+
+export class OrderEndpoint extends endpoint(srv.order, ({ mutation }) => ({
+  cancelOrder: mutation(cnst.Order, { guards: [SignedIn, CanCancelOrder] }) // [!code highlight]
     .param("orderId", ID)
-    .with(CurrentUserId, { nullable: true }) // [!code highlight:2]
+    .with(CurrentUserId) // [!code highlight]
     .exec(async function (orderId, currentUserId) {
-      return await this.orderService.cancelOrder(orderId, { canceledBy: currentUserId });
-    })
+      return await this.orderService.cancelOrder(orderId, currentUserId);
+    }),
 })) {}
 ```
 
-### srvkit/createHash.ts
+### apps/koyo/srvkit/createOrderHash.ts
 
 ```ts
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 
 export const createOrderHash = (orderId: string) => {
   return createHash("sha256").update(orderId).digest("hex");
 };
 ```
 
-### srvkit/EmailClient.ts
+### apps/koyo/srvkit/emailClient.ts
 
 ```ts
 import { Mailer } from "some-mail-provider";
@@ -240,70 +351,85 @@ export class EmailClient {
     this.#mailer = new Mailer({ apiKey });
   }
 
-  sendReceipt(to: string, orderId: string) {
-    return this.#mailer.send({ to, subject: `Receipt for ${orderId}` });
+  sendReceipt(to: string, receiptCode: string) {
+    return this.#mailer.send({ to, subject: `Receipt ${receiptCode}` });
   }
 }
 ```
 
-### option.ts
+### apps/koyo/lib/option.ts
 
 ```ts
+import { AkanOption } from "akanjs/server";
 import { EmailClient } from "../srvkit";
+import type { LibOptions } from "./srv";
 
-export const option = new AkanOption()
-  .use((options) => ({
-    emailClient: new EmailClient(options.mailer.apiKey),
-  }));
+export type ModulesOptions = LibOptions & {
+  mailer: { apiKey: string };
+};
+
+export const option = new AkanOption<ModulesOptions>().use((options) => ({
+  emailClient: new EmailClient(options.mailer.apiKey),
+}));
 ```
 
-### order.service.ts
+### apps/koyo/lib/order/order.service.ts
 
 ```ts
-import { createOrderHash, type EmailClient } from "../srvkit";
+import { createOrderHash, type EmailClient } from "@apps/koyo/srvkit";
+import { serve } from "akanjs/service";
+
+import * as db from "../db";
 
 export class OrderService extends serve(db.order, ({ use }) => ({
-  emailClient: use<EmailClient>(),
+  emailClient: use<EmailClient>(), // [!code highlight]
 })) {
   async sendReceipt(order: db.Order) {
-    const hash = createOrderHash(order.id);
-    await this.emailClient.sendReceipt(order.email, hash);
+    const receiptCode = createOrderHash(order.id);
+    await this.emailClient.sendReceipt(order.email, receiptCode);
   }
 }
 ```
 
-### srvkit/paymentApi.ts
+### apps/koyo/srvkit/paymentApi.ts
 
 ```ts
 import { adapt } from "akanjs/service";
 
-interface PaymentOptions {
+export interface PaymentApiOptions {
   endpoint: string;
 }
 
 export class PaymentApi extends adapt("paymentApi" as const, ({ env }) => ({
-  endpoint: env((option: PaymentOptions) => option.endpoint),
+  endpoint: env((option: PaymentApiOptions) => option.endpoint),
 })) {
   async requestPayment(orderId: string, amount: number) {
-    return fetch(`${this.endpoint}/payments`, {
-      method: "POST",
-      body: JSON.stringify({ orderId, amount }),
-    });
+    const body = JSON.stringify({ orderId, amount });
+    return await this.#api("/payments", { method: "POST", body });
+  }
+
+  async #api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
+    const url = `${this.endpoint}${path}`;
+    const signal = AbortSignal.timeout(20_000);
+    const response = await fetch(url, { ...init, signal });
+    return (await response.json()) as T;
   }
 }
 ```
 
-### order.service.ts
+### apps/koyo/lib/order/order.service.ts
 
 ```ts
-import { PaymentApi } from "../srvkit";
+import { PaymentApi } from "@apps/koyo/srvkit";
 import { serve } from "akanjs/service";
 
+import * as db from "../db";
+
 export class OrderService extends serve(db.order, ({ plug }) => ({
-  paymentApi: plug(PaymentApi),
+  paymentApi: plug(PaymentApi), // [!code highlight]
 })) {
   async pay(order: db.Order) {
-    return this.paymentApi.requestPayment(order.id, order.totalPrice);
+    return await this.paymentApi.requestPayment(order.id, order.totalPrice);
   }
 }
 ```

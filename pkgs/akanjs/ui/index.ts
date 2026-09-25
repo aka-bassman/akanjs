@@ -145,8 +145,8 @@ export { Tooltip, type TooltipProps } from "./Tooltip";
 // Public so a `Dropdown` replacement bound in `_overrides.tsx` can put the menu's aria state on its own trigger,
 // the way the default does. Framework surfaces otherwise wrap their slots — see the note in the file.
 export { triggerSlot } from "./triggerSlot";
-// `UiOverrideProvider` is public on purpose, not incidentally: an app mounts it by hand where the route
-// manifest cannot reach — a component rendered by a root-boundary layout sits outside the generated provider.
+// `UiOverrideProvider` is public on purpose: the wrapper generated for every `_overrides.tsx`
+// (devkit `artifact/implicitRootLayout.ts`) imports it from `akanjs/ui`, and an app may mount one around a subtree.
 export {
   type AkanModalComponent,
   type AkanUiOverrideManifest,

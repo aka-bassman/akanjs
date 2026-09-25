@@ -9,54 +9,130 @@
 ## Headings
 
 - model.abstract.md (#module-abstract)
-- A Real One (#worked-example)
+- A Real Example (#worked-example)
 - Replace The Scaffold (#scaffold)
 
 ## Content
 
 model.abstract.md
 
-Open user.constant.ts and you can see that accountId and phone are secret strings. What you cannot see is that they may not repeat across active, dormant and restricted accounts — but may repeat once an account has left. No field, type or method says that, and the first person to write a uniqueness index without knowing it breaks sign-up for everyone who ever deleted an account.
+One title line with the module name spelled as in its file name.
 
-That sentence is what the abstract is for. It holds the invariants the module obeys and cannot state, and it holds nothing the constant file already says. Four parts, and the last one is optional.
+One sentence
 
-one title line carrying the module name as the folder spells it
+What the module owns, stated as fact, right under the title with no heading.
 
-One declarative sentence
+Two to five bullets, each an invariant a reader could not derive from the code.
 
-what this module owns, stated as fact, with no heading above it
+Optional: a list under this heading, or one arrow chain with no heading at all.
 
-two to five bullets, each an invariant a reader could not derive from the code
+Scaffold
 
-A workflow
+Becomes
 
-optional. Six model abstracts here write it as a ## Workflow list; the shortest form is a bare arrow chain with no heading at all
+Written for you, spelled as in the file name. Keep it.
 
-Thirty-one of the thirty-three abstracts in this workspace are written this way. The two that are not have never been written at all — they are empty root containers still carrying the scaffold.
+Rewritten as what the module owns, stated as fact.
 
-A Real One
+Stays, and grows to the module's real invariants, two to five in all.
 
-libs/shared/lib/user/user.abstract.md in full, for a module with a constant file, a document file, a service, a signal, a store and five components. Thirteen lines.
+Mirrors the scaffolded slice guards; rewrite it whenever you change them.
 
-Read it against the code and notice what is missing. Not one bullet names a field type, a class or a method signature. Every one is either a constraint the database cannot express on its own or a coupling between this module and another — and the last one, that restriction and dormancy move together with the summary aggregate, is the kind of fact a reader would otherwise find by breaking it.
+Stays: removal of a model is always soft.
 
-Korean is normal in an abstract and common here; English is normal too. What is never normal is a language split inside one file.
+Not written by the scaffold; add it, or one arrow chain, once the module has a flow.
+
+Update
+
+Leave
+
+When the module's meaning changes
+
+A business invariant
+
+A rule that must always hold, such as the uniqueness rule above.
+
+A workflow or state transition
+
+How a record moves, such as from `prepare` to `active`.
+
+A permission
+
+Who may do what, such as an admin adjusting a restriction.
+
+Public behavior
+
+What callers of the module can observe.
+
+When only how the code looks changes
+
+Formatting
+
+Whitespace and line breaks the formatter decides.
+
+Imports
+
+Adding, removing or reordering imports.
+
+Style
+
+A code style change that alters no behavior.
+
+What The Code Cannot Say
+
+What The Constant File Shows
+
+What Only The Abstract Says
+
+Neither may repeat across active, dormant and restricted accounts, but both may repeat once an account has left.
+
+The Four Parts
+
+Every abstract has four parts, and only the last is optional:
+
+<one sentence: what this module owns>
+
+<an invariant the code cannot show>
+
+<two to five bullets in all>
+
+<optional: how a ticket moves from state to state>
+
+Part
+
+A Real Example
+
+Read it next to the code and notice what is and is not there:
 
 Replace The Scaffold
 
-A new module arrives with six headings and no content. That file is a prompt rather than a template: the first real edit deletes five of the six.
+Where each line goes:
 
-Purpose becomes the one sentence under the title. Domain Rules becomes ## Rules. Workflows keeps its content and loses its plural. Data Meaning belongs next to the field it describes, as a trailing comment in constant.ts. Agent Notes and Related Modules say nothing this guide does not already say to every module, so they go and nothing replaces them.
+Keeping It Current
 
-Keeping it:
+Read it before changing the constant, document, service, signal, store or any component of the same module. Update it only when what the module means changes:
 
-Read it before changing constant, document, service, signal, store or a component in the same module.
+Change
 
-Update it when a business invariant, a workflow, a permission, a state transition or public behavior changes.
+Do this
 
-Do not update it for a formatting, import or style change. akan quality scan warns once an abstract passes 300 lines, and the way a file gets there is one restated field at a time.
+Not this
 
 ## Code Examples
+
+### apps/koyo/lib/ticket/ticket.abstract.md
+
+```markdown
+# ticket Abstract
+${l.trans({ en: "<one sentence: what this module owns>", ko: "<이 모듈이 맡는 일을 한 문장으로>" })}
+
+## Rules
+- ${l.trans({ en: "<an invariant the code cannot show>", ko: "<코드로는 보이지 않는 불변식>" })}
+- ${l.trans({ en: "<two to five bullets in all>", ko: "<항목은 모두 두 개에서 다섯 개>" })}
+
+## Workflow
+- ${l.trans({ en: "<optional: how a ticket moves from state to state>", ko: "<선택: ticket이 어떤 상태를 거쳐 움직이는지>" })}
+```
 
 ### libs/shared/lib/user/user.abstract.md
 
@@ -76,37 +152,15 @@ Do not update it for a formatting, import or style change. akan quality scan war
 - 관리자는 역할, 제한, 계정 정보, 프로필 상태를 조정할 수 있다.
 ```
 
-### pkgs/@akanjs/cli/templates/module/__model__.abstract.md
+### apps/koyo/lib/project/project.abstract.md
 
 ```markdown
-# Module Abstract
+# project Abstract
+Project represents a project workspace or business initiative managed by the app.
 
-## Purpose // [!code --]
-
-Describe the business concept this module owns. // [!code --]
-
-## Domain Rules // [!code --]
-
-- Keep durable business invariants here.
-- Avoid repeating field types that are already clear in the constant file. // [!code --]
-
-## Data Meaning // [!code --]
-
-Explain the meaning of important data only when the code does not make the intent obvious. // [!code --]
-
-## Workflows // [!code --]
-
-Describe create, update, approval, deletion, or state transition flows.
-
-## Agent Notes // [!code --]
-
-- Read this abstract before changing the module. // [!code --]
-- Update this file when business invariants, workflows, or public behavior change. // [!code --]
-- Do not update this file for formatting-only, import-only, or style-only changes. // [!code --]
-
-## Related Modules // [!code --]
-
-- None yet. // [!code --]
+## Rules
+- Anyone may read a project; only an admin creates, updates or removes one.
+- Removal is soft: a removed project keeps its row with `removedAt` set.
 ```
 
 ## Agent Notes

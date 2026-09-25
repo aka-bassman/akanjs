@@ -25,19 +25,9 @@ The data layer is the path from business data definition to server logic and scr
 
 Akan keeps this flow close to the model folder. For example, a product feature can define what a product is, how it is stored, how stock and price rules work, and how pages load product data from one module.
 
-What data exists
+One module, from the database to the screen
 
-How data is stored
-
-What the business does
-
-What pages can call
-
-How client state is kept
-
-How users see the data
-
-You do not need every layer on day one. A simple read-only feature may start with constant and document, then add service or signal when the business behavior grows.
+One lib/product folder holds the whole path: document stores the data, service runs the business rules, signal opens them to pages, and past the API the store holds client state for the UI. The constant file runs underneath every step, because each of them reuses its shape.
 
 Model Shape
 
@@ -55,15 +45,31 @@ The whole record, returned by a detail query. Write all five classes, in this or
 
 Aggregate numbers a list query reports alongside the rows. Declare it even when it is empty.
 
+How the five classes build on each other
+
+Input is what a form sends. Object adds the stored fields the system controls. Light picks the few fields a list or card needs and carries the shared logic. Model combines Object and Light into the full record, and Insight counts over a list of them.
+
+Where each class shows up
+
+A create or edit form sends Input, a list of cards shows Light, a detail view shows the full Model, and the totals above a list read Insight.
+
 Document And Service
 
 The document file turns the model shape into stored data. It defines the database-facing model and the filter shape used when the application searches or sorts records.
 
 The service file is where business behavior lives. In this simple example, the document knows how to increase its own stock, and the service decides which product should be loaded and saved.
 
+Service decides, document changes itself
+
+The service loads a document from the database, the document validates and changes itself and returns itself, and the service saves it back.
+
 What A Filter Generates
 
 A query you declare in the document file is not one method. Akan generates fourteen from it, named after the filter key: declare byOwner and you have listByOwner, countByOwner, updateOneByOwner, and eleven more, on both the model and the service.
+
+One filter, fourteen methods
+
+One filter such as byOwner generates nine reads, one query descriptor for a slice, and four writes that run no hooks.
 
 Nine of the fourteen read, one only builds a query descriptor, and the remaining four write. Those four are the ones to be careful with: each is a single atomic statement against the database, so none of the model's document hooks run:
 
@@ -71,7 +77,7 @@ Method
 
 Reach for the four writes only on a model whose removal carries no side effect. A model with a cascade, a _postRemove that deletes a stored file, or a live list watching it must be removed one document at a time through remove<Model>(id) — one atomic UPDATE cannot run any of that.
 
-Every model already carries an any filter, so listAny and countAny exist before you declare anything. One name is refused: a filter may not be keyed after its own model, case aside. A filter named chat on model chat would generate a removeChat that quietly replaces the single-document one with a hookless version, so Akan fails the boot instead.
+Every model already carries an any filter, so listAny and countAny exist before you declare anything.
 
 Signal To UI
 
@@ -85,6 +91,10 @@ Use it for actions such as cancel order, approve request, send message, or compl
 
 Use it for server-side jobs such as schedules, intervals, queues, or maintenance work.
 
+Two doors out, one job inside
+
+A slice and an endpoint are the two doors a page can reach, each behind its guards; an internal signal runs a job inside the server and has no door at all.
+
 Fetch And Store Instances
 
 After signal is declared, Akan exposes app-specific client helpers from @apps/<app>/client. The two names you will see most often are fetch and st.
@@ -94,6 +104,10 @@ Use fetch when you need to call server data or pass slice metadata into Akan UI 
 Generated request instance. It calls endpoints, initializes slices, loads views, and exposes fetch.slice.* metadata.
 
 Generated client store instance. It provides st.use.* hooks for reading state and st.do.* actions for changing state.
+
+Who calls fetch, who holds st
+
+A server component calls fetch directly. A client component reads the store with st.use and changes it with st.do, and the store's action is what calls fetch.
 
 Endpoint arguments are positional and in declaration order, and the call resolves to whatever the endpoint returns. addStock returns cnst.Product, so the awaited value is the product itself, not a wrapper object.
 
@@ -110,6 +124,22 @@ Streaming Page Data
 fetch.init<Model><Suffix>, fetch.view<Model>, and fetch.edit<Model> are the three helpers a route uses to load a screen. Each returns a handle that is awaitable and destructurable at the same time: awaiting it gives the payload object, while reading a field off it gives that field's own promise.
 
 The difference is where the page waits. An awaited call holds the whole route until the query lands, so nothing below it is sent. A promise handed to a Zone or to Load.Stream is awaited inside that component instead, behind a Suspense boundary of its own — the rest of the page is already on the wire, and each section fills in as its own data arrives.
+
+Where the page waits
+
+Browser
+
+Route render
+
+Server queries
+
+shell HTML, one boundary per section
+
+productInitInShop fills the product zone
+
+orderInitInShop fills the order zone
+
+productListInShop fills the Load.Stream
 
 Plain list and insight data. This is the one field that may cross into a client Zone as a prop.
 

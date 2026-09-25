@@ -14,159 +14,249 @@
 
 Forms
 
-The form-field namespace, and the layer a module template is written in. `<Field>` itself is a section wrapper — label, help tooltip, optional marker, and a column for the controls inside it; every member below is one labelled control. They share a prop vocabulary: `value` / `onChange`, `label` / `desc`, `nullable`, `disabled`, `placeholder`, `transform`, `validate`, and `className` / `labelClassName` / `inputClassName`. What differs between them is the shape of `value`.
+The store's draft of the record being edited, such as `icecreamOrderForm`.
 
-Section wrapper. Draws the label row and stacks its children in a gap-4 column.
+The generated form setter. It writes one field of that draft.
 
-The label row itself. Capitalizes a string label, hangs `desc` off a help tooltip, and appends `(optional)` when `nullable`.
+controlled
 
-One-line text. `inputStyleType` picks bordered, borderless, or underline.
+Shows the `value` you pass and hands the next one to `onChange`. Only `Switch` can also run alone.
 
-Multi-line text.
+agent tool
 
-Text with email validation built in.
+An action the in-page agent may call. A form setter passed by reference becomes one.
 
-Text with phone-number validation and formatting.
+override slot
 
-Masked text. `showConfirm` adds the second box and checks the two against each other.
+A name in `_overrides.tsx` that swaps a component for one route subtree.
 
-One number. `unit` is drawn in the label; `formatter` / `parser` control how the digits are shown and read back.
+Label row
 
-A pair of numbers in one row — a range, a ratio, a coordinate.
+Agent tool
 
-One date, optionally with a time part.
+Override slot
 
-Two ends of a range. `onChange` fires only once both ends are set — nobody can query a half-open one.
+Model field — inside a Template
 
-A labelled boolean. `onDesc` / `offDesc` explain the current position beside the toggle.
+One labelled control per model field, written inside a Template.
 
-One choice as a row of buttons. `items` takes an `enumOf(...)` instance directly and translates each value through the dictionary.
+Bare control — search box, filter bar, inline cell
 
-The same row, many selected. `minlength` / `maxlength` are enforced with localized messages.
+Text, number, password, email and checkbox inputs without a label row.
 
-An ordered list of strings, each its own input, reorderable by drag and removable per row.
+A dropdown for single, multiple or searchable choice. `label` is optional.
 
-An unordered set of short strings, drawn as badges with an inline add box.
+A boolean toggle. `Field.Switch` adds the label row.
 
-A list of embedded objects. You render one row; the field draws the frame, the add button, and the per-row remove.
+One choice from a short list of radio buttons.
 
-One related model, held as the Light instance. `slice` is the generated slice the options are loaded from.
+One or many choices as a row of buttons. `Field.ToggleSelect` publishes the tool.
 
-The same picker holding only the id — what a form field of type `ID` stores. The chosen model arrives as the second argument.
+A date, date-time, range or time on the native input. `Field.Date` publishes the tool.
+
+Action — ends the form
+
+Publishes nothing itself. An `st.tool(...)` handler given to `onClick` is the agent's tool.
+
+Writing a Template
+
+Where the model-field controls live and how a module form is laid out.
+
+Override Slots
+
+Re-skin the controls on this page for one route subtree.
+
+In-Page Agent
+
+How a setter passed by reference becomes a tool the agent can call.
+
+The form-field namespace a module Template is written in. `<Field>` itself is a section wrapper with a label row; every member is one labelled control. The members differ mainly in the shape of `value`.
+
+Section wrapper: draws the label row, then stacks its children in a `gap-4` column.
+
+The label row: capitalizes a string label, tooltips `desc`, adds `(optional)` when `nullable`.
+
+One line of text. `inputStyleType` is `bordered` (default), `borderless` or `underline`.
+
+Multi-line text, three rows tall by default.
+
+Text that must be a valid email address.
+
+Text that must be a phone number. The default `transform` formats it with dashes.
+
+Masked text with a show/hide eye. `showConfirm` adds a second box that must match.
+
+One number. `unit` shows in the label; `formatter` / `parser` convert the digits shown.
+
+Two numbers in one row, such as a range, a ratio or a coordinate. `min` / `max` are pairs too.
+
+One date on the browser's native input. `showTime` adds the time of day.
+
+Two ends of a range. `onChange(from, to)` fires only once both ends are set.
+
+A labelled boolean. `onDesc` / `offDesc` describe the current position beside the toggle.
+
+One choice as a row of buttons. An `enumOf(...)` in `items` gets each value translated.
+
+Many choices in the same row. `minlength` / `maxlength` show translated messages.
+
+Ordered strings, one input each. Drag to reorder; remove any row.
+
+Unordered short strings drawn as badges, with an inline add box.
+
+Embedded objects. You render one row; the field draws the frame and add/remove buttons.
+
+One related model as its Light instance. Options load from `slice`, e.g. `fetch.slice.user`.
+
+The same picker for an `ID` field: holds the id and passes the model as a second argument.
 
 Many related models as Light instances.
 
 Many related models as ids.
 
-Pass the generated setter by reference — `onChange={st.do.setNameOnUser}`. That is what makes the framework emit `data-akan-action` / `data-akan-state` on the control and publish the field as an agent tool. An inline arrow (`onChange={(v) => st.do.setNameOnUser(v)}`) runs identically and publishes nothing: a closure the caller wrote says nothing about what it does, so the annotation is dropped rather than guessed. `no-unpublished-form-setter.grit` fails the build on the pass-through form.
+Controlled inputs without the label row, for a search box, a filter bar or an inline cell editor. Each member is its own override slot: `Input`, `InputTextArea`, `InputPassword`, `InputEmail`, `InputNumber` and `InputCheckbox` can be re-skinned separately.
 
-A wrapper that transforms the value, adds a statement, or writes a nested path with `writeOnX` stays legal — normalize with the control's own `transform` prop where you can, and publish the rest explicitly with `st.tool`.
+The current text. The input keeps no copy of its own.
 
-`libs/shared/ui/Field` wraps and extends this namespace for project-specific controls such as rich text, maps, and postcode.
+Receives the next string.
 
-Controlled primitive input namespace. Reach for it below `Field` — a search box, a filter bar, an inline cell editor — where you want the input without the label row. Every leaf is its own override slot, so `Input`, `Input.TextArea`, `Input.Password`, `Input.Email`, `Input.Number`, and `Input.Checkbox` can each be re-skinned on their own.
+`true` when valid; `false` or a message shows an error under the input.
 
-Controlled input value.
+Lets an empty value pass without a warning.
 
-Receives the next string value.
+The surface the input is drawn on.
 
-Returns true for valid input or an error message.
+A leading icon.
 
-The surface the field is drawn on.
+Called on Enter: a search box without a form element.
 
-Called on Enter — the search-box idiom, without a form element.
+Called on Escape, after the input loses focus.
 
-The typed variants. Each keeps the same controlled `value` / `onChange` contract in its own value type.
+The same contract, with `validate` required. `Email` also rejects a malformed address.
 
-Controlled selector that accepts primitive arrays, label/value options, or Akan enum instances. It supports single, multiple, and searchable selection modes. The option list portals to document.body and is placed against the field, matching its width, so a Select inside a scrolling modal body or a table is not clipped by it.
+A number or `null`. `formatter` / `parser` convert the text shown.
 
-Selected value, or selected values when multiple is true.
+A native checkbox tinted with the primary color.
 
-Option source.
+A controlled dropdown for plain values, `{ label, value }` pairs or an `enumOf(...)` class, with single, multiple and searchable modes. The option list portals to `document.body` at the field's width, so a scrolling modal or a table never clips it.
 
-Enable multiple selected values.
+The selected value; an array when `multiple` is on.
 
-Show search input and optionally call onSearch.
+Receives the next value and the previous one.
 
-Custom display renderers.
+The choices. An enum shows its raw values; pass pairs for translated labels.
 
-A boolean as a `<button role="switch">`, so focus and Space/Enter toggling come from the platform rather than from a keydown handler. Controlled and uncontrolled both work: pass `checked` for the first, `defaultChecked` for the second. Use `Field.Switch` when the value is a model field and you want the label row with it.
+An optional label row above the field, with `desc` as a help tooltip.
 
-Controlled state. Left out, the switch keeps its own.
+Allows several values.
 
-Starting position for the uncontrolled form.
+Adds a text box that filters the options by label. Non-string values then need pairs.
 
-Receives the next position. Passed by reference, it publishes the field to the agent.
+Called 300 ms after typing stops, in place of the local filter.
 
-The colour of the on position. The off position is always `bg-muted`.
+Adds a clear row to the list and a clear button to the field.
 
-Blocks the toggle and dims the control; the published tool goes with it.
+Shows a spinner instead of the empty placeholder while options load.
 
-Inside a `Dropdown` menu item, put `data-dropdown-keep-open` on the `<li>` so flipping the switch does not close the menu.
+Called when the list opens: the place to load options lazily.
 
-A single choice as a `role="radiogroup"` of `role="radio"` buttons, with arrow-key roving focus. Each child carries its own `value`; the group resolves the selection by matching it, and falls back to treating a numeric `value` as an index only when no child owns it — resolving both at once is what once let two options read as checked at the same time.
+Custom drawing for a list row and for the chosen value.
+
+The text shown with nothing selected, and what an empty option list shows.
+
+Blocks opening and picking; the published tool is withdrawn too.
+
+A boolean drawn as `<button role="switch">`, so focus and Space/Enter toggling come from the browser. Pass `checked` to control it, or `defaultChecked` to let it keep its own state. For a model field with a label row, use `Field.Switch`.
+
+Controlled state. Leave it out and the switch keeps its own.
+
+The starting position when uncontrolled.
+
+Receives the next position. A form setter passed by reference is published to the agent.
+
+The color of the on position. The off position is always `bg-muted`.
+
+Blocks the toggle and dims it; the published tool is withdrawn too.
+
+One choice from a `role="radiogroup"` of `role="radio"` buttons; arrow keys move the focus and the choice together. Each child carries its own `value`, and the group matches on it. A numeric `value` counts as an index only when no child owns it.
 
 The selected child's `value`, or a position when no child declares one.
 
-Receives the chosen child's `value` and its index.
+Receives the chosen child's `value` and its index. Arrow keys call it too.
 
-The options, normally `Radio.Item`s. The framework draws the dot and the row; the child renders only its own body.
+Disables every option.
 
-One option's body. Its own override slot (`RadioItem`), separate from the group's.
+The options, usually `Radio.Item`s. The group draws the dot and the row around each.
 
-A choice as a row of pressed buttons rather than a dropdown — right where the option count is small and the labels are short. `ToggleSelect` is single-select, `ToggleSelect.Multi` many. `nullable` and `validate` are required props, not optional ones: a toggle row has no empty state to fall back on, so both decisions are made at the call site.
+One option's body. It has its own override slot, `RadioItem`, apart from the group's.
 
-The cells. `Field.ToggleSelect` accepts an `enumOf(...)` instance on top of this and translates each value first.
+A choice as a row of pressed buttons instead of a dropdown, for a few short options. `ToggleSelect` picks one and `ToggleSelect.Multi` picks many. `nullable` and `validate` are required: a button row has no empty state to fall back on, so the call site decides both.
+
+The cells. `Field.ToggleSelect` also takes an `enumOf(...)` and translates each value.
 
 The selected value.
 
-Required. Whether the selection may be cleared — which is also whether `onClear` is ever called.
+Required. Whether the choice can be cleared; pressing the selected cell then calls `onClear`.
 
-Required. Returns true, or the message to show under the row.
+Required. Returns `true`, or the message to show under the row.
 
 The pick and the clear. `onClear` fires only in the `nullable` form.
 
-Draws one cell. `onToggle` is the cell's own action — put it on whatever the cell renders.
+Disables every cell. An item's own `disabled` disables just that cell.
 
-The many-selected form. Its own override slot (`ToggleSelectMulti`).
+Draws one cell. `onToggle` is the cell's own action; put it on whatever the cell renders.
 
-A date as the browser's own field, so the calendar, the locale, and the touch keyboard are the platform's. `min` and `max` are enforced by the browser; `disabledDate` is rejected on selection rather than greyed out, because a native field constrains only through those two.
+The many-choice form, with its own override slot, `ToggleSelectMulti`.
+
+A date on the browser's own `<input type="date">`, so the calendar, locale and touch keyboard are the platform's. The browser enforces `min` and `max`. A native field cannot grey out single days, so a pick that `disabledDate` rejects is refused with a warning toast.
 
 The current value.
 
 Receives the next value.
 
-Switches the native input to datetime-local.
+Switches the native input to `datetime-local`.
 
-Earliest and latest selectable values. The browser enforces them.
+The earliest and latest values the browser lets you pick.
 
-Rejected on selection rather than greyed out.
+Returns `true` for a date to refuse. It is checked on pick, not greyed out.
 
-Both ends in one control, as a tuple. Its own override slot (`DatePickerRangePicker`).
+Sent through `onChange` on mount, and again whenever it changes.
 
-The time part alone. Its own override slot (`DatePickerTimePicker`).
+Both ends as one tuple; an empty other end is filled with now. Slot `DatePickerRangePicker`.
 
-For a model field use `Field.Date` / `Field.DateRange` instead — they add the label row, the optional marker, and the store wiring around this control.
+The time alone, kept on the day `value` already holds. Slot `DatePickerTimePicker`.
 
-The one button primitive. A synchronous handler renders a plain button; returning a promise is what opts the same button into loading, success, and error state and blocks duplicate clicks while processing. There is no separate async button to choose.
+The one button primitive. A synchronous `onClick` renders a plain button; returning a promise puts the same button through loading, success or error, and blocks repeat clicks meanwhile. There is no separate async button to choose.
 
-Optional. Returning a promise enables the async states; returning nothing keeps it a plain button.
+Optional. A returned promise turns on the async states; anything else keeps it plain.
 
-Called after the success state is shown briefly.
+Called with the result after the success check has shown for 0.7 s.
 
-Both modes keep the box fixed — CSS cannot animate an auto width, so a resizing button can only snap. hold (default) fades a bare indicator over the children, sizing the box to the label. replace cross-fades to a labelled indicator, keeping both labels stacked so the box is the wider of the two from the start.
+The box never resizes: `hold` overlays a spinner, `replace` cross-fades to a labelled one.
 
-Whether a failure renders its message under the button. Off leaves it to the framework toast, keeping the layout fixed.
+Shows the `onError` message under the button. Off, nothing shows it; toast it yourself.
 
-Inherited native button prop; also disabled while loading/success.
+The `buttonRecipe` look: color, size, corner shape and the outline flag.
+
+The native type. It defaults to `button`, so a click never submits a surrounding form.
+
+Native prop. The button is also disabled while loading and during the success check.
 
 Forms UI
 
-A model form in Akan is not a form element with state in it. The store holds `<model>Form`, the generated setters write one field each, and a control's only job is to show the current value and hand the next one back. That is why nothing on this page keeps state of its own.
+Words used on this page
 
-Work down the layers: `Field.*` for a model field, `Input` / `Select` / `Switch` / `Radio` / `ToggleSelect` / `DatePicker` for a control without a label row, and `Button` for the action at the end.
+Term
 
-Hand every setter over by reference — `onChange={st.do.setSizeOnTicket}`, never `onChange={(size) => st.do.setSizeOnTicket(size)}`. The two run identically, and only the first emits `data-akan-action` on the control and publishes the field as an agent tool. `no-unpublished-form-setter.grit` is an error, because it is a silent failure in two lines that read the same.
+Pick a control
+
+Component
+
+Has it
+
+Does not
+
+Related pages
 
 ## Code Examples
 

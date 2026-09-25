@@ -157,7 +157,7 @@ const serverModule = await import(${JSON.stringify(serverPath)});
 const { assertAkanConsoleAllowed, startAkanConsole } = await import("akanjs/server");
 const server = serverModule.server;
 if (!server?.start) throw new Error("server.ts must export server with start()");
-assertAkanConsoleAllowed(server.env);
+assertAkanConsoleAllowed();
 await server.start({ listen: false, web: false });
 try {
   await startAkanConsole(server, {

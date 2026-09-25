@@ -9,7 +9,6 @@
     "swiper": "^12.1.4",
     "shiki": "^4.1.0",
     "@shikijs/transformers": "^4.1.0",
-    "mermaid": "^11.15.0",
     "react-dom": "19.2.7"
   },
   "devDependencies": {

@@ -21,6 +21,22 @@ export type CodeAgentApprovalPolicy = "never" | "writes" | "commands" | "all";
  */
 export type CodeAgentInteractionMode = "await" | "suspend";
 
+export interface CodeAgentModelInfo {
+  id: string;
+  name: string;
+  contextWindow?: number;
+  /** Whether this is the one the session is running on, which a listing has to mark rather than repeat. */
+  current: boolean;
+}
+
+/** One provider of the model catalogue, and whether a credential for it has been configured. */
+export interface CodeAgentProviderInfo {
+  id: string;
+  name: string;
+  authorized: boolean;
+  models: CodeAgentModelInfo[];
+}
+
 export interface CodeAgentMcpServerRef {
   name: string;
   transport: "stdio" | "http";

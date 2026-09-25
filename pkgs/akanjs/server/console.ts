@@ -124,16 +124,16 @@ export interface AkanConsoleContext extends Record<string, unknown> {
   debug: () => ReturnType<AkanServer["inspectConsole"]>;
 }
 
-export const assertAkanConsoleAllowed = (
-  env: Pick<BaseEnv, "environment" | "operationMode"> = {
-    environment: (process.env.AKAN_PUBLIC_ENV ?? "debug") as BaseEnv["environment"],
-    operationMode: (process.env.AKAN_PUBLIC_OPERATION_MODE ?? "cloud") as BaseEnv["operationMode"],
-  },
-) => {
+export const assertAkanConsoleAllowed = (env: Partial<Pick<BaseEnv, "environment" | "operationMode">> = {}) => {
+  const environment = env.environment ?? ((process.env.AKAN_PUBLIC_ENV ?? "debug") as BaseEnv["environment"]);
+  const operationMode =
+    env.operationMode ??
+    ((process.env.AKAN_PUBLIC_OPERATION_MODE ??
+      (environment === "local" ? "local" : "cloud")) as BaseEnv["operationMode"]);
   const isProductionLike =
-    env.environment === "main" ||
-    env.operationMode === "cloud" ||
-    env.operationMode === "edge" ||
+    environment === "main" ||
+    operationMode === "cloud" ||
+    operationMode === "edge" ||
     process.env.NODE_ENV === "production";
   if (!isProductionLike || process.env.AKAN_CONSOLE === "1") return;
 

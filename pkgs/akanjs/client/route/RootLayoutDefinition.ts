@@ -12,7 +12,6 @@ export class RootLayoutDefinition<Args extends RouteArgsShape = Record<never, ne
   #reconnect?: boolean;
   #wsConnect?: boolean;
   #layoutStyle?: "mobile" | "web";
-  #gaTrackingId?: string;
 
   fonts(fonts: ReactFont[]) {
     this.#fonts = fonts;
@@ -38,10 +37,6 @@ export class RootLayoutDefinition<Args extends RouteArgsShape = Record<never, ne
     this.#layoutStyle = style;
     return this;
   }
-  gaTrackingId(id: string) {
-    this.#gaTrackingId = id;
-    return this;
-  }
 
   protected override extendModule(module: PageModule & LayoutModule): PageModule & LayoutModule {
     return {
@@ -52,7 +47,6 @@ export class RootLayoutDefinition<Args extends RouteArgsShape = Record<never, ne
       ...(this.#reconnect !== undefined ? { reconnect: this.#reconnect } : {}),
       ...(this.#wsConnect !== undefined ? { wsConnect: this.#wsConnect } : {}),
       ...(this.#layoutStyle ? { layoutStyle: this.#layoutStyle } : {}),
-      ...(this.#gaTrackingId ? { gaTrackingId: this.#gaTrackingId } : {}),
     };
   }
 }

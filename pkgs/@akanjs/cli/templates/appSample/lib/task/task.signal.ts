@@ -25,7 +25,7 @@ export class TaskInternal extends internal(srv.task, ({ interval }) => ({})) {}
 // Guards, per key: root = the generated admin API (runs any filter with caller-supplied args), get = reads,
 // cru = create/update/remove. root and cru are never Public; None here means "nobody until you name a guard".
 export class TaskSlice extends slice(srv.task, { guards: { root: None, get: Public, cru: SignedIn } }, (init) => ({
-  inPublic: init().exec(function () {
+  inPublic: init({ guards: [Public] }).exec(function () {
     return this.taskService.queryAny();
   }),
 })) {}

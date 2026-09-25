@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import type { CodeAgent } from "@akanjs/devkit/codeAgent";
+import { akanCodePaths } from "@akanjs/devkit/codeAgent/agent/akanCodePaths";
 import type {
   CodeAgentAnswer,
   CodeAgentEvent,
@@ -99,6 +100,18 @@ class FakeAgent {
     return this.mcp;
   }
 
+  catalogue() {
+    return [
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        authorized: true,
+        models: [{ id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", contextWindow: 1_000_000, current: true }],
+      },
+      { id: "anthropic", name: "Anthropic", authorized: false, models: [{ id: "opus", name: "Opus", current: false }] },
+    ];
+  }
+
   setName(name: string) {
     this.calls.push(`setName:${name}`);
   }
@@ -184,6 +197,18 @@ const caretOf = (stdout: FakeStdout) => {
 
 /** Ink throttles frame writes to `maxFps: 30`, and the host adds its own 34ms frame timer on top. */
 const settle = () => Bun.sleep(140);
+
+/**
+ * The home half of the config, moved somewhere disposable.
+ *
+ * `/mcp add` writes to `~/.akan/code/mcp.json` by default — that is the point of it — so without this the
+ * suite declares its fixtures as real servers for whoever runs it.
+ */
+beforeAll(() => {
+  const home = mkdtempSync(path.join(tmpdir(), "akan-tui-home-"));
+  process.env.AKAN_CODE_HOME = home;
+  expect(akanCodePaths.globalMcpFile().startsWith(home)).toBe(true);
+});
 
 const running: { tui: CodeTui; done: Promise<CodeTuiExit | undefined> }[] = [];
 
@@ -315,18 +340,37 @@ describe("CodeTui", () => {
    * The engine binds its tool registry when the session is created, so a server declared now is reachable
    * only through another assembly — which is the session switch the runner already performs.
    */
-  test("/mcp add writes the file and reopens this session to pick it up", async () => {
+  test("/mcp add writes the home file and reopens this session to pick it up", async () => {
     const root = mkdtempSync(path.join(tmpdir(), "akan-tui-mcp-"));
     const harness = mount(root);
     harness.agent.stored = [{ id: "s1", opening: "hi", updatedAt: Date.now(), turns: 1 }];
     await settle();
     await harness.press("/mcp add github npx -y server-github");
     await harness.press("\r");
-    expect(await harness.done).toEqual({ id: "s1", notice: "added github · npx -y server-github" });
-    const file = JSON.parse(readFileSync(path.join(root, ".akan", "code", "mcp.json"), "utf8")) as {
+    expect(await harness.done).toEqual({ id: "s1", notice: "added github · npx -y server-github · every repo" });
+    // The home file, because a server is an integration with an account and not one checkout's business.
+    const file = JSON.parse(readFileSync(akanCodePaths.globalMcpFile(), "utf8")) as {
       mcpServers: Record<string, unknown>;
     };
     expect(file.mcpServers.github).toEqual({ command: "npx", args: ["-y", "server-github"] });
+    rmSync(akanCodePaths.globalMcpFile(), { force: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /** A server this repo starts for itself belongs to this repo, so the narrower scope has to be reachable. */
+  test("/mcp add --local writes the workspace file instead", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "akan-tui-mcp-"));
+    const harness = mount(root);
+    harness.agent.stored = [{ id: "s1", opening: "hi", updatedAt: Date.now(), turns: 1 }];
+    await settle();
+    await harness.press("/mcp add --local repobot bun run bot.ts");
+    await harness.press("\r");
+    expect(await harness.done).toEqual({ id: "s1", notice: "added repobot · bun run bot.ts · this repo" });
+    const file = JSON.parse(readFileSync(path.join(root, ".akan", "code", "mcp.json"), "utf8")) as {
+      mcpServers: Record<string, unknown>;
+    };
+    expect(file.mcpServers.repobot).toEqual({ command: "bun", args: ["run", "bot.ts"] });
+    expect(existsSync(akanCodePaths.globalMcpFile())).toBe(false);
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -587,6 +631,37 @@ describe("CodeTui", () => {
     expect(frame).toContain("second");
     await harness.press("\r");
     expect(harness.agent.calls).toEqual(["prompt:first\nsecond"]);
+  });
+
+  /**
+   * The two spellings of the same key binding, which arrive at the handler as different shapes.
+   *
+   * `\` + return is one event carrying both characters, because the backslash stops Ink parsing it as a
+   * return; `\` + ESC + return is two, the backslash typed and then a `meta+return`. Either way the backslash
+   * is the shell's line continuation and not something the person typed.
+   */
+  test("a shift+enter binding breaks the line without leaving its backslash behind", async () => {
+    for (const ending of [String.fromCharCode(13), String.fromCharCode(10), `${esc}${String.fromCharCode(13)}`]) {
+      const harness = mount();
+      await settle();
+      await harness.press("first");
+      await harness.press(`\\${ending}`);
+      await harness.press("second");
+      expect(harness.stdout.lastFrame).not.toContain("\\");
+      await harness.press("\r");
+      expect(harness.agent.calls).toEqual(["prompt:first\nsecond"]);
+    }
+  });
+
+  /** One backslash is the binding's; a second is the one that was typed, and it stays. */
+  test("a backslash the user typed survives the line break after it", async () => {
+    const harness = mount();
+    await settle();
+    await harness.press("a\\");
+    await harness.press(`\\${String.fromCharCode(13)}`);
+    await harness.press("b");
+    await harness.press("\r");
+    expect(harness.agent.calls).toEqual(["prompt:a\\\nb"]);
   });
 
   test("the arrows move inside a multi-line prompt before they reach history", async () => {

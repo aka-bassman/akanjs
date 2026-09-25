@@ -4,12 +4,13 @@ interface Dict {
   Model: string;
   model: string;
   appName: string;
+  clientPath: string;
 }
 export default function getContent(scanInfo: AppInfo | LibInfo | null, dict: Dict) {
   return {
     filename: "_index.tsx",
     content: `
-import { type cnst, fetch, usePage, ${dict.Model} } from "@apps/${dict.appName}/client";
+import { type cnst, fetch, usePage, ${dict.Model} } from "${dict.clientPath}";
 import { page } from "akanjs/client";
 import { Load } from "akanjs/ui";
 

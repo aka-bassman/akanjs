@@ -23,8 +23,6 @@ export interface ProviderProps {
   prefix?: string;
   /** App content rendered inside the system provider. */
   children: ReactNode | ReactNode[];
-  /** Optional Google Analytics tracking id. */
-  gaTrackingId?: string;
   /** Select mobile-style frame behavior or normal web layout. */
   layoutStyle?: "mobile" | "web";
   /** Enable reconnect helper. Defaults to local operation mode in CSR. */

@@ -4,6 +4,7 @@ import type { ImgHTMLAttributes } from "react";
 
 type CsrImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "alt" | "src"> & {
   src?: string;
+  alt?: string;
   file?: ProtoLightFile | { url: string; imageSize: [number, number]; abstractData?: string | null } | null;
   abstractData?: string | null;
   priority?: boolean;
@@ -13,7 +14,7 @@ type CsrImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "alt" | "src"> & 
   fill?: boolean;
 };
 
-export const CsrImage = ({ src, file, className, abstractData, ...props }: CsrImageProps) => {
+export const CsrImage = ({ src, alt, file, className, abstractData, ...props }: CsrImageProps) => {
   const url = src ?? file?.url ?? "/empty.png";
   const [width, height] = [props.width ?? file?.imageSize[0], props.height ?? file?.imageSize[1]];
   const defaultAbstractData =
@@ -41,7 +42,7 @@ export const CsrImage = ({ src, file, className, abstractData, ...props }: CsrIm
       height={height}
       // className={clsx("object-cover w-full", className)}
       className={className}
-      alt="image"
+      alt={alt ?? "image"}
       // placeholder="blur"
       {...csrProps}
     />

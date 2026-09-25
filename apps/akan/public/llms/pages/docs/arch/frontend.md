@@ -19,97 +19,237 @@
 
 UI Architecture
 
-Server. One row, one card, one tile. Takes the model as a prop and renders it. Never carries the directive.
+Runs once on the server and arrives as HTML. None of its JavaScript reaches the browser.
 
-Server. The detail surface for one record. Takes the full model as a prop. Never carries the directive.
+A file that starts with "use client". It arrives as HTML, then again as JavaScript in the bundle.
 
-Client. The composed page section that reads the store and hydrates from an init or view prop. Always "use client" on line 1, and it should hold almost no markup of its own.
+The browser re-runs a client component's JavaScript so the HTML on screen responds to input.
 
-Client. The form. Every field is bound to the store, so a Template contains zero useState. Always "use client" on line 1.
+The first HTML the server sends. What the page awaited is in it; streamed sections follow.
 
-Client. One domain action as a control — Serve, Refund, Remove. Always "use client" on line 1, and it takes ids rather than model instances.
+One hydrated client component inside HTML the server rendered.
 
-The directive is there but the file uses no client-only capability at all. Delete it.
+Server
 
-A component in a client file renders four or more JSX elements with zero client-only capability. It is server-renderable markup sitting in the bundle.
+Client
 
-Ten or more JSX elements wrapped around one or two client-only touches. Split it: the touch stays client, the subtree goes server.
+The five that need the browser
 
-A useEffect with an empty dependency array loads server data. The route can fetch it before the first byte. A reactive effect with real dependencies is not flagged.
+An event handler has to be in the browser to catch the click, so its component goes there too.
 
-A module renders only from Template, Zone and Util and declares no Unit or View at all, so every consumer pays for hydration just to display the model.
+client-only package
 
-A Template holds form state in useState instead of the store. Bind the field with value={xForm.field} and onChange={st.do.setFieldOnX}.
+A map, editor or chart that touches the DOM when imported. Reach it through a lib re-export.
 
-You add "use client" to a file because one button in it has an onClick. The file is two hundred lines of product markup and one handler, and now all two hundred lines ship twice: once as the HTML the server already rendered, and again as JavaScript the browser has to download, parse and re-run before that one button works.
+Everything else is server work
 
-Akan is SSR-first. Every element that renders on the server ships as markup and costs nothing to hydrate, so the default is server and the directive is a cost you justify per component rather than a habit. This page is about where that line falls, why it is mechanical rather than a judgment call, and how to see where your app currently sits.
+markup and lists
 
-How A Page Reaches The Browser
+Cards drawn from an array are plain HTML with nothing to hydrate.
 
-Server-side rendering means the server prepares the first visible HTML before the browser has finished loading the app. A customer reads the order list, the price and the policy text while the filter and the submit button are still arriving. Viewing and interacting do not have to happen at the same moment.
+Route values arrive typed in the render callback before the first byte is sent.
 
-One request, end to end
+Called in a route, it finishes before the first byte. From a mounted client it costs two extra round-trips.
 
-How quickly the user can read something meaningful: order titles, sizes, prices, the first rows, the policy text. Server rendering is what moves this.
+show / hide a panel
 
-How quickly the user can type, click, filter or receive a live update. Only the hydrated islands move this, and every element you keep on the server makes them smaller.
+Files that draw data
 
-The shell does not have to wait for every query. fetch.init<Model><Suffix>, fetch.view<Model> and fetch.edit<Model> are awaitable and destructurable: destructuring hands out one promise per field with both queries already in flight, so a route can send the shell and give each section its own promise. Awaiting instead keeps that section in the shell, which is what SEO snapshots, prerendering and pre-hydration E2E read — so await what the page needs immediately and stream the rest.
+One row, card or tile. Takes the model as a prop and only draws it.
 
-The heading is server markup. The Zone is the only thing in the tree that hydrates, and it receives the unawaited promise rather than an awaited value, so the heading is on the wire while the slice query is still running. A promise that no Zone consumes goes to a Load.Stream instead, which the composition page covers.
+The detail screen for one record. Takes the full model as a prop.
 
-What Earns A Client Component
+Files that hold state or an action
 
-There are exactly five capabilities that require the browser. Everything else on a screen — including all the markup around them — is server work. This is the whole decision, and it is the same table akan quality ssr reads when it decides whether a directive was earned.
+Fills the store from an init or view prop and reads it. Holds almost no markup.
 
-Capability
+The form. Every field is bound to the store, so it holds no useState.
 
-In Domain UI The Rule Is Mechanical
-
-Inside a domain module you never make the call above. The file role decides it: Template, Zone and Util always carry the directive on line 1, and Unit and View never do. If a file's role and its directive disagree, one of the two is wrong.
-
-File
-
-The pair below is the shape the rule produces. The Zone is client because it hydrates the store from init; it holds no markup of its own and delegates every row to a server Unit.
-
-The Unit takes the model as a prop and renders it. No directive, no import of st, nothing to hydrate — a hundred rows on screen cost the bundle exactly one component, the Zone.
-
-Splitting One Screen
-
-Outside a domain module — an app shell, a marketing section, a dashboard — you place the boundary yourself. Push it down until it sits on the leaf that actually needs the browser, and let everything above and inside it stay server markup:
-
-Wrap, do not absorb
-
-A client component that adds one behaviour and renders children untouched keeps its whole subtree on the server.
+One domain action as a control, such as Serve, Refund or Remove.
 
 Split compound components
 
-Tab, Tab.Menus, Tab.Menu and Tab.Panel are four small client shells; the panel bodies arrive as children and never enter the bundle. One client file with a mode useState and every panel inlined is the opposite.
+Tab is four small client pieces: Tab, Tab.Menus, Tab.Menu and Tab.Panel. Panel bodies arrive as children, so they never enter the bundle. One client file with a mode useState and every panel inlined is the opposite.
 
 Use named slots
 
-Layout.Navbar takes title, back, left, right and children, so a client shell composes server content in five places instead of absorbing it.
+Layout.Navbar takes title, back, left, right and children. A client shell holds server content in five places instead of swallowing it.
 
 Derive on the server
 
-Display and predicate logic belongs on Light<Model>, which both sides hold; enum-to-class lookups belong in a module-scope as const map.
+Display and predicate logic goes on Light<Model>, which both sides hold. An enum-to-class lookup goes in a module-scope as const map.
 
-Keep the heavy island late
+Load heavy islands late
 
-A map, an editor or a chart goes behind the ui/<Folder>/index_.tsx and lazy() pair, with a server-safe index.tsx beside it. Collapsing the pair into one file breaks RSC.
+A map, editor or chart sits behind a ui/<Folder>/index_.tsx and lazy() pair, with a server-safe index.tsx beside it. Merging the pair into one file breaks RSC.
 
-That file is the whole client cost of a copy button: one handler and one children pass-through. The label, the icon and the receipt block around it are written in the page and stay server markup, however large they grow.
+The file starts with "use client" but uses none of the five features.
+
+Delete that first line.
+
+A component in a client file draws four or more elements with no client feature.
+
+Move it to a file without "use client".
+
+Ten or more elements wrap only one or two client features.
+
+Keep only the interactive leaf client and pass the rest in as children.
+
+A useEffect(…, []) loads server data after the page mounts.
+
+Fetch it in the route and pass it down as an init prop.
+
+A module draws only from Template, Zone and Util, with no Unit or View.
+
+Add a Unit or View and let the Zone hand its rows to it.
+
+A Template keeps form state in useState instead of the store.
+
+Bind each field to the store:
+
+Every component in an Akan app runs in one of two places. A server component runs once on the server and reaches the browser as finished HTML. A client component — a file that starts with "use client" — reaches the browser as HTML too, but then its JavaScript follows, and the browser runs it again before its buttons and inputs work.
+
+This page is about deciding which of the two each piece of a screen should be. The mistake it exists to prevent looks like this: one button in a file needs an onClick, so "use client" goes on top. The file is two hundred lines of product markup and one handler, and now all two hundred lines ship twice.
+
+A client file ships twice
+
+A file marked use client travels to the browser twice: once as HTML the user can already read, and again as JavaScript the browser must download and re-run before the one button in it works.
+
+That is why Akan is SSR-first. Server is the default, and "use client" is a cost you justify for each component rather than a habit. The good news is that the line is mostly mechanical: the sections below show which features need the browser, how domain files decide for you, and how to measure where your app stands.
+
+Words used on this page
+
+Term
+
+How A Page Reaches The Browser
+
+Server-side rendering means the server builds the first HTML before the browser has loaded the app. A customer can already read the order list, the prices and the policy text while the filter and the submit button are still on their way.
+
+One request, end to end
+
+User
+
+Browser
+
+fetch.init and fetch.view
+
+Akan server
+
+request
+
+slice query
+
+init payload
+
+shell HTML, server components already rendered
+
+the user can read the page here
+
+each section streams in as its own promise lands
+
+hydrate the client islands only
+
+the user can now type and click
+
+Reading and interacting do not have to start at the same moment, so it helps to think of them as two separate clocks:
+
+When the page becomes readable
+
+How soon the user can read something meaningful: titles, sizes, prices, the first rows. Server rendering is what moves this.
+
+When the page responds to input
+
+How soon the user can type, click or filter. Only hydrated islands move this, and every element you keep on the server makes them smaller.
+
+Send the shell first, stream the rest
+
+A page does not have to wait for every query before it sends anything. fetch.init<Model><Suffix>, fetch.view<Model> and fetch.edit<Model> can be used in two ways, and the choice decides where the data lands:
+
+await — part of the shell
+
+The shell waits for the data, so it is in the first HTML. SEO snapshots, prerendering and pre-hydration E2E read exactly this. Use it for what the page needs immediately.
+
+destructure — streamed
+
+You get one promise per field, with the queries already running. The shell goes out at once, and each section fills in when its own promise lands. Use it for the rest.
+
+In the page below, the heading goes out right away and the order list streams in behind it:
+
+The heading is server markup. It is already on the wire while the slice query is still running.
+
+The Zone is the only part that hydrates. It receives the unawaited promise, not the data, so nothing above it waits.
+
+A promise that no Zone consumes goes to a Load.Stream instead. The UI Composition page covers it.
+
+What Earns A Client Component
+
+Only five kinds of feature actually need the browser. A component that uses none of them belongs on the server, even when it sits right next to one that does. akan quality ssr applies this same list when it checks whether a "use client" was needed.
+
+What the code uses
+
+Belongs here
+
+Not here
+
+In Domain UI The Rule Is Mechanical
+
+Inside a domain module you never make the call above yourself: the file name makes it. Template, Zone and Util always start with "use client"; Unit and View never do. If a file's role and its first line disagree, one of the two is wrong.
+
+File
+
+Runs here
+
+Never here
+
+A Zone and a Unit working together
+
+Here is the pair the rule produces. The Zone is client for one reason only: it fills the store from init. It draws no markup of its own and hands every row to a Unit:
+
+The Unit takes the model as a prop and draws it. No "use client", no st, nothing to hydrate. A hundred rows on screen still cost the bundle one component: the Zone.
+
+Splitting One Screen
+
+Outside a domain module (an app shell, a marketing section, a dashboard) you place the boundary yourself. Push it down until it sits on the smallest piece that actually needs the browser, and leave everything above and inside it as server markup.
+
+One client leaf, server markup all around
+
+In a receipt card, only the small copy button is a client component; the card, its lines, the total, and even the icon inside the button stay server markup.
+
+The copy button, in code
+
+The client part is a file this small. It adds one behaviour, copying on click, and renders its children untouched:
+
+The page around it stays a server component. The receipt, its lines and even the button's label are written in the page and passed in as children, so they stay server markup however large they grow:
+
+That is the whole client cost of a copy button: one handler and one children pass-through.
+
+Four more ways to keep markup on the server
 
 Measuring The Split
 
-None of the above is a style preference, so it is measured rather than reviewed. akan quality ssr counts JSX elements per side and reports the share each app and lib keeps on the server, plus the six findings below. It reads the .tsx files under ui/ and lib/ in every app and lib — page/ and webkit/ are outside the measurement, so moving markup into a route neither helps nor hurts the number.
+None of this is a matter of taste, so it is measured rather than argued about in review. akan quality ssr counts the JSX elements on each side and reports, per app and lib, the share kept on the server, plus the six findings below.
+
+It reads the .tsx files under ui/ and lib/ of every app and lib.
+
+page/ and webkit/ are not counted, so moving markup into a route neither raises nor lowers the number.
+
+Every finding is named akan.ssr.<rule>. Here is what each rule means and how to fix it:
 
 Rule
 
-Three things are deliberately not flagged. A client-only third-party package and an index_.tsx lazy() boundary are legitimate reasons for the directive; a Zone, Template or Util inside a module is exempt because its role requires the directive whether or not today's body uses it; and an interaction-driven fetch — a lookup inside an onClick — is work the server could not have done. Only mount-time loads are findings.
+Meaning → fix
 
-Run it before and after any change that touches .tsx, and treat --format json as the hook for CI. With the boundary settled, the next page is about what fills the space on either side of it: the akanjs/ui shells that render a list, a detail view and a form without you writing a loading state, and the generated helpers underneath them.
+What is not flagged
+
+A client-only third-party package and an index_.tsx lazy() boundary. Both are legitimate reasons for "use client".
+
+A Zone, Template or Util inside a module. Its role requires "use client" even when today's body does not use it.
+
+A fetch started by the user, such as a lookup inside onClick. The server could not have done it in advance; only loads at mount time are findings.
+
+Run it before and after any change that touches a .tsx file, and use --format json to wire it into CI.
+
+With the boundary settled, the next page covers what fills each side of it: the akanjs/ui shells that render a list, a detail view and a form without a hand-written loading state, and the generated helpers underneath them.
 
 ## Code Examples
 
@@ -191,6 +331,32 @@ export const CopyOrderId = ({ className, orderId, children }: CopyOrderIdProps) 
     </button>
   );
 };
+```
+
+### apps/koyo/page/(public)/icecreamOrder/[icecreamOrderId]/_index.tsx
+
+```ts
+import { fetch, usePage } from "@apps/koyo/client";
+import { CopyOrderId } from "@apps/koyo/ui";
+import { ID } from "akanjs/base";
+import { page } from "akanjs/client";
+
+export default page()
+  .param("icecreamOrderId", ID)
+  .render(async ({ icecreamOrderId }) => {
+    const { l } = usePage();
+    const [{ icecreamOrder }] = await Promise.all([fetch.viewIcecreamOrder(icecreamOrderId)]);
+    return (
+      <section className="rounded-lg border p-4">
+        <h2 className="font-bold text-lg">{l("icecreamOrder.modelName")}</h2>
+        <div>{icecreamOrder.size}</div>
+        <div>{icecreamOrder.status}</div>
+        <CopyOrderId className="mt-2 text-sm" orderId={icecreamOrder.id}>
+          {l.trans({ en: "Copy order ID", ko: "주문 번호 복사" })}
+        </CopyOrderId>
+      </section>
+    );
+  });
 ```
 
 ### Terminal

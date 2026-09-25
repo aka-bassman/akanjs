@@ -31,11 +31,11 @@ describe("resolveSsrPageEntries", () => {
     await write(path.join(appRoot, "env", "env.client.ts"), "export const env = {};\n");
     await write(
       rootLayoutPath,
-      'export const theme = "dark";\nexport const fonts = [{ name: "pretendard" }];\nexport const metadata = { title: "Root" };\n',
+      'export const theme = "dark";\nexport const fonts = [{ name: "pretendard" }];\nexport const head = null;\n',
     );
     await write(
       groupedLayoutPath,
-      'export function generateMetadata() { return { title: "Home" }; }\nexport default function Layout({ children }) { return children; }\n',
+      "export function generateHead() { return null; }\nexport default function Layout({ children }) { return children; }\n",
     );
 
     const entries = await resolveSsrPageEntries({
@@ -54,15 +54,10 @@ describe("resolveSsrPageEntries", () => {
     expect(generatedSource).toContain('import * as inheritedModule from "../../../page/_layout.tsx";');
     expect(generatedSource).toContain("const inheritedLayout = resolveRouteModule(inheritedModule as never");
     expect(generatedSource).not.toContain("<System.Provider");
-    expect(generatedSource).toContain("export async function generateMetadata(props: PageProps)");
-    expect(generatedSource).toContain("if (userLayout.generateMetadata) return userLayout.generateMetadata(props);");
-    expect(generatedSource).toContain("if (userLayout.metadata !== undefined) return userLayout.metadata;");
-    expect(generatedSource).toContain(
-      "if (inheritedLayout.generateMetadata) return inheritedLayout.generateMetadata(props);",
-    );
-    expect(generatedSource).toContain("return inheritedLayout.metadata;");
-    expect(generatedSource).not.toContain("Object.keys(userLayout.metadata)");
-    expect(generatedSource).not.toContain("Object.keys(inheritedLayout.metadata)");
+    expect(generatedSource).toContain("export async function generateHead(props: PageProps)");
+    expect(generatedSource).toContain("if (userLayout.generateHead) return userLayout.generateHead(props);");
+    expect(generatedSource).toContain("return inheritedLayout.head;");
+    expect(generatedSource).not.toContain("generateMetadata");
     expect(generatedSource).toContain("export const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;");
     expect(generatedSource).toContain("export const Error = userLayout.Error ?? inheritedLayout.Error;");
     expect(generatedSource).toContain("export const pageConfig = userLayout.pageConfig ?? inheritedLayout.pageConfig;");

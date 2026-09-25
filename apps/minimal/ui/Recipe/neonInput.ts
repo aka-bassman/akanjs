@@ -3,7 +3,7 @@ import { recipe, tv } from "akanjs/ui";
 /**
  * 네온 입력 표면 스킨 — 프레임워크 inputRecipe 의 **look 교체용**.
  * kind/size/tone 표면을 inputRecipe 와 동일하게 유지해야 `recipes.input` 슬롯에 주입 가능하다
- * (Input/TextArea/Select 가 같은 셸을 공유하므로). 아래쪽 한 줄만 남긴 터미널풍 필드 + 포커스 글로우.
+ * (Input/TextArea 가 이 슬롯으로 셸을 그리므로). 아래쪽 한 줄만 남긴 터미널풍 필드 + 포커스 글로우.
  * 높이는 field 에만 붙는다 — textarea 는 내용으로 자란다.
  */
 export const neonInputRecipe = recipe(

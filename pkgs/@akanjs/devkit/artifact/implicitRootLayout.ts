@@ -236,13 +236,6 @@ export async function generateHead(props: PageProps) {
   return inheritedLayout.head;
 }
 
-export async function generateMetadata(props: PageProps) {
-  if (userLayout.generateMetadata) return userLayout.generateMetadata(props);
-  if (userLayout.metadata !== undefined) return userLayout.metadata;
-  if (inheritedLayout.generateMetadata) return inheritedLayout.generateMetadata(props);
-  return inheritedLayout.metadata;
-}
-
 export const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;
 export const Error = userLayout.Error ?? inheritedLayout.Error;
 export const pageConfig = userLayout.pageConfig ?? inheritedLayout.pageConfig;
@@ -258,7 +251,6 @@ ${layoutBinding}  return (
       theme={userLayout.theme ?? inheritedLayout.theme}
       fonts={loadFonts(userFonts)}
       className={defaultFontClassName}
-      gaTrackingId={userLayout.gaTrackingId ?? inheritedLayout.gaTrackingId}
       layoutStyle={userLayout.layoutStyle ?? inheritedLayout.layoutStyle}
       reconnect={userLayout.reconnect ?? inheritedLayout.reconnect ?? false}
       wsConnect={userLayout.wsConnect ?? inheritedLayout.wsConnect ?? true}
@@ -278,13 +270,6 @@ export async function generateHead(props: PageProps) {
   if (userLayout.head !== undefined) return userLayout.head;
   if (inheritedLayout.generateHead) return inheritedLayout.generateHead(props);
   return inheritedLayout.head;
-}
-
-export async function generateMetadata(props: PageProps) {
-  if (userLayout.generateMetadata) return userLayout.generateMetadata(props);
-  if (userLayout.metadata !== undefined) return userLayout.metadata;
-  if (inheritedLayout.generateMetadata) return inheritedLayout.generateMetadata(props);
-  return inheritedLayout.metadata;
 }
 
 export const NotFound = userLayout.NotFound ?? inheritedLayout.NotFound;

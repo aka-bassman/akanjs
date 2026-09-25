@@ -16,31 +16,187 @@
 
 Workflow
 
-List, explain, plan, apply, validate, or report an Akan workflow. A workflow is a named recipe for a change that always touches the same files in the same order — a field, a module, a slice. Planning it produces a JSON file you can read before anything is written, and applying it consumes that file. `plan` and `explain` never write source. `apply` does, and only from a plan file.
+workflow
 
-Run one narrow repair and return a structured report. Each kind is a known remedy for a known diagnostic, run through the same reporting shape as an apply: what it ran, what it changed, what to do next. Two of the five change nothing on their own — `dictionary` and `module-shape` read `akan doctor --strict`, filter its diagnostics to your module, and name the primitive command that would fix them.
+A named recipe for a change that always touches the same files in the same order.
+
+plan file
+
+The JSON `plan --out` writes: the steps, the files it expects to change, and the checks to run.
+
+run artifact
+
+What an apply, a validate or a repair leaves in `.akan/workflows/runs/<runId>.json`.
+
+The run artifact's file name, such as `apply-20260921103000-a1b2c3`.
+
+A narrow fix for one known kind of failure, picked by `<kind>`.
+
+`sync`, `lint` or `typecheck` failed on the source; fix it or run a repair.
+
+A workspace configuration, such as the Biome config, failed to load.
+
+The command could not run at all, such as `command not found` (exit code 127).
+
+Anything else, including a failed `build`; read the command output in the report.
+
+plan and apply mode
+
+apply mode
+
+CLI only
+
+Needs:
+
+A new database-backed domain module, from the constant through the store and UI.
+
+A reusable value module with no database ownership, such as a value object or shared scalar.
+
+One conventional UI file for an existing module.
+
+A field on the constant and the dictionary, with the Template form flagged for review.
+
+A closed-value field: the enum class, its labels and options, and the field itself.
+
+A service method and a mutation guarded by `None`; it only recommends a store action or UI control.
+
+A service query and an `init` slice guarded by `None`; it only recommends the page load and Zone.
+
+Create
+
+Add to a module
+
+List, explain, plan, apply, or validate a workflow, or print an earlier run's report. `plan` and `explain` never write source. Only `apply` does, and only from a plan file.
+
+What to do. Left out, it is asked for at a prompt.
+
+Needed by every action but `list`. What it names depends on the action; see Notes.
+
+`markdown` is for a person; `json` is the report an MCP client receives.
+
+`plan` only. Writes the plan JSON here; without it the plan is only printed and cannot be applied.
+
+`apply` only. Reports the predicted apply without writing source; the run is still recorded.
+
+Plan input: the target app or library. Every workflow requires it.
+
+Plan input: the target domain, service or scalar module. All but `create-scalar` require it.
+
+Plan input for `add-field` and `add-enum-field`: the field name.
+
+Plan input for `add-field`: a field type or scalar name. Use `Int` or `Float`, never `Number`.
+
+Plan input for `add-enum-field`, or `add-field` with `--type enum`: comma-separated enum values.
+
+Plan input: the field default, converted by type. An enum default must be one of the values.
+
+Plan input for `create-scalar`: the scalar name.
+
+Plan input for `create-ui`: the UI file to create. `zone` and `util` plan but do not apply.
+
+Plan input for `add-mutation`: the mutation or action name.
+
+Plan input for `add-slice`: the slice or query name.
+
+`workflow` is a name from `akan workflow list`.
+
+`workflow` is the `--out` path, not a name; the run lands in `.akan/workflows/runs/<runId>.json`.
+
+`workflow` is a plan path, a run artifact path, or a runId, and validation is recorded as a run too.
+
+`workflow` is a runId whose report is printed again, whether apply, dry run, validate or repair.
+
+Run one narrow repair and print a structured report. Each kind is a known remedy for a known problem. `dictionary` and `module-shape` change nothing: they read `akan doctor --strict`, keep your module's findings, and name the command that fixes them.
+
+Which repair to run. What each one does is in Notes.
+
+Output format. `json` is what an MCP client receives.
+
+Target app or library. Required by `generated`, `dictionary` and `module-shape`.
+
+Target module. Required by `dictionary` and `module-shape`.
+
+Target app, library or package. Required by `format` and `imports`.
+
+Runs `akan sync <app>`.
+
+Both run `akan lint <target>`; the kind only labels what the report is about.
+
+Report only: finds missing dictionary labels and points at `akan add-field`.
+
+Report only: finds a malformed module or a missing abstract and points at `akan create-module`.
+
+afterwards
+
+Every repair is recorded as a run and suggests `akan doctor --strict --format json` next.
+
+over MCP
+
+Apply mode serves `repair_generated`, `repair_imports`, `repair_module_shape`; others are CLI-only.
 
 Workflow CLI
 
-Adding one field to a module is six edits in five files, and four of them are mechanical. Do it by hand and the interesting part — the name, the type, the default — competes for your attention with a dictionary label and a generated barrel. Do it twice and the two modules disagree.
+Adding one field to a module touches five files, and most of that work is mechanical. By hand, the decisions that matter — the name, the type, the default — get lost among dictionary labels and generated barrel files, and no two modules end up quite alike.
 
-A workflow names that change once. You plan it, read the plan, apply it, and validate what it did. `akan repair` is the other half: when validation fails, it runs the one command that clears that failure.
+Words Used on This Page
+
+Term
 
 Plan, Apply, Validate
 
-The four steps are one chain, and each hands the next a file path rather than a name. That is what makes the sequence reviewable: the plan is a document before it is an action, and the run artifact is a record after it.
+The steps form one chain, and each hands the next a file path rather than a name. That makes the plan a document you review before anything is written, and the run artifact a record of what happened.
 
-Reads the workspace and writes a JSON plan: the steps, the files it predicts it will change, the validation it will want afterwards. Nothing in your source is touched.
+Workflow chain
 
-Takes the plan file, not a workflow name. An invalid or unreadable plan is reported as a diagnostic instead of throwing, so the report shape is the same whether it worked or not.
+Plan
 
-Runs the validation commands the plan asked for — sync, lint, typecheck — and classifies a failure as a source change, a workspace config problem, or an environment one.
+Apply
 
-The remedy for that classification. `generated` re-syncs, `format` and `imports` re-lint, and the two report-only kinds point at the primitive that fixes a module.
+Validate
+
+Repair
+
+plan JSON
+
+on failure
+
+1. Plan
+
+Checks your inputs and writes the plan JSON: the steps, the files it expects to change, and the checks to run. Source is neither read nor written.
+
+2. Apply
+
+Takes the plan file, not a workflow name, and writes the source changes. A plan with an error, such as a missing input, applies nothing.
+
+3. Validate
+
+4. Repair
+
+How Validate Sorts a Failure
+
+Cause
+
+Over MCP
+
+Command
+
+MCP tool · mode
 
 Workflow Catalogue
 
-Seven workflows ship with the CLI. `akan workflow list` prints them with the same descriptions, and `akan workflow explain <name>` adds the inputs, the predicted changes, and the completion criteria.
+What Validate Runs
+
+Run by validate
+
+Not run
+
+Related Pages
+
+Primitive Commands
+
+The commands a workflow applies through. You can also run them directly.
+
+Serves workflows and repairs to an agent as MCP tools.
 
 ## Code Examples
 

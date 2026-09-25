@@ -20,95 +20,151 @@
 
 Text Search
 
-Akan has built-in full-text search. There is no separate search server to run and no index to keep in sync by hand: you mark fields in constant.ts, write one filter, and the database does the rest.
+A field option that puts the field in the search index, written as `{ text: "title" }`.
 
-Declare a text role on the fields you want searchable.
+A named query in `document.ts`. The service gets methods named after it, like `listBySearch`.
 
-Write a filter that calls q.search(text).
+The query node that matches text against the index.
 
-Call the generated listBySearch and sort by "relevance".
+A filter published as an endpoint that a client store can load.
+
+A built-in sort key that puts the best match first.
+
+The name a person types into the search box. Ranked above everything else.
+
+A keyword list. Ranked below the title and above prose.
+
+Prose. It matches, but should not beat a name match.
+
+A scoping value like status or owner. Searchable, never a reason to rank first.
+
+Stored with the entry so you can draw the result. Not indexed, so it never matches.
+
+The matching documents. A last `{ sort, skip, limit }` argument orders and pages them.
+
+How many documents match.
+
+The model's insight, computed over the matches only.
+
+The query itself, for a slice's `exec` to return.
+
+Lets the last word match as a prefix, for as-you-type boxes. Without it, `Ken` misses `Kenny`.
+
+all four
+
+Looks only in the named roles. `thumb` is not indexed, so it is not a column.
+
+Replaces the ranking weights: exactly four finite numbers, in title, desc, tag, filter order.
+
+Best match first.
+
+Any other key, like `"latest"`
+
+That key wins over the score.
+
+Left off, in a service call
+
+Best match first, because the query holds a search.
+
+Left off, on a slice endpoint
+
+`"latest"` is filled in, so the score is never used.
+
+unset = on
+
+Switches the index on or off. Off keeps indexed data; back on re-syncs every model.
+
+Picks the fts5 tokenizer. A change rebuilds the index on the next boot.
+
+Akan has full-text search built in. There is no search server to run and no index to keep in sync by hand.
+
+It takes three steps:
+
+Letting clients search as well is a separate decision, covered in Publishing To Clients.
+
+Words used on this page
+
+Term
 
 1. Mark The Fields
 
-Five roles exist. Pick one by what the value is, not by how badly you want it found: the roles carry different ranking weights.
+A product with all five roles in use:
 
-The name a person searches for. Ranked well above everything else.
+Role
 
-A keyword list. Above prose, below the title.
+Weight
 
-Prose. Matched, but it should not beat a name match.
-
-A scoping value like status or owner. Weighted zero: searchable, never a reason to rank first.
-
-Carried along so you can draw the result. Not indexed, so it never matches.
-
-Secrets are refused
-
-A secret, hidden, or resolved field with a text role fails at startup. The index stores plaintext, so this is the guard that keeps a password out of search results.
+Use
 
 2. Write The Filter
 
-q.search() is a query node like any other, so it combines with ordinary conditions. Nothing else is needed to make search work from a service.
+Declare the filter
+
+A search that can also narrow by status:
+
+Call it from the service
+
+The filter gives the service a family of methods. These four are the ones a search uses:
+
+Method
+
+A service method that returns one page of results and the total:
 
 3. Tune The Match
 
-Three options cover almost everything: prefix for as-you-type boxes, columns to narrow where to look, weights to change what counts as relevant.
+How input is matched
 
-options
+Ordering
 
-Raw user input is safe. Punctuation that would otherwise be search syntax is quoted for you.
+When sort is
 
-Blank input matches nothing. An empty search box does not become a full listing.
-
-Sorting by "relevance" gives best-match-first. Any other sort key wins over the score. Name it explicitly from a client: a slice endpoint fills "latest" when sort is left off, so it never falls through to the score.
+Order
 
 Publishing To Clients
 
-A filter is server-side. Adding a slice turns it into an endpoint anyone allowed by the slice guards can call, which on a publicly readable model means anyone can walk the table one query at a time.
+A filter runs on the server only. A slice turns it into an endpoint a client can call, and on a publicly readable model anyone can then walk the table one query at a time.
 
-So decide per model. A product catalog is meant to be searched. A user directory usually is not.
+So decide per model:
+
+Meant To Be Searched
+
+A product catalog. Publishing a search slice is the point.
+
+Usually Not
+
+A user directory. Keep its search filter on the server.
+
+A public catalog search, with its own guard:
 
 Operating It
 
-The index keeps itself current through database triggers, so a write made by any path is reflected, including bulk query-level updates that fire no document hooks. Changing which fields carry a role rebuilds that model on the next boot.
-
-A nightly job merges the index segments that writes leave behind, so search does not get slower over time. It does a bounded amount of work per run and only one process in a deployment performs it, so nothing needs to be scheduled by hand.
-
-turn it off
-
-Unset means on. Turning it off never deletes indexed data, and turning it back on reconciles every model.
-
-Give every process in a deployment the same value. A process cannot clean up triggers for models it does not mount, so a mixed fleet leaves stale ones behind.
-
-AKAN_SEARCH_TOKENIZER picks the fts5 tokenizer, defaulting to unicode61 remove_diacritics 2. Changing it rebuilds the index from the mirror on the next boot without re-reading any model table, so it is cheap to revisit. The rebuild takes no cross-process claim, so a fleet restarted at once repeats it in every process.
-
-Search needs sqlite or libsql. On Postgres q.search() throws instead of quietly returning every row.
+The index keeps itself current through database triggers. A write from any path is reflected, including bulk query-level updates that fire no document hooks.
 
 Gotchas
 
-q.search() must sit at an AND position. Nesting it under q.any() or q.not() throws.
-
-It cannot be used in updateOneByQuery or updateManyByQuery. Those writes take no join, and applying only the other conditions would hit rows you did not mean to touch.
-
-schema.index() has nothing to do with search. It builds ordinary lookup indexes only.
-
-Removing a document removes it from the index, including a soft delete.
-
 ## Code Examples
 
-### product.constant.ts
+### apps/shop/lib/product/product.constant.ts
 
 ```ts
+export class ProductStatus extends enumOf("productStatus", [
+  "draft",
+  "active",
+] as const) {}
+
 export class ProductInput extends via((field) => ({
   name: field(String, { text: "title" }),
   summary: field(String, { default: "", text: "desc" }),
   keywords: field([String], { text: "tag" }),
   cover: field(File, { text: "thumb" }).optional(),
+})) {}
+
+export class ProductObject extends via(ProductInput, (field) => ({
   status: field(ProductStatus, { default: "draft", text: "filter" }),
 })) {}
 ```
 
-### product.document.ts
+### apps/shop/lib/product/product.document.ts
 
 ```ts
 export class ProductFilter extends from(cnst.Product, (filter) => ({
@@ -117,39 +173,52 @@ export class ProductFilter extends from(cnst.Product, (filter) => ({
       .arg("text", String)
       .opt("statuses", [cnst.ProductStatus])
       .query((text, statuses, q) =>
-        q.all(q.search(text, { prefix: true }), statuses?.length ? { status: q.oneOf(statuses) } : {}),
+        q.all(
+          q.search(text, { prefix: true }),
+          statuses?.length ? { status: q.oneOf(statuses) } : {},
+        ),
       ),
   },
   sort: {},
 })) {}
 ```
 
-### product.service.ts
+### apps/shop/lib/product/product.dictionary.ts
 
 ```ts
-const products = await this.listBySearch(text, statuses, { sort: "relevance", limit: 20 });
-const count = await this.countBySearch(text, statuses);
+.query<ProductFilter>((fn) => ({
+  bySearch: fn(["By Search", "검색어별 조회"]).arg((t) => ({
+    text: t(["Text", "검색어"]).desc(["Words to search for", "찾을 검색어"]),
+    statuses: t(["Statuses", "상태"]).desc(["Statuses to keep", "남길 상태"]),
+  })),
+}))
 ```
 
-### Code
+### apps/shop/lib/product/product.service.ts
 
 ```ts
-q.search(text, { prefix: true })
-
-q.search(text, { columns: ["title", "tag"] })
-
-// title, desc, tag, filter order
-q.search(text, { weights: [20, 1, 5, 0] })
+export class ProductService extends serve(db.product, () => ({})) {
+  async searchProducts(
+    text: string,
+    statuses?: cnst.ProductStatus["value"][],
+  ) {
+    const [products, total] = await Promise.all([
+      this.listBySearch(text, statuses, { sort: "relevance", limit: 20 }),
+      this.countBySearch(text, statuses),
+    ]);
+    return { products, total };
+  }
+}
 ```
 
-### product.signal.ts
+### apps/shop/lib/product/product.signal.ts
 
 ```ts
 export class ProductSlice extends slice(
   srv.product,
   { guards: { root: Admin, get: Public, cru: Admin } },
   (init) => ({
-    bySearch: init()
+    bySearch: init({ guards: [Public] })
       .param("text", String)
       .search("statuses", [cnst.ProductStatus])
       .exec(function (text, statuses) {
@@ -157,12 +226,6 @@ export class ProductSlice extends slice(
       }),
   }),
 ) {}
-```
-
-### Code
-
-```ts
-AKAN_SEARCH_ENABLED=0
 ```
 
 ## Agent Notes

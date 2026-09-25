@@ -31,6 +31,20 @@ normal routing
 
 Akan can serve multiple web clients from one app by splitting pages with basePath. Every route sits under the locale, so locally a client is the segment right after it — /en/store — but in production the matching domain hides that segment and serves the client as a separate site.
 
+One app, many clients
+
+Akan App
+
+single server and backend
+
+store web
+
+admin web
+
+partner web
+
+demo web
+
 Multi web
 
 Each basePath can behave like its own website.
@@ -47,9 +61,9 @@ Route Config
 
 Define clients in akan.config.ts with routes. The basePath names the client, and domains decide which production host should open that client.
 
-The client this route opens, and the first page folder its routes live under. For basePath store, pages live under page/store. Akan strips the slashes, so /store/ and store are the same value.
+The client this route opens and its first page folder: basePath store lives in page/store.
 
-Hosts that open this basePath, keyed by deployment branch. main, develop, and debug always exist, and naming any other key adds that branch. When the host matches, users see the site without the basePath segment.
+Hosts per branch that open this basePath; a matching host hides the basePath segment.
 
 Page Structure
 
@@ -57,7 +71,7 @@ When routes define base paths, every page file must be placed under one of those
 
 In local development, you open each client with the locale followed by its basePath, such as /en/store or /ko/admin. After deployment, a configured domain can open that same client without showing the basePath in the URL.
 
-Rule: once basePath is declared, pages outside page/basePath/ are not allowed. Akan raises an error instead of routing them.
+Rule: once basePath is declared, pages outside page/basePath/ are not allowed.
 
 Local And Production
 
@@ -75,7 +89,11 @@ CSR And Mobile Builds
 
 When the app is built, Akan can prepare CSR web output per basePath. Mobile targets can also point to a basePath, so Android and iOS apps can open the right client from the same backend.
 
-A target's basePath must name one the routes declared. An unknown value fails the config load rather than building a package that opens nothing.
+Build outputs
+
+One Akan app builds CSR web output per basePath and an Android and iOS app per target, and all three talk to one server and backend.
+
+A target's basePath must name one the routes declared.
 
 This is the main idea: multi web and multi app clients, but one Akan app, one server runtime, and one backend domain model.
 

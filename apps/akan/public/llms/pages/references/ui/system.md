@@ -14,69 +14,123 @@
 
 System
 
-The app shell. Two of these are mounted for you by the generated root layout — `Provider` and `Root` — and the other four are controls you place yourself. `Provider` is the one that branches: it renders the CSR or the SSR provider by render mode, so a root layout names one component and never asks which build it is in.
+app shell
 
-The app frame. `of` is the root route component the CSR wrapper mounts; `env` is the app's own `env/env.client.ts` merged over the framework's `getEnv()`; `layoutStyle` picks the mobile frame or the plain web layout. The root layout chain sets most of these from `akan.config.ts`, so an app rarely writes it by hand.
+The frame every page renders inside, holding the theme, fonts, locale, toasts and socket.
 
-Binds the app's generated store to the framework runtime. It is what makes `st.use.*` resolve inside the tree, and it is mounted once, above everything.
+A React boundary that shows a fallback until the content inside it is ready.
 
-Cycles the `data-theme` attribute the semantic tokens follow. `themes` names the rotation; left out it is light and dark.
+Every endpoint with its arguments, guards and return model, shipped as `fetch.serializedSignal`.
 
-Swaps the locale segment of the current route. Every route sits under `/:lang`, so this changes the path rather than navigating somewhere new.
+agent tool
 
-The blocking overlay for a dropped connection. It pings the server, reports the state, and sits above every other layer on purpose — it is the one surface that should stop the app.
+An action a control publishes so the in-page agent can do what the user's click does.
 
-Flips the store's `devMode` flag — what admin screens read to show developer-only affordances.
+Auto
 
-`System`'s toast stack is deliberately not a member. `Provider` mounts it, and it keeps the `msg.*` wiring, the store read, the body-level portal, and the dismiss timers — which is why the override slots are `Toast` and `ToastItem`, the surface, rather than the component that decides when a toast appears and goes away.
+Server
 
-Small Suspense boundary for content that should be rendered client-side with an optional fallback.
+no "use client"
 
-Client-side content.
+Tool
 
-Suspense fallback.
+App shell
 
-The API explorer, as parts. It reads the serialized signal the server ships with the app — every endpoint, its arguments, its guards, its return model — and renders a document you can also call from. Eight members, and every one of them is a namespace carrier: `Signal.Doc` and its siblings render an empty div on their own, so you always reach for a static (`Signal.Doc.Zone`, `Signal.RestApi.Endpoints`), never the root.
+Controls you place
 
-The explorer itself. `Doc.Zone({ refName, fetch, openAll? })` is one signal's whole document — the entry point an admin page mounts; `Setting` is the search and guard toolbar, `AuthModal` the credential dialog the Try controls need.
+Switches the color theme and publishes `applyTheme`.
 
-The HTTP half. `Endpoints({ refName, fetch, endpoints?, openAll?, search?, httpUri? })` lists a signal's query and mutation endpoints — naming `endpoints` narrows it to exactly those, which is how a docs page embeds one call. `Interface` is the read-only shape, `Try` the form that sends it.
+Switches the URL's language and publishes `setLanguage`.
 
-`Endpoints({ refName, fetch, openAll?, search? })` — the same listing narrowed to the websocket endpoints, delegating each row to `PubSub` or `Message`. A pubsub room authorizes once, at subscribe, so the guard filter here reads the endpoint's own guards.
+Turns developer-only UI on and off.
 
-One subscription: its room, its payload shape, and a Try that subscribes and shows frames as they land.
+Developer tools and primitives
 
-The same three for a one-way message endpoint.
+The API explorer, for an admin or docs screen.
 
-`Result({ status, data })` — the live pane a `PubSub.Try` writes into, with a status dot and the payload. A byte payload is shown as a hex head rather than JSON: `JSON.stringify` spells a `Uint8Array` as `{"0":2,…}`, which for one video chunk is megabytes of DOM.
+react-spring's animated `div`, `g` and `progress`.
 
-A model's shape, drawn from the constant class: `Type` is one field's type with its array depth and nullability, `Detail` the whole class, `Schema` the nested structure.
+Root Layout Stages
 
-The only member that is a component in its own right: `Arg({ argType, value, onChange })` renders the input for one scalar type, and the per-type statics are what it dispatches to. `Table` is the read-only argument list an `Interface` shows.
+Override Slots
 
-`fetch` is the app's own fetch proxy — the explorer reads `fetch.serializedSignal` off it, so a signal the app did not mount is reported as unregistered rather than rendered empty.
+Constant Schema Docs
 
-A tab set split so the panels stay on the server. Only the provider and the menu hold state; `Tab.Panel` renders whatever it is given, so a panel body full of markup never reaches the bundle. This is the shape to copy — never one `"use client"` file with a mode `useState` and every panel inlined in it.
+In-Page Agent
 
-The provider. `namespace` names this tab set for the in-page agent — without it the tab publishes nothing, because two tab sets on one screen would otherwise share a tool name.
+How the tools a control publishes let the agent drive the screen.
 
-The row the menu items sit in.
+The app shell. Akan mounts `Provider` for you, and `Provider` mounts `Reconnect` when you turn it on. `ThemeToggle`, `SelectLanguage` and `DevModeToggle` are controls you place yourself.
 
-One selectable item. The key is `menu`, not `value`.
+The frame around your root `_layout.tsx`, filled from its `rootLayout()` stages.
 
-Content for a matching `menu` key. `loading` decides when the body is rendered — `"eager"` up front, `"lazy"` on first selection, `"every"` on each selection.
+Deprecated: it renders `children` and ignores `st`, so render the children directly.
 
-Small re-export of react-spring animated primitives used by Akan UI components and custom animated surfaces.
+Sets `data-theme` to one of `themes`: a switch for two, a dropdown for three or more.
 
-Animated div primitive.
+A dropdown that swaps the `/:lang` segment of the current URL and keeps the rest.
 
-Animated SVG group primitive.
+When the socket drops and a ping fails, it covers the screen, then reloads once reconnected.
 
-Animated progress element.
+A switch for the store's `devMode` flag, kept in `localStorage` across reloads.
+
+A small React `Suspense` boundary. It shows `loading` while anything inside it suspends, such as a `lazy()` component still fetching its chunk.
+
+The content that may suspend.
+
+The fallback shown meanwhile; nothing is shown when it is left out.
+
+The API explorer, split into parts. It reads the serialized signal the server ships with the app — every endpoint, its arguments, guards and return model — and renders a document you can also call endpoints from.
+
+The explorer; `Doc.Zone({ refName, fetch, openAll? })` renders one signal's whole document.
+
+The HTTP side: `Endpoints` lists queries and mutations, or only the ones named in `endpoints`.
+
+The same list for websocket endpoints, each row handed to `PubSub` or `Message`.
+
+One subscription: its room, its payload shape, and a Try that shows frames as they land.
+
+The same three parts for a one-way message endpoint.
+
+`Result` is the live pane a Try writes into, showing byte payloads as a short hex preview.
+
+A model from its constant class: a type chip, its field table, or a titled schema.
+
+The one real component: `Arg({ argType, value, onChange })` renders one scalar's input.
+
+A tab set split into parts so the panels stay on the server. Only the provider and the menu hold state, and `Tab.Panel` renders what it is given, so the markup inside a panel never reaches the bundle.
+
+The provider holding the selected menu, which starts at `defaultMenu` or, left out, at none.
+
+The `role="tablist"` row the menu buttons sit in.
+
+One tab button, keyed by `menu` rather than `value`.
+
+The body shown while its `menu` is selected; `loading` decides when it mounts.
+
+A small re-export of react-spring's animated elements, the ones Akan UI components animate with. Drive them with a spring hook in your own animated surfaces.
+
+An animated `div`.
+
+An animated SVG group, `g`.
+
+An animated `progress` element.
 
 System UI
 
-System UI components are app-shell and admin helpers, not normal feature widgets. Use them in root layouts, admin pages, signal dashboards, tabbed detail views, and animation-heavy UI.
+Words used on this page
+
+Term
+
+Pick a component
+
+Component
+
+Yes
+
+No
+
+Related pages
 
 ## Code Examples
 

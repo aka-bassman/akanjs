@@ -37,14 +37,18 @@ Only what the generated set does not cover: extra client state, a multi-step or 
 calls to the non-CRUD endpoints you added in the signal. Each is an `async` method using `this.set(...)` /
 `this.get()` / `this.pick(...)`.
 
+To reach another store, cast `this`: `import type { RootStore } from "../st"`, then
+`(this as unknown as RootStore).logout()` to call its action or `(this as unknown as RootStore).set({ … })` /
+`.get()` to write or read its state. Every store is mixed into one root at runtime, so the cast only tells the
+type what `this` already is. Keep it `import type` — `st.ts` imports every store, so a value import is a cycle.
+
 A store that needs none of this stays empty. `store(sig.comment, () => ({}))` with an empty body is the
 correct, complete result — an empty store is not an unfinished one.
 
-## Two rules the linter enforces
+## The rule the linter enforces
 
 - **An action returns nothing.** Every method dispatches through `st.do.<action>()` and is typed `void`, so a
   returned value is unreachable. Write it into state with `this.set({ … })`.
-- **Never `import type { RootStore } from "../st"`** — it crashes `akan build` with a Bun SSR segfault.
 
 ## From UI
 

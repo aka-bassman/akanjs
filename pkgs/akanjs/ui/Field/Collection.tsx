@@ -146,8 +146,9 @@ export const TextList = ({
                       onChange(newValue);
                     }}
                     validate={(text: string) => {
-                      if (text.length < minlength) return l("base.textTooShortError", { minlength: minTextlength });
-                      else if (text.length > maxlength) return l("base.textTooLongError", { maxlength: maxTextlength });
+                      if (text.length < minTextlength) return l("base.textTooShortError", { minlength: minTextlength });
+                      else if (text.length > maxTextlength)
+                        return l("base.textTooLongError", { maxlength: maxTextlength });
                       else return validate?.(text) ?? true;
                     }}
                     className={cn("w-full", inputClassName)}
@@ -172,7 +173,7 @@ export const TextList = ({
           ))}
         </DraggableList>
         <div className="my-5 h-[0.5px] bg-foreground/20" />
-        {texts.length <= maxTextlength ? (
+        {texts.length < maxlength ? (
           <button
             className={recipe({ variant: "outline" }, "w-full")}
             onClick={() => {

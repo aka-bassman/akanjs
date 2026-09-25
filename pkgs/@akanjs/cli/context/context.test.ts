@@ -33,8 +33,8 @@ describe("ContextRunner", () => {
 
     const output = await new ContextRunner().getContext(workspace, { module: "post" });
 
-    expect(output).toContain("# Post Module Abstract");
-    expect(output.indexOf("# Post Module Abstract")).toBeLessThan(output.indexOf("- Files:"));
+    expect(output).toContain("# post Abstract");
+    expect(output.indexOf("# post Abstract")).toBeLessThan(output.indexOf("- Files:"));
   });
 
   test("prints generated file and validation contracts in json context", async () => {

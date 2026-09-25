@@ -325,16 +325,4 @@ function validateRouteModuleExports(key: string, mod: RouteModule) {
   if ("head" in mod && "generateHead" in mod) {
     throw new Error(`[route-convention] head and generateHead cannot both be exported in ${key}`);
   }
-  if (
-    !parsed.isInternalRootLayout &&
-    ("head" in mod || "generateHead" in mod) &&
-    ("metadata" in mod || "generateMetadata" in mod)
-  ) {
-    throw new Error(
-      `[route-convention] head/generateHead and metadata/generateMetadata cannot both be exported in ${key}`,
-    );
-  }
-  if ("metadata" in mod && "generateMetadata" in mod) {
-    throw new Error(`[route-convention] metadata and generateMetadata cannot both be exported in ${key}`);
-  }
 }

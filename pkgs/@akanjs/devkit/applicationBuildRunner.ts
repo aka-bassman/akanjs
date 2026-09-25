@@ -246,11 +246,12 @@ export class ApplicationBuildRunner {
   async #writeConsoleShim() {
     await Bun.write(
       path.join(this.#app.dist.cwdPath, "console.js"),
-      `import { cnst, db, dict, option, server, sig, srv } from "./server.js";
-import { assertAkanConsoleAllowed, startAkanConsole } from "./console-runtime.js";
+      `process.env.AKAN_COMMAND_TYPE = "console";
+const { cnst, db, dict, option, server, sig, srv } = await import("./server.js");
+const { assertAkanConsoleAllowed, startAkanConsole } = await import("./console-runtime.js");
 
 const run = async () => {
-  assertAkanConsoleAllowed(server.env);
+  assertAkanConsoleAllowed();
   await server.start({ listen: false, web: false });
   try {
     await startAkanConsole(server, { globals: { cnst, db, dict, option, sig, srv } });

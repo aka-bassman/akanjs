@@ -1,10 +1,268 @@
 import { usePage } from "@apps/akan/client";
-import { Code, Divider, Docs, DocsToc, panelRecipe } from "@apps/akan/ui";
+import {
+  Code,
+  cardGridRecipe,
+  Divider,
+  Docs,
+  DocsToc,
+  type IntroItem,
+  type LinkGridItem,
+  type MatrixColumn,
+  type MatrixGroup,
+  panelRecipe,
+} from "@apps/akan/ui";
 import { Scroll } from "@libs/util/ui";
 import { page } from "akanjs/client";
 
 export default page().render(() => {
   const { l } = usePage();
+
+  const bulletList = "my-4 list-disc space-y-2 pl-5";
+
+  const termRows: IntroItem[] = [
+    {
+      name: "service module",
+      href: "/conventions/service/overview",
+      desc: l.trans({
+        en: "A `lib/_<name>` folder with no model: a service, a signal, a dictionary and often a store.",
+        ko: "자기 model 없이 service, signal, dictionary, 그리고 흔히 store로 이루어진 `lib/_<name>` 폴더입니다.",
+      }),
+    },
+    {
+      name: "model module",
+      href: "/conventions/module/overview",
+      desc: l.trans({
+        en: "A `lib/<model>` folder built around one stored model. Its Util acts on that model's records.",
+        ko: "저장되는 model 하나를 중심으로 한 `lib/<model>` 폴더입니다. 이 module의 Util은 그 model의 레코드를 다룹니다.",
+      }),
+    },
+    {
+      name: "Util",
+      href: "/conventions/module/util",
+      desc: l.trans({
+        en: "The file role for a small control, such as a button, that runs an endpoint.",
+        ko: "버튼처럼 endpoint를 실행하는 작은 컨트롤을 맡는 파일 역할입니다.",
+      }),
+    },
+    {
+      name: "client component",
+      href: "/docs/arch/frontend#client-boundary",
+      desc: l.trans({
+        en: 'A file that starts with "use client". It arrives as HTML, then again as JS the browser re-runs.',
+        ko: '첫 줄이 "use client"인 파일입니다. HTML로 한 번, 브라우저가 다시 실행하는 JS로 한 번 더 도착합니다.',
+      }),
+    },
+    {
+      name: "ui/",
+      href: "/conventions/applib/ui",
+      desc: l.trans({
+        en: "The app or lib folder for components that render JSX and are not bound to one model.",
+        ko: "JSX를 그리되 model 하나에 묶이지 않는 컴포넌트를 두는 app·lib의 폴더입니다.",
+      }),
+    },
+  ];
+
+  const whyCards = [
+    {
+      title: l.trans({ en: "Model Module: Verb And Noun", ko: "model module: 동사와 명사" }),
+      desc: l.trans({
+        en: "A Util is named for the endpoint verb minus the noun: Serve, Refund, Complete. The button runs the module's own endpoint on the module's own record, so it belongs there.",
+        ko: "Util 이름은 Serve, Refund, Complete처럼 endpoint의 동사에서 명사를 뺀 것입니다. 버튼이 이 module의 endpoint를 이 module의 레코드에 실행하므로 module 안에 둡니다.",
+      }),
+    },
+    {
+      title: l.trans({ en: "Service Module: Verb Only", ko: "service module: 동사만" }),
+      desc: l.trans({
+        en: "It has endpoints but no model, so there is no record for the control to belong to. The control usually belongs to the screen that offers it, not to the capability behind it.",
+        ko: "endpoint는 있지만 model이 없어서, 컨트롤이 속할 레코드가 없습니다. 그래서 컨트롤은 보통 그 뒤의 기능이 아니라 컨트롤을 보여 주는 화면에 속합니다.",
+      }),
+    },
+  ];
+
+  const placeColumns: MatrixColumn[] = [
+    { key: "ui", label: "ui/", code: true },
+    { key: "page", label: "page/", code: true },
+    { key: "util", label: ".Util.tsx", code: true },
+  ];
+
+  const placeGroups: MatrixGroup[] = [
+    {
+      label: l.trans({ en: "Usually", ko: "대부분" }),
+      rows: [
+        {
+          name: (
+            <span className="font-sans">
+              {l.trans({ en: "Not bound to one model", ko: "model 하나에 묶이지 않음" })}
+            </span>
+          ),
+          desc: l.trans({
+            en: "A disconnect button, a permission prompt, a map control. The service store only drives it.",
+            ko: "연결 끊기 버튼, 권한 요청, 지도 컨트롤입니다. service store는 이를 움직일 뿐입니다.",
+          }),
+          marks: { ui: true },
+        },
+        {
+          name: <span className="font-sans">{l.trans({ en: "A screen of its own", ko: "자기만의 화면" })}</span>,
+          desc: l.trans({
+            en: "The OAuth consent screen is a route in `libs/shared/page/oauth`, not a component.",
+            ko: "OAuth 동의 화면은 컴포넌트가 아니라 `libs/shared/page/oauth`의 route입니다.",
+          }),
+          marks: { page: true },
+        },
+      ],
+    },
+    {
+      label: l.trans({ en: "Rarely", ko: "드물게" }),
+      rows: [
+        {
+          name: (
+            <span className="font-sans">
+              {l.trans({ en: "Meaningless outside this module", ko: "이 module 밖에서는 의미 없음" })}
+            </span>
+          ),
+          desc: l.trans({
+            en: "It reads this store and calls this endpoint. In `ui/` it would import the module back in.",
+            ko: "이 store를 읽고 이 endpoint를 부릅니다. `ui/`에 두면 module을 도로 import해야 합니다.",
+          }),
+          marks: { util: true },
+        },
+      ],
+    },
+  ];
+
+  const fileRuleRows: IntroItem[] = [
+    {
+      name: '"use client"',
+      desc: l.trans({
+        en: "Line 1, above the imports, in every `.Util.tsx`. A Util is always a client component.",
+        ko: "모든 `.Util.tsx`의 1행, import 위에 둡니다. Util은 언제나 클라이언트 컴포넌트입니다.",
+      }),
+    },
+    {
+      name: "Print",
+      desc: l.trans({
+        en: "The endpoint `printReceipt` minus its noun. Callers write `<Receipt.Util.Print>`.",
+        ko: "endpoint `printReceipt`에서 명사를 뺀 동사입니다. 쓰는 쪽에서는 `<Receipt.Util.Print>`로 부릅니다.",
+      }),
+    },
+    {
+      name: "interface PrintProps",
+      desc: l.trans({
+        en: "Sits right above the component with `className` first, and is not exported.",
+        ko: "컴포넌트 바로 위에 두고 `className`을 첫 prop으로 쓰며, export하지 않습니다.",
+      }),
+    },
+    {
+      name: "icecreamOrderId: string",
+      desc: l.trans({
+        en: "An id, not the order. A `cnst` model prop arrives on the client as a plain object, methods stripped.",
+        ko: "주문 객체가 아니라 id를 받습니다. `cnst` model을 prop으로 넘기면 method가 모두 빠진 평범한 객체로 도착합니다.",
+      }),
+    },
+    {
+      name: 'st.tool("printReceipt")',
+      href: "/docs/arch/agentic#agent-surface",
+      desc: l.trans({
+        en: "Publishes the button to the in-page agent, so a click and the agent run one handler.",
+        ko: "버튼을 인페이지 에이전트에 공개합니다. 사용자의 클릭과 에이전트가 같은 핸들러를 실행합니다.",
+      }),
+    },
+    {
+      name: 'l("receipt.print")',
+      href: "/conventions/service/dictionary",
+      desc: l.trans({
+        en: "The label comes from the module's dictionary, never from a string literal.",
+        ko: "라벨은 문자열 리터럴이 아니라 module의 dictionary에서 가져옵니다.",
+      }),
+    },
+  ];
+
+  const roleColumns: MatrixColumn[] = [
+    { key: "model", label: "model module", caption: "lib/<model>" },
+    { key: "service", label: "service module", caption: "lib/_<name>" },
+  ];
+
+  const roleGroups: MatrixGroup[] = [
+    {
+      label: l.trans({ en: "Roles that need a model", ko: "model이 있어야 하는 역할" }),
+      rows: [
+        {
+          name: ".Template.tsx",
+          desc: l.trans({ en: "Binds to a model's form state.", ko: "model의 form state에 묶입니다." }),
+          marks: { model: true },
+        },
+        {
+          name: ".Unit.tsx",
+          desc: l.trans({
+            en: "Renders one light model, such as a list card.",
+            ko: "목록 카드처럼 light model 하나를 그립니다.",
+          }),
+          marks: { model: true },
+        },
+        {
+          name: ".View.tsx",
+          desc: l.trans({
+            en: "Renders one full model, such as a detail screen.",
+            ko: "상세 화면처럼 full model 하나를 그립니다.",
+          }),
+          marks: { model: true },
+        },
+      ],
+    },
+    {
+      label: l.trans({ en: "Roles that need no model", ko: "model이 없어도 되는 역할" }),
+      rows: [
+        {
+          name: ".Util.tsx",
+          desc: l.trans({ en: "One client control.", ko: "클라이언트 컨트롤 하나입니다." }),
+          marks: { model: true, service: true },
+        },
+        {
+          name: ".Zone.tsx",
+          desc: l.trans({
+            en: "One client section a page drops in whole.",
+            ko: "page가 통째로 끼워 넣는 클라이언트 구획 하나입니다.",
+          }),
+          marks: { model: true, service: true },
+        },
+      ],
+    },
+  ];
+
+  const relatedLinks: LinkGridItem[] = [
+    {
+      href: "/conventions/service/zone",
+      title: "Service.Zone.tsx",
+      desc: l.trans({
+        en: "The other component role, for a whole section.",
+        ko: "구획 하나를 통째로 맡는 나머지 컴포넌트 역할입니다.",
+      }),
+    },
+    {
+      href: "/conventions/module/util",
+      title: "Model.Util.tsx",
+      desc: l.trans({
+        en: "The common case: a control bound to one model's records.",
+        ko: "흔한 경우인, model 하나의 레코드에 묶인 컨트롤입니다.",
+      }),
+    },
+    {
+      href: "/conventions/applib/ui",
+      title: "ui/",
+      desc: l.trans({
+        en: "Where most service-driven controls actually live.",
+        ko: "service store가 움직이는 컨트롤 대부분이 실제로 놓이는 곳입니다.",
+      }),
+    },
+    {
+      href: "/conventions/service/store",
+      title: "service.store.ts",
+      desc: l.trans({
+        en: "The store keys and actions a Util reads and calls.",
+        ko: "Util이 읽는 store key와 부르는 액션입니다.",
+      }),
+    },
+  ];
 
   return (
     <Scroll>
@@ -13,65 +271,156 @@ export default page().render(() => {
         <Docs.Description>
           <div>
             {l.trans({
-              en: "Not one of the eight service modules in this workspace has this file. That is the most useful thing this page can tell you, and it is not an oversight waiting to be corrected — the rest of the page is about why the file is rare, and what it takes for yours to be the exception.",
-              ko: "이 워크스페이스의 service module 여덟 중 이 파일을 가진 것은 하나도 없습니다. 이 문서가 해 줄 수 있는 가장 쓸모 있는 말이고, 언젠가 고쳐야 할 누락이 아닙니다. 이 문서의 나머지는 왜 이 파일이 드문지, 그리고 당신의 것이 예외가 되려면 무엇이 필요한지에 대한 이야기입니다.",
+              en: (
+                <span>
+                  <code>Service.Util.tsx</code> holds a small client control, such as a button, that runs one of a
+                  service module's endpoints. Not one of the eight service modules in this workspace has this file, and
+                  that is by design, not a gap waiting to be filled.
+                </span>
+              ),
+              ko: (
+                <span>
+                  <code>Service.Util.tsx</code>는 service module의 endpoint 하나를 실행하는 버튼 같은 작은 클라이언트
+                  컨트롤을 담습니다. 이 워크스페이스의 service module 여덟 개 중 이 파일을 가진 것은 하나도 없습니다.
+                  언젠가 채워야 할 빈칸이 아니라 의도된 결과입니다.
+                </span>
+              ),
             })}
           </div>
           <div>
             {l.trans({
-              en: "A model module's Util is the verb minus the noun: Serve, Refund, Complete. It belongs to the module because the button it wraps is the module's own endpoint and the record it acts on is the module's own model. A service module has the verb and no noun — so the control usually belongs to the screen that offers it, not to the capability behind it.",
-              ko: "model module의 Util은 동사에서 명사를 뺀 이름입니다. Serve, Refund, Complete 같은 것입니다. 감싸는 버튼이 그 module의 endpoint이고 작용하는 레코드가 그 module의 model이기 때문에 module에 속합니다. service module에는 동사만 있고 명사가 없습니다. 그래서 그 control은 보통 뒤에 있는 능력이 아니라 그것을 내미는 화면에 속합니다.",
+              en: "This page explains why the file is rare, where the control goes instead, and what it takes for yours to be the exception.",
+              ko: "이 문서는 이 파일이 왜 드문지, 대신 컨트롤을 어디에 두는지, 그리고 예외가 되려면 무엇이 필요한지를 다룹니다.",
             })}
           </div>
-          <div className="my-4 space-y-3">
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">📦</span>
-                <strong className="text-primary">{l.trans({ en: "Put it in ui/", ko: "ui/에 두기" })}</strong>
+          <Docs.SubSubTitle>{l.trans({ en: "Words used on this page", ko: "이 페이지에서 쓰는 말" })}</Docs.SubSubTitle>
+          <Docs.IntroTable type={l.trans({ en: "Term", ko: "용어" })} items={termRows} />
+
+          <Docs.SubSubTitle>{l.trans({ en: "Why it is rare", ko: "왜 드문가" })}</Docs.SubSubTitle>
+          <div className={cardGridRecipe({ cols: "mdTwo" }, "my-4")}>
+            {whyCards.map((card, idx) => (
+              <div key={idx} className={panelRecipe({ radius: "lg", padding: "sm" }, "min-w-0")}>
+                <div className="font-semibold text-primary">{card.title}</div>
+                <div className="mt-1 text-foreground/70 text-sm">{card.desc}</div>
               </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: "The component renders JSX and is not bound to one model — which is the admission test for ui/ verbatim. A disconnect button, a permission prompt, a map control: all of them are ui/ components the service store happens to drive.",
-                  ko: "component가 JSX를 그리고 model 하나에 묶이지 않는다면, 그것이 ui/의 입장 조건 그대로입니다. 연결 끊기 버튼, 권한 요청, 지도 컨트롤 전부 service store가 몰고 있을 뿐인 ui/ component입니다.",
-                })}
-              </div>
-            </div>
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">📄</span>
-                <strong className="text-primary">{l.trans({ en: "Put it in page/", ko: "page/에 두기" })}</strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: "The capability has a screen of its own rather than a section inside somebody else's. The OAuth consent page is a route in libs/shared/page/oauth, which is why _oauth ships ten endpoints and no component.",
-                  ko: "그 능력이 남의 화면 안 구획이 아니라 자기 화면을 가진 경우입니다. OAuth 동의 화면은 libs/shared/page/oauth의 route이고, 그래서 _oauth는 endpoint 열 개와 component 영 개를 배포합니다.",
-                })}
-              </div>
-            </div>
-            <div className={panelRecipe({ radius: "lg", padding: "sm" })}>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-primary">🧰</span>
-                <strong className="text-primary">{l.trans({ en: "Put it here", ko: "여기에 두기" })}</strong>
-              </div>
-              <div className="text-foreground/70 text-sm">
-                {l.trans({
-                  en: "Only when the control is meaningless outside this module — it reads this store, calls this endpoint, and moving it to ui/ would mean importing the module back in. Then it is a Util, and only then.",
-                  ko: "이 module 밖에서는 의미가 없는 control일 때만입니다. 이 store를 읽고 이 endpoint를 호출하며, ui/로 옮기면 module을 도로 import해야 하는 경우입니다. 그럴 때에만 Util입니다.",
-                })}
-              </div>
-            </div>
+            ))}
           </div>
+
+          <Docs.SubSubTitle>{l.trans({ en: "Where the control goes", ko: "컨트롤을 둘 곳" })}</Docs.SubSubTitle>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  Start from what the control is bound to. Most controls land in <code>ui/</code> or <code>page/</code>,
+                  and only the last row earns a Util:
+                </span>
+              ),
+              ko: (
+                <span>
+                  컨트롤이 무엇에 묶여 있는지부터 봅니다. 대부분은 <code>ui/</code>나 <code>page/</code>로 가고, 마지막
+                  줄만 Util이 됩니다:
+                </span>
+              ),
+            })}
+          </div>
+          <Docs.Matrix
+            type={l.trans({ en: "The control is", ko: "컨트롤의 성격" })}
+            columns={placeColumns}
+            groups={placeGroups}
+            markLabel={l.trans({ en: "Goes here", ko: "여기에 둡니다" })}
+            emptyLabel={l.trans({ en: "Not here", ko: "여기가 아닙니다" })}
+          />
+          <ul className={bulletList}>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>
+                      <code>ui/</code> is the default.
+                    </strong>{" "}
+                    Rendering JSX without being bound to one model is the <code>ui/</code> admission test, word for
+                    word. The map in <code>libs/util/ui/MapView</code> reads the <code>_util</code> store this way.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>
+                      기본 자리는 <code>ui/</code>입니다.
+                    </strong>{" "}
+                    model 하나에 묶이지 않고 JSX를 그린다는 것이 <code>ui/</code>에 들어갈 조건 그대로입니다.{" "}
+                    <code>libs/util/ui/MapView</code>의 지도가 이렇게 <code>_util</code> store를 읽습니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>A screen of its own is a route.</strong> <code>_oauth</code> ships ten endpoints and zero
+                    components, because its one screen is the consent route.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>자기 화면이 있으면 route입니다.</strong> <code>_oauth</code>는 endpoint 열 개를 내보내지만
+                    컴포넌트는 하나도 없습니다. 유일한 화면이 동의 route이기 때문입니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>A Util only when all three hold.</strong> It reads this store, calls this endpoint, and
+                    moving it to <code>ui/</code> would mean importing the module back in.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>세 가지가 모두 맞을 때만 Util입니다.</strong> 이 store를 읽고, 이 endpoint를 부르며,{" "}
+                    <code>ui/</code>로 옮기면 module을 도로 import해야 하는 경우입니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
         </Docs.Description>
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="shape" title={l.trans({ en: "The Shape, If You Write One", ko: "쓰게 된다면, 그 모양" })}>
-        <Docs.Title>{l.trans({ en: "The Shape, If You Write One", ko: "쓰게 된다면, 그 모양" })}</Docs.Title>
+      <Scroll.Slide id="shape" title={l.trans({ en: "The Shape, If You Write One", ko: "직접 쓴다면, 이런 모양" })}>
+        <Docs.Title>{l.trans({ en: "The Shape, If You Write One", ko: "직접 쓴다면, 이런 모양" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: 'A Util is always a client component, mechanically: "use client" on line 1, above the imports, in every .Util.tsx there is. Exports are role names, and for a service module the role is the endpoint verb.',
-              ko: '.Util.tsx는 기계적으로 언제나 client component입니다. import 위, 1행에 "use client"를 적습니다. export는 역할 이름이고, service module에서 그 역할은 endpoint의 동사입니다.',
+              en: (
+                <span>
+                  A Util is always a client component, so <code>{'"use client"'}</code> goes on line 1, above the
+                  imports. Its export is a role name, and in a service module that role is the endpoint's verb.
+                </span>
+              ),
+              ko: (
+                <span>
+                  Util은 언제나 클라이언트 컴포넌트이므로 import 위 1행에 <code>{'"use client"'}</code>를 적습니다.
+                  export는 역할 이름이고, service module에서 그 역할은 endpoint의 동사입니다.
+                </span>
+              ),
+            })}
+          </div>
+          <div>
+            {l.trans({
+              en: (
+                <span>
+                  A receipt module's print button, which runs the <code>printReceipt</code> endpoint:
+                </span>
+              ),
+              ko: (
+                <span>
+                  영수증 module의 인쇄 버튼입니다. <code>printReceipt</code> endpoint를 실행합니다:
+                </span>
+              ),
             })}
           </div>
           <Code.Snippet
@@ -80,6 +429,7 @@ export default page().render(() => {
             code={`"use client";
 
 import { st, usePage } from "@apps/koyo/client";
+import { ID } from "akanjs/base";
 import { Button } from "akanjs/ui";
 
 interface PrintProps {
@@ -88,36 +438,39 @@ interface PrintProps {
 }
 export const Print = ({ className, icecreamOrderId }: PrintProps) => {
   const { l } = usePage();
-  const printing = st.use.printing();
+  const isPrinting = st.use.isPrinting();
+  const print = st
+    .tool("printReceipt")
+    .desc("Print the receipt of one ice cream order.")
+    .arg("icecreamOrderId", ID)
+    .exec((id) => st.do.printReceipt(id));
   return (
-    <Button className={className} disabled={printing} onClick={() => st.do.printReceipt(icecreamOrderId)}>
+    <Button
+      className={className}
+      disabled={isPrinting}
+      onClick={() => print(icecreamOrderId)}
+    >
       {l("receipt.print")}
     </Button>
   );
 };`}
           />
-          <div>
-            {l.trans({
-              en: "Three rules are load-bearing in those sixteen lines. The props interface sits immediately above the component with className first and is not exported. The prop is an id string rather than the order itself — a cnst model on a Util prop is a lint error, because the server would have to hand a class instance across the boundary and the methods do not survive the trip. And the label comes from the dictionary, never from a literal.",
-              ko: "그 열여섯 줄에서 규칙 셋이 하중을 받고 있습니다. props interface는 component 바로 위에 className을 먼저 두고 붙어 있으며 export하지 않습니다. prop은 주문 객체가 아니라 id 문자열입니다. Util의 prop에 cnst model을 쓰면 lint 에러입니다. server가 class instance를 경계 너머로 건네야 하는데 method는 그 여행에서 살아남지 못하기 때문입니다. 그리고 label은 리터럴이 아니라 dictionary에서 옵니다.",
-            })}
-          </div>
+          <Docs.SubSubTitle>{l.trans({ en: "The rules in the file", ko: "파일에 담긴 규칙" })}</Docs.SubSubTitle>
+          <Docs.IntroTable type={l.trans({ en: "Part", ko: "부분" })} items={fileRuleRows} />
           <Docs.Alert type="warning">
             {l.trans({
               en: (
                 <span>
-                  A <code>Util</code> renders markup, and markup in a client file ships twice — once as HTML and once as
-                  bundled JS the browser re-runs. Keep it to the control and the one line of text it needs. A panel, a
-                  layout, a list of anything: those are server work, and they belong in a server component this one
-                  takes as <code>children</code>.
+                  <strong>Keep a Util to the control and the one line of text it needs.</strong> Markup in a client file
+                  ships twice, as HTML and again as bundled JS the browser re-runs. A panel, a layout or a list is
+                  server work: put it in a server component and take it as <code>children</code>.
                 </span>
               ),
               ko: (
                 <span>
-                  <code>Util</code>은 markup을 그리고, client 파일의 markup은 두 번 전송됩니다. HTML로 한 번, 브라우저가
-                  다시 실행하는 bundle JS로 한 번입니다. control과 거기 필요한 한 줄의 문구까지만 두세요. 패널,
-                  레이아웃, 무언가의 목록은 server의 일이고, 이 component가 <code>children</code>으로 받는 server
-                  component에 속합니다.
+                  <strong>Util에는 컨트롤과 거기 필요한 한 줄 문구만 둡니다.</strong> 클라이언트 파일의 마크업은 HTML로
+                  한 번, 브라우저가 다시 실행하는 번들 JS로 한 번, 모두 두 번 전송됩니다. 패널, 레이아웃, 목록은 서버의
+                  일이니 서버 컴포넌트로 만들어 <code>children</code>으로 받으세요.
                 </span>
               ),
             })}
@@ -126,29 +479,68 @@ export const Print = ({ className, icecreamOrderId }: PrintProps) => {
       </Scroll.Slide>
       <Divider />
 
-      <Scroll.Slide id="allowlist" title={l.trans({ en: "What Sync Will Accept", ko: "Sync가 받아 주는 것" })}>
-        <Docs.Title>{l.trans({ en: "What Sync Will Accept", ko: "Sync가 받아 주는 것" })}</Docs.Title>
+      <Scroll.Slide id="allowlist" title={l.trans({ en: "Two Component Roles", ko: "컴포넌트 역할은 둘뿐" })}>
+        <Docs.Title>{l.trans({ en: "Two Component Roles", ko: "컴포넌트 역할은 둘뿐" })}</Docs.Title>
         <Docs.Description>
           <div>
             {l.trans({
-              en: "A service module folder has exactly two component roles: Service.Util.tsx and Service.Zone.tsx. There is no Template, no Unit and no View. akan sync will happily collect a file that ignores that — the rule is carried by akan quality scan, which asks for predictable module UI filenames and names service modules as Util and Zone only.",
-              ko: "service module folder의 component 역할은 정확히 둘입니다. Service.Util.tsx와 Service.Zone.tsx입니다. Template도 Unit도 View도 없습니다. 그것을 무시한 파일이 있어도 akan sync는 그냥 수집합니다. 이 규칙은 akan quality scan이 들고 있고, module UI 파일 이름을 예측 가능하게 유지하라고 하면서 service module은 Util과 Zone뿐이라고 적습니다.",
+              en: (
+                <span>
+                  A service module folder has exactly two component roles: <code>Service.Util.tsx</code> and{" "}
+                  <code>Service.Zone.tsx</code>. There is no Template, no Unit and no View.
+                </span>
+              ),
+              ko: (
+                <span>
+                  service module 폴더의 컴포넌트 역할은 <code>Service.Util.tsx</code>와 <code>Service.Zone.tsx</code> 딱
+                  둘입니다. Template, Unit, View는 없습니다.
+                </span>
+              ),
             })}
           </div>
-          <div>
-            {l.trans({
-              en: "Those three missing roles are the three that would need a model. Template binds to a model's form state, Unit renders one light model, View renders one full model — none of which a service module has. What is left is one client control and one client section, and the framework agrees that is all there should be: the SSR scanner exempts every lib/_ folder from the rule that warns when a module renders only from client files, because a service module owns no model to render on the server.",
-              ko: "빠진 세 역할은 전부 model이 있어야 하는 것들입니다. Template은 model의 form state에 묶이고, Unit은 light model 하나를 그리고, View는 full model 하나를 그립니다. service module에는 그중 무엇도 없습니다. 남는 것은 client control 하나와 client section 하나이고, framework도 그것이 전부여야 한다고 봅니다. SSR 스캐너는 module이 client 파일에서만 그릴 때 경고하는 규칙에서 모든 lib/_ folder를 면제합니다. service module에는 server에서 그릴 model이 없기 때문입니다.",
-            })}
-          </div>
-          <Code.Snippet
-            className="w-full"
-            title="Terminal"
-            language="bash"
-            showLineNumbers={false}
-            code={`akan quality scan   # names a Template, Unit or View under lib/_<service>
-akan quality ssr    # lib/_<service> is exempt from akan.ssr.module-missing-server-view`}
+          <Docs.Matrix
+            type={l.trans({ en: "Role", ko: "역할" })}
+            columns={roleColumns}
+            groups={roleGroups}
+            markLabel={l.trans({ en: "Allowed", ko: "둘 수 있음" })}
+            emptyLabel={l.trans({ en: "Not allowed", ko: "둘 수 없음" })}
           />
+          <ul className={bulletList}>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>The missing three all need a model.</strong> A service module has no form state to bind and
+                    no light or full model to render.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>빠진 세 역할은 모두 model이 있어야 합니다.</strong> service module에는 묶일 form state도,
+                    그릴 light model이나 full model도 없습니다.
+                  </span>
+                ),
+              })}
+            </li>
+            <li>
+              {l.trans({
+                en: (
+                  <span>
+                    <strong>Both remaining roles are client components.</strong> What is left is one client control and
+                    one client section, each with <code>{'"use client"'}</code> on line 1.
+                  </span>
+                ),
+                ko: (
+                  <span>
+                    <strong>남은 두 역할은 모두 클라이언트 컴포넌트입니다.</strong> 클라이언트 컨트롤 하나와 클라이언트
+                    구획 하나가 남고, 둘 다 1행에 <code>{'"use client"'}</code>가 있습니다.
+                  </span>
+                ),
+              })}
+            </li>
+          </ul>
+          <Docs.SubSubTitle>{l.trans({ en: "Related pages", ko: "함께 볼 페이지" })}</Docs.SubSubTitle>
+          <Docs.LinkGrid items={relatedLinks} />
         </Docs.Description>
       </Scroll.Slide>
       <DocsToc />

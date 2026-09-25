@@ -23,7 +23,7 @@ import { type Internal, internal } from "./internal";
 import type { InternalArg } from "./internalArg";
 import { Ws } from "./internalArg";
 import { buildInternal } from "./internalInfo";
-import { Cache, middleware, Timeout } from "./middleware";
+import { middleware, Timeout } from "./middleware";
 import { FetchSerializer } from "./serializer";
 import { serverSignal } from "./serverSignal";
 import { SignalContext } from "./signalContext";
@@ -913,36 +913,49 @@ describe("SignalContext execution", () => {
     expect(cleared).toBeGreaterThan(0);
   });
 
-  test("serves a declared cache from the entry, and still runs the guards on the hit", async () => {
+  test("serves a declared cache only after the guards admitted a caller the middleware resolved", async () => {
     let runs = 0;
     let passes = 0;
-    class CountingGuard implements Guard {
-      static name = "CountingGuard";
+    class SignedInOnly implements Guard {
+      static name = "SignedInOnly";
       static scope: GuardScope = "account";
-      canPass() {
+      canPass(context: SignalContext) {
         passes++;
-        return true;
+        return context.get<{ id?: string }>("account")?.id === "user-1";
       }
     }
-    const info = buildEndpoint.query(String, { guards: [CountingGuard], cache: 60_000 }).exec(() => {
+    class ResolveAccount extends middleware("signalTestResolveAccount") {
+      override async use() {
+        return async (context: SignalContext, next: () => Promise<unknown>) => {
+          Object.assign(context.getHttpContext().req, { account: { id: "user-1" } });
+          return await next();
+        };
+      }
+    }
+    const info = buildEndpoint.query(String, { guards: [SignedInOnly], cache: 60_000 }).exec(() => {
       runs++;
       return `run-${runs}`;
     });
+    const adaptor = new (adapt("signalTestCacheAdaptor"))();
     const cache = new FakeCacheAdaptor();
-    const call = async () => {
-      const context = makeSignalContext({
-        endpointInfo: info,
-        middlewareMap: new Map([["cache", Cache]]) as never,
-        registry: makeCacheRegistry(cache),
-      });
-      await context.init();
-      return await ((await context.exec()) as Response).json();
-    };
+    const call = async (middlewareMap: Map<string, typeof GlobalMiddleware>) =>
+      (await SignalContext.try(adaptor, info, "cached", async () => {
+        const context = makeSignalContext({
+          endpointInfo: info,
+          adaptor,
+          middlewareMap,
+          registry: makeCacheRegistry(cache),
+        });
+        await context.init();
+        return (await context.exec()) as Response;
+      })) as Response;
+    const signedIn = new Map([["resolveAccount", ResolveAccount]]) as never;
 
-    expect(await call()).toBe("run-1");
-    expect(await call()).toBe("run-1");
+    expect(await (await call(signedIn)).json()).toBe("run-1");
+    expect(await (await call(signedIn)).json()).toBe("run-1");
+    expect((await call(new Map())).status).toBe(403);
     expect(runs).toBe(1);
-    expect(passes).toBe(2);
+    expect(passes).toBe(3);
   });
 
   test("refuses a cache on a mutation and on a query that takes an internal argument", async () => {
@@ -960,7 +973,6 @@ describe("SignalContext execution", () => {
       const context = makeSignalContext({
         endpointInfo,
         request: makeHttpRequest({ body: {} }),
-        middlewareMap: new Map([["cache", Cache]]) as never,
         registry: makeCacheRegistry(cache),
       });
       await context.init();

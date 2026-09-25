@@ -21,59 +21,173 @@
 
 Business Service
 
+The phone operator
+
+May this caller ask at all?
+
+Takes the call, refuses the ones that should never reach the floor, and hands valid work to the right service.
+
+The business owner
+
+What should happen?
+
+Stock rules, payment status, reservation conflicts and external APIs are combined here into one meaningful action.
+
+The archive and its rulebook
+
+How is the record stored, and which changes will it accept?
+
+The stored form, the query filters, and the state changes a record will accept. A chain method mutates and returns this; the caller saves.
+
+A class that decides who may make a call. Every endpoint names its own in the signal file.
+
+The create, read, update and remove endpoints every model already has. You never write them.
+
+A state change on the document: it checks, mutates and returns this. The caller saves.
+
+A singleton that wraps an outside system, such as a POS terminal, and is plugged into a service.
+
+A pubsub channel. Every screen subscribed to it receives what the server publishes there.
+
+The screen asks once and expects one result: load a list, save a form, approve a request, add stock.
+
+An open screen keeps a websocket conversation going: device control, a live operation panel, a guided workflow.
+
+One business change is pushed into a room that many screens, dashboards, devices or users subscribe to.
+
+The work is queued, scheduled, repeated, or tied to the server lifecycle rather than to a caller.
+
+Decided by the guards
+
+An endpoint that declares a real guard is published to agents.
+
+no guards
+
+Refused. A missing guards array now costs visibility as well as authorization.
+
+A mutation whose only guard is Public is refused too.
+
+Decided by the shape
+
+Refused.
+
+A file upload is refused.
+
+An endpoint returning Any or Binary is refused.
+
+Your own choice
+
+Takes the endpoint off the shelf without touching its guards. Right for a step of a UI-driven state machine: perfectly guarded, still no business of a model.
+
 Business Service Architecture
 
-A customer taps Order on the kiosk, and that one button has to do four things: refuse the order when the mango has run out, write the order down, hand back a receipt now, and put the ticket on the kitchen screen before the customer turns away. None of that is drawing a screen.
+A customer taps Order on the kiosk, and that one button has to do four things: refuse the order when the mango has run out, write the order down, hand back a receipt now, and put the ticket on the kitchen screen before the customer turns away.
 
-That work — the request action, the business rule, the background job it starts, and the change other screens must be told about — is the business service. Three files split it, and the split never changes. Traffic arrives at the API port, signal decides whether this caller may ask at all, service decides what should happen, and document owns how the record is stored and which state changes it will accept.
+One tap, four jobs
 
-One module, right to left
+One tap on the kiosk reaches the business service, which checks the stock, saves the order, hands back a receipt, and puts a ticket on the kitchen screen.
 
-The layers are not a formality. A rule written into the kiosk screen ships once per client and drifts; the same rule on the service is one answer for the kiosk, the admin console, the mobile app and an AI agent, because all four arrive through the same endpoint.
+None of that is drawing a screen. Together it is the business service: the action a request asks for, the business rule behind it, the background job it starts, and the change other screens must be told about.
+
+Every module splits that work across the same three files, and the split never changes. A request arrives at the API port and passes through them in order:
+
+One module, top to bottom
+
+Browser · mobile app · agent
+
+API port
+
+rules · other services
+
+schema · filters
+
+Stored data
+
+Each file answers one question, and only that one:
+
+Words used on this page
+
+Term
 
 Two Actions, End To End
 
-Start from the counter. Creating an order is generated CRUD, so no endpoint is written for it; what is written is the rule that an order takes stock out of today's inventory, and the mutation a staff member uses to move that order to the next status.
+Let's follow two real actions from the counter through the three files:
 
-The endpoint is one line of delegation, because the decision is not its to make. The service is where the order meets a second module — inventory — and where the two documents are loaded before either is saved:
+A customer places an order
 
-The manager's half is the mirror image: the same three files, a different guard, and no state machine — refilling today's inventory is allowed whenever an admin asks. Each layer keeps its own kind of decision:
+Creating an order is generated CRUD, so no endpoint is written for it. What you write is the rule: an order takes stock out of today's inventory.
 
-The phone operator. Takes the call, refuses the ones that should never reach the floor, and hands valid work to the right service.
+Staff move it to the next status
 
-The business owner. Stock rules, payment status, reservation conflicts and external APIs are combined here into one meaningful action.
+This one is not generated. It is a mutation you declare, and only an admin may call it.
 
-The archive and its rulebook. The stored form, the query filters, and the state changes a record will accept. A chain method mutates and returns this; the caller saves.
+The decision lives in the service. This is where the order meets a second module, inventory, and where both documents are loaded before either is saved:
 
-The rule of thumb is short: if the code answers a business question, it belongs in service logic. If it only draws a screen or holds temporary UI state, it stays on the UI side.
+The manager's half is the mirror image: the same three files, a different guard, and no state machine, because refilling today's inventory is allowed whenever an admin asks. Its signal appears in Bounding A Call below.
 
 Endpoint, Slice, Internal
 
-A model's signal file exports exactly three classes, and every module declares all three even when two of them are empty. Which one you reach for is decided by who starts the call.
+A model's signal file exports exactly three classes, and every module declares all three even when two of them are empty. Which one you reach for depends on one thing: who starts the call.
 
 Class
+
+Who calls it
+
+What goes in it
+
+A screen
+
+The server itself
+
+Choosing by what the screen needs
 
 Start from the product behavior, not from the class list. Does the user need an answer now, a live conversation, a broadcast to many screens, or a job that finishes later?
 
 Signal shape choice
 
-the screen asks once and expects one result — load a list, save a form, approve a request, add stock.
+What does the screen need?
 
-an open screen keeps a websocket conversation going — device control, a live operation panel, a guided workflow.
+Answer now
 
-one business change is pushed into a room that many screens, dashboards, devices or users subscribe to.
+Keep talking while open
 
-the work is queued, scheduled, repeated, or tied to the server lifecycle rather than to a caller.
+Notify many screens
+
+Finish later
+
+Use query or mutation
+
+Use message
+
+Use pubsub
+
+Use process or schedule
 
 Bounding A Call
 
-Every endpoint takes an option object, and guards is only the first field in it. Here is the manager's half of the shift — a read the whole shop shares, and a write only an admin may make and that a stock provider can make slow.
+Every endpoint takes an option object, and guards is only its first field. The rest say how the call behaves: how long it may take, whether its answer may be reused, whether agents see it.
+
+Here is the manager's half of the shift:
+
+Who may call this. An endpoint that names none runs no check; there is no default policy.
 
 Work That Outlives The Request
 
-Some work has no caller waiting for it. Served ice cream melts on its own schedule, and orders nobody collected have to be closed out overnight. Both are internal signals, and the batch replica is what runs them — while the pubsub room below is an endpoint nobody calls, because the server is what publishes into it.
+Some work has no caller waiting for it. Nobody presses a button to make ice cream melt, and nobody asks for last night's orders to be closed. That work goes in the Internal class, and the server starts it itself:
 
-A kitchen screen is already open when an order moves to processing, and nobody is going to press refresh. The service reaches its own signal through an injected field and publishes the saved order into the room named by its new status, so every screen subscribed to that status appends the ticket:
+Both are internal signals, and the batch replica, the server process that runs background jobs, is what runs them.
+
+The same file also gains a pubsub room. It is an endpoint nobody calls, because the server is what publishes into it:
+
+Telling screens that are already open
+
+When an order moves to processing, the kitchen screen is already open, and nobody is going to press refresh. So the service publishes the saved order into the room named after its new status, and every screen subscribed to that status appends the ticket.
+
+One publish, every open screen
+
+The business service publishes the processed order once into the room for its status, and every kitchen screen subscribed to that room receives the ticket.
+
+The service reaches its own signal through an injected field, then publishes right after the save:
 
 A heavy job uses all three at once:
 
@@ -85,33 +199,81 @@ A slice lets the screen read progress, status, and the download result as the re
 
 What A Service Is Handed
 
-A service never constructs the things it needs. It declares them in the builder argument of serve(), and the container resolves each one before any handler runs — which is what lets a payment provider, a cache backend or a whole sibling module be swapped without editing the business method that uses it.
+A service never builds the things it needs. It lists them in the builder argument of serve(), and the container hands each one in before any handler runs.
 
-A value read out of the backend environment at wiring time, so no configuration has to be threaded through every function that needs it.
+That is what lets a payment provider, a cache backend or a whole sibling module be swapped without editing the business method that uses it.
 
-An adaptor is the unit you plug. It is a class built on adapt(), it self-registers under the name it is given, and it takes the same injectors minus service and signal — so an adaptor can hold config, another adaptor, and shared state, but not business logic:
+Handed in, never built
+
+Another module's service, an adaptor, an environment value and shared memory are each handed into the service from outside; the service builds none of them.
+
+A value read out of the backend environment at wiring time.
+
+Runtime state held in the cache adaptor, so every replica sees it. Takes a scalar or model class.
+
+Writing an adaptor
+
+An adaptor is the unit you plug. It is a class built on adapt(), and it registers itself under the name it is given.
+
+It takes the same injectors as a service minus service and signal. So an adaptor can hold config, another adaptor and shared state, but not business logic:
 
 Where An Error Belongs
 
-Refusing an order out of mango and refusing an order from a customer who is not signed in are not the same refusal, and they are not written in the same file. Each layer throws what only it can know.
+Refusing an order because the mango ran out and refusing an order from a customer who is not signed in are not the same refusal, and they are not written in the same file. Each layer throws what only it can know:
+
+A customer who is not signed in: the guard in signal.ts refuses before anything else runs.
+
+The mango ran out: another document forbids it, so service.ts refuses.
+
+An order that is not active cannot be processed: the record's own state forbids it, so document.ts refuses.
 
 Which layer refuses
 
-A chain method is the smallest version of this: it validates, mutates, and returns this — never saving, so that chains compose and the caller decides when the write happens.
+A call arrives
 
-Best-effort code does not throw at all. An adaptor that cannot reach a provider logs and returns null, a guard that cannot load a record warns and returns false, and the caller decides whether that is an error. There are no Result wrappers anywhere in the stack.
+may this caller do this at all?
+
+401 or 403 · the guard returns false
+
+does another document forbid it?
+
+is this record in a state that allows it?
+
+chain method mutates · caller saves
+
+translated for the caller
+
+no
+
+yes
+
+A chain method is the smallest version of this. It validates, mutates, and returns this. It never saves, so chains compose and the caller decides when the write happens:
+
+When failing is not an error
+
+Best-effort code does not throw at all. It returns a plain value, and the caller decides whether that is an error:
+
+An adaptor that cannot reach a provider logs and returns null.
+
+A guard that cannot load a record warns and returns false.
+
+There are no Result wrappers anywhere in the stack.
 
 The Same Endpoints, For Agents
 
-Every signal is also served to AI agents as an MCP server on POST /mcp, mounted by default. There is no per-endpoint opt-in and nothing extra to write in a signal file: exposure follows the guards, because the guards are already the authorization decision and a second switch would only guarantee that endpoints added later are invisible until somebody remembers them.
+Every signal is also served to AI agents as an MCP server on POST /mcp, mounted by default. You write nothing extra in a signal file, and there is no per-endpoint switch to turn on.
 
-What the guards decide for agents:
+Instead, exposure follows the guards. The guards are already the authorization decision, and a second switch would only guarantee that endpoints added later stay invisible until somebody remembers them.
 
-An endpoint that declares a real guard is published; one that declares none is refused, and the boot log names it. So a missing guards array now costs visibility as well as authorization.
+Endpoint
 
-A mutation whose only guard is Public is refused too, and so are pubsub, message, file uploads, and any endpoint returning Any or Binary.
+Published
 
-mcp: false takes an endpoint off the shelf without touching its guards — the right answer for a step of a UI-driven state machine that is perfectly guarded and still no business of a model.
+Left out
+
+What agents get
+
+Not this
 
 ## Code Examples
 

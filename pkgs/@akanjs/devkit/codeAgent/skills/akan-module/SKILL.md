@@ -41,5 +41,5 @@ module. Collection-level helpers go `static` on the full model.
 - Read the module's `<module>.abstract.md` before changing it, and update it when an invariant or workflow
   changes — not for formatting.
 
-Deeper detail per layer is a `get_guideline` call away: `moduleOverview`, `moduleCodegen`, `modelConstant`,
-`modelDocument`, `modelService`, `modelSignal`, `modelStore`, `modelDictionary`.
+Deeper detail per layer is a `get_guideline` call away: `moduleOverview`, `modelConstant`, `modelDocument`,
+`modelService`, `modelSignal`, `modelStore`, `modelDictionary`.

@@ -109,10 +109,12 @@ export const useCamera = ({ promptLabels = {} }: { promptLabels?: CameraPromptLa
 
   useEffect(() => {
     void (async () => {
-      if (isMobileDevice()) {
+      if (!isMobileDevice()) return;
+      try {
         const { Camera } = await loadCapacitorCamera();
-        const permissions = await Camera.checkPermissions();
-        setPermissions(permissions);
+        setPermissions(await Camera.checkPermissions());
+      } catch {
+        //? a mobile browser has no Capacitor Camera plugin, so the permissions stay at "prompt"
       }
     })();
   }, []);

@@ -61,6 +61,7 @@ export class ImageOptimizer {
   static readonly #avif = "image/avif";
   static readonly #heic = "image/heic";
   static readonly #bypassTypes = new Set(["image/x-icon", "image/x-icns", "image/bmp", "image/jxl", "image/heic"]);
+  static readonly #encodableTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 
   #publicDir: string;
   #cacheDir: string;
@@ -329,6 +330,7 @@ export class ImageOptimizer {
       shouldBypass || !params.outputType || inputType === ImageOptimizer.#webp || inputType === ImageOptimizer.#avif
         ? inputType
         : params.outputType;
+    const shouldEncode = !shouldBypass && ImageOptimizer.#encodableTypes.has(outputType);
     const cachePath = this.#getCachePath({
       href: params.href,
       width: params.width,
@@ -351,7 +353,7 @@ export class ImageOptimizer {
     let buffer = source.buffer;
     let contentType = inputType;
     let cacheable = true;
-    if (!shouldBypass) {
+    if (shouldEncode) {
       try {
         buffer = await this.#semaphore.run(() =>
           ImageOptimizer.#optimize(source.buffer, {

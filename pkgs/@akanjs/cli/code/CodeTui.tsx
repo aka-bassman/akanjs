@@ -28,6 +28,7 @@ import { CodeTuiFiles } from "./CodeTuiFiles";
 import { type CodeTuiLine, CodeTuiLines, type CodeTuiRow, type CodeTuiSpan } from "./CodeTuiLines";
 import { CodeTuiMarkdown } from "./CodeTuiMarkdown";
 import { CodeTuiMcp } from "./CodeTuiMcp";
+import { CodeTuiModels } from "./CodeTuiModels";
 import { CodeTuiMouse } from "./CodeTuiMouse";
 import { CodeTuiParts } from "./CodeTuiParts";
 
@@ -1096,7 +1097,10 @@ export class CodeTui {
    * switch already is, pointed back at this session.
    */
   #mcp(argument: string) {
-    const [verb, name, ...rest] = argument.split(" ").filter(Boolean);
+    const words = argument.split(" ").filter(Boolean);
+    // Anywhere in the line, because it reads as an adverb and nobody remembers which slot an adverb goes in.
+    const local = words.includes("--local");
+    const [verb, name, ...rest] = words.filter((word) => word !== "--local");
     const root = this.#agent.workspaceRoot;
     if (!verb) return this.#open("mcp", CodeTuiMcp.list(this.#mcpView()));
     if (verb === "reload") return this.#reload("reconnected the MCP servers");
@@ -1111,11 +1115,14 @@ export class CodeTui {
       return this.#open("mcp", `"${name}" cannot name a server: letters, digits, dash and underscore only.`);
     try {
       if (verb === "remove") {
-        if (!McpServerConfig.remove(root, name)) return this.#open("mcp", `No server named "${name}" is declared.`);
-        return this.#reload(`removed ${name}`);
+        const scope = McpServerConfig.remove(root, name);
+        if (!scope) return this.#open("mcp", `No server named "${name}" is declared.`);
+        return this.#reload(`removed ${name} from the ${scope} file`);
       }
-      const ref = McpServerConfig.add(root, name, rest);
-      return this.#reload(`added ${name} · ${McpServerConfig.targetOf(ref)}`);
+      const scope = local ? "workspace" : "global";
+      const ref = McpServerConfig.add(root, name, rest, scope);
+      const where = scope === "global" ? "every repo" : "this repo";
+      return this.#reload(`added ${name} · ${McpServerConfig.targetOf(ref)} · ${where}`);
     } catch (error: unknown) {
       this.#fail(error);
     }
@@ -1149,7 +1156,7 @@ export class CodeTui {
     return {
       status: this.#agent.mcpServers(),
       declared: McpServerConfig.declared(root),
-      file: McpServerConfig.file(root),
+      files: McpServerConfig.files(root),
       ...(problem ? { problem } : {}),
     };
   }
@@ -1210,11 +1217,23 @@ export class CodeTui {
     }
   }
 
+  /**
+   * Switching model, and the three listings that answer "to what".
+   *
+   * A bare `/model` lists rather than prints a usage line: the id it wants is one of ~1,700 the catalogue
+   * carries, and nothing on screen anywhere else names even one of them.
+   */
   #setModel(argument: string) {
-    const [provider, ...rest] = argument.split("/");
-    if (!provider || !rest.length)
-      return this.#open("model", "Usage: /model <provider>/<id>\n\ne.g. /model deepseek/deepseek-v4-pro");
-    void this.#agent.setModel({ provider, id: rest.join("/") }).catch((error: unknown) => this.#fail(error));
+    const wanted = argument.trim();
+    const [provider, ...rest] = wanted.split("/");
+    if (provider && rest.length)
+      return void this.#agent.setModel({ provider, id: rest.join("/") }).catch((error: unknown) => this.#fail(error));
+    const catalogue = this.#agent.catalogue();
+    if (wanted === "providers") return this.#open("model · providers", CodeTuiModels.providers(catalogue));
+    if (!provider) return this.#open("model", CodeTuiModels.list(catalogue));
+    const listing = CodeTuiModels.ofProvider(catalogue, provider);
+    if (listing) return this.#open(`model · ${provider}`, listing);
+    return this.#open("model", [`There is no provider called "${provider}".`, "", ...CodeTuiModels.usage].join("\n"));
   }
 
   /**

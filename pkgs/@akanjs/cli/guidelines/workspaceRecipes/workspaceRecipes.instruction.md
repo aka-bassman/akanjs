@@ -376,15 +376,16 @@ export default page()
 |---|---|
 | `interface PageProps { params }` + `[x]` folder | `.param("x", ID \| String \| Int \| …)` — one per `[x]` segment, every one of them, in path order |
 | `searchParams.k` | `.search("k", Type)`; `[Type]` for a repeated key; the value arrives typed and optional |
-| `params.lang` | `lang` — on every route's `.render()`, `.head()`, `.metadata()` and `.loading()` with no stage; `.param("lang")` is refused |
+| `params.lang` | `lang` — on every route's `.render()`, `.head()` and `.loading()` with no stage; `.param("lang")` is refused |
 | `export const pageConfig = {…}` | `.config({…})` — `devOnly` stays a literal |
 | `export const head = <…/>` / `generateHead({ params })` | `.head(<…/>)` / `.head(({ x }) => <…/>)` |
-| `export const metadata` / `generateMetadata` | `.metadata({…})` / `.metadata((args) => …)` |
+| `export const metadata` / `generateMetadata` | `.head(<><title>…</title><meta name="description" content="…" /></>)` — there is no object form |
 | `export function Loading()` | `.loading((args) => …)` |
 | `export default async function Page({ params, searchParams })` | `.render(async ({ x, k }) => { …same body… })` — `async` only if it awaits |
 | `_layout.tsx`: `export default function Layout({ children })` | `layout().render(({ children }) => …)` |
 | `export function NotFound` / `export function Error` | `.notFound(fn)` / `.error(fn)` on `layout()` |
-| root `_layout.tsx`: `fonts`, `theme`, `manifest`, `reconnect`, `wsConnect`, `layoutStyle`, `gaTrackingId` | `rootLayout().fonts([…]).theme("dark").manifest({…}).reconnect(false).wsConnect(false).layoutStyle("web").gaTrackingId("G-…")` |
+| root `_layout.tsx`: `fonts`, `theme`, `manifest`, `reconnect`, `wsConnect`, `layoutStyle` | `rootLayout().fonts([…]).theme("dark").manifest({…}).reconnect(false).wsConnect(false).layoutStyle("web")` |
+| root `_layout.tsx`: `gaTrackingId` | none — render the app's own `"use client"` analytics component from the root layout's `.render()` |
 | `prompt()` on `endpoint()` (removed) | `.prompt(name, description)` on the page that shows the same screen |
 
 Rules the loader and `akan sync` enforce: a chain module has no other export; `page()` belongs in a page file and
