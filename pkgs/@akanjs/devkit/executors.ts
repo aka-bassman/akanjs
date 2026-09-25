@@ -1405,14 +1405,21 @@ export class AppExecutor extends SysExecutor {
       ...env,
     };
   }
+  /** The database mode a command runs this app in, and the modes its build carries — the same rule the server boots by. */
+  async getDatabaseModeEnv() {
+    const akanConfig = await this.getConfig();
+    return {
+      AKAN_DATABASE_MODE: akanConfig.resolveDatabaseMode(),
+      AKAN_DATABASE_MODES: akanConfig.database.modes.join(","),
+    };
+  }
   async prepareCommand(type: "build" | "start") {
     const akanConfig = await this.getConfig();
-    const databaseMode = process.env.AKAN_DATABASE_MODE ?? akanConfig.defaultDatabaseMode ?? "single";
     const routeEnv = {
       AKAN_PUBLIC_BASE_PATHS: [...akanConfig.basePaths].join(","),
       AKAN_PUBLIC_API_PREFIX: akanConfig.api.prefix,
       AKAN_PUBLIC_WS_PREFIX: akanConfig.api.websocketPrefix,
-      AKAN_DATABASE_MODE: databaseMode,
+      ...(await this.getDatabaseModeEnv()),
     };
     Object.assign(process.env, routeEnv);
     if (type === "build") {
@@ -1457,11 +1464,14 @@ export class AppExecutor extends SysExecutor {
     // this does not leak non-public env.
     // The port keys are this machine's dev allocation, and `define` turns an `AKAN_PUBLIC_*` into a literal the
     // artifact can never be run with a different value for — a baked port would outrank the `PORT` the container
-    // is started with and send every SSR self-call to a port nothing bound.
+    // is started with and send every SSR self-call to a port nothing bound. The operation mode likewise: one image
+    // serves an edge site and a cloud cluster, and a shell's `local` would pin every artifact to it.
     if (type === "build") {
       const buildEnv = { ...env };
       delete buildEnv.AKAN_PUBLIC_CLIENT_PORT;
       delete buildEnv.AKAN_PUBLIC_SERVER_PORT;
+      delete buildEnv.AKAN_PUBLIC_OPERATION_MODE;
+      delete process.env.AKAN_PUBLIC_OPERATION_MODE;
       Object.assign(process.env, buildEnv);
     }
     return { env };

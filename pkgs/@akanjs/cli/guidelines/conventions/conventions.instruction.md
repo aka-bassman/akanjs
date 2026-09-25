@@ -28,7 +28,7 @@ you fetch on demand — `get_guideline` with the name, or `akan guideline show <
 | name | covers |
 |---|---|
 | `ssrRule` | server-share targets, the `akan.ssr.*` warnings, the client-boundary playbook |
-| `runtimeRule` | `web` / `csr` surfaces, gateway vs solo processes, logging, the generated image, shipped assets |
+| `runtimeRule` | `web` / `csr` surfaces, gateway vs solo processes, logging, the generated image, shipped assets, database modes |
 | `queryRule` | slices and hydration, the generated filter methods, full-text search, cascade removal |
 | `transportRule` | guards across HTTP and websocket, socket identity and cleanup, binary pubsub, mutation verbs |
 | `mcpRule` | MCP configuration, wire behaviour, resource URIs, OAuth metadata, protocol revisions |
@@ -337,6 +337,11 @@ Full contract: `get_guideline` with `runtimeRule`, or `akan guideline show runti
 - **`assets: { pruneFonts, keepFonts }`** trims from the `dist` copy of `public/` the fonts nothing reads; source
   trees are never touched. A font with `optimize` on is a build input, not a runtime asset. `keepFonts` belongs to
   the `akan.config.ts` that owns the font, written against that scope's own `public/`.
+- **Database modes are `database: { modes: [...] }`** — `single` (SQLite + Solid), `multiple` (one SQLite file on
+  a host volume + Redis), `cluster` (Postgres + Redis). The build carries the drivers of every declared mode and a
+  deployment picks one with `AKAN_DATABASE_MODE` — a declared one, named whenever the build declares several.
+  Where the data lives (`POSTGRES_URL`, `REDIS_URI`, `SQLITE_DATABASE_PATH`) is the deployment's env, ahead of
+  `env.server.ts`. `q.raw` is written in the dialect's own SQL, so an app running in two modes avoids it.
 
 ## React Components And Styling (`**/*.tsx`)
 
@@ -793,7 +798,8 @@ Full contract — the trigger-maintained mirror, tokenizer changes, `AKAN_SEARCH
   backstop, including for a `text` field *underneath* one of those. Do not work around either.
 - The role works on a relation (`image: field(File, { text: "thumb" })`) and on an array; an array of objects
   indexes by leaf key. A field inside a `Map` indexes nothing — there is no fixed path to extract it from.
-- Search runs on sqlite/libsql only. `q.search()` against Postgres throws, loudly, rather than returning every row.
+- Search runs in every database mode — fts5 on SQLite/libSQL, a weighted `tsvector` (`pg_trgm` for `trigram`) on
+  Postgres. The same text matches the same documents; only the order may differ on Postgres.
 
 ### Image & File Fields
 

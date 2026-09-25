@@ -204,15 +204,21 @@ export class ApplicationBuildRunner {
     for (const entrypoint of backendEntryPoints) {
       if (!(await Bun.file(entrypoint).exists())) throw new Error(`Backend entrypoint not found: ${entrypoint}`);
     }
-    const backendResult = await this.#buildOrThrow("backend", {
-      entrypoints: backendEntryPoints,
+    const backendConfig = {
       outdir: this.#app.dist.cwdPath,
       target: "bun",
       minify: AKAN_BACKEND_MINIFY,
       naming: { entry: "[name].[ext]", chunk: "chunk-[hash].[ext]" },
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
       plugins: backendExternals.length > 0 ? [this.#createExternalSpecifiersPlugin(backendExternals)] : [],
-    });
+    } satisfies Omit<Bun.BuildConfig, "entrypoints">;
+    //* Built apart so main.js keeps its own module copies; splitting moves lazy vendor `import()`s out of the boot
+    //* parse (minimal: server.js import 79ms → 24ms, 59MB → 36MB RSS).
+    const [mainResult, serverResult] = [
+      await this.#buildOrThrow("backend", { ...backendConfig, entrypoints: [backendEntryPoints[0]] }),
+      await this.#buildOrThrow("backend", { ...backendConfig, entrypoints: [backendEntryPoints[1]], splitting: true }),
+    ];
+    const backendResult = { outputs: [...mainResult.outputs, ...serverResult.outputs] };
     // Nothing spawns the RSC worker without SSR, so an api-only image does not carry it.
     const rscWorkerResult = web.ssr
       ? await this.#buildOrThrow("rsc-worker", {

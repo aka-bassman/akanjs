@@ -4,6 +4,22 @@ import { Link } from "akanjs/ui";
 
 const posts = [
   {
+    href: "/blog/v3release",
+    eyebrow: { en: "Release Note", ko: "Release Note" },
+    title: {
+      en: "Akan.js v3: agents join the full stack",
+      ko: "Akan.js v3: 풀스택에 에이전트가 합류합니다",
+    },
+    desc: {
+      en: "Every app becomes an MCP server, an in-page agent works the screen, pages become prompts, and the UI is rebuilt on native tokens and recipes.",
+      ko: "모든 앱이 MCP 서버가 되고, 인페이지 에이전트가 화면을 다루고, 페이지가 프롬프트가 되며, UI는 네이티브 토큰과 레시피로 새로 지었습니다.",
+    },
+    meta: { en: "Product", ko: "제품" },
+    date: { en: "Sep 25, 2026", ko: "2026년 9월 25일" },
+    image: "/akanjsImage/diagrams/agent-runtime.png",
+    imageClassName: "object-cover",
+  },
+  {
     href: "/blog/production-stability",
     eyebrow: { en: "Production Stability", ko: "Production Stability" },
     title: {

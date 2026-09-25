@@ -58,11 +58,11 @@ SQLite file
 
 `local/apps/<app>/` in dev, `sqlite/` in production. `AKAN_SOLID_DB_PATH` sets the file.
 
-`REDIS_URI` if set; otherwise localhost when local and the in-cluster `redis-svc` in cloud.
+`REDIS_URI`, required once deployed. A developer machine uses localhost.
 
-Stores a string, number or Buffer. Without `expireAt` it stays until you delete it.
+Stores text, a number, a boolean, bytes or an object. Without `expireAt` it stays until deleted.
 
-Reads the value back. A missing or expired key reads empty.
+Reads the value back as stored. A missing or expired key reads `undefined`.
 
 Removes the value right away.
 
@@ -114,7 +114,7 @@ The Options Object
 
 The endpoint `cache` option next to `timeout` and `guards`.
 
-The setting that picks SQLite or Redis for the cache.
+The setting that declares the database modes, and with them SQLite or Redis for the cache.
 
 Server Caching
 

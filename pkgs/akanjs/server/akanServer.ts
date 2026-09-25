@@ -605,9 +605,7 @@ export class AkanServer {
 
   #handleIpcMessage(message: AkanIpcMessage) {
     if (!message || typeof message !== "object") return;
-    if (message.type === "pubsub.deliver")
-      this.#localPublish?.(message.roomId, message.data as object | object[] | Uint8Array);
-    else if (message.type === "health.ping")
+    if (message.type === "health.ping")
       process.send?.({
         type: "health.pong",
         nonce: message.nonce,

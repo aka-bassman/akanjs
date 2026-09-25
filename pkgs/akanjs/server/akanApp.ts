@@ -1183,6 +1183,9 @@ export class AkanApp {
       case "pubsub.snapshot":
         this.#replaceRoomSnapshot(idx, message.rooms);
         return;
+      case "live.change":
+        this.#fanoutLiveChange(idx, message);
+        return;
       case "metrics.report":
         this.#updateMetrics(idx, message.metrics);
         return;
@@ -1433,6 +1436,12 @@ export class AkanApp {
 
   #fanoutToAll(message: AkanIpcMessage) {
     for (const child of this.#children.values()) this.#sendToChild(child, message);
+  }
+
+  // Every replica that serves sockets routes a write to the live rooms it holds; the writer has routed its own.
+  #fanoutLiveChange(originIdx: number, message: Extract<AkanIpcMessage, { type: "live.change" }>) {
+    for (const child of this.#children.values())
+      if (child.idx !== originIdx && child.role !== "batch") this.#sendToChild(child, message);
   }
 
   #fanoutToBatch(message: AkanIpcMessage) {

@@ -184,6 +184,38 @@ const config: AppConfig = { docker: "FROM oven/bun:1-slim\n…" }; // verbatim, 
 - `AkanAppConfig.docker` is the resolved declaration; `AkanAppConfig.dockerfile` is the text `akan build` writes
   to `dist/apps/<app>/Dockerfile`.
 
+## Database Modes — `database` In `akan.config.ts`
+
+| mode | database | cache · queue · pubsub | runs as |
+|---|---|---|---|
+| `single` | SQLite file | SQLite files (Solid) | one container |
+| `multiple` | one SQLite file (WAL) on a host volume every container on that host opens | Redis | containers on one host |
+| `cluster` | Postgres | Redis | pods on several servers |
+
+- **`database: { modes: ["single", "cluster"] }` is what the build can run in**; the first is what `akan start`
+  runs. `akan build` carries the drivers of every declared mode (`multiple` → `bullmq`, `ioredis`; `cluster` adds
+  `postgres`).
+- **A deployment names its mode with `AKAN_DATABASE_MODE`**, and only a declared one. With one declared mode it may
+  leave it out; with several it must name one — the fallback would be a SQLite file inside each pod. `akan start`,
+  `build`, `script` and `console` resolve it the same way from the shell. One image can serve an edge site in
+  `single` and a cloud cluster in `cluster`: declare both.
+- **Where the data lives is the deployment's env, ahead of `env.server.ts`**: `SQLITE_DATABASE_PATH`,
+  `AKAN_SOLID_DB_PATH`, `POSTGRES_URL` (or `POSTGRES_HOST`/`PORT`/`DATABASE`/`USER`/`PASSWORD`),
+  `POSTGRES_INSIGHT_URL`, `LIBSQL_URL`. `REDIS_URI` is required outside local development. Pool size, SSL and
+  prepared statements ride the Postgres URL (`?max=20&ssl=require`, `prepare=false` behind PgBouncer).
+- **Uploads**: a deployed `multiple`/`cluster` app uses object storage, or a volume every instance mounts with
+  `AKAN_STORAGE_SHARED=true`.
+- **`runAdminSql` on Postgres reads as its own login role** holding base-column `SELECT` and nothing else:
+  `CREATE ROLE <name> LOGIN PASSWORD '…'` with no other role granted, `POSTGRES_INSIGHT_URL` logging in as it, and
+  `GRANT USAGE ON SCHEMA` from the DBA when the app does not own its schema. Every model table grants the role its
+  base columns at boot. Without it the console refuses on Postgres; `_doc` is never readable either way.
+- **`akan dbup`** starts what the workspace's apps declare (`--mode multiple` is Redis, `cluster` adds Postgres).
+  **`akan db-export <app>` / `akan db-import <app>`** move every model table as stored rows through NDJSON files
+  (`--dir`, default `local/transfer`) between whatever the shell's `AKAN_DATABASE_MODE` points at; a rerun
+  replaces rows, search is rebuilt after, and sessions, queued jobs and uploaded files do not move.
+- **`q.raw(sql)` is the dialect's own SQL** — `json_extract("_doc", '$.f')` on SQLite, `("_doc" #>> '{f}')` on
+  Postgres. An app that runs in both modes avoids it.
+
 ## Shipped Assets — `assets` In `akan.config.ts`
 
 `akan build` copies the whole `public/` tree into `dist`, lib assets dereferenced, and that copy is the image.

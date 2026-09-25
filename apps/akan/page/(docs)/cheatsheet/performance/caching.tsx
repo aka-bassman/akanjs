@@ -93,8 +93,8 @@ export default page().render(() => {
       mode: "`multiple` · `cluster`",
       engine: "Redis",
       where: l.trans({
-        en: "`REDIS_URI` if set; otherwise localhost when local and the in-cluster `redis-svc` in cloud.",
-        ko: "`REDIS_URI`가 있으면 그것을, 없으면 로컬에서는 localhost, 클라우드에서는 클러스터 안의 `redis-svc`를 씁니다.",
+        en: "`REDIS_URI`, required once deployed. A developer machine uses localhost.",
+        ko: "`REDIS_URI`로 정하며 배포에서는 꼭 필요합니다. 개발자 PC에서는 localhost를 씁니다.",
       }),
     },
   ];
@@ -103,15 +103,15 @@ export default page().render(() => {
     {
       name: "set(topic, key, value, { expireAt }?)",
       desc: l.trans({
-        en: "Stores a string, number or Buffer. Without `expireAt` it stays until you delete it.",
-        ko: "문자열, 숫자, Buffer를 저장합니다. `expireAt`이 없으면 지울 때까지 남습니다.",
+        en: "Stores text, a number, a boolean, bytes or an object. Without `expireAt` it stays until deleted.",
+        ko: "문자열, 숫자, boolean, 바이트, 객체를 저장합니다. `expireAt`이 없으면 지울 때까지 남습니다.",
       }),
     },
     {
       name: "get<T>(topic, key)",
       desc: l.trans({
-        en: "Reads the value back. A missing or expired key reads empty.",
-        ko: "값을 다시 읽습니다. 없거나 만료된 key는 빈 값으로 읽힙니다.",
+        en: "Reads the value back as stored. A missing or expired key reads `undefined`.",
+        ko: "저장한 값을 그대로 다시 읽습니다. 없거나 만료된 key는 `undefined`로 읽힙니다.",
       }),
     },
     {
@@ -257,10 +257,10 @@ keys() · entries() · forEach(fn)`,
     },
     {
       href: "/conventions/applib/config#default-database-mode",
-      title: "defaultDatabaseMode",
+      title: "database.modes",
       desc: l.trans({
-        en: "The setting that picks SQLite or Redis for the cache.",
-        ko: "캐시를 SQLite로 둘지 Redis로 둘지 고르는 설정입니다.",
+        en: "The setting that declares the database modes, and with them SQLite or Redis for the cache.",
+        ko: "데이터베이스 모드를 선언하는 설정으로, 캐시를 SQLite에 둘지 Redis에 둘지도 이것으로 정해집니다.",
       }),
     },
   ];
@@ -295,16 +295,16 @@ keys() · entries() · forEach(fn)`,
             {l.trans({
               en: (
                 <span>
-                  The engine follows the app's database mode: <code>defaultDatabaseMode</code> in{" "}
-                  <code>akan.config.ts</code>, overridden by <code>AKAN_DATABASE_MODE</code>. Your code is the same on
-                  either engine.
+                  The engine follows the database mode the app runs in: <code>database.modes</code> in{" "}
+                  <code>akan.config.ts</code> declares the modes, and <code>AKAN_DATABASE_MODE</code> picks one per
+                  deployment. Your code is the same on either engine.
                 </span>
               ),
               ko: (
                 <span>
-                  엔진은 앱의 데이터베이스 모드를 따릅니다. <code>akan.config.ts</code>의{" "}
-                  <code>defaultDatabaseMode</code>로 정하고, <code>AKAN_DATABASE_MODE</code>가 있으면 그 값이
-                  우선합니다. 어느 엔진이든 코드는 같습니다.
+                  엔진은 앱이 도는 데이터베이스 모드를 따릅니다. <code>akan.config.ts</code>의{" "}
+                  <code>database.modes</code>에 모드를 선언하고, 배포마다 <code>AKAN_DATABASE_MODE</code>로 그중 하나를
+                  고릅니다. 어느 엔진이든 코드는 같습니다.
                 </span>
               ),
             })}
@@ -393,14 +393,14 @@ keys() · entries() · forEach(fn)`,
               {l.trans({
                 en: (
                   <span>
-                    <strong>Text, numbers or bytes only.</strong> For a structured value, use a <code>memory()</code>{" "}
-                    typed with a model instead.
+                    <strong>Values keep their type.</strong> A number reads back as a number and bytes as bytes, on
+                    SQLite and Redis alike.
                   </span>
                 ),
                 ko: (
                   <span>
-                    <strong>문자열, 숫자, 바이트만 담습니다.</strong> 구조가 있는 값은 model로 타입을 준{" "}
-                    <code>memory()</code>를 대신 씁니다.
+                    <strong>값은 타입을 그대로 지닙니다.</strong> 숫자는 숫자로, 바이트는 바이트로 읽히며 SQLite와 Redis
+                    모두 같습니다.
                   </span>
                 ),
               })}
@@ -412,18 +412,16 @@ keys() · entries() · forEach(fn)`,
             {l.trans({
               en: (
                 <span>
-                  <strong>Read cache values defensively: SQLite and Redis return different shapes.</strong> A missing
-                  key is <code>undefined</code> on SQLite and <code>null</code> on Redis, and Redis hands every number
-                  back as a string. Compare against the value you expect (<code>saved !== token</code>) and convert
-                  numbers with <code>Number(value)</code>.
+                  <strong>A class instance comes back as plain JSON.</strong> Objects and arrays are stored as JSON, so
+                  a model read back has no methods and its dates are strings. For a model value, use a{" "}
+                  <code>memory()</code> typed with the model instead.
                 </span>
               ),
               ko: (
                 <span>
-                  <strong>캐시 값은 방어적으로 읽으세요. SQLite와 Redis는 돌려주는 모양이 다릅니다.</strong> 없는 key는
-                  SQLite에서 <code>undefined</code>, Redis에서 <code>null</code>이고, Redis는 숫자도 문자열로
-                  돌려줍니다. 기대하는 값과 직접 비교하고(<code>saved !== token</code>), 숫자는{" "}
-                  <code>Number(value)</code>로 바꿔 씁니다.
+                  <strong>class 인스턴스는 평범한 JSON으로 돌아옵니다.</strong> 객체와 배열은 JSON으로 저장되므로, 다시
+                  읽은 model에는 메서드가 없고 날짜는 문자열입니다. model 값은 model로 타입을 준 <code>memory()</code>를
+                  대신 씁니다.
                 </span>
               ),
             })}

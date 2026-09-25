@@ -367,7 +367,9 @@ export class WebRouter {
       await this.#rsc.reload({
         clientManifest: this.#mergeRuntimeManifest().clientManifest,
         cssAssets: this.renderState.cssAssets,
-        buildId: this.renderState.buildId,
+        // The worker booted on the artifact's id; any other id is a fresh `?v=` URL, so Bun re-evaluates the whole
+        // pages bundle and keeps both copies in its ESM registry for the life of the worker.
+        buildId: this.#artifact.pagesBundleBuildId,
       });
     }
 
